@@ -1,0 +1,103 @@
+package server
+
+import (
+	"net/http"
+
+	chiprometheus "github.com/766b/chi-prometheus"
+	"github.com/getcihub/cihub/cmd/cihub/server/config"
+	"github.com/getcihub/cihub/handler/api"
+	"github.com/getcihub/cihub/handler/health"
+	"github.com/getcihub/cihub/handler/web"
+	"github.com/getcihub/cihub/metric"
+	"github.com/getcihub/cihub/server"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/wire"
+	"github.com/unrolled/secure"
+)
+
+type (
+	healthzHandler http.Handler
+	pprofHandler   http.Handler
+)
+
+// wire set for loading the server.
+//
+//nolint:unused
+var serverSet = wire.NewSet(
+	api.New,
+	web.New,
+	provideHealthz,
+	providePprof,
+	provideRouter,
+	provideServer,
+	provideServerOptions,
+)
+
+// provideHealthz is a Wire provider function
+// that returns a healthcheck HTTP handler.
+func provideHealthz() healthzHandler {
+	return healthzHandler(health.New())
+}
+
+// providePprof is a Wire provider function
+// that returns a pprof HTTP handler.
+func providePprof(config *config.Config) pprofHandler {
+	switch {
+	case config.Server.Debug:
+		return pprofHandler(middleware.Profiler())
+	default:
+		return pprofHandler(http.NotFoundHandler())
+	}
+}
+
+// provideRouter is a Wire provider function that returns
+// a router that serves the provided handlers.
+func provideRouter(api api.Server, web web.Server, healthz healthzHandler, pprof pprofHandler, config *config.Config) *chi.Mux {
+	r := chi.NewRouter()
+
+	m := chiprometheus.NewMiddleware("server")
+	r.Use(m)
+
+	r.Mount("/healthz", healthz)
+	r.Mount("/metrics", metric.HandleMetrics(config.Metric.Secret))
+	r.Mount("/api", api.Handler())
+	r.Mount("/", web.Handler())
+	r.Mount("/debug", pprof)
+
+	return r
+}
+
+func provideServer(handler *chi.Mux, config *config.Config) *server.Server {
+	return &server.Server{
+		Acme:    config.Server.Acme,
+		Addr:    config.Server.Addr,
+		Cert:    config.Server.Cert,
+		Email:   config.Server.Email,
+		Key:     config.Server.Key,
+		Host:    config.Server.Host,
+		Handler: handler,
+	}
+}
+
+// provideServerOptions is a Wire provider function that returns
+// the http web server security option from the environment.
+func provideServerOptions(config *config.Config) secure.Options {
+	return secure.Options{
+		AllowedHosts:          config.HTTP.AllowedHosts,
+		HostsProxyHeaders:     config.HTTP.HostsProxyHeaders,
+		SSLRedirect:           config.HTTP.SSLRedirect,
+		SSLTemporaryRedirect:  config.HTTP.SSLTemporaryRedirect,
+		SSLHost:               config.HTTP.SSLHost,
+		SSLProxyHeaders:       config.HTTP.SSLProxyHeaders,
+		STSSeconds:            config.HTTP.STSSeconds,
+		STSIncludeSubdomains:  config.HTTP.STSIncludeSubdomains,
+		STSPreload:            config.HTTP.STSPreload,
+		ForceSTSHeader:        config.HTTP.ForceSTSHeader,
+		FrameDeny:             config.HTTP.FrameDeny,
+		ContentTypeNosniff:    config.HTTP.ContentTypeNosniff,
+		BrowserXssFilter:      config.HTTP.BrowserXSSFilter,
+		ContentSecurityPolicy: config.HTTP.ContentSecurityPolicy,
+		ReferrerPolicy:        config.HTTP.ReferrerPolicy,
+	}
+}
