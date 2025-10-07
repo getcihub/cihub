@@ -1,0 +1,265 @@
+# ============================================================================
+# Database Configuration
+# ============================================================================
+[database]
+# Database driver to use for data persistence
+# Options: "sqlite3", "mysql", "postgres"
+# Default: "sqlite3"
+driver = "sqlite3"
+
+# Database connection string
+# - SQLite: path to database file (e.g., "data.sqlite", "/var/lib/cihub/data.db")
+# - MySQL: "username:password@tcp(host:port)/database"
+# - Postgres: "host=localhost port=5432 user=username password=password dbname=database sslmode=disable"
+datasource = "data.sqlite"
+
+# Database encryption secret key (AES-256)
+# SECURITY: Generate with: openssl rand -hex 16
+# WARNING: Keep this secret! Changing this will invalidate encrypted data.
+#
+# Note:
+# If no secret key is provided, secrets are stored in plaintext on the datastore.
+# Can be useful during development, but should never be blank in production.
+secret = "d63f883dd38d5daaeb4e62fb82772fb5"
+
+# Maximum number of open connections to the database allowed.
+# If max_connections <= 0, then there is no limit on the number of open connections.
+# Default: 0 (unlimited).
+max_connections = 0
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+[logger]
+# Logging level for application output
+# Options: "error", "warn", "info", "debug"
+# Default: "info"
+# Note: "debug" level may expose sensitive information; use only in development
+level = "info"
+
+# ============================================================================
+# Metrics Configuration
+# ============================================================================
+[metric]
+# Optional authentication token to protect the Prometheus /metrics endpoint
+# SECURITY: Generate with: openssl rand -hex 16
+# If not defined or empty, the /metrics endpoint is publicly accessible
+# When set, clients must provide this token via Bearer authentication or query parameter
+# Example: curl -H "Authorization: Bearer <token>" http://localhost:8125/metrics
+# Default: "" (public access)
+secret = ""
+
+# ============================================================================
+# RPC Configuration (Server/Agent Communication)
+# ============================================================================
+[rpc]
+# RPC server address for agent connections
+# Format options:
+#   - "host:port" for bind address (e.g., "0.0.0.0:8125" for all interfaces)
+#   - "domain" for external URL (e.g., "cihub.io")
+host = "0.0.0.0:8125"
+
+# RPC protocol to use
+# Options: "http", "https"
+# Default: "http"
+proto = "http"
+
+# RPC authentication secret for server/agent communication
+# SECURITY: Generate with: openssl rand -hex 16
+# WARNING: Keep this secret! Must match on all agents.
+secret = "732564db5b5297fa90584ce11d36885a"
+
+# ============================================================================
+# Server Configuration
+# ============================================================================
+[server]
+
+# Enable Let's Encrypt automatic TLS certificate provisioning via ACME protocol
+# When true, automatically obtains and renews TLS certificates from Let's Encrypt
+# Requires 'host' to be set to a valid DNS address
+# Default: false
+acme = false
+
+# Server bind address (local listening address)
+# Use "0.0.0.0" for all interfaces, "127.0.0.1" for localhost only
+# Format: ":port" or "host:port"
+# Default: ":8125"
+addr = ":8125"
+
+# Administrator email address for Let's Encrypt notifications
+# Required when acme = true
+# Used for certificate expiration notices and account recovery
+# Example: "admin@example.com"
+email = "admin@example.com"
+
+# DNS hostname of the server (external address)
+# REQUIRED when acme = true for Let's Encrypt domain validation
+# Example: "cihub-node-01.cihub.io"
+host = "example.com"
+
+# Path to custom TLS certificate file (PEM format)
+# Used when acme = false for manual certificate configuration
+# Leave empty when using ACME/Let's Encrypt
+cert = ""
+
+# Path to custom TLS private key file (PEM format)
+# Used when acme = false for manual certificate configuration
+# Leave empty when using ACME/Let's Encrypt
+key = ""
+
+# Enable debug profiler endpoints (pprof)
+# Default: false
+# WARNING: Only enable in development; exposes sensitive runtime information
+debug = false
+
+# ============================================================================
+# HTTP Security Configuration
+# ============================================================================
+[http]
+# --- Host Security ---
+# Allowed hostnames for accessing the server (empty array = all hosts allowed)
+# Example: ["example.com", "www.example.com"]
+allowed_hosts = []
+
+# Proxy headers to trust for determining client host/IP
+# Example: ["X-Forwarded-Host", "X-Forwarded-For"]
+hosts_proxy_headers = []
+
+# --- SSL/TLS Configuration ---
+# Redirect all HTTP requests to HTTPS
+# Default: false
+ssl_redirect = false
+
+# Use temporary redirect (307) instead of permanent (301) for SSL redirects
+# Default: false
+ssl_temporary_redirect = false
+
+# Custom host for SSL redirects (empty = use same host as request)
+# Example: "secure.example.com"
+ssl_host = ""
+
+# --- HTTP Strict Transport Security (HSTS) ---
+# HSTS max-age in seconds (0 = disabled)
+# Example: 31536000 (1 year)
+# Default: 0
+sts_seconds = 0
+
+# Include subdomains in HSTS policy
+# Default: false
+sts_include_subdomains = false
+
+# Add preload directive to HSTS header (for browser preload lists)
+# Default: false
+sts_preload = false
+
+# Send HSTS header even on HTTP connections (not recommended)
+# Default: false
+force_sts_header = false
+
+# --- Security Headers ---
+# Enable XSS filter protection header
+# Sets: X-XSS-Protection: 1; mode=block
+# Default: true
+browser_xss_filter = true
+
+# Prevent site from being rendered in iframe/frame
+# Sets: X-Frame-Options: DENY
+# Default: true
+frame_deny = true
+
+# Prevent MIME-type sniffing
+# Sets: X-Content-Type-Options: nosniff
+# Default: false
+content_type_nosniff = false
+
+# Content Security Policy header value (empty = not set)
+# Example: "default-src 'self'; script-src 'self' 'unsafe-inline'"
+content_security_policy = ""
+
+# Referrer-Policy header value (empty = not set)
+# Options: "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url"
+referrer_policy = ""
+
+# ============================================================================
+# Session Configuration
+# ============================================================================
+[session]
+# Session encryption secret for cookie signing
+# SECURITY: Generate with: openssl rand -hex 16
+# WARNING: Keep this secret! Changing this will invalidate all active sessions.
+secret = "ce2ccc0b4103dda1ef97eca8c1b45e9d"
+
+# Session timeout duration
+# Format: duration string (e.g., "1h", "24h", "720h")
+# Default: "720h" (30 days)
+timeout = "720h"
+
+# Enable secure flag on session cookies (requires HTTPS)
+# Default: true
+# WARNING: Set to false only in development without HTTPS
+secure = true
+
+# ============================================================================
+# Runner Labels Configuration
+# ============================================================================
+# Define runner resource specifications used in GitHub Actions workflows
+# via "runs-on: <label-name>". All label names must start with "cihub".
+#
+# Fields:
+#   - name: Unique label identifier (must start with "cihub")
+#   - cpu: Number of CPU cores to allocate
+#   - ram: RAM in megabytes (e.g., 2048 = 2GB)
+#   - storage: Disk space in gigabytes (e.g., 10 = 10GB)
+#   - kernel: Kernel file to use (e.g., "vmlinux-5.10")
+#   - ubuntu: Ubuntu version (ubuntu20.04, ubuntu22.04, or ubuntu24.04)
+
+[[labels]]
+name = "cihub-small"
+cpu = 2
+ram = 2048
+storage = 10
+kernel = "vmlinux-5.10"
+ubuntu = "ubuntu22.04"
+
+[[labels]]
+name = "cihub-medium"
+cpu = 4
+ram = 4096
+storage = 20
+kernel = "vmlinux-5.10"
+ubuntu = "ubuntu22.04"
+
+[[labels]]
+name = "cihub-large"
+cpu = 8
+ram = 8192
+storage = 50
+kernel = "vmlinux-6.1"
+ubuntu = "ubuntu24.04"
+
+# ============================================================================
+# User Bootstrap Configuration
+# ============================================================================
+# Define initial users to create on first startup
+# You can add multiple [[users]] sections to bootstrap multiple users
+#
+# Example:
+# [[users]]
+# admin = false
+# login = "octocat"
+# token = "your-generated-token-here"
+
+[[users]]
+# Grant administrator privileges to this user
+# Admins can manage users, system settings, and all resources
+# Default: false
+admin = true
+
+# Username for authentication
+# For GitHub integration, this should match the GitHub username
+login = "nlecoy"
+
+# API authentication token for this user
+# SECURITY: Generate with: openssl rand -hex 16
+# WARNING: Keep this secret! Used for API authentication.
+token = "82cad9385a2d2c4e47fee5d95dc3c223"
