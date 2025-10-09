@@ -2,10 +2,12 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/getcihub/cihub/store/shared/db"
 	"github.com/knadh/koanf/parsers/toml"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/sirupsen/logrus"
@@ -101,10 +103,9 @@ type (
 	// User stores account information used to bootstrap admin user account(s)
 	// on system initialization.
 	User struct {
-		Admin   bool   `koanf:"admin"`
-		Login   string `koanf:"login"`
-		Machine bool   `koanf:"machine"`
-		Token   string `koanf:"token"`
+		Admin bool   `koanf:"admin"`
+		Login string `koanf:"login"`
+		Token string `koanf:"token"`
 	}
 )
 
@@ -117,6 +118,20 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: failed to load configuration file at '%s': %w", path, err)
 	}
+
+	// Load configuration from environment variable
+	//
+	// Environment variables must have prefix "CIHUB_"
+	k.Load(env.Provider(".", env.Opt{
+		Prefix: "CIHUB_",
+		TransformFunc: func(k, v string) (string, any) {
+			k = strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(k, "CIHUB_")), "_", ".")
+			if strings.Contains(v, " ") {
+				return k, strings.Split(v, " ")
+			}
+			return k, v
+		},
+	}), nil)
 
 	var config Config
 	if err := k.Unmarshal("", &config); err != nil {
