@@ -8,6 +8,7 @@ import (
 	"github.com/getcihub/cihub/handler/api/auth"
 	"github.com/getcihub/cihub/handler/api/user"
 	"github.com/getcihub/cihub/handler/api/users"
+	"github.com/getcihub/cihub/logger"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -31,6 +32,7 @@ func (s Server) Handler() http.Handler {
 
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.NoCache)
+	r.Use(logger.Middleware)
 	r.Use(auth.HandleAuthentication(s.Session))
 
 	r.Route("/users", func(r chi.Router) {

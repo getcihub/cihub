@@ -50,6 +50,9 @@ func runServer(ctx context.Context, cmd *cli.Command) error {
 		logrus.Fatalln(err)
 	}
 
+	// Set logging level
+	logrus.SetLevel(conf.Logger.Level)
+
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

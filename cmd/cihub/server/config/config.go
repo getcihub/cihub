@@ -7,6 +7,7 @@ import (
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+	"github.com/sirupsen/logrus"
 )
 
 type (
@@ -15,6 +16,7 @@ type (
 		Database Database `koanf:"database"`
 		HTTP     HTTP     `koanf:"http"`
 		Labels   []Label  `koanf:"labels"`
+		Logger   Logger   `koanf:"logger"`
 		Metric   Metric   `koanf:"metric"`
 		RPC      RPC      `koanf:"rpc"`
 		Server   Server   `koanf:"server"`
@@ -88,6 +90,11 @@ type (
 		Storage int    `koanf:"storage"`
 		Kernel  string `koanf:"kernel"`
 		Ubuntu  string `koanf:"ubuntu"`
+	}
+
+	// Logger provides the logger configuration.
+	Logger struct {
+		Level logrus.Level `koanf:"level"`
 	}
 
 	// User stores account information used to bootstrap admin user account(s)
