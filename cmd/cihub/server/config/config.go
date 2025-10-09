@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/getcihub/cihub/store/shared/db"
 	"github.com/knadh/koanf/parsers/toml"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -26,10 +27,10 @@ type (
 
 	// Database provides the database configuration.
 	Database struct {
-		Driver         string `koanf:"driver"`
-		Datasource     string `koanf:"datasource"`
-		Secret         string `koanf:"secret"`
-		MaxConnections int    `koanf:"max_connections"`
+		Driver         db.Driver `koanf:"driver"`
+		Datasource     string    `koanf:"datasource"`
+		Secret         string    `koanf:"secret"`
+		MaxConnections int       `koanf:"max_connections"`
 	}
 
 	// HTTP provides http security configuration.

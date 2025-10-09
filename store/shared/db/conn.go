@@ -12,14 +12,14 @@ import (
 )
 
 // Connect to a database and verify with a ping.
-func Connect(driver, datasource string, maxOpenConnections int) (*DB, error) {
-	db, err := sql.Open(driver, datasource)
+func Connect(driver Driver, datasource string, maxOpenConnections int) (*DB, error) {
+	db, err := sql.Open(driver.String(), datasource)
 	if err != nil {
 		return nil, err
 	}
 
 	switch driver {
-	case "mysql":
+	case Mysql:
 		db.SetMaxIdleConns(0)
 	}
 
@@ -37,10 +37,10 @@ func Connect(driver, datasource string, maxOpenConnections int) (*DB, error) {
 	var engine Driver
 	var locker Locker
 	switch driver {
-	case "mysql":
+	case Mysql:
 		engine = Mysql
 		locker = &nopLocker{}
-	case "postgres":
+	case Postgres:
 		engine = Postgres
 		locker = &nopLocker{}
 	default:
@@ -49,7 +49,7 @@ func Connect(driver, datasource string, maxOpenConnections int) (*DB, error) {
 	}
 
 	return &DB{
-		conn:   sqlx.NewDb(db, driver),
+		conn:   sqlx.NewDb(db, driver.String()),
 		driver: engine,
 		locker: locker,
 	}, nil
@@ -69,11 +69,11 @@ func pingDatabase(db *sql.DB) (err error) {
 	return
 }
 
-func setupDatabase(db *sql.DB, driver string) error {
+func setupDatabase(db *sql.DB, driver Driver) error {
 	switch driver {
-	case "mysql":
+	case Mysql:
 		return mysql.Migrate(db)
-	case "postgres":
+	case Postgres:
 		return postgres.Migrate(db)
 	default:
 		return sqlite.Migrate(db)

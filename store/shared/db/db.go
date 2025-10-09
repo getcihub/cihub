@@ -7,16 +7,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// Driver defines database driver.
-type Driver int
-
-// Database driver enums.
-const (
-	Sqlite = iota + 1
-	Mysql
-	Postgres
-)
-
 type (
 	// Locker represents an object that can be locked and unlocked.
 	Locker interface {
