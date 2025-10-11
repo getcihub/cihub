@@ -5,9 +5,10 @@ import (
 	"time"
 
 	"github.com/dchest/uniuri"
+	"github.com/sirupsen/logrus"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
-	"github.com/sirupsen/logrus"
 )
 
 // Bootstrapper bootstraps the system with the initial account.

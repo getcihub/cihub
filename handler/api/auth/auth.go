@@ -3,10 +3,11 @@ package auth
 import (
 	"net/http"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/request"
 	"github.com/getcihub/cihub/logger"
-	"github.com/sirupsen/logrus"
 )
 
 // HandleAuthentication returns an http.HandlerFunc middleware that
@@ -22,8 +23,8 @@ func HandleAuthentication(session core.Session) func(http.Handler) http.Handler 
 			// returned from the session, including some edge cases,
 			// to prevent a session from being falsely created.
 			if err != nil || user == nil || user.ID == 0 {
-				next.ServeHTTP(w, r)
 				log.Debugln("api: guest access")
+				next.ServeHTTP(w, r)
 				return
 			}
 

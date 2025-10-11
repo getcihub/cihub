@@ -5,10 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/getcihub/cihub/store/shared/migrate/mysql"
 	"github.com/getcihub/cihub/store/shared/migrate/postgres"
 	"github.com/getcihub/cihub/store/shared/migrate/sqlite"
-	"github.com/jmoiron/sqlx"
 )
 
 // Connect to a database and verify with a ping.

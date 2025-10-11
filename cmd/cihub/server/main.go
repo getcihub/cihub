@@ -5,13 +5,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v3"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/getcihub/cihub/cmd/cihub/server/bootstrap"
 	"github.com/getcihub/cihub/cmd/cihub/server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/server"
-	"github.com/sirupsen/logrus"
-	"github.com/urfave/cli/v3"
-	"golang.org/x/sync/errgroup"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"

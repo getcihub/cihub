@@ -27,13 +27,15 @@ type Server struct {
 
 // ListenAndServe starts an HTTP server to respond to HTTP
 // requests until provided context is canceled.
-func (s Server) ListenAndServe(ctx context.Context) error {
+func (s Server) ListenAndServe(ctx context.Context) (err error) {
 	if s.Acme {
-		return s.listenAndServeAcme(ctx)
+		err = s.listenAndServeAcme(ctx)
 	} else if s.Key != "" {
-		return s.listenAndServeTLS(ctx)
+		err = s.listenAndServeTLS(ctx)
+	} else {
+		err = s.listenAndServe(ctx)
 	}
-	err := s.listenAndServe(ctx)
+
 	if err == http.ErrServerClosed {
 		err = nil
 	}
@@ -108,6 +110,7 @@ func (s Server) listenAndServeAcme(ctx context.Context) error {
 
 func (s Server) listenAndServeTLS(ctx context.Context) error {
 	g := errgroup.Group{}
+
 	s1 := &http.Server{
 		Addr:    ":http",
 		Handler: http.HandlerFunc(redirect),

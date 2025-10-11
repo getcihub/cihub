@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/mock"
-	"go.uber.org/mock/gomock"
 
 	"github.com/dchest/authcookie"
 )

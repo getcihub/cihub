@@ -4,10 +4,11 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/render"
 	"github.com/getcihub/cihub/logger"
-	"github.com/go-chi/chi/v5"
 )
 
 // HandleFind returns an http.HandlerFunc that writes json-encoded

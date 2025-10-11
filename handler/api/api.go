@@ -3,15 +3,26 @@ package api
 import (
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/acl"
 	"github.com/getcihub/cihub/handler/api/auth"
 	"github.com/getcihub/cihub/handler/api/user"
 	"github.com/getcihub/cihub/handler/api/users"
 	"github.com/getcihub/cihub/logger"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
+
+var corsOpts = cors.Options{
+	AllowedOrigins:   []string{"*"},
+	AllowedMethods:   []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+	AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+	ExposedHeaders:   []string{"Link"},
+	AllowCredentials: true,
+	MaxAge:           300,
+}
 
 // Server is a http.Handler exposing CIHub functionality over HTTP.
 type Server struct {
@@ -32,8 +43,12 @@ func (s Server) Handler() http.Handler {
 
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.NoCache)
-	r.Use(logger.Middleware)
+	r.Use(middleware.RealIP)
 	r.Use(auth.HandleAuthentication(s.Session))
+	r.Use(logger.Middleware)
+
+	cors := cors.New(corsOpts)
+	r.Use(cors.Handler)
 
 	r.Route("/users", func(r chi.Router) {
 		r.Use(acl.AuthorizeAdmin)

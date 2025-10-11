@@ -3,8 +3,9 @@ package rpc
 import (
 	"context"
 
-	"github.com/getcihub/cihub/core"
 	"github.com/hashicorp/go-retryablehttp"
+
+	"github.com/getcihub/cihub/core"
 )
 
 type client struct {

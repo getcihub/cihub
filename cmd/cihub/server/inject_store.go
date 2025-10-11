@@ -1,13 +1,14 @@
 package server
 
 import (
+	"github.com/google/wire"
+
 	"github.com/getcihub/cihub/cmd/cihub/server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/label"
 	"github.com/getcihub/cihub/store/shared/db"
 	"github.com/getcihub/cihub/store/shared/encrypt"
 	"github.com/getcihub/cihub/store/user"
-	"github.com/google/wire"
 )
 
 // wire set for loading the stores.

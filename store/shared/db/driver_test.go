@@ -1,8 +1,6 @@
 package db
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestDriver_String(t *testing.T) {
 	tests := []struct {

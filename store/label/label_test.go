@@ -8,7 +8,7 @@ import (
 	"github.com/getcihub/cihub/core"
 )
 
-var noContext = context.Background()
+var noContext = context.TODO()
 
 func TestNew(t *testing.T) {
 	tests := []struct {

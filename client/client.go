@@ -11,10 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getcihub/cihub/core"
-	"github.com/getcihub/cihub/logger"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/urfave/cli/v3"
+
+	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/logger"
 )
 
 const (

@@ -4,16 +4,17 @@ import (
 	"net/http"
 
 	chiprometheus "github.com/766b/chi-prometheus"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/wire"
+	"github.com/unrolled/secure"
+
 	"github.com/getcihub/cihub/cmd/cihub/server/config"
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/health"
 	"github.com/getcihub/cihub/handler/web"
 	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/server"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/google/wire"
-	"github.com/unrolled/secure"
 )
 
 type (

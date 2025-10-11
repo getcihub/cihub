@@ -8,11 +8,7 @@ import (
 
 type key int
 
-const (
-	userKey key = iota
-	permKey
-	repoKey
-)
+const userKey key = iota
 
 // WithUser returns a copy of parent in which the user value is set
 func WithUser(parent context.Context, user *core.User) context.Context {

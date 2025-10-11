@@ -5,10 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/render"
 	"github.com/getcihub/cihub/handler/api/request"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestFind(t *testing.T) {

@@ -7,10 +7,11 @@ import (
 	"testing"
 
 	"github.com/dchest/uniuri"
-	"github.com/getcihub/cihub/core"
-	"github.com/getcihub/cihub/mock"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/mock/gomock"
+
+	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/mock"
 )
 
 var noContext = context.TODO()
