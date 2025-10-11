@@ -19,7 +19,14 @@ func New(db *db.DB, enc encrypt.Encrypter) core.UserStore {
 	return &store{db, enc}
 }
 
-// Create persists a new user to the datastore.
+func (s *store) Count(context.Context) (int64, error) {
+	var out int64
+	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
+		return queryer.QueryRow(queryCount).Scan(&out)
+	})
+	return out, err
+}
+
 func (s *store) Create(ctx context.Context, user *core.User) error {
 	if s.db.Driver() == db.Postgres {
 		return s.createPostgres(ctx, user)
@@ -185,6 +192,10 @@ SELECT
 	user_oauth_refresh,
 	user_oauth_expiry,
 	user_token
+`
+
+const queryCount = `
+SELECT COUNT(*) FROM users
 `
 
 const queryFind = queryBase + `

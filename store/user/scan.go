@@ -11,7 +11,7 @@ import (
 // helper function converts the User structure to a set
 // of named query parameters.
 func toParams(encrypt encrypt.Encrypter, u *core.User) (map[string]interface{}, error) {
-	token, err := encrypt.Encrypt(u.Token)
+	token, err := encrypt.Encrypt(u.Access)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func toParams(encrypt encrypt.Encrypter, u *core.User) (map[string]interface{}, 
 // helper function scans the sql.Row and copies the column
 // values to the destination object.
 func scanRow(encrypt encrypt.Encrypter, scanner db.Scanner, dest *core.User) error {
-	var token, refresh []byte
+	var access, refresh []byte
 	err := scanner.Scan(
 		&dest.ID,
 		&dest.Login,
@@ -48,7 +48,7 @@ func scanRow(encrypt encrypt.Encrypter, scanner db.Scanner, dest *core.User) err
 		&dest.Avatar,
 		&dest.Created,
 		&dest.Updated,
-		&token,
+		&access,
 		&refresh,
 		&dest.Expiry,
 		&dest.Token,
@@ -56,7 +56,7 @@ func scanRow(encrypt encrypt.Encrypter, scanner db.Scanner, dest *core.User) err
 	if err != nil {
 		return err
 	}
-	dest.Token, err = encrypt.Decrypt(token)
+	dest.Access, err = encrypt.Decrypt(access)
 	if err != nil {
 		return err
 	}

@@ -27,6 +27,9 @@ type (
 
 	// UserStore defines operations for working with user on a datastore.
 	UserStore interface {
+		// Count returns a count of users.
+		Count(context.Context) (int64, error)
+
 		// Create persists a new user to the datastore.
 		Create(ctx context.Context, user *User) error
 
