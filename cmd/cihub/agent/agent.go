@@ -19,7 +19,7 @@ Start an agent with a configuration file:
 
 var Command = &cli.Command{
 	Name:        "agent",
-	Usage:       "Start a CIHub agent",
+	Usage:       "Start CIHub agent",
 	UsageText:   "cihub agent [option]",
 	Description: help,
 	Action:      runAgent,
