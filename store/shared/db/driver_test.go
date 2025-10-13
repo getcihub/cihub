@@ -11,7 +11,7 @@ func TestDriver_String(t *testing.T) {
 		{
 			name:   "sqlite",
 			driver: Sqlite,
-			want:   "sqlite3",
+			want:   "sqlite",
 		},
 		{
 			name:   "mysql",
@@ -53,20 +53,20 @@ func TestDriver_Set(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "sqlite3 lowercase",
-			input:   "sqlite3",
+			name:    "sqlite lowercase",
+			input:   "sqlite",
 			want:    Sqlite,
 			wantErr: false,
 		},
 		{
-			name:    "sqlite3 uppercase",
-			input:   "SQLITE3",
+			name:    "sqlite uppercase",
+			input:   "SQLITE",
 			want:    Sqlite,
 			wantErr: false,
 		},
 		{
-			name:    "sqlite3 mixed case",
-			input:   "SqLiTe3",
+			name:    "sqlite mixed case",
+			input:   "SqLiTe",
 			want:    Sqlite,
 			wantErr: false,
 		},
@@ -120,7 +120,7 @@ func TestDriver_Set(t *testing.T) {
 		},
 		{
 			name:    "invalid with whitespace",
-			input:   " sqlite3 ",
+			input:   " sqlite ",
 			want:    Unknown,
 			wantErr: true,
 		},
@@ -156,8 +156,8 @@ func TestDriver_UnmarshalText(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "sqlite3",
-			input:   []byte("sqlite3"),
+			name:    "sqlite",
+			input:   []byte("sqlite"),
 			want:    Sqlite,
 			wantErr: false,
 		},
@@ -174,8 +174,8 @@ func TestDriver_UnmarshalText(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "uppercase sqlite3",
-			input:   []byte("SQLITE3"),
+			name:    "uppercase sqlite",
+			input:   []byte("SQLITE"),
 			want:    Sqlite,
 			wantErr: false,
 		},

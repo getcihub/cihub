@@ -1,13 +1,17 @@
 # ============================================================================
 # Database Configuration
 # ============================================================================
+
 [database]
+
 # Database driver to use for data persistence
-# Options: "sqlite3", "mysql", "postgres"
-# Default: "sqlite3"
-driver = "sqlite3"
+# Options: "sqlite", "mysql", "postgres"
+#
+# Default: "sqlite"
+driver = "sqlite"
 
 # Database connection string
+#
 # - SQLite: path to database file (e.g., "data.sqlite", "/var/lib/cihub/data.db")
 # - MySQL: "username:password@tcp(host:port)/database"
 # - Postgres: "host=localhost port=5432 user=username password=password dbname=database sslmode=disable"
@@ -24,6 +28,7 @@ secret = "d63f883dd38d5daaeb4e62fb82772fb5"
 
 # Maximum number of open connections to the database allowed.
 # If max_connections <= 0, then there is no limit on the number of open connections.
+#
 # Default: 0 (unlimited).
 max_connections = 0
 

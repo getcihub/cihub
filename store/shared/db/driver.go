@@ -19,7 +19,7 @@ const (
 // Set implements the flag.Value interface.
 func (d *Driver) Set(s string) error {
 	switch {
-	case strings.EqualFold(s, "sqlite3"):
+	case strings.EqualFold(s, "sqlite"):
 		*d = Sqlite
 	case strings.EqualFold(s, "mysql"):
 		*d = Mysql
@@ -36,7 +36,7 @@ func (d *Driver) Set(s string) error {
 func (d Driver) String() string {
 	switch d {
 	case Sqlite:
-		return "sqlite3"
+		return "sqlite"
 	case Mysql:
 		return "mysql"
 	case Postgres:

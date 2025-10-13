@@ -16,7 +16,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 const help = `
@@ -31,7 +31,7 @@ Start a server with a configuration file:
 
 var Command = &cli.Command{
 	Name:        "server",
-	Usage:       "Start a CIHub server",
+	Usage:       "Start CIHub server",
 	UsageText:   "cihub server [option]",
 	Description: help,
 	Action:      runServer,
