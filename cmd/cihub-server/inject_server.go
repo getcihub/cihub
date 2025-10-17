@@ -1,4 +1,4 @@
-package server
+package main
 
 import (
 	"net/http"
@@ -9,7 +9,7 @@ import (
 	"github.com/google/wire"
 	"github.com/unrolled/secure"
 
-	"github.com/getcihub/cihub/cmd/cihub/server/config"
+	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/health"
 	"github.com/getcihub/cihub/handler/web"

@@ -4,10 +4,10 @@
 //go:build !wireinject
 // +build !wireinject
 
-package server
+package main
 
 import (
-	"github.com/getcihub/cihub/cmd/cihub/server/config"
+	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/web"
 	"github.com/getcihub/cihub/store/user"
@@ -38,10 +38,10 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	server := api.New(session, userStore)
 	options := provideServerOptions(conf)
 	webServer := web.New(options)
-	serverHealthzHandler := provideHealthz()
-	serverPprofHandler := providePprof(conf)
-	mux := provideRouter(server, webServer, serverHealthzHandler, serverPprofHandler, conf)
+	mainHealthzHandler := provideHealthz()
+	mainPprofHandler := providePprof(conf)
+	mux := provideRouter(server, webServer, mainHealthzHandler, mainPprofHandler, conf)
 	serverServer := provideServer(mux, conf)
-	serverApplication := newApplication(serverServer, userStore)
-	return serverApplication, nil
+	mainApplication := newApplication(serverServer, userStore)
+	return mainApplication, nil
 }

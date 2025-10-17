@@ -1,9 +1,9 @@
-package server
+package main
 
 import (
 	"github.com/google/wire"
 
-	"github.com/getcihub/cihub/cmd/cihub/server/config"
+	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/session"
 )

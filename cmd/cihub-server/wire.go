@@ -1,11 +1,11 @@
 //go:build wireinject
 
-package server
+package main
 
 import (
 	"github.com/google/wire"
 
-	"github.com/getcihub/cihub/cmd/cihub/server/config"
+	"github.com/getcihub/cihub/cmd/cihub-server/config"
 )
 
 func InitializeApplication(conf *config.Config) (application, error) {

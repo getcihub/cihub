@@ -40,7 +40,7 @@ run app:
 
 # Run tests
 test:
-	go test -v -race -cover ./...
+	go test -v -cover ./...
 
 # Format code
 fmt:

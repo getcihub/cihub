@@ -15,7 +15,6 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/wire v0.7.0
-	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf/parsers/toml v0.1.0
 	github.com/knadh/koanf/providers/env/v2 v2.0.0
@@ -27,7 +26,6 @@ require (
 	github.com/segmentio/ksuid v1.0.4
 	github.com/sirupsen/logrus v1.9.3
 	github.com/unrolled/secure v1.17.0
-	github.com/urfave/cli/v3 v3.4.1
 	go.uber.org/mock v0.6.0
 	golang.org/x/crypto v0.42.0
 	golang.org/x/sync v0.17.0
@@ -66,7 +64,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
