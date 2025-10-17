@@ -5,12 +5,12 @@ import (
 
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/shared/db"
-	"github.com/getcihub/cihub/store/shared/encrypt"
+	"github.com/getcihub/cihub/store/shared/encrypter"
 )
 
 // helper function converts the User structure to a set
 // of named query parameters.
-func toParams(encrypt encrypt.Encrypter, u *core.User) (map[string]interface{}, error) {
+func toParams(encrypt encrypter.Encrypter, u *core.User) (map[string]interface{}, error) {
 	token, err := encrypt.Encrypt(u.Access)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func toParams(encrypt encrypt.Encrypter, u *core.User) (map[string]interface{}, 
 
 // helper function scans the sql.Row and copies the column
 // values to the destination object.
-func scanRow(encrypt encrypt.Encrypter, scanner db.Scanner, dest *core.User) error {
+func scanRow(encrypt encrypter.Encrypter, scanner db.Scanner, dest *core.User) error {
 	var access, refresh []byte
 	err := scanner.Scan(
 		&dest.ID,
@@ -69,7 +69,7 @@ func scanRow(encrypt encrypt.Encrypter, scanner db.Scanner, dest *core.User) err
 
 // helper function scans the sql.Row and copies the column
 // values to the destination object.
-func scanRows(encrypt encrypt.Encrypter, rows *sql.Rows) ([]*core.User, error) {
+func scanRows(encrypt encrypter.Encrypter, rows *sql.Rows) ([]*core.User, error) {
 	users := []*core.User{}
 	for rows.Next() {
 		user := new(core.User)

@@ -6,16 +6,16 @@ import (
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
 	"github.com/getcihub/cihub/store/shared/db"
-	"github.com/getcihub/cihub/store/shared/encrypt"
+	"github.com/getcihub/cihub/store/shared/encrypter"
 )
 
 type store struct {
 	db  *db.DB
-	enc encrypt.Encrypter
+	enc encrypter.Encrypter
 }
 
 // New returns a new UserStore.
-func New(db *db.DB, enc encrypt.Encrypter) core.UserStore {
+func New(db *db.DB, enc encrypter.Encrypter) core.UserStore {
 	return &store{db, enc}
 }
 

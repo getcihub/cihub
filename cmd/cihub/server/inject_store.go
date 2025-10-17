@@ -7,7 +7,7 @@ import (
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/label"
 	"github.com/getcihub/cihub/store/shared/db"
-	"github.com/getcihub/cihub/store/shared/encrypt"
+	"github.com/getcihub/cihub/store/shared/encrypter"
 	"github.com/getcihub/cihub/store/user"
 )
 
@@ -33,8 +33,8 @@ func provideDatabase(config *config.Config) (*db.DB, error) {
 
 // provideEncrypter is a Wire provider function that provides a
 // database encrypter.
-func provideEncrypter(config *config.Config) (encrypt.Encrypter, error) {
-	return encrypt.New(config.Database.Secret)
+func provideEncrypter(config *config.Config) (encrypter.Encrypter, error) {
+	return encrypter.New(config.Database.Secret)
 }
 
 // provideLabelStore is a Wire provider function that provides an

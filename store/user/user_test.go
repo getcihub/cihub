@@ -6,7 +6,7 @@ import (
 
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/shared/db/dbtest"
-	"github.com/getcihub/cihub/store/shared/encrypt"
+	"github.com/getcihub/cihub/store/shared/encrypter"
 )
 
 var noContext = context.TODO()
@@ -23,7 +23,7 @@ func TestUser(t *testing.T) {
 	}()
 
 	store := New(conn, nil).(*store)
-	store.enc, _ = encrypt.New("fb4b4d6267c8a5ce8231f8b186dbca92")
+	store.enc, _ = encrypter.New("fb4b4d6267c8a5ce8231f8b186dbca92")
 	t.Run("Create", testUserCreate(store))
 }
 
