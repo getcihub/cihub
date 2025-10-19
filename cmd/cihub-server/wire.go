@@ -10,6 +10,10 @@ import (
 
 func InitializeApplication(conf *config.Config) (application, error) {
 	wire.Build(
+		agentSet,
+		// clientSet,
+		externalSet,
+		schedulerSet,
 		serverSet,
 		serviceSet,
 		storeSet,

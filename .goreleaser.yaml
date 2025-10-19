@@ -4,7 +4,7 @@ env:
   - GO111MODULE=on
 builds:
   - binary: cihub
-    main: ./cmd/cihub
+    main: ./cmd/cihub-server
     goos:
       - linux
     goarch:

@@ -12,6 +12,14 @@ var migrations = []struct {
 		name: "create-table-users",
 		stmt: createTableUsers,
 	},
+	{
+		name: "create-table-jobs",
+		stmt: createTableJobs,
+	},
+	{
+		name: "create-table-runners",
+		stmt: createTableRunners,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -108,4 +116,68 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE(user_login COLLATE NOCASE),
   UNIQUE(user_token)
 );
+`
+
+//
+// 0002_create_table_jobs.sql
+//
+
+var createTableJobs = `
+CREATE TABLE IF NOT EXISTS jobs (
+  job_id              INTEGER PRIMARY KEY,
+  job_run_id          INTEGER,
+  job_installation_id INTEGER,
+  job_owner           TEXT,
+  job_repo            TEXT,
+  job_workflow        TEXT,
+  job_name            TEXT,
+  job_branch          TEXT,
+  job_sha             TEXT,
+  job_status          TEXT,
+  job_conclusion      TEXT,
+  job_labels          TEXT,
+  job_runner_id       INTEGER,
+  job_runner_name     TEXT,
+  job_machine         TEXT,
+  job_url             TEXT,
+  job_accepted        INTEGER,
+  job_queued          INTEGER,
+  job_started         INTEGER,
+  job_completed       INTEGER,
+  job_created         INTEGER,
+  job_updated         INTEGER,
+  job_version         INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS ix_job_run_id ON jobs (job_run_id);
+CREATE INDEX IF NOT EXISTS ix_job_status ON jobs (job_status);
+CREATE INDEX IF NOT EXISTS ix_job_runner_id ON jobs (job_runner_id);
+CREATE INDEX IF NOT EXISTS ix_job_machine ON jobs (job_machine);
+CREATE INDEX IF NOT EXISTS ix_job_created ON jobs (job_created);
+`
+
+//
+// 0003_create_table_runners.sql
+//
+
+var createTableRunners = `
+CREATE TABLE IF NOT EXISTS runners (
+  runner_name            TEXT PRIMARY KEY COLLATE NOCASE,
+  runner_id              INTEGER,
+  runner_installation_id INTEGER,
+  runner_status          TEXT,
+  runner_assigned_to     INTEGER,
+  runner_cancelled       BOOLEAN,
+  runner_completed       INTEGER,
+  runner_created         INTEGER,
+  runner_started         INTEGER,
+  runner_stopped         INTEGER,
+  runner_updated         INTEGER,
+  runner_timeout         INTEGER,
+  runner_token           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_runner_status ON runners (runner_status);
+CREATE INDEX IF NOT EXISTS ix_runner_assigned_to ON runners (runner_assigned_to);
+CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
 `

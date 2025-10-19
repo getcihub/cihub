@@ -10,6 +10,9 @@ import (
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/web"
+	"github.com/getcihub/cihub/orchestrator/manager"
+	"github.com/getcihub/cihub/store/job"
+	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/user"
 )
 
@@ -26,11 +29,20 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	if err != nil {
 		return application{}, err
 	}
+	jobStore := job.New(db)
 	encrypter, err := provideEncrypter(conf)
 	if err != nil {
 		return application{}, err
 	}
+	runnerStore := runner.New(db, encrypter)
+	redisDB, err := provideRedisClient(conf)
+	if err != nil {
+		return application{}, err
+	}
+	scheduler := provideScheduler(jobStore, redisDB)
 	userStore := user.New(db, encrypter)
+	runnerManager := manager.New(jobStore, runnerStore, scheduler, userStore)
+	agent := provideAgent(runnerManager, conf)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
 		return application{}, err
@@ -39,9 +51,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(options)
 	mainHealthzHandler := provideHealthz()
+	v := provideEventHandlers(jobStore)
+	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
-	mux := provideRouter(server, webServer, mainHealthzHandler, mainPprofHandler, conf)
+	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, conf)
 	serverServer := provideServer(mux, conf)
-	mainApplication := newApplication(serverServer, userStore)
+	mainApplication := newApplication(agent, serverServer, userStore)
 	return mainApplication, nil
 }

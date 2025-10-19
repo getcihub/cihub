@@ -12,6 +12,7 @@ import (
 	"github.com/getcihub/cihub/cmd/cihub-server/bootstrap"
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/orchestrator/agent"
 	"github.com/getcihub/cihub/server"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -68,6 +69,20 @@ func main() {
 		return app.server.ListenAndServe(ctx)
 	})
 
+	// launches the runner agent in a goroutine. If the local
+	// agent is disabled (because remote agents are enabled)
+	// then the goroutine exits immediately without error.
+	g.Go(func() (err error) {
+		if app.agent == nil {
+			return nil
+		}
+
+		logrus.
+			WithField("threads", config.Agent.Capacity).
+			Infoln("main: starting the local runner agent")
+		return app.agent.Start(ctx, config.Agent.Capacity)
+	})
+
 	if err := g.Wait(); err != nil {
 		logrus.WithError(err).Fatalln("program terminated")
 	}
@@ -75,13 +90,19 @@ func main() {
 
 // application is the main struct for the CIHub server.
 type application struct {
+	agent  *agent.Agent
 	server *server.Server
 	users  core.UserStore
 }
 
 // newApplication returns a new CIHub server application struct.
-func newApplication(server *server.Server, users core.UserStore) application {
+func newApplication(
+	agent *agent.Agent,
+	server *server.Server,
+	users core.UserStore,
+) application {
 	return application{
+		agent:  agent,
 		server: server,
 		users:  users,
 	}

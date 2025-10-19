@@ -24,6 +24,7 @@ const (
 	ReasonCreated  = "created"
 	ReasonUpdated  = "updated"
 	ReasonDeleted  = "deleted"
+	ReasonIgnored  = "ignored"
 
 	// Error reasons
 	ReasonUnauthorized   = "unauthorized"
