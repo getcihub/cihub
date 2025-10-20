@@ -126,13 +126,12 @@ func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*cor
 	logger.Debugln("manager: job accepted")
 
 	// Step 2.
-	// Register a runner on GitHub
+	// Register a runner on GitHub at organization level
 
 	runner, err := m.Runnerz.Create(ctx, core.CreateRunnerOpts{
 		InstallationID: job.InstallationID,
 		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(8)),
 		Owner:          job.Owner,
-		Repo:           job.Repo,
 		Labels:         job.Labels,
 		GroupID:        1,
 	})

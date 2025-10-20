@@ -26,8 +26,7 @@ type (
 		Name           string `json:"name"`            // Runner registration name
 		ID             int64  `json:"id"`              // GitHub runner ID (assigned after registration)
 		InstallationID int64  `json:"installation_id"` // GitHub App installation ID for token generation
-		Owner          string `json:"owner"`           // GitHub repository owner
-		Repo           string `json:"repo"`            // GitHub repository name
+		Owner          string `json:"owner"`           // GitHub organization name
 		Status         string `json:"status"`          // Runner lifecycle status
 		AssignedTo     int64  `json:"assigned_to"`     // Job ID this runner is assigned to (0 if idle)
 		Cancelled      bool   `json:"cancelled"`       // Cancellation flag
@@ -41,12 +40,11 @@ type (
 	}
 
 	// CreateRunnerOpts defines optional instructions for
-	// creating runner instances.
+	// creating runner instances at the organization level.
 	CreateRunnerOpts struct {
 		InstallationID int64
 		Name           string
 		Owner          string
-		Repo           string
 		Labels         []string
 		GroupID        int64
 	}

@@ -24,7 +24,7 @@ func (s *service) Create(ctx context.Context, opts core.CreateRunnerOpts) (*core
 		return nil, err
 	}
 
-	runner, _, err := c.Actions.GenerateRepoJITConfig(ctx, opts.Owner, opts.Repo, &github.GenerateJITConfigRequest{
+	runner, _, err := c.Actions.GenerateOrgJITConfig(ctx, opts.Owner, &github.GenerateJITConfigRequest{
 		Name:          opts.Name,
 		RunnerGroupID: opts.GroupID,
 		Labels:        opts.Labels,
@@ -37,7 +37,6 @@ func (s *service) Create(ctx context.Context, opts core.CreateRunnerOpts) (*core
 		Name:           opts.Name,
 		InstallationID: opts.InstallationID,
 		Owner:          opts.Owner,
-		Repo:           opts.Repo,
 		ID:             runner.GetRunner().GetID(),
 		Status:         runner.GetRunner().GetStatus(),
 		Created:        time.Now().Unix(),
@@ -51,7 +50,7 @@ func (s *service) Delete(ctx context.Context, runner *core.Runner) error {
 		return err
 	}
 
-	_, err = c.Actions.RemoveRunner(ctx, runner.Owner, runner.Repo, runner.ID)
+	_, err = c.Actions.RemoveOrganizationRunner(ctx, runner.Owner, runner.ID)
 	if err != nil {
 		return err
 	}

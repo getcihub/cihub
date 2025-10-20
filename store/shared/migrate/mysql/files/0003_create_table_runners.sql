@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_id              BIGINT,
   runner_installation_id BIGINT,
   runner_owner           VARCHAR(255),
-  runner_repo            VARCHAR(255),
   runner_status          VARCHAR(50),
   runner_assigned_to     BIGINT,
   runner_cancelled       BOOLEAN,
