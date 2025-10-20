@@ -9,10 +9,6 @@ import (
 	"github.com/getcihub/cihub/service/redisdb"
 )
 
-// jobCreateBuffer is a buffer allowing existing runners to
-// process the job.
-const jobCreateBuffer = time.Second * 10
-
 type queue struct {
 	sync.Mutex
 	globMx redisdb.LockErr
@@ -100,12 +96,6 @@ func (q *queue) signal(ctx context.Context) error {
 	q.Lock()
 	defer q.Unlock()
 	for _, job := range jobs {
-		// Give a chance to the job to be processed by an
-		// existing runner.
-		if job.Created > time.Now().Add(-jobCreateBuffer).Unix() {
-			continue
-		}
-
 	loop:
 		for w := range q.workers {
 			if !checkLabels(job.Labels, w.labels) {
