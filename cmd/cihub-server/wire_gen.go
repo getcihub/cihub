@@ -11,6 +11,7 @@ import (
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/web"
 	"github.com/getcihub/cihub/orchestrator/manager"
+	runner2 "github.com/getcihub/cihub/service/runner"
 	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/user"
@@ -35,13 +36,18 @@ func InitializeApplication(conf *config.Config) (application, error) {
 		return application{}, err
 	}
 	runnerStore := runner.New(db, encrypter)
+	clientCreator, err := provideClient(conf)
+	if err != nil {
+		return application{}, err
+	}
+	runnerService := runner2.New(clientCreator)
 	redisDB, err := provideRedisClient(conf)
 	if err != nil {
 		return application{}, err
 	}
 	scheduler := provideScheduler(jobStore, redisDB)
 	userStore := user.New(db, encrypter)
-	runnerManager := manager.New(jobStore, runnerStore, scheduler, userStore)
+	runnerManager := manager.New(jobStore, runnerStore, runnerService, scheduler, userStore)
 	agent := provideAgent(runnerManager, conf)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
@@ -51,7 +57,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(options)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(jobStore)
+	v := provideEventHandlers(jobStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, conf)

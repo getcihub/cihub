@@ -4,6 +4,9 @@ import "context"
 
 // Scheduler schedules runners for execution.
 type Scheduler interface {
+	// Schedule schedules the stage for execution.
+	Schedule(ctx context.Context, job *Job) error
+
 	// Request requests the next job scheduled for execution.
 	Request(ctx context.Context, labels []string) (*Job, error)
 

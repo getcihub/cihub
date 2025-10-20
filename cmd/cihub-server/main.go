@@ -78,7 +78,9 @@ func main() {
 		}
 
 		logrus.
-			WithField("threads", config.Agent.Capacity).
+			WithField("capacity", config.Agent.Capacity).
+			WithField("vcpu", config.Agent.VCPU).
+			WithField("memory", config.Agent.Memory).
 			Infoln("main: starting the local runner agent")
 		return app.agent.Start(ctx, config.Agent.Capacity)
 	})

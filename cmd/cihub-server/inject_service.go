@@ -5,6 +5,7 @@ import (
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/service/runner"
 	"github.com/getcihub/cihub/session"
 )
 
@@ -12,6 +13,7 @@ import (
 //
 //nolint:unused
 var serviceSet = wire.NewSet(
+	runner.New,
 	provideSession,
 )
 

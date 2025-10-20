@@ -187,5 +187,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: failed to read configuration file: %w", err)
 	}
 
+	if config.Agent.Name == "" {
+		config.Agent.Name = hostname
+	}
+
 	return &config, nil
 }

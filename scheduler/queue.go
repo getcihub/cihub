@@ -39,6 +39,14 @@ func newQueue(ctx context.Context, store core.JobStore) *queue {
 	return q
 }
 
+func (q *queue) Schedule(ctx context.Context, job *core.Job) error {
+	select {
+	case q.ready <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 func (q *queue) Request(ctx context.Context, labels []string) (*core.Job, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

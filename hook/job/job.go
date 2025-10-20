@@ -3,21 +3,25 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/go-github/v76/github"
 	"github.com/palantir/go-githubapp/githubapp"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/logger"
 )
 
 type handler struct {
-	jobs core.JobStore
+	jobs      core.JobStore
+	scheduler core.Scheduler
 }
 
-func New(jobs core.JobStore) githubapp.EventHandler {
-	return &handler{jobs}
+func New(jobs core.JobStore, scheduler core.Scheduler) githubapp.EventHandler {
+	return &handler{jobs, scheduler}
 }
 
 func (h *handler) Handles() []string {
@@ -45,6 +49,21 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 	// Convert GitHub event to core.Job model
 	job := convertWorkflowJobToJob(&event)
 
+	log := logger.FromContext(ctx).WithFields(
+		logrus.Fields{
+			"event":       eventType,
+			"delivery.id": deliveryID,
+			"job.id":      job.ID,
+			"run.id":      job.RunID,
+			"owner":       job.Owner,
+			"repo":        job.Repo,
+			"status":      job.Status,
+			"runner.id":   job.RunnerID,
+			"runner.name": job.RunnerName,
+		},
+	)
+	log.Infoln("webhook: received workflow job event")
+
 	// Attempt to find existing job for idempotency
 	existing, err := h.jobs.Find(ctx, job.ID)
 	if err != nil {
@@ -52,7 +71,13 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 		now := time.Now().Unix()
 		job.Created = now
 		job.Updated = now
-		return errors.Wrap(h.jobs.Create(ctx, job), "failed to create job")
+
+		err := h.jobs.Create(ctx, job)
+		if err != nil {
+			return fmt.Errorf("hook: failed to create job, err: %w", err)
+		}
+
+		return h.scheduler.Schedule(ctx, job)
 	}
 
 	// Job exists - update with latest webhook data
@@ -65,7 +90,12 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 	job.Machine = existing.Machine
 	job.Accepted = existing.Accepted
 
-	return errors.Wrap(h.jobs.Update(ctx, job), "failed to update job")
+	err = h.jobs.Update(ctx, job)
+	if err != nil {
+		return errors.Wrap(err, "failed to update jon")
+	}
+
+	return nil
 }
 
 // convertWorkflowJobToJob converts a GitHub WorkflowJobEvent to a core.Job.

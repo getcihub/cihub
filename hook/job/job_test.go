@@ -21,7 +21,8 @@ func TestHandler_Handles(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := New(mockStore)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(mockStore, mockScheduler)
 
 	events := h.Handles()
 	if got, want := len(events), 1; got != want {
@@ -37,7 +38,8 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -121,6 +123,11 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 			return nil
 		})
 
+	// Expect Schedule to be called after successful Create
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
 	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
 		t.Errorf("Handle failed: %v", err)
 	}
@@ -131,7 +138,8 @@ func TestHandler_Handle_UpdateExisting(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	createdTime := time.Now().Add(-5 * time.Minute)
 	startedTime := time.Now()
@@ -238,7 +246,8 @@ func TestHandler_Handle_Completed(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	createdTime := time.Now().Add(-10 * time.Minute)
 	startedTime := time.Now().Add(-5 * time.Minute)
@@ -318,7 +327,8 @@ func TestHandler_Handle_InvalidPayload(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	invalidPayload := []byte(`{invalid json}`)
 
@@ -333,7 +343,8 @@ func TestHandler_Handle_MissingWorkflowJob(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action:      github.String("queued"),
@@ -368,7 +379,8 @@ func TestHandler_Handle_MissingRepository(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -400,7 +412,8 @@ func TestHandler_Handle_MissingInstallation(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -435,7 +448,8 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -481,7 +495,8 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockStore := mock.NewMockJobStore(ctrl)
-	h := &handler{jobs: mockStore}
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("in_progress"),

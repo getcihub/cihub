@@ -2,8 +2,10 @@ package manager
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/dchest/uniuri"
 	"github.com/sirupsen/logrus"
 
 	"github.com/getcihub/cihub/core"
@@ -27,11 +29,7 @@ type RunnerManager interface {
 	// The system uses optimistic locking at the database-level to prevent
 	// multiple agents from executing the same job. If the job has already
 	// been accepted by another agent, this method returns an error.
-	Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error)
-
-	// Details returns the complete runner context including the registration
-	// token needed to register the runner with GitHub.
-	Details(ctx context.Context, jobID int64) (*Context, error)
+	Accept(ctx context.Context, jobID int64, machine string) (*core.Runner, error)
 
 	// Watch watches the runner for cancellation.
 	// It returns true if the runner has been cancelled, false otherwise.
@@ -40,25 +38,18 @@ type RunnerManager interface {
 	Watch(ctx context.Context, runnerID int64) (bool, error)
 }
 
-// Context provides the runner execution context with the minimal
-// information needed to start a GitHub Actions runner.
-type Context struct {
-	Token      string // GitHub runner registration token (JIT)
-	RunnerName string // Unique runner name
-	RunnerID   int64  // GitHub runner ID (after registration)
-	Timeout    int64  // Runner timeout in seconds
-}
-
 // New returns a new RunnerManager.
 func New(
 	jobs core.JobStore,
 	runners core.RunnerStore,
+	runnerz core.RunnerService,
 	scheduler core.Scheduler,
 	users core.UserStore,
 ) RunnerManager {
 	return &Manager{
 		Jobs:      jobs,
 		Runners:   runners,
+		Runnerz:   runnerz,
 		Scheduler: scheduler,
 		Users:     users,
 	}
@@ -69,6 +60,7 @@ func New(
 type Manager struct {
 	Jobs      core.JobStore
 	Runners   core.RunnerStore
+	Runnerz   core.RunnerService
 	Scheduler core.Scheduler
 	Users     core.UserStore
 }
@@ -95,10 +87,10 @@ func (m *Manager) Request(ctx context.Context, labels []string) (*core.Job, erro
 }
 
 // Accept accepts a job for execution with optimistic locking.
-func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error) {
+func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*core.Runner, error) {
 	logger := logrus.WithFields(
 		logrus.Fields{
-			"job-id":  jobID,
+			"job.id":  jobID,
 			"machine": machine,
 		},
 	)
@@ -117,29 +109,61 @@ func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*cor
 	job.Machine = machine
 	job.Updated = now.Unix()
 
+	// Step 1.
+	// Accept job with optimistic locking
+
 	err = m.Jobs.Update(ctx, job)
 	if err == db.ErrOptimisticLock {
 		logger = logger.WithError(err)
 		logger.Debugln("manager: job processed by another agent")
+		return nil, err
 	} else if err != nil {
 		logger = logger.WithError(err)
 		logger.Debugln("manager: cannot update job")
-	} else {
-		logger.Debugln("manager: job accepted")
+		return nil, err
 	}
 
-	return job, err
-}
+	logger.Debugln("manager: job accepted")
 
-// Details returns the complete runner context including GitHub registration token.
-func (m *Manager) Details(ctx context.Context, jobID int64) (*Context, error) {
-	// TODO: Implement details logic
-	// 1. Find job by ID
-	// 2. Find runner by job.RunnerName
-	// 3. Call GitHub API to register runner and get JIT token
-	// 4. Update runner with token and GitHub runner ID
-	// 5. Return Context with token, runner name, runner ID, and timeout
-	return nil, nil
+	// Step 2.
+	// Register a runner on GitHub
+
+	runner, err := m.Runnerz.Create(ctx, core.CreateRunnerOpts{
+		InstallationID: job.InstallationID,
+		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(8)),
+		Owner:          job.Owner,
+		Repo:           job.Repo,
+		Labels:         job.Labels,
+		GroupID:        1,
+	})
+
+	if err != nil {
+		logger.WithError(err).
+			Errorln("manager: failed to create runner on GitHub, rollback")
+
+		// Rollback, marking job as available again
+		job.Accepted = 0
+		job.Machine = ""
+		if err := m.Jobs.Update(ctx, job); err != nil {
+			logger.WithError(err).
+				Errorln("manager: failed to rollback job")
+		}
+
+		return nil, fmt.Errorf("manager: failed to create GitHub runner, err: %w", err)
+	}
+
+	// Step 3.
+	// Save runner to datastore
+
+	runner.Status = core.RunnerStatusCreating
+	err = m.Runners.Create(ctx, runner)
+	if err != nil {
+		logger.WithError(err).
+			Errorln("manager: failed to save runner to datastore")
+		return nil, err
+	}
+
+	return runner, nil
 }
 
 // Watch watches the runner for cancellation.

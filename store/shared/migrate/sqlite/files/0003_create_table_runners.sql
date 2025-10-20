@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_name            TEXT PRIMARY KEY COLLATE NOCASE,
   runner_id              INTEGER,
   runner_installation_id INTEGER,
+  runner_owner           TEXT,
+  runner_repo            TEXT,
   runner_status          TEXT,
   runner_assigned_to     INTEGER,
   runner_cancelled       BOOLEAN,

@@ -40,8 +40,6 @@ func provideClient(config *config.Config) (githubapp.ClientCreator, error) {
 		cc,
 		githubapp.WithClientUserAgent(fmt.Sprintf("cihub/%s", version.Version)),
 		githubapp.WithClientTimeout(time.Second*5),
-		githubapp.WithClientCaching(false, func() httpcache.Cache {
-			return httpcache.NewMemoryCache()
-		}),
+		githubapp.WithClientCaching(false, func() httpcache.Cache { return httpcache.NewMemoryCache() }),
 	)
 }

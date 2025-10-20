@@ -26,6 +26,8 @@ type (
 		Name           string `json:"name"`            // Runner registration name
 		ID             int64  `json:"id"`              // GitHub runner ID (assigned after registration)
 		InstallationID int64  `json:"installation_id"` // GitHub App installation ID for token generation
+		Owner          string `json:"owner"`           // GitHub repository owner
+		Repo           string `json:"repo"`            // GitHub repository name
 		Status         string `json:"status"`          // Runner lifecycle status
 		AssignedTo     int64  `json:"assigned_to"`     // Job ID this runner is assigned to (0 if idle)
 		Cancelled      bool   `json:"cancelled"`       // Cancellation flag
@@ -36,6 +38,17 @@ type (
 		Updated        int64  `json:"updated"`         // Unix timestamp when runner was last updated
 		Timeout        int64  `json:"timeout"`         // Runner timeout in seconds
 		Token          string `json:"-"`               // Registration token (never logged or exposed)
+	}
+
+	// CreateRunnerOpts defines optional instructions for
+	// creating runner instances.
+	CreateRunnerOpts struct {
+		InstallationID int64
+		Name           string
+		Owner          string
+		Repo           string
+		Labels         []string
+		GroupID        int64
 	}
 
 	// RunnerStore defines operations for working with runners in a datastore.
@@ -69,5 +82,14 @@ type (
 
 		// Update persists an updated runner to the datastore.
 		Update(ctx context.Context, runner *Runner) error
+	}
+
+	// RunnerService provides access to self-hosted runners from GitHub.
+	RunnerService interface {
+		// Create creates a new self-hosted runner.
+		Create(ctx context.Context, opts CreateRunnerOpts) (*Runner, error)
+
+		// Delete deletes a self-hosted runner.
+		Delete(ctx context.Context, runner *Runner) error
 	}
 )

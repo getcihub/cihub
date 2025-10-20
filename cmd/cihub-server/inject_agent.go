@@ -43,7 +43,7 @@ func provideAgent(manager manager.RunnerManager, config *config.Config) *agent.A
 		Manager:   manager,
 		Images:    image.New(client, config.Agent.Snapshotter),
 		Snapshots: snapshot.New(client, config.Agent.Snapshotter),
-		Kernel:    "",
+		Kernel:    "/home/ubuntu/cihub/vmlinux",
 		Labels:    config.Agent.Labels,
 		Machine:   config.Agent.Name,
 		Memory:    config.Agent.Memory,
