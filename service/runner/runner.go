@@ -38,6 +38,7 @@ func (s *service) Create(ctx context.Context, opts core.CreateRunnerOpts) (*core
 		InstallationID: opts.InstallationID,
 		Owner:          opts.Owner,
 		ID:             runner.GetRunner().GetID(),
+		Busy:           runner.GetRunner().GetBusy(),
 		Status:         runner.GetRunner().GetStatus(),
 		Created:        time.Now().Unix(),
 		Token:          runner.GetEncodedJITConfig(),
@@ -56,4 +57,25 @@ func (s *service) Delete(ctx context.Context, runner *core.Runner) error {
 	}
 
 	return nil
+}
+
+func (s *service) Find(ctx context.Context, owner string, installationID, runnerID int64) (*core.Runner, error) {
+	c, err := s.client.NewInstallationClient(installationID)
+	if err != nil {
+		return nil, err
+	}
+
+	runner, _, err := c.Actions.GetOrganizationRunner(ctx, owner, runnerID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.Runner{
+		InstallationID: installationID,
+		Owner:          owner,
+		ID:             runner.GetID(),
+		Busy:           runner.GetBusy(),
+		Name:           runner.GetName(),
+		Status:         runner.GetStatus(),
+	}, nil
 }

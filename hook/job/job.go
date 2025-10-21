@@ -17,11 +17,20 @@ import (
 
 type handler struct {
 	jobs      core.JobStore
+	runners   core.RunnerStore
 	scheduler core.Scheduler
 }
 
-func New(jobs core.JobStore, scheduler core.Scheduler) githubapp.EventHandler {
-	return &handler{jobs, scheduler}
+func New(
+	jobs core.JobStore,
+	runners core.RunnerStore,
+	scheduler core.Scheduler,
+) githubapp.EventHandler {
+	return &handler{
+		jobs:      jobs,
+		runners:   runners,
+		scheduler: scheduler,
+	}
 }
 
 func (h *handler) Handles() []string {
@@ -62,7 +71,7 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 			"runner.name": job.RunnerName,
 		},
 	)
-	log.Infoln("webhook: received workflow job event")
+	log.Infoln("hook: received workflow job event")
 
 	// Attempt to find existing job for idempotency
 	existing, err := h.jobs.Find(ctx, job.ID)
@@ -92,7 +101,29 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 
 	err = h.jobs.Update(ctx, job)
 	if err != nil {
-		return errors.Wrap(err, "failed to update jon")
+		return errors.Wrap(err, "failed to update job")
+	}
+
+	// Only update runner if a runner name is provided (job has been assigned)
+	if job.RunnerName == "" {
+		return nil
+	}
+
+	runner, err := h.runners.Find(ctx, job.RunnerName)
+	if err != nil {
+		logrus.WithError(err).
+			Warnln("hook: failed to get runner from datastore")
+		return nil
+	}
+
+	runner.AssignedTo = job.ID
+	runner.Busy = true
+	runner.Status = core.RunnerStatusBusy
+	err = h.runners.Update(ctx, runner)
+	if err != nil {
+		logrus.WithError(err).
+			Warnln("hook: failed to update runner")
+		return errors.Wrap(err, "failed to update runner")
 	}
 
 	return nil

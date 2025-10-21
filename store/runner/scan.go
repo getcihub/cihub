@@ -3,6 +3,8 @@ package runner
 import (
 	"database/sql"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/shared/db"
 	"github.com/getcihub/cihub/store/shared/encrypter"
@@ -23,6 +25,7 @@ func toParams(encrypt encrypter.Encrypter, r *core.Runner) (map[string]interface
 		"runner_owner":           r.Owner,
 		"runner_status":          r.Status,
 		"runner_assigned_to":     r.AssignedTo,
+		"runner_busy":            r.Busy,
 		"runner_cancelled":       r.Cancelled,
 		"runner_completed":       r.Completed,
 		"runner_created":         r.Created,
@@ -46,6 +49,7 @@ func scanRow(encrypt encrypter.Encrypter, scanner db.Scanner, dest *core.Runner)
 		&dest.Owner,
 		&dest.Status,
 		&dest.AssignedTo,
+		&dest.Busy,
 		&dest.Cancelled,
 		&dest.Completed,
 		&dest.Created,
@@ -70,6 +74,13 @@ func scanRow(encrypt encrypter.Encrypter, scanner db.Scanner, dest *core.Runner)
 // helper function scans the sql.Rows and copies the column
 // values to the destination object.
 func scanRows(encrypt encrypter.Encrypter, rows *sql.Rows) ([]*core.Runner, error) {
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logrus.WithError(err).
+				Warnln("store: cannot close runner rows")
+		}
+	}()
+
 	runners := []*core.Runner{}
 	for rows.Next() {
 		runner := new(core.Runner)

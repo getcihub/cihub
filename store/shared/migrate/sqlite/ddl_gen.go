@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_owner           TEXT,
   runner_status          TEXT,
   runner_assigned_to     INTEGER,
+  runner_busy            BOOLEAN,
   runner_cancelled       BOOLEAN,
   runner_completed       INTEGER,
   runner_created         INTEGER,

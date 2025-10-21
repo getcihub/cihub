@@ -301,18 +301,18 @@ func (mr *MockRunnerStoreMockRecorder) List(ctx, params any) *gomock.Call {
 }
 
 // ListStatus mocks base method.
-func (m *MockRunnerStore) ListStatus(ctx context.Context, status string, params core.RunnerParams) ([]*core.Runner, error) {
+func (m *MockRunnerStore) ListStatus(ctx context.Context, status string) ([]*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListStatus", ctx, status, params)
+	ret := m.ctrl.Call(m, "ListStatus", ctx, status)
 	ret0, _ := ret[0].([]*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListStatus indicates an expected call of ListStatus.
-func (mr *MockRunnerStoreMockRecorder) ListStatus(ctx, status, params any) *gomock.Call {
+func (mr *MockRunnerStoreMockRecorder) ListStatus(ctx, status any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStatus", reflect.TypeOf((*MockRunnerStore)(nil).ListStatus), ctx, status, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStatus", reflect.TypeOf((*MockRunnerStore)(nil).ListStatus), ctx, status)
 }
 
 // Purge mocks base method.

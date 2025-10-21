@@ -122,7 +122,7 @@ func testRunnerList(runners *store) func(t *testing.T) {
 
 func testRunnerListStatus(runners *store) func(t *testing.T) {
 	return func(t *testing.T) {
-		list, err := runners.ListStatus(noContext, core.RunnerStatusPending, core.RunnerParams{Limit: 100})
+		list, err := runners.ListStatus(noContext, core.RunnerStatusPending)
 		if err != nil {
 			t.Error(err)
 			return

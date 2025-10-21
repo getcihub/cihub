@@ -4,7 +4,6 @@ import "context"
 
 const (
 	RunnerStatusPending   = "pending"
-	RunnerStatusCreating  = "creating"
 	RunnerStatusIdle      = "idle"
 	RunnerStatusBusy      = "busy"
 	RunnerStatusCompleted = "completed"
@@ -29,6 +28,7 @@ type (
 		Owner          string `json:"owner"`           // GitHub organization name
 		Status         string `json:"status"`          // Runner lifecycle status
 		AssignedTo     int64  `json:"assigned_to"`     // Job ID this runner is assigned to (0 if idle)
+		Busy           bool   `json:"busy"`            // Indicates if runner is busy working
 		Cancelled      bool   `json:"cancelled"`       // Cancellation flag
 		Completed      int64  `json:"completed"`       // Unix timestamp when runner completed
 		Created        int64  `json:"created"`         // Unix timestamp when runner was created
@@ -73,7 +73,7 @@ type (
 		List(ctx context.Context, params RunnerParams) ([]*Runner, error)
 
 		// ListStatus returns a list of runners filtered by status.
-		ListStatus(ctx context.Context, status string, params RunnerParams) ([]*Runner, error)
+		ListStatus(ctx context.Context, status string) ([]*Runner, error)
 
 		// Purge deletes all stopped runners older than the given unix timestamp.
 		Purge(ctx context.Context, before int64) error
@@ -89,5 +89,8 @@ type (
 
 		// Delete deletes a self-hosted runner.
 		Delete(ctx context.Context, runner *Runner) error
+
+		// Find returns a runner for an organization.
+		Find(ctx context.Context, owner string, installationID, runnerID int64) (*Runner, error)
 	}
 )

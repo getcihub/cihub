@@ -138,39 +138,18 @@ func (s *store) List(ctx context.Context, q core.RunnerParams) ([]*core.Runner, 
 }
 
 // ListStatus returns a list of runners filtered by status.
-func (s *store) ListStatus(ctx context.Context, status string, q core.RunnerParams) ([]*core.Runner, error) {
+func (s *store) ListStatus(ctx context.Context, status string) ([]*core.Runner, error) {
 	var out []*core.Runner
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		limit := q.Limit + 1
-
-		query := queryListStatus
-		params := map[string]any{
-			"limit":         limit,
-			"runner_status": status,
-		}
-		if q.After != "" {
-			query = queryListStatusOffset
-			params["runner_name"] = q.After
-		}
-
-		stmt, args, err := binder.BindNamed(query, params)
+		params := map[string]interface{}{"runner_status": status}
+		query, args, err := binder.BindNamed(queryListStatus, params)
 		if err != nil {
 			return err
 		}
-
-		rows, err := queryer.Query(stmt, args...)
+		rows, err := queryer.Query(query, args...)
 		if err != nil {
 			return err
 		}
-
-		defer func() {
-			if err := rows.Close(); err != nil {
-				logger.FromContext(ctx).
-					WithError(err).
-					Warnln("store: cannot close runner rows")
-			}
-		}()
-
 		out, err = scanRows(s.enc, rows)
 		return err
 	})
@@ -218,6 +197,7 @@ SELECT
 	runner_owner,
 	runner_status,
 	runner_assigned_to,
+	runner_busy,
 	runner_cancelled,
 	runner_completed,
 	runner_created,
@@ -264,15 +244,6 @@ const queryListStatus = queryBase + `
 FROM runners
 WHERE runner_status = :runner_status
 ORDER BY runner_name
-LIMIT :limit
-`
-
-const queryListStatusOffset = queryBase + `
-FROM runners
-WHERE runner_status = :runner_status
-AND runner_name > :runner_name
-ORDER BY runner_name
-LIMIT :limit
 `
 
 const stmtDelete = `
@@ -287,6 +258,7 @@ INSERT INTO runners (
 	runner_owner,
 	runner_status,
 	runner_assigned_to,
+	runner_busy,
 	runner_cancelled,
 	runner_completed,
 	runner_created,
@@ -302,6 +274,7 @@ INSERT INTO runners (
 	:runner_owner,
 	:runner_status,
 	:runner_assigned_to,
+	:runner_busy,
 	:runner_cancelled,
 	:runner_completed,
 	:runner_created,
@@ -328,6 +301,7 @@ SET
 	runner_owner           = :runner_owner,
 	runner_status          = :runner_status,
 	runner_assigned_to     = :runner_assigned_to,
+	runner_busy            = :runner_busy,
 	runner_cancelled       = :runner_cancelled,
 	runner_completed       = :runner_completed,
 	runner_started         = :runner_started,

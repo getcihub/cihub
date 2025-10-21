@@ -154,7 +154,6 @@ func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*cor
 	// Step 3.
 	// Save runner to datastore
 
-	runner.Status = core.RunnerStatusCreating
 	err = m.Runners.Create(ctx, runner)
 	if err != nil {
 		logger.WithError(err).
@@ -167,12 +166,5 @@ func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*cor
 
 // Watch watches the runner for cancellation.
 func (m *Manager) Watch(ctx context.Context, runnerID int64) (bool, error) {
-	// TODO: Implement watch logic
-	// 1. Find runner by GitHub runner ID
-	// 2. Check if runner.Cancelled is true
-	// 3. Find associated job
-	// 4. Check if job.Status is completed or job.Conclusion is cancelled
-	// 5. Optionally check GitHub API for workflow run cancellation
-	// 6. Return true if cancelled/completed, false otherwise
-	return false, nil
+	return m.Scheduler.Cancelled(ctx, runnerID)
 }

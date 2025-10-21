@@ -459,6 +459,7 @@ secure = true
 # ============================================================================
 # User Bootstrap Configuration
 # ============================================================================
+
 # Define initial users to create on first startup
 # You can add multiple [[users]] sections to bootstrap multiple users
 #
@@ -486,3 +487,41 @@ login = "nlecoy"
 # WARNING: Keep this secret! Used for API authentication.
 
 token = "82cad9385a2d2c4e47fee5d95dc3c223"
+
+# ============================================================================
+# Reaper Configuration
+# ============================================================================
+
+# The reaper monitors and terminates zombie runners that remain stuck in a
+# pending state for an excessive duration. This prevents resource leaks and
+# ensures the system can recover from failed runner initialization attempts.
+
+[reaper]
+
+# Disable the reaper process
+# When true, zombie runners will not be automatically cleaned up
+#
+# WARNING: Disabling the reaper may cause resource exhaustion if runners fail to start
+#
+# Default: false
+
+disabled = false
+
+# Reaper execution interval
+# How frequently the reaper scans for zombie runners
+# Format: duration string (e.g., "30s", "1m", "5m")
+#
+# Default: "30s"
+
+interval = "30s"
+
+# Zombie runner timeout threshold
+# Duration after which a pending runner is considered a zombie and eligible for termination
+# Format: duration string (e.g., "60s", "2m", "5m")
+#
+# Recommendation: Set this value higher than typical runner startup time to avoid
+# prematurely killing runners that are initializing normally
+#
+# Default: "60s"
+
+timeout = "60s"

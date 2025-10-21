@@ -49,6 +49,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	userStore := user.New(db, encrypter)
 	runnerManager := manager.New(jobStore, runnerStore, runnerService, scheduler, userStore)
 	agent := provideAgent(runnerManager, conf)
+	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
 		return application{}, err
@@ -57,11 +58,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(options)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(jobStore, scheduler)
+	v := provideEventHandlers(jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, conf)
 	serverServer := provideServer(mux, conf)
-	mainApplication := newApplication(agent, serverServer, userStore)
+	mainApplication := newApplication(agent, reaper, serverServer, userStore)
 	return mainApplication, nil
 }

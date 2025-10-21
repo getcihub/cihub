@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_owner           VARCHAR(255),
   runner_status          VARCHAR(50),
   runner_assigned_to     BIGINT,
+  runner_busy            BOOLEAN,
   runner_cancelled       BOOLEAN,
   runner_completed       BIGINT,
   runner_created         BIGINT,

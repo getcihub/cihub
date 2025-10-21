@@ -20,9 +20,10 @@ func TestHandler_Handles(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := New(mockStore, mockScheduler)
+	h := New(mockJobStore, mockRunnerStore, mockScheduler)
 
 	events := h.Handles()
 	if got, want := len(events), 1; got != want {
@@ -37,9 +38,10 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -72,12 +74,12 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 	}
 
 	// Expect Find to return error (job doesn't exist)
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Find(gomock.Any(), int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, job *core.Job) error {
 			// Verify conversion
@@ -137,9 +139,10 @@ func TestHandler_Handle_UpdateExisting(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	createdTime := time.Now().Add(-5 * time.Minute)
 	startedTime := time.Now()
@@ -196,12 +199,12 @@ func TestHandler_Handle_UpdateExisting(t *testing.T) {
 	}
 
 	// Expect Find to return existing job
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Find(gomock.Any(), int64(1001)).
 		Return(existingJob, nil)
 
 	// Expect Update to be called
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, job *core.Job) error {
 			// Verify update preserves important fields
@@ -236,6 +239,33 @@ func TestHandler_Handle_UpdateExisting(t *testing.T) {
 			return nil
 		})
 
+	// Expect runner lookup since RunnerName is set
+	mockRunnerStore.EXPECT().
+		Find(gomock.Any(), "runner-1").
+		Return(&core.Runner{
+			Name:       "runner-1",
+			ID:         5001,
+			Status:     core.RunnerStatusIdle,
+			AssignedTo: 0,
+			Busy:       false,
+		}, nil)
+
+	// Expect runner update to mark it as busy
+	mockRunnerStore.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
+			if !runner.Busy {
+				t.Error("Expected runner to be marked as busy")
+			}
+			if runner.Status != core.RunnerStatusBusy {
+				t.Errorf("Expected runner status to be busy, got %s", runner.Status)
+			}
+			if runner.AssignedTo != 1001 {
+				t.Errorf("Expected runner to be assigned to job 1001, got %d", runner.AssignedTo)
+			}
+			return nil
+		})
+
 	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
 		t.Errorf("Handle failed: %v", err)
 	}
@@ -245,9 +275,10 @@ func TestHandler_Handle_Completed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	createdTime := time.Now().Add(-10 * time.Minute)
 	startedTime := time.Now().Add(-5 * time.Minute)
@@ -298,11 +329,11 @@ func TestHandler_Handle_Completed(t *testing.T) {
 		Created:        createdTime.Unix(),
 	}
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Find(gomock.Any(), int64(1001)).
 		Return(existingJob, nil)
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, job *core.Job) error {
 			if got, want := job.Status, core.JobStatusCompleted; got != want {
@@ -317,6 +348,33 @@ func TestHandler_Handle_Completed(t *testing.T) {
 			return nil
 		})
 
+	// Expect FindAssignedTo to find runner
+	mockRunnerStore.EXPECT().
+		Find(gomock.Any(), "runner-1").
+		Return(&core.Runner{
+			Name:       "runner-1",
+			ID:         5001,
+			Status:     core.RunnerStatusBusy,
+			AssignedTo: 1001,
+			Busy:       true,
+		}, nil)
+
+	// Expect Update to mark runner as busy
+	mockRunnerStore.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
+			if !runner.Busy {
+				t.Error("Expected runner to remain marked as busy")
+			}
+			if runner.Status != core.RunnerStatusBusy {
+				t.Errorf("Expected runner status to be busy, got %s", runner.Status)
+			}
+			if runner.AssignedTo != 1001 {
+				t.Errorf("Expected runner to be assigned to job 1001, got %d", runner.AssignedTo)
+			}
+			return nil
+		})
+
 	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
 		t.Errorf("Handle failed: %v", err)
 	}
@@ -326,9 +384,10 @@ func TestHandler_Handle_InvalidPayload(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	invalidPayload := []byte(`{invalid json}`)
 
@@ -342,9 +401,10 @@ func TestHandler_Handle_MissingWorkflowJob(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action:      github.String("queued"),
@@ -378,9 +438,10 @@ func TestHandler_Handle_MissingRepository(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -411,9 +472,10 @@ func TestHandler_Handle_MissingInstallation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -447,9 +509,10 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -476,11 +539,11 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Find(gomock.Any(), int64(1001)).
 		Return(nil, errors.New("not found"))
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
 		Return(errors.New("database error"))
 
@@ -494,9 +557,10 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockStore := mock.NewMockJobStore(ctrl)
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockStore, scheduler: mockScheduler}
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("in_progress"),
@@ -528,11 +592,11 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 		Created: time.Now().Unix(),
 	}
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Find(gomock.Any(), int64(1001)).
 		Return(existingJob, nil)
 
-	mockStore.EXPECT().
+	mockJobStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		Return(errors.New("optimistic lock error"))
 

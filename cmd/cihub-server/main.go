@@ -13,6 +13,7 @@ import (
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/orchestrator/agent"
+	"github.com/getcihub/cihub/reaper"
 	"github.com/getcihub/cihub/server"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -65,8 +66,23 @@ func main() {
 				"url":  config.Server.Addr,
 				"acme": config.Server.Acme,
 			},
-		).Infoln("starting the http server")
+		).Infoln("Starting the http server")
 		return app.server.ListenAndServe(ctx)
+	})
+
+	// launches the reaper in a goroutine.
+	//
+	// If the reaper is disabled, the goroutine exists immediately
+	g.Go(func() error {
+		if config.Reaper.Disabled {
+			return nil
+		}
+
+		logrus.
+			WithField("interval", config.Reaper.Interval).
+			WithField("reclaim", config.Reaper.Reclaim).
+			Infoln("Starting VM reaper")
+		return app.reaper.Start(ctx, config.Reaper.Interval)
 	})
 
 	// launches the runner agent in a goroutine. If the local
@@ -81,7 +97,7 @@ func main() {
 			WithField("capacity", config.Agent.Capacity).
 			WithField("vcpu", config.Agent.VCPU).
 			WithField("memory", config.Agent.Memory).
-			Infoln("main: starting the local runner agent")
+			Infoln("Starting the local runner agent")
 		return app.agent.Start(ctx, config.Agent.Capacity)
 	})
 
@@ -93,6 +109,7 @@ func main() {
 // application is the main struct for the CIHub server.
 type application struct {
 	agent  *agent.Agent
+	reaper *reaper.Reaper
 	server *server.Server
 	users  core.UserStore
 }
@@ -100,11 +117,13 @@ type application struct {
 // newApplication returns a new CIHub server application struct.
 func newApplication(
 	agent *agent.Agent,
+	reaper *reaper.Reaper,
 	server *server.Server,
 	users core.UserStore,
 ) application {
 	return application{
 		agent:  agent,
+		reaper: reaper,
 		server: server,
 		users:  users,
 	}

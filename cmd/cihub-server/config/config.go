@@ -35,6 +35,7 @@ type (
 		Labels   []Label  `koanf:"labels"`
 		Logger   Logger   `koanf:"logger"`
 		Metric   Metric   `koanf:"metric"`
+		Reaper   Reaper   `koanf:"reaper"`
 		RPC      RPC      `koanf:"rpc"`
 		Server   Server   `koanf:"server"`
 		Session  Session  `koanf:"session"`
@@ -106,6 +107,13 @@ type (
 	// Metric provides the metrics configuration.
 	Metric struct {
 		Secret string `koanf:"secret"`
+	}
+
+	// Reaper provides the reaper configuration.
+	Reaper struct {
+		Disabled bool          `koanf:"disabled"`
+		Interval time.Duration `koanf:"interval"`
+		Reclaim  time.Duration `koanf:"reclaim"`
 	}
 
 	// RPC provides the RPC server configuration.
