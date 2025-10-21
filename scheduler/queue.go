@@ -96,6 +96,11 @@ func (q *queue) signal(ctx context.Context) error {
 	q.Lock()
 	defer q.Unlock()
 	for _, job := range jobs {
+
+		if job.Machine != "" {
+			continue
+		}
+
 	loop:
 		for w := range q.workers {
 			if !checkLabels(job.Labels, w.labels) {
