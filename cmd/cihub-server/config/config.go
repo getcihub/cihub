@@ -26,7 +26,7 @@ func init() {
 }
 
 type (
-	// Config provides the system configuration.
+	// Config provides the server configuration.
 	Config struct {
 		Agent    Agent    `koanf:"agent"`
 		Database Database `koanf:"database"`

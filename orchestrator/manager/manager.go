@@ -12,6 +12,8 @@ import (
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
+var noContext = context.Background()
+
 // RunnerManager encapsulates complex runner operations and provides
 // a simplified interface for runner agents. It manages the lifecycle of
 // self-hosted GitHub Actions runners, including job assignment, runner
@@ -29,7 +31,9 @@ type RunnerManager interface {
 	// The system uses optimistic locking at the database-level to prevent
 	// multiple agents from executing the same job. If the job has already
 	// been accepted by another agent, this method returns an error.
-	Accept(ctx context.Context, jobID int64, machine string) (*core.Runner, error)
+	Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error)
+
+	Details(ctx context.Context, jobID int64) (*core.RunnerWithToken, error)
 
 	// Watch watches the runner for cancellation.
 	// It returns true if the runner has been cancelled, false otherwise.
@@ -87,48 +91,60 @@ func (m *Manager) Request(ctx context.Context, labels []string) (*core.Job, erro
 }
 
 // Accept accepts a job for execution with optimistic locking.
-func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*core.Runner, error) {
+func (m *Manager) Accept(ctx context.Context, id int64, machine string) (*core.Job, error) {
 	logger := logrus.WithFields(
 		logrus.Fields{
-			"job.id":  jobID,
 			"machine": machine,
+			"job-id":  id,
 		},
 	)
 	logger.Debugln("manager: accept job")
 
-	job, err := m.Jobs.Find(ctx, jobID)
+	job, err := m.Jobs.Find(noContext, id)
 	if err != nil {
 		logger = logger.WithError(err)
 		logger.Warnln("manager: cannot find job")
 		return nil, err
 	}
 
+	if job.Machine != "" {
+		logger.Debugln("manager: job already assigned. abort.")
+		return nil, db.ErrOptimisticLock
+	}
+
 	now := time.Now()
 
-	job.Accepted = now.Unix()
 	job.Machine = machine
+	job.Accepted = now.Unix()
 	job.Updated = now.Unix()
 
-	// Step 1.
-	// Accept job with optimistic locking
-
-	err = m.Jobs.Update(ctx, job)
+	err = m.Jobs.Update(noContext, job)
 	if err == db.ErrOptimisticLock {
 		logger = logger.WithError(err)
 		logger.Debugln("manager: job processed by another agent")
-		return nil, err
 	} else if err != nil {
 		logger = logger.WithError(err)
 		logger.Debugln("manager: cannot update job")
+	} else {
+		logger.Debugln("manager: job accepted")
+	}
+
+	return job, err
+}
+
+func (m *Manager) Details(ctx context.Context, id int64) (*core.RunnerWithToken, error) {
+	logger := logrus.WithField("job-id", id)
+	logger.Debugln("manager: fetching job details")
+
+	job, err := m.Jobs.Find(noContext, id)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot fin job")
 		return nil, err
 	}
 
-	logger.Debugln("manager: job accepted")
-
-	// Step 2.
-	// Register a runner on GitHub at organization level
-
-	runner, err := m.Runnerz.Create(ctx, core.CreateRunnerOpts{
+	logger.Debugln("manager: registering runner")
+	runner, err := m.Runnerz.Create(noContext, core.CreateRunnerOpts{
 		InstallationID: job.InstallationID,
 		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(8)),
 		Owner:          job.Owner,
@@ -137,34 +153,25 @@ func (m *Manager) Accept(ctx context.Context, jobID int64, machine string) (*cor
 	})
 
 	if err != nil {
-		logger.WithError(err).
-			Errorln("manager: failed to create runner on GitHub, rollback")
-
-		// Rollback, marking job as available again
-		job.Accepted = 0
-		job.Machine = ""
-		if err := m.Jobs.Update(ctx, job); err != nil {
-			logger.WithError(err).
-				Errorln("manager: failed to rollback job")
-		}
-
-		return nil, fmt.Errorf("manager: failed to create GitHub runner, err: %w", err)
-	}
-
-	// Step 3.
-	// Save runner to datastore
-
-	err = m.Runners.Create(ctx, runner)
-	if err != nil {
-		logger.WithError(err).
-			Errorln("manager: failed to save runner to datastore")
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot register runner")
 		return nil, err
 	}
 
-	return runner, nil
+	err = m.Runners.Create(ctx, runner)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot create runner")
+		return nil, err
+	}
+
+	return &core.RunnerWithToken{
+		Runner: runner,
+		Token:  runner.Token,
+	}, nil
 }
 
 // Watch watches the runner for cancellation.
-func (m *Manager) Watch(ctx context.Context, runnerID int64) (bool, error) {
-	return m.Scheduler.Cancelled(ctx, runnerID)
+func (m *Manager) Watch(ctx context.Context, id int64) (bool, error) {
+	return m.Scheduler.Cancelled(ctx, id)
 }

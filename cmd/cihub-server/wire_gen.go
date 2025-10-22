@@ -61,7 +61,8 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	v := provideEventHandlers(jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
-	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, conf)
+	mainRpcHandler := provideRPC(runnerManager, conf)
+	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, mainRpcHandler, conf)
 	serverServer := provideServer(mux, conf)
 	mainApplication := newApplication(agent, reaper, serverServer, userStore)
 	return mainApplication, nil

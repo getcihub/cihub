@@ -18,6 +18,7 @@ import (
 	"github.com/getcihub/cihub/hook/job"
 	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/orchestrator/manager"
+	"github.com/getcihub/cihub/orchestrator/manager/rpc"
 	"github.com/getcihub/cihub/server"
 )
 
@@ -25,6 +26,7 @@ type (
 	healthzHandler http.Handler
 	hookHandler    http.Handler
 	pprofHandler   http.Handler
+	rpcHandler     http.Handler
 )
 
 // wire set for loading the server.
@@ -38,6 +40,7 @@ var serverSet = wire.NewSet(
 	provideHealthz,
 	provideHook,
 	providePprof,
+	provideRPC,
 	provideRouter,
 	provideServer,
 	provideServerOptions,
@@ -66,9 +69,15 @@ func providePprof(config *config.Config) pprofHandler {
 	}
 }
 
+// provideRPC is a Wire provider function that returns an RPC
+// handler that exposes the runner manager to a remote agent.
+func provideRPC(m manager.RunnerManager, config *config.Config) rpcHandler {
+	return rpcHandler(rpc.NewServer(m, config.RPC.Secret))
+}
+
 // provideRouter is a Wire provider function that returns
 // a router that serves the provided handlers.
-func provideRouter(api api.Server, web web.Server, healthz healthzHandler, hook hookHandler, pprof pprofHandler, config *config.Config) *chi.Mux {
+func provideRouter(api api.Server, web web.Server, healthz healthzHandler, hook hookHandler, pprof pprofHandler, rpc rpcHandler, config *config.Config) *chi.Mux {
 	r := chi.NewRouter()
 
 	m := chiprometheus.NewMiddleware("server")
@@ -78,12 +87,15 @@ func provideRouter(api api.Server, web web.Server, healthz healthzHandler, hook 
 	r.Mount("/metrics", metric.HandleMetrics(config.Metric.Secret))
 	r.Mount("/api", api.Handler())
 	r.Mount("/hook", hook)
+	r.Mount("/rpc/v1", rpc)
 	r.Mount("/", web.Handler())
 	r.Mount("/debug", pprof)
 
 	return r
 }
 
+// provideServer is a Wire provider function that returns an
+// http server that is configured from the environment.
 func provideServer(handler *chi.Mux, config *config.Config) *server.Server {
 	return &server.Server{
 		Acme:    config.Server.Acme,

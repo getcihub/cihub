@@ -10,6 +10,7 @@ require (
 	github.com/dchest/authcookie v0.0.0-20190824115100-f900d2294c8e
 	github.com/dchest/uniuri v1.2.0
 	github.com/distribution/reference v0.6.0
+	github.com/drone/go-login v1.1.0
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
@@ -21,6 +22,7 @@ require (
 	github.com/google/wire v0.7.0
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/knadh/koanf/parsers/toml v0.1.0
 	github.com/knadh/koanf/providers/env/v2 v2.0.0
@@ -28,6 +30,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.0
 	github.com/lib/pq v1.10.9
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/oxtoacart/bpool v0.0.0-20190530202638-03653db5a59c
 	github.com/palantir/go-githubapp v0.38.2
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.23.2
@@ -95,6 +98,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

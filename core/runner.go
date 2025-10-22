@@ -39,6 +39,11 @@ type (
 		Token          string `json:"-"`               // Registration token (never logged or exposed)
 	}
 
+	RunnerWithToken struct {
+		*Runner
+		Token string `json:"token"`
+	}
+
 	// CreateRunnerOpts defines optional instructions for
 	// creating runner instances at the organization level.
 	CreateRunnerOpts struct {
