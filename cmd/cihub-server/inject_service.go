@@ -15,8 +15,8 @@ import (
 //nolint:unused
 var serviceSet = wire.NewSet(
 	runner.New,
-	provideSession,
 	provideReaper,
+	provideSession,
 )
 
 // provideSession is a Wire provider function that returns a

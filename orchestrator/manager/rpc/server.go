@@ -25,8 +25,10 @@ func NewServer(manager manager.RunnerManager, secret string) Server {
 	r.Post("/ping", HandlePing())
 	r.Post("/request", HandleRequest(manager))
 	r.Post("/accept", HandleAccept(manager))
-	r.Post("/details", HandleDetails(manager))
+	r.Post("/register", HandleRegister(manager))
 	r.Post("/watch", HandleWatch(manager))
+	r.Post("/started", HandleStarted(manager))
+	r.Post("/completed", HandleCompleted(manager))
 
 	return Server(r)
 }

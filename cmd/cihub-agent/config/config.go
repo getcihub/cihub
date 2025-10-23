@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/knadh/koanf/parsers/toml"
+	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -23,35 +23,38 @@ func init() {
 }
 
 type (
-	// Config provides the agent configuration.
+	// Config provides the system configuration.
 	Config struct {
-		Agent  Agent   `koanf:"agent"`
-		Labels []Label `koanf:"labels"`
-		Logger Logger  `koanf:"logger"`
-		RPC    RPC     `koanf:"rpc"`
+		Agent  Agent  `koanf:"agent"`
+		Logger Logger `koanf:"logger"`
+		RPC    RPC    `koanf:"rpc"`
 	}
 
+	// Agent provides the agent configuration.
 	Agent struct {
-		Enabled     bool     `koanf:"enabled"`
-		Name        string   `koanf:"name"`
-		Capacity    int      `koanf:"capacity"`
-		Containerd  string   `koanf:"containerd"`
-		Kernel      string   `koanf:"kernel"`
-		Labels      []string `koanf:"labels"`
-		Memory      int64    `koanf:"memory"`
-		OS          string   `koanf:"os"`
-		Snapshotter string   `koanf:"snapshotter"`
-		VCPU        int64    `koanf:"vcpu"`
+		Enabled     bool   `koanf:"enabled"`
+		Name        string `koanf:"name"`
+		Containerd  string `koanf:"containerd"`
+		Firecracker string `koanf:"firecracker"`
+		Kernel      Kernel `koanf:"kernel"`
+		Snapshotter string `koanf:"snapshotter"`
+		Pools       []Pool `koanf:"pools"`
 	}
 
-	// Label defines resource specifications for runners loaded from configuration.
-	Label struct {
-		Name    string `koanf:"name"`
-		CPU     int    `koanf:"cpu"`
-		RAM     int    `koanf:"ram"`
-		Storage int    `koanf:"storage"`
-		Kernel  string `koanf:"kernel"`
-		Ubuntu  string `koanf:"ubuntu"`
+	// Kernel provides the kernel configuration to use for an agent
+	Kernel struct {
+		Args string `koanf:"args"`
+		Path string `koanf:"path"`
+	}
+
+	// Pool provides a pool of runner configuration
+	Pool struct {
+		ID       string   `koanf:"id"`
+		Capacity int      `koanf:"capacity"`
+		Labels   []string `koanf:"labels"`
+		Memory   int64    `koanf:"memory"`
+		OS       string   `koanf:"os"`
+		VCPU     int64    `koanf:"vcpu"`
 	}
 
 	// Logger provides the logger configuration.
@@ -71,8 +74,8 @@ type (
 func Load(path string) (Config, error) {
 	k := koanf.New(".")
 
-	// Load configuration from specified TOML file first
-	err := k.Load(file.Provider(path), toml.Parser())
+	// Load configuration from specified YAML file first
+	err := k.Load(file.Provider(path), yaml.Parser())
 	if err != nil {
 		return Config{}, fmt.Errorf("config: failed to load configuration file at '%s': %w", path, err)
 	}
@@ -98,6 +101,9 @@ func Load(path string) (Config, error) {
 
 	if config.Agent.Name == "" {
 		config.Agent.Name = hostname
+	}
+	if len(config.Agent.Pools) == 0 {
+		return Config{}, fmt.Errorf("config: must provide at least one poll configuration")
 	}
 
 	return config, nil

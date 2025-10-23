@@ -5,7 +5,6 @@ import (
 
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/scheduler"
-
 	"github.com/getcihub/cihub/service/redisdb"
 )
 

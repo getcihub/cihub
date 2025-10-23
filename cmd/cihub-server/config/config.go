@@ -2,11 +2,10 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/knadh/koanf/parsers/toml"
+	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
@@ -15,24 +14,12 @@ import (
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
-// default agent hostname.
-var hostname string
-
-func init() {
-	hostname, _ = os.Hostname()
-	if hostname == "" {
-		hostname = "localhost"
-	}
-}
-
 type (
-	// Config provides the server configuration.
+	// Config provides the system configuration.
 	Config struct {
-		Agent    Agent    `koanf:"agent"`
 		Database Database `koanf:"database"`
 		HTTP     HTTP     `koanf:"http"`
 		GitHub   GitHub   `koanf:"github"`
-		Labels   []Label  `koanf:"labels"`
 		Logger   Logger   `koanf:"logger"`
 		Metric   Metric   `koanf:"metric"`
 		Reaper   Reaper   `koanf:"reaper"`
@@ -42,18 +29,20 @@ type (
 		Users    []User   `koanf:"users"`
 	}
 
-	// Agent provides the agent configuration.
-	Agent struct {
-		Enabled     bool     `koanf:"enabled"`
-		Name        string   `koanf:"name"`
-		Capacity    int      `koanf:"capacity"`
-		Containerd  string   `koanf:"containerd"`
-		Kernel      string   `koanf:"kernel"`
-		Labels      []string `koanf:"labels"`
-		Memory      int64    `koanf:"memory"`
-		OS          string   `koanf:"os"`
-		Snapshotter string   `koanf:"snapshotter"`
-		VCPU        int64    `koanf:"vcpu"`
+	// Kernel defines the kernel configuration
+	Kernel struct {
+		Args string `koanf:"args"`
+		Path string `koanf:"path"`
+	}
+
+	// Pool defines a pool of runner agents with shared resource specs
+	Pool struct {
+		ID       string   `koanf:"id"`
+		Capacity int      `koanf:"capacity"`
+		Labels   []string `koanf:"labels"`
+		Memory   int64    `koanf:"memory"`
+		OS       string   `koanf:"os"`
+		VCPU     int64    `koanf:"vcpu"`
 	}
 
 	// Database provides the database configuration.
@@ -142,16 +131,6 @@ type (
 		Secure  bool          `koanf:"secure"`
 	}
 
-	// Label defines resource specifications for runners loaded from configuration.
-	Label struct {
-		Name    string `koanf:"name"`
-		CPU     int    `koanf:"cpu"`
-		RAM     int    `koanf:"ram"`
-		Storage int    `koanf:"storage"`
-		Kernel  string `koanf:"kernel"`
-		Ubuntu  string `koanf:"ubuntu"`
-	}
-
 	// Logger provides the logger configuration.
 	Logger struct {
 		Level logrus.Level `koanf:"level"`
@@ -170,8 +149,8 @@ type (
 func Load(path string) (*Config, error) {
 	k := koanf.New(".")
 
-	// Load configuration from specified TOML file first
-	err := k.Load(file.Provider(path), toml.Parser())
+	// Load configuration from specified YAML file first
+	err := k.Load(file.Provider(path), yaml.Parser())
 	if err != nil {
 		return nil, fmt.Errorf("config: failed to load configuration file at '%s': %w", path, err)
 	}
@@ -193,10 +172,6 @@ func Load(path string) (*Config, error) {
 	var config Config
 	if err := k.Unmarshal("", &config); err != nil {
 		return nil, fmt.Errorf("config: failed to read configuration file: %w", err)
-	}
-
-	if config.Agent.Name == "" {
-		config.Agent.Name = hostname
 	}
 
 	return &config, nil

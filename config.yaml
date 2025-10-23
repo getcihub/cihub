@@ -1,0 +1,473 @@
+# ============================================================================
+# Agent Configuration
+# ============================================================================
+
+# IMPORTANT: Resource Planning
+# Total system resources required = capacity × (memory + vcpu)
+#
+# Example: capacity=4, memory=4096MB, vcpu=2 requires ~16GB RAM and 8 CPU logical cores
+
+agent:
+  # Unique identifier for this agent instance
+  #
+  # This name is used to identify the agent in the CIHub server. If none
+  # provided, will use the hostname of the machine running the agent.
+  #
+  # Example: "agent-prod-01", "agent-dev-02"
+  name: ""
+
+  # Path to the containerd socket file
+  #
+  # The agent uses containerd to manage container-based runners.
+  # Only change this if you have a custom containerd installation.
+  #
+  # Default: "/run/containerd/containerd.sock"
+  containerd: "/run/containerd/containerd.sock"
+
+  # Path to the firecracker binary
+  #
+  # The agent uses firecracker to manager microVM.
+  # Only change this if you have a custom firecracker installation.
+  #
+  # Default: "/usr/local/bin/firecracker"
+  firecracker: "/usr/local/bin/firecracker"
+
+  # Snapshotter backend to use for container storage
+  #
+  # Common options:
+  #   - "overlayfs": Most common, good performance, requires kernel support
+  #   - "devmapper": Good for systems without overlayfs support
+  #   - "native": Simple but slower, works everywhere
+  #   - "zfs": Best performance with ZFS filesystems
+  #   - "btrfs": Good for systems using Btrfs filesystems
+  #
+  # Default: "devmapper"
+  snapshotter: "devmapper"
+
+  kernel:
+    args: "console=ttyS0 reboot=k panic=1 pci=off nomodules rw"
+    path: "/home/ubuntu/cihub/vmlinux"
+
+  # Runner pools configuration
+  #
+  # Each pool defines a set of runners with specific resources and labels.
+  # Workflows specify which pool to use via the "runs-on" label.
+  pools:
+    - # Unique identifier for this pool
+      id: "cihub-2vcpu-ubuntu-2404"
+
+      # Maximum number of concurrent runners in this pool
+      #
+      # The maximum number of runners that this agent can execute in parallel.
+      # This value determines the agent's capacity and should be set based on the
+      # available system resources (CPU, memory, disk I/O).
+      #
+      # Example: 4, 8, 16
+      capacity: 4
+
+      # Labels associated with runners in this pool
+      #
+      # Workflows must specify this label in their "runs-on" field.
+      #
+      # Example: "cihub-2vcpu-ubuntu-2404"
+      labels:
+        - "cihub-2vcpu-ubuntu-2404"
+
+      # Memory allocated per microVM (in megabytes)
+      #
+      # The amount of RAM allocated to each microVM runner in this pool.
+      # Ensure this value is appropriate for your workload requirements.
+      #
+      # Example: 2048 (2GB), 4096 (4GB), 8192 (8GB)
+      memory: 4096
+
+      # Container image to use for runners in this pool
+      #
+      # The OCI/Docker image that will be used to create runner instances.
+      #
+      # Example: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
+      os: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
+
+      # Virtual CPUs allocated per microVM
+      #
+      # The number of virtual CPU cores assigned to each microVM runner in this pool.
+      # Choose based on the computational needs of your CI/CD workloads.
+      vcpu: 2
+
+# ============================================================================
+# Database Configuration
+# ============================================================================
+
+database:
+  # Database driver to use for data persistence
+  # Options: "sqlite", "mysql", "postgres"
+  #
+  # Default: "sqlite"
+  driver: "sqlite"
+
+  # Database connection string
+  #
+  # - SQLite: path to database file (e.g., "data.sqlite", "/var/lib/cihub/data.db")
+  # - MySQL: "username:password@tcp(host:port)/database"
+  # - Postgres: "host=localhost port=5432 user=username password=password dbname=database sslmode=disable"
+  datasource: "data.sqlite"
+
+  # Database encryption secret key (AES-256)
+  # SECURITY: Generate with: openssl rand -hex 16
+  # WARNING: Keep this secret! Changing this will invalidate encrypted data.
+  #
+  # Note:
+  # If no secret key is provided, secrets are stored in plaintext on the datastore.
+  # Can be useful during development, but should never be blank in production.
+  secret: "d63f883dd38d5daaeb4e62fb82772fb5"
+
+  # Maximum number of open connections to the database allowed.
+  # If max_connections <= 0, then there is no limit on the number of open connections.
+  #
+  # Default: 0 (unlimited).
+  max_connections: 0
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+
+logger:
+  # Logging level for application output
+  #
+  # Valid values: "trace", "debug", "info", "warn", "error"
+  #
+  # Default: "info"
+  level: "info"
+
+# ============================================================================
+# Metrics Configuration
+# ============================================================================
+
+metric:
+  # Optional authentication token to protect the Prometheus /metrics endpoint
+  # SECURITY: Generate with: openssl rand -hex 16
+  # If not defined or empty, the /metrics endpoint is publicly accessible
+  # When set, clients must provide this token via Bearer authentication or query parameter
+  # Example: curl -H "Authorization: Bearer <token>" http://localhost:8125/metrics
+  # Default: "" (public access)
+  secret: ""
+
+# ============================================================================
+# GitHub Configuration
+# ============================================================================
+
+# Configuration for GitHub App integration and API access
+# See: https://docs.github.com/en/apps
+
+github:
+  # Base URL for GitHub web interface
+  # - GitHub.com (cloud): "https://github.com"
+  # - GitHub Enterprise Server: "https://github.example.com"
+  #
+  # Default: "https://github.com"
+  server: "https://github.com"
+
+  # Base URL for GitHub REST API (v2022-11-28)
+  # - GitHub.com (cloud): "https://api.github.com"
+  # - GitHub Enterprise Server: "https://github.example.com/api/v3"
+  #
+  # Default: "https://api.github.com"
+  # See: https://docs.github.com/en/rest?apiVersion=2022-11-28
+  api_server: "https://api.github.com"
+
+  app:
+    # GitHub App integration ID (also called "App ID")
+    # Find this in your GitHub App settings page under "About"
+    # Format: integer value (e.g., 123456)
+    #
+    # Example: 123456
+    # See: https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app
+    integration_id: 1
+
+    # Webhook secret for validating GitHub webhook deliveries
+    # SECURITY: Generate with: openssl rand -hex 32
+    # This secret is used to verify the authenticity of webhook payloads via HMAC-SHA256
+    # Must match the webhook secret configured in your GitHub App settings
+    #
+    # IMPORTANT: Keep this secret secure! Without it, malicious actors could send fake webhooks
+    #
+    # See: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
+    webhook_secret: ""
+
+    # Private key for GitHub App authentication (PEM format)
+    # Generate and download from your GitHub App settings page
+    # Used to sign JWT tokens for authenticating as the GitHub App
+    #
+    # IMPORTANT: Keep this key secure! It grants full access to your GitHub App's permissions
+    # The key must be in PEM format with RSA PRIVATE KEY header/footer
+    #
+    # To generate a new private key:
+    # 1. Navigate to your GitHub App settings
+    # 2. Scroll to "Private keys" section
+    # 3. Click "Generate a private key"
+    # 4. Paste the entire contents here (including BEGIN/END markers)
+    #
+    # See: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps
+    private_key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      xxxxx
+      xxxxx
+      xxxxx
+      -----END RSA PRIVATE KEY-----
+
+  oauth:
+    # OAuth application client ID
+    # Find this in your GitHub App settings under "OAuth credentials"
+    # Used for OAuth 2.0 user authentication flow (web application flow)
+    #
+    # Format: 20-character alphanumeric string
+    # Example: "Iv1.a1b2c3d4e5f6g7h8"
+    #
+    # See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+    client_id: ""
+
+    # OAuth application client secret
+    # Generate in your GitHub App settings under "OAuth credentials"
+    # SECURITY: Keep this secret secure! Used to complete the OAuth flow
+    #
+    # Format: 40-character alphanumeric string
+    # Example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+    #
+    # See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+    client_secret: ""
+
+# ============================================================================
+# RPC Configuration (Server/Agent Communication)
+# ============================================================================
+
+rpc:
+  # RPC server address for agent connections
+  # Format options:
+  #   - "host:port" for bind address (e.g., "0.0.0.0:8125" for all interfaces)
+  #   - "domain" for external URL (e.g., "cihub.io")
+  host: "0.0.0.0:8125"
+
+  # RPC protocol to use
+  #
+  # Options: "http", "https"
+  #
+  # Default: "http"
+  proto: "http"
+
+  # RPC authentication secret for server/agent communication
+  # SECURITY: Generate with: openssl rand -hex 16
+  # WARNING: Keep this secret! Must match on all agents.
+  secret: "732564db5b5297fa90584ce11d36885a"
+
+# ============================================================================
+# Server Configuration
+# ============================================================================
+
+server:
+  # Enable Let's Encrypt automatic TLS certificate provisioning via ACME protocol
+  # When true, automatically obtains and renews TLS certificates from Let's Encrypt
+  # Requires 'host' to be set to a valid DNS address
+  #
+  # Default: false
+  acme: false
+
+  # Server bind address (local listening address)
+  # Use "0.0.0.0" for all interfaces, "127.0.0.1" for localhost only
+  # Format: ":port" or "host:port"
+  #
+  # Default: ":8125"
+  addr: ":8125"
+
+  # Administrator email address for Let's Encrypt notifications
+  # Required when acme = true
+  # Used for certificate expiration notices and account recovery
+  #
+  # Example: "admin@example.com"
+  email: "admin@example.com"
+
+  # DNS hostname of the server (external address)
+  # REQUIRED when acme = true for Let's Encrypt domain validation
+  #
+  # Example: "cihub.example.com"
+  host: "cihub.example.com"
+
+  # Path to custom TLS certificate file (PEM format)
+  # Used when acme = false for manual certificate configuration
+  # Leave empty when using ACME/Let's Encrypt
+  cert: ""
+
+  # Path to custom TLS private key file (PEM format)
+  # Used when acme = false for manual certificate configuration
+  # Leave empty when using ACME/Let's Encrypt
+  key: ""
+
+  # Enable debug profiler endpoints (pprof)
+  # WARNING: Only enable in development; exposes sensitive runtime information
+  #
+  # Default: false
+  debug: false
+
+# ============================================================================
+# HTTP Security Configuration
+# ============================================================================
+
+http:
+  # --- Host Security ---
+  # Allowed hostnames for accessing the server (empty array = all hosts allowed)
+  # Example: ["example.com", "www.example.com"]
+  allowed_hosts: []
+
+  # Proxy headers to trust for determining client host/IP
+  # Example: ["X-Forwarded-Host", "X-Forwarded-For"]
+  hosts_proxy_headers: []
+
+  # --- SSL/TLS Configuration ---
+  # Redirect all HTTP requests to HTTPS
+  #
+  # Default: false
+  ssl_redirect: false
+
+  # Use temporary redirect (307) instead of permanent (301) for SSL redirects
+  #
+  # Default: false
+  ssl_temporary_redirect: false
+
+  # Custom host for SSL redirects (empty = use same host as request)
+  #
+  # Example: "secure.example.com"
+  ssl_host: ""
+
+  # --- HTTP Strict Transport Security (HSTS) ---
+  # HSTS max-age in seconds (0 = disabled)
+  #
+  # Example: 31536000 (1 year)
+  #
+  # Default: 0
+  sts_seconds: 0
+
+  # Include subdomains in HSTS policy
+  #
+  # Default: false
+  sts_include_subdomains: false
+
+  # Add preload directive to HSTS header (for browser preload lists)
+  #
+  # Default: false
+  sts_preload: false
+
+  # Send HSTS header even on HTTP connections (not recommended)
+  #
+  # Default: false
+  force_sts_header: false
+
+  # --- Security Headers ---
+  # Enable XSS filter protection header
+  # Sets: X-XSS-Protection: 1; mode=block
+  #
+  # Default: true
+  browser_xss_filter: true
+
+  # Prevent site from being rendered in iframe/frame
+  # Sets: X-Frame-Options: DENY
+  #
+  # Default: true
+  frame_deny: true
+
+  # Prevent MIME-type sniffing
+  # Sets: X-Content-Type-Options: nosniff
+  #
+  # Default: false
+  content_type_nosniff: false
+
+  # Content Security Policy header value (empty = not set)
+  #
+  # Example: "default-src 'self'; script-src 'self' 'unsafe-inline'"
+  content_security_policy: ""
+
+  # Referrer-Policy header value (empty = not set)
+  # Options: "no-referrer", "no-referrer-when-downgrade", "origin", "origin-when-cross-origin", "same-origin", "strict-origin", "strict-origin-when-cross-origin", "unsafe-url"
+  referrer_policy: ""
+
+# ============================================================================
+# Session Configuration
+# ============================================================================
+
+session:
+  # Session encryption secret for cookie signing
+  # SECURITY: Generate with: openssl rand -hex 16
+  # WARNING: Keep this secret! Changing this will invalidate all active sessions.
+  secret: "ce2ccc0b4103dda1ef97eca8c1b45e9d"
+
+  # Session timeout duration
+  # Format: duration string (e.g., "1h", "24h", "720h")
+  #
+  # Default: "720h" (30 days)
+  timeout: "720h"
+
+  # Enable secure flag on session cookies (requires HTTPS)
+  #
+  # WARNING: Set to false only in development without HTTPS
+  #
+  # Default: true
+  secure: true
+
+# ============================================================================
+# User Bootstrap Configuration
+# ============================================================================
+
+# Define initial users to create on first startup
+# You can add multiple users entries to bootstrap multiple users
+#
+# Example:
+# - admin: false
+#   login: "octocat"
+#   token: "your-generated-token-here"
+
+users:
+  # Grant administrator privileges to this user
+  # Admins can manage users, system settings, and all resources
+  # Default: false
+  - admin: true
+
+    # Username for authentication
+    # For GitHub integration, this should match the GitHub username
+    login: "nlecoy"
+
+    # API authentication token for this user
+    # SECURITY: Generate with: openssl rand -hex 16
+    # WARNING: Keep this secret! Used for API authentication.
+    token: "82cad9385a2d2c4e47fee5d95dc3c223"
+
+# ============================================================================
+# Reaper Configuration
+# ============================================================================
+
+# The reaper monitors and terminates zombie runners that remain stuck in a
+# pending state for an excessive duration. This prevents resource leaks and
+# ensures the system can recover from failed runner initialization attempts.
+
+reaper:
+  # Disable the reaper process
+  # When true, zombie runners will not be automatically cleaned up
+  #
+  # WARNING: Disabling the reaper may cause resource exhaustion if runners fail to start
+  #
+  # Default: false
+  disabled: false
+
+  # Reaper execution interval
+  # How frequently the reaper scans for zombie runners
+  # Format: duration string (e.g., "30s", "1m", "5m")
+  #
+  # Default: "30s"
+  interval: "30s"
+
+  # Zombie runner timeout threshold
+  # Duration after which a pending runner is considered a zombie and eligible for termination
+  # Format: duration string (e.g., "60s", "2m", "5m")
+  #
+  # Recommendation: Set this value higher than typical runner startup time to avoid
+  # prematurely killing runners that are initializing normally
+  #
+  # Default: "60s"
+  reclaim: "60s"

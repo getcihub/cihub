@@ -229,7 +229,7 @@ func testJobPurge(store *store) func(t *testing.T) {
 			Repo:           "test-repo",
 			Workflow:       "Test",
 			Status:         core.JobStatusCompleted,
-			Conclusion:     core.JobConclusionSuccess,
+			Conclusion:     "success",
 			Labels:         []string{"linux"},
 			Completed:      1000000000, // Old timestamp
 			Created:        1000000000,

@@ -33,7 +33,19 @@ type RunnerManager interface {
 	// been accepted by another agent, this method returns an error.
 	Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error)
 
-	Details(ctx context.Context, jobID int64) (*core.RunnerWithToken, error)
+	// Register registers a runner for the job on GitHub and retrieves its
+	// just-in-time configuration. The runner acts as the compute environment
+	// where the job will execute.
+	Register(ctx context.Context, jobID int64) (*core.RunnerWithToken, error)
+
+	// Started notifies the manager that the runner is starting execution.
+	// This should be called immediately before starting the Firecracker VM.
+	Started(ctx context.Context, runnerID int64) error
+
+	// Completed notifies the manager that the runner has finished execution.
+	// This should be called after the VM exits and cleanup begins.
+	// It accepts a status string to indicate success/error outcomes.
+	Completed(ctx context.Context, runnerID int64, status string) error
 
 	// Watch watches the runner for cancellation.
 	// It returns true if the runner has been cancelled, false otherwise.
@@ -132,7 +144,7 @@ func (m *Manager) Accept(ctx context.Context, id int64, machine string) (*core.J
 	return job, err
 }
 
-func (m *Manager) Details(ctx context.Context, id int64) (*core.RunnerWithToken, error) {
+func (m *Manager) Register(ctx context.Context, id int64) (*core.RunnerWithToken, error) {
 	logger := logrus.WithField("job-id", id)
 	logger.Debugln("manager: fetching job details")
 
@@ -169,6 +181,72 @@ func (m *Manager) Details(ctx context.Context, id int64) (*core.RunnerWithToken,
 		Runner: runner,
 		Token:  runner.Token,
 	}, nil
+}
+
+// Started notifies the manager that the runner is starting execution.
+// It updates the runner's started timestamp and marks it as idle. Status
+// will be modified when receiving job.
+func (m *Manager) Started(ctx context.Context, runnerID int64) error {
+	logger := logrus.WithField("runner-id", runnerID)
+	logger.Debugln("manager: marking runner as started")
+
+	runner, err := m.Runners.FindID(ctx, runnerID)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot find runner")
+		return err
+	}
+
+	now := time.Now()
+	runner.Started = now.Unix()
+	runner.Status = core.RunnerStatusIdle
+	runner.Updated = now.Unix()
+
+	err = m.Runners.Update(noContext, runner)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot update runner")
+		return err
+	}
+
+	logger.Debugln("manager: runner marked as started")
+	return nil
+}
+
+// Completed notifies the manager that the runner has finished execution.
+// It updates the runner's stopped and completed timestamps, and sets its status.
+func (m *Manager) Completed(ctx context.Context, runnerID int64, status string) error {
+	logger := logrus.WithFields(
+		logrus.Fields{
+			"runner-id": runnerID,
+			"status":    status,
+		},
+	)
+	logger.Debugln("manager: marking runner as completed")
+
+	runner, err := m.Runners.FindID(noContext, runnerID)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot find runner")
+		return err
+	}
+
+	now := time.Now()
+	runner.Completed = now.Unix()
+	runner.Stopped = now.Unix()
+	runner.Status = status
+	runner.Busy = false
+	runner.Updated = now.Unix()
+
+	err = m.Runners.Update(noContext, runner)
+	if err != nil {
+		logger = logger.WithError(err)
+		logger.Warnln("manager: cannot update runner")
+		return err
+	}
+
+	logger.Debugln("manager: runner marked as completed")
+	return nil
 }
 
 // Watch watches the runner for cancellation.

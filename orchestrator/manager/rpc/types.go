@@ -13,7 +13,7 @@ type acceptRequest struct {
 	Machine string
 }
 
-type detailsRequest struct {
+type registerRequest struct {
 	Job int64
 }
 
@@ -23,4 +23,13 @@ type watchRequest struct {
 
 type watchResponse struct {
 	Done bool
+}
+
+type startedRequest struct {
+	RunnerID int64
+}
+
+type completedRequest struct {
+	RunnerID int64
+	Status   string
 }

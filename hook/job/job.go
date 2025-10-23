@@ -36,7 +36,6 @@ func New(
 func (h *handler) Handles() []string {
 	return []string{"workflow_job"}
 }
-
 func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payload []byte) error {
 	// Parse the GitHub webhook payload
 	var event github.WorkflowJobEvent
@@ -55,6 +54,12 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 		return errors.New("missing installation in event payload")
 	}
 
+	// Extract and validate action
+	action := event.GetAction()
+	if action == "" {
+		return errors.New("missing action in workflow_job event")
+	}
+
 	// Convert GitHub event to core.Job model
 	job := convertWorkflowJobToJob(&event)
 
@@ -62,6 +67,7 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 		logrus.Fields{
 			"event":       eventType,
 			"delivery.id": deliveryID,
+			"action":      action,
 			"job.id":      job.ID,
 			"run.id":      job.RunID,
 			"owner":       job.Owner,
@@ -73,59 +79,199 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 	)
 	log.Infoln("hook: received workflow job event")
 
-	// Attempt to find existing job for idempotency
+	// Route to action-specific handler
+	switch action {
+	case "waiting":
+		return h.handleWaiting(ctx, log, job)
+	case "queued":
+		return h.handleQueued(ctx, log, job)
+	case "in_progress":
+		return h.handleInProgress(ctx, log, job)
+	case "completed":
+		return h.handleCompleted(ctx, log, job)
+	default:
+		log.Warnf("hook: unknown workflow job action: %s", action)
+		return nil
+	}
+}
+
+func (h *handler) handleWaiting(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+	// Try to find existing job for idempotency
+	_, err := h.jobs.Find(ctx, job.ID)
+	if err == nil {
+		// Job already exists, nothing to do
+		log.Debugln("hook: job already exists in waiting state")
+		return nil
+	}
+
+	// Job doesn't exist, create new record
+	now := time.Now().Unix()
+	job.Created = now
+	job.Updated = now
+
+	if err := h.jobs.Create(ctx, job); err != nil {
+		return fmt.Errorf("hook: failed to create job in waiting state, err: %w", err)
+	}
+
+	log.Infoln("hook: created job in waiting state")
+	return nil
+}
+
+func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+	// Try to find existing job
 	existing, err := h.jobs.Find(ctx, job.ID)
 	if err != nil {
-		// Job doesn't exist - create new record
+		// Create new job record
 		now := time.Now().Unix()
 		job.Created = now
 		job.Updated = now
 
-		err := h.jobs.Create(ctx, job)
-		if err != nil {
-			return fmt.Errorf("hook: failed to create job, err: %w", err)
+		if err := h.jobs.Create(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to create queued job, err: %w", err)
 		}
 
+		log.Infoln("hook: created queued job")
 		return h.scheduler.Schedule(ctx, job)
 	}
 
-	// Job exists - update with latest webhook data
-	// Preserve version for optimistic locking
+	// Update existing job
 	job.Version = existing.Version
 	job.Created = existing.Created
 	job.Updated = time.Now().Unix()
 
-	// Preserve agent-assigned fields that webhooks don't provide
+	// Preserve agent-assigned fields
 	job.Machine = existing.Machine
 	job.Accepted = existing.Accepted
 
-	err = h.jobs.Update(ctx, job)
+	if err := h.jobs.Update(ctx, job); err != nil {
+		return fmt.Errorf("hook: failed to update queued job, err: %w", err)
+	}
+
+	log.Infoln("hook: updated queued job")
+	return h.scheduler.Schedule(ctx, job)
+}
+
+func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+	// Try to find existing job
+	existing, err := h.jobs.Find(ctx, job.ID)
 	if err != nil {
-		return errors.Wrap(err, "failed to update job")
+		// Create new job record
+		now := time.Now().Unix()
+		job.Created = now
+		job.Updated = now
+
+		if err := h.jobs.Create(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to create in_progress job, err: %w", err)
+		}
+
+		log.Infoln("hook: created in_progress job")
+	} else {
+		// Update existing job
+		job.Version = existing.Version
+		job.Created = existing.Created
+		job.Updated = time.Now().Unix()
+
+		// Preserve agent-assigned fields
+		job.Machine = existing.Machine
+		job.Accepted = existing.Accepted
+
+		if err := h.jobs.Update(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to update in_progress job, err: %w", err)
+		}
+
+		log.Infoln("hook: updated in_progress job")
 	}
 
-	// Only update runner if a runner name is provided (job has been assigned)
-	if job.RunnerName == "" {
-		return nil
+	// Sync runner if assigned
+	if job.RunnerName != "" {
+		if err := h.syncRunnerInProgress(ctx, log, job); err != nil {
+			log.WithError(err).Warnln("hook: failed to sync runner")
+			// Don't fail the entire handler if runner sync fails
+		}
 	}
 
+	return nil
+}
+
+func (h *handler) handleCompleted(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+	// Try to find existing job
+	existing, err := h.jobs.Find(ctx, job.ID)
+	if err != nil {
+		// Create new job record (shouldn't normally happen, but be safe)
+		now := time.Now().Unix()
+		job.Created = now
+		job.Updated = now
+
+		if err := h.jobs.Create(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to create completed job, err: %w", err)
+		}
+
+		log.Infoln("hook: created completed job")
+	} else {
+		// Update existing job
+		job.Version = existing.Version
+		job.Created = existing.Created
+		job.Updated = time.Now().Unix()
+
+		// Preserve agent-assigned fields
+		job.Machine = existing.Machine
+		job.Accepted = existing.Accepted
+
+		if err := h.jobs.Update(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to update completed job, err: %w", err)
+		}
+
+		log.Infoln("hook: updated completed job")
+	}
+
+	// Sync runner if assigned
+	if job.RunnerName != "" {
+		if err := h.syncRunnerCompleted(ctx, log, job); err != nil {
+			log.WithError(err).Warnln("hook: failed to sync runner")
+			// Don't fail the entire handler if runner sync fails
+		}
+	}
+
+	return nil
+}
+
+func (h *handler) syncRunnerInProgress(ctx context.Context, log *logrus.Entry, job *core.Job) error {
 	runner, err := h.runners.Find(ctx, job.RunnerName)
 	if err != nil {
-		logrus.WithError(err).
-			Warnln("hook: failed to get runner from datastore")
-		return nil
+		log.WithError(err).Warnf("hook: runner '%s' not found in datastore", job.RunnerName)
+		return nil // Non-fatal: log and continue
 	}
 
 	runner.AssignedTo = job.ID
 	runner.Busy = true
 	runner.Status = core.RunnerStatusBusy
-	err = h.runners.Update(ctx, runner)
-	if err != nil {
-		logrus.WithError(err).
-			Warnln("hook: failed to update runner")
-		return errors.Wrap(err, "failed to update runner")
+	runner.Updated = time.Now().Unix()
+
+	if err := h.runners.Update(ctx, runner); err != nil {
+		return fmt.Errorf("failed to update runner '%s': %w", job.RunnerName, err)
 	}
 
+	log.Infof("hook: synced runner '%s' to busy", job.RunnerName)
+	return nil
+}
+
+func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+	runner, err := h.runners.Find(ctx, job.RunnerName)
+	if err != nil {
+		log.WithError(err).Warnf("hook: runner '%s' not found in datastore", job.RunnerName)
+		return nil // Non-fatal: log and continue
+	}
+
+	runner.Busy = false
+	runner.Status = core.RunnerStatusCompleted
+	runner.Completed = time.Now().Unix()
+	runner.Updated = time.Now().Unix()
+
+	if err := h.runners.Update(ctx, runner); err != nil {
+		return fmt.Errorf("failed to update runner '%s': %w", job.RunnerName, err)
+	}
+
+	log.Infof("hook: synced runner '%s' to completed", job.RunnerName)
 	return nil
 }
 

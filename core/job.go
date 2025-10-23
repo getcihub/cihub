@@ -13,23 +13,6 @@ const (
 	JobStatusWaiting = "waiting"
 )
 
-const (
-	// JobConclusionSuccess indicates the job completed successfully.
-	JobConclusionSuccess = "success"
-	// JobConclusionFailure indicates the job failed.
-	JobConclusionFailure = "failure"
-	// JobConclusionCancelled indicates the job was cancelled.
-	JobConclusionCancelled = "cancelled"
-	// JobConclusionSkipped indicates the job was skipped.
-	JobConclusionSkipped = "skipped"
-	// JobConclusionTimedOut indicates the job exceeded its timeout.
-	JobConclusionTimedOut = "timed_out"
-	// JobConclusionActionRequired indicates the job requires action.
-	JobConclusionActionRequired = "action_required"
-	// JobConclusionNeutral indicates a neutral job result.
-	JobConclusionNeutral = "neutral"
-)
-
 type (
 	// JobParams defines job query parameters.
 	JobParams struct {

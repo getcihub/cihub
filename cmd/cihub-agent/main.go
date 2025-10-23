@@ -31,6 +31,13 @@ func main() {
 	// Set logging level
 	logrus.SetLevel(config.Logger.Level)
 
+	// Containerd must be installed on machine
+	ctr, err := containerd.New(config.Agent.Containerd, containerd.WithDefaultNamespace("cihub"))
+	if err != nil {
+		logger := logrus.WithError(err)
+		logger.Fatalln("agent: cannot create containerd client")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -39,28 +46,8 @@ func main() {
 		config.RPC.Secret,
 	)
 
-	opts := []containerd.ClientOpt{
-		containerd.WithDefaultNamespace("cihub"),
-		containerd.WithTimeout(time.Second * 5),
-	}
-
-	client, err := containerd.New(config.Agent.Containerd, opts...)
-	if err != nil {
-		logrus.WithError(err).
-			Fatalln("agent: cannot create containerd client")
-	}
-
-	agent := &agent.Agent{
-		Manager:   manager,
-		Images:    image.New(client, config.Agent.Snapshotter),
-		Snapshots: snapshot.New(client, config.Agent.Snapshotter),
-		Kernel:    "/home/ubuntu/cihub/vmlinux",
-		Labels:    config.Agent.Labels,
-		Machine:   config.Agent.Name,
-		Memory:    config.Agent.Memory,
-		OS:        config.Agent.OS,
-		VCPU:      config.Agent.VCPU,
-	}
+	imagez := image.New(ctr, config.Agent.Snapshotter)
+	snapshotz := snapshot.New(ctr, config.Agent.Snapshotter)
 
 	// Ping the server and block until a successful connection
 	// to the server has been established.
@@ -77,8 +64,8 @@ func main() {
 		}
 
 		if err != nil {
-			logrus.WithError(err).
-				Errorln("agent: cannot ping the remote server")
+			logger := logrus.WithError(err)
+			logger.Errorln("agent: cannot ping the remote server")
 			time.Sleep(time.Second)
 		} else {
 			logrus.Infoln("agent: successfully pinged the remote server")
@@ -86,15 +73,38 @@ func main() {
 		}
 	}
 
+	// Launch agents for each pool
 	var g errgroup.Group
-	g.Go(func() error {
-		logrus.
-			WithField("name", config.Agent.Name).
-			WithField("capacity", config.Agent.Capacity).
-			WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
-			Infoln("start polling remote server")
-		return agent.Start(ctx, config.Agent.Capacity)
-	})
+	for _, pool := range config.Agent.Pools {
+		pool := pool
+		agent := &agent.Agent{
+			Manager:     manager,
+			Machine:     config.Agent.Name,
+			Images:      imagez,
+			Snapshots:   snapshotz,
+			ID:          pool.ID,
+			Firecracker: config.Agent.Firecracker,
+			KernelArgs:  config.Agent.Kernel.Args,
+			KernelPath:  config.Agent.Kernel.Path,
+			Labels:      pool.Labels,
+			Memory:      pool.Memory,
+			OS:          pool.OS,
+			VCPU:        pool.VCPU,
+		}
+
+		g.Go(func() error {
+			logrus.
+				WithField("capacity", pool.Capacity).
+				WithField("labels", pool.Labels).
+				WithField("machine", config.Agent.Name).
+				WithField("memory", pool.Memory).
+				WithField("pool", pool.ID).
+				WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
+				WithField("vcpu", pool.VCPU).
+				Infoln("agent: start polling remote server")
+			return agent.Start(ctx, pool.Capacity)
+		})
+	}
 
 	if err := g.Wait(); err != nil {
 		logrus.WithError(err).Fatalln("program terminated")

@@ -67,10 +67,10 @@ func (c *Client) Accept(ctx context.Context, jobID int64, machine string) (*core
 	return out, err
 }
 
-func (c *Client) Details(ctx context.Context, jobID int64) (*core.RunnerWithToken, error) {
-	in := &detailsRequest{Job: jobID}
+func (c *Client) Register(ctx context.Context, jobID int64) (*core.RunnerWithToken, error) {
+	in := &registerRequest{Job: jobID}
 	out := &core.RunnerWithToken{}
-	err := c.send(ctx, "/rpc/v1/details", in, out)
+	err := c.send(ctx, "/rpc/v1/register", in, out)
 	return out, err
 }
 
@@ -79,6 +79,16 @@ func (c *Client) Watch(ctx context.Context, runnerID int64) (bool, error) {
 	out := &watchResponse{}
 	err := c.send(ctx, "/rpc/v1/watch", in, out)
 	return out.Done, err
+}
+
+func (c *Client) Started(ctx context.Context, runnerID int64) error {
+	in := &startedRequest{RunnerID: runnerID}
+	return c.send(ctx, "/rpc/v1/started", in, nil)
+}
+
+func (c *Client) Completed(ctx context.Context, runnerID int64, status string) error {
+	in := &completedRequest{RunnerID: runnerID, Status: status}
+	return c.send(ctx, "/rpc/v1/completed", in, nil)
 }
 
 func (c *Client) send(ctx context.Context, path string, in, out interface{}) error {

@@ -34,7 +34,130 @@ func TestHandler_Handles(t *testing.T) {
 	}
 }
 
-func TestHandler_Handle_CreateNew(t *testing.T) {
+func TestHandler_Handle_Waiting_CreateNew(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+
+	now := time.Now()
+	event := &github.WorkflowJobEvent{
+		Action: github.String("waiting"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			HeadBranch:   github.String("main"),
+			HeadSHA:      github.String("abc123"),
+			Labels:       []string{"self-hosted", "linux"},
+			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
+			CreatedAt:    &github.Timestamp{Time: now},
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect Find to return error (job doesn't exist)
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(nil, errors.New("not found"))
+
+	// Expect Create to be called
+	mockJobStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			// Verify conversion
+			if got, want := job.ID, int64(1001); got != want {
+				t.Errorf("Want job ID %d, got %d", want, got)
+			}
+			if got, want := job.Status, core.JobStatusQueued; got != want {
+				t.Errorf("Want status %s, got %s", want, got)
+			}
+			if job.Created == 0 {
+				t.Error("Expected Created timestamp to be set")
+			}
+			if job.Updated == 0 {
+				t.Error("Expected Updated timestamp to be set")
+			}
+			return nil
+		})
+
+	// Schedule should NOT be called for waiting action
+	// (no expectation set, will fail if called)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_Handle_Waiting_AlreadyExists(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+
+	event := &github.WorkflowJobEvent{
+		Action: github.String("waiting"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existingJob := &core.Job{
+		ID:      1001,
+		Created: time.Now().Unix(),
+	}
+
+	// Expect Find to return existing job
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(existingJob, nil)
+
+	// Create should NOT be called (no expectation set)
+	// Schedule should NOT be called (no expectation set)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -82,50 +205,13 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 	mockJobStore.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, job *core.Job) error {
-			// Verify conversion
 			if got, want := job.ID, int64(1001); got != want {
 				t.Errorf("Want job ID %d, got %d", want, got)
-			}
-			if got, want := job.RunID, int64(2001); got != want {
-				t.Errorf("Want run ID %d, got %d", want, got)
-			}
-			if got, want := job.InstallationID, int64(3001); got != want {
-				t.Errorf("Want installation ID %d, got %d", want, got)
-			}
-			if got, want := job.Owner, "octocat"; got != want {
-				t.Errorf("Want owner %s, got %s", want, got)
-			}
-			if got, want := job.Repo, "hello-world"; got != want {
-				t.Errorf("Want repo %s, got %s", want, got)
-			}
-			if got, want := job.Workflow, "CI"; got != want {
-				t.Errorf("Want workflow %s, got %s", want, got)
-			}
-			if got, want := job.Branch, "main"; got != want {
-				t.Errorf("Want branch %s, got %s", want, got)
-			}
-			if got, want := job.SHA, "abc123"; got != want {
-				t.Errorf("Want SHA %s, got %s", want, got)
-			}
-			if got, want := job.Status, core.JobStatusQueued; got != want {
-				t.Errorf("Want status %s, got %s", want, got)
-			}
-			if got, want := len(job.Labels), 2; got != want {
-				t.Errorf("Want %d labels, got %d", want, got)
-			}
-			if got, want := job.Queued, now.Unix(); got != want {
-				t.Errorf("Want queued timestamp %d, got %d", want, got)
-			}
-			if job.Created == 0 {
-				t.Error("Expected Created timestamp to be set")
-			}
-			if job.Updated == 0 {
-				t.Error("Expected Updated timestamp to be set")
 			}
 			return nil
 		})
 
-	// Expect Schedule to be called after successful Create
+	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
 		Schedule(gomock.Any(), gomock.Any()).
 		Return(nil)
@@ -135,7 +221,89 @@ func TestHandler_Handle_CreateNew(t *testing.T) {
 	}
 }
 
-func TestHandler_Handle_UpdateExisting(t *testing.T) {
+func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+
+	createdTime := time.Now().Add(-5 * time.Minute)
+	now := time.Now()
+
+	event := &github.WorkflowJobEvent{
+		Action: github.String("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			HeadBranch:   github.String("main"),
+			HeadSHA:      github.String("abc123"),
+			Labels:       []string{"self-hosted", "linux"},
+			CreatedAt:    &github.Timestamp{Time: now},
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existingJob := &core.Job{
+		ID:       1001,
+		RunID:    2001,
+		Status:   core.JobStatusQueued,
+		Version:  2,
+		Created:  createdTime.Unix(),
+		Updated:  createdTime.Unix(),
+		Machine:  "node-1",
+		Accepted: createdTime.Unix(),
+	}
+
+	// Expect Find to return existing job
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(existingJob, nil)
+
+	// Expect Update to be called, no runner sync for queued
+	mockJobStore.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			if got, want := job.Version, int64(2); got != want {
+				t.Errorf("Want version %d preserved, got %d", want, got)
+			}
+			if got, want := job.Machine, "node-1"; got != want {
+				t.Errorf("Want machine %s preserved, got %s", want, got)
+			}
+			if got, want := job.Accepted, createdTime.Unix(); got != want {
+				t.Errorf("Want accepted %d preserved, got %d", want, got)
+			}
+			return nil
+		})
+
+	// Expect Schedule to be called for queued action
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -266,12 +434,14 @@ func TestHandler_Handle_UpdateExisting(t *testing.T) {
 			return nil
 		})
 
+	// Schedule should NOT be called for in_progress action
+
 	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
 		t.Errorf("Handle failed: %v", err)
 	}
 }
 
-func TestHandler_Handle_Completed(t *testing.T) {
+func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
@@ -291,7 +461,7 @@ func TestHandler_Handle_Completed(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI"),
 			Status:       github.String(core.JobStatusCompleted),
-			Conclusion:   github.String(core.JobConclusionSuccess),
+			Conclusion:   github.String("success"),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
 			Labels:       []string{"self-hosted", "linux"},
@@ -339,7 +509,7 @@ func TestHandler_Handle_Completed(t *testing.T) {
 			if got, want := job.Status, core.JobStatusCompleted; got != want {
 				t.Errorf("Want status %s, got %s", want, got)
 			}
-			if got, want := job.Conclusion, core.JobConclusionSuccess; got != want {
+			if got, want := job.Conclusion, "success"; got != want {
 				t.Errorf("Want conclusion %s, got %s", want, got)
 			}
 			if got, want := job.Completed, completedTime.Unix(); got != want {
@@ -348,7 +518,7 @@ func TestHandler_Handle_Completed(t *testing.T) {
 			return nil
 		})
 
-	// Expect FindAssignedTo to find runner
+	// Expect Find to find runner by name
 	mockRunnerStore.EXPECT().
 		Find(gomock.Any(), "runner-1").
 		Return(&core.Runner{
@@ -359,22 +529,90 @@ func TestHandler_Handle_Completed(t *testing.T) {
 			Busy:       true,
 		}, nil)
 
-	// Expect Update to mark runner as busy
+	// Expect Update to mark runner as completed
 	mockRunnerStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
-			if !runner.Busy {
-				t.Error("Expected runner to remain marked as busy")
+			if runner.Busy {
+				t.Error("Expected runner to be marked as not busy")
 			}
-			if runner.Status != core.RunnerStatusBusy {
-				t.Errorf("Expected runner status to be busy, got %s", runner.Status)
+			if runner.Status != core.RunnerStatusCompleted {
+				t.Errorf("Expected runner status to be completed, got %s", runner.Status)
 			}
 			if runner.AssignedTo != 1001 {
-				t.Errorf("Expected runner to be assigned to job 1001, got %d", runner.AssignedTo)
+				t.Errorf("Expected runner to remain assigned to job 1001, got %d", runner.AssignedTo)
+			}
+			if runner.Completed == 0 {
+				t.Error("Expected runner completed timestamp to be set")
 			}
 			return nil
 		})
 
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_Handle_Completed_RunnerNotFound(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+
+	createdTime := time.Now().Add(-10 * time.Minute)
+	completedTime := time.Now()
+
+	event := &github.WorkflowJobEvent{
+		Action: github.String("completed"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusCompleted),
+			RunnerName:   github.String("runner-1"),
+			CreatedAt:    &github.Timestamp{Time: createdTime},
+			CompletedAt:  &github.Timestamp{Time: completedTime},
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existingJob := &core.Job{
+		ID:      1001,
+		Status:  core.JobStatusInProgress,
+		Version: 1,
+		Created: createdTime.Unix(),
+	}
+
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(existingJob, nil)
+
+	mockJobStore.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	// Expect Find to fail when looking up runner
+	mockRunnerStore.EXPECT().
+		Find(gomock.Any(), "runner-1").
+		Return(nil, errors.New("not found"))
+
+	// Handler should not fail if runner is not found (non-fatal error)
 	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
 		t.Errorf("Handle failed: %v", err)
 	}
@@ -617,7 +855,7 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI Pipeline"),
 			Status:       github.String(core.JobStatusCompleted),
-			Conclusion:   github.String(core.JobConclusionSuccess),
+			Conclusion:   github.String("success"),
 			HeadBranch:   github.String("feature/test"),
 			HeadSHA:      github.String("def456"),
 			Labels:       []string{"self-hosted", "linux", "x64"},
@@ -655,7 +893,7 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 		{"Branch", job.Branch, "feature/test"},
 		{"SHA", job.SHA, "def456"},
 		{"Status", job.Status, core.JobStatusCompleted},
-		{"Conclusion", job.Conclusion, core.JobConclusionSuccess},
+		{"Conclusion", job.Conclusion, "success"},
 		{"RunnerID", job.RunnerID, int64(5001)},
 		{"RunnerName", job.RunnerName, "runner-awesome"},
 		{"URL", job.URL, "https://api.github.com/repos/testorg/testrepo/actions/jobs/1001"},
