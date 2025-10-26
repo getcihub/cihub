@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: cihub-2vcpu-ubuntu-2404
+    runs-on: cihub-4vcpu-ubuntu-2404
     strategy:
       matrix:
         go-version: ['1.25.x']
