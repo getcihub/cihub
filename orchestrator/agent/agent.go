@@ -203,15 +203,15 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 
 	machine.Handlers.FcInit = machine.Handlers.FcInit.Append(firecracker.NewSetMetadataHandler(metadata))
 
-	machineCtx, cancelMachine := context.WithCancel(context.Background())
-	defer cancelMachine()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	go func() {
 		logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation started")
 
 		done, _ := a.Manager.Watch(ctx, runner.ID)
 		if done {
-			cancelMachine()
+			cancel()
 			logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation received")
 		} else {
 			logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation finished")
@@ -233,7 +233,7 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 
 	logger.WithField("runner_name", runner.Name).Infoln("agent: start VM ok")
 
-	err = machine.Wait(machineCtx)
+	err = machine.Wait(ctx)
 	if err != nil {
 		logger = logger.WithError(err).WithField("runner_name", runner.Name)
 		logger.Warnln("agent: wait VM failed")
@@ -243,7 +243,7 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 
 	// Notify manager that runner has completed
 	status := core.RunnerStatusCompleted
-	if machineCtx.Err() != nil {
+	if ctx.Err() != nil {
 		status = "cancelled" // Was cancelled during execution
 	}
 
