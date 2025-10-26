@@ -16,6 +16,22 @@ agent:
   # Example: "agent-prod-01", "agent-dev-02"
   name: ""
 
+  # CPU architecture supported by this agent
+  #
+  # This specifies the CPU architecture that the agent can run jobs for.
+  # The scheduler uses this to match jobs requesting specific architectures
+  # to agents that support them.
+  #
+  # Valid values: "amd64", "arm64"
+  #
+  # Important:
+  #   - Jobs requesting labels with matching arch will be routed to this agent
+  #   - A job will not be assigned if the agent's arch doesn't match the job's arch
+  #   - This must match the kernel and runner image architecture
+  #
+  # Example: "amd64" for x86_64 systems, "arm64" for ARM systems
+  arch: "amd64"
+
   # Path to the containerd socket file
   #
   # The agent uses containerd to manage container-based runners.
@@ -32,6 +48,28 @@ agent:
   # Default: "/usr/local/bin/firecracker"
   firecracker: "/usr/local/bin/firecracker"
 
+  # GitHub repository owner filter (optional)
+  #
+  # When set, this agent will only accept and process jobs from the specified
+  # GitHub repository owner. This is useful for dedicating agents to specific
+  # organizations or users.
+  #
+  # The job's owner is determined from the repository owner in the GitHub Actions
+  # workflow run that triggered the job.
+  #
+  # Behavior:
+  #   - If empty: Agent accepts jobs from any repository owner (no filtering)
+  #   - If set: Agent only accepts jobs where job.owner matches this value
+  #   - Jobs from other owners will not be assigned to this agent
+  #
+  # Example values:
+  #   - "mycompany" - Only accept jobs from repositories under "mycompany" org
+  #   - "octocat" - Only accept jobs from repositories under "octocat" user
+  #   - "" (empty) - Accept jobs from any owner
+  #
+  # Use case: Dedicate agents to specific organizations for security or resource isolation
+  owner: ""
+
   # Snapshotter backend to use for container storage
   #
   # Common options:
@@ -44,55 +82,102 @@ agent:
   # Default: "devmapper"
   snapshotter: "devmapper"
 
+  # Kernel configuration for Firecracker microVMs
+  #
+  # The Linux kernel runs inside each Firecracker microVM to execute GitHub Actions runners.
+  # This section controls kernel selection and boot-time behavior.
   kernel:
+    # Kernel command-line arguments passed to the VM at boot
+    #
+    # These arguments control VM behavior during initialization and runtime:
+    #   - "console=ttyS0": Route kernel messages to serial console for logging/debugging
+    #   - "reboot=k": Use keyboard reset on reboot (required by Firecracker)
+    #   - "panic=1": Reboot automatically 1 second after kernel panic
+    #   - "pci=off": Disable PCI bus (not needed in microVM)
+    #   - "nomodules": Disable kernel module loading (all needed features compiled in)
+    #   - "rw": Mount root filesystem read-write
+    #
+    # WARNING: These args are critical for proper VM behavior. Only modify if you understand
+    # the implications. Refer to Linux kernel boot documentation for more options.
+    #
+    # Example: "console=ttyS0 reboot=k panic=1 pci=off nomodules rw"
     args: "console=ttyS0 reboot=k panic=1 pci=off nomodules rw"
+
+    # Path to the Linux kernel image file (vmlinux, uncompressed)
+    #
+    # This is a compiled Linux kernel image that Firecracker will boot for each microVM.
+    # The kernel must be uncompressed (vmlinux) not compressed (vmlinuz or bzImage).
+    #
+    # How to obtain a kernel:
+    #   1. Use a pre-built kernel from your runner container image
+    #   2. Extract from a running container: docker run <image> cat /boot/vmlinux > vmlinux
+    #   3. Build your own: Compile a custom Linux kernel with minimal features
+    #
+    # Kernel considerations:
+    #   - Use a kernel matching the runner image OS (Ubuntu 24.04, CentOS, etc.)
+    #   - Smaller kernels (~10-20 MB) boot faster and use less memory
+    #   - Ensure kernel includes required drivers (network, storage, etc.)
+    #   - Keep kernel path consistent across agent configuration updates
+    #
+    # Example: "/boot/vmlinux" or "/home/ubuntu/cihub/vmlinux"
     path: "/home/ubuntu/cihub/vmlinux"
 
-  # Runner pools configuration
+  # Resource limits for this agent
   #
-  # Each pool defines a set of runners with specific resources and labels.
-  # Workflows specify which pool to use via the "runs-on" label.
-  pools:
-    - # Unique identifier for this pool
-      id: "cihub-2vcpu-ubuntu-2404"
+  # This section defines the TOTAL aggregate resources available on this agent.
+  # The agent can run multiple microVMs concurrently, but the sum of their resources
+  # cannot exceed these limits.
+  #
+  # IMPORTANT: Resource Planning
+  # - Total system resources required = (memory + vcpu) from labels × concurrent runners
+  # - Physical host must have at least (memory in MB + overhead) and (vcpu cores + overhead)
+  # - Recommended: Reserve 10-20% of host resources for system services and overhead
+  #
+  # Example: If running 4 concurrent runners with 4GB memory and 2 vCPU each:
+  #   - memory: 4 × 4096 = 16384 MB
+  #   - vcpu: 4 × 2 = 8 cores
+  #   - Host should have ~18-20 GB RAM and ~9-10 CPU cores available
+  limit:
+    # Total memory available for all microVMs on this agent (in megabytes)
+    #
+    # This is the maximum aggregate memory that can be allocated to running microVMs.
+    # When the agent receives a job request for a microVM with memory requirement X,
+    # it will only accept if available_memory >= X.
+    #
+    # The agent tracks available memory dynamically:
+    #   - When a microVM starts: available_memory -= vm_memory_requirement
+    #   - When a microVM completes: available_memory += vm_memory_requirement
+    #
+    # Setting a value that exceeds available host memory will cause out-of-memory errors.
+    #
+    # Example values:
+    #   - Single high-performance runner: 4096-8192 MB
+    #   - Multiple concurrent runners: 16384-32768 MB (16-32 GB)
+    #   - Large cluster node: 65536+ MB (64+ GB)
+    #
+    # Default: Set based on available host memory, leaving 10-20% for system overhead
+    memory: 16384
 
-      # Maximum number of concurrent runners in this pool
-      #
-      # The maximum number of runners that this agent can execute in parallel.
-      # This value determines the agent's capacity and should be set based on the
-      # available system resources (CPU, memory, disk I/O).
-      #
-      # Example: 4, 8, 16
-      capacity: 4
-
-      # Labels associated with runners in this pool
-      #
-      # Workflows must specify this label in their "runs-on" field.
-      #
-      # Example: "cihub-2vcpu-ubuntu-2404"
-      labels:
-        - "cihub-2vcpu-ubuntu-2404"
-
-      # Memory allocated per microVM (in megabytes)
-      #
-      # The amount of RAM allocated to each microVM runner in this pool.
-      # Ensure this value is appropriate for your workload requirements.
-      #
-      # Example: 2048 (2GB), 4096 (4GB), 8192 (8GB)
-      memory: 4096
-
-      # Container image to use for runners in this pool
-      #
-      # The OCI/Docker image that will be used to create runner instances.
-      #
-      # Example: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
-      os: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
-
-      # Virtual CPUs allocated per microVM
-      #
-      # The number of virtual CPU cores assigned to each microVM runner in this pool.
-      # Choose based on the computational needs of your CI/CD workloads.
-      vcpu: 2
+    # Total vCPU cores available for all microVMs on this agent
+    #
+    # This is the maximum aggregate CPU cores that can be allocated to running microVMs.
+    # When the agent receives a job request for a microVM with vCPU requirement Y,
+    # it will only accept if available_vcpu >= Y.
+    #
+    # The agent tracks available vCPUs dynamically:
+    #   - When a microVM starts: available_vcpu -= vm_vcpu_requirement
+    #   - When a microVM completes: available_vcpu += vm_vcpu_requirement
+    #
+    # Setting a value that exceeds available host CPU cores will cause performance degradation.
+    # Oversubscription is possible but not recommended for CI/CD workloads.
+    #
+    # Example values:
+    #   - Single runner per node: 2-4 vCPU cores
+    #   - Multiple concurrent runners: 8-16 vCPU cores
+    #   - High-performance cluster: 32+ vCPU cores
+    #
+    # Default: Set based on available host CPU cores, leaving 10-20% for system overhead
+    vcpu: 8
 
 # ============================================================================
 # Database Configuration
@@ -126,6 +211,65 @@ database:
   #
   # Default: 0 (unlimited).
   max_connections: 0
+
+# ============================================================================
+# Labels Configuration
+# ============================================================================
+
+# Labels define resource specifications for Firecracker microVMs.
+#
+# Each label represents a unique configuration that can be requested by GitHub Actions
+# jobs via the "runs-on" field. Label IDs MUST start with "cihub-" prefix.
+#
+# Example workflow usage:
+#   runs-on: cihub-2vcpu-ubuntu-2404
+
+labels:
+  # Label 1: 2 vCPU Ubuntu 24.04 configuration
+  - # Unique identifier for this label (must start with "cihub-")
+    #
+    # Example: "cihub-2vcpu-ubuntu-2404"
+    id: "cihub-2vcpu-ubuntu-2404"
+
+    # CPU architecture for this label
+    #
+    # Valid values: "amd64", "arm64"
+    arch: amd64
+
+    # Operating system image (OCI/Docker container image reference)
+    #
+    # The image URL must point to a runner container that supports the GitHub Actions
+    # runner protocol. The container will be used to create the Firecracker microVM.
+    #
+    # Example: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
+    os: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
+
+    # Memory allocated per microVM (in megabytes)
+    #
+    # Ensure this value is sufficient for your GitHub Actions workflows.
+    # Recommended minimums:
+    #   - 512 MB for simple tasks
+    #   - 2048 MB (2 GB) for most workflows
+    #   - 4096 MB+ for resource-intensive tasks
+    #
+    # Example: 2048
+    memory: 2048
+
+    # Virtual CPUs allocated per microVM
+    #
+    # The number of logical CPU cores assigned to each microVM runner.
+    # Choose based on the computational needs of your CI/CD workloads.
+    # Recommended values: 1, 2, 4, 8
+    #
+    # Example: 2
+    vcpu: 2
+
+  # Label 2: 4 vCPU Ubuntu 24.04 configuration (for more resource-intensive tasks)
+  - id: "cihub-4vcpu-ubuntu-2404"
+    arch: amd64
+    os: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
+    memory: 4096
+    vcpu: 4
 
 # ============================================================================
 # Logging Configuration

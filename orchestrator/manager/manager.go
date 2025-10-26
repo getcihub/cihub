@@ -20,9 +20,9 @@ var noContext = context.Background()
 // registration, and cancellation monitoring.
 type RunnerManager interface {
 	// Request requests the next available job from the queue that matches
-	// the agent's labels. It returns the job if found, or nil if no matching
+	// the agent's capacities. It returns the job if found, or nil if no matching
 	// jobs are available.
-	Request(ctx context.Context, labels []string) (*core.Job, error)
+	Request(ctx context.Context, params *core.Filter) (*core.Job, error)
 
 	// Accept accepts a job for execution. This operation uses optimistic
 	// locking to prevent multiple agents from executing the same job.
@@ -31,7 +31,7 @@ type RunnerManager interface {
 	// The system uses optimistic locking at the database-level to prevent
 	// multiple agents from executing the same job. If the job has already
 	// been accepted by another agent, this method returns an error.
-	Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error)
+	Accept(ctx context.Context, jobID int64, machine string) error
 
 	// Register registers a runner for the job on GitHub and retrieves its
 	// just-in-time configuration. The runner acts as the compute environment
@@ -83,11 +83,18 @@ type Manager struct {
 
 // Request requests the next available job from the queue that matches
 // the agent's labels.
-func (m *Manager) Request(ctx context.Context, labels []string) (*core.Job, error) {
-	logger := logrus.WithField("labels", labels)
+func (m *Manager) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+	logger := logrus.WithFields(
+		logrus.Fields{
+			"arch":   params.Arch,
+			"owner":  params.Owner,
+			"memory": params.Memory,
+			"vcpu":   params.VCPU,
+		},
+	)
 	logger.Debugln("manager: request queued job")
 
-	job, err := m.Scheduler.Request(ctx, labels)
+	job, err := m.Scheduler.Request(ctx, params)
 	if err != nil && ctx.Err() != nil {
 		logger.Debugln("manager: context canceled")
 		return nil, err
@@ -103,11 +110,11 @@ func (m *Manager) Request(ctx context.Context, labels []string) (*core.Job, erro
 }
 
 // Accept accepts a job for execution with optimistic locking.
-func (m *Manager) Accept(ctx context.Context, id int64, machine string) (*core.Job, error) {
+func (m *Manager) Accept(ctx context.Context, id int64, machine string) error {
 	logger := logrus.WithFields(
 		logrus.Fields{
 			"machine": machine,
-			"job-id":  id,
+			"job.id":  id,
 		},
 	)
 	logger.Debugln("manager: accept job")
@@ -116,12 +123,12 @@ func (m *Manager) Accept(ctx context.Context, id int64, machine string) (*core.J
 	if err != nil {
 		logger = logger.WithError(err)
 		logger.Warnln("manager: cannot find job")
-		return nil, err
+		return err
 	}
 
 	if job.Machine != "" {
 		logger.Debugln("manager: job already assigned. abort.")
-		return nil, db.ErrOptimisticLock
+		return db.ErrOptimisticLock
 	}
 
 	now := time.Now()
@@ -141,7 +148,7 @@ func (m *Manager) Accept(ctx context.Context, id int64, machine string) (*core.J
 		logger.Debugln("manager: job accepted")
 	}
 
-	return job, err
+	return err
 }
 
 func (m *Manager) Register(ctx context.Context, id int64) (*core.RunnerWithToken, error) {

@@ -32,13 +32,14 @@ type (
 
 	// Agent provides the agent configuration.
 	Agent struct {
-		Enabled     bool   `koanf:"enabled"`
 		Name        string `koanf:"name"`
+		Arch        string `koanf:"arch"`
 		Containerd  string `koanf:"containerd"`
 		Firecracker string `koanf:"firecracker"`
+		Owner       string `koanf:"owner"`
 		Kernel      Kernel `koanf:"kernel"`
 		Snapshotter string `koanf:"snapshotter"`
-		Pools       []Pool `koanf:"pools"`
+		Limit       Limit  `koanf:"limit"`
 	}
 
 	// Kernel provides the kernel configuration to use for an agent
@@ -47,14 +48,10 @@ type (
 		Path string `koanf:"path"`
 	}
 
-	// Pool provides a pool of runner configuration
-	Pool struct {
-		ID       string   `koanf:"id"`
-		Capacity int      `koanf:"capacity"`
-		Labels   []string `koanf:"labels"`
-		Memory   int64    `koanf:"memory"`
-		OS       string   `koanf:"os"`
-		VCPU     int64    `koanf:"vcpu"`
+	// Limit provides the agent's limits configuration
+	Limit struct {
+		Memory int64 `koanf:"memory"`
+		VCPU   int64 `koanf:"vcpu"`
 	}
 
 	// Logger provides the logger configuration.
@@ -101,9 +98,6 @@ func Load(path string) (Config, error) {
 
 	if config.Agent.Name == "" {
 		config.Agent.Name = hostname
-	}
-	if len(config.Agent.Pools) == 0 {
-		return Config{}, fmt.Errorf("config: must provide at least one poll configuration")
 	}
 
 	return config, nil

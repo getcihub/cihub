@@ -8,13 +8,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
 	"github.com/getcihub/cihub/orchestrator/manager"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
 // default http request timeout
-var defaultTimeout = time.Second * 30
+var defaultTimeout = time.Second * 10
 
 // HandlePing returns an http.HandlerFunc that makes an
 // http.Request to ping the server and confirm connectivity.
@@ -36,8 +37,8 @@ func HandleRequest(m manager.RunnerManager) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 		defer cancel()
 
-		in := &requestRequest{}
-		err := json.NewDecoder(r.Body).Decode(in)
+		params := &core.Filter{}
+		err := json.NewDecoder(r.Body).Decode(params)
 		if err != nil {
 			logger.FromRequest(r).
 				WithError(err).
@@ -46,7 +47,7 @@ func HandleRequest(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		job, err := m.Request(ctx, in.Labels)
+		job, err := m.Request(ctx, params)
 		if err != nil {
 			writeError(w, err)
 		} else {
@@ -71,14 +72,14 @@ func HandleAccept(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		job, err := m.Accept(context.Background(), in.JobID, in.Machine)
+		err = m.Accept(context.Background(), in.JobID, in.Machine)
 		if err != nil {
 			logger.FromRequest(r).
 				WithError(err).
 				Debugln("manager: cannot accept job")
 			writeError(w, err)
 		} else {
-			writeJSON(w, job)
+			writeOK(w)
 		}
 	}
 }

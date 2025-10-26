@@ -16,6 +16,26 @@ import (
 
 var noContext = context.TODO()
 
+// testLabels returns a sample Labels map for testing
+func testLabels() core.Labels {
+	return core.Labels{
+		"cihub-2vcpu-amd64-ubuntu2404": {
+			ID:     "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:   "amd64",
+			OS:  "ubuntu2404",
+			Memory: 2048,
+			VCPU:   2,
+		},
+		"cihub-4vcpu-arm64-ubuntu2204": {
+			ID:     "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:   "arm64",
+			OS:  "ubuntu2204",
+			Memory: 4096,
+			VCPU:   4,
+		},
+	}
+}
+
 func TestHandler_Handles(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -23,7 +43,7 @@ func TestHandler_Handles(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := New(mockJobStore, mockRunnerStore, mockScheduler)
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	events := h.Handles()
 	if got, want := len(events), 1; got != want {
@@ -41,7 +61,7 @@ func TestHandler_Handle_Waiting_CreateNew(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -53,7 +73,7 @@ func TestHandler_Handle_Waiting_CreateNew(t *testing.T) {
 			Status:       github.String(core.JobStatusQueued),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
-			Labels:       []string{"self-hosted", "linux"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
@@ -113,7 +133,7 @@ func TestHandler_Handle_Waiting_AlreadyExists(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("waiting"),
@@ -122,6 +142,7 @@ func TestHandler_Handle_Waiting_AlreadyExists(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI"),
 			Status:       github.String(core.JobStatusQueued),
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
 			Name: github.String("hello-world"),
@@ -164,7 +185,7 @@ func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -176,7 +197,7 @@ func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 			Status:       github.String(core.JobStatusQueued),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
-			Labels:       []string{"self-hosted", "linux"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
@@ -228,7 +249,7 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now().Add(-5 * time.Minute)
 	now := time.Now()
@@ -242,7 +263,7 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 			Status:       github.String(core.JobStatusQueued),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
-			Labels:       []string{"self-hosted", "linux"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
 		Repo: &github.Repository{
@@ -310,7 +331,7 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now().Add(-5 * time.Minute)
 	startedTime := time.Now()
@@ -324,7 +345,7 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 			Status:       github.String(core.JobStatusInProgress),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
-			Labels:       []string{"self-hosted", "linux"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			RunnerID:     github.Int64(5001),
 			RunnerName:   github.String("runner-1"),
 			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
@@ -448,7 +469,7 @@ func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now().Add(-10 * time.Minute)
 	startedTime := time.Now().Add(-5 * time.Minute)
@@ -464,7 +485,7 @@ func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 			Conclusion:   github.String("success"),
 			HeadBranch:   github.String("main"),
 			HeadSHA:      github.String("abc123"),
-			Labels:       []string{"self-hosted", "linux"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			RunnerID:     github.Int64(5001),
 			RunnerName:   github.String("runner-1"),
 			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
@@ -560,7 +581,7 @@ func TestHandler_Handle_Completed_RunnerNotFound(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now().Add(-10 * time.Minute)
 	completedTime := time.Now()
@@ -572,6 +593,7 @@ func TestHandler_Handle_Completed_RunnerNotFound(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI"),
 			Status:       github.String(core.JobStatusCompleted),
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			RunnerName:   github.String("runner-1"),
 			CreatedAt:    &github.Timestamp{Time: createdTime},
 			CompletedAt:  &github.Timestamp{Time: completedTime},
@@ -625,7 +647,7 @@ func TestHandler_Handle_InvalidPayload(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	invalidPayload := []byte(`{invalid json}`)
 
@@ -642,7 +664,7 @@ func TestHandler_Handle_MissingWorkflowJob(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action:      github.String("queued"),
@@ -679,7 +701,7 @@ func TestHandler_Handle_MissingRepository(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -713,7 +735,7 @@ func TestHandler_Handle_MissingInstallation(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -750,7 +772,7 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("queued"),
@@ -759,7 +781,7 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI"),
 			Status:       github.String(core.JobStatusQueued),
-			Labels:       []string{"self-hosted"},
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
 			Name: github.String("hello-world"),
@@ -798,7 +820,7 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := &handler{jobs: mockJobStore, runners: mockRunnerStore, scheduler: mockScheduler}
+	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
 		Action: github.String("in_progress"),
@@ -807,6 +829,7 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 			RunID:        github.Int64(2001),
 			WorkflowName: github.String("CI"),
 			Status:       github.String(core.JobStatusInProgress),
+			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
 			Name: github.String("hello-world"),
@@ -951,5 +974,308 @@ func TestConvertWorkflowJobToJob_EmptyTimestamps(t *testing.T) {
 	}
 	if job.Completed != 0 {
 		t.Errorf("Want Completed = 0 for missing CompletedAt, got %d", job.Completed)
+	}
+}
+
+func TestHandler_Handle_NoMatchingLabel_IgnoresEvent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create labels without "cihub-4vcpu-arm64-ubuntu2204"
+	labels := core.Labels{
+		"cihub-2vcpu-amd64-ubuntu2404": {
+			ID:     "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:   "amd64",
+			OS:  "ubuntu2404",
+			Memory: 2048,
+			VCPU:   2,
+		},
+	}
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
+
+	event := &github.WorkflowJobEvent{
+		Action: github.String("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			Labels:       []string{"cihub-4vcpu-arm64-ubuntu2204"}, // Not in supported labels
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect no calls to store or scheduler
+	// (no expectations set, will fail if any method is called)
+
+	err = h.Handle(noContext, "workflow_job", "test-delivery", payload)
+	if err != nil {
+		t.Errorf("Handle should not fail for unsupported label, got: %v", err)
+	}
+}
+
+func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	labels := core.Labels{
+		"cihub-2vcpu-amd64-ubuntu2404": {
+			ID:     "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:   "amd64",
+			OS:  "ubuntu2404",
+			Memory: 2048,
+			VCPU:   2,
+		},
+		"cihub-4vcpu-arm64-ubuntu2204": {
+			ID:     "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:   "arm64",
+			OS:  "ubuntu2204",
+			Memory: 4096,
+			VCPU:   4,
+		},
+	}
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
+
+	event := &github.WorkflowJobEvent{
+		Action: github.String("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			Labels:       []string{"unknown-label", "cihub-2vcpu-amd64-ubuntu2404"}, // Has matching label
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect Find to return error (job doesn't exist)
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(nil, errors.New("not found"))
+
+	// Expect Create to be called
+	mockJobStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	// Expect Schedule to be called for queued action
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	err = h.Handle(noContext, "workflow_job", "test-delivery", payload)
+	if err != nil {
+		t.Errorf("Handle should process event with matching label, got: %v", err)
+	}
+}
+
+func TestHandler_ResolveJobSpecification(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	labels := core.Labels{
+		"cihub-2vcpu-amd64-ubuntu2404": {
+			ID:     "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:   "amd64",
+			OS:     "ghcr.io/getcihub/runner-ubuntu24.04:latest",
+			Memory: 2048,
+			VCPU:   2,
+		},
+		"cihub-4vcpu-arm64-ubuntu2204": {
+			ID:     "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:   "arm64",
+			OS:     "ghcr.io/getcihub/runner-ubuntu22.04:latest",
+			Memory: 4096,
+			VCPU:   4,
+		},
+	}
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
+
+	createdTime := time.Now()
+	event := &github.WorkflowJobEvent{
+		Action: github.String("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			Labels:       []string{"self-hosted", "cihub-2vcpu-amd64-ubuntu2404", "linux"},
+			CreatedAt:    &github.Timestamp{Time: createdTime},
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect Find to return error (job doesn't exist)
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(nil, errors.New("not found"))
+
+	// Expect Create to be called, verify job specification is set
+	mockJobStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			// Verify job specification was resolved
+			if got, want := job.OS, "ghcr.io/getcihub/runner-ubuntu24.04:latest"; got != want {
+				t.Errorf("Want job.OS = %s, got %s", want, got)
+			}
+			if got, want := job.Arch, "amd64"; got != want {
+				t.Errorf("Want job.Arch = %s, got %s", want, got)
+			}
+			if got, want := job.Memory, int64(2048); got != want {
+				t.Errorf("Want job.Memory = %d, got %d", want, got)
+			}
+			if got, want := job.VCPU, int64(2); got != want {
+				t.Errorf("Want job.VCPU = %d, got %d", want, got)
+			}
+			return nil
+		})
+
+	// Expect Schedule to be called for queued action
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	labels := core.Labels{
+		"cihub-2vcpu-amd64-ubuntu2404": {
+			ID:     "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:   "amd64",
+			OS:     "ghcr.io/getcihub/runner-ubuntu24.04:latest",
+			Memory: 2048,
+			VCPU:   2,
+		},
+		"cihub-4vcpu-arm64-ubuntu2204": {
+			ID:     "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:   "arm64",
+			OS:     "ghcr.io/getcihub/runner-ubuntu22.04:latest",
+			Memory: 4096,
+			VCPU:   4,
+		},
+	}
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
+
+	createdTime := time.Now()
+	event := &github.WorkflowJobEvent{
+		Action: github.String("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Int64(1001),
+			RunID:        github.Int64(2001),
+			WorkflowName: github.String("CI"),
+			Status:       github.String(core.JobStatusQueued),
+			// Both labels are available, should match the first one
+			Labels:    []string{"cihub-4vcpu-arm64-ubuntu2204", "cihub-2vcpu-amd64-ubuntu2404"},
+			CreatedAt: &github.Timestamp{Time: createdTime},
+		},
+		Repo: &github.Repository{
+			Name: github.String("hello-world"),
+			Owner: &github.User{
+				Login: github.String("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Int64(3001),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect Find to return error (job doesn't exist)
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(nil, errors.New("not found"))
+
+	// Expect Create to be called, verify first matching label is used
+	mockJobStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			// Should resolve to first matching label in job.Labels order
+			if got, want := job.OS, "ghcr.io/getcihub/runner-ubuntu22.04:latest"; got != want {
+				t.Errorf("Want job.OS = %s (4vcpu), got %s", want, got)
+			}
+			if got, want := job.Arch, "arm64"; got != want {
+				t.Errorf("Want job.Arch = %s, got %s", want, got)
+			}
+			if got, want := job.Memory, int64(4096); got != want {
+				t.Errorf("Want job.Memory = %d, got %d", want, got)
+			}
+			if got, want := job.VCPU, int64(4); got != want {
+				t.Errorf("Want job.VCPU = %d, got %d", want, got)
+			}
+			return nil
+		})
+
+	// Expect Schedule to be called for queued action
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
 	}
 }

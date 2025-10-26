@@ -18,9 +18,9 @@ func TestQueue(t *testing.T) {
 	defer controller.Finish()
 
 	jobs := []*core.Job{
-		{ID: 3, Labels: []string{"self-hosted", "linux", "amd64"}},
-		{ID: 2, Labels: []string{"self-hosted", "linux", "amd64"}},
-		{ID: 1, Labels: []string{"self-hosted", "linux", "amd64"}},
+		{ID: 3, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
+		{ID: 2, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
+		{ID: 1, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
 	}
 
 	ctx := context.Background()
@@ -31,7 +31,7 @@ func TestQueue(t *testing.T) {
 
 	q := newQueue(ctx, store)
 	for _, job := range jobs {
-		next, err := q.Request(ctx, []string{"self-hosted", "linux", "amd64"})
+		next, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
 		if err != nil {
 			t.Error(err)
 			return
@@ -56,7 +56,7 @@ func TestQueueCancel(t *testing.T) {
 	wg.Add(1)
 
 	go func() {
-		job, err := q.Request(ctx, []string{"self-hosted", "linux", "amd64"})
+		job, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
 		if err != context.Canceled {
 			t.Errorf("Expected context.Canceled error, got %s", err)
 		}
@@ -77,109 +77,6 @@ func TestQueueCancel(t *testing.T) {
 
 	cancel()
 	wg.Wait()
-}
-
-func TestCheckLabels(t *testing.T) {
-	tests := []struct {
-		name string
-		a    []string
-		b    []string
-		want bool
-	}{
-		{
-			name: "equal slices same order",
-			a:    []string{"linux", "amd64", "docker"},
-			b:    []string{"linux", "amd64", "docker"},
-			want: true,
-		},
-		{
-			name: "equal slices different order",
-			a:    []string{"linux", "amd64", "docker"},
-			b:    []string{"docker", "linux", "amd64"},
-			want: true,
-		},
-		{
-			name: "different length slices",
-			a:    []string{"linux", "amd64"},
-			b:    []string{"linux", "amd64", "docker"},
-			want: false,
-		},
-		{
-			name: "both empty slices",
-			a:    []string{},
-			b:    []string{},
-			want: true,
-		},
-		{
-			name: "one empty one non-empty",
-			a:    []string{"linux"},
-			b:    []string{},
-			want: false,
-		},
-		{
-			name: "both nil slices",
-			a:    nil,
-			b:    nil,
-			want: true,
-		},
-		{
-			name: "one nil one empty",
-			a:    nil,
-			b:    []string{},
-			want: true,
-		},
-		{
-			name: "different elements same length",
-			a:    []string{"linux", "amd64"},
-			b:    []string{"darwin", "arm64"},
-			want: false,
-		},
-		{
-			name: "partially overlapping",
-			a:    []string{"linux", "amd64"},
-			b:    []string{"linux", "arm64"},
-			want: false,
-		},
-		{
-			name: "single element match",
-			a:    []string{"linux"},
-			b:    []string{"linux"},
-			want: true,
-		},
-		{
-			name: "single element mismatch",
-			a:    []string{"linux"},
-			b:    []string{"darwin"},
-			want: false,
-		},
-		{
-			name: "duplicate elements in first slice",
-			a:    []string{"linux", "linux", "amd64"},
-			b:    []string{"linux", "amd64"},
-			want: false,
-		},
-		{
-			name: "duplicate elements in both slices same count",
-			a:    []string{"linux", "linux", "amd64"},
-			b:    []string{"linux", "linux", "amd64"},
-			want: true,
-		},
-		{
-			name: "duplicate elements in both slices different order",
-			a:    []string{"linux", "amd64", "linux"},
-			b:    []string{"amd64", "linux", "linux"},
-			want: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := checkLabels(tt.a, tt.b)
-			if got != tt.want {
-				t.Errorf("checkLabels(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
-			}
-		})
-	}
 }
 
 func TestQueueDeadlock(t *testing.T) {
@@ -207,7 +104,7 @@ func TestQueueDeadlock(t *testing.T) {
 			// Randomly cancel some contexts to simulate timeouts
 			cancel()
 		}
-		_, err := q.Request(ctx, []string{"self-hosted", "linux", "amd64"})
+		_, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
 		if err != nil && err != context.Canceled && err !=
 			context.DeadlineExceeded {
 			t.Errorf("Expected context.Canceled or context.DeadlineExceeded error, got %s", err)
@@ -234,7 +131,7 @@ func TestQueueDeadlock(t *testing.T) {
 func incomplete(n int) ([]*core.Job, error) {
 	ret := make([]*core.Job, n)
 	for i := range ret {
-		ret[i] = &core.Job{Labels: []string{"self-hosted", "linux", "amd64"}}
+		ret[i] = &core.Job{Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2}
 	}
 	return ret, nil
 }

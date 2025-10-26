@@ -397,18 +397,18 @@ func (mr *MockSchedulerMockRecorder) Cancelled(ctx, id any) *gomock.Call {
 }
 
 // Request mocks base method.
-func (m *MockScheduler) Request(ctx context.Context, labels []string) (*core.Job, error) {
+func (m *MockScheduler) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Request", ctx, labels)
+	ret := m.ctrl.Call(m, "Request", ctx, params)
 	ret0, _ := ret[0].(*core.Job)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Request indicates an expected call of Request.
-func (mr *MockSchedulerMockRecorder) Request(ctx, labels any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Request(ctx, params any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, labels)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, params)
 }
 
 // Schedule mocks base method.

@@ -41,13 +41,12 @@ func (c *Client) Ping(ctx context.Context, machine string) error {
 	return c.send(ctx, "/rpc/v1/ping", in, nil)
 }
 
-func (c *Client) Request(ctx context.Context, labels []string) (*core.Job, error) {
-	timeout, cancel := context.WithTimeout(ctx, time.Minute)
+func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+	timeout, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
-	in := &requestRequest{Labels: labels}
 	out := &core.Job{}
-	err := c.send(timeout, "/rpc/v1/request", in, out)
+	err := c.send(timeout, "/rpc/v1/request", params, out)
 
 	// The request is performing long polling and is subject
 	// to a client-side and server-side timeout. The timeout
@@ -60,11 +59,10 @@ func (c *Client) Request(ctx context.Context, labels []string) (*core.Job, error
 	return out, err
 }
 
-func (c *Client) Accept(ctx context.Context, jobID int64, machine string) (*core.Job, error) {
+func (c *Client) Accept(ctx context.Context, jobID int64, machine string) error {
 	in := &acceptRequest{JobID: jobID, Machine: machine}
-	out := &core.Job{}
-	err := c.send(ctx, "/rpc/v1/accept", in, out)
-	return out, err
+	err := c.send(ctx, "/rpc/v1/accept", in, nil)
+	return err
 }
 
 func (c *Client) Register(ctx context.Context, jobID int64) (*core.RunnerWithToken, error) {

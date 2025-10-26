@@ -11,22 +11,24 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/sirupsen/logrus"
 
+	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
 type (
 	// Config provides the system configuration.
 	Config struct {
-		Database Database `koanf:"database"`
-		HTTP     HTTP     `koanf:"http"`
-		GitHub   GitHub   `koanf:"github"`
-		Logger   Logger   `koanf:"logger"`
-		Metric   Metric   `koanf:"metric"`
-		Reaper   Reaper   `koanf:"reaper"`
-		RPC      RPC      `koanf:"rpc"`
-		Server   Server   `koanf:"server"`
-		Session  Session  `koanf:"session"`
-		Users    []User   `koanf:"users"`
+		Database Database     `koanf:"database"`
+		HTTP     HTTP         `koanf:"http"`
+		GitHub   GitHub       `koanf:"github"`
+		Labels   []core.Label `koanf:"labels"`
+		Logger   Logger       `koanf:"logger"`
+		Metric   Metric       `koanf:"metric"`
+		Reaper   Reaper       `koanf:"reaper"`
+		RPC      RPC          `koanf:"rpc"`
+		Server   Server       `koanf:"server"`
+		Session  Session      `koanf:"session"`
+		Users    []User       `koanf:"users"`
 	}
 
 	// Kernel defines the kernel configuration

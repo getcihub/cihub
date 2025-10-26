@@ -43,12 +43,14 @@ func (q *queue) Schedule(ctx context.Context, job *core.Job) error {
 	return nil
 }
 
-func (q *queue) Request(ctx context.Context, labels []string) (*core.Job, error) {
+func (q *queue) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	w := &worker{
-		labels:  labels,
+		arch:    params.Arch,
+		memory:  params.Memory,
+		vcpu:    params.VCPU,
 		channel: make(chan *core.Job),
 		done:    ctx.Done(),
 	}
@@ -96,14 +98,32 @@ func (q *queue) signal(ctx context.Context) error {
 	q.Lock()
 	defer q.Unlock()
 	for _, job := range jobs {
-
+		if job.Status == core.JobStatusInProgress {
+			continue
+		}
 		if job.Machine != "" {
 			continue
 		}
 
 	loop:
 		for w := range q.workers {
-			if !checkLabels(job.Labels, w.labels) {
+			// job does not match server cpu architecture?
+			if w.arch != job.Arch {
+				continue
+			}
+
+			// job requires more vcpu than available?
+			if w.vcpu < job.VCPU {
+				continue
+			}
+
+			// job requires more memory than available?
+			if w.memory < job.Memory {
+				continue
+			}
+
+			// server pulls job for specific runner?
+			if w.owner != "" && w.owner != job.Owner {
 				continue
 			}
 
@@ -119,6 +139,7 @@ func (q *queue) signal(ctx context.Context) error {
 				return false
 			}
 
+			// job do match, send it and wait for ack
 			if sendWork() {
 				delete(q.workers, w)
 				break loop
@@ -143,26 +164,10 @@ func (q *queue) start() error {
 }
 
 type worker struct {
-	labels  []string
+	arch    string
+	memory  int64
+	owner   string
+	vcpu    int64
 	channel chan *core.Job
 	done    <-chan struct{}
-}
-
-func checkLabels(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-
-	m := map[string]struct{}{}
-	for _, v := range a {
-		m[v] = struct{}{}
-	}
-
-	for _, v := range b {
-		if _, ok := m[v]; !ok {
-			return false
-		}
-	}
-
-	return true
 }

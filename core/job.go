@@ -42,6 +42,10 @@ type (
 		RunnerName     string   `json:"runner_name"`     // Assigned runner name (empty if not assigned)
 		Machine        string   `json:"machine"`         // Node/agent where job is executing
 		URL            string   `json:"url"`             // URL to request runner registration token
+		OS             string   `json:"os"`              // Operating system image specification (from resolved label)
+		Arch           string   `json:"arch"`            // CPU architecture (from resolved label)
+		Memory         int64    `json:"memory"`          // Memory in MB (from resolved label)
+		VCPU           int64    `json:"vcpu"`            // Virtual CPUs (from resolved label)
 		Accepted       int64    `json:"accepted"`        // Unix timestamp when job was accepted by agent
 		Queued         int64    `json:"queued"`          // Unix timestamp when job was queued
 		Started        int64    `json:"started"`         // Unix timestamp when job started

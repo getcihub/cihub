@@ -73,38 +73,30 @@ func main() {
 		}
 	}
 
-	// Launch agents for each pool
-	var g errgroup.Group
-	for _, pool := range config.Agent.Pools {
-		pool := pool
-		agent := &agent.Agent{
-			Manager:     manager,
-			Machine:     config.Agent.Name,
-			Images:      imagez,
-			Snapshots:   snapshotz,
-			ID:          pool.ID,
-			Firecracker: config.Agent.Firecracker,
-			KernelArgs:  config.Agent.Kernel.Args,
-			KernelPath:  config.Agent.Kernel.Path,
-			Labels:      pool.Labels,
-			Memory:      pool.Memory,
-			OS:          pool.OS,
-			VCPU:        pool.VCPU,
-		}
-
-		g.Go(func() error {
-			logrus.
-				WithField("capacity", pool.Capacity).
-				WithField("labels", pool.Labels).
-				WithField("machine", config.Agent.Name).
-				WithField("memory", pool.Memory).
-				WithField("pool", pool.ID).
-				WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
-				WithField("vcpu", pool.VCPU).
-				Infoln("agent: start polling remote server")
-			return agent.Start(ctx, pool.Capacity)
-		})
+	agent := &agent.Agent{
+		Manager:     manager,
+		Images:      imagez,
+		Snapshots:   snapshotz,
+		Machine:     config.Agent.Name,
+		Firecracker: config.Agent.Firecracker,
+		KernelArgs:  config.Agent.Kernel.Args,
+		KernelPath:  config.Agent.Kernel.Path,
+		Arch:        config.Agent.Arch,
+		Memory:      config.Agent.Limit.Memory,
+		VCPU:        config.Agent.Limit.VCPU,
+		Owner:       config.Agent.Owner,
 	}
+
+	var g errgroup.Group
+	g.Go(func() error {
+		logrus.WithField("arch", agent.Arch).
+			WithField("memory", agent.Memory).
+			WithField("owner", agent.Owner).
+			WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
+			WithField("vcpu", agent.VCPU).
+			Infoln("agent: start polling remote server")
+		return agent.Start(ctx)
+	})
 
 	if err := g.Wait(); err != nil {
 		logrus.WithError(err).Fatalln("program terminated")

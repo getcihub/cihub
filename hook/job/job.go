@@ -16,17 +16,20 @@ import (
 )
 
 type handler struct {
+	labels    core.Labels
 	jobs      core.JobStore
 	runners   core.RunnerStore
 	scheduler core.Scheduler
 }
 
 func New(
+	labels core.Labels,
 	jobs core.JobStore,
 	runners core.RunnerStore,
 	scheduler core.Scheduler,
 ) githubapp.EventHandler {
 	return &handler{
+		labels:    labels,
 		jobs:      jobs,
 		runners:   runners,
 		scheduler: scheduler,
@@ -69,6 +72,7 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 			"delivery.id": deliveryID,
 			"action":      action,
 			"job.id":      job.ID,
+			"job.labels":  job.Labels,
 			"run.id":      job.RunID,
 			"owner":       job.Owner,
 			"repo":        job.Repo,
@@ -78,6 +82,17 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 		},
 	)
 	log.Infoln("hook: received workflow job event")
+
+	// Check if job has a supported label
+	if !h.labels.Has(job.Labels) {
+		log.Debugln("hook: no matching label, ignore event")
+		return nil
+	}
+
+	// Resolve job specification from matching label
+	if err := h.resolveJobSpecification(job, log); err != nil {
+		return err
+	}
 
 	// Route to action-specific handler
 	switch action {
@@ -272,6 +287,30 @@ func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, jo
 	}
 
 	log.Infof("hook: synced runner '%s' to completed", job.RunnerName)
+	return nil
+}
+
+// resolveJobSpecification finds a matching label for the job and populates
+// the job's OS, Arch, Memory, and VCPU fields from the label specification.
+func (h *handler) resolveJobSpecification(job *core.Job, log *logrus.Entry) error {
+	// Find the first matching label from the job's requested labels
+	var matchedLabel core.Label
+	for _, requestedLabel := range job.Labels {
+		if label, ok := h.labels[requestedLabel]; ok {
+			matchedLabel = label
+			break
+		}
+	}
+
+	// Populate job specification from resolved label
+	job.OS = matchedLabel.OS
+	job.Arch = matchedLabel.Arch
+	job.Memory = matchedLabel.Memory
+	job.VCPU = matchedLabel.VCPU
+
+	log.Debugf("hook: resolved job specification - label: %s, os: %s, arch: %s, memory: %dMB, vcpu: %d",
+		matchedLabel.ID, job.OS, job.Arch, job.Memory, job.VCPU)
+
 	return nil
 }
 

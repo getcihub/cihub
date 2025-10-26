@@ -56,7 +56,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(options)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(jobStore, runnerStore, scheduler)
+	labels, err := provideLabels(conf)
+	if err != nil {
+		return application{}, err
+	}
+	v := provideEventHandlers(labels, jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	runnerManager := manager.New(jobStore, runnerStore, runnerService, scheduler, userStore)
