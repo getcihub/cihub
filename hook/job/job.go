@@ -337,7 +337,7 @@ func convertWorkflowJobToJob(event *github.WorkflowJobEvent) *core.Job {
 		Labels:         wj.Labels,
 		RunnerID:       wj.GetRunnerID(),
 		RunnerName:     wj.GetRunnerName(),
-		URL:            wj.GetURL(),
+		URL:            wj.GetHTMLURL(),
 	}
 
 	// Convert GitHub timestamps to Unix timestamps

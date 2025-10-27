@@ -22,14 +22,14 @@ func testLabels() core.Labels {
 		"cihub-2vcpu-amd64-ubuntu2404": {
 			ID:     "cihub-2vcpu-amd64-ubuntu2404",
 			Arch:   "amd64",
-			OS:  "ubuntu2404",
+			OS:     "ubuntu2404",
 			Memory: 2048,
 			VCPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
 			ID:     "cihub-4vcpu-arm64-ubuntu2204",
 			Arch:   "arm64",
-			OS:  "ubuntu2204",
+			OS:     "ubuntu2204",
 			Memory: 4096,
 			VCPU:   4,
 		},
@@ -65,26 +65,26 @@ func TestHandler_Handle_Waiting_CreateNew(t *testing.T) {
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
-		Action: github.String("waiting"),
+		Action: github.Ptr("waiting"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
-			HeadBranch:   github.String("main"),
-			HeadSHA:      github.String("abc123"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
-			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
+			HTMLURL:      github.Ptr("https://github.com/octocat/hello-world/actions/runs/2001/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -136,22 +136,22 @@ func TestHandler_Handle_Waiting_AlreadyExists(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("waiting"),
+		Action: github.Ptr("waiting"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -189,26 +189,26 @@ func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 
 	now := time.Now()
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
-			HeadBranch:   github.String("main"),
-			HeadSHA:      github.String("abc123"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
-			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
+			HTMLURL:      github.Ptr("https://github.com/octocat/hello-world/actions/runs/2001/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -255,25 +255,25 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 	now := time.Now()
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
-			HeadBranch:   github.String("main"),
-			HeadSHA:      github.String("abc123"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 			CreatedAt:    &github.Timestamp{Time: now},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -337,29 +337,29 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 	startedTime := time.Now()
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("in_progress"),
+		Action: github.Ptr("in_progress"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusInProgress),
-			HeadBranch:   github.String("main"),
-			HeadSHA:      github.String("abc123"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusInProgress),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
-			RunnerID:     github.Int64(5001),
-			RunnerName:   github.String("runner-1"),
-			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
+			RunnerID:     github.Ptr(int64(5001)),
+			RunnerName:   github.Ptr("runner-1"),
+			HTMLURL:      github.Ptr("https://github.com/octocat/hello-world/actions/runs/2001/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: createdTime},
 			StartedAt:    &github.Timestamp{Time: startedTime},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -476,31 +476,31 @@ func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 	completedTime := time.Now()
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("completed"),
+		Action: github.Ptr("completed"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusCompleted),
-			Conclusion:   github.String("success"),
-			HeadBranch:   github.String("main"),
-			HeadSHA:      github.String("abc123"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusCompleted),
+			Conclusion:   github.Ptr("success"),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
-			RunnerID:     github.Int64(5001),
-			RunnerName:   github.String("runner-1"),
-			URL:          github.String("https://api.github.com/repos/octocat/hello-world/actions/jobs/1001"),
+			RunnerID:     github.Ptr(int64(5001)),
+			RunnerName:   github.Ptr("runner-1"),
+			HTMLURL:      github.Ptr("https://github.com/octocat/hello-world/actions/runs/2001/jobs/1001"),
 			CreatedAt:    &github.Timestamp{Time: createdTime},
 			StartedAt:    &github.Timestamp{Time: startedTime},
 			CompletedAt:  &github.Timestamp{Time: completedTime},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -587,25 +587,25 @@ func TestHandler_Handle_Completed_RunnerNotFound(t *testing.T) {
 	completedTime := time.Now()
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("completed"),
+		Action: github.Ptr("completed"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusCompleted),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusCompleted),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
-			RunnerName:   github.String("runner-1"),
+			RunnerName:   github.Ptr("runner-1"),
 			CreatedAt:    &github.Timestamp{Time: createdTime},
 			CompletedAt:  &github.Timestamp{Time: completedTime},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -667,16 +667,16 @@ func TestHandler_Handle_MissingWorkflowJob(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action:      github.String("queued"),
+		Action:      github.Ptr("queued"),
 		WorkflowJob: nil, // Missing
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -704,13 +704,13 @@ func TestHandler_Handle_MissingRepository(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID: github.Int64(1001),
+			ID: github.Ptr(int64(1001)),
 		},
 		Repo: nil, // Missing
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -738,14 +738,14 @@ func TestHandler_Handle_MissingInstallation(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID: github.Int64(1001),
+			ID: github.Ptr(int64(1001)),
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: nil, // Missing
@@ -775,22 +775,22 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -823,22 +823,22 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 	h := New(testLabels(), mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("in_progress"),
+		Action: github.Ptr("in_progress"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusInProgress),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusInProgress),
 			Labels:       []string{"cihub-2vcpu-amd64-ubuntu2404"},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -874,29 +874,29 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 
 	event := &github.WorkflowJobEvent{
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI Pipeline"),
-			Status:       github.String(core.JobStatusCompleted),
-			Conclusion:   github.String("success"),
-			HeadBranch:   github.String("feature/test"),
-			HeadSHA:      github.String("def456"),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI Pipeline"),
+			Status:       github.Ptr(core.JobStatusCompleted),
+			Conclusion:   github.Ptr("success"),
+			HeadBranch:   github.Ptr("feature/test"),
+			HeadSHA:      github.Ptr("def456"),
 			Labels:       []string{"self-hosted", "linux", "x64"},
-			RunnerID:     github.Int64(5001),
-			RunnerName:   github.String("runner-awesome"),
-			URL:          github.String("https://api.github.com/repos/testorg/testrepo/actions/jobs/1001"),
+			RunnerID:     github.Ptr(int64(5001)),
+			RunnerName:   github.Ptr("runner-awesome"),
+			HTMLURL:      github.Ptr("https://github.com/octocat/github/actions/runs/18822693234/job/53737137650"),
 			CreatedAt:    &github.Timestamp{Time: createdAt},
 			StartedAt:    &github.Timestamp{Time: startedAt},
 			CompletedAt:  &github.Timestamp{Time: completedAt},
 		},
 		Repo: &github.Repository{
-			Name: github.String("testrepo"),
+			Name: github.Ptr("testrepo"),
 			Owner: &github.User{
-				Login: github.String("testorg"),
+				Login: github.Ptr("testorg"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -919,7 +919,7 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 		{"Conclusion", job.Conclusion, "success"},
 		{"RunnerID", job.RunnerID, int64(5001)},
 		{"RunnerName", job.RunnerName, "runner-awesome"},
-		{"URL", job.URL, "https://api.github.com/repos/testorg/testrepo/actions/jobs/1001"},
+		{"URL", job.URL, "https://github.com/octocat/github/actions/runs/18822693234/job/53737137650"},
 		{"Queued", job.Queued, createdAt.Unix()},
 		{"Started", job.Started, startedAt.Unix()},
 		{"Completed", job.Completed, completedAt.Unix()},
@@ -946,20 +946,20 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 func TestConvertWorkflowJobToJob_EmptyTimestamps(t *testing.T) {
 	event := &github.WorkflowJobEvent{
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			// No timestamps set
 		},
 		Repo: &github.Repository{
-			Name: github.String("testrepo"),
+			Name: github.Ptr("testrepo"),
 			Owner: &github.User{
-				Login: github.String("testorg"),
+				Login: github.Ptr("testorg"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -986,7 +986,7 @@ func TestHandler_Handle_NoMatchingLabel_IgnoresEvent(t *testing.T) {
 		"cihub-2vcpu-amd64-ubuntu2404": {
 			ID:     "cihub-2vcpu-amd64-ubuntu2404",
 			Arch:   "amd64",
-			OS:  "ubuntu2404",
+			OS:     "ubuntu2404",
 			Memory: 2048,
 			VCPU:   2,
 		},
@@ -998,22 +998,22 @@ func TestHandler_Handle_NoMatchingLabel_IgnoresEvent(t *testing.T) {
 	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			Labels:       []string{"cihub-4vcpu-arm64-ubuntu2204"}, // Not in supported labels
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -1039,14 +1039,14 @@ func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
 		"cihub-2vcpu-amd64-ubuntu2404": {
 			ID:     "cihub-2vcpu-amd64-ubuntu2404",
 			Arch:   "amd64",
-			OS:  "ubuntu2404",
+			OS:     "ubuntu2404",
 			Memory: 2048,
 			VCPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
 			ID:     "cihub-4vcpu-arm64-ubuntu2204",
 			Arch:   "arm64",
-			OS:  "ubuntu2204",
+			OS:     "ubuntu2204",
 			Memory: 4096,
 			VCPU:   4,
 		},
@@ -1058,22 +1058,22 @@ func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
 	h := New(labels, mockJobStore, mockRunnerStore, mockScheduler)
 
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			Labels:       []string{"unknown-label", "cihub-2vcpu-amd64-ubuntu2404"}, // Has matching label
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -1131,23 +1131,23 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 
 	createdTime := time.Now()
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			Labels:       []string{"self-hosted", "cihub-2vcpu-amd64-ubuntu2404", "linux"},
 			CreatedAt:    &github.Timestamp{Time: createdTime},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
@@ -1219,24 +1219,24 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 
 	createdTime := time.Now()
 	event := &github.WorkflowJobEvent{
-		Action: github.String("queued"),
+		Action: github.Ptr("queued"),
 		WorkflowJob: &github.WorkflowJob{
-			ID:           github.Int64(1001),
-			RunID:        github.Int64(2001),
-			WorkflowName: github.String("CI"),
-			Status:       github.String(core.JobStatusQueued),
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
 			// Both labels are available, should match the first one
 			Labels:    []string{"cihub-4vcpu-arm64-ubuntu2204", "cihub-2vcpu-amd64-ubuntu2404"},
 			CreatedAt: &github.Timestamp{Time: createdTime},
 		},
 		Repo: &github.Repository{
-			Name: github.String("hello-world"),
+			Name: github.Ptr("hello-world"),
 			Owner: &github.User{
-				Login: github.String("octocat"),
+				Login: github.Ptr("octocat"),
 			},
 		},
 		Installation: &github.Installation{
-			ID: github.Int64(3001),
+			ID: github.Ptr(int64(3001)),
 		},
 	}
 
