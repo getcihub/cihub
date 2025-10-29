@@ -82,18 +82,18 @@ func main() {
 		KernelArgs:  config.Agent.Kernel.Args,
 		KernelPath:  config.Agent.Kernel.Path,
 		Arch:        config.Agent.Arch,
-		Memory:      config.Agent.Limit.Memory,
-		VCPU:        config.Agent.Limit.VCPU,
+		RAM:         config.Agent.Limit.RAM,
+		CPU:         config.Agent.Limit.CPU,
 		Owner:       config.Agent.Owner,
 	}
 
 	var g errgroup.Group
 	g.Go(func() error {
 		logrus.WithField("arch", agent.Arch).
-			WithField("memory", agent.Memory).
+			WithField("ram", agent.RAM).
 			WithField("owner", agent.Owner).
 			WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
-			WithField("vcpu", agent.VCPU).
+			WithField("cpu", agent.CPU).
 			Infoln("agent: start polling remote server")
 		return agent.Start(ctx)
 	})

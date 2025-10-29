@@ -40,12 +40,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 		return application{}, err
 	}
 	runnerService := runner2.New(clientCreator)
-	jobStore := job.New(db)
 	redisDB, err := provideRedisClient(conf)
 	if err != nil {
 		return application{}, err
 	}
-	scheduler := provideScheduler(jobStore, redisDB)
+	scheduler := provideScheduler(runnerStore, redisDB)
 	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
 	userStore := user.New(db, encrypter)
 	session, err := provideSession(userStore, conf)
@@ -60,10 +59,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	if err != nil {
 		return application{}, err
 	}
+	jobStore := job.New(db)
 	v := provideEventHandlers(labels, jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
-	runnerManager := manager.New(jobStore, runnerStore, runnerService, scheduler, userStore)
+	runnerManager := manager.New(runnerStore, runnerService, scheduler)
 	mainRpcHandler := provideRPC(runnerManager, conf)
 	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, mainRpcHandler, conf)
 	serverServer := provideServer(mux, conf)

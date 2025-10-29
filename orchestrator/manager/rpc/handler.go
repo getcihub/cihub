@@ -10,7 +10,6 @@ import (
 
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
-	"github.com/getcihub/cihub/orchestrator/manager"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
@@ -28,10 +27,10 @@ func HandlePing() http.HandlerFunc {
 }
 
 // HandleRequest returns an http.HandlerFunc that processes an
-// http.Request to request a job from the queue for execution.
+// http.Request to request a runner from the queue for execution.
 //
 // POST /rpc/v1/request
-func HandleRequest(m manager.RunnerManager) http.HandlerFunc {
+func HandleRequest(m core.RunnerManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
@@ -47,20 +46,20 @@ func HandleRequest(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		job, err := m.Request(ctx, params)
+		runner, err := m.Request(ctx, params)
 		if err != nil {
 			writeError(w, err)
 		} else {
-			writeJSON(w, job)
+			writeJSON(w, runner)
 		}
 	}
 }
 
 // HandleAccept returns an http.HandlerFunc that processes an
-// http.Request to accept ownership of the job.
+// http.Request to accept ownership of the runner.
 //
 // POST /rpc/v1/accept
-func HandleAccept(m manager.RunnerManager) http.HandlerFunc {
+func HandleAccept(m core.RunnerManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		in := &acceptRequest{}
 		err := json.NewDecoder(r.Body).Decode(in)
@@ -72,11 +71,11 @@ func HandleAccept(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		err = m.Accept(context.Background(), in.JobID, in.Machine)
+		err = m.Accept(context.Background(), in.Name, in.Machine)
 		if err != nil {
 			logger.FromRequest(r).
 				WithError(err).
-				Debugln("manager: cannot accept job")
+				Debugln("manager: cannot accept runner")
 			writeError(w, err)
 		} else {
 			writeOK(w)
@@ -88,7 +87,7 @@ func HandleAccept(m manager.RunnerManager) http.HandlerFunc {
 // http.Request to register GitHub runner and get details
 //
 // POST /rpc/v1/register
-func HandleRegister(m manager.RunnerManager) http.HandlerFunc {
+func HandleRegister(m core.RunnerManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		in := &registerRequest{}
 		err := json.NewDecoder(r.Body).Decode(in)
@@ -100,7 +99,7 @@ func HandleRegister(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		runner, err := m.Register(r.Context(), in.Job)
+		runner, err := m.Register(r.Context(), in.Name)
 		if err != nil {
 			logger.FromRequest(r).
 				WithError(err).
@@ -118,7 +117,7 @@ func HandleRegister(m manager.RunnerManager) http.HandlerFunc {
 // events.
 //
 // GET /rpc/v1/watch
-func HandleWatch(m manager.RunnerManager) http.HandlerFunc {
+func HandleWatch(m core.RunnerManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
@@ -134,7 +133,7 @@ func HandleWatch(m manager.RunnerManager) http.HandlerFunc {
 			return
 		}
 
-		done, err := m.Watch(ctx, in.RunnerID)
+		done, err := m.Watch(ctx, in.Name)
 		if err != nil {
 			logger.FromRequest(r).
 				WithError(err).
@@ -146,62 +145,6 @@ func HandleWatch(m manager.RunnerManager) http.HandlerFunc {
 		json.NewEncoder(w).Encode(&watchResponse{
 			Done: done,
 		})
-	}
-}
-
-// HandleStarted returns an http.HandlerFunc that processes an
-// http.Request to notify that a runner is starting execution.
-//
-// POST /rpc/v1/started
-func HandleStarted(m manager.RunnerManager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		in := &startedRequest{}
-		err := json.NewDecoder(r.Body).Decode(in)
-		if err != nil {
-			logger.FromRequest(r).
-				WithError(err).
-				Debugln("manager: cannot decode started request payload")
-			writeError(w, err)
-			return
-		}
-
-		err = m.Started(context.Background(), in.RunnerID)
-		if err != nil {
-			logger.FromRequest(r).
-				WithError(err).
-				Debugln("manager: cannot mark runner as started")
-			writeError(w, err)
-		} else {
-			writeOK(w)
-		}
-	}
-}
-
-// HandleCompleted returns an http.HandlerFunc that processes an
-// http.Request to notify that a runner has completed execution.
-//
-// POST /rpc/v1/completed
-func HandleCompleted(m manager.RunnerManager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		in := &completedRequest{}
-		err := json.NewDecoder(r.Body).Decode(in)
-		if err != nil {
-			logger.FromRequest(r).
-				WithError(err).
-				Debugln("manager: cannot decode completed request payload")
-			writeError(w, err)
-			return
-		}
-
-		err = m.Completed(context.Background(), in.RunnerID, in.Status)
-		if err != nil {
-			logger.FromRequest(r).
-				WithError(err).
-				Debugln("manager: cannot mark runner as completed")
-			writeError(w, err)
-		} else {
-			writeOK(w)
-		}
 	}
 }
 

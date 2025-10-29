@@ -18,7 +18,7 @@ func New(client githubapp.ClientCreator) core.RunnerService {
 	return &service{client}
 }
 
-func (s *service) Create(ctx context.Context, opts core.CreateRunnerOpts) (*core.Runner, error) {
+func (s *service) Register(ctx context.Context, opts core.RegisterRunnerOpts) (*core.Runner, error) {
 	c, err := s.client.NewInstallationClient(opts.InstallationID)
 	if err != nil {
 		return nil, err
@@ -38,8 +38,9 @@ func (s *service) Create(ctx context.Context, opts core.CreateRunnerOpts) (*core
 		InstallationID: opts.InstallationID,
 		Owner:          opts.Owner,
 		ID:             runner.GetRunner().GetID(),
-		Busy:           runner.GetRunner().GetBusy(),
 		Status:         runner.GetRunner().GetStatus(),
+		GroupID:        opts.GroupID,
+		Labels:         opts.Labels,
 		Created:        time.Now().Unix(),
 		Token:          runner.GetEncodedJITConfig(),
 	}, nil
@@ -70,12 +71,16 @@ func (s *service) Find(ctx context.Context, owner string, installationID, runner
 		return nil, err
 	}
 
+	status := runner.GetStatus()
+	if runner.GetBusy() {
+		status = core.RunnerStatusBusy
+	}
+
 	return &core.Runner{
 		InstallationID: installationID,
 		Owner:          owner,
 		ID:             runner.GetID(),
-		Busy:           runner.GetBusy(),
 		Name:           runner.GetName(),
-		Status:         runner.GetStatus(),
+		Status:         status,
 	}, nil
 }

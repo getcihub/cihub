@@ -71,7 +71,7 @@ func providePprof(config *config.Config) pprofHandler {
 
 // provideRPC is a Wire provider function that returns an RPC
 // handler that exposes the runner manager to a remote agent.
-func provideRPC(m manager.RunnerManager, config *config.Config) rpcHandler {
+func provideRPC(m core.RunnerManager, config *config.Config) rpcHandler {
 	return rpcHandler(rpc.NewServer(m, config.RPC.Secret))
 }
 

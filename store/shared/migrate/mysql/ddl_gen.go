@@ -171,19 +171,23 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_installation_id BIGINT,
   runner_owner           VARCHAR(255),
   runner_status          VARCHAR(50),
-  runner_assigned_to     BIGINT,
-  runner_busy            BOOLEAN,
-  runner_cancelled       BOOLEAN,
-  runner_completed       BIGINT,
+  runner_machine         VARCHAR(255),
+  runner_arch            VARCHAR(50),
+  runner_cpu             BIGINT,
+  runner_ram             BIGINT,
+  runner_image           VARCHAR(255),
+  runner_group_id        BIGINT,
+  runner_labels          TEXT,
+  runner_cancelled       BIGINT,
   runner_created         BIGINT,
+  runner_accepted        BIGINT,
   runner_started         BIGINT,
   runner_stopped         BIGINT,
   runner_updated         BIGINT,
-  runner_timeout         BIGINT,
   runner_token           TEXT
 );
 
 CREATE INDEX ix_runner_status ON runners (runner_status);
-CREATE INDEX ix_runner_assigned_to ON runners (runner_assigned_to);
 CREATE INDEX ix_runner_created ON runners (runner_created);
+CREATE INDEX ix_runner_machine ON runners (runner_machine);
 `

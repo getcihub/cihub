@@ -17,27 +17,28 @@ func TestQueue(t *testing.T) {
 	controller := gomock.NewController(t)
 	defer controller.Finish()
 
-	jobs := []*core.Job{
-		{ID: 3, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
-		{ID: 2, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
-		{ID: 1, Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2},
+	runners := []*core.Runner{
+		{Name: "runner-3", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
+		{Name: "runner-2", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
+		{Name: "runner-1", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
 	}
 
 	ctx := context.Background()
-	store := mock.NewMockJobStore(controller)
-	store.EXPECT().ListStatus(ctx, core.JobStatusQueued).Return(jobs, nil).Times(1)
-	store.EXPECT().ListStatus(ctx, core.JobStatusQueued).Return(jobs[1:], nil).Times(1)
-	store.EXPECT().ListStatus(ctx, core.JobStatusQueued).Return(jobs[2:], nil).Times(1)
+	store := mock.NewMockRunnerStore(controller)
+	store.EXPECT().ListPending(ctx).Return(runners, nil).Times(1)
+	store.EXPECT().ListPending(ctx).Return(runners[1:], nil).Times(1)
+	store.EXPECT().ListPending(ctx).Return(runners[2:], nil).Times(1)
 
 	q := newQueue(ctx, store)
-	for _, job := range jobs {
-		next, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
+	filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
+	for _, runner := range runners {
+		next, err := q.Request(ctx, filter)
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		if got, want := next, job; got != want {
-			t.Errorf("Want job %d, got %d", want.ID, got.ID)
+		if got, want := next, runner; got != want {
+			t.Errorf("Want runner %s, got %s", want.Name, got.Name)
 		}
 	}
 }
@@ -47,8 +48,8 @@ func TestQueueCancel(t *testing.T) {
 	defer controller.Finish()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	store := mock.NewMockJobStore(controller)
-	store.EXPECT().ListStatus(ctx, core.JobStatusQueued).Return(nil, nil)
+	store := mock.NewMockRunnerStore(controller)
+	store.EXPECT().ListPending(ctx).Return(nil, nil)
 
 	q := newQueue(ctx, store)
 
@@ -56,12 +57,13 @@ func TestQueueCancel(t *testing.T) {
 	wg.Add(1)
 
 	go func() {
-		job, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
+		filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
+		runner, err := q.Request(ctx, filter)
 		if err != context.Canceled {
 			t.Errorf("Expected context.Canceled error, got %s", err)
 		}
-		if job != nil {
-			t.Errorf("Expect nil job when subscribe canceled")
+		if runner != nil {
+			t.Errorf("Expect nil runner when subscribe canceled")
 		}
 		wg.Done()
 	}()
@@ -87,10 +89,11 @@ func TestQueueDeadlock(t *testing.T) {
 	donechan := make(chan struct{}, n)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	store := mock.NewMockJobStore(controller)
-	store.EXPECT().ListStatus(ctx, core.JobStatusQueued).Return(incomplete(n)).AnyTimes()
+	store := mock.NewMockRunnerStore(controller)
+	store.EXPECT().ListPending(ctx).Return(incompleteRunners(n), nil).AnyTimes()
 
 	q := newQueue(ctx, store)
+	filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
 	doWork := func(i int) bool {
 		select {
 		case <-ctx.Done():
@@ -104,7 +107,7 @@ func TestQueueDeadlock(t *testing.T) {
 			// Randomly cancel some contexts to simulate timeouts
 			cancel()
 		}
-		_, err := q.Request(ctx, &core.Filter{Arch: "amd64", Memory: 2048, VCPU: 2})
+		_, err := q.Request(ctx, filter)
 		if err != nil && err != context.Canceled && err !=
 			context.DeadlineExceeded {
 			t.Errorf("Expected context.Canceled or context.DeadlineExceeded error, got %s", err)
@@ -128,10 +131,10 @@ func TestQueueDeadlock(t *testing.T) {
 	}
 }
 
-func incomplete(n int) ([]*core.Job, error) {
-	ret := make([]*core.Job, n)
+func incompleteRunners(n int) []*core.Runner {
+	ret := make([]*core.Runner, n)
 	for i := range ret {
-		ret[i] = &core.Job{Labels: []string{"self-hosted", "linux", "amd64"}, Arch: "amd64", OS: "ubuntu2404", Memory: 2048, VCPU: 2}
+		ret[i] = &core.Runner{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
 	}
-	return ret, nil
+	return ret
 }

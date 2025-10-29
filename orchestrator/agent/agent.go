@@ -19,14 +19,13 @@ import (
 
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
-	"github.com/getcihub/cihub/orchestrator/manager"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
 type Agent struct {
 	sync.Mutex
 
-	Manager   manager.RunnerManager
+	Manager   core.RunnerManager
 	Images    core.ImageService
 	Snapshots core.SnapshotService
 
@@ -35,23 +34,21 @@ type Agent struct {
 	KernelArgs  string
 	KernelPath  string
 
-	Arch   string
-	Memory int64
-	Owner  string
-	VCPU   int64
+	Arch  string
+	CPU   int64
+	Owner string
+	RAM   int64
 }
 
-func (a *Agent) Run(ctx context.Context, job *core.Job) error {
+func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 	logger := logrus.WithFields(
 		logrus.Fields{
-			"installation_id": job.InstallationID,
-			"job_id":          job.ID,
-			"job_memory":      job.Memory,
-			"job_vcpu":        job.VCPU,
+			"installation_id": runner.InstallationID,
+			"runner_cpu":      runner.CPU,
+			"runner_name":     runner.Name,
+			"runner_ram":      runner.RAM,
 		},
 	)
-
-	logger.Debugln("agent: get runner details from server")
 
 	defer func() {
 		// taking the paranoid approach to recover from
@@ -63,8 +60,8 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 
 		// Release agent's resource
 		a.Lock()
-		a.Memory += job.Memory
-		a.VCPU += job.VCPU
+		a.CPU += runner.CPU
+		a.RAM += runner.RAM
 		a.Unlock()
 	}()
 
@@ -82,32 +79,33 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 		logger.WithField("path", "/var/lib/cihub").Debugln("agent: create directory ok")
 	}
 
-	runner, err := a.Manager.Register(ctx, job.ID)
+	logger.Debugln("agent: register runner")
+	jit, err := a.Manager.Register(ctx, runner.Name)
 	if err != nil {
-		logger = logger.WithError(err).WithField("job_id", job.ID)
-		logger.Warnln("agent: get runner details failed")
+		logger = logger.WithError(err)
+		logger.Warnln("agent: cannot register runner")
 		return err
 	}
 
-	logger = logger.WithField("runner_name", runner.Name)
-	imageExists, err := a.Images.Exists(ctx, job.OS)
+	imageExists, err := a.Images.Exists(ctx, runner.Image)
 	if err != nil {
-		logger = logger.WithError(err).WithField("image", job.OS)
+		logger = logger.WithError(err).
+			WithField("image", runner.Image)
 		logger.Errorln("agent: check image existence failed")
 		return err
 	}
 
 	if !imageExists {
-		logger.WithField("image", job.OS).Infoln("agent: pull image started")
+		logger.WithField("image", runner.Image).Infoln("agent: pull image started")
 
-		err = a.Images.Pull(ctx, job.OS)
+		err = a.Images.Pull(ctx, runner.Image)
 		if err != nil {
-			logger = logger.WithError(err).WithField("image", job.OS)
+			logger = logger.WithError(err).WithField("image", runner.Image)
 			logger.Errorln("agent: pull image failed")
 			return err
 		}
 
-		logger.WithField("image", job.OS).Infoln("agent: pull image ok")
+		logger.WithField("image", runner.Image).Infoln("agent: pull image ok")
 	}
 
 	snapshotExists, err := a.Snapshots.Exists(ctx, runner.Name)
@@ -121,7 +119,7 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 	if !snapshotExists {
 		logger.WithField("runner_name", runner.Name).Debugln("agent: create snapshot started")
 
-		snapshot, err = a.Snapshots.Create(ctx, runner.Name, job.OS)
+		snapshot, err = a.Snapshots.Create(ctx, runner.Name, runner.Image)
 		if err != nil {
 			logger = logger.WithError(err).WithField("runner_name", runner.Name)
 			logger.Errorln("agent: create snapshot failed")
@@ -165,8 +163,8 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 		KernelImagePath: a.KernelPath,
 		KernelArgs:      a.KernelArgs,
 		MachineCfg: models.MachineConfiguration{
-			VcpuCount:  firecracker.Int64(job.VCPU),
-			MemSizeMib: firecracker.Int64(job.Memory),
+			MemSizeMib: firecracker.Int64(runner.RAM),
+			VcpuCount:  firecracker.Int64(runner.CPU),
 		},
 		Drives: []models.Drive{{
 			DriveID:      firecracker.String("rootfs"),
@@ -195,7 +193,7 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 			"meta-data": map[string]interface{}{
 				"fireactions": map[string]interface{}{
 					"runner_id":         runner.Name,
-					"runner_jit_config": runner.Token,
+					"runner_jit_config": jit.Token,
 				},
 			},
 		},
@@ -207,50 +205,31 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 	defer cancel()
 
 	go func() {
-		logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation started")
+		logger.Debugln("agent: watch cancellation started")
 
-		done, _ := a.Manager.Watch(ctx, runner.ID)
+		done, _ := a.Manager.Watch(ctx, runner.Name)
 		if done {
 			cancel()
-			logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation received")
+			logger.Debugln("agent: watch cancellation received")
 		} else {
-			logger.WithField("runner_id", runner.ID).Debugln("agent: watch cancellation finished")
+			logger.Debugln("agent: watch cancellation finished")
 		}
 	}()
 
-	// Notify manager that runner is starting
-	if err := a.Manager.Started(ctx, runner.ID); err != nil {
-		logger = logger.WithError(err).WithField("runner_id", runner.ID)
-		logger.Warnln("agent: notify runner started failed")
-		// Continue anyway—VM state is what matters, not notification
-	}
-
 	if err := machine.Start(ctx); err != nil {
-		logger = logger.WithError(err).WithField("runner_name", runner.Name)
+		logger = logger.WithError(err)
 		logger.Errorln("agent: start VM failed")
 		return err
 	}
 
-	logger.WithField("runner_name", runner.Name).Infoln("agent: start VM ok")
+	logger.Infoln("agent: start VM ok")
 
 	err = machine.Wait(ctx)
 	if err != nil {
-		logger = logger.WithError(err).WithField("runner_name", runner.Name)
+		logger = logger.WithError(err)
 		logger.Warnln("agent: wait VM failed")
-	}
-
-	logger.WithField("runner_name", runner.Name).Debugln("agent: VM exited")
-
-	// Notify manager that runner has completed
-	status := core.RunnerStatusCompleted
-	if ctx.Err() != nil {
-		status = "cancelled" // Was cancelled during execution
-	}
-
-	if notifyErr := a.Manager.Completed(ctx, runner.ID, status); notifyErr != nil {
-		logger = logger.WithError(notifyErr).WithField("runner_id", runner.ID).WithField("status", status)
-		logger.Warnln("agent: notify runner completed failed")
-		// Continue with cleanup regardless
+	} else {
+		logger.Debugln("agent: VM exited")
 	}
 
 	shutdown, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -258,20 +237,20 @@ func (a *Agent) Run(ctx context.Context, job *core.Job) error {
 
 	err = a.Snapshots.Delete(shutdown, runner.Name)
 	if err != nil && !errdefs.IsNotFound(err) {
-		logger = logger.WithError(err).WithField("runner_name", runner.Name)
+		logger = logger.WithError(err)
 		logger.Errorln("agent: delete snapshot failed")
 		return err
 	} else {
-		logger.WithField("runner_name", runner.Name).Debugln("agent: delete snapshot ok")
+		logger.Debugln("agent: delete snapshot ok")
 	}
 
 	err = machineLogFile.Close()
 	if err != nil {
-		logger = logger.WithError(err).WithField("runner_name", runner.Name)
+		logger = logger.WithError(err)
 		logger.Warnln("agent: close machine log failed")
 	}
 
-	logger.WithField("runner_name", runner.Name).Infoln("agent: VM terminated")
+	logger.Infoln("agent: VM terminated")
 
 	return nil
 }
@@ -296,19 +275,19 @@ func (a *Agent) poll(ctx context.Context) error {
 	log := logger.FromContext(ctx).
 		WithFields(
 			logrus.Fields{
-				"machine":          a.Machine,
-				"available_vcpu":   a.VCPU,
-				"available_memory": a.Memory,
+				"machine":       a.Machine,
+				"available_cpu": a.CPU,
+				"available_ram": a.RAM,
 			},
 		)
 	log.Debugln("agent: poll queue started")
 
 	// Call server and blocks until response or context cancellation
-	job, err := a.Manager.Request(ctx, &core.Filter{
-		Arch:   a.Arch,
-		Memory: a.Memory,
-		Owner:  a.Owner,
-		VCPU:   a.VCPU,
+	runner, err := a.Manager.Request(ctx, &core.Filter{
+		Arch:  a.Arch,
+		CPU:   a.CPU,
+		Owner: a.Owner,
+		RAM:   a.RAM,
 	})
 
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -321,41 +300,33 @@ func (a *Agent) poll(ctx context.Context) error {
 		return err
 	}
 
-	// exit if a nil or empty job is returned from the system
+	// exit if a nil runner is returned from the system
 	// and allow the agent to retry.
-	if job == nil || job.ID == 0 {
+	if runner == nil {
 		return nil
 	}
 
-	log = log.WithFields(
-		logrus.Fields{
-			"job_id":     job.ID,
-			"job_memory": job.Memory,
-			"job_vcpu":   job.VCPU,
-			"owner":      job.Owner,
-			"repo":       job.Repo,
-		},
-	)
+	log = log.WithField("runner_name", runner.Name)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = a.Manager.Accept(ctx, job.ID, a.Machine)
+	err = a.Manager.Accept(ctx, runner.Name, a.Machine)
 	if err == db.ErrOptimisticLock {
 		return nil
 	} else if err != nil {
 		log = log.WithError(err)
-		log.Warnln("agent: accept job failed")
+		log.Warnln("agent: accept runner failed")
 		return err
 	}
 
 	a.Lock()
-	a.Memory -= job.Memory
-	a.VCPU -= job.VCPU
+	a.CPU -= runner.CPU
+	a.RAM -= runner.RAM
 	a.Unlock()
 
 	// Start microVM in a goroutine
-	go a.Run(context.Background(), job)
+	go a.Run(context.Background(), runner)
 
 	return nil
 }

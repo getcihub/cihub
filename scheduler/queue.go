@@ -16,11 +16,11 @@ type queue struct {
 	ctx      context.Context
 	interval time.Duration
 	ready    chan struct{}
-	store    core.JobStore
+	store    core.RunnerStore
 	workers  map[*worker]struct{}
 }
 
-func newQueue(ctx context.Context, store core.JobStore) *queue {
+func newQueue(ctx context.Context, store core.RunnerStore) *queue {
 	q := &queue{
 		store:    store,
 		globMx:   redisdb.LockErrNoOp{},
@@ -35,7 +35,7 @@ func newQueue(ctx context.Context, store core.JobStore) *queue {
 	return q
 }
 
-func (q *queue) Schedule(ctx context.Context, job *core.Job) error {
+func (q *queue) Schedule(ctx context.Context, runner *core.Runner) error {
 	select {
 	case q.ready <- struct{}{}:
 	default:
@@ -43,15 +43,16 @@ func (q *queue) Schedule(ctx context.Context, job *core.Job) error {
 	return nil
 }
 
-func (q *queue) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+func (q *queue) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	w := &worker{
 		arch:    params.Arch,
-		memory:  params.Memory,
-		vcpu:    params.VCPU,
-		channel: make(chan *core.Job),
+		cpu:     params.CPU,
+		owner:   params.Owner,
+		ram:     params.RAM,
+		channel: make(chan *core.Runner),
 		done:    ctx.Done(),
 	}
 
@@ -90,46 +91,36 @@ func (q *queue) signal(ctx context.Context) error {
 		return nil
 	}
 
-	jobs, err := q.store.ListStatus(ctx, core.JobStatusQueued)
+	runners, err := q.store.ListPending(ctx)
 	if err != nil {
 		return err
 	}
 
 	q.Lock()
 	defer q.Unlock()
-	for _, job := range jobs {
-		if job.Status == core.JobStatusInProgress {
-			continue
-		}
-		if job.Machine != "" {
+	for _, runner := range runners {
+		if runner.Machine != "" {
 			continue
 		}
 
 	loop:
 		for w := range q.workers {
-			// job does not match server cpu architecture?
-			if w.arch != job.Arch {
+			if w.owner != runner.Owner {
 				continue
 			}
-
-			// job requires more vcpu than available?
-			if w.vcpu < job.VCPU {
+			if w.arch != runner.Arch {
 				continue
 			}
-
-			// job requires more memory than available?
-			if w.memory < job.Memory {
+			if w.cpu < runner.CPU {
 				continue
 			}
-
-			// server pulls job for specific runner?
-			if w.owner != "" && w.owner != job.Owner {
+			if w.ram < runner.RAM {
 				continue
 			}
 
 			sendWork := func() bool {
 				select {
-				case w.channel <- job:
+				case w.channel <- runner:
 					return true
 				case <-w.done:
 					// Worker will exit when we call the deferred q.Unlock()
@@ -139,7 +130,6 @@ func (q *queue) signal(ctx context.Context) error {
 				return false
 			}
 
-			// job do match, send it and wait for ack
 			if sendWork() {
 				delete(q.workers, w)
 				break loop
@@ -165,9 +155,9 @@ func (q *queue) start() error {
 
 type worker struct {
 	arch    string
-	memory  int64
 	owner   string
-	vcpu    int64
-	channel chan *core.Job
+	ram     int64
+	cpu     int64
+	channel chan *core.Runner
 	done    <-chan struct{}
 }

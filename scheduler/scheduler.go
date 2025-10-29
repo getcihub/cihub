@@ -20,7 +20,7 @@ type schedulerRedis struct {
 
 // New creates a new job scheduler. If Redis client passed as parameter is not nil it uses
 // a Redis implementation, otherwise it uses an in-memory implementation.
-func New(store core.JobStore, r redisdb.RedisDB) core.Scheduler {
+func New(store core.RunnerStore, r redisdb.RedisDB) core.Scheduler {
 	if r == nil {
 		return scheduler{
 			queue:     newQueue(context.Background(), store),

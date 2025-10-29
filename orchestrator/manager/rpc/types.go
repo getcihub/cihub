@@ -9,16 +9,16 @@ type requestRequest struct {
 }
 
 type acceptRequest struct {
-	JobID   int64
+	Name    string
 	Machine string
 }
 
 type registerRequest struct {
-	Job int64
+	Name string
 }
 
 type watchRequest struct {
-	RunnerID int64
+	Name string
 }
 
 type watchResponse struct {

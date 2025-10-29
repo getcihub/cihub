@@ -232,6 +232,11 @@ func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 			return nil
 		})
 
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
+
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
 		Schedule(gomock.Any(), gomock.Any()).
@@ -289,8 +294,6 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 		Version:  2,
 		Created:  createdTime.Unix(),
 		Updated:  createdTime.Unix(),
-		Machine:  "node-1",
-		Accepted: createdTime.Unix(),
 	}
 
 	// Expect Find to return existing job
@@ -305,14 +308,13 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 			if got, want := job.Version, int64(2); got != want {
 				t.Errorf("Want version %d preserved, got %d", want, got)
 			}
-			if got, want := job.Machine, "node-1"; got != want {
-				t.Errorf("Want machine %s preserved, got %s", want, got)
-			}
-			if got, want := job.Accepted, createdTime.Unix(); got != want {
-				t.Errorf("Want accepted %d preserved, got %d", want, got)
-			}
 			return nil
 		})
+
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
 
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
@@ -379,8 +381,6 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 		SHA:            "abc123",
 		Status:         core.JobStatusQueued,
 		Labels:         []string{"self-hosted", "linux"},
-		Machine:        "node-1",
-		Accepted:       startedTime.Unix() - 10,
 		Queued:         createdTime.Unix(),
 		Created:        createdTime.Unix(),
 		Updated:        createdTime.Unix(),
@@ -416,12 +416,6 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 			if got, want := job.Created, createdTime.Unix(); got != want {
 				t.Errorf("Want created timestamp %d preserved, got %d", want, got)
 			}
-			if got, want := job.Machine, "node-1"; got != want {
-				t.Errorf("Want machine %s preserved, got %s", want, got)
-			}
-			if got, want := job.Accepted, startedTime.Unix()-10; got != want {
-				t.Errorf("Want accepted timestamp %d preserved, got %d", want, got)
-			}
 			if job.Updated == createdTime.Unix() {
 				t.Error("Expected Updated timestamp to be refreshed")
 			}
@@ -432,25 +426,20 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 	mockRunnerStore.EXPECT().
 		Find(gomock.Any(), "runner-1").
 		Return(&core.Runner{
-			Name:       "runner-1",
-			ID:         5001,
-			Status:     core.RunnerStatusIdle,
-			AssignedTo: 0,
-			Busy:       false,
+			Name:   "runner-1",
+			ID:     5001,
+			Status: core.RunnerStatusIdle,
 		}, nil)
 
 	// Expect runner update to mark it as busy
 	mockRunnerStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
-			if !runner.Busy {
-				t.Error("Expected runner to be marked as busy")
-			}
 			if runner.Status != core.RunnerStatusBusy {
 				t.Errorf("Expected runner status to be busy, got %s", runner.Status)
 			}
-			if runner.AssignedTo != 1001 {
-				t.Errorf("Expected runner to be assigned to job 1001, got %d", runner.AssignedTo)
+			if runner.Started == 0 {
+				t.Error("Expected runner Started timestamp to be set")
 			}
 			return nil
 		})
@@ -543,28 +532,20 @@ func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 	mockRunnerStore.EXPECT().
 		Find(gomock.Any(), "runner-1").
 		Return(&core.Runner{
-			Name:       "runner-1",
-			ID:         5001,
-			Status:     core.RunnerStatusBusy,
-			AssignedTo: 1001,
-			Busy:       true,
+			Name:   "runner-1",
+			ID:     5001,
+			Status: core.RunnerStatusBusy,
 		}, nil)
 
 	// Expect Update to mark runner as completed
 	mockRunnerStore.EXPECT().
 		Update(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
-			if runner.Busy {
-				t.Error("Expected runner to be marked as not busy")
-			}
 			if runner.Status != core.RunnerStatusCompleted {
 				t.Errorf("Expected runner status to be completed, got %s", runner.Status)
 			}
-			if runner.AssignedTo != 1001 {
-				t.Errorf("Expected runner to remain assigned to job 1001, got %d", runner.AssignedTo)
-			}
-			if runner.Completed == 0 {
-				t.Error("Expected runner completed timestamp to be set")
+			if runner.Stopped == 0 {
+				t.Error("Expected runner Stopped timestamp to be set")
 			}
 			return nil
 		})
@@ -1092,6 +1073,11 @@ func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
 		Create(gomock.Any(), gomock.Any()).
 		Return(nil)
 
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
+
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
 		Schedule(gomock.Any(), gomock.Any()).
@@ -1181,6 +1167,11 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 			return nil
 		})
 
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
+
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
 		Schedule(gomock.Any(), gomock.Any()).
@@ -1269,6 +1260,11 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 			}
 			return nil
 		})
+
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
 
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().

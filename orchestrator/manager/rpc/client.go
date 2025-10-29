@@ -11,7 +11,6 @@ import (
 	"github.com/oxtoacart/bpool"
 
 	"github.com/getcihub/cihub/core"
-	"github.com/getcihub/cihub/orchestrator/manager"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
@@ -41,11 +40,11 @@ func (c *Client) Ping(ctx context.Context, machine string) error {
 	return c.send(ctx, "/rpc/v1/ping", in, nil)
 }
 
-func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
 	timeout, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
-	out := &core.Job{}
+	out := &core.Runner{}
 	err := c.send(timeout, "/rpc/v1/request", params, out)
 
 	// The request is performing long polling and is subject
@@ -59,34 +58,24 @@ func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Job, e
 	return out, err
 }
 
-func (c *Client) Accept(ctx context.Context, jobID int64, machine string) error {
-	in := &acceptRequest{JobID: jobID, Machine: machine}
+func (c *Client) Accept(ctx context.Context, name, machine string) error {
+	in := &acceptRequest{Name: name, Machine: machine}
 	err := c.send(ctx, "/rpc/v1/accept", in, nil)
 	return err
 }
 
-func (c *Client) Register(ctx context.Context, jobID int64) (*core.RunnerWithToken, error) {
-	in := &registerRequest{Job: jobID}
+func (c *Client) Register(ctx context.Context, name string) (*core.RunnerWithToken, error) {
+	in := &registerRequest{Name: name}
 	out := &core.RunnerWithToken{}
 	err := c.send(ctx, "/rpc/v1/register", in, out)
 	return out, err
 }
 
-func (c *Client) Watch(ctx context.Context, runnerID int64) (bool, error) {
-	in := &watchRequest{RunnerID: runnerID}
+func (c *Client) Watch(ctx context.Context, name string) (bool, error) {
+	in := &watchRequest{Name: name}
 	out := &watchResponse{}
 	err := c.send(ctx, "/rpc/v1/watch", in, out)
 	return out.Done, err
-}
-
-func (c *Client) Started(ctx context.Context, runnerID int64) error {
-	in := &startedRequest{RunnerID: runnerID}
-	return c.send(ctx, "/rpc/v1/started", in, nil)
-}
-
-func (c *Client) Completed(ctx context.Context, runnerID int64, status string) error {
-	in := &completedRequest{RunnerID: runnerID, Status: status}
-	return c.send(ctx, "/rpc/v1/completed", in, nil)
 }
 
 func (c *Client) send(ctx context.Context, path string, in, out interface{}) error {
@@ -147,4 +136,4 @@ func (c *Client) send(ctx context.Context, path string, in, out interface{}) err
 	return json.NewDecoder(res.Body).Decode(out)
 }
 
-var _ manager.RunnerManager = (*Client)(nil)
+var _ core.RunnerManager = (*Client)(nil)

@@ -70,7 +70,7 @@ func (r *Reaper) reap(ctx context.Context) error {
 
 	logrus.Traceln("reaper: find zombie runners")
 
-	pending, err := r.Runners.ListStatus(ctx, core.RunnerStatusPending)
+	pending, err := r.Runners.ListPending(ctx)
 	if err != nil {
 		logrus.WithError(err).
 			Errorln("reaper: cannot get pending runners")
@@ -81,11 +81,11 @@ func (r *Reaper) reap(ctx context.Context) error {
 	for _, runner := range pending {
 		logger := logrus.WithFields(
 			logrus.Fields{
-				"runner.name":    runner.Name,
-				"runner.id":      runner.ID,
-				"runner.created": runner.Created,
-				"runner.owner":   runner.Owner,
-				"runner.status":  runner.Status,
+				"runner_name":    runner.Name,
+				"runner_id":      runner.ID,
+				"runner_created": runner.Created,
+				"runner_owner":   runner.Owner,
+				"runner_status":  runner.Status,
 			},
 		)
 
@@ -111,11 +111,11 @@ func (r *Reaper) reap(ctx context.Context) error {
 func (r *Reaper) reapMaybe(ctx context.Context, runner *core.Runner) error {
 	logger := logrus.WithFields(
 		logrus.Fields{
-			"runner.name":    runner.Name,
-			"runner.id":      runner.ID,
-			"runner.created": runner.Created,
-			"runner.owner":   runner.Owner,
-			"runner.status":  runner.Status,
+			"runner_name":    runner.Name,
+			"runner_id":      runner.ID,
+			"runner_created": runner.Created,
+			"runner_owner":   runner.Owner,
+			"runner_status":  runner.Status,
 		},
 	)
 
@@ -146,7 +146,7 @@ func (r *Reaper) reapMaybe(ctx context.Context, runner *core.Runner) error {
 	}
 
 	// Do not cancel the runner if is busy working
-	if s.Busy {
+	if s.Status == core.RunnerStatusBusy {
 		logger.Infoln("reaper: runner is busy, skipping cancellation")
 		return nil
 	}
@@ -161,11 +161,7 @@ func (r *Reaper) reapMaybe(ctx context.Context, runner *core.Runner) error {
 	}
 
 	// Update runner from datastore after unregistered from GitHub
-	//
-	// Note: If GitHub runner is deleted but DB update failed
-	// This is safer than the opposite - the runner will be reaped on next cycle
-	runner.Busy = false
-	runner.Cancelled = true
+	runner.Cancelled = time.Now().Unix()
 	runner.Status = core.RunnerStatusCompleted
 	runner.Stopped = time.Now().Unix()
 	if runner.Started == 0 {
@@ -182,7 +178,7 @@ func (r *Reaper) reapMaybe(ctx context.Context, runner *core.Runner) error {
 	// notify the scheduler to cancel the runner. this will
 	// instruct agents subscribing to the scheduler to
 	// cancel execution.
-	err = r.Scheduler.Cancel(ctx, runner.ID)
+	err = r.Scheduler.Cancel(ctx, runner.Name)
 	if err != nil {
 		logger.WithError(err).
 			Warnln("reaper: cannot signal cancelled runner is complete")

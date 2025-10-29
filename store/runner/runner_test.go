@@ -35,12 +35,13 @@ func testRunnerCreate(store *store) func(t *testing.T) {
 			Name:           "runner-test-001",
 			ID:             12345,
 			InstallationID: 67890,
+			Owner:          "testorg",
 			Status:         core.RunnerStatusPending,
-			AssignedTo:     111,
-			Cancelled:      false,
+			Arch:           "amd64",
+			CPU:            2,
+			RAM:            2048,
 			Created:        now,
 			Updated:        now,
-			Timeout:        300,
 			Token:          "s.abcdef123456",
 		}
 		err := store.Create(noContext, runner)
@@ -48,27 +49,13 @@ func testRunnerCreate(store *store) func(t *testing.T) {
 			t.Error(err)
 		}
 
-		t.Run("Count", testRunnerCount(store))
 		t.Run("Find", testRunnerFind(store, runner))
 		t.Run("FindID", testRunnerFindID(store, runner))
-		t.Run("FindAssignedTo", testRunnerFindAssignedTo(store, runner))
-		t.Run("List", testRunnerList(store))
-		t.Run("ListStatus", testRunnerListStatus(store))
+		t.Run("ListPending", testRunnerListPending(store))
+		t.Run("ListIdle", testRunnerListIdle(store))
 		t.Run("Update", testRunnerUpdate(store, runner))
 		t.Run("Purge", testRunnerPurge(store, runner))
 		t.Run("Delete", testRunnerDelete(store, runner))
-	}
-}
-
-func testRunnerCount(runners *store) func(t *testing.T) {
-	return func(t *testing.T) {
-		count, err := runners.Count(noContext)
-		if err != nil {
-			t.Error(err)
-		}
-		if got, want := count, int64(1); got != want {
-			t.Errorf("Want runner table count %d, got %d", want, got)
-		}
 	}
 }
 
@@ -95,43 +82,32 @@ func testRunnerFindID(runners *store, created *core.Runner) func(t *testing.T) {
 	}
 }
 
-func testRunnerFindAssignedTo(runners *store, created *core.Runner) func(t *testing.T) {
+func testRunnerListPending(runners *store) func(t *testing.T) {
 	return func(t *testing.T) {
-		runner, err := runners.FindAssignedTo(noContext, created.AssignedTo)
-		if err != nil {
-			t.Error(err)
-		}
-		if runner.Name != created.Name {
-			t.Errorf("Want runner name %s, got %s", created.Name, runner.Name)
-		}
-	}
-}
-
-func testRunnerList(runners *store) func(t *testing.T) {
-	return func(t *testing.T) {
-		list, err := runners.List(noContext, core.RunnerParams{Limit: 100})
+		list, err := runners.ListPending(noContext)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		if got, want := len(list), 1; got != want {
-			t.Errorf("Want runner count %d, got %d", want, got)
-		}
-	}
-}
-
-func testRunnerListStatus(runners *store) func(t *testing.T) {
-	return func(t *testing.T) {
-		list, err := runners.ListStatus(noContext, core.RunnerStatusPending)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if got, want := len(list), 1; got != want {
-			t.Errorf("Want runner count %d, got %d", want, got)
+			t.Errorf("Want pending runner count %d, got %d", want, got)
 		}
 		if list[0].Status != core.RunnerStatusPending {
 			t.Errorf("Want status %s, got %s", core.RunnerStatusPending, list[0].Status)
+		}
+	}
+}
+
+func testRunnerListIdle(runners *store) func(t *testing.T) {
+	return func(t *testing.T) {
+		list, err := runners.ListIdle(noContext)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		// Should be empty since we haven't created any idle runners
+		if got, want := len(list), 0; got != want {
+			t.Errorf("Want idle runner count %d, got %d", want, got)
 		}
 	}
 }
@@ -147,7 +123,7 @@ func testRunnerUpdate(runners *store, created *core.Runner) func(t *testing.T) {
 
 		// Update fields
 		runner.Status = core.RunnerStatusBusy
-		runner.AssignedTo = 333
+		runner.Machine = "machine-1"
 		runner.Started = time.Now().Unix()
 		runner.Updated = time.Now().Unix()
 
@@ -166,8 +142,8 @@ func testRunnerUpdate(runners *store, created *core.Runner) func(t *testing.T) {
 		if updated.Status != core.RunnerStatusBusy {
 			t.Errorf("Want status %s, got %s", core.RunnerStatusBusy, updated.Status)
 		}
-		if updated.AssignedTo != 333 {
-			t.Errorf("Want assigned_to %d, got %d", 333, updated.AssignedTo)
+		if updated.Machine != "machine-1" {
+			t.Errorf("Want machine %s, got %s", "machine-1", updated.Machine)
 		}
 
 		// Copy updated runner to created for other tests
@@ -182,8 +158,11 @@ func testRunnerPurge(runners *store, created *core.Runner) func(t *testing.T) {
 			Name:           "runner-old-001",
 			ID:             99999,
 			InstallationID: created.InstallationID,
+			Owner:          "testorg",
 			Status:         core.RunnerStatusCompleted,
-			AssignedTo:     444,
+			Arch:           "amd64",
+			CPU:            2,
+			RAM:            2048,
 			Created:        time.Now().Add(-2 * time.Hour).Unix(),
 			Stopped:        time.Now().Add(-1 * time.Hour).Unix(),
 			Token:          "s.old123",

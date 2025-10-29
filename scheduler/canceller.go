@@ -9,24 +9,24 @@ import (
 type canceller struct {
 	sync.Mutex
 
-	cancelled   map[int64]time.Time
-	subscribers map[chan struct{}]int64
+	cancelled   map[string]time.Time
+	subscribers map[chan struct{}]string
 }
 
 func newCanceller() *canceller {
 	return &canceller{
-		subscribers: make(map[chan struct{}]int64),
-		cancelled:   make(map[int64]time.Time),
+		subscribers: make(map[chan struct{}]string),
+		cancelled:   make(map[string]time.Time),
 	}
 }
 
-func (c *canceller) Cancel(ctx context.Context, id int64) error {
+func (c *canceller) Cancel(ctx context.Context, name string) error {
 	c.Lock()
 	defer c.Unlock()
 
-	c.cancelled[id] = time.Now().Add(time.Minute * 5)
+	c.cancelled[name] = time.Now().Add(time.Minute * 5)
 	for subscriber, runner := range c.subscribers {
-		if id == runner {
+		if name == runner {
 			close(subscriber)
 		}
 	}
@@ -36,10 +36,10 @@ func (c *canceller) Cancel(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (c *canceller) Cancelled(ctx context.Context, id int64) (bool, error) {
+func (c *canceller) Cancelled(ctx context.Context, name string) (bool, error) {
 	subscriber := make(chan struct{})
 	c.Lock()
-	c.subscribers[subscriber] = id
+	c.subscribers[subscriber] = name
 	c.Unlock()
 
 	defer func() {
@@ -54,7 +54,7 @@ func (c *canceller) Cancelled(ctx context.Context, id int64) (bool, error) {
 			return false, ctx.Err()
 		case <-time.After(time.Minute):
 			c.Lock()
-			_, ok := c.cancelled[id]
+			_, ok := c.cancelled[name]
 			c.Unlock()
 			if ok {
 				return true, nil

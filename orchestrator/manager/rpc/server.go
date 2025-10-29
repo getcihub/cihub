@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/getcihub/cihub/orchestrator/manager"
+	"github.com/getcihub/cihub/core"
 )
 
 // Server wraps the chi Router in a custom type for wire
@@ -15,7 +15,7 @@ type Server http.Handler
 
 // NewServer returns a new RPC server that enables remote interaction
 // between a server and an agent using the http transport.
-func NewServer(manager manager.RunnerManager, secret string) Server {
+func NewServer(manager core.RunnerManager, secret string) Server {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Recoverer)
@@ -27,8 +27,6 @@ func NewServer(manager manager.RunnerManager, secret string) Server {
 	r.Post("/accept", HandleAccept(manager))
 	r.Post("/register", HandleRegister(manager))
 	r.Post("/watch", HandleWatch(manager))
-	r.Post("/started", HandleStarted(manager))
-	r.Post("/completed", HandleCompleted(manager))
 
 	return Server(r)
 }

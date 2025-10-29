@@ -2,6 +2,7 @@ package runner
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 
@@ -18,21 +19,30 @@ func toParams(encrypt encrypter.Encrypter, r *core.Runner) (map[string]interface
 		return nil, err
 	}
 
+	var labels string
+	if len(r.Labels) > 0 {
+		labels = strings.Join(r.Labels, ",")
+	}
+
 	return map[string]interface{}{
 		"runner_name":            r.Name,
 		"runner_id":              r.ID,
 		"runner_installation_id": r.InstallationID,
 		"runner_owner":           r.Owner,
 		"runner_status":          r.Status,
-		"runner_assigned_to":     r.AssignedTo,
-		"runner_busy":            r.Busy,
+		"runner_machine":         r.Machine,
+		"runner_arch":            r.Arch,
+		"runner_cpu":             r.CPU,
+		"runner_ram":             r.RAM,
+		"runner_image":           r.Image,
+		"runner_group_id":        r.GroupID,
+		"runner_labels":          labels,
 		"runner_cancelled":       r.Cancelled,
-		"runner_completed":       r.Completed,
 		"runner_created":         r.Created,
+		"runner_accepted":        r.Accepted,
 		"runner_started":         r.Started,
 		"runner_stopped":         r.Stopped,
 		"runner_updated":         r.Updated,
-		"runner_timeout":         r.Timeout,
 		"runner_token":           token,
 	}, nil
 }
@@ -41,6 +51,7 @@ func toParams(encrypt encrypter.Encrypter, r *core.Runner) (map[string]interface
 // values to the destination object.
 func scanRow(encrypt encrypter.Encrypter, scanner db.Scanner, dest *core.Runner) error {
 	var token []byte
+	var labels string
 
 	err := scanner.Scan(
 		&dest.Name,
@@ -48,19 +59,27 @@ func scanRow(encrypt encrypter.Encrypter, scanner db.Scanner, dest *core.Runner)
 		&dest.InstallationID,
 		&dest.Owner,
 		&dest.Status,
-		&dest.AssignedTo,
-		&dest.Busy,
+		&dest.Machine,
+		&dest.Arch,
+		&dest.CPU,
+		&dest.RAM,
+		&dest.Image,
+		&dest.GroupID,
+		&labels,
 		&dest.Cancelled,
-		&dest.Completed,
 		&dest.Created,
+		&dest.Accepted,
 		&dest.Started,
 		&dest.Stopped,
 		&dest.Updated,
-		&dest.Timeout,
 		&token,
 	)
 	if err != nil {
 		return err
+	}
+
+	if labels != "" {
+		dest.Labels = strings.Split(labels, ",")
 	}
 
 	dest.Token, err = encrypt.Decrypt(token)

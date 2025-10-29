@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Label represents resource specifications for Firecracker microVMs.
+// Label represents resource specifications for runners.
 // Labels are requested by GitHub Actions jobs via runs-on field.
 // Label ID must start with "cihub-" prefix.
 type Label struct {

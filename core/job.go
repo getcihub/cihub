@@ -40,7 +40,6 @@ type (
 		Labels         []string `json:"labels"`          // Required runner labels
 		RunnerID       int64    `json:"runner_id"`       // Assigned GitHub runner ID (0 if not assigned)
 		RunnerName     string   `json:"runner_name"`     // Assigned runner name (empty if not assigned)
-		Machine        string   `json:"machine"`         // Node/agent where job is executing
 		URL            string   `json:"url"`             // URL to request runner registration token
 		OS             string   `json:"os"`              // Operating system image specification (from resolved label)
 		Arch           string   `json:"arch"`            // CPU architecture (from resolved label)

@@ -2,10 +2,8 @@ package manager
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	"github.com/dchest/uniuri"
 	"github.com/sirupsen/logrus"
 
 	"github.com/getcihub/cihub/core"
@@ -14,160 +12,122 @@ import (
 
 var noContext = context.Background()
 
-// RunnerManager encapsulates complex runner operations and provides
-// a simplified interface for runner agents. It manages the lifecycle of
-// self-hosted GitHub Actions runners, including job assignment, runner
-// registration, and cancellation monitoring.
-type RunnerManager interface {
-	// Request requests the next available job from the queue that matches
-	// the agent's capacities. It returns the job if found, or nil if no matching
-	// jobs are available.
-	Request(ctx context.Context, params *core.Filter) (*core.Job, error)
-
-	// Accept accepts a job for execution. This operation uses optimistic
-	// locking to prevent multiple agents from executing the same job.
-	//
-	// It is possible for multiple agents to pull the same job from the queue.
-	// The system uses optimistic locking at the database-level to prevent
-	// multiple agents from executing the same job. If the job has already
-	// been accepted by another agent, this method returns an error.
-	Accept(ctx context.Context, jobID int64, machine string) error
-
-	// Register registers a runner for the job on GitHub and retrieves its
-	// just-in-time configuration. The runner acts as the compute environment
-	// where the job will execute.
-	Register(ctx context.Context, jobID int64) (*core.RunnerWithToken, error)
-
-	// Started notifies the manager that the runner is starting execution.
-	// This should be called immediately before starting the Firecracker VM.
-	Started(ctx context.Context, runnerID int64) error
-
-	// Completed notifies the manager that the runner has finished execution.
-	// This should be called after the VM exits and cleanup begins.
-	// It accepts a status string to indicate success/error outcomes.
-	Completed(ctx context.Context, runnerID int64, status string) error
-
-	// Watch watches the runner for cancellation.
-	// It returns true if the runner has been cancelled, false otherwise.
-	// The agent should call this method periodically during job execution to
-	// check for cancellation requests.
-	Watch(ctx context.Context, runnerID int64) (bool, error)
-}
-
 // New returns a new RunnerManager.
-func New(
-	jobs core.JobStore,
-	runners core.RunnerStore,
-	runnerz core.RunnerService,
-	scheduler core.Scheduler,
-	users core.UserStore,
-) RunnerManager {
-	return &Manager{
-		Jobs:      jobs,
-		Runners:   runners,
-		Runnerz:   runnerz,
-		Scheduler: scheduler,
-		Users:     users,
+func New(runners core.RunnerStore, runnerz core.RunnerService, scheduler core.Scheduler) core.RunnerManager {
+	return &manager{
+		runners:   runners,
+		runnerz:   runnerz,
+		scheduler: scheduler,
 	}
 }
 
 // Manager provides a simplified interface to the runner agent so that it
 // can more easily interact with the server.
-type Manager struct {
-	Jobs      core.JobStore
-	Runners   core.RunnerStore
-	Runnerz   core.RunnerService
-	Scheduler core.Scheduler
-	Users     core.UserStore
+type manager struct {
+	runners   core.RunnerStore
+	runnerz   core.RunnerService
+	scheduler core.Scheduler
 }
 
-// Request requests the next available job from the queue that matches
-// the agent's labels.
-func (m *Manager) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+// Request requests the next available runner that matches
+// machine's capacities. Returns the runner if found, nil if no matching
+// runner available.
+func (m *manager) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
 	logger := logrus.WithFields(
 		logrus.Fields{
-			"arch":   params.Arch,
-			"owner":  params.Owner,
-			"memory": params.Memory,
-			"vcpu":   params.VCPU,
+			"arch":  params.Arch,
+			"cpu":   params.CPU,
+			"owner": params.Owner,
+			"ram":   params.RAM,
 		},
 	)
-	logger.Debugln("manager: request queued job")
+	logger.Debugln("manager: request pending runner")
 
-	job, err := m.Scheduler.Request(ctx, params)
+	runner, err := m.scheduler.Request(ctx, params)
 	if err != nil && ctx.Err() != nil {
-		logger.Debugln("manager: context canceled")
+		logger = logger.WithError(err)
+		logger.Traceln("manager: context canceled")
 		return nil, err
 	}
 
 	if err != nil {
 		logger = logger.WithError(err)
-		logger.Warnln("manager: request queued job error")
+		logger.Warnln("manager: cannot request pending runner")
 		return nil, err
 	}
 
-	return job, nil
+	return runner, nil
 }
 
-// Accept accepts a job for execution with optimistic locking.
-func (m *Manager) Accept(ctx context.Context, id int64, machine string) error {
+// Accept accepts a runner for execution. This operation uses optimistic
+// locking to prevent multiple agents from executing the same runner.
+func (m *manager) Accept(ctx context.Context, name, machine string) error {
 	logger := logrus.WithFields(
 		logrus.Fields{
 			"machine": machine,
-			"job.id":  id,
+			"runner":  name,
 		},
 	)
-	logger.Debugln("manager: accept job")
+	logger.Debugln("manager: accept runner")
 
-	job, err := m.Jobs.Find(noContext, id)
+	runner, err := m.runners.Find(ctx, name)
 	if err != nil {
 		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot find job")
+		logger.Warnf("manager: cannot find runner %s", name)
 		return err
 	}
 
-	if job.Machine != "" {
-		logger.Debugln("manager: job already assigned. abort.")
+	if runner.Machine != "" {
+		logger.
+			WithField("machine", runner.Machine).
+			Debugln("manager: runner already assigned. abort.")
 		return db.ErrOptimisticLock
 	}
 
 	now := time.Now()
 
-	job.Machine = machine
-	job.Accepted = now.Unix()
-	job.Updated = now.Unix()
+	runner.Accepted = now.Unix()
+	runner.Machine = machine
+	runner.Updated = now.Unix()
 
-	err = m.Jobs.Update(noContext, job)
+	err = m.runners.Update(noContext, runner)
 	if err == db.ErrOptimisticLock {
 		logger = logger.WithError(err)
-		logger.Debugln("manager: job processed by another agent")
+		logger.Debugln("manager: runner processed by another agent")
 	} else if err != nil {
 		logger = logger.WithError(err)
-		logger.Debugln("manager: cannot update job")
+		logger.Debugln("manager: cannot update runner")
 	} else {
-		logger.Debugln("manager: job accepted")
+		logger.Debugln("manager: runner accepted")
 	}
 
 	return err
 }
 
-func (m *Manager) Register(ctx context.Context, id int64) (*core.RunnerWithToken, error) {
-	logger := logrus.WithField("job-id", id)
-	logger.Debugln("manager: fetching job details")
+func (m *manager) Register(ctx context.Context, name string) (*core.RunnerWithToken, error) {
+	logger := logrus.WithField("runner_name", name)
 
-	job, err := m.Jobs.Find(noContext, id)
+	runner, err := m.runners.Find(noContext, name)
 	if err != nil {
 		logger = logger.WithError(err)
 		logger.Warnln("manager: cannot fin job")
 		return nil, err
 	}
 
+	// Runner already registered
+	if runner.ID != 0 && runner.Token != "" {
+		return &core.RunnerWithToken{
+			Runner: runner,
+			Token:  runner.Token,
+		}, nil
+	}
+
 	logger.Debugln("manager: registering runner")
-	runner, err := m.Runnerz.Create(noContext, core.CreateRunnerOpts{
-		InstallationID: job.InstallationID,
-		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(8)),
-		Owner:          job.Owner,
-		Labels:         job.Labels,
+	r, err := m.runnerz.Register(noContext, core.RegisterRunnerOpts{
+		InstallationID: runner.InstallationID,
+		Name:           runner.Name,
+		Owner:          runner.Owner,
+		Labels:         runner.Labels,
 		GroupID:        1,
 	})
 
@@ -177,10 +137,14 @@ func (m *Manager) Register(ctx context.Context, id int64) (*core.RunnerWithToken
 		return nil, err
 	}
 
-	err = m.Runners.Create(ctx, runner)
+	runner.ID = r.ID
+	runner.Token = r.Token
+	runner.Updated = time.Now().Unix()
+
+	err = m.runners.Update(ctx, runner)
 	if err != nil {
 		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot create runner")
+		logger.Warnln("manager: cannot update runner")
 		return nil, err
 	}
 
@@ -190,73 +154,7 @@ func (m *Manager) Register(ctx context.Context, id int64) (*core.RunnerWithToken
 	}, nil
 }
 
-// Started notifies the manager that the runner is starting execution.
-// It updates the runner's started timestamp and marks it as idle. Status
-// will be modified when receiving job.
-func (m *Manager) Started(ctx context.Context, runnerID int64) error {
-	logger := logrus.WithField("runner-id", runnerID)
-	logger.Debugln("manager: marking runner as started")
-
-	runner, err := m.Runners.FindID(ctx, runnerID)
-	if err != nil {
-		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot find runner")
-		return err
-	}
-
-	now := time.Now()
-	runner.Started = now.Unix()
-	runner.Status = core.RunnerStatusIdle
-	runner.Updated = now.Unix()
-
-	err = m.Runners.Update(noContext, runner)
-	if err != nil {
-		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot update runner")
-		return err
-	}
-
-	logger.Debugln("manager: runner marked as started")
-	return nil
-}
-
-// Completed notifies the manager that the runner has finished execution.
-// It updates the runner's stopped and completed timestamps, and sets its status.
-func (m *Manager) Completed(ctx context.Context, runnerID int64, status string) error {
-	logger := logrus.WithFields(
-		logrus.Fields{
-			"runner-id": runnerID,
-			"status":    status,
-		},
-	)
-	logger.Debugln("manager: marking runner as completed")
-
-	runner, err := m.Runners.FindID(noContext, runnerID)
-	if err != nil {
-		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot find runner")
-		return err
-	}
-
-	now := time.Now()
-	runner.Completed = now.Unix()
-	runner.Stopped = now.Unix()
-	runner.Status = status
-	runner.Busy = false
-	runner.Updated = now.Unix()
-
-	err = m.Runners.Update(noContext, runner)
-	if err != nil {
-		logger = logger.WithError(err)
-		logger.Warnln("manager: cannot update runner")
-		return err
-	}
-
-	logger.Debugln("manager: runner marked as completed")
-	return nil
-}
-
 // Watch watches the runner for cancellation.
-func (m *Manager) Watch(ctx context.Context, id int64) (bool, error) {
-	return m.Scheduler.Cancelled(ctx, id)
+func (m *manager) Watch(ctx context.Context, name string) (bool, error) {
+	return m.scheduler.Cancelled(ctx, name)
 }

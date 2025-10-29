@@ -10,33 +10,37 @@ const (
 )
 
 type (
-	// RunnerParams defines runner query parameters.
-	RunnerParams struct {
-		After  string // Pagination cursor (runner name)
-		Limit  int    // Maximum number of results
-		Status string // Filter by status
+	// RegisterRunnerOpts defines optional instructions for
+	// registering runner instances at the organization level.
+	RegisterRunnerOpts struct {
+		GroupID        int64
+		InstallationID int64
+		Labels         []string
+		Name           string
+		Owner          string
 	}
 
-	// Runner represents a GitHub Actions runner instance.
-	// A Runner has an independent lifecycle from a Job. A runner may be
-	// created for job A but assigned to job B. Use AssignedTo to link
-	// a runner to a specific job.
+	// Runner represents a GitHub Actions runner.
 	Runner struct {
-		Name           string `json:"name"`            // Runner registration name
-		ID             int64  `json:"id"`              // GitHub runner ID (assigned after registration)
-		InstallationID int64  `json:"installation_id"` // GitHub App installation ID for token generation
-		Owner          string `json:"owner"`           // GitHub organization name
-		Status         string `json:"status"`          // Runner lifecycle status
-		AssignedTo     int64  `json:"assigned_to"`     // Job ID this runner is assigned to (0 if idle)
-		Busy           bool   `json:"busy"`            // Indicates if runner is busy working
-		Cancelled      bool   `json:"cancelled"`       // Cancellation flag
-		Completed      int64  `json:"completed"`       // Unix timestamp when runner completed
-		Created        int64  `json:"created"`         // Unix timestamp when runner was created
-		Started        int64  `json:"started"`         // Unix timestamp when runner started
-		Stopped        int64  `json:"stopped"`         // Unix timestamp when runner stopped
-		Updated        int64  `json:"updated"`         // Unix timestamp when runner was last updated
-		Timeout        int64  `json:"timeout"`         // Runner timeout in seconds
-		Token          string `json:"-"`               // Registration token (never logged or exposed)
+		Name           string   `json:"name"`
+		Machine        string   `json:"machine"`
+		ID             int64    `json:"id"`
+		InstallationID int64    `json:"installation_id"`
+		Owner          string   `json:"owner"`
+		Status         string   `json:"status"`
+		Arch           string   `json:"arch"`
+		CPU            int64    `json:"cpu"`
+		Image          string   `json:"image"`
+		RAM            int64    `json:"ram"`
+		GroupID        int64    `json:"group_id"`
+		Labels         []string `json:"labels"`
+		Cancelled      int64    `json:"cancelled"`
+		Created        int64    `json:"created"`
+		Accepted       int64    `json:"accepted"`
+		Started        int64    `json:"started"`
+		Stopped        int64    `json:"stopped"`
+		Updated        int64    `json:"updated"`
+		Token          string   `json:"-"`
 	}
 
 	RunnerWithToken struct {
@@ -44,21 +48,43 @@ type (
 		Token string `json:"token"`
 	}
 
-	// CreateRunnerOpts defines optional instructions for
-	// creating runner instances at the organization level.
-	CreateRunnerOpts struct {
-		InstallationID int64
-		Name           string
-		Owner          string
-		Labels         []string
-		GroupID        int64
+	// RunnerManager encapsulates complex runner operations and provides
+	// a simplified interface for runner agents.
+	RunnerManager interface {
+		// Request requests the next available runner that matches
+		// machine's capacities. Returns the runner if found, nil if no matching
+		// runner available.
+		Request(ctx context.Context, params *Filter) (*Runner, error)
+
+		// Accept accepts a runner for execution. This operation uses optimistic
+		// locking to prevent multiple agents from executing the same runner.
+		Accept(ctx context.Context, name, machine string) error
+
+		// Register registers the runner on GitHub and retrieve its just-in-time
+		// configuration.
+		Register(ctx context.Context, name string) (*RunnerWithToken, error)
+
+		// Watch watches the runner for cancellation.
+		// It returns true if the runner has been cancelled, false otherwise.
+		// The agent should call this method periodically during job execution to
+		// check for cancellation requests.
+		Watch(ctx context.Context, name string) (bool, error)
+	}
+
+	// RunnerService provides access to self-hosted runners from GitHub.
+	RunnerService interface {
+		// Delete deletes a self-hosted runner.
+		Delete(ctx context.Context, runner *Runner) error
+
+		// Find returns a runner for an organization.
+		Find(ctx context.Context, owner string, installationID, runnerID int64) (*Runner, error)
+
+		// Register registers a new self-hosted runner on GitHub.
+		Register(ctx context.Context, opts RegisterRunnerOpts) (*Runner, error)
 	}
 
 	// RunnerStore defines operations for working with runners in a datastore.
 	RunnerStore interface {
-		// Count returns a count of all runners.
-		Count(context.Context) (int64, error)
-
 		// Create persists a new runner to the datastore.
 		Create(ctx context.Context, runner *Runner) error
 
@@ -71,31 +97,16 @@ type (
 		// FindID returns a runner from the datastore by its GitHub runner ID.
 		FindID(ctx context.Context, id int64) (*Runner, error)
 
-		// FindAssignedTo returns a runner assigned to a specific job ID.
-		FindAssignedTo(ctx context.Context, jobID int64) (*Runner, error)
+		// ListPending returns a slice of pending runner.
+		ListPending(context.Context) ([]*Runner, error)
 
-		// List returns a list of runners from the datastore.
-		List(ctx context.Context, params RunnerParams) ([]*Runner, error)
-
-		// ListStatus returns a list of runners filtered by status.
-		ListStatus(ctx context.Context, status string) ([]*Runner, error)
+		// ListIdle returns a slice of idle runner.
+		ListIdle(context.Context) ([]*Runner, error)
 
 		// Purge deletes all stopped runners older than the given unix timestamp.
 		Purge(ctx context.Context, before int64) error
 
 		// Update persists an updated runner to the datastore.
 		Update(ctx context.Context, runner *Runner) error
-	}
-
-	// RunnerService provides access to self-hosted runners from GitHub.
-	RunnerService interface {
-		// Create creates a new self-hosted runner.
-		Create(ctx context.Context, opts CreateRunnerOpts) (*Runner, error)
-
-		// Delete deletes a self-hosted runner.
-		Delete(ctx context.Context, runner *Runner) error
-
-		// Find returns a runner for an organization.
-		Find(ctx context.Context, owner string, installationID, runnerID int64) (*Runner, error)
 	}
 )

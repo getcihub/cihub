@@ -50,8 +50,8 @@ type (
 
 	// Limit provides the agent's limits configuration
 	Limit struct {
-		Memory int64 `koanf:"memory"`
-		VCPU   int64 `koanf:"vcpu"`
+		CPU int64 `koanf:"cpu"`
+		RAM int64 `koanf:"ram"`
 	}
 
 	// Logger provides the logger configuration.

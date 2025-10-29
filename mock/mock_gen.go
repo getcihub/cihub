@@ -197,21 +197,6 @@ func (m *MockRunnerStore) EXPECT() *MockRunnerStoreMockRecorder {
 	return m.recorder
 }
 
-// Count mocks base method.
-func (m *MockRunnerStore) Count(arg0 context.Context) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Count", arg0)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Count indicates an expected call of Count.
-func (mr *MockRunnerStoreMockRecorder) Count(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockRunnerStore)(nil).Count), arg0)
-}
-
 // Create mocks base method.
 func (m *MockRunnerStore) Create(ctx context.Context, runner *core.Runner) error {
 	m.ctrl.T.Helper()
@@ -255,21 +240,6 @@ func (mr *MockRunnerStoreMockRecorder) Find(ctx, name any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockRunnerStore)(nil).Find), ctx, name)
 }
 
-// FindAssignedTo mocks base method.
-func (m *MockRunnerStore) FindAssignedTo(ctx context.Context, jobID int64) (*core.Runner, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindAssignedTo", ctx, jobID)
-	ret0, _ := ret[0].(*core.Runner)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// FindAssignedTo indicates an expected call of FindAssignedTo.
-func (mr *MockRunnerStoreMockRecorder) FindAssignedTo(ctx, jobID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindAssignedTo", reflect.TypeOf((*MockRunnerStore)(nil).FindAssignedTo), ctx, jobID)
-}
-
 // FindID mocks base method.
 func (m *MockRunnerStore) FindID(ctx context.Context, id int64) (*core.Runner, error) {
 	m.ctrl.T.Helper()
@@ -285,34 +255,34 @@ func (mr *MockRunnerStoreMockRecorder) FindID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindID", reflect.TypeOf((*MockRunnerStore)(nil).FindID), ctx, id)
 }
 
-// List mocks base method.
-func (m *MockRunnerStore) List(ctx context.Context, params core.RunnerParams) ([]*core.Runner, error) {
+// ListIdle mocks base method.
+func (m *MockRunnerStore) ListIdle(arg0 context.Context) ([]*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx, params)
+	ret := m.ctrl.Call(m, "ListIdle", arg0)
 	ret0, _ := ret[0].([]*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// List indicates an expected call of List.
-func (mr *MockRunnerStoreMockRecorder) List(ctx, params any) *gomock.Call {
+// ListIdle indicates an expected call of ListIdle.
+func (mr *MockRunnerStoreMockRecorder) ListIdle(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRunnerStore)(nil).List), ctx, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListIdle", reflect.TypeOf((*MockRunnerStore)(nil).ListIdle), arg0)
 }
 
-// ListStatus mocks base method.
-func (m *MockRunnerStore) ListStatus(ctx context.Context, status string) ([]*core.Runner, error) {
+// ListPending mocks base method.
+func (m *MockRunnerStore) ListPending(arg0 context.Context) ([]*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListStatus", ctx, status)
+	ret := m.ctrl.Call(m, "ListPending", arg0)
 	ret0, _ := ret[0].([]*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListStatus indicates an expected call of ListStatus.
-func (mr *MockRunnerStoreMockRecorder) ListStatus(ctx, status any) *gomock.Call {
+// ListPending indicates an expected call of ListPending.
+func (mr *MockRunnerStoreMockRecorder) ListPending(arg0 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStatus", reflect.TypeOf((*MockRunnerStore)(nil).ListStatus), ctx, status)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPending", reflect.TypeOf((*MockRunnerStore)(nil).ListPending), arg0)
 }
 
 // Purge mocks base method.
@@ -368,61 +338,61 @@ func (m *MockScheduler) EXPECT() *MockSchedulerMockRecorder {
 }
 
 // Cancel mocks base method.
-func (m *MockScheduler) Cancel(ctx context.Context, id int64) error {
+func (m *MockScheduler) Cancel(ctx context.Context, runnerName string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Cancel", ctx, id)
+	ret := m.ctrl.Call(m, "Cancel", ctx, runnerName)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Cancel indicates an expected call of Cancel.
-func (mr *MockSchedulerMockRecorder) Cancel(ctx, id any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Cancel(ctx, runnerName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockScheduler)(nil).Cancel), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancel", reflect.TypeOf((*MockScheduler)(nil).Cancel), ctx, runnerName)
 }
 
 // Cancelled mocks base method.
-func (m *MockScheduler) Cancelled(ctx context.Context, id int64) (bool, error) {
+func (m *MockScheduler) Cancelled(ctx context.Context, runnerName string) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Cancelled", ctx, id)
+	ret := m.ctrl.Call(m, "Cancelled", ctx, runnerName)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Cancelled indicates an expected call of Cancelled.
-func (mr *MockSchedulerMockRecorder) Cancelled(ctx, id any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Cancelled(ctx, runnerName any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancelled", reflect.TypeOf((*MockScheduler)(nil).Cancelled), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Cancelled", reflect.TypeOf((*MockScheduler)(nil).Cancelled), ctx, runnerName)
 }
 
 // Request mocks base method.
-func (m *MockScheduler) Request(ctx context.Context, params *core.Filter) (*core.Job, error) {
+func (m *MockScheduler) Request(ctx context.Context, parals *core.Filter) (*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Request", ctx, params)
-	ret0, _ := ret[0].(*core.Job)
+	ret := m.ctrl.Call(m, "Request", ctx, parals)
+	ret0, _ := ret[0].(*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Request indicates an expected call of Request.
-func (mr *MockSchedulerMockRecorder) Request(ctx, params any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Request(ctx, parals any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, parals)
 }
 
 // Schedule mocks base method.
-func (m *MockScheduler) Schedule(ctx context.Context, job *core.Job) error {
+func (m *MockScheduler) Schedule(ctx context.Context, runner *core.Runner) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Schedule", ctx, job)
+	ret := m.ctrl.Call(m, "Schedule", ctx, runner)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Schedule indicates an expected call of Schedule.
-func (mr *MockSchedulerMockRecorder) Schedule(ctx, job any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Schedule(ctx, runner any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Schedule", reflect.TypeOf((*MockScheduler)(nil).Schedule), ctx, job)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Schedule", reflect.TypeOf((*MockScheduler)(nil).Schedule), ctx, runner)
 }
 
 // MockSession is a mock of Session interface.

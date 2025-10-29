@@ -156,7 +156,7 @@ agent:
     #   - Large cluster node: 65536+ MB (64+ GB)
     #
     # Default: Set based on available host memory, leaving 10-20% for system overhead
-    memory: 16384
+    ram: 16384
 
     # Total vCPU cores available for all microVMs on this agent
     #
@@ -177,7 +177,7 @@ agent:
     #   - High-performance cluster: 32+ vCPU cores
     #
     # Default: Set based on available host CPU cores, leaving 10-20% for system overhead
-    vcpu: 8
+    cpu: 8
 
 # ============================================================================
 # Database Configuration

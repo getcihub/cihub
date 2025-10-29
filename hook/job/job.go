@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dchest/uniuri"
 	"github.com/google/go-github/v76/github"
 	"github.com/palantir/go-githubapp/githubapp"
 	"github.com/pkg/errors"
@@ -140,30 +141,36 @@ func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core
 		now := time.Now().Unix()
 		job.Created = now
 		job.Updated = now
+		job.Status = core.JobStatusQueued
 
 		if err := h.jobs.Create(ctx, job); err != nil {
 			return fmt.Errorf("hook: failed to create queued job, err: %w", err)
 		}
 
 		log.Infoln("hook: created queued job")
-		return h.scheduler.Schedule(ctx, job)
+	} else {
+		// Update existing job
+		job.Version = existing.Version
+		job.Created = existing.Created
+		job.Updated = time.Now().Unix()
+		job.Status = core.JobStatusQueued
+
+		if err := h.jobs.Update(ctx, job); err != nil {
+			return fmt.Errorf("hook: failed to update queued job, err: %w", err)
+		}
+
+		log.Infoln("hook: updated queued job")
 	}
 
-	// Update existing job
-	job.Version = existing.Version
-	job.Created = existing.Created
-	job.Updated = time.Now().Unix()
-
-	// Preserve agent-assigned fields
-	job.Machine = existing.Machine
-	job.Accepted = existing.Accepted
-
-	if err := h.jobs.Update(ctx, job); err != nil {
-		return fmt.Errorf("hook: failed to update queued job, err: %w", err)
+	// Create and schedule runner for this job
+	runner := h.createRunnerFromJob(job)
+	if err := h.runners.Create(ctx, runner); err != nil {
+		log = log.WithError(err)
+		log.Warnln("hook: cannot create runner")
+		return err
 	}
 
-	log.Infoln("hook: updated queued job")
-	return h.scheduler.Schedule(ctx, job)
+	return h.scheduler.Schedule(ctx, runner)
 }
 
 func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *core.Job) error {
@@ -174,6 +181,7 @@ func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *
 		now := time.Now().Unix()
 		job.Created = now
 		job.Updated = now
+		job.Status = core.JobStatusInProgress
 
 		if err := h.jobs.Create(ctx, job); err != nil {
 			return fmt.Errorf("hook: failed to create in_progress job, err: %w", err)
@@ -185,10 +193,7 @@ func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *
 		job.Version = existing.Version
 		job.Created = existing.Created
 		job.Updated = time.Now().Unix()
-
-		// Preserve agent-assigned fields
-		job.Machine = existing.Machine
-		job.Accepted = existing.Accepted
+		job.Status = core.JobStatusInProgress
 
 		if err := h.jobs.Update(ctx, job); err != nil {
 			return fmt.Errorf("hook: failed to update in_progress job, err: %w", err)
@@ -216,6 +221,7 @@ func (h *handler) handleCompleted(ctx context.Context, log *logrus.Entry, job *c
 		now := time.Now().Unix()
 		job.Created = now
 		job.Updated = now
+		job.Status = core.JobStatusCompleted
 
 		if err := h.jobs.Create(ctx, job); err != nil {
 			return fmt.Errorf("hook: failed to create completed job, err: %w", err)
@@ -227,10 +233,7 @@ func (h *handler) handleCompleted(ctx context.Context, log *logrus.Entry, job *c
 		job.Version = existing.Version
 		job.Created = existing.Created
 		job.Updated = time.Now().Unix()
-
-		// Preserve agent-assigned fields
-		job.Machine = existing.Machine
-		job.Accepted = existing.Accepted
+		job.Status = core.JobStatusCompleted
 
 		if err := h.jobs.Update(ctx, job); err != nil {
 			return fmt.Errorf("hook: failed to update completed job, err: %w", err)
@@ -257,9 +260,8 @@ func (h *handler) syncRunnerInProgress(ctx context.Context, log *logrus.Entry, j
 		return nil // Non-fatal: log and continue
 	}
 
-	runner.AssignedTo = job.ID
-	runner.Busy = true
 	runner.Status = core.RunnerStatusBusy
+	runner.Started = time.Now().Unix()
 	runner.Updated = time.Now().Unix()
 
 	if err := h.runners.Update(ctx, runner); err != nil {
@@ -277,9 +279,8 @@ func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, jo
 		return nil // Non-fatal: log and continue
 	}
 
-	runner.Busy = false
 	runner.Status = core.RunnerStatusCompleted
-	runner.Completed = time.Now().Unix()
+	runner.Stopped = time.Now().Unix()
 	runner.Updated = time.Now().Unix()
 
 	if err := h.runners.Update(ctx, runner); err != nil {
@@ -288,6 +289,24 @@ func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, jo
 
 	log.Infof("hook: synced runner '%s' to completed", job.RunnerName)
 	return nil
+}
+
+// createRunnerFromJob creates a core.Runner from a core.Job for scheduling.
+// The runner is created in pending state and will be assigned to a machine when available.
+func (h *handler) createRunnerFromJob(job *core.Job) *core.Runner {
+	return &core.Runner{
+		InstallationID: job.InstallationID,
+		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(16)),
+		Owner:          job.Owner,
+		Status:         core.RunnerStatusPending,
+		Arch:           job.Arch,
+		CPU:            job.VCPU,
+		RAM:            job.Memory,
+		Labels:         job.Labels,
+		Image:          job.OS,
+		Created:        time.Now().Unix(),
+		Updated:        time.Now().Unix(),
+	}
 }
 
 // resolveJobSpecification finds a matching label for the job and populates
