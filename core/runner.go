@@ -30,7 +30,6 @@ type (
 		Status         string   `json:"status"`
 		Arch           string   `json:"arch"`
 		CPU            int64    `json:"cpu"`
-		Image          string   `json:"image"`
 		RAM            int64    `json:"ram"`
 		GroupID        int64    `json:"group_id"`
 		Labels         []string `json:"labels"`

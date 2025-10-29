@@ -36,6 +36,7 @@ type Agent struct {
 
 	Arch  string
 	CPU   int64
+	Image string
 	Owner string
 	RAM   int64
 }
@@ -87,25 +88,25 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 		return err
 	}
 
-	imageExists, err := a.Images.Exists(ctx, runner.Image)
+	imageExists, err := a.Images.Exists(ctx, a.Image)
 	if err != nil {
 		logger = logger.WithError(err).
-			WithField("image", runner.Image)
+			WithField("image", a.Image)
 		logger.Errorln("agent: check image existence failed")
 		return err
 	}
 
 	if !imageExists {
-		logger.WithField("image", runner.Image).Infoln("agent: pull image started")
+		logger.WithField("image", a.Image).Infoln("agent: pull image started")
 
-		err = a.Images.Pull(ctx, runner.Image)
+		err = a.Images.Pull(ctx, a.Image)
 		if err != nil {
-			logger = logger.WithError(err).WithField("image", runner.Image)
+			logger = logger.WithError(err).WithField("image", a.Image)
 			logger.Errorln("agent: pull image failed")
 			return err
 		}
 
-		logger.WithField("image", runner.Image).Infoln("agent: pull image ok")
+		logger.WithField("image", a.Image).Infoln("agent: pull image ok")
 	}
 
 	snapshotExists, err := a.Snapshots.Exists(ctx, runner.Name)
@@ -119,7 +120,7 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 	if !snapshotExists {
 		logger.WithField("runner_name", runner.Name).Debugln("agent: create snapshot started")
 
-		snapshot, err = a.Snapshots.Create(ctx, runner.Name, runner.Image)
+		snapshot, err = a.Snapshots.Create(ctx, runner.Name, a.Image)
 		if err != nil {
 			logger = logger.WithError(err).WithField("runner_name", runner.Name)
 			logger.Errorln("agent: create snapshot failed")

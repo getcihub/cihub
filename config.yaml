@@ -82,6 +82,8 @@ agent:
   # Default: "devmapper"
   snapshotter: "devmapper"
 
+  image: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
+
   # Kernel configuration for Firecracker microVMs
   #
   # The Linux kernel runs inside each Firecracker microVM to execute GitHub Actions runners.
@@ -211,65 +213,6 @@ database:
   #
   # Default: 0 (unlimited).
   max_connections: 0
-
-# ============================================================================
-# Labels Configuration
-# ============================================================================
-
-# Labels define resource specifications for Firecracker microVMs.
-#
-# Each label represents a unique configuration that can be requested by GitHub Actions
-# jobs via the "runs-on" field. Label IDs MUST start with "cihub-" prefix.
-#
-# Example workflow usage:
-#   runs-on: cihub-2vcpu-ubuntu-2404
-
-labels:
-  # Label 1: 2 vCPU Ubuntu 24.04 configuration
-  - # Unique identifier for this label (must start with "cihub-")
-    #
-    # Example: "cihub-2vcpu-ubuntu-2404"
-    id: "cihub-2vcpu-ubuntu-2404"
-
-    # CPU architecture for this label
-    #
-    # Valid values: "amd64", "arm64"
-    arch: amd64
-
-    # Operating system image (OCI/Docker container image reference)
-    #
-    # The image URL must point to a runner container that supports the GitHub Actions
-    # runner protocol. The container will be used to create the Firecracker microVM.
-    #
-    # Example: "ghcr.io/getcihub/runner-ubuntu24.04:2.328.0"
-    image: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
-
-    # RAM allocated per microVM (in megabytes)
-    #
-    # Ensure this value is sufficient for your GitHub Actions workflows.
-    # Recommended minimums:
-    #   - 512 MB for simple tasks
-    #   - 2048 MB (2 GB) for most workflows
-    #   - 4096 MB+ for resource-intensive tasks
-    #
-    # Example: 2048
-    ram: 2048
-
-    # CPU cores allocated per microVM
-    #
-    # The number of logical CPU cores assigned to each microVM runner.
-    # Choose based on the computational needs of your CI/CD workloads.
-    # Recommended values: 1, 2, 4, 8
-    #
-    # Example: 2
-    cpu: 2
-
-  # Label 2: 4 vCPU Ubuntu 24.04 configuration (for more resource-intensive tasks)
-  - id: "cihub-4vcpu-ubuntu-2404"
-    arch: amd64
-    cpu: 4
-    image: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
-    ram: 4096
 
 # ============================================================================
 # Logging Configuration

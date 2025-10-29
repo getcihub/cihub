@@ -13,24 +13,22 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/label"
 	"github.com/getcihub/cihub/logger"
 )
 
 type handler struct {
-	labels    core.Labels
 	jobs      core.JobStore
 	runners   core.RunnerStore
 	scheduler core.Scheduler
 }
 
 func New(
-	labels core.Labels,
 	jobs core.JobStore,
 	runners core.RunnerStore,
 	scheduler core.Scheduler,
 ) githubapp.EventHandler {
 	return &handler{
-		labels:    labels,
 		jobs:      jobs,
 		runners:   runners,
 		scheduler: scheduler,
@@ -69,30 +67,40 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 
 	log := logger.FromContext(ctx).WithFields(
 		logrus.Fields{
-			"event":       eventType,
-			"delivery.id": deliveryID,
 			"action":      action,
-			"job.id":      job.ID,
-			"job.labels":  job.Labels,
-			"run.id":      job.RunID,
+			"delivery_id": deliveryID,
+			"event":       eventType,
+			"job_id":      job.ID,
+			"labels":      job.Labels,
 			"owner":       job.Owner,
 			"repo":        job.Repo,
+			"run_id":      job.RunID,
+			"runner_id":   job.RunnerID,
+			"runner_name": job.RunnerName,
 			"status":      job.Status,
-			"runner.id":   job.RunnerID,
-			"runner.name": job.RunnerName,
 		},
 	)
 	log.Infoln("hook: received workflow job event")
 
-	// Check if job has a supported label
-	if !h.labels.Has(job.Labels) {
-		log.Debugln("hook: no matching label, ignore event")
+	// Check if job has a CIHub label
+	if !label.Has(job.Labels) {
+		log.Debugln("hook: no cihub label found, ignore event")
 		return nil
 	}
 
-	// Resolve job specification from matching label
-	if err := h.resolveJobSpecification(job, log); err != nil {
-		return err
+	// Parse the CIHub label to get resource specifications
+	lbl, err := label.Resolve(job.Labels)
+	if err != nil {
+		log.WithError(err).
+			Warnln("hook: invalid cihub label, skipping event")
+		return nil
+	}
+
+	// Validate the parsed label
+	if err := lbl.Validate(); err != nil {
+		log.WithError(err).
+			Warnln("hook: invalid label specification, skipping event")
+		return nil
 	}
 
 	// Route to action-specific handler
@@ -100,7 +108,7 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 	case "waiting":
 		return h.handleWaiting(ctx, log, job)
 	case "queued":
-		return h.handleQueued(ctx, log, job)
+		return h.handleQueued(ctx, log, job, lbl)
 	case "in_progress":
 		return h.handleInProgress(ctx, log, job)
 	case "completed":
@@ -133,7 +141,7 @@ func (h *handler) handleWaiting(ctx context.Context, log *logrus.Entry, job *cor
 	return nil
 }
 
-func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core.Job) error {
+func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core.Job, lbl *label.Label) error {
 	// Try to find existing job
 	existing, err := h.jobs.Find(ctx, job.ID)
 	if err != nil {
@@ -163,7 +171,7 @@ func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core
 	}
 
 	// Create and schedule runner for this job
-	runner := h.createRunnerFromJob(job)
+	runner := h.createRunnerFromJob(job, lbl)
 	if err := h.runners.Create(ctx, runner); err != nil {
 		log = log.WithError(err)
 		log.Warnln("hook: cannot create runner")
@@ -293,49 +301,20 @@ func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, jo
 
 // createRunnerFromJob creates a core.Runner from a core.Job for scheduling.
 // The runner is created in pending state and will be assigned to a machine when available.
-// The runner specification is populated from the first matching label in the job.
-func (h *handler) createRunnerFromJob(job *core.Job) *core.Runner {
-	// Find the first matching label to populate runner specification
-	var matchedLabel core.Label
-	for _, requestedLabel := range job.Labels {
-		if label, ok := h.labels[requestedLabel]; ok {
-			matchedLabel = label
-			break
-		}
-	}
-
+// The runner specification is populated from the provided label.
+func (h *handler) createRunnerFromJob(job *core.Job, lbl *label.Label) *core.Runner {
 	return &core.Runner{
 		InstallationID: job.InstallationID,
 		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(16)),
 		Owner:          job.Owner,
 		Status:         core.RunnerStatusPending,
-		Arch:           matchedLabel.Arch,
-		CPU:            matchedLabel.CPU,
-		RAM:            matchedLabel.RAM,
+		Arch:           lbl.Arch,
+		CPU:            lbl.CPU,
+		RAM:            lbl.RAM,
 		Labels:         job.Labels,
-		Image:          matchedLabel.Image,
 		Created:        time.Now().Unix(),
 		Updated:        time.Now().Unix(),
 	}
-}
-
-// resolveJobSpecification finds a matching label for the job and validates that
-// the job requires a supported label. The job specification (Image, Arch, RAM, CPU)
-// is not stored in the Job struct but will be used when creating the Runner.
-func (h *handler) resolveJobSpecification(job *core.Job, log *logrus.Entry) error {
-	// Find the first matching label from the job's requested labels
-	var matchedLabel core.Label
-	for _, requestedLabel := range job.Labels {
-		if label, ok := h.labels[requestedLabel]; ok {
-			matchedLabel = label
-			break
-		}
-	}
-
-	log.Debugf("hook: resolved job specification - label: %s, image: %s, arch: %s, ram: %dMB, cpu: %d",
-		matchedLabel.ID, matchedLabel.Image, matchedLabel.Arch, matchedLabel.RAM, matchedLabel.CPU)
-
-	return nil
 }
 
 // convertWorkflowJobToJob converts a GitHub WorkflowJobEvent to a core.Job.

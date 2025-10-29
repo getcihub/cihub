@@ -36,6 +36,7 @@ type (
 		Arch        string `koanf:"arch"`
 		Containerd  string `koanf:"containerd"`
 		Firecracker string `koanf:"firecracker"`
+		Image       string `koanf:"image"`
 		Owner       string `koanf:"owner"`
 		Kernel      Kernel `koanf:"kernel"`
 		Snapshotter string `koanf:"snapshotter"`
