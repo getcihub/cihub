@@ -21,7 +21,7 @@ type Scheduler interface {
 	Cancelled(ctx context.Context, runnerName string) (bool, error)
 
 	// Request requests the next job scheduled for execution.
-	Request(ctx context.Context, parals *Filter) (*Runner, error)
+	Request(ctx context.Context, params *Filter) (*Runner, error)
 
 	// Schedule schedules the runner for execution.
 	Schedule(ctx context.Context, runner *Runner) error
