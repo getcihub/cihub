@@ -9,25 +9,25 @@ import (
 // Labels are requested by GitHub Actions jobs via runs-on field.
 // Label ID must start with "cihub-" prefix.
 type Label struct {
-	ID     string `json:"id" koanf:"id"`     // Unique identifier, must start with "cihub-"
-	Arch   string `json:"arch" koanf:"arch"` // CPU architecture (amd64, arm64)
-	OS     string `json:"os" koanf:"os"`     // Operating system image (OCI container image reference)
-	Memory int64  `json:"memory" koanf:"memory"` // RAM in megabytes
-	VCPU   int64  `json:"vcpu" koanf:"vcpu"`     // CPU cores allocated
+	ID    string `json:"id" koanf:"id"`       // Unique identifier, must start with "cihub-"
+	Arch  string `json:"arch" koanf:"arch"`   // CPU architecture (amd64, arm64)
+	Image string `json:"image" koanf:"image"` // OCI container image reference
+	RAM   int64  `json:"ram" koanf:"ram"`     // RAM in megabytes
+	CPU   int64  `json:"cpu" koanf:"cpu"`     // CPU cores allocated
 }
 
 // Validate validates the label configuration.
-// Returns error if ID doesn't start with "cihub-", Arch is not amd64 or arm64, VCPU <= 0, or Memory <= 0.
+// Returns error if ID doesn't start with "cihub-", Arch is not amd64 or arm64, CPU <= 0, or RAM <= 0.
 func (label *Label) Validate() error {
 	switch {
 	case !strings.HasPrefix(label.ID, "cihub-"):
 		return fmt.Errorf("invalid label ID prefix: %s", label.ID)
 	case label.Arch != "amd64" && label.Arch != "arm64":
 		return fmt.Errorf("invalid architecture: %s (must be amd64 or arm64)", label.Arch)
-	case label.VCPU <= 0:
-		return fmt.Errorf("invalid VCPU specification: %d", label.VCPU)
-	case label.Memory <= 0:
-		return fmt.Errorf("invalid memory specification: %d", label.Memory)
+	case label.CPU <= 0:
+		return fmt.Errorf("invalid CPU specification: %d", label.CPU)
+	case label.RAM <= 0:
+		return fmt.Errorf("invalid RAM specification: %d", label.RAM)
 	default:
 		return nil
 	}

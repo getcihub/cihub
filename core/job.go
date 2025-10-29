@@ -27,10 +27,12 @@ type (
 	// to job B.
 	Job struct {
 		ID             int64    `json:"id"`              // GitHub workflow job ID
-		RunID          int64    `json:"run_id"`          // GitHub workflow run ID
 		InstallationID int64    `json:"installation_id"` // GitHub App installation ID
+		RunnerID       int64    `json:"runner_id"`       // Assigned GitHub runner ID (0 if not assigned)
+		RunnerName     string   `json:"runner_name"`     // Assigned runner name (empty if not assigned)
 		Owner          string   `json:"owner"`           // Repository owner
 		Repo           string   `json:"repo"`            // Repository name
+		RunID          int64    `json:"run_id"`          // GitHub workflow run ID
 		Workflow       string   `json:"workflow"`        // Workflow name
 		Name           string   `json:"name"`            // Job name
 		Branch         string   `json:"branch"`          // Branch name where workflow run originated
@@ -38,18 +40,11 @@ type (
 		Status         string   `json:"status"`          // Job status (queued, in_progress, completed, waiting)
 		Conclusion     string   `json:"conclusion"`      // Job conclusion (success, failure, etc.)
 		Labels         []string `json:"labels"`          // Required runner labels
-		RunnerID       int64    `json:"runner_id"`       // Assigned GitHub runner ID (0 if not assigned)
-		RunnerName     string   `json:"runner_name"`     // Assigned runner name (empty if not assigned)
 		URL            string   `json:"url"`             // URL to request runner registration token
-		OS             string   `json:"os"`              // Operating system image specification (from resolved label)
-		Arch           string   `json:"arch"`            // CPU architecture (from resolved label)
-		Memory         int64    `json:"memory"`          // Memory in MB (from resolved label)
-		VCPU           int64    `json:"vcpu"`            // Virtual CPUs (from resolved label)
-		Accepted       int64    `json:"accepted"`        // Unix timestamp when job was accepted by agent
-		Queued         int64    `json:"queued"`          // Unix timestamp when job was queued
-		Started        int64    `json:"started"`         // Unix timestamp when job started
 		Completed      int64    `json:"completed"`       // Unix timestamp when job completed
 		Created        int64    `json:"created"`         // Unix timestamp when job record was created
+		Queued         int64    `json:"queued"`          // Unix timestamp when job was queued
+		Started        int64    `json:"started"`         // Unix timestamp when job started
 		Updated        int64    `json:"updated"`         // Unix timestamp when job was last updated
 		Version        int64    `json:"version"`         // Optimistic locking version
 	}

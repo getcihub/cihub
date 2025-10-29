@@ -20,18 +20,18 @@ var noContext = context.TODO()
 func testLabels() core.Labels {
 	return core.Labels{
 		"cihub-2vcpu-amd64-ubuntu2404": {
-			ID:     "cihub-2vcpu-amd64-ubuntu2404",
-			Arch:   "amd64",
-			OS:     "ubuntu2404",
-			Memory: 2048,
-			VCPU:   2,
+			ID:    "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:  "amd64",
+			Image: "ubuntu2404",
+			RAM:   2048,
+			CPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
-			ID:     "cihub-4vcpu-arm64-ubuntu2204",
-			Arch:   "arm64",
-			OS:     "ubuntu2204",
-			Memory: 4096,
-			VCPU:   4,
+			ID:    "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:  "arm64",
+			Image: "ubuntu2204",
+			RAM:   4096,
+			CPU:   4,
 		},
 	}
 }
@@ -288,12 +288,12 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 	}
 
 	existingJob := &core.Job{
-		ID:       1001,
-		RunID:    2001,
-		Status:   core.JobStatusQueued,
-		Version:  2,
-		Created:  createdTime.Unix(),
-		Updated:  createdTime.Unix(),
+		ID:      1001,
+		RunID:   2001,
+		Status:  core.JobStatusQueued,
+		Version: 2,
+		Created: createdTime.Unix(),
+		Updated: createdTime.Unix(),
 	}
 
 	// Expect Find to return existing job
@@ -965,11 +965,11 @@ func TestHandler_Handle_NoMatchingLabel_IgnoresEvent(t *testing.T) {
 	// Create labels without "cihub-4vcpu-arm64-ubuntu2204"
 	labels := core.Labels{
 		"cihub-2vcpu-amd64-ubuntu2404": {
-			ID:     "cihub-2vcpu-amd64-ubuntu2404",
-			Arch:   "amd64",
-			OS:     "ubuntu2404",
-			Memory: 2048,
-			VCPU:   2,
+			ID:    "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:  "amd64",
+			Image: "ubuntu2404",
+			RAM:   2048,
+			CPU:   2,
 		},
 	}
 
@@ -1018,18 +1018,18 @@ func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
 
 	labels := core.Labels{
 		"cihub-2vcpu-amd64-ubuntu2404": {
-			ID:     "cihub-2vcpu-amd64-ubuntu2404",
-			Arch:   "amd64",
-			OS:     "ubuntu2404",
-			Memory: 2048,
-			VCPU:   2,
+			ID:    "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:  "amd64",
+			Image: "ubuntu2404",
+			RAM:   2048,
+			CPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
-			ID:     "cihub-4vcpu-arm64-ubuntu2204",
-			Arch:   "arm64",
-			OS:     "ubuntu2204",
-			Memory: 4096,
-			VCPU:   4,
+			ID:    "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:  "arm64",
+			Image: "ubuntu2204",
+			RAM:   4096,
+			CPU:   4,
 		},
 	}
 
@@ -1095,18 +1095,18 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 
 	labels := core.Labels{
 		"cihub-2vcpu-amd64-ubuntu2404": {
-			ID:     "cihub-2vcpu-amd64-ubuntu2404",
-			Arch:   "amd64",
-			OS:     "ghcr.io/getcihub/runner-ubuntu24.04:latest",
-			Memory: 2048,
-			VCPU:   2,
+			ID:    "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:  "amd64",
+			Image: "ghcr.io/getcihub/runner-ubuntu24.04:latest",
+			RAM:   2048,
+			CPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
-			ID:     "cihub-4vcpu-arm64-ubuntu2204",
-			Arch:   "arm64",
-			OS:     "ghcr.io/getcihub/runner-ubuntu22.04:latest",
-			Memory: 4096,
-			VCPU:   4,
+			ID:    "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:  "arm64",
+			Image: "ghcr.io/getcihub/runner-ubuntu22.04:latest",
+			RAM:   4096,
+			CPU:   4,
 		},
 	}
 
@@ -1147,30 +1147,30 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 		Find(gomock.Any(), int64(1001)).
 		Return(nil, errors.New("not found"))
 
-	// Expect Create to be called, verify job specification is set
+	// Expect Create to be called
 	mockJobStore.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, job *core.Job) error {
-			// Verify job specification was resolved
-			if got, want := job.OS, "ghcr.io/getcihub/runner-ubuntu24.04:latest"; got != want {
-				t.Errorf("Want job.OS = %s, got %s", want, got)
+		Return(nil)
+
+	// Expect runner to be created with correct specification from matched label
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
+			// Verify runner specification was set from label
+			if got, want := runner.Image, "ghcr.io/getcihub/runner-ubuntu24.04:latest"; got != want {
+				t.Errorf("Want runner.Image = %s, got %s", want, got)
 			}
-			if got, want := job.Arch, "amd64"; got != want {
-				t.Errorf("Want job.Arch = %s, got %s", want, got)
+			if got, want := runner.Arch, "amd64"; got != want {
+				t.Errorf("Want runner.Arch = %s, got %s", want, got)
 			}
-			if got, want := job.Memory, int64(2048); got != want {
-				t.Errorf("Want job.Memory = %d, got %d", want, got)
+			if got, want := runner.RAM, int64(2048); got != want {
+				t.Errorf("Want runner.RAM = %d, got %d", want, got)
 			}
-			if got, want := job.VCPU, int64(2); got != want {
-				t.Errorf("Want job.VCPU = %d, got %d", want, got)
+			if got, want := runner.CPU, int64(2); got != want {
+				t.Errorf("Want runner.CPU = %d, got %d", want, got)
 			}
 			return nil
 		})
-
-	// Expect runner to be created
-	mockRunnerStore.EXPECT().
-		Create(gomock.Any(), gomock.Any()).
-		Return(nil)
 
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().
@@ -1188,18 +1188,18 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 
 	labels := core.Labels{
 		"cihub-2vcpu-amd64-ubuntu2404": {
-			ID:     "cihub-2vcpu-amd64-ubuntu2404",
-			Arch:   "amd64",
-			OS:     "ghcr.io/getcihub/runner-ubuntu24.04:latest",
-			Memory: 2048,
-			VCPU:   2,
+			ID:    "cihub-2vcpu-amd64-ubuntu2404",
+			Arch:  "amd64",
+			Image: "ghcr.io/getcihub/runner-ubuntu24.04:latest",
+			RAM:   2048,
+			CPU:   2,
 		},
 		"cihub-4vcpu-arm64-ubuntu2204": {
-			ID:     "cihub-4vcpu-arm64-ubuntu2204",
-			Arch:   "arm64",
-			OS:     "ghcr.io/getcihub/runner-ubuntu22.04:latest",
-			Memory: 4096,
-			VCPU:   4,
+			ID:    "cihub-4vcpu-arm64-ubuntu2204",
+			Arch:  "arm64",
+			Image: "ghcr.io/getcihub/runner-ubuntu22.04:latest",
+			RAM:   4096,
+			CPU:   4,
 		},
 	}
 
@@ -1241,30 +1241,30 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 		Find(gomock.Any(), int64(1001)).
 		Return(nil, errors.New("not found"))
 
-	// Expect Create to be called, verify first matching label is used
+	// Expect Create to be called
 	mockJobStore.EXPECT().
 		Create(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+		Return(nil)
+
+	// Expect runner to be created with first matching label specification
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
 			// Should resolve to first matching label in job.Labels order
-			if got, want := job.OS, "ghcr.io/getcihub/runner-ubuntu22.04:latest"; got != want {
-				t.Errorf("Want job.OS = %s (4vcpu), got %s", want, got)
+			if got, want := runner.Image, "ghcr.io/getcihub/runner-ubuntu22.04:latest"; got != want {
+				t.Errorf("Want runner.Image = %s (4vcpu), got %s", want, got)
 			}
-			if got, want := job.Arch, "arm64"; got != want {
-				t.Errorf("Want job.Arch = %s, got %s", want, got)
+			if got, want := runner.Arch, "arm64"; got != want {
+				t.Errorf("Want runner.Arch = %s, got %s", want, got)
 			}
-			if got, want := job.Memory, int64(4096); got != want {
-				t.Errorf("Want job.Memory = %d, got %d", want, got)
+			if got, want := runner.RAM, int64(4096); got != want {
+				t.Errorf("Want runner.RAM = %d, got %d", want, got)
 			}
-			if got, want := job.VCPU, int64(4); got != want {
-				t.Errorf("Want job.VCPU = %d, got %d", want, got)
+			if got, want := runner.CPU, int64(4); got != want {
+				t.Errorf("Want runner.CPU = %d, got %d", want, got)
 			}
 			return nil
 		})
-
-	// Expect runner to be created
-	mockRunnerStore.EXPECT().
-		Create(gomock.Any(), gomock.Any()).
-		Return(nil)
 
 	// Expect Schedule to be called for queued action
 	mockScheduler.EXPECT().

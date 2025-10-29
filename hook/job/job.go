@@ -293,24 +293,35 @@ func (h *handler) syncRunnerCompleted(ctx context.Context, log *logrus.Entry, jo
 
 // createRunnerFromJob creates a core.Runner from a core.Job for scheduling.
 // The runner is created in pending state and will be assigned to a machine when available.
+// The runner specification is populated from the first matching label in the job.
 func (h *handler) createRunnerFromJob(job *core.Job) *core.Runner {
+	// Find the first matching label to populate runner specification
+	var matchedLabel core.Label
+	for _, requestedLabel := range job.Labels {
+		if label, ok := h.labels[requestedLabel]; ok {
+			matchedLabel = label
+			break
+		}
+	}
+
 	return &core.Runner{
 		InstallationID: job.InstallationID,
 		Name:           fmt.Sprintf("cihub-%s", uniuri.NewLen(16)),
 		Owner:          job.Owner,
 		Status:         core.RunnerStatusPending,
-		Arch:           job.Arch,
-		CPU:            job.VCPU,
-		RAM:            job.Memory,
+		Arch:           matchedLabel.Arch,
+		CPU:            matchedLabel.CPU,
+		RAM:            matchedLabel.RAM,
 		Labels:         job.Labels,
-		Image:          job.OS,
+		Image:          matchedLabel.Image,
 		Created:        time.Now().Unix(),
 		Updated:        time.Now().Unix(),
 	}
 }
 
-// resolveJobSpecification finds a matching label for the job and populates
-// the job's OS, Arch, Memory, and VCPU fields from the label specification.
+// resolveJobSpecification finds a matching label for the job and validates that
+// the job requires a supported label. The job specification (Image, Arch, RAM, CPU)
+// is not stored in the Job struct but will be used when creating the Runner.
 func (h *handler) resolveJobSpecification(job *core.Job, log *logrus.Entry) error {
 	// Find the first matching label from the job's requested labels
 	var matchedLabel core.Label
@@ -321,14 +332,8 @@ func (h *handler) resolveJobSpecification(job *core.Job, log *logrus.Entry) erro
 		}
 	}
 
-	// Populate job specification from resolved label
-	job.OS = matchedLabel.OS
-	job.Arch = matchedLabel.Arch
-	job.Memory = matchedLabel.Memory
-	job.VCPU = matchedLabel.VCPU
-
-	log.Debugf("hook: resolved job specification - label: %s, os: %s, arch: %s, memory: %dMB, vcpu: %d",
-		matchedLabel.ID, job.OS, job.Arch, job.Memory, job.VCPU)
+	log.Debugf("hook: resolved job specification - label: %s, image: %s, arch: %s, ram: %dMB, cpu: %d",
+		matchedLabel.ID, matchedLabel.Image, matchedLabel.Arch, matchedLabel.RAM, matchedLabel.CPU)
 
 	return nil
 }

@@ -138,13 +138,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   job_labels          TEXT,
   job_runner_id       BIGINT,
   job_runner_name     VARCHAR(255),
-  job_machine         VARCHAR(255),
   job_url             VARCHAR(1000),
-  job_os              TEXT,
-  job_arch            VARCHAR(50),
-  job_memory          BIGINT,
-  job_vcpu            BIGINT,
-  job_accepted        BIGINT,
   job_queued          BIGINT,
   job_started         BIGINT,
   job_completed       BIGINT,
@@ -156,7 +150,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX ix_job_run_id ON jobs (job_run_id);
 CREATE INDEX ix_job_status ON jobs (job_status);
 CREATE INDEX ix_job_runner_id ON jobs (job_runner_id);
-CREATE INDEX ix_job_machine ON jobs (job_machine);
 CREATE INDEX ix_job_created ON jobs (job_created);
 `
 
