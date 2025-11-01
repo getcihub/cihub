@@ -7,6 +7,7 @@ import (
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/reaper"
 	"github.com/getcihub/cihub/service/runner"
+	"github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/session"
 )
 
@@ -15,6 +16,7 @@ import (
 //nolint:unused
 var serviceSet = wire.NewSet(
 	runner.New,
+	user.New,
 	provideReaper,
 	provideSession,
 )
@@ -37,10 +39,5 @@ func provideReaper(
 	scheduler core.Scheduler,
 	config *config.Config,
 ) *reaper.Reaper {
-	return reaper.New(
-		runners,
-		runnerz,
-		scheduler,
-		config.Reaper.Reclaim,
-	)
+	return reaper.New(runners, runnerz, scheduler, config.Reaper.Reclaim)
 }

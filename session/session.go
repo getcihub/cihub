@@ -49,19 +49,9 @@ func (s *session) Get(r *http.Request) (*core.User, error) {
 	switch {
 	case isBearer(r):
 		return s.fromBearer(r)
-	case isBasicAuth(r):
-		return s.fromBasic(r)
 	default:
 		return s.fromCookie(r)
 	}
-}
-
-func (s *session) fromBasic(r *http.Request) (*core.User, error) {
-	_, password, ok := r.BasicAuth()
-	if !ok {
-		return nil, nil
-	}
-	return s.users.FindToken(r.Context(), password)
 }
 
 func (s *session) fromBearer(r *http.Request) (*core.User, error) {
@@ -84,10 +74,6 @@ func (s *session) fromCookie(r *http.Request) (*core.User, error) {
 
 func isBearer(r *http.Request) bool {
 	return hasAuthPrefix(r, "Bearer ")
-}
-
-func isBasicAuth(r *http.Request) bool {
-	return hasAuthPrefix(r, "Basic ")
 }
 
 func hasAuthPrefix(r *http.Request, prefix string) bool {

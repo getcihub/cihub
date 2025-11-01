@@ -20,3 +20,6 @@ vendor/
 
 # Build output
 dist/
+
+# Except web dist folder
+!web/dist/

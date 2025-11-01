@@ -114,11 +114,6 @@ func TestUnauthorized(t *testing.T) {
 		t.Errorf("Expected status 401, got %d", w.Code)
 	}
 
-	authHeader := w.Header().Get("WWW-Authenticate")
-	if authHeader != `Basic realm="CIHub"` {
-		t.Errorf("Expected WWW-Authenticate header, got '%s'", authHeader)
-	}
-
 	var resp Response
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatal(err)

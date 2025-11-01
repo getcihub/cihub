@@ -55,10 +55,11 @@ type (
 
 	// GitHub provides the GitHub integration configuration.
 	GitHub struct {
-		Server    string    `koanf:"server"`
-		APIServer string    `koanf:"api_server"`
-		App       GitHubApp `koanf:"app"`
-		OAuth     OAuth     `koanf:"oauth"`
+		Server     string    `koanf:"server"`
+		APIServer  string    `koanf:"api_server"`
+		SkipVerify bool      `koanf:"skip_verify"`
+		App        GitHubApp `koanf:"app"`
+		OAuth      OAuth     `koanf:"oauth"`
 	}
 
 	// GitHubApp provides the GitHub App configuration.
@@ -70,8 +71,9 @@ type (
 
 	// OAuth provides the OAuth application configuration.
 	OAuth struct {
-		ClientID     string `koanf:"client_id"`
-		ClientSecret string `koanf:"client_secret"`
+		ClientID     string   `koanf:"client_id"`
+		ClientSecret string   `koanf:"client_secret"`
+		Scope        []string `koanf:"scope"`
 	}
 
 	// HTTP provides http security configuration.

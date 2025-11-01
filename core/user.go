@@ -25,6 +25,13 @@ type (
 		Token   string `json:"-"`
 	}
 
+	// UserEmail represents user's email address.
+	UserEmail struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+
 	// UserStore defines operations for working with user on a datastore.
 	UserStore interface {
 		// Count returns a count of users.
@@ -56,5 +63,8 @@ type (
 	UserService interface {
 		// Find returns the authenticated user.
 		Find(ctx context.Context, access, refresh string) (*User, error)
+
+		// ListEmail returns a list of verified emails for the authenticated user
+		ListEmail(ctx context.Context, user *User) ([]*UserEmail, error)
 	}
 )

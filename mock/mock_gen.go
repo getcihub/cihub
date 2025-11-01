@@ -367,18 +367,18 @@ func (mr *MockSchedulerMockRecorder) Cancelled(ctx, runnerName any) *gomock.Call
 }
 
 // Request mocks base method.
-func (m *MockScheduler) Request(ctx context.Context, parals *core.Filter) (*core.Runner, error) {
+func (m *MockScheduler) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Request", ctx, parals)
+	ret := m.ctrl.Call(m, "Request", ctx, params)
 	ret0, _ := ret[0].(*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Request indicates an expected call of Request.
-func (mr *MockSchedulerMockRecorder) Request(ctx, parals any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Request(ctx, params any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, parals)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, params)
 }
 
 // Schedule mocks base method.
@@ -499,6 +499,21 @@ func (m *MockUserService) Find(ctx context.Context, access, refresh string) (*co
 func (mr *MockUserServiceMockRecorder) Find(ctx, access, refresh any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockUserService)(nil).Find), ctx, access, refresh)
+}
+
+// ListEmail mocks base method.
+func (m *MockUserService) ListEmail(ctx context.Context, user *core.User) ([]*core.UserEmail, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListEmail", ctx, user)
+	ret0, _ := ret[0].([]*core.UserEmail)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListEmail indicates an expected call of ListEmail.
+func (mr *MockUserServiceMockRecorder) ListEmail(ctx, user any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListEmail", reflect.TypeOf((*MockUserService)(nil).ListEmail), ctx, user)
 }
 
 // MockUserStore is a mock of UserStore interface.

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   job_runner_id       BIGINT,
   job_runner_name     VARCHAR(255),
   job_url             VARCHAR(1000),
+  job_author_login    VARCHAR(255),
+  job_author_avatar   VARCHAR(1000),
   job_queued          BIGINT,
   job_started         BIGINT,
   job_completed       BIGINT,

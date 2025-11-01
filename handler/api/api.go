@@ -28,12 +28,18 @@ var corsOpts = cors.Options{
 type Server struct {
 	Session core.Session
 	Users   core.UserStore
+	Userz   core.UserService
 }
 
-func New(session core.Session, users core.UserStore) Server {
+func New(
+	session core.Session,
+	users core.UserStore,
+	userz core.UserService,
+) Server {
 	return Server{
 		Session: session,
 		Users:   users,
+		Userz:   userz,
 	}
 }
 
@@ -59,6 +65,8 @@ func (s Server) Handler() http.Handler {
 	r.Route("/user", func(r chi.Router) {
 		r.Use(acl.AuthorizeUser)
 		r.Get("/", user.HandleFind())
+		r.Patch("/", user.HandleUpdate(s.Users))
+		r.Get("/emails", user.HandleEmails(s.Userz))
 	})
 
 	return r

@@ -262,6 +262,8 @@ github:
   # See: https://docs.github.com/en/rest?apiVersion=2022-11-28
   api_server: "https://api.github.com"
 
+  skip_verify: false
+
   app:
     # GitHub App integration ID (also called "App ID")
     # Find this in your GitHub App settings page under "About"
@@ -322,6 +324,9 @@ github:
     #
     # See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
     client_secret: ""
+
+    scope:
+      - "user:email"
 
 # ============================================================================
 # RPC Configuration (Server/Agent Communication)

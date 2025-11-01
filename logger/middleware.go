@@ -38,12 +38,8 @@ func Middleware(next http.Handler) http.Handler {
 
 func authType(r *http.Request) string {
 	authorization := r.Header.Get("Authorization")
-	switch {
-	case strings.HasPrefix(authorization, "Bearer"):
+	if strings.HasPrefix(authorization, "Bearer") {
 		return "bearer"
-	case strings.HasPrefix(authorization, "Basic"):
-		return "basic"
-	default:
-		return "cookie"
 	}
+	return "cookie"
 }

@@ -41,6 +41,8 @@ type (
 		Conclusion     string   `json:"conclusion"`      // Job conclusion (success, failure, etc.)
 		Labels         []string `json:"labels"`          // Required runner labels
 		URL            string   `json:"url"`             // URL to request runner registration token
+		AuthorLogin    string   `json:"author_login"`    // Login of the job's author
+		AuthorAvatar   string   `json:"author_avatar"`   // AvatarURL of the job's author
 		Completed      int64    `json:"completed"`       // Unix timestamp when job completed
 		Created        int64    `json:"created"`         // Unix timestamp when job record was created
 		Queued         int64    `json:"queued"`          // Unix timestamp when job was queued

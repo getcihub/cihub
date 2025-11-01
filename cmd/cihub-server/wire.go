@@ -12,6 +12,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	wire.Build(
 		clientSet,
 		externalSet,
+		loginSet,
 		schedulerSet,
 		serverSet,
 		serviceSet,

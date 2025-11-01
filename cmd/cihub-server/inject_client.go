@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/wire"
@@ -42,4 +44,23 @@ func provideClient(config *config.Config) (githubapp.ClientCreator, error) {
 		githubapp.WithClientTimeout(time.Second*5),
 		githubapp.WithClientCaching(false, func() httpcache.Cache { return httpcache.NewMemoryCache() }),
 	)
+}
+
+// defaultClient provides a default http.Client. If skipverify
+// is true, the default transport will skip ssl verification.
+func defaultClient(skipverify bool) *http.Client {
+	client := &http.Client{}
+	client.Transport = defaultTransport(skipverify)
+	return client
+}
+
+// defaultTransport provides a default http.Transport. If
+// skipverify is true, the transport will skip ssl verification.
+func defaultTransport(skipverify bool) http.RoundTripper {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipverify,
+		},
+	}
 }

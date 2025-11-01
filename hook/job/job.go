@@ -343,6 +343,12 @@ func convertWorkflowJobToJob(event *github.WorkflowJobEvent) *core.Job {
 		URL:            wj.GetHTMLURL(),
 	}
 
+	// Extract author information from the event actor if available
+	if event.Sender != nil {
+		job.AuthorLogin = event.Sender.GetLogin()
+		job.AuthorAvatar = event.Sender.GetAvatarURL()
+	}
+
 	// Convert GitHub timestamps to Unix timestamps
 	if createdAt := wj.GetCreatedAt(); !createdAt.IsZero() {
 		job.Queued = createdAt.Unix()

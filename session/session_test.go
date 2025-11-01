@@ -16,47 +16,6 @@ import (
 	"github.com/dchest/authcookie"
 )
 
-// TestGet_BasicAuth verifies that a user is returned when valid
-// credentials are provided via HTTP Basic Authentication.
-func TestGet_BasicAuth(t *testing.T) {
-	controller := gomock.NewController(t)
-	defer controller.Finish()
-
-	mockUser := &core.User{
-		Login: "octocat",
-		Token: "ulSxuA0FKjNiOFIchk18NNvC6ygSxdtKjiOAS",
-	}
-
-	users := mock.NewMockUserStore(controller)
-	users.EXPECT().FindToken(gomock.Any(), mockUser.Token).Return(mockUser, nil)
-
-	session := New(users, NewConfig("correct-horse-battery-staple", time.Hour, false))
-	r := httptest.NewRequest("GET", "/", nil)
-	r.SetBasicAuth("", "ulSxuA0FKjNiOFIchk18NNvC6ygSxdtKjiOAS")
-	user, _ := session.Get(r)
-	if user != mockUser {
-		t.Errorf("Want authenticated user")
-	}
-}
-
-// TestGet_BasicAuth_InvalidToken verifies that nil is returned
-// when an invalid token is provided via Basic Auth.
-func TestGet_BasicAuth_InvalidToken(t *testing.T) {
-	controller := gomock.NewController(t)
-	defer controller.Finish()
-
-	users := mock.NewMockUserStore(controller)
-	users.EXPECT().FindToken(gomock.Any(), "invalidtoken").Return(nil, sql.ErrNoRows)
-
-	session := New(users, NewConfig("correct-horse-battery-staple", time.Hour, false))
-	r := httptest.NewRequest("GET", "/", nil)
-	r.SetBasicAuth("", "invalidtoken")
-	user, _ := session.Get(r)
-	if user != nil {
-		t.Errorf("Expect nil user with invalid token")
-	}
-}
-
 // This test verifies that a user is returned when a valid
 // authorization token included in the Authorization header.
 func TestGet_Token_Header(t *testing.T) {

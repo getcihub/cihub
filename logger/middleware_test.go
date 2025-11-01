@@ -24,10 +24,4 @@ func TestAuthType(t *testing.T) {
 	if authType(bearerRequest) != "bearer" {
 		t.Error("auth-type is not bearer")
 	}
-
-	basicRequest := httptest.NewRequest("GET", "/", nil)
-	basicRequest.Header.Add("Authorization", "Basic test")
-	if authType(basicRequest) != "basic" {
-		t.Error("auth-type is not basic")
-	}
 }

@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   job_runner_id       INTEGER,
   job_runner_name     TEXT,
   job_url             TEXT,
+  job_author_login    TEXT,
+  job_author_avatar   TEXT,
   job_queued          INTEGER,
   job_started         INTEGER,
   job_completed       INTEGER,

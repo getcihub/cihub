@@ -12,6 +12,7 @@ import (
 	"github.com/getcihub/cihub/handler/web"
 	"github.com/getcihub/cihub/orchestrator/manager"
 	runner2 "github.com/getcihub/cihub/service/runner"
+	user2 "github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/user"
@@ -51,9 +52,11 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	if err != nil {
 		return application{}, err
 	}
-	server := api.New(session, userStore)
+	userService := user2.New(clientCreator)
+	server := api.New(session, userStore, userService)
+	middleware := provideLogin(conf)
 	options := provideServerOptions(conf)
-	webServer := web.New(options)
+	webServer := web.New(middleware, options, session, userStore, userService)
 	mainHealthzHandler := provideHealthz()
 	jobStore := job.New(db)
 	v := provideEventHandlers(jobStore, runnerStore, scheduler)

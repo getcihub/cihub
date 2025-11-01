@@ -116,15 +116,13 @@ func NotFoundWithReason(w http.ResponseWriter, reason string) {
 	Error(w, reason, 404)
 }
 
-// Unauthorized writes error with 401 status and WWW-Authenticate header
+// Unauthorized writes error with 401 status
 func Unauthorized(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="CIHub"`)
 	Error(w, ReasonUnauthorized, 401)
 }
 
 // UnauthorizedWithReason writes error with 401 status and custom reason
 func UnauthorizedWithReason(w http.ResponseWriter, reason string) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="CIHub"`)
 	Error(w, reason, 401)
 }
 

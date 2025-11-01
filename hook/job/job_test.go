@@ -862,6 +862,10 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 		Installation: &github.Installation{
 			ID: github.Ptr(int64(3001)),
 		},
+		Sender: &github.User{
+			Login:     github.Ptr("octouser"),
+			AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/1?v=4"),
+		},
 	}
 
 	job := convertWorkflowJobToJob(event)
@@ -884,6 +888,8 @@ func TestConvertWorkflowJobToJob(t *testing.T) {
 		{"RunnerID", job.RunnerID, int64(5001)},
 		{"RunnerName", job.RunnerName, "runner-awesome"},
 		{"URL", job.URL, "https://github.com/octocat/github/actions/runs/18822693234/job/53737137650"},
+		{"AuthorLogin", job.AuthorLogin, "octouser"},
+		{"AuthorAvatar", job.AuthorAvatar, "https://avatars.githubusercontent.com/u/1?v=4"},
 		{"Queued", job.Queued, createdAt.Unix()},
 		{"Started", job.Started, startedAt.Unix()},
 		{"Completed", job.Completed, completedAt.Unix()},
@@ -938,6 +944,224 @@ func TestConvertWorkflowJobToJob_EmptyTimestamps(t *testing.T) {
 	}
 	if job.Completed != 0 {
 		t.Errorf("Want Completed = 0 for missing CompletedAt, got %d", job.Completed)
+	}
+}
+
+func TestConvertWorkflowJobToJob_WithAuthorInfo(t *testing.T) {
+	event := &github.WorkflowJobEvent{
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("Test Workflow"),
+			Status:       github.Ptr(core.JobStatusQueued),
+		},
+		Repo: &github.Repository{
+			Name: github.Ptr("testrepo"),
+			Owner: &github.User{
+				Login: github.Ptr("testorg"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Ptr(int64(3001)),
+		},
+		Sender: &github.User{
+			Login:     github.Ptr("john-developer"),
+			AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/12345?v=4"),
+		},
+	}
+
+	job := convertWorkflowJobToJob(event)
+
+	if got, want := job.AuthorLogin, "john-developer"; got != want {
+		t.Errorf("Want AuthorLogin = %s, got %s", want, got)
+	}
+	if got, want := job.AuthorAvatar, "https://avatars.githubusercontent.com/u/12345?v=4"; got != want {
+		t.Errorf("Want AuthorAvatar = %s, got %s", want, got)
+	}
+}
+
+func TestConvertWorkflowJobToJob_NoSender(t *testing.T) {
+	event := &github.WorkflowJobEvent{
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("Test Workflow"),
+			Status:       github.Ptr(core.JobStatusQueued),
+		},
+		Repo: &github.Repository{
+			Name: github.Ptr("testrepo"),
+			Owner: &github.User{
+				Login: github.Ptr("testorg"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Ptr(int64(3001)),
+		},
+		Sender: nil, // No sender provided
+	}
+
+	job := convertWorkflowJobToJob(event)
+
+	// Verify AuthorLogin and AuthorAvatar are empty when Sender is nil
+	if got, want := job.AuthorLogin, ""; got != want {
+		t.Errorf("Want empty AuthorLogin, got %s", got)
+	}
+	if got, want := job.AuthorAvatar, ""; got != want {
+		t.Errorf("Want empty AuthorAvatar, got %s", got)
+	}
+}
+
+func TestHandler_Handle_Waiting_WithAuthorInfo(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(mockJobStore, mockRunnerStore, mockScheduler)
+
+	now := time.Now()
+	event := &github.WorkflowJobEvent{
+		Action: github.Ptr("waiting"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
+			Labels:       []string{"cihub-2cpu-2048mb"},
+			HTMLURL:      github.Ptr("https://github.com/octocat/hello-world/actions/runs/2001/jobs/1001"),
+			CreatedAt:    &github.Timestamp{Time: now},
+		},
+		Repo: &github.Repository{
+			Name: github.Ptr("hello-world"),
+			Owner: &github.User{
+				Login: github.Ptr("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Ptr(int64(3001)),
+		},
+		Sender: &github.User{
+			Login:     github.Ptr("alice-dev"),
+			AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/123?v=4"),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect Find to return error (job doesn't exist)
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(nil, errors.New("not found"))
+
+	// Expect Create to be called with author info preserved
+	mockJobStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			// Verify author info is captured
+			if got, want := job.AuthorLogin, "alice-dev"; got != want {
+				t.Errorf("Want AuthorLogin %s, got %s", want, got)
+			}
+			if got, want := job.AuthorAvatar, "https://avatars.githubusercontent.com/u/123?v=4"; got != want {
+				t.Errorf("Want AuthorAvatar %s, got %s", want, got)
+			}
+			return nil
+		})
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
+	}
+}
+
+func TestHandler_Handle_Queued_UpdateWithAuthorInfo(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockJobStore := mock.NewMockJobStore(ctrl)
+	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
+	mockScheduler := mock.NewMockScheduler(ctrl)
+	h := New(mockJobStore, mockRunnerStore, mockScheduler)
+
+	createdTime := time.Now().Add(-5 * time.Minute)
+	now := time.Now()
+
+	event := &github.WorkflowJobEvent{
+		Action: github.Ptr("queued"),
+		WorkflowJob: &github.WorkflowJob{
+			ID:           github.Ptr(int64(1001)),
+			RunID:        github.Ptr(int64(2001)),
+			WorkflowName: github.Ptr("CI"),
+			Status:       github.Ptr(core.JobStatusQueued),
+			HeadBranch:   github.Ptr("main"),
+			HeadSHA:      github.Ptr("abc123"),
+			Labels:       []string{"cihub-2cpu-2048mb"},
+			CreatedAt:    &github.Timestamp{Time: now},
+		},
+		Repo: &github.Repository{
+			Name: github.Ptr("hello-world"),
+			Owner: &github.User{
+				Login: github.Ptr("octocat"),
+			},
+		},
+		Installation: &github.Installation{
+			ID: github.Ptr(int64(3001)),
+		},
+		Sender: &github.User{
+			Login:     github.Ptr("bob-ci"),
+			AvatarURL: github.Ptr("https://avatars.githubusercontent.com/u/456?v=4"),
+		},
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	existingJob := &core.Job{
+		ID:      1001,
+		RunID:   2001,
+		Status:  core.JobStatusQueued,
+		Version: 2,
+		Created: createdTime.Unix(),
+		Updated: createdTime.Unix(),
+	}
+
+	// Expect Find to return existing job
+	mockJobStore.EXPECT().
+		Find(gomock.Any(), int64(1001)).
+		Return(existingJob, nil)
+
+	// Expect Update to be called with author info
+	mockJobStore.EXPECT().
+		Update(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, job *core.Job) error {
+			// Verify author info is preserved in update
+			if got, want := job.AuthorLogin, "bob-ci"; got != want {
+				t.Errorf("Want AuthorLogin %s, got %s", want, got)
+			}
+			if got, want := job.AuthorAvatar, "https://avatars.githubusercontent.com/u/456?v=4"; got != want {
+				t.Errorf("Want AuthorAvatar %s, got %s", want, got)
+			}
+			return nil
+		})
+
+	// Expect runner to be created
+	mockRunnerStore.EXPECT().
+		Create(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	// Expect Schedule to be called
+	mockScheduler.EXPECT().
+		Schedule(gomock.Any(), gomock.Any()).
+		Return(nil)
+
+	if err := h.Handle(noContext, "workflow_job", "test-delivery", payload); err != nil {
+		t.Errorf("Handle failed: %v", err)
 	}
 }
 
