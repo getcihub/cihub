@@ -16,6 +16,7 @@ type Server struct {
 	Login   login.Middleware
 	Options secure.Options
 	Session core.Session
+	Syncer  core.Syncer
 	Users   core.UserStore
 	Userz   core.UserService
 }
@@ -25,6 +26,7 @@ func New(
 	login login.Middleware,
 	options secure.Options,
 	session core.Session,
+	syncer core.Syncer,
 	users core.UserStore,
 	userz core.UserService,
 ) Server {
@@ -32,6 +34,7 @@ func New(
 		Login:   login,
 		Options: options,
 		Session: session,
+		Syncer:  syncer,
 		Users:   users,
 		Userz:   userz,
 	}
@@ -51,7 +54,18 @@ func (s Server) Handler() http.Handler {
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/logout", HandleLogout(s.Session))
 		r.Post("/logout", HandleLogout(s.Session))
-		r.Handle("/login", s.Login.Handler(http.HandlerFunc(HandleLogin(s.Users, s.Userz, s.Session))))
+		r.Handle("/login",
+			s.Login.Handler(
+				http.HandlerFunc(
+					HandleLogin(
+						s.Users,
+						s.Userz,
+						s.Session,
+						s.Syncer,
+					),
+				),
+			),
+		)
 	})
 
 	h := http.FileServer(dist.New())

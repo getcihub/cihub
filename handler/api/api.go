@@ -10,6 +10,9 @@ import (
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/acl"
 	"github.com/getcihub/cihub/handler/api/auth"
+	"github.com/getcihub/cihub/handler/api/orgs"
+	"github.com/getcihub/cihub/handler/api/orgs/jobs"
+	"github.com/getcihub/cihub/handler/api/orgs/machines"
 	"github.com/getcihub/cihub/handler/api/user"
 	"github.com/getcihub/cihub/handler/api/users"
 	"github.com/getcihub/cihub/logger"
@@ -26,20 +29,38 @@ var corsOpts = cors.Options{
 
 // Server is a http.Handler exposing CIHub functionality over HTTP.
 type Server struct {
-	Session core.Session
-	Users   core.UserStore
-	Userz   core.UserService
+	Installations core.InstallationStore
+	Installationz core.InstallationService
+	Jobs          core.JobStore
+	Machines      core.MachineStore
+	Memberships   core.MembershipStore
+	Session       core.Session
+	Syncer        core.Syncer
+	Users         core.UserStore
+	Userz         core.UserService
 }
 
 func New(
+	installations core.InstallationStore,
+	installationz core.InstallationService,
+	jobs core.JobStore,
+	machines core.MachineStore,
+	memberships core.MembershipStore,
 	session core.Session,
+	syncer core.Syncer,
 	users core.UserStore,
 	userz core.UserService,
 ) Server {
 	return Server{
-		Session: session,
-		Users:   users,
-		Userz:   userz,
+		Installations: installations,
+		Installationz: installationz,
+		Jobs:          jobs,
+		Machines:      machines,
+		Memberships:   memberships,
+		Session:       session,
+		Syncer:        syncer,
+		Users:         users,
+		Userz:         userz,
 	}
 }
 
@@ -56,6 +77,30 @@ func (s Server) Handler() http.Handler {
 	cors := cors.New(corsOpts)
 	r.Use(cors.Handler)
 
+	r.Route("/installations", func(r chi.Router) {
+		r.With(acl.AuthorizeAdmin).Get("/", orgs.HandleList())
+
+		r.Route("/{namespace}", func(r chi.Router) {
+			r.Use(acl.InjectOrganization(s.Installations, s.Installationz, s.Memberships))
+			r.Use(acl.CheckMember())
+
+			r.Get("/", orgs.HandleFind())
+
+			r.Route("/jobs", func(r chi.Router) {
+				r.Get("/", jobs.HandleList(s.Jobs))
+				r.Get("/{id}", jobs.HandleFind(s.Jobs))
+			})
+
+			r.Route("/machines", func(r chi.Router) {
+				r.Get("/", machines.HandleList(s.Machines))
+				r.Get("/{hostname}", machines.HandleFind(s.Machines))
+				r.With(acl.CheckAdmin()).Delete("/{hostname}", machines.HandleDelete())
+				r.With(acl.CheckAdmin()).Patch("/{hostname}", machines.HandleUpdate())
+				r.Get("/{hostname}/runners", machines.HandleRunners())
+			})
+		})
+	})
+
 	r.Route("/users", func(r chi.Router) {
 		r.Use(acl.AuthorizeAdmin)
 		r.Get("/", users.HandleList(s.Users))
@@ -67,6 +112,8 @@ func (s Server) Handler() http.Handler {
 		r.Get("/", user.HandleFind())
 		r.Patch("/", user.HandleUpdate(s.Users))
 		r.Get("/emails", user.HandleEmails(s.Userz))
+		r.Get("/installations", user.HandleInstallations(s.Installations))
+		r.Post("/installations", user.HandleSync(s.Syncer, s.Installations))
 	})
 
 	return r

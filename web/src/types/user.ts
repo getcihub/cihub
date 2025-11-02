@@ -1,22 +1,18 @@
 export interface User {
     id: number
     login: string
-    avatar: string
+    avatar_url: string
     email: string
     admin: boolean
     active: boolean
-    created: number
-    updated: number
+    created_at: number
+    updated_at: number
+    synced_at?: number
+    syncing?: boolean
 }
 
-export interface Email {
+export interface UserEmail {
     email: string
     primary?: boolean
     verified?: boolean
-}
-
-export interface ApiResponse<T> {
-    error: boolean
-    reason: string
-    data: T
 }

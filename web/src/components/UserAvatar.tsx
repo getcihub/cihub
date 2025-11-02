@@ -12,7 +12,7 @@ export function UserAvatar() {
         <div className="flex items-center gap-3">
             {/* Avatar Image */}
             <img
-                src={user.avatar}
+                src={user.avatar_url}
                 alt={user.login}
                 className="size-10 rounded-full border-2 border-gray-200 object-cover"
             />

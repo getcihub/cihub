@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Email, ApiResponse } from '../types/user'
+import type { UserEmail } from '../types/user'
+import type { ApiResponse } from '../types/api'
 
 export function useEmails() {
     return useQuery({
@@ -9,7 +10,7 @@ export function useEmails() {
             if (!response.ok) {
                 throw new Error('Failed to fetch emails')
             }
-            const data: ApiResponse<Email[]> = await response.json()
+            const data: ApiResponse<UserEmail[]> = await response.json()
             if (data.error) {
                 throw new Error(data.reason || 'Failed to fetch emails')
             }

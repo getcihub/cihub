@@ -20,6 +20,14 @@ var migrations = []struct {
 		name: "create-table-runners",
 		stmt: createTableRunners,
 	},
+	{
+		name: "create-table-installations",
+		stmt: createTableInstallations,
+	},
+	{
+		name: "create-table-memberships",
+		stmt: createTableMemberships,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -109,6 +117,8 @@ CREATE TABLE IF NOT EXISTS users (
   user_avatar         TEXT,
   user_created        INTEGER,
   user_updated        INTEGER,
+  user_synced         INTEGER,
+  user_syncing        BOOLEAN,
   user_oauth_token    TEXT,
   user_oauth_refresh  TEXT,
   user_oauth_expiry   INTEGER,
@@ -185,4 +195,42 @@ CREATE TABLE IF NOT EXISTS runners (
 CREATE INDEX IF NOT EXISTS ix_runner_status ON runners (runner_status);
 CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
 CREATE INDEX IF NOT EXISTS ix_runner_machine ON runners (runner_machine);
+`
+
+//
+// 0004_create_table_installations.sql
+//
+
+var createTableInstallations = `
+CREATE TABLE IF NOT EXISTS installations (
+  installation_id           INTEGER PRIMARY KEY,
+  installation_login        TEXT COLLATE NOCASE NOT NULL,
+  installation_avatar       TEXT,
+  installation_type         TEXT NOT NULL,
+  installation_created      INTEGER,
+  installation_suspended    INTEGER,
+  installation_updated      INTEGER,
+  UNIQUE(installation_login COLLATE NOCASE)
+);
+`
+
+//
+// 0005_create_table_memberships.sql
+//
+
+var createTableMemberships = `
+CREATE TABLE IF NOT EXISTS memberships (
+  membership_installation_id INTEGER NOT NULL,
+  membership_user_id         INTEGER NOT NULL,
+  membership_role            TEXT NOT NULL,
+  membership_state           TEXT NOT NULL,
+  membership_synced          INTEGER,
+  membership_created         INTEGER,
+  membership_updated         INTEGER,
+  PRIMARY KEY (membership_installation_id, membership_user_id),
+  FOREIGN KEY (membership_installation_id) REFERENCES installations(installation_id),
+  FOREIGN KEY (membership_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(membership_user_id);
 `

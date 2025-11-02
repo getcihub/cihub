@@ -6,7 +6,9 @@ import (
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/reaper"
+	"github.com/getcihub/cihub/service/installation"
 	"github.com/getcihub/cihub/service/runner"
+	"github.com/getcihub/cihub/service/syncer"
 	"github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/session"
 )
@@ -15,7 +17,9 @@ import (
 //
 //nolint:unused
 var serviceSet = wire.NewSet(
+	installation.New,
 	runner.New,
+	syncer.New,
 	user.New,
 	provideReaper,
 	provideSession,

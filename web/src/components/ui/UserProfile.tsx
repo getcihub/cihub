@@ -11,13 +11,16 @@ import { cx, focusRing } from "../../lib/utils"
 import {
     RiArrowRightUpLine,
     RiLogoutBoxLine,
+    RiSettingsLine,
 } from "@remixicon/react"
 import { useAuth } from "../../hooks/useAuth"
+import { useNavigate } from "@tanstack/react-router"
 import React from "react"
 
 function DropdownUserProfile() {
     const [mounted, setMounted] = React.useState(false)
     const { user, logout } = useAuth()
+    const navigate = useNavigate()
 
     React.useEffect(() => {
         setMounted(true)
@@ -50,9 +53,9 @@ function DropdownUserProfile() {
                             "group rounded-full p-1 hover:bg-gray-100 data-[state=open]:bg-gray-100",
                         )}
                     >
-                        {user.avatar ? (
+                        {user.avatar_url ? (
                             <img
-                                src={user.avatar}
+                                src={user.avatar_url}
                                 alt={user.login}
                                 className="size-8 shrink-0 rounded-full border border-gray-300 object-cover"
                             />
@@ -73,6 +76,16 @@ function DropdownUserProfile() {
                     <DropdownMenuLabel>
                         {user.email || user.login}
                     </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                        <DropdownMenuItem onClick={() => navigate({ to: '/account' })}>
+                            <RiSettingsLine
+                                className="mb-1 mr-2 size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            Account Settings
+                        </DropdownMenuItem>
+                    </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
                         <DropdownMenuItem>

@@ -2,21 +2,31 @@ package core
 
 import "context"
 
+const (
+	InstallationTypeOrganization = "organization"
+	InstallationTypeUser         = "user"
+)
+
 type (
 	// Installation represents a GitHub app installation
 	Installation struct {
-		ID        int64  `json:"id"`
-		Owner     string `json:"owner"`
-		Personnal bool   `json:"is_personnal"`
-		Status    string `json:"status"`
-		Created   int64  `json:"created_at"`
-		Updated   int64  `json:"updated_at"`
+		ID         int64       `json:"id"`
+		Login      string      `json:"login"`
+		Avatar     string      `json:"avatar_url"`
+		Type       string      `json:"account_type"`
+		Membership *Membership `json:"membership,omitempty"`
+		Created    int64       `json:"created_at"`
+		Suspended  int64       `json:"suspended_at"`
+		Updated    int64       `json:"updated_at"`
 	}
 
 	// InstallationService provides access to installation from GitHub.
 	InstallationService interface {
 		// List returns a slice of installation the user as access to.
 		List(ctx context.Context, user *User) ([]*Installation, error)
+
+		// FindMembership returns the membership of the user for an organization.
+		FindMembership(ctx context.Context, user *User, org string) (*Membership, error)
 	}
 
 	// InstallationStore defines operations for working with installation on a datastore.
@@ -30,11 +40,11 @@ type (
 		// Find returns installation by ID
 		Find(ctx context.Context, id int64) (*Installation, error)
 
-		// FindOwner returns installation by owner name
-		FindOwner(ctx context.Context, owner string) (*Installation, error)
+		// FindLogin returns installation by login
+		FindLogin(ctx context.Context, login string) (*Installation, error)
 
-		// List returns a slice of installations from the datastore.
-		List(ctx context.Context) ([]*Installation, error)
+		// List returns a slice of installations for a user from the datastore.
+		List(ctx context.Context, user *User) ([]*Installation, error)
 
 		// Update persists an updated installation to the datastore.
 		Update(ctx context.Context, installation *Installation) error

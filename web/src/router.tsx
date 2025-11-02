@@ -1,12 +1,18 @@
 import { RootRoute, Route, Router } from '@tanstack/react-router'
 import { LoginPage } from './pages/Login'
 import { DashboardPage } from './pages/Dashboard'
+import { JobDetailPage } from './pages/JobDetail'
 import { MachinesPage } from './pages/Machines'
+import { MachineDetailPage } from './pages/MachineDetail'
+import { AddMachinePage } from './pages/AddMachine'
 import { SettingsPage } from './pages/Settings'
+import { InstallationsPage } from './pages/Installations'
+import { AccountPage } from './pages/Account'
 import { NotFoundPage } from './pages/NotFound'
 import App from './App'
 import { RootLayout } from './layouts/RootLayout'
-import { ConsoleLayout } from './layouts/ConsoleLayout'
+import { AuthLayout } from './layouts/AuthLayout'
+import { InstallationLayout } from './layouts/InstallationLayout'
 
 // Root route layout - applies to all pages
 const rootRoute = new RootRoute({
@@ -21,30 +27,73 @@ const rootLayoutRoute = new Route({
     component: RootLayout,
 })
 
-// Console layout - shared template for authenticated console pages
-const consoleLayoutRoute = new Route({
+// Auth layout - for authenticated routes that don't require installation context
+const authLayoutRoute = new Route({
     getParentRoute: () => rootLayoutRoute,
-    id: 'console',
-    component: ConsoleLayout,
+    id: 'auth',
+    component: AuthLayout,
 })
 
-// Dashboard index route
-const dashboardRoute = new Route({
-    getParentRoute: () => consoleLayoutRoute,
+// Installations index route (protected, no installation context needed)
+const installationsRoute = new Route({
+    getParentRoute: () => authLayoutRoute,
     path: '/',
+    component: InstallationsPage,
+})
+
+// Account route - protected, no installation context needed
+const accountRoute = new Route({
+    getParentRoute: () => authLayoutRoute,
+    path: '/account',
+    component: AccountPage,
+})
+
+// Installation layout - for routes that require installation context
+// Scoped to a specific installation login parameter
+const installationLayoutRoute = new Route({
+    getParentRoute: () => rootRoute,
+    path: '/$login',
+    component: InstallationLayout,
+})
+
+// Jobs route - requires installation context
+const jobsRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/jobs',
     component: DashboardPage,
 })
 
-// Agents route - uses same layout
-const agentsRoute = new Route({
-    getParentRoute: () => consoleLayoutRoute,
+// Job detail route - requires installation context
+const jobDetailRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/jobs/$jobId',
+    component: JobDetailPage,
+})
+
+// Machines route - requires installation context
+const machinesRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
     path: '/machines',
     component: MachinesPage,
 })
 
-// Settings route - uses same layout
+// Machine detail route - requires installation context
+const machineDetailRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/machines/$name',
+    component: MachineDetailPage,
+})
+
+// Add machine route - requires installation context
+const addMachineRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/machines/add',
+    component: AddMachinePage,
+})
+
+// Settings route - requires installation context
 const settingsRoute = new Route({
-    getParentRoute: () => consoleLayoutRoute,
+    getParentRoute: () => installationLayoutRoute,
     path: '/settings',
     component: SettingsPage,
 })
@@ -59,8 +108,19 @@ const loginRoute = new Route({
 // Create the route tree
 const routeTree = rootRoute.addChildren([
     rootLayoutRoute.addChildren([
-        consoleLayoutRoute.addChildren([dashboardRoute, agentsRoute, settingsRoute]),
+        authLayoutRoute.addChildren([
+            installationsRoute,
+            accountRoute,
+        ]),
         loginRoute,
+    ]),
+    installationLayoutRoute.addChildren([
+        machinesRoute,
+        machineDetailRoute,
+        addMachineRoute,
+        jobsRoute,
+        jobDetailRoute,
+        settingsRoute,
     ]),
 ])
 

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ApiResponse, User } from '../types/user'
+import type { User } from '../types/user'
+import type { ApiResponse } from '../types/api'
 
 interface UpdateEmailPayload {
     email: string

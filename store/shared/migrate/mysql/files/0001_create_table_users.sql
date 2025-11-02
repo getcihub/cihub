@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
   user_avatar         VARCHAR(1000),
   user_created        BIGINT,
   user_updated        BIGINT,
+  user_synced         BIGINT,
+  user_syncing        BOOLEAN,
   user_oauth_token    TEXT,
   user_oauth_refresh  TEXT,
   user_oauth_expiry   BIGINT,

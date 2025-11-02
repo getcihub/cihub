@@ -4,7 +4,11 @@ import (
 	"github.com/google/wire"
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
+	"github.com/getcihub/cihub/store/batch"
+	"github.com/getcihub/cihub/store/installation"
 	"github.com/getcihub/cihub/store/job"
+	"github.com/getcihub/cihub/store/machine"
+	"github.com/getcihub/cihub/store/membership"
 	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/shared/db"
 	"github.com/getcihub/cihub/store/shared/encrypter"
@@ -17,7 +21,11 @@ import (
 var storeSet = wire.NewSet(
 	provideDatabase,
 	provideEncrypter,
+	installation.New,
+	batch.New,
 	job.New,
+	machine.New,
+	membership.New,
 	runner.New,
 	user.New,
 )

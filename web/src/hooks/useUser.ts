@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { User, ApiResponse } from '../types/user'
+import type { User } from '../types/user'
+import type { ApiResponse } from '../types/api'
 
 export function useUser() {
     return useQuery({

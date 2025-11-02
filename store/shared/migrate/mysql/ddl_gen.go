@@ -20,6 +20,14 @@ var migrations = []struct {
 		name: "create-table-runners",
 		stmt: createTableRunners,
 	},
+	{
+		name: "create-table-installations",
+		stmt: createTableInstallations,
+	},
+	{
+		name: "create-table-memberships",
+		stmt: createTableMemberships,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -109,6 +117,8 @@ CREATE TABLE IF NOT EXISTS users (
   user_avatar         VARCHAR(1000),
   user_created        BIGINT,
   user_updated        BIGINT,
+  user_synced         BIGINT,
+  user_syncing        BOOLEAN,
   user_oauth_token    TEXT,
   user_oauth_refresh  TEXT,
   user_oauth_expiry   BIGINT,
@@ -185,4 +195,42 @@ CREATE TABLE IF NOT EXISTS runners (
 CREATE INDEX ix_runner_status ON runners (runner_status);
 CREATE INDEX ix_runner_created ON runners (runner_created);
 CREATE INDEX ix_runner_machine ON runners (runner_machine);
+`
+
+//
+// 0004_create_table_installations.sql
+//
+
+var createTableInstallations = `
+CREATE TABLE IF NOT EXISTS installations (
+  installation_id           BIGINT PRIMARY KEY,
+  installation_login        VARCHAR(255) NOT NULL,
+  installation_avatar       VARCHAR(1000),
+  installation_type         VARCHAR(50) NOT NULL,
+  installation_created      BIGINT,
+  installation_suspended    BIGINT,
+  installation_updated      BIGINT,
+  UNIQUE(installation_login)
+);
+`
+
+//
+// 0005_create_table_memberships.sql
+//
+
+var createTableMemberships = `
+CREATE TABLE IF NOT EXISTS memberships (
+  membership_installation_id BIGINT NOT NULL,
+  membership_user_id         BIGINT NOT NULL,
+  membership_role            VARCHAR(50) NOT NULL,
+  membership_state           VARCHAR(50) NOT NULL,
+  membership_synced          BIGINT,
+  membership_created         BIGINT,
+  membership_updated         BIGINT,
+  PRIMARY KEY (membership_installation_id, membership_user_id),
+  FOREIGN KEY (membership_installation_id) REFERENCES installations(installation_id),
+  FOREIGN KEY (membership_user_id) REFERENCES users(user_id)
+);
+
+CREATE INDEX idx_memberships_user_id ON memberships(membership_user_id);
 `

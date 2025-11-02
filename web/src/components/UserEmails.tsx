@@ -17,6 +17,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useEmails } from '../hooks/useEmails'
 import { useToast } from '../hooks/useToast'
 import { useUpdateEmail } from '../hooks/useUpdateEmail'
+import type { UserEmail } from '../types/user'
 
 export function UserEmails() {
     const { user } = useAuth()
@@ -90,7 +91,7 @@ export function UserEmails() {
                                 <SelectValue placeholder="Select an email" />
                             </SelectTrigger>
                             <SelectContent>
-                                {emails.map((email) => (
+                                {emails.map((email: UserEmail) => (
                                     <SelectItem key={email.email} value={email.email}>
                                         <div className="flex items-center gap-2">
                                             {email.email}

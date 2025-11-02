@@ -11,9 +11,15 @@ import (
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/web"
 	"github.com/getcihub/cihub/orchestrator/manager"
+	installation2 "github.com/getcihub/cihub/service/installation"
 	runner2 "github.com/getcihub/cihub/service/runner"
+	"github.com/getcihub/cihub/service/syncer"
 	user2 "github.com/getcihub/cihub/service/user"
+	"github.com/getcihub/cihub/store/batch"
+	"github.com/getcihub/cihub/store/installation"
 	"github.com/getcihub/cihub/store/job"
+	"github.com/getcihub/cihub/store/machine"
+	"github.com/getcihub/cihub/store/membership"
 	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/user"
 )
@@ -47,18 +53,24 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	}
 	scheduler := provideScheduler(runnerStore, redisDB)
 	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
+	installationStore := installation.New(db)
+	installationService := installation2.New(clientCreator)
+	jobStore := job.New(db)
+	machineStore := machine.New(db)
+	membershipStore := membership.New(db)
 	userStore := user.New(db, encrypter)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
 		return application{}, err
 	}
+	batcher := batch.New(db)
+	coreSyncer := syncer.New(batcher, installationService, installationStore, userStore)
 	userService := user2.New(clientCreator)
-	server := api.New(session, userStore, userService)
+	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, session, coreSyncer, userStore, userService)
 	middleware := provideLogin(conf)
 	options := provideServerOptions(conf)
-	webServer := web.New(middleware, options, session, userStore, userService)
+	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)
 	mainHealthzHandler := provideHealthz()
-	jobStore := job.New(db)
 	v := provideEventHandlers(jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)

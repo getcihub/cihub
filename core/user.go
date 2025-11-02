@@ -14,11 +14,13 @@ type (
 		ID      int64  `json:"id"`
 		Login   string `json:"login"`
 		Email   string `json:"email"`
-		Avatar  string `json:"avatar"`
+		Avatar  string `json:"avatar_url"`
 		Active  bool   `json:"active"`
 		Admin   bool   `json:"admin"`
 		Created int64  `json:"created_at"`
 		Updated int64  `json:"updated_at"`
+		Synced  int64  `json:"synced_at"`
+		Syncing bool   `json:"syncing"`
 		Access  string `json:"-"`
 		Refresh string `json:"-"`
 		Expiry  int64  `json:"-"`

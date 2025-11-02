@@ -2,7 +2,11 @@ import { Outlet } from '@tanstack/react-router'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { Navigation } from '../components/ui/Navigation'
 
-export function ConsoleLayout() {
+/**
+ * AuthLayout wraps authenticated routes that don't require installation context
+ * Routes: /, /account
+ */
+export function AuthLayout() {
     return (
         <ProtectedRoute>
             <div>
