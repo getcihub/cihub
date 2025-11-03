@@ -125,7 +125,42 @@ export function useMachineMutations() {
         },
     })
 
+    const createMachine = useMutation({
+        mutationFn: async (machineData: {
+            name: string
+            arch: string
+            cpu: number
+            ram: number
+            labels: string[]
+        }) => {
+            if (!selectedInstallation) {
+                throw new Error('No installation selected')
+            }
+
+            const response = await fetch(`/api/installations/${selectedInstallation.login}/machines`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(machineData),
+            })
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}))
+                throw new Error(error.reason || 'Failed to create machine')
+            }
+
+            return response.json()
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ['installations', selectedInstallation?.login, 'machines'],
+            })
+        },
+    })
+
     return {
+        createMachine,
         pauseMachine,
         resumeMachine,
         restartMachine,

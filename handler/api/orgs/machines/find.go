@@ -15,15 +15,18 @@ import (
 func HandleFind(machines core.MachineStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
-			owner    = chi.URLParam(r, "owner")
-			hostname = chi.URLParam(r, "hostname")
+			owner = chi.URLParam(r, "owner")
+			name  = chi.URLParam(r, "name")
 		)
 
-		machine, err := machines.Find(r.Context(), hostname, owner)
+		machine, err := machines.Find(r.Context(), owner, name)
 		if err != nil {
 			render.NotFound(w)
 			logger.FromRequest(r).
-				Debugln("api: cannot find machine")
+				WithError(err).
+				WithField("owner", owner).
+				WithField("name", name).
+				Debugln("api: machine not found")
 			return
 		}
 

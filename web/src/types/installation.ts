@@ -10,6 +10,7 @@ export interface Installation {
     created_at: number
     suspended_at?: number
     updated_at: number
+    stripe_product_id?: string
 }
 
 export interface Membership {

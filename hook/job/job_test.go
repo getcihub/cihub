@@ -78,7 +78,7 @@ func TestHandler_Handle_Waiting_CreateNew(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called
@@ -150,7 +150,7 @@ func TestHandler_Handle_Waiting_AlreadyExists(t *testing.T) {
 
 	// Expect Find to return existing job
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	// Create should NOT be called (no expectation set)
@@ -202,7 +202,7 @@ func TestHandler_Handle_Queued_CreateNew(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called
@@ -281,7 +281,7 @@ func TestHandler_Handle_Queued_UpdateExisting(t *testing.T) {
 
 	// Expect Find to return existing job
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	// Expect Update to be called, no runner sync for queued
@@ -372,7 +372,7 @@ func TestHandler_Handle_InProgress_UpdateExisting(t *testing.T) {
 
 	// Expect Find to return existing job
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	// Expect Update to be called
@@ -493,7 +493,7 @@ func TestHandler_Handle_Completed_UpdateExisting(t *testing.T) {
 	}
 
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	mockJobStore.EXPECT().
@@ -586,7 +586,7 @@ func TestHandler_Handle_Completed_RunnerNotFound(t *testing.T) {
 	}
 
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	mockJobStore.EXPECT().
@@ -764,7 +764,7 @@ func TestHandler_Handle_CreateError(t *testing.T) {
 	}
 
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	mockJobStore.EXPECT().
@@ -818,7 +818,7 @@ func TestHandler_Handle_UpdateError(t *testing.T) {
 	}
 
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	mockJobStore.EXPECT().
@@ -1056,7 +1056,7 @@ func TestHandler_Handle_Waiting_WithAuthorInfo(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called with author info preserved
@@ -1133,7 +1133,7 @@ func TestHandler_Handle_Queued_UpdateWithAuthorInfo(t *testing.T) {
 
 	// Expect Find to return existing job
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(existingJob, nil)
 
 	// Expect Update to be called with author info
@@ -1244,7 +1244,7 @@ func TestHandler_Handle_MatchingLabel_ProcessesEvent(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called
@@ -1307,7 +1307,7 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called
@@ -1382,7 +1382,7 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 
 	// Expect Find to return error (job doesn't exist)
 	mockJobStore.EXPECT().
-		Find(gomock.Any(), int64(1001)).
+		Find(gomock.Any(), "octocat", int64(1001)).
 		Return(nil, errors.New("not found"))
 
 	// Expect Create to be called

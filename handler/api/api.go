@@ -13,6 +13,7 @@ import (
 	"github.com/getcihub/cihub/handler/api/orgs"
 	"github.com/getcihub/cihub/handler/api/orgs/jobs"
 	"github.com/getcihub/cihub/handler/api/orgs/machines"
+	"github.com/getcihub/cihub/handler/api/orgs/runners"
 	"github.com/getcihub/cihub/handler/api/user"
 	"github.com/getcihub/cihub/handler/api/users"
 	"github.com/getcihub/cihub/logger"
@@ -34,6 +35,8 @@ type Server struct {
 	Jobs          core.JobStore
 	Machines      core.MachineStore
 	Memberships   core.MembershipStore
+	Runners       core.RunnerStore
+	Scheduler     core.Scheduler
 	Session       core.Session
 	Syncer        core.Syncer
 	Users         core.UserStore
@@ -46,6 +49,8 @@ func New(
 	jobs core.JobStore,
 	machines core.MachineStore,
 	memberships core.MembershipStore,
+	runners core.RunnerStore,
+	scheduler core.Scheduler,
 	session core.Session,
 	syncer core.Syncer,
 	users core.UserStore,
@@ -57,6 +62,8 @@ func New(
 		Jobs:          jobs,
 		Machines:      machines,
 		Memberships:   memberships,
+		Runners:       runners,
+		Scheduler:     scheduler,
 		Session:       session,
 		Syncer:        syncer,
 		Users:         users,
@@ -80,7 +87,7 @@ func (s Server) Handler() http.Handler {
 	r.Route("/installations", func(r chi.Router) {
 		r.With(acl.AuthorizeAdmin).Get("/", orgs.HandleList())
 
-		r.Route("/{namespace}", func(r chi.Router) {
+		r.Route("/{owner}", func(r chi.Router) {
 			r.Use(acl.InjectOrganization(s.Installations, s.Installationz, s.Memberships))
 			r.Use(acl.CheckMember())
 
@@ -93,10 +100,16 @@ func (s Server) Handler() http.Handler {
 
 			r.Route("/machines", func(r chi.Router) {
 				r.Get("/", machines.HandleList(s.Machines))
-				r.Get("/{hostname}", machines.HandleFind(s.Machines))
-				r.With(acl.CheckAdmin()).Delete("/{hostname}", machines.HandleDelete())
-				r.With(acl.CheckAdmin()).Patch("/{hostname}", machines.HandleUpdate())
-				r.Get("/{hostname}/runners", machines.HandleRunners())
+				r.With(acl.CheckAdmin()).Post("/", machines.HandleCreate(s.Machines))
+				r.Get("/{name}", machines.HandleFind(s.Machines))
+				r.With(acl.CheckAdmin()).
+					Delete("/{name}", machines.HandleDelete(s.Machines, s.Scheduler))
+				r.With(acl.CheckAdmin()).Patch("/{name}", machines.HandleUpdate())
+				r.Get("/{name}/runners", machines.HandleRunners())
+			})
+
+			r.Route("/runners", func(r chi.Router) {
+				r.Get("/{name}", runners.HandleFind(s.Runners))
 			})
 		})
 	})

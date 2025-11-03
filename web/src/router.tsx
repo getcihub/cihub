@@ -1,6 +1,6 @@
 import { RootRoute, Route, Router } from '@tanstack/react-router'
 import { LoginPage } from './pages/Login'
-import { DashboardPage } from './pages/Dashboard'
+import { JobsPage } from './pages/Jobs'
 import { JobDetailPage } from './pages/JobDetail'
 import { MachinesPage } from './pages/Machines'
 import { MachineDetailPage } from './pages/MachineDetail'
@@ -60,7 +60,7 @@ const installationLayoutRoute = new Route({
 const jobsRoute = new Route({
     getParentRoute: () => installationLayoutRoute,
     path: '/jobs',
-    component: DashboardPage,
+    component: JobsPage,
 })
 
 // Job detail route - requires installation context

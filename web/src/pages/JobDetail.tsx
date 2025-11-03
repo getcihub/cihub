@@ -1,25 +1,28 @@
-import { useParams, useNavigate } from '@tanstack/react-router'
-import { RiArrowLeftLine, RiBriefcaseLine, RiExternalLinkLine, RiCheckLine, RiArrowRightLine, RiTimeLine, RiServerLine, RiCpuLine, RiHardDriveLine } from '@remixicon/react'
-import { useJobs } from '../hooks/useJobs'
-import { useRunners } from '../hooks/useRunners'
+import { useParams, useNavigate, useSearch } from '@tanstack/react-router'
+import { RiArrowLeftLine, RiBriefcaseLine, RiExternalLinkLine, RiCheckLine, RiArrowRightLine, RiTimeLine, RiServerLine, RiCpuLine, RiRam2Line } from '@remixicon/react'
+import { useJobDetail } from '../hooks/useJobDetail'
+import { useRunnerDetail } from '../hooks/useRunnerDetail'
 import { useInstallation } from '../hooks/useInstallation'
 import { JobStatusBadge } from '../components/JobStatusBadge'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
+import { Skeleton } from '../components/Skeleton'
 
 export function JobDetailPage() {
     const { jobId } = useParams({ from: '/$login/jobs/$jobId' })
-    const navigate = useNavigate()
+    const navigate = useNavigate({ from: '/$login/jobs/$jobId' })
+    const searchParams = useSearch({ from: '/$login/jobs/$jobId' }) as { tab?: string } | undefined
     const { selectedInstallation } = useInstallation()
-    const { data: jobs = [] } = useJobs()
-    const { data: runners = [] } = useRunners()
-
-    const job = jobs.find((j) => String(j.id) === jobId)
-    const assignedRunner = job && job.runner_id > 0 ? runners.find((r) => r.id === job.runner_id) : null
+    const { data: job, isLoading, error } = useJobDetail(jobId)
+    const { data: assignedRunner } = useRunnerDetail(job?.runner_name)
 
     const handleBack = () => {
         if (selectedInstallation) {
-            navigate({ to: '/$login/jobs', params: { login: selectedInstallation.login } })
+            navigate({
+                to: '/$login/jobs',
+                params: { login: selectedInstallation.login },
+                search: searchParams?.tab ? { tab: searchParams.tab } : undefined,
+            })
         }
     }
 
@@ -49,7 +52,30 @@ export function JobDetailPage() {
         ? job.completed - job.created
         : 0
 
-    if (!job) {
+    if (isLoading) {
+        return (
+            <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                    <Button
+                        onClick={handleBack}
+                        variant="ghost"
+                        className="gap-2"
+                    >
+                        <RiArrowLeftLine className="size-4" />
+                        Back
+                    </Button>
+                </div>
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <div className="space-y-4">
+                    {[...Array(3)].map((_, i) => (
+                        <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                    ))}
+                </div>
+            </div>
+        )
+    }
+
+    if (error || !job) {
         return (
             <div className="space-y-6">
                 <div className="flex items-center gap-4">
@@ -65,6 +91,7 @@ export function JobDetailPage() {
                 <Card className="p-8 text-center">
                     <RiBriefcaseLine className="size-12 text-gray-300 mx-auto mb-4" aria-hidden="true" />
                     <p className="text-lg font-medium text-gray-900">Job not found</p>
+                    {error && <p className="text-sm text-gray-600 mt-2">{error.message}</p>}
                 </Card>
             </div>
         )
@@ -161,65 +188,64 @@ export function JobDetailPage() {
             {/* Job Information Card */}
             <Card className="p-6">
                 <h2 className="text-sm font-semibold text-gray-900 mb-4">Job Information</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Left Column: Source Information */}
-                    <div className="space-y-3">
-                        {/* Author Row */}
-                        <div className="pb-3 border-b border-gray-200">
-                            <div className="flex items-center gap-3">
-                                <img
-                                    src={job.author_avatar}
-                                    alt={job.author_login}
-                                    className="size-6 rounded-full object-cover"
-                                />
-                                <div>
-                                    <p className="text-xs font-medium text-gray-600">Triggered by</p>
-                                    <p className="text-sm font-medium text-gray-900">@{job.author_login}</p>
-                                </div>
-                            </div>
-                        </div>
 
-                        {/* Repository & Branch Row */}
+                {/* Top Row: Author, Workflow, Repository */}
+                <div className="flex flex-wrap items-center gap-8 pb-6 border-b border-gray-200">
+                    {/* Author */}
+                    <div className="flex items-center gap-3">
+                        <img
+                            src={job.author_avatar}
+                            alt={job.author_login}
+                            className="size-6 rounded-full object-cover"
+                        />
                         <div>
-                            <p className="text-xs font-medium text-gray-600">Repository</p>
-                            <p className="text-sm font-medium text-gray-900 mt-1">{job.owner}/{job.repo}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-medium text-gray-600">Branch</p>
-                            <p className="text-sm font-medium text-gray-900 mt-1">{job.branch}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-medium text-gray-600">Commit</p>
-                            <p className="text-sm font-mono text-gray-900 mt-1">{job.sha.substring(0, 7)}</p>
+                            <p className="text-xs font-medium text-gray-600">Triggered by</p>
+                            <p className="text-sm font-medium text-gray-900">@{job.author_login}</p>
                         </div>
                     </div>
 
-                    {/* Right Column: Workflow & Labels */}
-                    <div className="space-y-3">
-                        <div>
-                            <p className="text-xs font-medium text-gray-600">Workflow</p>
-                            <p className="text-sm font-medium text-gray-900 mt-1 truncate">{job.workflow}</p>
-                        </div>
-                        <div>
-                            <p className="text-xs font-medium text-gray-600">Run ID</p>
-                            <p className="text-sm font-mono text-gray-900 mt-1">{job.run_id}</p>
-                        </div>
-                        {job.labels && job.labels.length > 0 && (
-                            <div className="pt-2 border-t border-gray-200">
-                                <p className="text-xs font-medium text-gray-600 mb-2">Required Labels</p>
-                                <div className="flex flex-wrap gap-1">
-                                    {job.labels.map((label) => (
-                                        <span
-                                            key={label}
-                                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                                        >
-                                            {label}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                    {/* Workflow */}
+                    <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-600">Workflow</p>
+                        <p className="text-sm font-medium text-gray-900 mt-1 truncate">{job.workflow}</p>
                     </div>
+
+                    {/* Repository */}
+                    <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-600">Repository</p>
+                        <p className="text-sm font-medium text-gray-900 mt-1">{job.owner}/{job.repo}</p>
+                    </div>
+                </div>
+
+                {/* Bottom Row: Branch, Commit, Run ID, Labels */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 pt-6">
+                    <div>
+                        <p className="text-xs font-medium text-gray-600">Branch</p>
+                        <p className="text-sm font-medium text-gray-900 mt-1">{job.branch}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-gray-600">Commit</p>
+                        <p className="text-sm font-mono text-gray-900 mt-1">{job.sha.substring(0, 7)}</p>
+                    </div>
+                    <div>
+                        <p className="text-xs font-medium text-gray-600">Run ID</p>
+                        <p className="text-sm font-mono text-gray-900 mt-1">{job.run_id}</p>
+                    </div>
+                    {job.labels && job.labels.length > 0 && (
+                        <div className="col-span-2 md:col-span-1">
+                            <p className="text-xs font-medium text-gray-600 mb-2">Required Labels</p>
+                            <div className="flex flex-wrap gap-1">
+                                {job.labels.map((label) => (
+                                    <span
+                                        key={label}
+                                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                                    >
+                                        {label}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </Card>
 
@@ -340,7 +366,7 @@ export function JobDetailPage() {
             </Card>
 
             {/* Runner Assignment */}
-            {assignedRunner ? (
+            {job?.runner_name && assignedRunner ? (
                 <Card className="p-6">
                     <div className="flex items-start gap-4">
                         <div className="rounded-lg bg-blue-100 p-3 flex-shrink-0">
@@ -378,11 +404,11 @@ export function JobDetailPage() {
                                             <p className="text-sm font-mono text-gray-900">{assignedRunner.arch}</p>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <RiCpuLine className="size-4 text-purple-600" aria-hidden="true" />
+                                            <RiCpuLine className="size-4 text-blue-600" aria-hidden="true" />
                                             <p className="text-sm text-gray-900"><span className="font-semibold">{assignedRunner.cpu}</span> vCPU</p>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <RiHardDriveLine className="size-4 text-orange-600" aria-hidden="true" />
+                                            <RiRam2Line className="size-4 text-blue-600" aria-hidden="true" />
                                             <p className="text-sm text-gray-900"><span className="font-semibold">{Math.round(assignedRunner.ram / 1024)}</span> GB RAM</p>
                                         </div>
                                     </div>

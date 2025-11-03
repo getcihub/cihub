@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { Card } from './Card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './ui/card'
 import {
     Select,
     SelectContent,
@@ -11,7 +11,6 @@ import {
 import { Badge } from './Badge'
 import { Button } from './Button'
 import { Skeleton } from './Skeleton'
-import { Text } from './Text'
 
 import { useAuth } from '../hooks/useAuth'
 import { useEmails } from '../hooks/useEmails'
@@ -66,20 +65,15 @@ export function UserEmails() {
     }
 
     return (
-        <Card className="overflow-hidden p-0">
-            <div className="px-4 py-4">
-                <h3 className="font-bold text-gray-900">
-                    Email
-                </h3>
-                <Text variant="xs" className="mt-1">
-                    This email address will be used for account-related notifications
-                </Text>
-            </div>
-            <div className="px-4 pb-6">
+        <Card className='mb-6'>
+            <CardHeader>
+                <CardTitle>Email address</CardTitle>
+                <CardDescription>Email address used for account-related notifications</CardDescription>
+            </CardHeader>
+            <CardContent>
                 {isLoading ? (
                     <div className="space-y-4">
                         <Skeleton className="h-10 w-full rounded-md" />
-                        <Skeleton className="h-8 w-20 rounded-md ml-auto" />
                     </div>
                 ) : (
                     <div className="space-y-4">
@@ -108,8 +102,8 @@ export function UserEmails() {
                         </Select>
                     </div>
                 )}
-            </div>
-            <div className="bg-gray-50 px-4 py-3 flex justify-end border-t border-gray-200">
+            </CardContent>
+            <CardFooter>
                 <Button
                     onClick={handleSave}
                     disabled={!hasChanges || isPending || isLoading}
@@ -118,7 +112,7 @@ export function UserEmails() {
                 >
                     Save Changes
                 </Button>
-            </div>
+            </CardFooter>
         </Card>
     )
 }

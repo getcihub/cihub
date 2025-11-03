@@ -45,6 +45,7 @@ func Reset(d *db.DB) {
 		tx.Exec("DELETE FROM runners")
 		tx.Exec("DELETE FROM installations")
 		tx.Exec("DELETE FROM memberships")
+		tx.Exec("DELETE FROM machines")
 		return nil
 	})
 }

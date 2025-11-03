@@ -3,9 +3,10 @@ package batch
 import (
 	"context"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/store/shared/db"
-	"github.com/sirupsen/logrus"
 )
 
 type store struct {
@@ -23,24 +24,29 @@ func (s *store) Batch(ctx context.Context, user *core.User, batch *core.Batch) e
 	return s.db.Update(func(execer db.Execer, binder db.Binder) error {
 		// Process inserts: new installations and their memberships
 		for _, installation := range batch.Insert {
-			if err := s.insertInstallation(ctx, execer, binder, installation); err != nil {
+			err := s.insertInstallation(execer, binder, installation)
+			if err != nil {
 				return err
 			}
-			if err := s.insertMembership(ctx, execer, binder, user, installation); err != nil {
+
+			err = s.insertMembership(execer, binder, user, installation)
+			if err != nil {
 				return err
 			}
 		}
 
 		// Process updates: existing installations with changed membership data
 		for _, installation := range batch.Update {
-			if err := s.updateMembership(ctx, execer, binder, user, installation); err != nil {
+			err := s.updateMembership(execer, binder, user, installation)
+			if err != nil {
 				return err
 			}
 		}
 
 		// Process revokes: remove memberships for installations no longer in GitHub
 		for _, installation := range batch.Revoke {
-			if err := s.revokeMembership(ctx, execer, binder, user, installation); err != nil {
+			err := s.revokeMembership(execer, binder, user, installation)
+			if err != nil {
 				return err
 			}
 		}
@@ -49,7 +55,7 @@ func (s *store) Batch(ctx context.Context, user *core.User, batch *core.Batch) e
 	})
 }
 
-func (s *store) insertInstallation(ctx context.Context, execer db.Execer, binder db.Binder, installation *core.Installation) error {
+func (s *store) insertInstallation(execer db.Execer, binder db.Binder, installation *core.Installation) error {
 	params := map[string]interface{}{
 		"installation_id":        installation.ID,
 		"installation_login":     installation.Login,
@@ -80,13 +86,15 @@ func (s *store) insertInstallation(ctx context.Context, execer db.Execer, binder
 	return err
 }
 
-func (s *store) insertMembership(ctx context.Context, execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
+func (s *store) insertMembership(execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
 	if installation.Membership == nil {
-		logrus.WithFields(logrus.Fields{
-			"user_login":       user.Login,
-			"installation_id":  installation.ID,
-			"installation_log": installation.Login,
-		}).Warnln("batch: installation missing membership")
+		logrus.WithFields(
+			logrus.Fields{
+				"installation_id":    installation.ID,
+				"installation_login": installation.Login,
+				"user_login":         user.Login,
+			},
+		).Warnln("batch: installation missing membership")
 		return nil
 	}
 
@@ -109,13 +117,15 @@ func (s *store) insertMembership(ctx context.Context, execer db.Execer, binder d
 	return err
 }
 
-func (s *store) updateMembership(ctx context.Context, execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
+func (s *store) updateMembership(execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
 	if installation.Membership == nil {
-		logrus.WithFields(logrus.Fields{
-			"user_login":       user.Login,
-			"installation_id":  installation.ID,
-			"installation_log": installation.Login,
-		}).Warnln("batch: installation missing membership")
+		logrus.WithFields(
+			logrus.Fields{
+				"user_login":       user.Login,
+				"installation_id":  installation.ID,
+				"installation_log": installation.Login,
+			},
+		).Warnln("batch: installation missing membership")
 		return nil
 	}
 
@@ -138,7 +148,7 @@ func (s *store) updateMembership(ctx context.Context, execer db.Execer, binder d
 	return err
 }
 
-func (s *store) revokeMembership(ctx context.Context, execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
+func (s *store) revokeMembership(execer db.Execer, binder db.Binder, user *core.User, installation *core.Installation) error {
 	// Delete both installation and membership records when revoking
 	params := map[string]interface{}{
 		"membership_user_id":         user.ID,
@@ -149,16 +159,13 @@ func (s *store) revokeMembership(ctx context.Context, execer db.Execer, binder d
 	if err != nil {
 		return err
 	}
-
 	_, err = execer.Exec(stmt, args...)
 	if err != nil {
 		return err
 	}
 
 	// Delete the installation if no other users have memberships for it
-	params = map[string]interface{}{
-		"installation_id": installation.ID,
-	}
+	params = map[string]interface{}{"installation_id": installation.ID}
 	stmt, args, err = binder.BindNamed(stmtDeleteInstallation, params)
 	if err != nil {
 		return err

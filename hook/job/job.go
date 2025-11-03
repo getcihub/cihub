@@ -121,7 +121,7 @@ func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payl
 
 func (h *handler) handleWaiting(ctx context.Context, log *logrus.Entry, job *core.Job) error {
 	// Try to find existing job for idempotency
-	_, err := h.jobs.Find(ctx, job.ID)
+	_, err := h.jobs.Find(ctx, job.Owner, job.ID)
 	if err == nil {
 		// Job already exists, nothing to do
 		log.Debugln("hook: job already exists in waiting state")
@@ -143,7 +143,7 @@ func (h *handler) handleWaiting(ctx context.Context, log *logrus.Entry, job *cor
 
 func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core.Job, lbl *label.Label) error {
 	// Try to find existing job
-	existing, err := h.jobs.Find(ctx, job.ID)
+	existing, err := h.jobs.Find(ctx, job.Owner, job.ID)
 	if err != nil {
 		// Create new job record
 		now := time.Now().Unix()
@@ -183,7 +183,7 @@ func (h *handler) handleQueued(ctx context.Context, log *logrus.Entry, job *core
 
 func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *core.Job) error {
 	// Try to find existing job
-	existing, err := h.jobs.Find(ctx, job.ID)
+	existing, err := h.jobs.Find(ctx, job.Owner, job.ID)
 	if err != nil {
 		// Create new job record
 		now := time.Now().Unix()
@@ -223,7 +223,7 @@ func (h *handler) handleInProgress(ctx context.Context, log *logrus.Entry, job *
 
 func (h *handler) handleCompleted(ctx context.Context, log *logrus.Entry, job *core.Job) error {
 	// Try to find existing job
-	existing, err := h.jobs.Find(ctx, job.ID)
+	existing, err := h.jobs.Find(ctx, job.Owner, job.ID)
 	if err != nil {
 		// Create new job record (shouldn't normally happen, but be safe)
 		now := time.Now().Unix()

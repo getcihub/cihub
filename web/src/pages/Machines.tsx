@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { RiServerLine, RiCpuLine, RiHardDriveLine, RiAddLine, RiArrowRightSLine } from '@remixicon/react'
+import { RiServerLine, RiCpuLine, RiRam2Line, RiAddLine, RiArrowRightSLine } from '@remixicon/react'
 import { useMachines } from '../hooks/useMachines'
-import { useRunners } from '../hooks/useRunners'
 import { useInstallation } from '../hooks/useInstallation'
 import { Card } from '../components/Card'
 import { Skeleton } from '../components/Skeleton'
@@ -14,7 +13,6 @@ export function MachinesPage() {
     const navigate = useNavigate()
     const { selectedInstallation } = useInstallation()
     const { data: machines = [], isLoading, error } = useMachines()
-    const { data: runners = [] } = useRunners()
     const [selectedStatus, setSelectedStatus] = useState<string>('all')
 
     const isAdmin = selectedInstallation?.membership?.role === MembershipRoleAdmin
@@ -25,12 +23,12 @@ export function MachinesPage() {
         }
     }
 
-    // Helper function to calculate machine resource usage
-    const getMachineResourceUsage = (machineName: string) => {
-        const machineRunners = runners.filter((r) => r.machine === machineName)
+    // Helper function to calculate machine resource usage from machine's runners
+    const getMachineResourceUsage = (machine: { runners?: any[] }) => {
+        const machineRunners = machine.runners ?? []
         const usedCPU = machineRunners.reduce((sum, r) => sum + r.cpu, 0)
         const usedRAM = machineRunners.reduce((sum, r) => sum + r.ram, 0)
-        return { usedCPU, usedRAM }
+        return { usedCPU, usedRAM, runnerCount: machineRunners.length }
     }
 
     // Helper function to get status dot styling
@@ -55,11 +53,11 @@ export function MachinesPage() {
     const totalCPU = machines.reduce((sum, m) => sum + m.cpu, 0)
     const totalRAM = machines.reduce((sum, m) => sum + m.ram, 0)
     const usedCPU = machines.reduce((sum, m) => {
-        const { usedCPU: machineUsedCPU } = getMachineResourceUsage(m.name)
+        const { usedCPU: machineUsedCPU } = getMachineResourceUsage(m)
         return sum + machineUsedCPU
     }, 0)
     const usedRAM = machines.reduce((sum, m) => {
-        const { usedRAM: machineUsedRAM } = getMachineResourceUsage(m.name)
+        const { usedRAM: machineUsedRAM } = getMachineResourceUsage(m)
         return sum + machineUsedRAM
     }, 0)
 
@@ -205,7 +203,7 @@ export function MachinesPage() {
                             </div>
                         </div>
                         <div className="rounded-lg bg-orange-100 p-3">
-                            <RiHardDriveLine className="size-6 text-orange-600" aria-hidden="true" />
+                            <RiRam2Line className="size-6 text-orange-600" aria-hidden="true" />
                         </div>
                     </div>
                     <div className="mt-4 h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -238,10 +236,11 @@ export function MachinesPage() {
             ) : (
                 <div className="space-y-3">
                     {filteredMachines.map((machine) => {
-                        const { usedCPU, usedRAM } = getMachineResourceUsage(machine.name)
+                        const { usedCPU, usedRAM, runnerCount } = getMachineResourceUsage(machine)
+                        const availableCPU = machine.cpu - usedCPU
+                        const availableRAM = machine.ram - usedRAM
                         const cpuPercent = machine.cpu > 0 ? Math.round((usedCPU / machine.cpu) * 100) : 0
                         const ramPercent = machine.ram > 0 ? Math.round((usedRAM / machine.ram) * 100) : 0
-                        const machineRunnerCount = runners.filter((r) => r.machine === machine.name).length
 
                         return (
                             <Card
@@ -260,12 +259,12 @@ export function MachinesPage() {
                                             {/* Machine name */}
                                             <h3 className="text-sm font-semibold text-gray-900 font-mono truncate">{machine.name}</h3>
 
-                                            {/* Architecture, labels, and runners count */}
+                                            {/* Architecture, runners count, and labels */}
                                             <div className="flex items-center gap-1 flex-wrap mt-1">
                                                 <span className="text-xs text-gray-500 px-1.5 py-0.5 bg-gray-100 rounded">{machine.arch}</span>
                                                 <span className="text-xs text-gray-600">•</span>
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-xs font-medium text-blue-900">
-                                                    {machineRunnerCount}
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-xs font-medium text-blue-900">
+                                                    {runnerCount} runner{runnerCount !== 1 ? 's' : ''}
                                                 </span>
                                                 {machine.labels && machine.labels.length > 0 && (
                                                     <>
@@ -287,10 +286,10 @@ export function MachinesPage() {
                                     {/* Right side: Resources (smaller) */}
                                     <div className="flex items-center gap-4 flex-shrink-0">
                                         {/* CPU Usage */}
-                                        <div className="min-w-[85px]">
+                                        <div className="min-w-[95px]">
                                             <div className="flex items-center justify-between mb-0.5">
                                                 <div className="flex items-center gap-0.5">
-                                                    <RiCpuLine className="size-2.5 text-purple-600" aria-hidden="true" />
+                                                    <RiCpuLine className="size-2.5 text-blue-600" aria-hidden="true" />
                                                     <p className="text-xs text-gray-600">CPU</p>
                                                 </div>
                                                 <p className="text-xs font-medium text-gray-900">{cpuPercent}%</p>
@@ -301,14 +300,14 @@ export function MachinesPage() {
                                                     style={{ width: `${cpuPercent}%` }}
                                                 />
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-0.5">{usedCPU}/{machine.cpu}</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{usedCPU}/{machine.cpu} ({availableCPU})</p>
                                         </div>
 
                                         {/* RAM Usage */}
-                                        <div className="min-w-[85px]">
+                                        <div className="min-w-[95px]">
                                             <div className="flex items-center justify-between mb-0.5">
                                                 <div className="flex items-center gap-0.5">
-                                                    <RiHardDriveLine className="size-2.5 text-orange-600" aria-hidden="true" />
+                                                    <RiRam2Line className="size-2.5 text-blue-600" aria-hidden="true" />
                                                     <p className="text-xs text-gray-600">RAM</p>
                                                 </div>
                                                 <p className="text-xs font-medium text-gray-900">{ramPercent}%</p>
@@ -319,7 +318,7 @@ export function MachinesPage() {
                                                     style={{ width: `${ramPercent}%` }}
                                                 />
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-0.5">{Math.round(usedRAM / 1024)}GB</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">{Math.round(usedRAM / 1024)}GB / {Math.round(machine.ram / 1024)}GB ({Math.round(availableRAM / 1024)})</p>
                                         </div>
 
                                         {/* Arrow icon */}

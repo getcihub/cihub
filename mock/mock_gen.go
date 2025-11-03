@@ -86,63 +86,48 @@ func (mr *MockJobStoreMockRecorder) Delete(ctx, job any) *gomock.Call {
 }
 
 // Find mocks base method.
-func (m *MockJobStore) Find(ctx context.Context, id int64) (*core.Job, error) {
+func (m *MockJobStore) Find(ctx context.Context, owner string, id int64) (*core.Job, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Find", ctx, id)
+	ret := m.ctrl.Call(m, "Find", ctx, owner, id)
 	ret0, _ := ret[0].(*core.Job)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Find indicates an expected call of Find.
-func (mr *MockJobStoreMockRecorder) Find(ctx, id any) *gomock.Call {
+func (mr *MockJobStoreMockRecorder) Find(ctx, owner, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockJobStore)(nil).Find), ctx, id)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockJobStore)(nil).Find), ctx, owner, id)
 }
 
-// FindRunID mocks base method.
-func (m *MockJobStore) FindRunID(ctx context.Context, runID int64) ([]*core.Job, error) {
+// ListCompleted mocks base method.
+func (m *MockJobStore) ListCompleted(ctx context.Context, owner string, limit, offset int) ([]*core.Job, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "FindRunID", ctx, runID)
+	ret := m.ctrl.Call(m, "ListCompleted", ctx, owner, limit, offset)
 	ret0, _ := ret[0].([]*core.Job)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// FindRunID indicates an expected call of FindRunID.
-func (mr *MockJobStoreMockRecorder) FindRunID(ctx, runID any) *gomock.Call {
+// ListCompleted indicates an expected call of ListCompleted.
+func (mr *MockJobStoreMockRecorder) ListCompleted(ctx, owner, limit, offset any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindRunID", reflect.TypeOf((*MockJobStore)(nil).FindRunID), ctx, runID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListCompleted", reflect.TypeOf((*MockJobStore)(nil).ListCompleted), ctx, owner, limit, offset)
 }
 
-// List mocks base method.
-func (m *MockJobStore) List(ctx context.Context, params core.JobParams) ([]*core.Job, error) {
+// ListIncomplete mocks base method.
+func (m *MockJobStore) ListIncomplete(ctx context.Context, owner string) ([]*core.Job, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "List", ctx, params)
+	ret := m.ctrl.Call(m, "ListIncomplete", ctx, owner)
 	ret0, _ := ret[0].([]*core.Job)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// List indicates an expected call of List.
-func (mr *MockJobStoreMockRecorder) List(ctx, params any) *gomock.Call {
+// ListIncomplete indicates an expected call of ListIncomplete.
+func (mr *MockJobStoreMockRecorder) ListIncomplete(ctx, owner any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockJobStore)(nil).List), ctx, params)
-}
-
-// ListStatus mocks base method.
-func (m *MockJobStore) ListStatus(ctx context.Context, status string) ([]*core.Job, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListStatus", ctx, status)
-	ret0, _ := ret[0].([]*core.Job)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListStatus indicates an expected call of ListStatus.
-func (mr *MockJobStoreMockRecorder) ListStatus(ctx, status any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStatus", reflect.TypeOf((*MockJobStore)(nil).ListStatus), ctx, status)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListIncomplete", reflect.TypeOf((*MockJobStore)(nil).ListIncomplete), ctx, owner)
 }
 
 // Purge mocks base method.

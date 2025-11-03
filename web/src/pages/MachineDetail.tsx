@@ -1,30 +1,44 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { RiArrowLeftLine, RiCpuLine, RiHardDriveLine, RiCalendarLine, RiCheckboxCircleLine, RiServerLine, RiMoreLine, RiAlertLine } from '@remixicon/react'
-import { useMachines } from '../hooks/useMachines'
-import { useRunnersByMachine } from '../hooks/useRunners'
+import { RiArrowLeftLine, RiCpuLine, RiRam2Line, RiServerLine, RiMoreLine, RiAlertLine } from '@remixicon/react'
+import { useMachineDetail } from '../hooks/useMachineDetail'
 import { useInstallation } from '../hooks/useInstallation'
 import { useMachineMutations } from '../hooks/useMachineMutations'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
+import { Skeleton } from '../components/Skeleton'
 import { MembershipRoleAdmin } from '../types/installation'
 
 export function MachineDetailPage() {
     const navigate = useNavigate()
     const { name: machineName, login } = useParams({ from: '/$login/machines/$name' })
     const { selectedInstallation } = useInstallation()
-    const { data: machines = [] } = useMachines()
-    const runnersOnMachine = useRunnersByMachine(machineName)
+    const { data: machine, isLoading, error } = useMachineDetail(machineName)
     const { pauseMachine, resumeMachine, restartMachine, deleteMachine } = useMachineMutations()
     const [showSettings, setShowSettings] = useState(false)
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+    const settingsRef = useRef<HTMLDivElement>(null)
+
+    // Close settings menu when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+                setShowSettings(false)
+            }
+        }
+
+        if (showSettings) {
+            document.addEventListener('mousedown', handleClickOutside)
+            return () => {
+                document.removeEventListener('mousedown', handleClickOutside)
+            }
+        }
+    }, [showSettings])
 
     const isAdmin = selectedInstallation?.membership?.role === MembershipRoleAdmin
 
     // Use login from params or selectedInstallation as fallback
     const currentLogin = login || selectedInstallation?.login
-
-    const machine = machines.find((m) => m.name === machineName)
 
     // Helper function to get status dot styling
     const getStatusDotColor = (status: string) => {
@@ -86,15 +100,39 @@ export function MachineDetailPage() {
         }
     }
 
-    // Calculate resource usage
+    // Calculate resource usage from machine runners
     const totalCPU = machine?.cpu || 0
     const totalRAM = machine?.ram || 0
-    const usedCPU = runnersOnMachine.reduce((sum, r) => sum + r.cpu, 0)
-    const usedRAM = runnersOnMachine.reduce((sum, r) => sum + r.ram, 0)
+    const machineRunners = machine?.runners ?? []
+    const usedCPU = machineRunners.reduce((sum, r) => sum + r.cpu, 0)
+    const usedRAM = machineRunners.reduce((sum, r) => sum + r.ram, 0)
     const cpuUsagePercent = totalCPU > 0 ? Math.round((usedCPU / totalCPU) * 100) : 0
     const ramUsagePercent = totalRAM > 0 ? Math.round((usedRAM / totalRAM) * 100) : 0
 
-    if (!machine) {
+    if (isLoading) {
+        return (
+            <div className="space-y-8">
+                <button
+                    onClick={() => navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })}
+                    className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
+                >
+                    <RiArrowLeftLine className="size-4" aria-hidden="true" />
+                    Back to Machines
+                </button>
+                <Skeleton className="h-12 w-48 rounded-lg" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                        <Skeleton className="h-64 w-full rounded-lg" />
+                    </div>
+                    <div>
+                        <Skeleton className="h-64 w-full rounded-lg" />
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    if (error || !machine) {
         return (
             <div className="space-y-4">
                 <button
@@ -106,7 +144,7 @@ export function MachineDetailPage() {
                 </button>
                 <Card className="bg-red-50 border-red-200 p-6">
                     <p className="text-red-800">
-                        Machine not found.
+                        {error ? 'Failed to load machine details. Please try again later.' : 'Machine not found.'}
                     </p>
                 </Card>
             </div>
@@ -143,7 +181,7 @@ export function MachineDetailPage() {
                     </p>
                 </div>
                 {isAdmin && (
-                    <div className="relative flex-shrink-0">
+                    <div className="relative flex-shrink-0" ref={settingsRef}>
                         <button
                             onClick={() => setShowSettings(!showSettings)}
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -189,12 +227,6 @@ export function MachineDetailPage() {
                 <div className="lg:col-span-2 space-y-6">
                     {/* Machine Details - Combined Card */}
                     <Card className="p-6">
-                        {/* Architecture */}
-                        <div className="mb-6">
-                            <p className="text-sm font-medium text-gray-600">Architecture</p>
-                            <p className="text-lg text-gray-900 mt-1">{machine.arch}</p>
-                        </div>
-
                         {/* Labels */}
                         {machine.labels && machine.labels.length > 0 && (
                             <div className="mb-6 pb-6 border-b border-gray-200">
@@ -220,7 +252,7 @@ export function MachineDetailPage() {
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <RiCpuLine className="size-5 text-purple-600" aria-hidden="true" />
+                                            <RiCpuLine className="size-5 text-blue-600" aria-hidden="true" />
                                             <span className="text-sm font-medium text-gray-600">CPU</span>
                                         </div>
                                         <div className="text-right">
@@ -230,7 +262,7 @@ export function MachineDetailPage() {
                                     </div>
                                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                         <div
-                                            className="h-full bg-purple-600 transition-all"
+                                            className="h-full bg-blue-600 transition-all"
                                             style={{ width: `${cpuUsagePercent}%` }}
                                         />
                                     </div>
@@ -240,7 +272,7 @@ export function MachineDetailPage() {
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <RiHardDriveLine className="size-5 text-orange-600" aria-hidden="true" />
+                                            <RiRam2Line className="size-5 text-blue-600" aria-hidden="true" />
                                             <span className="text-sm font-medium text-gray-600">RAM</span>
                                         </div>
                                         <div className="text-right">
@@ -250,7 +282,7 @@ export function MachineDetailPage() {
                                     </div>
                                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                         <div
-                                            className="h-full bg-orange-600 transition-all"
+                                            className="h-full bg-blue-600 transition-all"
                                             style={{ width: `${ramUsagePercent}%` }}
                                         />
                                     </div>
@@ -258,98 +290,83 @@ export function MachineDetailPage() {
                             </div>
                         </div>
                     </Card>
+
+                    {/* Runners on this Machine */}
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Runners on this Machine</h2>
+                        {machineRunners.length === 0 ? (
+                            <Card className="p-8 text-center">
+                                <RiServerLine className="size-12 text-gray-300 mx-auto mb-4" aria-hidden="true" />
+                                <p className="text-lg font-medium text-gray-900 mb-2">No runners yet</p>
+                                <p className="text-gray-600">No runners have been assigned to this machine.</p>
+                            </Card>
+                        ) : (
+                            <div className="space-y-3">
+                                {machineRunners.map((runner) => (
+                                    <Card key={runner.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900">{runner.name}</p>
+                                                <div className="flex items-center gap-3 mt-2">
+                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 capitalize">
+                                                        {runner.status}
+                                                    </span>
+                                                    <p className="text-xs text-gray-500">{runner.arch}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {runner.cpu} vCPU • {Math.round(runner.ram / 1024)} GB RAM
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Card>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
-                {/* Right Column - Timeline */}
+                {/* Right Column - Architecture & Dates */}
                 <div className="space-y-6">
-                    {/* Dates */}
+                    {/* Architecture Card */}
                     <Card className="p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-6">Dates</h2>
-                        <div className="space-y-4">
+                        <h2 className="text-sm font-semibold text-gray-900 mb-4">Architecture</h2>
+                        <div className="flex items-center gap-3">
+                            <RiServerLine className="size-5 text-blue-600" aria-hidden="true" />
+                            <span className="text-sm font-medium text-gray-700 capitalize">{machine.arch}</span>
+                        </div>
+                    </Card>
+
+                    {/* Dates Card */}
+                    <Card className="p-6">
+                        <h2 className="text-sm font-semibold text-gray-900 mb-4">Dates</h2>
+                        <div className="space-y-3">
                             <div>
-                                <p className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                                    <RiCalendarLine className="size-4" aria-hidden="true" />
-                                    Created
-                                </p>
-                                <p className="text-sm text-gray-900 mt-2">
-                                    {new Date(machine.created_at * 1000).toLocaleDateString('en-US', {
+                                <p className="text-xs text-gray-600 mb-1">Created</p>
+                                <p className="text-sm text-gray-900">
+                                    {new Date(machine.created_at * 1000).toLocaleString('en-US', {
                                         year: 'numeric',
-                                        month: 'long',
+                                        month: 'short',
                                         day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
                                     })}
-                                </p>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    {new Date(machine.created_at * 1000).toLocaleTimeString()}
                                 </p>
                             </div>
-                            <div className="border-t border-gray-200 pt-4">
-                                <p className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                                    <RiCheckboxCircleLine className="size-4" aria-hidden="true" />
-                                    Last Seen
-                                </p>
-                                <p className="text-sm text-gray-900 mt-2">
-                                    {new Date(machine.last_seen_at * 1000).toLocaleDateString('en-US', {
+                            <div>
+                                <p className="text-xs text-gray-600 mb-1">Last Seen</p>
+                                <p className="text-sm text-gray-900">
+                                    {new Date(machine.last_seen_at * 1000).toLocaleString('en-US', {
                                         year: 'numeric',
-                                        month: 'long',
+                                        month: 'short',
                                         day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
                                     })}
-                                </p>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    {new Date(machine.last_seen_at * 1000).toLocaleTimeString()}
-                                </p>
-                            </div>
-                            <div className="border-t border-gray-200 pt-4">
-                                <p className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                                    <RiCalendarLine className="size-4" aria-hidden="true" />
-                                    Last Updated
-                                </p>
-                                <p className="text-sm text-gray-900 mt-2">
-                                    {new Date(machine.updated_at * 1000).toLocaleDateString('en-US', {
-                                        year: 'numeric',
-                                        month: 'long',
-                                        day: 'numeric',
-                                    })}
-                                </p>
-                                <p className="text-xs text-gray-500 mt-1">
-                                    {new Date(machine.updated_at * 1000).toLocaleTimeString()}
                                 </p>
                             </div>
                         </div>
                     </Card>
                 </div>
-            </div>
-
-            {/* Runners on this Machine */}
-            <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Runners on this Machine</h2>
-                {runnersOnMachine.length === 0 ? (
-                    <Card className="p-8 text-center">
-                        <RiServerLine className="size-12 text-gray-300 mx-auto mb-4" aria-hidden="true" />
-                        <p className="text-lg font-medium text-gray-900 mb-2">No runners yet</p>
-                        <p className="text-gray-600">No runners have been assigned to this machine.</p>
-                    </Card>
-                ) : (
-                    <div className="space-y-3">
-                        {runnersOnMachine.map((runner) => (
-                            <Card key={runner.id} className="p-4 hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center justify-between gap-4">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-gray-900">{runner.name}</p>
-                                        <div className="flex items-center gap-3 mt-2">
-                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 capitalize">
-                                                {runner.status}
-                                            </span>
-                                            <p className="text-xs text-gray-500">{runner.arch}</p>
-                                            <p className="text-xs text-gray-500">
-                                                {runner.cpu} vCPU • {Math.round(runner.ram / 1024)} GB RAM
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </Card>
-                        ))}
-                    </div>
-                )}
             </div>
 
             {/* Delete Confirmation Modal */}

@@ -28,6 +28,10 @@ var migrations = []struct {
 		name: "create-table-memberships",
 		stmt: createTableMemberships,
 	},
+	{
+		name: "create-table-machines",
+		stmt: createTableMachines,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -233,4 +237,28 @@ CREATE TABLE IF NOT EXISTS memberships (
 );
 
 CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(membership_user_id);
+`
+
+//
+// 0006_create_table_machines.sql
+//
+
+var createTableMachines = `
+CREATE TABLE IF NOT EXISTS machines (
+  machine_name      TEXT PRIMARY KEY COLLATE NOCASE,
+  machine_owner     TEXT,
+  machine_arch      TEXT,
+  machine_cpu       INTEGER,
+  machine_ram       INTEGER,
+  machine_status    TEXT,
+  machine_created   INTEGER,
+  machine_last_seen INTEGER,
+  machine_updated   INTEGER,
+  machine_token     TEXT,
+  UNIQUE(machine_token)
+);
+
+CREATE INDEX IF NOT EXISTS ix_machine_owner ON machines (machine_owner);
+CREATE INDEX IF NOT EXISTS ix_machine_status ON machines (machine_status);
+CREATE INDEX IF NOT EXISTS ix_machine_last_seen ON machines (machine_last_seen);
 `

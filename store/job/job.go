@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/getcihub/cihub/core"
-	"github.com/getcihub/cihub/logger"
 	"github.com/getcihub/cihub/store/shared/db"
 )
 
@@ -51,10 +50,10 @@ func (s *store) Delete(ctx context.Context, job *core.Job) error {
 }
 
 // Find returns a job from the datastore by its ID.
-func (s *store) Find(ctx context.Context, id int64) (*core.Job, error) {
-	out := &core.Job{ID: id}
+func (s *store) Find(ctx context.Context, owner string, id int64) (*core.Job, error) {
+	out := &core.Job{ID: id, Owner: owner}
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		params := map[string]interface{}{"job_id": id}
+		params := map[string]interface{}{"job_id": id, "job_owner": owner}
 		query, args, err := binder.BindNamed(queryFind, params)
 		if err != nil {
 			return err
@@ -65,12 +64,13 @@ func (s *store) Find(ctx context.Context, id int64) (*core.Job, error) {
 	return out, err
 }
 
-// FindRunID returns jobs from the datastore by workflow run ID.
-func (s *store) FindRunID(ctx context.Context, runID int64) ([]*core.Job, error) {
+// ListIncomplete returns a list of jobs from the
+// datastore with imcomplete status.
+func (s *store) ListIncomplete(ctx context.Context, owner string) ([]*core.Job, error) {
 	var out []*core.Job
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		params := map[string]interface{}{"job_run_id": runID}
-		query, args, err := binder.BindNamed(queryFindRunID, params)
+		params := map[string]interface{}{"owner": owner}
+		query, args, err := binder.BindNamed(queryJobIncomplete, params)
 		if err != nil {
 			return err
 		}
@@ -78,80 +78,31 @@ func (s *store) FindRunID(ctx context.Context, runID int64) ([]*core.Job, error)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if err := rows.Close(); err != nil {
-				logger.FromContext(ctx).
-					WithError(err).
-					Warnln("store: cannot close job rows")
-			}
-		}()
 		out, err = scanRows(rows)
 		return err
 	})
 	return out, err
 }
 
-// List returns a list of jobs from the datastore.
-func (s *store) List(ctx context.Context, q core.JobParams) ([]*core.Job, error) {
+// ListCompleted returns a list of jobs from the datastore with completed status.
+func (s *store) ListCompleted(ctx context.Context, owner string, limit, jobID int) ([]*core.Job, error) {
 	var out []*core.Job
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		limit := q.Limit + 1
-
-		query := queryList
-		params := map[string]any{"limit": limit}
-		if q.After != 0 {
-			query = queryListOffset
-			params["job_id"] = q.After
+		limit = limit + 1
+		query := queryCompleted
+		params := map[string]any{"limit": limit, "owner": owner}
+		if jobID != 0 {
+			query = queryCompletedOffset
+			params["job_id"] = jobID
 		}
-
 		stmt, args, err := binder.BindNamed(query, params)
 		if err != nil {
 			return err
 		}
-
 		rows, err := queryer.Query(stmt, args...)
 		if err != nil {
 			return err
 		}
-
-		defer func() {
-			if err := rows.Close(); err != nil {
-				logger.FromContext(ctx).
-					WithError(err).
-					Warnln("store: cannot close job rows")
-			}
-		}()
-
-		out, err = scanRows(rows)
-		return err
-	})
-	return out, err
-}
-
-// ListStatus returns all jobs filtered by status without pagination.
-func (s *store) ListStatus(ctx context.Context, status string) ([]*core.Job, error) {
-	var out []*core.Job
-	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		params := map[string]any{"job_status": status}
-
-		stmt, args, err := binder.BindNamed(queryListStatusAll, params)
-		if err != nil {
-			return err
-		}
-
-		rows, err := queryer.Query(stmt, args...)
-		if err != nil {
-			return err
-		}
-
-		defer func() {
-			if err := rows.Close(); err != nil {
-				logger.FromContext(ctx).
-					WithError(err).
-					Warnln("store: cannot close job rows")
-			}
-		}()
-
 		out, err = scanRows(rows)
 		return err
 	})
@@ -240,32 +191,32 @@ SELECT COUNT(*) FROM jobs
 
 const queryFind = queryBase + `
 FROM jobs
-WHERE job_id = :job_id
+WHERE job_owner = :job_owner
+  AND job_id = :job_id
 `
 
-const queryFindRunID = queryBase + `
+const queryJobIncomplete = queryBase + `
 FROM jobs
-WHERE job_run_id = :job_run_id
-ORDER BY job_created
+WHERE job_owner = :owner
+  AND job_status IN ('queued', 'in_progress', 'waiting')
+ORDER BY job_id DESC
 `
 
-const queryList = queryBase + `
+const queryCompleted = queryBase + `
 FROM jobs
-ORDER BY job_id
+WHERE job_owner = :owner
+  AND job_status = 'completed'
+ORDER BY job_id DESC
 LIMIT :limit
 `
 
-const queryListOffset = queryBase + `
+const queryCompletedOffset = queryBase + `
 FROM jobs
-WHERE job_id > :job_id
-ORDER BY job_id
+WHERE job_owner = :owner
+  AND job_status = 'completed'
+  AND job_id > :job_id
+ORDER BY job_id DESC
 LIMIT :limit
-`
-
-const queryListStatusAll = queryBase + `
-FROM jobs
-WHERE job_status = :job_status
-ORDER BY job_id
 `
 
 const stmtDelete = `

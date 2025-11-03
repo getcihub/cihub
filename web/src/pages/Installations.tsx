@@ -15,7 +15,7 @@ export function InstallationsPage() {
     // Auto-redirect to selected installation if available
     useEffect(() => {
         if (!installationLoading && selectedInstallation) {
-            navigate({ to: '/$login/jobs', params: { login: selectedInstallation.login } })
+            navigate({ to: '/$login/machines', params: { login: selectedInstallation.login } })
         }
     }, [selectedInstallation, installationLoading, navigate])
 
@@ -25,7 +25,7 @@ export function InstallationsPage() {
 
         try {
             await selectInstallation(installation)
-            navigate({ to: '/$login/jobs', params: { login: installation.login } })
+            navigate({ to: '/$login/machines', params: { login: installation.login } })
         } catch (err) {
             console.error('Failed to select installation:', err)
         }

@@ -28,7 +28,7 @@ export function InstallationSwitcher() {
 
         try {
             await selectInstallation(installation)
-            navigate({ to: '/$login/jobs', params: { login } })
+            navigate({ to: '/$login/machines', params: { login } })
         } catch (err) {
             console.error('Failed to select installation:', err)
         }

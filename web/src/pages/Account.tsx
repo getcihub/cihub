@@ -1,7 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useAuth } from '../hooks/useAuth'
 import { UserEmails } from '../components/UserEmails'
-import { Card } from '../components/Card'
+// import { Card } from '../components/Card'
+import { Card } from '../components/ui/card'
 import { Button } from '../components/Button'
 
 export function AccountPage() {
@@ -48,10 +49,7 @@ export function AccountPage() {
             </Card>
 
             {/* Email Preferences Section */}
-            <Card className="p-6 mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">Email Addresses</h2>
-                <UserEmails />
-            </Card>
+            <UserEmails />
 
             {/* Logout Section */}
             <Card className="p-6 border-red-200 bg-red-50">

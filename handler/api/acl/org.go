@@ -25,8 +25,9 @@ func InjectOrganization(
 ) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			namespace := chi.URLParam(r, "namespace")
-			log := logger.FromRequest(r)
+			owner := chi.URLParam(r, "owner")
+			log := logger.FromRequest(r).
+				WithField("owner", owner)
 			ctx := r.Context()
 
 			user, ok := request.UserFrom(ctx)
@@ -36,11 +37,7 @@ func InjectOrganization(
 				return
 			}
 
-			log = log.
-				WithField("user.admin", user.Admin).
-				WithField("namespace", namespace)
-
-			installation, err := installations.FindLogin(ctx, namespace)
+			installation, err := installations.FindLogin(ctx, owner)
 			if err != nil {
 				render.NotFound(w)
 				log.WithError(err).

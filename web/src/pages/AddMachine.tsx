@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { RiArrowLeftLine, RiCheckLine, RiFileCopyLine, RiAddLine, RiCloseLine } from '@remixicon/react'
 import { useInstallation } from '../hooks/useInstallation'
+import { useMachineMutations } from '../hooks/useMachineMutations'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
 
@@ -9,19 +10,20 @@ export function AddMachinePage() {
     const navigate = useNavigate()
     const { login } = useParams({ from: '/$login/machines/add' })
     const { selectedInstallation } = useInstallation()
+    const { createMachine } = useMachineMutations()
 
     const [step, setStep] = useState<'form' | 'instructions'>('form')
     const [autoDetect, setAutoDetect] = useState(true)
     const [formData, setFormData] = useState({
         name: '',
-        arch: 'x86_64',
-        cpu: '4',
-        ram: '8192',
+        cpu: '',
+        ram: '',
     })
     const [labels, setLabels] = useState<string[]>([])
     const [newLabel, setNewLabel] = useState('')
     const [machineToken, setMachineToken] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
     const handleBack = () => {
         navigate({ to: '/$login/machines', params: { login } })
@@ -53,31 +55,59 @@ export function AddMachinePage() {
         }
     }
 
-    const handleFormSubmit = (e: React.FormEvent) => {
+    const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
         // Validate form
         if (!formData.name.trim()) {
-            alert('Machine name is required')
+            setError('Machine name is required')
             return
         }
 
-        if (parseInt(formData.cpu) < 1) {
-            alert('CPU must be at least 1')
+        // Validate optional CPU if provided
+        if (formData.cpu && parseInt(formData.cpu) < 1) {
+            setError('CPU must be at least 1')
             return
         }
 
-        if (parseInt(formData.ram) < 512) {
-            alert('RAM must be at least 512 MB')
+        // Validate optional RAM if provided
+        if (formData.ram && parseInt(formData.ram) < 512) {
+            setError('RAM must be at least 512 MB')
             return
         }
 
-        // Generate mock token (in real app, this would come from the server)
-        const token = `cihub_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`
-        setMachineToken(token)
-        setStep('instructions')
+        setError(null)
+
+        try {
+            const payload: any = {
+                name: formData.name,
+                labels,
+            }
+
+            // Only include CPU if provided
+            if (formData.cpu) {
+                payload.cpu = parseInt(formData.cpu)
+            }
+
+            // Only include RAM if provided
+            if (formData.ram) {
+                payload.ram = parseInt(formData.ram)
+            }
+
+            const response = await createMachine.mutateAsync(payload)
+
+            if (response.data?.token) {
+                setMachineToken(response.data.token)
+                setStep('instructions')
+            } else {
+                setError('Failed to get machine token from server')
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create machine')
+        }
     }
 
+    const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cihub.example.com'
     const installCommand = `#!/bin/bash
 # CIHub Agent Installation Script
 # Machine: ${formData.name}
@@ -86,7 +116,7 @@ export function AddMachinePage() {
 MACHINE_TOKEN="${machineToken}"
 MACHINE_NAME="${formData.name}"
 INSTALLATION="${selectedInstallation?.login}"
-CIHUB_SERVER="https://cihub.example.com"
+CIHUB_SERVER="${cihubServer}"
 
 # Download and run the agent installer
 curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
@@ -119,6 +149,18 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                         <p className="text-gray-600 mt-2">Create a new machine and get the installation instructions</p>
                     </div>
 
+                    {error && (
+                        <Card className="bg-red-50 border-red-200 p-6">
+                            <div className="flex gap-3">
+                                <RiCloseLine className="size-5 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                                <div>
+                                    <h3 className="font-medium text-red-900">Error</h3>
+                                    <p className="text-sm text-red-800 mt-1">{error}</p>
+                                </div>
+                            </div>
+                        </Card>
+                    )}
+
                     <Card className="p-8">
                         <form onSubmit={handleFormSubmit} className="space-y-6">
                             {/* Machine Name */}
@@ -132,39 +174,11 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                     name="name"
                                     value={formData.name}
                                     onChange={handleInputChange}
-                                    placeholder="e.g., runner-1, build-server"
+                                    placeholder="worker-01"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
                                     required
                                 />
                                 <p className="text-sm text-gray-500 mt-1">A unique identifier for this machine</p>
-                            </div>
-
-                            {/* Auto Detect Toggle */}
-                            <div className="border-t border-gray-200 pt-6">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <label htmlFor="autoDetect" className="text-sm font-medium text-gray-700">
-                                            Let the agent detect specs
-                                        </label>
-                                        <p className="text-sm text-gray-500 mt-1">
-                                            Architecture, CPU, and RAM will be detected automatically when the agent connects
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        id="autoDetect"
-                                        onClick={() => setAutoDetect(!autoDetect)}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full flex-shrink-0 ${
-                                            autoDetect ? 'bg-black' : 'bg-gray-200'
-                                        } transition-colors`}
-                                    >
-                                        <span
-                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                                autoDetect ? 'translate-x-6' : 'translate-x-1'
-                                            }`}
-                                        />
-                                    </button>
-                                </div>
                             </div>
 
                             {/* Labels */}
@@ -179,7 +193,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                         value={newLabel}
                                         onChange={(e) => setNewLabel(e.target.value)}
                                         onKeyPress={handleLabelKeyPress}
-                                        placeholder="e.g., gpu, production, testing"
+                                        placeholder="gpu, production, testing"
                                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
                                     />
                                     <button
@@ -213,30 +227,40 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                 <p className="text-sm text-gray-500 mt-2">Press Enter or click Add to add a label</p>
                             </div>
 
+                            {/* Resource Specification Section */}
+                            <div className="border-t border-gray-200 pt-6">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex-1">
+                                        <label htmlFor="autoDetect" className="text-sm font-medium text-gray-700">
+                                            Let the agent detect specs
+                                        </label>
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            CPU and RAM will be detected automatically when the agent connects
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        id="autoDetect"
+                                        onClick={() => setAutoDetect(!autoDetect)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full flex-shrink-0 ${
+                                            autoDetect ? 'bg-black' : 'bg-gray-200'
+                                        } transition-colors`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                                autoDetect ? 'translate-x-6' : 'translate-x-1'
+                                            }`}
+                                        />
+                                    </button>
+                                </div>
+                            </div>
+
                             {!autoDetect && (
                                 <>
-                                    {/* Architecture */}
-                                    <div>
-                                        <label htmlFor="arch" className="block text-sm font-medium text-gray-700 mb-2">
-                                            Architecture <span className="text-red-500">*</span>
-                                        </label>
-                                        <select
-                                            id="arch"
-                                            name="arch"
-                                            value={formData.arch}
-                                            onChange={handleInputChange}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
-                                        >
-                                            <option value="x86_64">x86_64 (Intel/AMD 64-bit)</option>
-                                            <option value="arm64">arm64 (ARM 64-bit)</option>
-                                            <option value="armv7">armv7 (ARM 32-bit)</option>
-                                        </select>
-                                    </div>
-
                                     {/* CPU */}
                                     <div>
                                         <label htmlFor="cpu" className="block text-sm font-medium text-gray-700 mb-2">
-                                            CPU Cores <span className="text-red-500">*</span>
+                                            CPU Cores <span className="text-gray-500 font-normal">(optional)</span>
                                         </label>
                                         <input
                                             type="number"
@@ -245,16 +269,16 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                             value={formData.cpu}
                                             onChange={handleInputChange}
                                             min="1"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
-                                            required
+                                            placeholder="4"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
                                         />
-                                        <p className="text-sm text-gray-500 mt-1">Number of CPU cores available on this machine</p>
+                                        <p className="text-sm text-gray-500 mt-1">Maximum number of CPU cores to limit the machine (leave empty to not set a limit)</p>
                                     </div>
 
                                     {/* RAM */}
                                     <div>
                                         <label htmlFor="ram" className="block text-sm font-medium text-gray-700 mb-2">
-                                            RAM (MB) <span className="text-red-500">*</span>
+                                            RAM (MB) <span className="text-gray-500 font-normal">(optional)</span>
                                         </label>
                                         <input
                                             type="number"
@@ -264,18 +288,22 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                             onChange={handleInputChange}
                                             min="512"
                                             step="512"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
-                                            required
+                                            placeholder="8192"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
                                         />
-                                        <p className="text-sm text-gray-500 mt-1">Amount of RAM in megabytes (minimum 512 MB)</p>
+                                        <p className="text-sm text-gray-500 mt-1">Maximum amount of RAM in megabytes to limit the machine (leave empty to not set a limit)</p>
                                     </div>
                                 </>
                             )}
 
                             {/* Buttons */}
                             <div className="flex gap-3 pt-4">
-                                <Button type="submit" className="gap-2">
-                                    Generate Installation Command
+                                <Button
+                                    type="submit"
+                                    className="gap-2"
+                                    disabled={createMachine.isPending}
+                                >
+                                    {createMachine.isPending ? 'Creating...' : 'Generate Installation Command'}
                                 </Button>
                                 <Button type="button" variant="secondary" onClick={handleBack}>
                                     Cancel
@@ -305,26 +333,26 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                     </Card>
 
                     {/* Machine Details */}
-                    {!autoDetect && (
+                    {!autoDetect && (formData.cpu || formData.ram) && (
                         <Card className="p-6">
-                            <h2 className="text-lg font-semibold text-gray-900 mb-4">Machine Details</h2>
-                            <div className="grid grid-cols-2 gap-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-4">Machine Resource Limits</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
                                     <p className="text-sm font-medium text-gray-600">Name</p>
                                     <p className="text-lg text-gray-900 mt-1 font-mono">{formData.name}</p>
                                 </div>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-600">Architecture</p>
-                                    <p className="text-lg text-gray-900 mt-1">{formData.arch}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-600">CPU Cores</p>
-                                    <p className="text-lg text-gray-900 mt-1">{formData.cpu}</p>
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-600">RAM</p>
-                                    <p className="text-lg text-gray-900 mt-1">{(parseInt(formData.ram) / 1024).toFixed(1)} GB</p>
-                                </div>
+                                {formData.cpu && (
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-600">Max CPU Cores</p>
+                                        <p className="text-lg text-gray-900 mt-1">{formData.cpu}</p>
+                                    </div>
+                                )}
+                                {formData.ram && (
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-600">Max RAM</p>
+                                        <p className="text-lg text-gray-900 mt-1">{(parseInt(formData.ram) / 1024).toFixed(1)} GB</p>
+                                    </div>
+                                )}
                             </div>
                         </Card>
                     )}
@@ -365,7 +393,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                     <Card className="p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4">Setup Steps</h2>
                         <div className="space-y-4">
-                            {!autoDetect && (
+                            {!autoDetect && (formData.cpu || formData.ram) && (
                                 <div>
                                     <div className="flex gap-3">
                                         <div className="flex-shrink-0 w-6 h-6 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center">
@@ -374,7 +402,9 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                                         <div>
                                             <h4 className="font-medium text-gray-900">Prepare Your Machine</h4>
                                             <p className="text-sm text-gray-600 mt-1">
-                                                Ensure you have bash and curl installed on your machine. The machine should have at least {formData.cpu} CPU cores and {(parseInt(formData.ram) / 1024).toFixed(1)} GB of RAM.
+                                                Ensure you have bash and curl installed on your machine.{' '}
+                                                {formData.cpu && <span>The machine will be limited to {formData.cpu} CPU cores. </span>}
+                                                {formData.ram && <span>The machine will be limited to {(parseInt(formData.ram) / 1024).toFixed(1)} GB of RAM.</span>}
                                             </p>
                                         </div>
                                     </div>
@@ -384,7 +414,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                             <div>
                                 <div className="flex gap-3">
                                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center">
-                                        {autoDetect ? 1 : 2}
+                                        {autoDetect || !(formData.cpu || formData.ram) ? 1 : 2}
                                     </div>
                                     <div>
                                         <h4 className="font-medium text-gray-900">Copy Installation Command</h4>
@@ -398,7 +428,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                             <div>
                                 <div className="flex gap-3">
                                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center">
-                                        {autoDetect ? 2 : 3}
+                                        {autoDetect || !(formData.cpu || formData.ram) ? 2 : 3}
                                     </div>
                                     <div>
                                         <h4 className="font-medium text-gray-900">Run the Script</h4>
@@ -412,7 +442,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                             <div>
                                 <div className="flex gap-3">
                                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-black text-white text-xs font-bold flex items-center justify-center">
-                                        {autoDetect ? 3 : 4}
+                                        {autoDetect || !(formData.cpu || formData.ram) ? 3 : 4}
                                     </div>
                                     <div>
                                         <h4 className="font-medium text-gray-900">Verify Installation</h4>
@@ -434,7 +464,7 @@ curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
                             variant="secondary"
                             onClick={() => {
                                 setStep('form')
-                                setFormData({ name: '', arch: 'x86_64', cpu: '4', ram: '8192' })
+                                setFormData({ name: '', cpu: '', ram: '' })
                                 setMachineToken(null)
                             }}
                         >

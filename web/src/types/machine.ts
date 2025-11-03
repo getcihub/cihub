@@ -1,3 +1,5 @@
+import type { Runner } from './runner'
+
 export const MachineStatusOnline = 'online'
 export const MachineStatusOffline = 'offline'
 export const MachineStatusUnhealthy = 'unhealthy'
@@ -16,4 +18,5 @@ export interface Machine {
     last_seen_at: number
     updated_at: number
     labels?: string[]
+    runners?: Runner[]
 }

@@ -63,16 +63,15 @@ type (
 		Delete(ctx context.Context, job *Job) error
 
 		// Find returns a job from the datastore by its ID.
-		Find(ctx context.Context, id int64) (*Job, error)
+		Find(ctx context.Context, owner string, id int64) (*Job, error)
 
-		// FindRunID returns jobs from the datastore by workflow run ID.
-		FindRunID(ctx context.Context, runID int64) ([]*Job, error)
+		// ListCompleted returns a list of jobs from the
+		// datastore with completed status.
+		ListCompleted(ctx context.Context, owner string, limit, offset int) ([]*Job, error)
 
-		// List returns a list of jobs from the datastore.
-		List(ctx context.Context, params JobParams) ([]*Job, error)
-
-		// ListStatus returns all jobs filtered by status without pagination.
-		ListStatus(ctx context.Context, status string) ([]*Job, error)
+		// ListIncomplete returns a list of jobs from the
+		// datastore with imcomplete status.
+		ListIncomplete(ctx context.Context, owner string) ([]*Job, error)
 
 		// Purge deletes all completed jobs older than the given unix timestamp.
 		Purge(ctx context.Context, before int64) error
