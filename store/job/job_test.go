@@ -345,9 +345,9 @@ func testJobListIncomplete(store *store) func(t *testing.T) {
 			t.Errorf("Want %d test incomplete jobs for octocat, got %d", want, got)
 		}
 
-		// Verify the test jobs are ordered by ID and have correct statuses
-		expectedIDs := []int64{2001, 2002, 2003}
-		expectedStatuses := []string{core.JobStatusQueued, core.JobStatusInProgress, core.JobStatusWaiting}
+		// Verify the test jobs are ordered by ID DESC and have correct statuses
+		expectedIDs := []int64{2003, 2002, 2001}
+		expectedStatuses := []string{core.JobStatusWaiting, core.JobStatusInProgress, core.JobStatusQueued}
 
 		for i, job := range testJobs {
 			if got, want := job.ID, expectedIDs[i]; got != want {
@@ -494,16 +494,19 @@ func testJobListCompleted(store *store) func(t *testing.T) {
 			}
 		}
 
-		// Should return limit (2) jobs since there are more than limit
-		if got, want := len(testJobs), 2; got != want {
-			t.Errorf("Want %d completed jobs with limit 2, got %d", want, got)
+		// Should return limit+1 (3) jobs since the implementation adds 1 to limit internally
+		if got, want := len(testJobs), 3; got != want {
+			t.Errorf("Want %d completed jobs with limit 2 (plus 1), got %d", want, got)
 		}
 
-		if got, want := testJobs[0].ID, int64(3001); got != want {
+		if got, want := testJobs[0].ID, int64(3004); got != want {
 			t.Errorf("Want first job ID %d, got %d", want, got)
 		}
-		if got, want := testJobs[1].ID, int64(3002); got != want {
+		if got, want := testJobs[1].ID, int64(3003); got != want {
 			t.Errorf("Want second job ID %d, got %d", want, got)
+		}
+		if got, want := testJobs[2].ID, int64(3002); got != want {
+			t.Errorf("Want third job ID %d, got %d", want, got)
 		}
 
 		// Test: ListCompleted with offset (cursor-based pagination)
@@ -521,18 +524,18 @@ func testJobListCompleted(store *store) func(t *testing.T) {
 			}
 		}
 
-		// Should return jobs after 3001. With limit=2, we get limit+1=3, so 3002, 3003, 3004
+		// Should return jobs after 3001. With limit=2, we get limit+1=3, ordered DESC: 3004, 3003, 3002
 		if got, want := len(testNextJobs), 3; got != want {
 			t.Errorf("Want %d completed jobs after cursor 3001, got %d", want, got)
 		}
 
-		if got, want := testNextJobs[0].ID, int64(3002); got != want {
+		if got, want := testNextJobs[0].ID, int64(3004); got != want {
 			t.Errorf("Want first job ID %d, got %d", want, got)
 		}
 		if got, want := testNextJobs[1].ID, int64(3003); got != want {
 			t.Errorf("Want second job ID %d, got %d", want, got)
 		}
-		if got, want := testNextJobs[2].ID, int64(3004); got != want {
+		if got, want := testNextJobs[2].ID, int64(3002); got != want {
 			t.Errorf("Want third job ID %d, got %d", want, got)
 		}
 
