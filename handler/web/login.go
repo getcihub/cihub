@@ -59,6 +59,7 @@ func HandleLogin(
 			user = &core.User{
 				Login:   account.Login,
 				Avatar:  account.Avatar,
+				Email:   account.Email,
 				Admin:   false,
 				Active:  true,
 				Syncing: true,
@@ -68,6 +69,20 @@ func HandleLogin(
 				Access:  token.Access,
 				Refresh: token.Refresh,
 				Token:   uniuri.NewLen(32),
+			}
+
+			// If the user has no email associated, fetch primary
+			// email from GitHub
+			if user.Email == "" {
+				email, err := userz.FindEmail(ctx, user)
+				if err != nil {
+					writeLoginError(w, r, err)
+					logger.WithError(err).
+						Errorln("web: cannot find user email")
+					return
+				}
+
+				user.Email = email.Email
 			}
 
 			if !token.Expires.IsZero() {
@@ -118,15 +133,10 @@ func HandleLogin(
 			go synchronize(syncer, user)
 		}
 
-		redirect := "/"
-		if len(user.Email) == 0 {
-			redirect = "/register"
-		}
-
 		logger.Debugln("web: authentication successful")
 
 		session.Create(w, user)
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 }
 

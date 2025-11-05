@@ -486,11 +486,26 @@ func (mr *MockUserServiceMockRecorder) Find(ctx, access, refresh any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Find", reflect.TypeOf((*MockUserService)(nil).Find), ctx, access, refresh)
 }
 
+// FindEmail mocks base method.
+func (m *MockUserService) FindEmail(ctx context.Context, user *core.User) (*core.Email, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindEmail", ctx, user)
+	ret0, _ := ret[0].(*core.Email)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindEmail indicates an expected call of FindEmail.
+func (mr *MockUserServiceMockRecorder) FindEmail(ctx, user any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindEmail", reflect.TypeOf((*MockUserService)(nil).FindEmail), ctx, user)
+}
+
 // ListEmail mocks base method.
-func (m *MockUserService) ListEmail(ctx context.Context, user *core.User) ([]*core.UserEmail, error) {
+func (m *MockUserService) ListEmail(ctx context.Context, user *core.User) ([]*core.Email, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListEmail", ctx, user)
-	ret0, _ := ret[0].([]*core.UserEmail)
+	ret0, _ := ret[0].([]*core.Email)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
