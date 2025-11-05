@@ -30,7 +30,16 @@ func (s *service) Find(ctx context.Context, access, refresh string) (*core.User,
 	return convertUser(src), nil
 }
 
-func (s *service) ListEmail(ctx context.Context, user *core.User) ([]*core.UserEmail, error) {
+func (s *service) FindEmail(ctx context.Context, user *core.User) (*core.Email, error) {
+	emails, err := s.ListEmail(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+
+	return returnPrimaryEmail(emails), nil
+}
+
+func (s *service) ListEmail(ctx context.Context, user *core.User) ([]*core.Email, error) {
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
 		return nil, err
@@ -52,37 +61,5 @@ func (s *service) ListEmail(ctx context.Context, user *core.User) ([]*core.UserE
 		opt.Page = res.NextPage
 	}
 
-	return convertEmails(emails), nil
-}
-
-func convertUser(src *github.User) *core.User {
-	dst := &core.User{
-		Login:  src.GetLogin(),
-		Avatar: src.GetAvatarURL(),
-		Email:  src.GetEmail(),
-	}
-	if !src.GetCreatedAt().IsZero() {
-		dst.Created = src.CreatedAt.Unix()
-	}
-	if !src.GetUpdatedAt().IsZero() {
-		dst.Created = src.UpdatedAt.Unix()
-	}
-	return dst
-}
-
-func convertEmails(emails []*github.UserEmail) []*core.UserEmail {
-	var out []*core.UserEmail
-	for _, email := range emails {
-		if !email.GetVerified() {
-			continue
-		}
-
-		out = append(out, &core.UserEmail{
-			Email:    email.GetEmail(),
-			Primary:  email.GetPrimary(),
-			Verified: email.GetVerified(),
-		})
-	}
-
-	return out
+	return convertEmailList(emails), nil
 }

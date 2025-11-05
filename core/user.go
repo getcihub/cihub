@@ -27,8 +27,8 @@ type (
 		Token   string `json:"-"`
 	}
 
-	// UserEmail represents user's email address.
-	UserEmail struct {
+	// Email represents a user email.
+	Email struct {
 		Email    string `json:"email"`
 		Primary  bool   `json:"primary"`
 		Verified bool   `json:"verified"`
@@ -66,7 +66,10 @@ type (
 		// Find returns the authenticated user.
 		Find(ctx context.Context, access, refresh string) (*User, error)
 
-		// ListEmail returns a list of verified emails for the authenticated user
-		ListEmail(ctx context.Context, user *User) ([]*UserEmail, error)
+		// FindEmail returns the authenticated user primary email.
+		FindEmail(ctx context.Context, user *User) (*Email, error)
+
+		// ListEmail returns the authenticated user email list.
+		ListEmail(ctx context.Context, user *User) ([]*Email, error)
 	}
 )
