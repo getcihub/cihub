@@ -103,9 +103,9 @@ func (s Server) Handler() http.Handler {
 				r.With(acl.CheckAdmin()).Post("/", machines.HandleCreate(s.Machines))
 				r.Get("/{name}", machines.HandleFind(s.Machines))
 				r.With(acl.CheckAdmin()).
-					Delete("/{name}", machines.HandleDelete(s.Machines, s.Scheduler))
+					Delete("/{name}", machines.HandleDelete(s.Machines, s.Runners, s.Scheduler))
 				r.With(acl.CheckAdmin()).Patch("/{name}", machines.HandleUpdate())
-				r.Get("/{name}/runners", machines.HandleRunners())
+				r.Get("/{name}/runners", machines.HandleRunners(s.Machines, s.Runners))
 			})
 
 			r.Route("/runners", func(r chi.Router) {

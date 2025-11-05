@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 const (
 	// MachineStatusOnline indicates the machine is online and available for jobs
@@ -19,17 +22,21 @@ const (
 type (
 	// Machine represents a server running an agent.
 	Machine struct {
-		Name     string    `json:"name"`
-		Owner    string    `json:"owner"`
-		Arch     string    `json:"arch"`
-		CPU      int64     `json:"cpu"`
-		RAM      int64     `json:"ram"`
-		Status   string    `json:"status"`
-		Created  int64     `json:"created_at"`
-		LastSeen int64     `json:"last_seen_at"`
-		Updated  int64     `json:"updated_at"`
-		Runners  []*Runner `json:"runners"`
-		Token    string    `json:"-"`
+		Name         string `json:"name"`
+		Owner        string `json:"owner"`
+		Arch         Arch   `json:"arch"`
+		CPU          int64  `json:"cpu"`
+		CPULimit     int64  `json:"cpu_limit"`
+		CPUAllocated int64  `json:"cpu_allocated"`
+		RAMAvailable int64  `json:"ram_available"`
+		RAMLimit     int64  `json:"ram_limit"`
+		RAMAllocated int64  `json:"ram_allocated"`
+		RAMTotal     int64  `json:"ram_total"`
+		Status       string `json:"status"`
+		Created      int64  `json:"created_at"`
+		LastSeen     int64  `json:"last_seen_at"`
+		Updated      int64  `json:"updated_at"`
+		Token        string `json:"-"`
 	}
 
 	// MachineStore defines operations for working with machine on a datastore.
@@ -56,3 +63,62 @@ type (
 		Purge(ctx context.Context, before int64) error
 	}
 )
+
+// CanAccept checks if a machine can accept a runner for execution.
+// A machine can accept a runner if:
+//   - The machine is online
+//   - The runner owner matches the machine owner
+//   - The runner architecture matches the machine architecture
+//   - CPU allocation won't exceed the effective CPU limit (CPULimit if set, else CPU)
+//   - RAM allocation won't exceed the effective RAM limit (RAMLimit if set, else RAMAvailable)
+//   - RAM available on the machine is sufficient for the runner's RAM requirement
+func (m *Machine) CanAccept(runner *Runner) bool {
+	// Check if machine is online
+	if m.Status != MachineStatusOnline {
+		return false
+	}
+
+	// Last seen less that 5 minutes
+	if time.Now().After(time.Unix(m.LastSeen, 0).Add(time.Minute)) {
+		return false
+	}
+
+	// Check if owner matches
+	if m.Owner != runner.Owner {
+		return false
+	}
+
+	// Check if architecture matches
+	if runner.Arch != m.Arch {
+		return false
+	}
+
+	// Determine effective CPU limit (use CPU total if CPULimit is 0)
+	cpuLimit := m.CPULimit
+	if cpuLimit == 0 {
+		cpuLimit = m.CPU
+	}
+
+	// Check if CPU allocation won't exceed limit
+	if m.CPUAllocated+runner.CPU > cpuLimit {
+		return false
+	}
+
+	// Determine effective RAM limit (use RAMAvailable if RAMLimit is 0)
+	ramLimit := m.RAMLimit
+	if ramLimit == 0 {
+		ramLimit = m.RAMAvailable
+	}
+
+	// Check if RAM allocation won't exceed limit
+	if m.RAMAllocated+runner.RAM > ramLimit {
+		return false
+	}
+
+	// Check if RAM available on machine is sufficient
+	if runner.RAM > m.RAMAvailable {
+		return false
+	}
+
+	return true
+}

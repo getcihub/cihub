@@ -23,12 +23,10 @@ export function MachinesPage() {
         }
     }
 
-    // Helper function to calculate machine resource usage from machine's runners
-    const getMachineResourceUsage = (machine: { runners?: any[] }) => {
+    // Helper function to get runner count from machine
+    const getMachineRunnerCount = (machine: { runners?: any[] }) => {
         const machineRunners = machine.runners ?? []
-        const usedCPU = machineRunners.reduce((sum, r) => sum + r.cpu, 0)
-        const usedRAM = machineRunners.reduce((sum, r) => sum + r.ram, 0)
-        return { usedCPU, usedRAM, runnerCount: machineRunners.length }
+        return { runnerCount: machineRunners.length }
     }
 
     // Helper function to get status dot styling
@@ -51,20 +49,14 @@ export function MachinesPage() {
     const totalMachines = machines.length
     const onlineMachines = machines.filter((m) => m.status === MachineStatusOnline).length
     const totalCPU = machines.reduce((sum, m) => sum + m.cpu, 0)
-    const totalRAM = machines.reduce((sum, m) => sum + m.ram, 0)
-    const usedCPU = machines.reduce((sum, m) => {
-        const { usedCPU: machineUsedCPU } = getMachineResourceUsage(m)
-        return sum + machineUsedCPU
-    }, 0)
-    const usedRAM = machines.reduce((sum, m) => {
-        const { usedRAM: machineUsedRAM } = getMachineResourceUsage(m)
-        return sum + machineUsedRAM
-    }, 0)
+    const totalCPUAllocated = machines.reduce((sum, m) => sum + m.cpu_allocated, 0)
+    const totalRAMAvailable = machines.reduce((sum, m) => sum + m.ram_available, 0)
+    const totalRAMAllocated = machines.reduce((sum, m) => sum + m.ram_allocated, 0)
 
-    const cpuUsagePercent = totalCPU > 0 ? Math.round((usedCPU / totalCPU) * 100) : 0
-    const ramUsagePercent = totalRAM > 0 ? Math.round((usedRAM / totalRAM) * 100) : 0
-    const ramUsageGB = Math.round(usedRAM / 1024)
-    const totalRAMGB = Math.round(totalRAM / 1024)
+    const cpuUsagePercent = totalCPU > 0 ? Math.round((totalCPUAllocated / totalCPU) * 100) : 0
+    const ramUsagePercent = totalRAMAvailable > 0 ? Math.round((totalRAMAllocated / totalRAMAvailable) * 100) : 0
+    const ramUsageGB = Math.round(totalRAMAllocated / 1024)
+    const totalRAMGB = Math.round(totalRAMAvailable / 1024)
 
     const handleMachineClick = (machineName: string) => {
         navigate({ to: '/$login/machines/$name', params: { login: selectedInstallation!.login, name: machineName } })
@@ -175,7 +167,7 @@ export function MachinesPage() {
                             <div className="mt-2">
                                 <p className="text-3xl font-bold text-gray-900">{cpuUsagePercent}%</p>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    {usedCPU} / {totalCPU} vCPU
+                                    {totalCPUAllocated} / {totalCPU} vCPU
                                 </p>
                             </div>
                         </div>
@@ -236,11 +228,14 @@ export function MachinesPage() {
             ) : (
                 <div className="space-y-3">
                     {filteredMachines.map((machine) => {
-                        const { usedCPU, usedRAM, runnerCount } = getMachineResourceUsage(machine)
-                        const availableCPU = machine.cpu - usedCPU
-                        const availableRAM = machine.ram - usedRAM
-                        const cpuPercent = machine.cpu > 0 ? Math.round((usedCPU / machine.cpu) * 100) : 0
-                        const ramPercent = machine.ram > 0 ? Math.round((usedRAM / machine.ram) * 100) : 0
+                        const { runnerCount } = getMachineRunnerCount(machine)
+
+                        // Determine effective limits (use total if limit is 0, which means "unknown")
+                        const cpuLimit = machine.cpu_limit > 0 ? machine.cpu_limit : machine.cpu
+                        const ramLimit = machine.ram_limit > 0 ? machine.ram_limit : machine.ram_available
+
+                        const cpuPercent = cpuLimit > 0 ? Math.round((machine.cpu_allocated / cpuLimit) * 100) : 0
+                        const ramPercent = ramLimit > 0 ? Math.round((machine.ram_allocated / ramLimit) * 100) : 0
 
                         return (
                             <Card
@@ -300,7 +295,9 @@ export function MachinesPage() {
                                                     style={{ width: `${cpuPercent}%` }}
                                                 />
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-0.5">{usedCPU}/{machine.cpu} ({availableCPU})</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                {machine.cpu > 0 ? `${machine.cpu_allocated}/${cpuLimit}` : 'Unknown'}
+                                            </p>
                                         </div>
 
                                         {/* RAM Usage */}
@@ -318,7 +315,9 @@ export function MachinesPage() {
                                                     style={{ width: `${ramPercent}%` }}
                                                 />
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-0.5">{Math.round(usedRAM / 1024)}GB / {Math.round(machine.ram / 1024)}GB ({Math.round(availableRAM / 1024)})</p>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                                {machine.ram_available > 0 ? `${Math.round(machine.ram_allocated / 1024)}GB/${Math.round(ramLimit / 1024)}GB` : 'Unknown'}
+                                            </p>
                                         </div>
 
                                         {/* Arrow icon */}

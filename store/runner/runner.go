@@ -80,12 +80,7 @@ func (s *store) FindID(ctx context.Context, id int64) (*core.Runner, error) {
 func (s *store) ListPending(ctx context.Context) ([]*core.Runner, error) {
 	var out []*core.Runner
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		params := map[string]interface{}{"runner_status": core.RunnerStatusPending}
-		query, args, err := binder.BindNamed(queryListStatus, params)
-		if err != nil {
-			return err
-		}
-		rows, err := queryer.Query(query, args...)
+		rows, err := queryer.Query(queryListPending)
 		if err != nil {
 			return err
 		}
@@ -95,12 +90,12 @@ func (s *store) ListPending(ctx context.Context) ([]*core.Runner, error) {
 	return out, err
 }
 
-// ListIdle returns a slice of idle runners.
-func (s *store) ListIdle(ctx context.Context) ([]*core.Runner, error) {
+// ListMachine returns a slice of runners for a given machine.
+func (s *store) ListMachine(ctx context.Context, machine *core.Machine) ([]*core.Runner, error) {
 	var out []*core.Runner
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		params := map[string]interface{}{"runner_status": core.RunnerStatusIdle}
-		query, args, err := binder.BindNamed(queryListStatus, params)
+		params := map[string]interface{}{"runner_owner": machine.Owner, "runner_machine": machine.Name}
+		query, args, err := binder.BindNamed(queryListMachine, params)
 		if err != nil {
 			return err
 		}
@@ -179,10 +174,17 @@ FROM runners
 WHERE runner_id = :runner_id
 `
 
-const queryListStatus = queryBase + `
+const queryListPending = queryBase + `
 FROM runners
-WHERE runner_status = :runner_status
+WHERE runner_status = 'pending'
 ORDER BY runner_name
+`
+
+const queryListMachine = queryBase + `
+FROM runners
+WHERE runner_owner = :runner_owner
+  AND runner_machine = :runner_machine
+  AND runner_status != 'completed'
 `
 
 const stmtDelete = `

@@ -14,11 +14,8 @@ import (
 )
 
 type createInput struct {
-	Name   string   `json:"name"`
-	Arch   string   `json:"arch"`
-	CPU    int64    `json:"cpu"`
-	Labels []string `json:"labels,omitempty"`
-	RAM    int64    `json:"ram"`
+	Name  string              `json:"name"`
+	Limit *core.ResourceLimit `json:"limit,omitempty"`
 }
 
 type machineWithToken struct {
@@ -44,13 +41,15 @@ func HandleCreate(machines core.MachineStore) http.HandlerFunc {
 		machine := &core.Machine{
 			Name:    in.Name,
 			Owner:   installation.Login,
-			Arch:    in.Arch,
-			CPU:     in.CPU,
-			RAM:     in.RAM,
 			Status:  core.MachineStatusOffline,
 			Created: time.Now().Unix(),
 			Updated: time.Now().Unix(),
 			Token:   uniuri.NewLen(32),
+		}
+
+		if in.Limit != nil {
+			machine.CPULimit = in.Limit.CPU
+			machine.RAMLimit = in.Limit.RAM
 		}
 
 		err = machines.Create(r.Context(), machine)

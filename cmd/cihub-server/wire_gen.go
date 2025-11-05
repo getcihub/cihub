@@ -9,8 +9,8 @@ package main
 import (
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/handler/api"
+	"github.com/getcihub/cihub/handler/rpc"
 	"github.com/getcihub/cihub/handler/web"
-	"github.com/getcihub/cihub/orchestrator/manager"
 	installation2 "github.com/getcihub/cihub/service/installation"
 	runner2 "github.com/getcihub/cihub/service/runner"
 	"github.com/getcihub/cihub/service/syncer"
@@ -74,9 +74,8 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	v := provideEventHandlers(jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
-	runnerManager := manager.New(runnerStore, runnerService, scheduler)
-	mainRpcHandler := provideRPC(runnerManager, conf)
-	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, mainRpcHandler, conf)
+	rpcServer := rpc.New(machineStore, runnerStore, runnerService, scheduler)
+	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, rpcServer, conf)
 	serverServer := provideServer(mux, conf)
 	mainApplication := newApplication(reaper, serverServer, userStore)
 	return mainApplication, nil

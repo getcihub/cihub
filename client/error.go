@@ -1,4 +1,4 @@
-package rpc
+package client
 
 type serverError struct {
 	Status  int

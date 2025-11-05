@@ -13,7 +13,11 @@ import (
 
 // HandleDelete returns an http.HandlerFunc that handles an
 // http.Request to delete a machine entry from the datastore.
-func HandleDelete(machines core.MachineStore, scheduler core.Scheduler) http.HandlerFunc {
+func HandleDelete(
+	machines core.MachineStore,
+	runners core.RunnerStore,
+	scheduler core.Scheduler,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
 			ctx   = r.Context()
@@ -37,8 +41,16 @@ func HandleDelete(machines core.MachineStore, scheduler core.Scheduler) http.Han
 			return
 		}
 
+		runnersToCancel, err := runners.ListMachine(ctx, machine)
+		if err != nil {
+			render.InternalErrorf(w, err.Error())
+			log.WithError(err).
+				Warnln("api: cannot get runners to cancel")
+			return
+		}
+
 		// Foreach runner on the machine, cancel them
-		for _, runner := range machine.Runners {
+		for _, runner := range runnersToCancel {
 			log.WithField("runner", runner.Name).Infoln("api: cancelling runner")
 			err := scheduler.Cancel(ctx, runner.Name)
 			if err != nil {

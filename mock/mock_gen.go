@@ -240,19 +240,19 @@ func (mr *MockRunnerStoreMockRecorder) FindID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindID", reflect.TypeOf((*MockRunnerStore)(nil).FindID), ctx, id)
 }
 
-// ListIdle mocks base method.
-func (m *MockRunnerStore) ListIdle(arg0 context.Context) ([]*core.Runner, error) {
+// ListMachine mocks base method.
+func (m *MockRunnerStore) ListMachine(arg0 context.Context, arg1 *core.Machine) ([]*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListIdle", arg0)
+	ret := m.ctrl.Call(m, "ListMachine", arg0, arg1)
 	ret0, _ := ret[0].([]*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListIdle indicates an expected call of ListIdle.
-func (mr *MockRunnerStoreMockRecorder) ListIdle(arg0 any) *gomock.Call {
+// ListMachine indicates an expected call of ListMachine.
+func (mr *MockRunnerStoreMockRecorder) ListMachine(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListIdle", reflect.TypeOf((*MockRunnerStore)(nil).ListIdle), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMachine", reflect.TypeOf((*MockRunnerStore)(nil).ListMachine), arg0, arg1)
 }
 
 // ListPending mocks base method.
@@ -352,18 +352,18 @@ func (mr *MockSchedulerMockRecorder) Cancelled(ctx, runnerName any) *gomock.Call
 }
 
 // Request mocks base method.
-func (m *MockScheduler) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
+func (m *MockScheduler) Request(ctx context.Context, machine *core.Machine) (*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Request", ctx, params)
+	ret := m.ctrl.Call(m, "Request", ctx, machine)
 	ret0, _ := ret[0].(*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Request indicates an expected call of Request.
-func (mr *MockSchedulerMockRecorder) Request(ctx, params any) *gomock.Call {
+func (mr *MockSchedulerMockRecorder) Request(ctx, machine any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Request", reflect.TypeOf((*MockScheduler)(nil).Request), ctx, machine)
 }
 
 // Schedule mocks base method.

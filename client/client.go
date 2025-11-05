@@ -1,4 +1,4 @@
-package rpc
+package client
 
 import (
 	"context"
@@ -16,36 +16,44 @@ import (
 
 var bufpool = bpool.NewBufferPool(64)
 
-type Client struct {
+type client struct {
 	client *retryablehttp.Client
 	server string
 	secret string
 }
 
-func NewClient(server, secret string) *Client {
-	client := retryablehttp.NewClient()
-	client.RetryMax = 30
-	client.RetryWaitMax = time.Second * 10
-	client.RetryWaitMin = time.Second * 1
-	client.Logger = nil
-	return &Client{
-		client: client,
+func NewClient(server, secret string) core.Client {
+	c := retryablehttp.NewClient()
+	c.RetryMax = 30
+	c.RetryWaitMax = time.Second * 10
+	c.RetryWaitMin = time.Second * 1
+	c.Logger = nil
+
+	return &client{
+		client: c,
 		server: strings.TrimSuffix(server, "/"),
 		secret: secret,
 	}
 }
 
-func (c *Client) Ping(ctx context.Context, machine string) error {
-	in := &pingRequest{Machine: machine}
-	return c.send(ctx, "/rpc/v1/ping", in, nil)
+func (c *client) Join(ctx context.Context) error {
+	return c.send(ctx, "/rpc/v1/join", nil, nil)
 }
 
-func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
+func (c *client) Leave(ctx context.Context) error {
+	return c.send(ctx, "/rpc/v1/leave", nil, nil)
+}
+
+func (c *client) Ping(ctx context.Context, resource *core.Resource) error {
+	return c.send(ctx, "/rpc/v1/ping", resource, nil)
+}
+
+func (c *client) Request(ctx context.Context) (*core.Runner, error) {
 	timeout, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
 	out := &core.Runner{}
-	err := c.send(timeout, "/rpc/v1/request", params, out)
+	err := c.send(timeout, "/rpc/v1/request", nil, out)
 
 	// The request is performing long polling and is subject
 	// to a client-side and server-side timeout. The timeout
@@ -58,27 +66,33 @@ func (c *Client) Request(ctx context.Context, params *core.Filter) (*core.Runner
 	return out, err
 }
 
-func (c *Client) Accept(ctx context.Context, name, machine string) error {
-	in := &acceptRequest{Name: name, Machine: machine}
-	err := c.send(ctx, "/rpc/v1/accept", in, nil)
-	return err
+func (c *client) Accept(ctx context.Context, runner *core.Runner) error {
+	return c.send(ctx, "/rpc/v1/accept", runner, nil)
 }
 
-func (c *Client) Register(ctx context.Context, name string) (*core.RunnerWithToken, error) {
-	in := &registerRequest{Name: name}
+func (c *client) Register(ctx context.Context, runner *core.Runner) (*core.RunnerWithToken, error) {
 	out := &core.RunnerWithToken{}
-	err := c.send(ctx, "/rpc/v1/register", in, out)
+	err := c.send(ctx, "/rpc/v1/register", runner, out)
 	return out, err
 }
 
-func (c *Client) Watch(ctx context.Context, name string) (bool, error) {
-	in := &watchRequest{Name: name}
-	out := &watchResponse{}
-	err := c.send(ctx, "/rpc/v1/watch", in, out)
-	return out.Done, err
+func (c *client) Lock(ctx context.Context, runner *core.Runner) error {
+	return c.send(ctx, "/rpc/v1/lock", runner, nil)
 }
 
-func (c *Client) send(ctx context.Context, path string, in, out interface{}) error {
+func (c *client) Unlock(ctx context.Context, runner *core.Runner) error {
+	return c.send(ctx, "/rpc/v1/unlock", runner, nil)
+}
+
+func (c *client) Watch(ctx context.Context, runner *core.Runner) (bool, error) {
+	err := c.send(ctx, "/rpc/v1/watch", runner, nil)
+	if err != nil {
+		return true, nil
+	}
+	return false, err
+}
+
+func (c *client) send(ctx context.Context, path string, in, out interface{}) error {
 	buf := bufpool.Get()
 	defer bufpool.Put(buf)
 
@@ -135,5 +149,3 @@ func (c *Client) send(ctx context.Context, path string, in, out interface{}) err
 
 	return json.NewDecoder(res.Body).Decode(out)
 }
-
-var _ core.RunnerManager = (*Client)(nil)

@@ -12,7 +12,12 @@ export interface Machine {
     owner: string
     arch: string
     cpu: number
-    ram: number
+    cpu_limit: number
+    cpu_allocated: number
+    ram_available: number
+    ram_limit: number
+    ram_allocated: number
+    ram_total: number
     status: MachineStatus
     created_at: number
     last_seen_at: number
