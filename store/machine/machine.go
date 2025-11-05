@@ -46,7 +46,7 @@ func (s *store) Update(ctx context.Context, machine *core.Machine) error {
 // Delete deletes a machine from the datastore.
 func (s *store) Delete(ctx context.Context, machine *core.Machine) error {
 	return s.db.Lock(func(execer db.Execer, binder db.Binder) error {
-		params := map[string]interface{}{"machine_name": machine.Name}
+		params := map[string]interface{}{"machine_name": machine.Name, "machine_owner": machine.Owner}
 		stmt, args, err := binder.BindNamed(stmtDelete, params)
 		if err != nil {
 			return err
@@ -209,7 +209,9 @@ ORDER BY machine_name, runner_name
 `
 
 const stmtDelete = `
-DELETE FROM machines WHERE machine_name = :machine_name
+DELETE FROM machines
+WHERE machine_name = :machine_name
+  AND machine_owner = :machine_owner
 `
 
 const stmtInsert = `
@@ -257,4 +259,5 @@ SET
 	machine_updated   = :machine_updated,
 	machine_token     = :machine_token
 WHERE machine_name = :machine_name
+  AND machine_owner = :machine_owner
 `

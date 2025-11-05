@@ -128,8 +128,8 @@ func testMachinePurge(store core.MachineStore, created *core.Machine) func(t *te
 			t.Error(err)
 		}
 
-		// Purge machines with last_seen before 2000000000
-		err = store.Purge(noContext, 2000000000)
+		// Purge machines with last_seen before 1500000000
+		err = store.Purge(noContext, 1500000000)
 		if err != nil {
 			t.Error(err)
 		}
