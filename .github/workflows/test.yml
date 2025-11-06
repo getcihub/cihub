@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     name: Test
-    runs-on: cihub-4cpu-8gb-amd64
+    runs-on: cihub-2cpu-4gb-amd64
     strategy:
       matrix:
         go-version: ['1.25.x']
