@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/getcihub/cihub/core"
 )
 
 const labelPrefix = "cihub-"
@@ -19,9 +21,9 @@ const labelPrefix = "cihub-"
 //   - cihub-4cpu-8gb-arm64  → 4 CPU, 8192 MB RAM, arm64
 //   - cihub-2cpu-2048mb     → 2 CPU, 2048 MB RAM, amd64
 type Label struct {
-	Arch string `json:"arch"` // CPU architecture (amd64, arm64), defaults to amd64
-	RAM  int64  `json:"ram"`  // RAM in megabytes
-	CPU  int64  `json:"cpu"`  // CPU cores allocated
+	Arch core.Arch `json:"arch"` // CPU architecture (amd64, arm64), defaults to amd64
+	RAM  int64     `json:"ram"`  // RAM in megabytes
+	CPU  int64     `json:"cpu"`  // CPU cores allocated
 }
 
 // Parse parses a label string and returns a Label struct.
@@ -66,9 +68,11 @@ func Parse(s string) (*Label, error) {
 	}
 
 	// Parse architecture (defaults to amd64)
-	arch := "amd64"
+	arch := core.ArchAmd64
 	if matches[4] != "" {
-		arch = matches[4]
+		if err := arch.Set(matches[4]); err != nil {
+			return nil, err
+		}
 	}
 
 	return &Label{
@@ -86,7 +90,7 @@ func (l *Label) Validate() error {
 		return fmt.Errorf("invalid CPU specification: %d", l.CPU)
 	case l.RAM <= 0:
 		return fmt.Errorf("invalid RAM specification: %d", l.RAM)
-	case l.Arch != "amd64" && l.Arch != "arm64":
+	case l.Arch != core.ArchAmd64 && l.Arch != core.ArchArm64:
 		return fmt.Errorf("invalid architecture: %s (must be amd64 or arm64)", l.Arch)
 	default:
 		return nil

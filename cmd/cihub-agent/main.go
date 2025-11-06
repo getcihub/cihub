@@ -11,10 +11,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/getcihub/cihub/agent"
+	"github.com/getcihub/cihub/client"
 	"github.com/getcihub/cihub/cmd/cihub-agent/config"
-	"github.com/getcihub/cihub/orchestrator/agent"
-	"github.com/getcihub/cihub/orchestrator/manager/rpc"
+	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/pinger"
 	"github.com/getcihub/cihub/service/image"
+	"github.com/getcihub/cihub/service/resource"
 	"github.com/getcihub/cihub/service/snapshot"
 )
 
@@ -41,18 +44,37 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	manager := rpc.NewClient(
+	manager := client.NewClient(
 		config.RPC.Proto+"://"+config.RPC.Host,
 		config.RPC.Secret,
 	)
 
+	resourcez := resource.New()
 	imagez := image.New(ctr, config.Agent.Snapshotter)
 	snapshotz := snapshot.New(ctr, config.Agent.Snapshotter)
+	pinger := pinger.New(manager, resourcez)
+	agent := &agent.Agent{
+		Client:      manager,
+		Images:      imagez,
+		Snapshots:   snapshotz,
+		Firecracker: config.Agent.Firecracker,
+		KernelArgs:  config.Agent.Kernel.Args,
+		KernelPath:  config.Agent.Kernel.Path,
+		Image:       config.Agent.Image,
+	}
+
+	resources, err := resourcez.Report(ctx)
+	if err != nil {
+		logger := logrus.WithError(err)
+		logger.Fatalln("agent: cannot report machine resource")
+	} else if resources.Arch == core.ArchUnknown {
+		logrus.Fatalln("agent: unsupported CPU architecture")
+	}
 
 	// Ping the server and block until a successful connection
 	// to the server has been established.
 	for {
-		err := manager.Ping(ctx, config.Agent.Name)
+		err := manager.Ping(ctx, resources)
 		select {
 		case <-ctx.Done():
 			return
@@ -73,34 +95,35 @@ func main() {
 		}
 	}
 
-	agent := &agent.Agent{
-		Manager:     manager,
-		Images:      imagez,
-		Snapshots:   snapshotz,
-		Machine:     config.Agent.Name,
-		Firecracker: config.Agent.Firecracker,
-		KernelArgs:  config.Agent.Kernel.Args,
-		KernelPath:  config.Agent.Kernel.Path,
-		Arch:        config.Agent.Arch,
-		CPU:         config.Agent.Limit.CPU,
-		Image:       config.Agent.Image,
-		Owner:       config.Agent.Owner,
-		RAM:         config.Agent.Limit.RAM,
+	err = manager.Join(ctx)
+	if err != nil {
+		logrus.WithError(err).
+			Fatalln("machine cannot join cluster")
 	}
 
 	var g errgroup.Group
 	g.Go(func() error {
-		logrus.WithField("arch", agent.Arch).
-			WithField("cpu", agent.CPU).
+		logrus.WithField("arch", resources.Arch).
+			WithField("cpu", resources.CPU).
 			WithField("image", agent.Image).
-			WithField("owner", agent.Owner).
-			WithField("ram", agent.RAM).
+			WithField("ram", resources.RAMAvailable).
 			WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
 			Infoln("agent: start polling remote server")
 		return agent.Start(ctx)
 	})
 
+	g.Go(func() error {
+		return pinger.Start(ctx, time.Second*10)
+	})
+
 	if err := g.Wait(); err != nil {
-		logrus.WithError(err).Fatalln("program terminated")
+		logrus.WithError(err).
+			Fatalln("program terminated")
+	}
+
+	err = manager.Leave(context.Background())
+	if err != nil {
+		logrus.WithError(err).
+			Warnln("machine cannot leave cluster")
 	}
 }

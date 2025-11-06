@@ -32,9 +32,9 @@ func testMachineCreate(store core.MachineStore) func(t *testing.T) {
 		machine := &core.Machine{
 			Name:     "machine-test-001",
 			Owner:    "testorg",
-			Arch:     "amd64",
+			Arch:     core.ArchAmd64,
 			CPU:      4,
-			RAM:      8192,
+			RAMTotal: 8192,
 			Status:   core.MachineStatusOnline,
 			Created:  now,
 			LastSeen: now,
@@ -114,9 +114,9 @@ func testMachinePurge(store core.MachineStore, created *core.Machine) func(t *te
 		oldMachine := &core.Machine{
 			Name:     "old-machine-001",
 			Owner:    created.Owner,
-			Arch:     "amd64",
+			Arch:     core.ArchAmd64,
 			CPU:      2,
-			RAM:      4096,
+			RAMTotal: 4096,
 			Status:   core.MachineStatusOffline,
 			Created:  1000000000,
 			LastSeen: 1000000000,
@@ -176,8 +176,8 @@ func testMachineFields(got *core.Machine, want *core.Machine) func(t *testing.T)
 		if got.CPU != want.CPU {
 			t.Errorf("Want cpu %d, got %d", want.CPU, got.CPU)
 		}
-		if got.RAM != want.RAM {
-			t.Errorf("Want ram %d, got %d", want.RAM, got.RAM)
+		if got.RAMTotal != want.RAMTotal {
+			t.Errorf("Want ram %d, got %d", want.RAMTotal, got.RAMTotal)
 		}
 		if got.Status != want.Status {
 			t.Errorf("Want status %s, got %s", want.Status, got.Status)

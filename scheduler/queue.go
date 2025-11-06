@@ -43,17 +43,14 @@ func (q *queue) Schedule(ctx context.Context, runner *core.Runner) error {
 	return nil
 }
 
-func (q *queue) Request(ctx context.Context, params *core.Filter) (*core.Runner, error) {
+func (q *queue) Request(ctx context.Context, machine *core.Machine) (*core.Runner, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	w := &worker{
-		arch:    params.Arch,
-		cpu:     params.CPU,
-		owner:   params.Owner,
-		ram:     params.RAM,
 		channel: make(chan *core.Runner),
 		done:    ctx.Done(),
+		machine: machine,
 	}
 
 	q.Lock()
@@ -105,16 +102,7 @@ func (q *queue) signal(ctx context.Context) error {
 
 	loop:
 		for w := range q.workers {
-			if w.owner != runner.Owner {
-				continue
-			}
-			if w.arch != runner.Arch {
-				continue
-			}
-			if w.cpu < runner.CPU {
-				continue
-			}
-			if w.ram < runner.RAM {
+			if !w.machine.CanAccept(runner) {
 				continue
 			}
 
@@ -154,10 +142,7 @@ func (q *queue) start() error {
 }
 
 type worker struct {
-	arch    string
-	owner   string
-	ram     int64
-	cpu     int64
 	channel chan *core.Runner
 	done    <-chan struct{}
+	machine *core.Machine
 }

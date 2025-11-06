@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
-	"sync"
 	"time"
 
 	"github.com/containerd/containerd/errdefs"
@@ -23,22 +22,14 @@ import (
 )
 
 type Agent struct {
-	sync.Mutex
-
-	Manager   core.RunnerManager
+	Client    core.Client
 	Images    core.ImageService
 	Snapshots core.SnapshotService
 
-	Machine     string
 	Firecracker string
+	Image       string
 	KernelArgs  string
 	KernelPath  string
-
-	Arch  string
-	CPU   int64
-	Image string
-	Owner string
-	RAM   int64
 }
 
 func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
@@ -59,11 +50,11 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 			debug.PrintStack()
 		}
 
-		// Release agent's resource
-		a.Lock()
-		a.CPU += runner.CPU
-		a.RAM += runner.RAM
-		a.Unlock()
+		err := a.Client.Unlock(context.Background(), runner)
+		if err != nil {
+			logger.WithError(err).
+				Errorln("agent: cannot unlock runner resources")
+		}
 	}()
 
 	_, err := os.Stat("/var/lib/cihub")
@@ -81,7 +72,7 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 	}
 
 	logger.Debugln("agent: register runner")
-	jit, err := a.Manager.Register(ctx, runner.Name)
+	jit, err := a.Client.Register(ctx, runner)
 	if err != nil {
 		logger = logger.WithError(err)
 		logger.Warnln("agent: cannot register runner")
@@ -193,7 +184,6 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 		"latest": map[string]interface{}{
 			"meta-data": map[string]interface{}{
 				"fireactions": map[string]interface{}{
-					"runner_hostname":   a.Machine,
 					"runner_id":         runner.Name,
 					"runner_jit_config": jit.Token,
 				},
@@ -209,7 +199,7 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 	go func() {
 		logger.Debugln("agent: watch cancellation started")
 
-		done, _ := a.Manager.Watch(ctx, runner.Name)
+		done, _ := a.Client.Watch(ctx, runner)
 		if done {
 			cancel()
 			logger.Debugln("agent: watch cancellation received")
@@ -274,24 +264,11 @@ func (a *Agent) Start(ctx context.Context) error {
 }
 
 func (a *Agent) poll(ctx context.Context) error {
-	log := logger.FromContext(ctx).
-		WithFields(
-			logrus.Fields{
-				"machine":       a.Machine,
-				"available_cpu": a.CPU,
-				"available_ram": a.RAM,
-			},
-		)
+	log := logger.FromContext(ctx)
 	log.Debugln("agent: poll queue started")
 
 	// Call server and blocks until response or context cancellation
-	runner, err := a.Manager.Request(ctx, &core.Filter{
-		Arch:  a.Arch,
-		CPU:   a.CPU,
-		Owner: a.Owner,
-		RAM:   a.RAM,
-	})
-
+	runner, err := a.Client.Request(ctx)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		log = log.WithError(err)
 		log.Traceln("agent: request job timeout")
@@ -313,19 +290,22 @@ func (a *Agent) poll(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = a.Manager.Accept(ctx, runner.Name, a.Machine)
+	err = a.Client.Accept(ctx, runner)
 	if err == db.ErrOptimisticLock {
 		return nil
 	} else if err != nil {
 		log = log.WithError(err)
-		log.Warnln("agent: accept runner failed")
+		log.Warnln("agent: cannot accept runner")
 		return err
 	}
 
-	a.Lock()
-	a.CPU -= runner.CPU
-	a.RAM -= runner.RAM
-	a.Unlock()
+	// Lock resources
+	err = a.Client.Lock(ctx, runner)
+	if err != nil {
+		log = log.WithError(err)
+		log.Warnln("agent: cannot lock runner resources")
+		return err
+	}
 
 	// Start microVM in a goroutine
 	go a.Run(context.Background(), runner)

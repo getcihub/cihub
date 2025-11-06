@@ -2,6 +2,8 @@ package label
 
 import (
 	"testing"
+
+	"github.com/getcihub/cihub/core"
 )
 
 func TestParse(t *testing.T) {
@@ -15,25 +17,25 @@ func TestParse(t *testing.T) {
 			name:      "valid 2cpu 4gb amd64",
 			labelStr:  "cihub-2cpu-4gb",
 			wantError: false,
-			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: "amd64"},
+			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: core.ArchAmd64},
 		},
 		{
 			name:      "valid 4cpu 8gb arm64",
 			labelStr:  "cihub-4cpu-8gb-arm64",
 			wantError: false,
-			wantLabel: &Label{CPU: 4, RAM: 8192, Arch: "arm64"},
+			wantLabel: &Label{CPU: 4, RAM: 8192, Arch: core.ArchArm64},
 		},
 		{
 			name:      "valid 2cpu 2048mb amd64",
 			labelStr:  "cihub-2cpu-2048mb",
 			wantError: false,
-			wantLabel: &Label{CPU: 2, RAM: 2048, Arch: "amd64"},
+			wantLabel: &Label{CPU: 2, RAM: 2048, Arch: core.ArchAmd64},
 		},
 		{
 			name:      "valid 2cpu 2048mb with explicit amd64",
 			labelStr:  "cihub-2cpu-2048mb-amd64",
 			wantError: false,
-			wantLabel: &Label{CPU: 2, RAM: 2048, Arch: "amd64"},
+			wantLabel: &Label{CPU: 2, RAM: 2048, Arch: core.ArchAmd64},
 		},
 		{
 			name:      "not a cihub label",
@@ -112,19 +114,19 @@ func TestResolve(t *testing.T) {
 			name:      "first label is cihub label",
 			labels:    []string{"cihub-2cpu-4gb", "self-hosted"},
 			wantError: false,
-			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: "amd64"},
+			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: core.ArchAmd64},
 		},
 		{
 			name:      "cihub label in middle",
 			labels:    []string{"self-hosted", "cihub-2cpu-4gb", "linux"},
 			wantError: false,
-			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: "amd64"},
+			wantLabel: &Label{CPU: 2, RAM: 4096, Arch: core.ArchAmd64},
 		},
 		{
 			name:      "multiple cihub labels uses first",
 			labels:    []string{"cihub-4cpu-8gb-arm64", "cihub-2cpu-4gb"},
 			wantError: false,
-			wantLabel: &Label{CPU: 4, RAM: 8192, Arch: "arm64"},
+			wantLabel: &Label{CPU: 4, RAM: 8192, Arch: core.ArchArm64},
 		},
 		{
 			name:      "no cihub labels",
@@ -220,37 +222,37 @@ func TestValidate(t *testing.T) {
 	}{
 		{
 			name:      "valid label",
-			label:     &Label{CPU: 2, RAM: 2048, Arch: "amd64"},
+			label:     &Label{CPU: 2, RAM: 2048, Arch: core.ArchAmd64},
 			wantError: false,
 		},
 		{
 			name:      "valid arm64 label",
-			label:     &Label{CPU: 4, RAM: 4096, Arch: "arm64"},
+			label:     &Label{CPU: 4, RAM: 4096, Arch: core.ArchArm64},
 			wantError: false,
 		},
 		{
 			name:      "invalid cpu zero",
-			label:     &Label{CPU: 0, RAM: 2048, Arch: "amd64"},
+			label:     &Label{CPU: 0, RAM: 2048, Arch: core.ArchAmd64},
 			wantError: true,
 		},
 		{
 			name:      "invalid cpu negative",
-			label:     &Label{CPU: -1, RAM: 2048, Arch: "amd64"},
+			label:     &Label{CPU: -1, RAM: 2048, Arch: core.ArchAmd64},
 			wantError: true,
 		},
 		{
 			name:      "invalid ram zero",
-			label:     &Label{CPU: 2, RAM: 0, Arch: "amd64"},
+			label:     &Label{CPU: 2, RAM: 0, Arch: core.ArchAmd64},
 			wantError: true,
 		},
 		{
 			name:      "invalid ram negative",
-			label:     &Label{CPU: 2, RAM: -1024, Arch: "amd64"},
+			label:     &Label{CPU: 2, RAM: -1024, Arch: core.ArchAmd64},
 			wantError: true,
 		},
 		{
 			name:      "invalid arch",
-			label:     &Label{CPU: 2, RAM: 2048, Arch: "x86"},
+			label:     &Label{CPU: 2, RAM: 2048, Arch: core.ArchUnknown},
 			wantError: true,
 		},
 	}

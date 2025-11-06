@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { RiArrowLeftLine, RiCheckLine, RiFileCopyLine, RiAddLine, RiCloseLine } from '@remixicon/react'
-import { useInstallation } from '../hooks/useInstallation'
 import { useMachineMutations } from '../hooks/useMachineMutations'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
@@ -9,7 +8,6 @@ import { Button } from '../components/Button'
 export function AddMachinePage() {
     const navigate = useNavigate()
     const { login } = useParams({ from: '/$login/machines/add' })
-    const { selectedInstallation } = useInstallation()
     const { createMachine } = useMachineMutations()
 
     const [step, setStep] = useState<'form' | 'instructions'>('form')
@@ -108,21 +106,13 @@ export function AddMachinePage() {
     }
 
     const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cihub.example.com'
-    const installCommand = `#!/bin/bash
-# CIHub Agent Installation Script
-# Machine: ${formData.name}
-# Installation: ${selectedInstallation?.login}
-
+    const installCommand = `
 MACHINE_TOKEN="${machineToken}"
-MACHINE_NAME="${formData.name}"
-INSTALLATION="${selectedInstallation?.login}"
 CIHUB_SERVER="${cihubServer}"
 
 # Download and run the agent installer
-curl -sSL "$CIHUB_SERVER/agent/install.sh" | bash -s -- \\
-  --machine-token "$MACHINE_TOKEN" \\
-  --machine-name "$MACHINE_NAME" \\
-  --installation "$INSTALLATION" \\
+curl -LsSf "https://install.cihub.io" | bash -s -- \\
+  --token "$MACHINE_TOKEN" \\
   --server "$CIHUB_SERVER"`
 
     const handleCopyCommand = () => {

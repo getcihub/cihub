@@ -28,7 +28,7 @@ type (
 		InstallationID int64    `json:"installation_id"`
 		Owner          string   `json:"owner"`
 		Status         string   `json:"status"`
-		Arch           string   `json:"arch"`
+		Arch           Arch     `json:"arch"`
 		CPU            int64    `json:"cpu"`
 		RAM            int64    `json:"ram"`
 		GroupID        int64    `json:"group_id"`
@@ -99,8 +99,8 @@ type (
 		// ListPending returns a slice of pending runner.
 		ListPending(context.Context) ([]*Runner, error)
 
-		// ListIdle returns a slice of idle runner.
-		ListIdle(context.Context) ([]*Runner, error)
+		// ListMachine returns a slice of runners for a given machine.
+		ListMachine(context.Context, *Machine) ([]*Runner, error)
 
 		// Purge deletes all stopped runners older than the given unix timestamp.
 		Purge(ctx context.Context, before int64) error

@@ -8,30 +8,6 @@
 # Example: capacity=4, memory=4096MB, vcpu=2 requires ~16GB RAM and 8 CPU logical cores
 
 agent:
-  # Unique identifier for this agent instance
-  #
-  # This name is used to identify the agent in the CIHub server. If none
-  # provided, will use the hostname of the machine running the agent.
-  #
-  # Example: "agent-prod-01", "agent-dev-02"
-  name: ""
-
-  # CPU architecture supported by this agent
-  #
-  # This specifies the CPU architecture that the agent can run jobs for.
-  # The scheduler uses this to match jobs requesting specific architectures
-  # to agents that support them.
-  #
-  # Valid values: "amd64", "arm64"
-  #
-  # Important:
-  #   - Jobs requesting labels with matching arch will be routed to this agent
-  #   - A job will not be assigned if the agent's arch doesn't match the job's arch
-  #   - This must match the kernel and runner image architecture
-  #
-  # Example: "amd64" for x86_64 systems, "arm64" for ARM systems
-  arch: "amd64"
-
   # Path to the containerd socket file
   #
   # The agent uses containerd to manage container-based runners.
@@ -47,28 +23,6 @@ agent:
   #
   # Default: "/usr/local/bin/firecracker"
   firecracker: "/usr/local/bin/firecracker"
-
-  # GitHub repository owner filter (optional)
-  #
-  # When set, this agent will only accept and process jobs from the specified
-  # GitHub repository owner. This is useful for dedicating agents to specific
-  # organizations or users.
-  #
-  # The job's owner is determined from the repository owner in the GitHub Actions
-  # workflow run that triggered the job.
-  #
-  # Behavior:
-  #   - If empty: Agent accepts jobs from any repository owner (no filtering)
-  #   - If set: Agent only accepts jobs where job.owner matches this value
-  #   - Jobs from other owners will not be assigned to this agent
-  #
-  # Example values:
-  #   - "mycompany" - Only accept jobs from repositories under "mycompany" org
-  #   - "octocat" - Only accept jobs from repositories under "octocat" user
-  #   - "" (empty) - Accept jobs from any owner
-  #
-  # Use case: Dedicate agents to specific organizations for security or resource isolation
-  owner: ""
 
   # Snapshotter backend to use for container storage
   #
@@ -123,63 +77,6 @@ agent:
     #
     # Example: "/boot/vmlinux" or "/home/ubuntu/cihub/vmlinux"
     path: "/home/ubuntu/cihub/vmlinux"
-
-  # Resource limits for this agent
-  #
-  # This section defines the TOTAL aggregate resources available on this agent.
-  # The agent can run multiple microVMs concurrently, but the sum of their resources
-  # cannot exceed these limits.
-  #
-  # IMPORTANT: Resource Planning
-  # - Total system resources required = (memory + vcpu) from labels × concurrent runners
-  # - Physical host must have at least (memory in MB + overhead) and (vcpu cores + overhead)
-  # - Recommended: Reserve 10-20% of host resources for system services and overhead
-  #
-  # Example: If running 4 concurrent runners with 4GB memory and 2 vCPU each:
-  #   - memory: 4 × 4096 = 16384 MB
-  #   - vcpu: 4 × 2 = 8 cores
-  #   - Host should have ~18-20 GB RAM and ~9-10 CPU cores available
-  limit:
-    # Total memory available for all microVMs on this agent (in megabytes)
-    #
-    # This is the maximum aggregate memory that can be allocated to running microVMs.
-    # When the agent receives a job request for a microVM with memory requirement X,
-    # it will only accept if available_memory >= X.
-    #
-    # The agent tracks available memory dynamically:
-    #   - When a microVM starts: available_memory -= vm_memory_requirement
-    #   - When a microVM completes: available_memory += vm_memory_requirement
-    #
-    # Setting a value that exceeds available host memory will cause out-of-memory errors.
-    #
-    # Example values:
-    #   - Single high-performance runner: 4096-8192 MB
-    #   - Multiple concurrent runners: 16384-32768 MB (16-32 GB)
-    #   - Large cluster node: 65536+ MB (64+ GB)
-    #
-    # Default: Set based on available host memory, leaving 10-20% for system overhead
-    ram: 16384
-
-    # Total vCPU cores available for all microVMs on this agent
-    #
-    # This is the maximum aggregate CPU cores that can be allocated to running microVMs.
-    # When the agent receives a job request for a microVM with vCPU requirement Y,
-    # it will only accept if available_vcpu >= Y.
-    #
-    # The agent tracks available vCPUs dynamically:
-    #   - When a microVM starts: available_vcpu -= vm_vcpu_requirement
-    #   - When a microVM completes: available_vcpu += vm_vcpu_requirement
-    #
-    # Setting a value that exceeds available host CPU cores will cause performance degradation.
-    # Oversubscription is possible but not recommended for CI/CD workloads.
-    #
-    # Example values:
-    #   - Single runner per node: 2-4 vCPU cores
-    #   - Multiple concurrent runners: 8-16 vCPU cores
-    #   - High-performance cluster: 32+ vCPU cores
-    #
-    # Default: Set based on available host CPU cores, leaving 10-20% for system overhead
-    cpu: 8
 
 # ============================================================================
 # Database Configuration

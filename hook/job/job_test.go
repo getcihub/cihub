@@ -1272,11 +1272,10 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := New( mockJobStore, mockRunnerStore, mockScheduler)
+	h := New(mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -1320,7 +1319,7 @@ func TestHandler_ResolveJobSpecification(t *testing.T) {
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
 			// Verify runner specification was set from label
-			if got, want := runner.Arch, "amd64"; got != want {
+			if got, want := runner.Arch, core.ArchAmd64; got != want {
 				t.Errorf("Want runner.Arch = %s, got %s", want, got)
 			}
 			if got, want := runner.RAM, int64(2048); got != want {
@@ -1346,11 +1345,10 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-
 	mockJobStore := mock.NewMockJobStore(ctrl)
 	mockRunnerStore := mock.NewMockRunnerStore(ctrl)
 	mockScheduler := mock.NewMockScheduler(ctrl)
-	h := New( mockJobStore, mockRunnerStore, mockScheduler)
+	h := New(mockJobStore, mockRunnerStore, mockScheduler)
 
 	createdTime := time.Now()
 	event := &github.WorkflowJobEvent{
@@ -1395,7 +1393,7 @@ func TestHandler_ResolveJobSpecification_FirstMatchingLabel(t *testing.T) {
 		Create(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, runner *core.Runner) error {
 			// Should resolve to first matching label in job.Labels order
-			if got, want := runner.Arch, "arm64"; got != want {
+			if got, want := runner.Arch, core.ArchArm64; got != want {
 				t.Errorf("Want runner.Arch = %s, got %s", want, got)
 			}
 			if got, want := runner.RAM, int64(4096); got != want {

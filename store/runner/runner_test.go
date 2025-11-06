@@ -33,11 +33,12 @@ func testRunnerCreate(store *store) func(t *testing.T) {
 		now := time.Now().Unix()
 		runner := &core.Runner{
 			Name:           "runner-test-001",
+			Machine:        "cihub-worker-01",
 			ID:             12345,
 			InstallationID: 67890,
 			Owner:          "testorg",
 			Status:         core.RunnerStatusPending,
-			Arch:           "amd64",
+			Arch:           core.ArchAmd64,
 			CPU:            2,
 			RAM:            2048,
 			Created:        now,
@@ -52,7 +53,7 @@ func testRunnerCreate(store *store) func(t *testing.T) {
 		t.Run("Find", testRunnerFind(store, runner))
 		t.Run("FindID", testRunnerFindID(store, runner))
 		t.Run("ListPending", testRunnerListPending(store))
-		t.Run("ListIdle", testRunnerListIdle(store))
+		t.Run("ListMachine", testRunnerListMachine(store))
 		t.Run("Update", testRunnerUpdate(store, runner))
 		t.Run("Purge", testRunnerPurge(store, runner))
 		t.Run("Delete", testRunnerDelete(store, runner))
@@ -98,16 +99,16 @@ func testRunnerListPending(runners *store) func(t *testing.T) {
 	}
 }
 
-func testRunnerListIdle(runners *store) func(t *testing.T) {
+func testRunnerListMachine(runners *store) func(t *testing.T) {
 	return func(t *testing.T) {
-		list, err := runners.ListIdle(noContext)
+		machine := &core.Machine{Owner: "testorg", Name: "cihub-worker-01"}
+		list, err := runners.ListMachine(noContext, machine)
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		// Should be empty since we haven't created any idle runners
-		if got, want := len(list), 0; got != want {
-			t.Errorf("Want idle runner count %d, got %d", want, got)
+		if got, want := len(list), 1; got != want {
+			t.Errorf("Want machine runner count %d, got %d", want, got)
 		}
 	}
 }
@@ -160,7 +161,7 @@ func testRunnerPurge(runners *store, created *core.Runner) func(t *testing.T) {
 			InstallationID: created.InstallationID,
 			Owner:          "testorg",
 			Status:         core.RunnerStatusCompleted,
-			Arch:           "amd64",
+			Arch:           core.ArchAmd64,
 			CPU:            2,
 			RAM:            2048,
 			Created:        time.Now().Add(-2 * time.Hour).Unix(),

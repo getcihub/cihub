@@ -100,14 +100,17 @@ export function MachineDetailPage() {
         }
     }
 
-    // Calculate resource usage from machine runners
-    const totalCPU = machine?.cpu || 0
-    const totalRAM = machine?.ram || 0
+    // Calculate resource usage from machine
     const machineRunners = machine?.runners ?? []
-    const usedCPU = machineRunners.reduce((sum, r) => sum + r.cpu, 0)
-    const usedRAM = machineRunners.reduce((sum, r) => sum + r.ram, 0)
-    const cpuUsagePercent = totalCPU > 0 ? Math.round((usedCPU / totalCPU) * 100) : 0
-    const ramUsagePercent = totalRAM > 0 ? Math.round((usedRAM / totalRAM) * 100) : 0
+
+    // Determine effective limits (use total if limit is 0, which means "unknown")
+    const cpuLimit = machine ? (machine.cpu_limit > 0 ? machine.cpu_limit : machine.cpu) : 0
+    const ramLimit = machine ? (machine.ram_limit > 0 ? machine.ram_limit : machine.ram_available) : 0
+
+    const cpuAllocated = machine?.cpu_allocated || 0
+    const ramAllocated = machine?.ram_allocated || 0
+    const cpuUsagePercent = cpuLimit > 0 ? Math.round((cpuAllocated / cpuLimit) * 100) : 0
+    const ramUsagePercent = ramLimit > 0 ? Math.round((ramAllocated / ramLimit) * 100) : 0
 
     if (isLoading) {
         return (
@@ -256,16 +259,48 @@ export function MachineDetailPage() {
                                             <span className="text-sm font-medium text-gray-600">CPU</span>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-lg font-semibold text-gray-900">{cpuUsagePercent}%</p>
-                                            <p className="text-xs text-gray-500">{usedCPU} / {totalCPU} vCPU</p>
+                                            <p className="text-lg font-semibold text-gray-900">
+                                                {machine.cpu > 0 ? `${cpuUsagePercent}%` : 'Unknown'}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                                {machine.cpu > 0
+                                                    ? `${cpuAllocated} / ${cpuLimit} vCPU`
+                                                    : 'Data unavailable'}
+                                            </p>
                                         </div>
                                     </div>
-                                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-blue-600 transition-all"
-                                            style={{ width: `${cpuUsagePercent}%` }}
-                                        />
-                                    </div>
+                                    {machine.cpu > 0 && (
+                                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-blue-600 transition-all"
+                                                style={{ width: `${cpuUsagePercent}%` }}
+                                            />
+                                        </div>
+                                    )}
+                                    {machine.cpu > 0 && (
+                                        <div className="mt-3 text-xs text-gray-600 space-y-1">
+                                            <div className="flex justify-between">
+                                                <span>Allocated:</span>
+                                                <span className="font-medium">{cpuAllocated} vCPU</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Available:</span>
+                                                <span className="font-medium">{cpuLimit - cpuAllocated} vCPU</span>
+                                            </div>
+                                            {machine.cpu_limit > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span>Limit:</span>
+                                                    <span className="font-medium">{cpuLimit} vCPU</span>
+                                                </div>
+                                            )}
+                                            {machine.cpu > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span>Total:</span>
+                                                    <span className="font-medium">{machine.cpu} vCPU</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* RAM */}
@@ -276,16 +311,48 @@ export function MachineDetailPage() {
                                             <span className="text-sm font-medium text-gray-600">RAM</span>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-lg font-semibold text-gray-900">{ramUsagePercent}%</p>
-                                            <p className="text-xs text-gray-500">{Math.round(usedRAM / 1024)} / {Math.round(totalRAM / 1024)} GB</p>
+                                            <p className="text-lg font-semibold text-gray-900">
+                                                {machine.ram_available > 0 ? `${ramUsagePercent}%` : 'Unknown'}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                                {machine.ram_available > 0
+                                                    ? `${Math.round(ramAllocated / 1024)} / ${Math.round(ramLimit / 1024)} GB`
+                                                    : 'Data unavailable'}
+                                            </p>
                                         </div>
                                     </div>
-                                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full bg-blue-600 transition-all"
-                                            style={{ width: `${ramUsagePercent}%` }}
-                                        />
-                                    </div>
+                                    {machine.ram_available > 0 && (
+                                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-blue-600 transition-all"
+                                                style={{ width: `${ramUsagePercent}%` }}
+                                            />
+                                        </div>
+                                    )}
+                                    {machine.ram_available > 0 && (
+                                        <div className="mt-3 text-xs text-gray-600 space-y-1">
+                                            <div className="flex justify-between">
+                                                <span>Allocated:</span>
+                                                <span className="font-medium">{Math.round(ramAllocated / 1024)} GB</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>Available:</span>
+                                                <span className="font-medium">{Math.round((ramLimit - ramAllocated) / 1024)} GB</span>
+                                            </div>
+                                            {machine.ram_limit > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span>Limit:</span>
+                                                    <span className="font-medium">{Math.round(ramLimit / 1024)} GB</span>
+                                                </div>
+                                            )}
+                                            {machine.ram_available > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span>Total:</span>
+                                                    <span className="font-medium">{Math.round(machine.ram_available / 1024)} GB</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

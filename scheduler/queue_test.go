@@ -18,9 +18,9 @@ func TestQueue(t *testing.T) {
 	defer controller.Finish()
 
 	runners := []*core.Runner{
-		{Name: "runner-3", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
-		{Name: "runner-2", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
-		{Name: "runner-1", Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048},
+		{Name: "runner-3", Owner: "org", Arch: core.ArchAmd64, CPU: 2, RAM: 2048},
+		{Name: "runner-2", Owner: "org", Arch: core.ArchAmd64, CPU: 2, RAM: 2048},
+		{Name: "runner-1", Owner: "org", Arch: core.ArchAmd64, CPU: 2, RAM: 2048},
 	}
 
 	ctx := context.Background()
@@ -30,9 +30,18 @@ func TestQueue(t *testing.T) {
 	store.EXPECT().ListPending(ctx).Return(runners[2:], nil).Times(1)
 
 	q := newQueue(ctx, store)
-	filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
+	machine := &core.Machine{
+		Name:         "machine-1",
+		Owner:        "org",
+		Arch:         core.ArchAmd64,
+		CPU:          4,
+		RAMAvailable: 4096,
+		RAMLimit:     4096,
+		Status:       core.MachineStatusOnline,
+	}
+
 	for _, runner := range runners {
-		next, err := q.Request(ctx, filter)
+		next, err := q.Request(ctx, machine)
 		if err != nil {
 			t.Error(err)
 			return
@@ -57,8 +66,17 @@ func TestQueueCancel(t *testing.T) {
 	wg.Add(1)
 
 	go func() {
-		filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
-		runner, err := q.Request(ctx, filter)
+		machine := &core.Machine{
+			Name:         "machine-1",
+			Owner:        "org",
+			Arch:         core.ArchAmd64,
+			CPU:          4,
+			RAMAvailable: 4096,
+			RAMLimit:     4096,
+			Status:       core.MachineStatusOnline,
+		}
+
+		runner, err := q.Request(ctx, machine)
 		if err != context.Canceled {
 			t.Errorf("Expected context.Canceled error, got %s", err)
 		}
@@ -93,7 +111,15 @@ func TestQueueDeadlock(t *testing.T) {
 	store.EXPECT().ListPending(ctx).Return(incompleteRunners(n), nil).AnyTimes()
 
 	q := newQueue(ctx, store)
-	filter := &core.Filter{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
+	machine := &core.Machine{
+		Name:         "machine-1",
+		Owner:        "org",
+		Arch:         core.ArchAmd64,
+		CPU:          4,
+		RAMAvailable: 4096,
+		RAMLimit:     4096,
+		Status:       core.MachineStatusOnline,
+	}
 	doWork := func(i int) bool {
 		select {
 		case <-ctx.Done():
@@ -107,7 +133,7 @@ func TestQueueDeadlock(t *testing.T) {
 			// Randomly cancel some contexts to simulate timeouts
 			cancel()
 		}
-		_, err := q.Request(ctx, filter)
+		_, err := q.Request(ctx, machine)
 		if err != nil && err != context.Canceled && err !=
 			context.DeadlineExceeded {
 			t.Errorf("Expected context.Canceled or context.DeadlineExceeded error, got %s", err)
@@ -134,7 +160,7 @@ func TestQueueDeadlock(t *testing.T) {
 func incompleteRunners(n int) []*core.Runner {
 	ret := make([]*core.Runner, n)
 	for i := range ret {
-		ret[i] = &core.Runner{Owner: "org", Arch: "amd64", CPU: 2, RAM: 2048}
+		ret[i] = &core.Runner{Owner: "org", Arch: core.ArchAmd64, CPU: 2, RAM: 2048}
 	}
 	return ret
 }
