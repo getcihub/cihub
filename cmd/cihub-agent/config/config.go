@@ -42,7 +42,6 @@ type (
 	// RPC provides the RPC server configuration.
 	RPC struct {
 		Host   string `koanf:"host"`
-		Proto  string `koanf:"proto"`
 		Secret string `koanf:"secret"`
 	}
 )

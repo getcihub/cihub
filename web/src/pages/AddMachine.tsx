@@ -115,8 +115,10 @@ export function AddMachinePage() {
         })
     }
 
-    const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cihub.example.com'
-    const installCommand = `curl -LsSf "https://install.cihub.io" | bash -s -- \\
+    const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cloud.cihub.io'
+    const installCommand = `
+# Download and run the agent installer
+curl -LsSf "https://install.cihub.io" | bash -s -- \\
   --token "${machineToken}" \\
   --server "${cihubServer}"`
 

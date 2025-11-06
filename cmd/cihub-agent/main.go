@@ -44,10 +44,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	manager := client.NewClient(
-		config.RPC.Proto+"://"+config.RPC.Host,
-		config.RPC.Secret,
-	)
+	manager := client.NewClient(config.RPC.Host, config.RPC.Secret)
 
 	resourcez := resource.New()
 	imagez := image.New(ctr, config.Agent.Snapshotter)
@@ -107,7 +104,7 @@ func main() {
 			WithField("cpu", resources.CPU).
 			WithField("image", agent.Image).
 			WithField("ram", resources.RAMAvailable).
-			WithField("server", config.RPC.Proto+"://"+config.RPC.Host).
+			WithField("server", config.RPC.Host).
 			Infoln("agent: start polling remote server")
 		return agent.Start(ctx)
 	})

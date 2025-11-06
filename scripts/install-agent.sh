@@ -20,9 +20,13 @@ DEFAULT_VERSION="latest"
 INSTALL_PATH="/usr/local/bin"
 
 # CIHub
-CIHUB_AGENT_VERSION="${CIHUB_AGENT:=$DEFAULT_VERSION}"
 CIHUB_AGENT_BIN="cihub-agent"
+CIHUB_AGENT_CONFIG_PATH="/etc/cihub-agent/config.yaml"
+CIHUB_AGENT_KERNEL_VERSION="5.10"
 CIHUB_AGENT_REPO="getcihub/cihub"
+CIHUB_AGENT_SERVICE_FILE="/etc/systemd/system/cihub-agent.service"
+CIHUB_AGENT_SYSTEMD_SVC="cihub-agent.service"
+CIHUB_AGENT_VERSION="${CIHUB_AGENT:=$DEFAULT_VERSION}"
 
 # CNI Plugins
 CNI_PLUGINS_VERSION="${CNI_PLUGINS:=$DEFAULT_VERSION}"
@@ -121,6 +125,14 @@ build_containerd_release_bin_name() {
     local arch="$2"
 
     echo "containerd-$tag-linux-$arch.tar.gz"
+}
+
+# Returns cihub-agent release binary name
+build_cihub_agent_release_bin_name() {
+    local tag=${1//v/} # remove the 'v' from arg $1
+    local arch="$2"
+
+    echo "cihub-agent-$tag-linux-$arch.tar.gz"
 }
 
 # Returns the desired binary download url for a repo, tag and binary
@@ -319,7 +331,7 @@ install_containerd() {
 
     say_info "Installing containerd version $tag to $INSTALL_PATH"
 
-    if [[ "$version" == "$DEFAULT_VERSION" ]]; then
+    if [[ "$tag" == "$DEFAULT_VERSION" ]]; then
         tag=$(latest_release_tag "$CONTAINERD_REPO")
     fi
 
@@ -514,6 +526,151 @@ install_firecracker() {
 }
 
 #=============================================================================
+# CIHub Agent
+#=============================================================================
+
+do_all_cihub() {
+    local version="$1"
+    local server="$2"
+    local token="$3"
+    local kernel="$4"
+
+    install_cihub_agent "$version"
+    install_cihub_agent_kernel "$kernel"
+    write_cihub_agent_config "$server" "$token" "$kernel"
+    start_cihub_agent_service
+
+    say_info "CIHub agent running"
+}
+
+# Fetch and install the CIHub agent binary
+install_cihub_agent() {
+    local tag="$1"
+
+    say_info "Installing CIHub agent version $tag to $INSTALL_PATH"
+
+    if [[ "$tag" == "$DEFAULT_VERSION" ]]; then
+        tag=$(latest_release_tag "$CIHUB_AGENT_REPO")
+    fi
+
+    bin=$(build_cihub_agent_release_bin_name "$tag" "$ARCH")
+    url=$(build_download_url "$CIHUB_AGENT_REPO" "$tag" "$bin")
+    install_release_tar "$url" "$(dirname $INSTALL_PATH)" || die "could not install cihub-agent"
+
+    say_info "CIHub agent version $tag successfully installed"
+}
+
+# Download the kernel
+install_cihub_agent_kernel() {
+    local kernel="$1"
+
+    if [[ -e /var/lib/cihub/kernels/$kernel/vmlinux ]]; then
+        return
+    fi
+
+    say_info "Downloading kernel $kernel"
+
+    mkdir -p /var/lib/cihub/kernels/$kernel
+
+    curl -sL -o "/var/lib/cihub/kernels/$kernel/vmlinux" \
+        "https://kernel.cihub.io/$ARCH/$kernel/vmlinux"
+
+    say_info "Downloaded kernel"
+}
+
+# Write CIHub agent config to default location
+write_cihub_agent_config() {
+    local server="$1"
+    local token="$2"
+    local kernel="$3"
+
+    mkdir -p "$(dirname "$CIHUB_AGENT_CONFIG_PATH")"
+
+    say_info "Writing CIHub agent config to $CIHUB_AGENT_CONFIG_PATH"
+
+    cat <<EOF >"$CIHUB_AGENT_CONFIG_PATH"
+# ============================================================================
+# Agent Configuration
+# ============================================================================
+
+agent:
+    # Path to the containerd socket file
+    containerd: "$CONTAINERD_STATE_DIR/containerd.sock"
+
+    # Path to the firecracker binary
+    firecracker: "$INSTALL_PATH/$FIRECRACKER_BIN"
+
+    # Snapshotter backend to use for container storage
+    snapshotter: "devmapper"
+
+    # Container image used to create Firecracker microVMs for GitHub Actions runners
+    image: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
+
+    # Kernel configuration for Firecracker microVMs
+    kernel:
+        # Kernel command-line arguments passed to the VM at boot
+        args: "console=ttyS0 reboot=k panic=1 pci=off nomodules rw"
+
+        # Path to the Linux kernel image file (vmlinux, uncompressed)
+        path: "/var/lib/cihub/kernels/$kernel/vmlinux"
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+
+logger:
+    # Logging level for application output
+    #
+    # Valid values: "trace", "debug", "info", "warn", "error"
+    #
+    # Default: "info"
+    level: "info"
+
+# ============================================================================
+# RPC Configuration (Server/Agent Communication)
+# ============================================================================
+
+rpc:
+    # RPC server address for agent connections
+    host: "$server"
+
+    # RPC authentication secret for server/agent communication
+    secret: "$token"
+EOF
+
+    say_info "CIHub agent config saved"
+}
+
+# Fetch and start the CIHub agent systemd service
+start_cihub_agent_service() {
+    say_info "Starting CIHub agent service with $CIHUB_AGENT_SERVICE_FILE"
+
+    cat <<EOF > /etc/systemd/system/cihub-agent.service
+[Unit]
+Description=CIHub
+Documentation=https://github.com/getcihub/cihub
+After=network.target
+
+[Service]
+User=root
+Type=simple
+KillMode=process
+ExecStartPre=/usr/bin/which firecracker
+ExecStartPre=/usr/bin/which containerd
+ExecStart=cihub-agent -c $CIHUB_AGENT_CONFIG_PATH
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    start_service "$CIHUB_AGENT_SYSTEMD_SVC"
+}
+
+#=============================================================================
 # IP FORWARD
 #=============================================================================
 
@@ -555,10 +712,15 @@ help() {
 #=============================================================================
 
 main() {
+    local server=""
+    local token=""
+    local version="$CIHUB_AGENT_VERSION"
+
     local containerd_version="$CONTAINERD_VERSION"
     local cni_plugins_version="$CNI_PLUGINS_VERSION"
     local firecracker_version="$FIRECRACKER_VERSION"
     local tc_redirect_tap_version="$TC_REDIRECT_TAP_VERSION"
+    local kernel_version="$CIHUB_AGENT_KERNEL_VERSION"
     local disk=""
     local skip_apt=false
     local thinpool="$DEFAULT_THINPOOL"
@@ -572,6 +734,22 @@ main() {
             "-h" | "--help")
                 help
                 exit 1
+            ;;
+            "-v" | "--version")
+                shift
+                version="$1"
+            ;;
+            "-s" | "--server")
+                shift
+                server="$1"
+            ;;
+            "-t" | "--token")
+                shift
+                token="$1"
+            ;;
+            "-k" | "--kernel")
+                shift
+                kernel_version="$1"
             ;;
             "--containerd-version")
                 shift
@@ -593,10 +771,10 @@ main() {
                 shift
                 disk="$1"
             ;;
-            "-s" | "--skip-apt")
+            "--skip-apt")
                 skip_apt=true
             ;;
-            "-t" | "--thinpool")
+            "--thinpool")
                 shift
                 thinpool="$1"
             ;;
@@ -607,7 +785,16 @@ main() {
         shift
     done
 
-    say_info "Provisioning host $(hostname)"
+    # Validate required parameters
+    if [[ -z "$server" ]]; then
+        die "Missing required argument: --server"
+    fi
+
+    if [[ -z "$token" ]]; then
+        die "Missing required argument: --token"
+    fi
+
+    say_info "Provisioning host"
 
     set_arch
     say_info "Will install binaries for architecture: $ARCH"
@@ -631,7 +818,9 @@ main() {
     do_all_containerd "$containerd_version" "$thinpool"
     enable_ip_forwarding
 
-    say_info "Host $(hostname) provisioned"
+    do_all_cihub "$version" "$server" "$token" "$kernel_version"
+
+    say_info "Host provisioned"
 }
 
 main "$@"
