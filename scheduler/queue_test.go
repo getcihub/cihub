@@ -23,7 +23,9 @@ func TestQueue(t *testing.T) {
 		{Name: "runner-1", Owner: "org", Arch: core.ArchAmd64, CPU: 2, RAM: 2048},
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	store := mock.NewMockRunnerStore(controller)
 	store.EXPECT().ListPending(ctx).Return(runners, nil).Times(1)
 	store.EXPECT().ListPending(ctx).Return(runners[1:], nil).Times(1)

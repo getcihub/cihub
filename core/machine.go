@@ -1,9 +1,6 @@
 package core
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 const (
 	// MachineStatusOnline indicates the machine is online and available for jobs
@@ -75,11 +72,6 @@ type (
 func (m *Machine) CanAccept(runner *Runner) bool {
 	// Check if machine is online
 	if m.Status != MachineStatusOnline {
-		return false
-	}
-
-	// Last seen less that 5 minutes
-	if time.Now().After(time.Unix(m.LastSeen, 0).Add(time.Minute)) {
 		return false
 	}
 
