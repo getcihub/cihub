@@ -32,6 +32,18 @@ var migrations = []struct {
 		name: "create-table-machines",
 		stmt: createTableMachines,
 	},
+	{
+		name: "create-index-machines-owner",
+		stmt: createIndexMachinesOwner,
+	},
+	{
+		name: "create-index-machines-status",
+		stmt: createIndexMachinesStatus,
+	},
+	{
+		name: "create-index-machines-last-seen",
+		stmt: createIndexMachinesLastSeen,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -245,7 +257,7 @@ CREATE INDEX idx_memberships_user_id ON memberships(membership_user_id);
 
 var createTableMachines = `
 CREATE TABLE IF NOT EXISTS machines (
-  machine_name            VARCHAR(255) PRIMARY KEY,
+  machine_name            VARCHAR(255),
   machine_owner           VARCHAR(255),
   machine_arch            VARCHAR(50),
   machine_cpu             BIGINT,
@@ -260,10 +272,20 @@ CREATE TABLE IF NOT EXISTS machines (
   machine_last_seen       BIGINT,
   machine_updated         BIGINT,
   machine_token           TEXT,
+
+  PRIMARY KEY(machine_name, machine_owner),
   UNIQUE(machine_token)
 );
+`
 
+var createIndexMachinesOwner = `
 CREATE INDEX ix_machine_owner ON machines (machine_owner);
+`
+
+var createIndexMachinesStatus = `
 CREATE INDEX ix_machine_status ON machines (machine_status);
+`
+
+var createIndexMachinesLastSeen = `
 CREATE INDEX ix_machine_last_seen ON machines (machine_last_seen);
 `
