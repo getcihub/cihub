@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { RiArrowLeftLine, RiCpuLine, RiRam2Line, RiServerLine, RiMoreLine, RiAlertLine } from '@remixicon/react'
-import { useMachineDetail } from '../hooks/useMachineDetail'
-import { useInstallation } from '../hooks/useInstallation'
-import { useMachineMutations } from '../hooks/useMachineMutations'
-import { Card } from '../components/Card'
-import { Button } from '../components/Button'
-import { Skeleton } from '../components/Skeleton'
-import { MembershipRoleAdmin } from '../types/installation'
+import { useMachineDetail } from '@/hooks/useMachineDetail'
+import { useInstallation } from '@/hooks/useInstallation'
+import { useMachineMutations } from '@/hooks/useMachineMutations'
+import { Card } from '@/components/Card'
+import { Button } from '@/components/Button'
+import { Skeleton } from '@/components/Skeleton'
+import { MembershipRoleAdmin } from '@/types/installation'
 
 export function MachineDetailPage() {
     const navigate = useNavigate()

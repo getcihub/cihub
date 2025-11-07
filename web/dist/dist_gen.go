@@ -141,7 +141,7 @@ var files = map[string]file{
 		FileInfo: &fileInfo{
 			name:    "index-B6bawMSG.js",
 			size:    562583,
-			modTime: time.Unix(1762374644, 0),
+			modTime: time.Unix(1762518989, 0),
 		},
 	},
 	"/assets/index-CWr0G8Bh.css": {
@@ -149,7 +149,7 @@ var files = map[string]file{
 		FileInfo: &fileInfo{
 			name:    "index-CWr0G8Bh.css",
 			size:    37399,
-			modTime: time.Unix(1762374644, 0),
+			modTime: time.Unix(1762518989, 0),
 		},
 	},
 	"/index.html": {
@@ -157,7 +157,7 @@ var files = map[string]file{
 		FileInfo: &fileInfo{
 			name:    "index.html",
 			size:    490,
-			modTime: time.Unix(1762374644, 0),
+			modTime: time.Unix(1762518989, 0),
 		},
 	},
 	"/vite.svg": {
@@ -165,7 +165,7 @@ var files = map[string]file{
 		FileInfo: &fileInfo{
 			name:    "vite.svg",
 			size:    1497,
-			modTime: time.Unix(1762374644, 0),
+			modTime: time.Unix(1762518989, 0),
 		},
 	},
 }

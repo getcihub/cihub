@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Machine } from '../types/machine'
-import type { Runner } from '../types/runner'
-import type { ApiResponse } from '../types/api'
+import type { Machine } from '@/types/machine'
+import type { Runner } from '@/types/runner'
+import type { ApiResponse } from '@/types/api'
 import { useInstallation } from './useInstallation'
 
 export function useMachineDetail(machineName: string | undefined) {

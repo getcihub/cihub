@@ -6,14 +6,14 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from "../DropdownMenu"
-import { cx, focusRing } from "../../lib/utils"
+} from "@/components/DropdownMenu"
+import { cx, focusRing } from "@/lib/utils"
 import {
     RiArrowRightUpLine,
     RiLogoutBoxLine,
     RiSettingsLine,
 } from "@remixicon/react"
-import { useAuth } from "../../hooks/useAuth"
+import { useAuth } from "@/hooks/useAuth"
 import { useNavigate } from "@tanstack/react-router"
 import React from "react"
 

@@ -1,7 +1,7 @@
 import { RiCheckboxCircleLine, RiTimeLine, RiPlayCircleLine } from '@remixicon/react'
-import type { JobStatus } from '../types/job'
-import { JobStatusQueued, JobStatusWaiting, JobStatusInProgress, JobStatusCompleted } from '../types/job'
-import { cx } from '../lib/utils'
+import type { JobStatus } from '@/types/job'
+import { JobStatusQueued, JobStatusWaiting, JobStatusInProgress, JobStatusCompleted } from '@/types/job'
+import { cx } from '@/lib/utils'
 
 interface JobStatusBadgeProps {
     status: JobStatus

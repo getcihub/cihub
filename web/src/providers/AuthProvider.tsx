@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { AuthContext, type AuthProviderProps } from '../context/AuthContext'
-import { useUser } from '../hooks/useUser'
+import { AuthContext, type AuthProviderProps } from '@/context/AuthContext'
+import { useUser } from '@/hooks/useUser'
 
 export function AuthProvider({ children }: AuthProviderProps) {
     const navigate = useNavigate()

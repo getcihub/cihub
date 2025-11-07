@@ -1,6 +1,6 @@
 import React from "react"
 
-import { cx } from "../lib/utils"
+import { cx } from "@/lib/utils"
 
 type DividerProps = React.ComponentPropsWithoutRef<"div">
 

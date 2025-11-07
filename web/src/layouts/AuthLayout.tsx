@@ -1,6 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
-import { ProtectedRoute } from '../components/ProtectedRoute'
-import { Navigation } from '../components/ui/Navigation'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { Navigation } from '@/components/ui/Navigation'
 
 /**
  * AuthLayout wraps authenticated routes that don't require installation context

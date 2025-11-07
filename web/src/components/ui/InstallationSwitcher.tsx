@@ -8,10 +8,10 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '../DropdownMenu'
-import { useInstallation } from '../../hooks/useInstallation'
-import { useInstallations } from '../../hooks/useInstallations'
-import { cx, focusRing } from '../../lib/utils'
+} from '@/components/DropdownMenu'
+import { useInstallation } from '@/hooks/useInstallation'
+import { useInstallations } from '@/hooks/useInstallations'
+import { cx, focusRing } from '@/lib/utils'
 
 export function InstallationSwitcher() {
     const navigate = useNavigate()

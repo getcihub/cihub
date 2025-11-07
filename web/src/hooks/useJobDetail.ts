@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Job } from '../types/job'
-import type { ApiResponse } from '../types/api'
+import type { Job } from '@/types/job'
+import type { ApiResponse } from '@/types/api'
 import { useInstallation } from './useInstallation'
 
 export function useJobDetail(jobId: string | undefined) {

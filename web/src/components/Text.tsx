@@ -1,4 +1,4 @@
-import { cx } from '../lib/utils'
+import { cx } from '@/lib/utils'
 
 interface TextProps extends React.HTMLAttributes<HTMLDivElement> {
     variant?: 'body' | 'small' | 'xs'

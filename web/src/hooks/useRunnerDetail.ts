@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Runner } from '../types/runner'
-import type { ApiResponse } from '../types/api'
+import type { Runner } from '@/types/runner'
+import type { ApiResponse } from '@/types/api'
 import { useInstallation } from './useInstallation'
 
 export function useRunnerDetail(runnerName: string | undefined) {

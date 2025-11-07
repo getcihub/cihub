@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { RiServerLine, RiCpuLine, RiRam2Line, RiAddLine, RiArrowRightSLine } from '@remixicon/react'
-import { useMachines } from '../hooks/useMachines'
-import { useInstallation } from '../hooks/useInstallation'
-import { Card } from '../components/Card'
-import { Skeleton } from '../components/Skeleton'
-import { Button } from '../components/Button'
-import { MachineStatusOnline } from '../types/machine'
-import { MembershipRoleAdmin } from '../types/installation'
+import { useMachines } from '@/hooks/useMachines'
+import { useInstallation } from '@/hooks/useInstallation'
+import { Card } from '@/components/Card'
+import { Skeleton } from '@/components/Skeleton'
+import { Button } from '@/components/Button'
+import { MachineStatusOnline } from '@/types/machine'
+import { MembershipRoleAdmin } from '@/types/installation'
 
 export function MachinesPage() {
     const navigate = useNavigate()

@@ -1,6 +1,6 @@
 import { RiAlertLine } from '@remixicon/react'
-import { useInstallation } from '../hooks/useInstallation'
-import { InstallationTypeUser } from '../types/installation'
+import { useInstallation } from '@/hooks/useInstallation'
+import { InstallationTypeUser } from '@/types/installation'
 
 export function InstallationTypeWarning() {
     const { selectedInstallation } = useInstallation()

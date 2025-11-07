@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect } from 'react'
-import { useAuth } from '../hooks/useAuth'
-import { useInstallationDetails } from '../hooks/useInstallationDetails'
+import { useAuth } from '@/hooks/useAuth'
+import { useInstallationDetails } from '@/hooks/useInstallationDetails'
 import { InstallationAccessError } from './InstallationAccessError'
 import { Skeleton } from './Skeleton'
 

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { RiArrowLeftLine, RiCheckLine, RiFileCopyLine, RiAddLine, RiCloseLine } from '@remixicon/react'
-import { useMachineMutations } from '../hooks/useMachineMutations'
-import { Card } from '../components/Card'
-import { Button } from '../components/Button'
+import { useMachineMutations } from '@/hooks/useMachineMutations'
+import { Card } from '@/components/Card'
+import { Button } from '@/components/Button'
 
 export function AddMachinePage() {
     const navigate = useNavigate()

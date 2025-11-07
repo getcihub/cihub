@@ -1,9 +1,9 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { TabNavigation, TabNavigationLink } from "../TabNavigation"
+import { TabNavigation, TabNavigationLink } from "@/components/TabNavigation"
 // import { Notifications } from "./Notifications"
 import { DropdownUserProfile } from "./UserProfile"
 import { InstallationSwitcher } from "./InstallationSwitcher"
-import { useInstallation } from '../../hooks/useInstallation'
+import { useInstallation } from '@/hooks/useInstallation'
 
 function Navigation() {
     const location = useLocation()

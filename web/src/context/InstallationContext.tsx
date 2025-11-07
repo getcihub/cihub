@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { createContext } from 'react'
-import type { Installation, Membership } from '../types/installation'
+import type { Installation, Membership } from '@/types/installation'
 
 export interface InstallationContextType {
     selectedInstallation: Installation | null

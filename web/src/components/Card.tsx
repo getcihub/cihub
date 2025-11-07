@@ -1,7 +1,7 @@
 import { Slot } from "@radix-ui/react-slot"
 import React from "react"
 
-import { cx } from "../lib/utils"
+import { cx } from "@/lib/utils"
 
 interface CardProps extends React.ComponentPropsWithoutRef<"div"> {
     asChild?: boolean

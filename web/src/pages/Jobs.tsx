@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { RiBriefcaseLine, RiArrowRightLine } from '@remixicon/react'
-import { useJobs } from '../hooks/useJobs'
-import { useInstallation } from '../hooks/useInstallation'
-import { JobStatusBadge } from '../components/JobStatusBadge'
-import { Card } from '../components/Card'
-import { Skeleton } from '../components/Skeleton'
-import { JobStatusQueued, JobStatusWaiting, JobStatusInProgress, JobStatusCompleted } from '../types/job'
+import { useJobs } from '@/hooks/useJobs'
+import { useInstallation } from '@/hooks/useInstallation'
+import { JobStatusBadge } from '@/components/JobStatusBadge'
+import { Card } from '@/components/Card'
+import { Skeleton } from '@/components/Skeleton'
+import { JobStatusQueued, JobStatusWaiting, JobStatusInProgress, JobStatusCompleted } from '@/types/job'
 
 const JOBS_PAGE_SIZE = 25
 

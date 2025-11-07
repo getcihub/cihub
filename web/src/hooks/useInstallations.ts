@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Installation } from '../types/installation'
-import type { PaginatedApiResponse } from '../types/api'
+import type { Installation } from '@/types/installation'
+import type { PaginatedApiResponse } from '@/types/api'
 
 export function useInstallations() {
     return useQuery({

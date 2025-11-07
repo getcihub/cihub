@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { UserEmail } from '../types/user'
-import type { ApiResponse } from '../types/api'
+import type { UserEmail } from '@/types/user'
+import type { ApiResponse } from '@/types/api'
 
 export function useEmails() {
     return useQuery({

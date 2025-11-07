@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Job } from '../types/job'
-import type { PaginatedApiResponse } from '../types/api'
+import type { Job } from '@/types/job'
+import type { PaginatedApiResponse } from '@/types/api'
 import { useInstallation } from './useInstallation'
 
 export interface UseJobsOptions {

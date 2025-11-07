@@ -1,12 +1,12 @@
 import { useParams, useNavigate, useSearch } from '@tanstack/react-router'
 import { RiArrowLeftLine, RiBriefcaseLine, RiExternalLinkLine, RiCheckLine, RiArrowRightLine, RiTimeLine, RiServerLine, RiCpuLine, RiRam2Line } from '@remixicon/react'
-import { useJobDetail } from '../hooks/useJobDetail'
-import { useRunnerDetail } from '../hooks/useRunnerDetail'
-import { useInstallation } from '../hooks/useInstallation'
-import { JobStatusBadge } from '../components/JobStatusBadge'
-import { Card } from '../components/Card'
-import { Button } from '../components/Button'
-import { Skeleton } from '../components/Skeleton'
+import { useJobDetail } from '@/hooks/useJobDetail'
+import { useRunnerDetail } from '@/hooks/useRunnerDetail'
+import { useInstallation } from '@/hooks/useInstallation'
+import { JobStatusBadge } from '@/components/JobStatusBadge'
+import { Card } from '@/components/Card'
+import { Button } from '@/components/Button'
+import { Skeleton } from '@/components/Skeleton'
 
 export function JobDetailPage() {
     const { jobId } = useParams({ from: '/$login/jobs/$jobId' })
