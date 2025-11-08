@@ -10,16 +10,22 @@ import (
 )
 
 type service struct {
-	client githubapp.ClientCreator
+	client  githubapp.ClientCreator
+	refresh core.Refresher
 }
 
 // New returns a new InstallationService.
-func New(client githubapp.ClientCreator) core.InstallationService {
-	return &service{client}
+func New(client githubapp.ClientCreator, refresh core.Refresher) core.InstallationService {
+	return &service{client: client, refresh: refresh}
 }
 
 // List returns a slice of installation the user has access to.
 func (s *service) List(ctx context.Context, user *core.User) ([]*core.Installation, error) {
+	err := s.refresh.Refresh(ctx, user, false)
+	if err != nil {
+		return nil, err
+	}
+
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
 		return nil, err
@@ -46,6 +52,11 @@ func (s *service) List(ctx context.Context, user *core.User) ([]*core.Installati
 
 // FindMembership returns the membership of the user for an organization.
 func (s *service) FindMembership(ctx context.Context, user *core.User, org string) (*core.Membership, error) {
+	err := s.refresh.Refresh(ctx, user, false)
+	if err != nil {
+		return nil, err
+	}
+
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
 		return nil, err

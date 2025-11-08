@@ -54,18 +54,19 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	scheduler := provideScheduler(runnerStore, redisDB)
 	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
 	installationStore := installation.New(db)
-	installationService := installation2.New(clientCreator)
+	userStore := user.New(db, encrypter)
+	refresher := provideRefresher(userStore, conf)
+	installationService := installation2.New(clientCreator, refresher)
 	jobStore := job.New(db)
 	machineStore := machine.New(db)
 	membershipStore := membership.New(db)
-	userStore := user.New(db, encrypter)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
 		return application{}, err
 	}
 	batcher := batch.New(db)
 	coreSyncer := syncer.New(batcher, installationService, installationStore, userStore)
-	userService := user2.New(clientCreator)
+	userService := user2.New(clientCreator, refresher)
 	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, userStore, userService)
 	middleware := provideLogin(conf)
 	options := provideServerOptions(conf)
