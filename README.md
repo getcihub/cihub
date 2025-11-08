@@ -20,6 +20,12 @@ That means:
 * Better **speed** (you control the hardware)
 * Full **control** over your CI/CD environment
 
+<p align="center">
+  <img src="https://github.com/getcihub/cihub/raw/main/.github/screenshots/machines.png" width="270" />
+  <img src="https://github.com/getcihub/cihub/raw/main/.github/screenshots/jobs.png" width="270" />
+  <img src="https://github.com/getcihub/cihub/raw/main/.github/screenshots/job-details.png" width="270" />
+</p>
+
 ## 💡 Why Use CIHub?
 
 * **Isolation by design** – Every job runs in its own micro-VM.
