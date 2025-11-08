@@ -1,12 +1,15 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/google/wire"
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/reaper"
 	"github.com/getcihub/cihub/service/installation"
+	"github.com/getcihub/cihub/service/refresher"
 	"github.com/getcihub/cihub/service/runner"
 	"github.com/getcihub/cihub/service/syncer"
 	"github.com/getcihub/cihub/service/user"
@@ -22,8 +25,23 @@ var serviceSet = wire.NewSet(
 	syncer.New,
 	user.New,
 	provideReaper,
+	provideRefresher,
 	provideSession,
 )
+
+// provideRefresher is a Wire provider function that returns an
+// access token refresh based on the environment configuration.
+func provideRefresher(store core.UserStore, config *config.Config) core.Refresher {
+	return refresher.New(
+		store,
+		defaultClient(config.GitHub.SkipVerify),
+		refresher.NewConfig(
+			config.GitHub.OAuth.ClientID,
+			config.GitHub.OAuth.ClientSecret,
+			strings.TrimSuffix(config.GitHub.Server, "/")+"/login/oauth/access_token",
+		),
+	)
+}
 
 // provideSession is a Wire provider function that returns a
 // user session based on the environment configuration.

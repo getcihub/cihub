@@ -10,11 +10,12 @@ import (
 )
 
 type service struct {
-	client githubapp.ClientCreator
+	client  githubapp.ClientCreator
+	refresh core.Refresher
 }
 
-func New(client githubapp.ClientCreator) core.UserService {
-	return &service{client}
+func New(client githubapp.ClientCreator, refresh core.Refresher) core.UserService {
+	return &service{client: client, refresh: refresh}
 }
 
 func (s *service) Find(ctx context.Context, access, refresh string) (*core.User, error) {
@@ -40,6 +41,11 @@ func (s *service) FindEmail(ctx context.Context, user *core.User) (*core.Email, 
 }
 
 func (s *service) ListEmail(ctx context.Context, user *core.User) ([]*core.Email, error) {
+	err := s.refresh.Refresh(ctx, user, false)
+	if err != nil {
+		return nil, err
+	}
+
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
 		return nil, err
