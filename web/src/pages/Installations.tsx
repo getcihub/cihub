@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { useInstallations } from '../hooks/useInstallations'
-import { useInstallation } from '../hooks/useInstallation'
-import { Card } from '../components/Card'
-import { Button } from '../components/Button'
-import { Skeleton } from '../components/Skeleton'
+import { useInstallations } from '@/hooks/useInstallations'
+import { useInstallation } from '@/hooks/useInstallation'
+import { Card } from '@/components/Card'
+import { Button } from '@/components/Button'
+import { Skeleton } from '@/components/Skeleton'
 import { RiAddLine } from '@remixicon/react'
 
 export function InstallationsPage() {

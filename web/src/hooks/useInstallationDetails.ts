@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Installation, Membership } from '../types/installation'
-import type { ApiResponse } from '../types/api'
+import type { Installation, Membership } from '@/types/installation'
+import type { ApiResponse } from '@/types/api'
 
 interface InstallationDetailsData {
     installation: Installation

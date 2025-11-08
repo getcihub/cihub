@@ -1,5 +1,5 @@
 import { useContext } from 'react'
-import { InstallationContext } from '../context/InstallationContext'
+import { InstallationContext } from '@/context/InstallationContext'
 
 export function useInstallation() {
     const context = useContext(InstallationContext)

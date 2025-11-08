@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { RiShieldLine, RiCheckLine, RiBillLine, RiSettingsLine, RiArrowRightLine } from '@remixicon/react'
-import { useInstallation } from '../hooks/useInstallation'
-import { useUsageMetrics } from '../hooks/useUsageMetrics'
-import { getPlanConfig } from '../config/plans'
-import { Card } from '../components/Card'
-import { Button } from '../components/Button'
-import { UserEmails } from '../components/UserEmails'
+import { useInstallation } from '@/hooks/useInstallation'
+import { useUsageMetrics } from '@/hooks/useUsageMetrics'
+import { getPlanConfig } from '@/config/plans'
+import { Card } from '@/components/Card'
+import { Button } from '@/components/Button'
+import { UserEmails } from '@/components/UserEmails'
 
 type SettingsSection = 'general' | 'billing'
 

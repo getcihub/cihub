@@ -12,11 +12,11 @@ import { Badge } from './Badge'
 import { Button } from './Button'
 import { Skeleton } from './Skeleton'
 
-import { useAuth } from '../hooks/useAuth'
-import { useEmails } from '../hooks/useEmails'
-import { useToast } from '../hooks/useToast'
-import { useUpdateEmail } from '../hooks/useUpdateEmail'
-import type { UserEmail } from '../types/user'
+import { useAuth } from '@/hooks/useAuth'
+import { useEmails } from '@/hooks/useEmails'
+import { useToast } from '@/hooks/useToast'
+import { useUpdateEmail } from '@/hooks/useUpdateEmail'
+import type { UserEmail } from '@/types/user'
 
 export function UserEmails() {
     const { user } = useAuth()

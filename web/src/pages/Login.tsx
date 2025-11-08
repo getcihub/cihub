@@ -2,8 +2,8 @@ import { useEffect } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { RiContrast2Line, RiGithubFill } from "@remixicon/react"
 
-import { Button } from "../components/Button"
-import { useAuth } from "../hooks/useAuth"
+import { Button } from "@/components/Button"
+import { useAuth } from "@/hooks/useAuth"
 
 export function LoginPage() {
     const { isAuthenticated, isLoading } = useAuth()

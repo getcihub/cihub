@@ -1,7 +1,7 @@
 import { RiCheckboxCircleLine, RiCloseCircleLine, RiAlertLine, RiPauseLine } from '@remixicon/react'
-import type { MachineStatus } from '../types/machine'
-import { MachineStatusOnline, MachineStatusOffline, MachineStatusUnhealthy, MachineStatusPaused } from '../types/machine'
-import { cx } from '../lib/utils'
+import type { MachineStatus } from '@/types/machine'
+import { MachineStatusOnline, MachineStatusOffline, MachineStatusUnhealthy, MachineStatusPaused } from '@/types/machine'
+import { cx } from '@/lib/utils'
 
 interface MachineStatusBadgeProps {
     status: MachineStatus

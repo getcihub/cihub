@@ -1,7 +1,7 @@
 import { Outlet } from '@tanstack/react-router'
-import { ProtectedInstallationRoute } from '../components/ProtectedInstallationRoute'
-import { Navigation } from '../components/ui/Navigation'
-import { InstallationTypeWarning } from '../components/InstallationTypeWarning'
+import { ProtectedInstallationRoute } from '@/components/ProtectedInstallationRoute'
+import { Navigation } from '@/components/ui/Navigation'
+import { InstallationTypeWarning } from '@/components/InstallationTypeWarning'
 
 /**
  * InstallationLayout wraps routes that require an installation context

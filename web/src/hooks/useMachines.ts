@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Machine } from '../types/machine'
-import type { PaginatedApiResponse } from '../types/api'
+import type { Machine } from '@/types/machine'
+import type { PaginatedApiResponse } from '@/types/api'
 import { useInstallation } from './useInstallation'
 
 export function useMachines() {

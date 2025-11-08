@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { InstallationContext, type InstallationProviderProps } from '../context/InstallationContext'
-import type { Installation, Membership } from '../types/installation'
-import type { ApiResponse } from '../types/api'
+import { InstallationContext, type InstallationProviderProps } from '@/context/InstallationContext'
+import type { Installation, Membership } from '@/types/installation'
+import type { ApiResponse } from '@/types/api'
 
 const STORAGE_KEY = 'selectedInstallation'
 

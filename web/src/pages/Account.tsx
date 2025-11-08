@@ -1,9 +1,8 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useAuth } from '../hooks/useAuth'
-import { UserEmails } from '../components/UserEmails'
-// import { Card } from '../components/Card'
-import { Card } from '../components/ui/card'
-import { Button } from '../components/Button'
+import { useAuth } from '@/hooks/useAuth'
+import { UserEmails } from '@/components/UserEmails'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/Button'
 
 export function AccountPage() {
     const navigate = useNavigate()
