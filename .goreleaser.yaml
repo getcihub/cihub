@@ -1,31 +1,89 @@
 version: 2
 project_name: cihub
-env:
-  - GO111MODULE=on
+before:
+  hooks:
+    - go mod tidy
+    - sh -c 'cd web && pnpm build'
+    - go generate ./...
 builds:
-  - id: cihub-server
-    binary: cihub-server
-    main: ./cmd/cihub-server
-    goos:
-      - linux
-    goarch:
-      - amd64
-      - arm64
-    ldflags:
-      - -s -w -X "version.GitCommit={{ .FullCommit }}"
   - id: cihub-agent
-    binary: cihub-agent
-    main: ./cmd/cihub-agent
     goos:
       - linux
     goarch:
       - amd64
       - arm64
-    ldflags:
-      - -s -w -X "version.GitCommit={{ .FullCommit }}"
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+    main: ./cmd/cihub-agent
+    binary: cihub-agent
+    ldflags: |
+      -s -w
+      -X github.com/getcihub/cihub/version.GitCommit={{ .Commit }}
+  - id: cihub-server
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+      - GO111MODULE=on
+    main: ./cmd/cihub-server
+    binary: cihub-server
+    ldflags: |
+      -s -w
+      -X github.com/getcihub/cihub/version.GitCommit={{ .Commit }}
 archives:
-  - formats: [ 'tar.gz' ]
-    name_template: "cihub-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+  - id: agent-archive
+    ids:
+      - cihub-agent
+    formats:
+      - "tar.gz"
+    name_template: '{{ .Binary }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}'
+  - id: server-archive
+    ids:
+      - cihub-server
+    formats:
+      - "tar.gz"
+    name_template: '{{ .Binary }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}'
 checksum:
-  name_template: "checksums.txt"
-  algorithm: sha256
+  name_template: 'checksums-{{ .Version }}.txt'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs?:'
+      - '^chore:'
+release:
+  github:
+    owner: getcihub
+    name: cihub
+  draft: false
+  prerelease: auto
+dockers_v2:
+  - id: server
+    ids: [cihub-server]
+    dockerfile: ./Dockerfile
+    images:
+      - ghcr.io/getcihub/cihub-server
+    tags:
+      - "latest"
+      - "{{ .Version }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: cihub-server
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+docker_manifests:
+  - name_template: ghcr.io/getcihub/cihub-server:latest
+    image_templates:
+      - ghcr.io/getcihub/cihub-server:latest-amd64
+      - ghcr.io/getcihub/cihub-server:latest-arm64
+  - name_template: ghcr.io/getcihub/cihub-server:{{ .Version }}
+    image_templates:
+      - ghcr.io/getcihub/cihub-server:{{ .Version }}-amd64
+      - ghcr.io/getcihub/cihub-server:{{ .Version }}-arm64
