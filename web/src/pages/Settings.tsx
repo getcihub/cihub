@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { RiBillLine, RiSettingsLine, RiArrowRightLine, RiExternalLinkLine, RiShieldLine } from '@remixicon/react'
+import { RiSettingsLine, RiArrowRightLine, RiExternalLinkLine, RiShieldLine } from '@remixicon/react'
 import { useInstallation } from '@/hooks/useInstallation'
 import { useUsageMetrics } from '@/hooks/useUsageMetrics'
 import { getPlanConfig } from '@/config/plans'
@@ -37,7 +37,6 @@ export function SettingsPage() {
 
     const menuItems: MenuItemProps[] = [
         { id: 'general', label: 'General', icon: <RiSettingsLine className="size-4" /> },
-        { id: 'billing', label: 'Billing', icon: <RiBillLine className="size-4" /> },
     ]
 
     return (
