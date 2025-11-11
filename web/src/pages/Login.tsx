@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router"
 import { RiGithubFill } from "@remixicon/react"
 
 import { Button } from "@/components/Button"
+import { Logo } from "@/components/Logo"
 import { useAuth } from "@/hooks/useAuth"
 
 export function LoginPage() {
@@ -60,7 +61,7 @@ export function LoginPage() {
                     <div className="absolute bottom-[9%] left-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
                     <div className="absolute bottom-[9%] right-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
                     <div className="w-fit rounded-lg bg-black p-3 shadow-sm shadow-black/50 ring-1 ring-inset ring-white/25">
-                        <img src="/favicon.svg" alt="CIHub" className="size-8" />
+                        <Logo color="white" className="size-8" />
                     </div>
                 </div>
                 <h2 className="mt-4 text-center text-xl font-semibold text-gray-900">
