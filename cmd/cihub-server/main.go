@@ -60,7 +60,6 @@ func main() {
 		logrus.WithFields(
 			logrus.Fields{
 				"host": config.Server.Host,
-				"port": config.Server.Port,
 				"url":  config.Server.Addr,
 				"acme": config.Server.Acme,
 			},

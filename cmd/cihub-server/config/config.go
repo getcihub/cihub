@@ -123,7 +123,6 @@ type (
 		Email string `koanf:"email"`
 		Key   string `koanf:"key"`
 		Host  string `koanf:"host"`
-		Port  int    `koanf:"port"`
 		Debug bool   `koanf:"debug"`
 	}
 
