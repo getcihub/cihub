@@ -117,9 +117,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - **Discussions** – [Ask questions and share ideas](https://github.com/getcihub/cihub/discussions)
 - **Website** – [https://cihub.io](https://cihub.io)
 - **Email** – [contact@cihub.io](mailto:contact@cihub.io)
-
----
-
-<p align="center">
-  Made with ❤️ by the CIHub team
-</p>
