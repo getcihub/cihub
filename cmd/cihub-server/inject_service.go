@@ -27,6 +27,7 @@ var serviceSet = wire.NewSet(
 	provideReaper,
 	provideRefresher,
 	provideSession,
+	provideSystem,
 )
 
 // provideRefresher is a Wire provider function that returns an
@@ -62,4 +63,13 @@ func provideReaper(
 	config *config.Config,
 ) *reaper.Reaper {
 	return reaper.New(runners, runnerz, scheduler, config.Reaper.Reclaim)
+}
+
+// provideSyncer is a Wire provider function that returns the
+// system details structure.
+func provideSystem(config *config.Config) *core.System {
+	return &core.System{
+		AppName: config.GitHub.App.Name,
+		Server:  config.GitHub.Server,
+	}
 }

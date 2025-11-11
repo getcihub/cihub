@@ -39,6 +39,7 @@ type Server struct {
 	Scheduler     core.Scheduler
 	Session       core.Session
 	Syncer        core.Syncer
+	System        *core.System
 	Users         core.UserStore
 	Userz         core.UserService
 }
@@ -53,6 +54,7 @@ func New(
 	scheduler core.Scheduler,
 	session core.Session,
 	syncer core.Syncer,
+	system *core.System,
 	users core.UserStore,
 	userz core.UserService,
 ) Server {
@@ -66,6 +68,7 @@ func New(
 		Scheduler:     scheduler,
 		Session:       session,
 		Syncer:        syncer,
+		System:        system,
 		Users:         users,
 		Userz:         userz,
 	}
@@ -128,6 +131,8 @@ func (s Server) Handler() http.Handler {
 		r.Get("/installations", user.HandleInstallations(s.Installations))
 		r.Post("/installations", user.HandleSync(s.Syncer, s.Installations))
 	})
+
+	r.Get("/varz", HandleVarz(s.System))
 
 	return r
 }

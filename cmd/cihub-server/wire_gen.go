@@ -65,8 +65,9 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	}
 	batcher := batch.New(db)
 	coreSyncer := syncer.New(batcher, installationService, installationStore, userStore)
+	system := provideSystem(conf)
 	userService := user2.New(clientCreator, refresher)
-	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, userStore, userService)
+	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, system, userStore, userService)
 	middleware := provideLogin(conf)
 	options := provideServerOptions(conf)
 	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)

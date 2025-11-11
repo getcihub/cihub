@@ -64,6 +64,7 @@ type (
 
 	// GitHubApp provides the GitHub App configuration.
 	GitHubApp struct {
+		Name          string `koanf:"name"`
 		IntegrationID int64  `koanf:"integration_id"`
 		WebhookSecret string `koanf:"webhook_secret"`
 		PrivateKey    string `koanf:"private_key"`
