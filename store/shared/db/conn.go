@@ -7,7 +7,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/getcihub/cihub/store/shared/migrate/mysql"
 	"github.com/getcihub/cihub/store/shared/migrate/postgres"
 	"github.com/getcihub/cihub/store/shared/migrate/sqlite"
 )
@@ -17,11 +16,6 @@ func Connect(driver Driver, datasource string, maxOpenConnections int) (*DB, err
 	db, err := sql.Open(driver.String(), datasource)
 	if err != nil {
 		return nil, err
-	}
-
-	switch driver {
-	case Mysql:
-		db.SetMaxIdleConns(0)
 	}
 
 	if err := pingDatabase(db); err != nil {
@@ -38,9 +32,6 @@ func Connect(driver Driver, datasource string, maxOpenConnections int) (*DB, err
 	var engine Driver
 	var locker Locker
 	switch driver {
-	case Mysql:
-		engine = Mysql
-		locker = &nopLocker{}
 	case Postgres:
 		engine = Postgres
 		locker = &nopLocker{}
@@ -72,8 +63,6 @@ func pingDatabase(db *sql.DB) (err error) {
 
 func setupDatabase(db *sql.DB, driver Driver) error {
 	switch driver {
-	case Mysql:
-		return mysql.Migrate(db)
 	case Postgres:
 		return postgres.Migrate(db)
 	default:

@@ -8,7 +8,7 @@ This SQL is generated into a go file and included as part of the CIHub binary.
 
 Any new changes to the database structure are always put into a new SQL file. Follow the naming scheme in the `store/shared/migrate/<db>/files` of the SQL files by incrementing the number file name and give it a good description of what changes are being made.
 
-Changes will need to be implemented for all supported databases, making similar changes for eg Mysql/Postgres/Sqllite.
+Changes will need to be implemented for all supported databases, making similar changes for eg Postgres and SQLite.
 
 **NB** Any changes to the database structure will need to be reflected for the relevant `struct` in the `core` directory. Changing the objects in the `store` directory for the ORM.
 

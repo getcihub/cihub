@@ -14,11 +14,6 @@ func TestDriver_String(t *testing.T) {
 			want:   "sqlite",
 		},
 		{
-			name:   "mysql",
-			driver: Mysql,
-			want:   "mysql",
-		},
-		{
 			name:   "postgres",
 			driver: Postgres,
 			want:   "postgres",
@@ -68,24 +63,6 @@ func TestDriver_Set(t *testing.T) {
 			name:    "sqlite mixed case",
 			input:   "SqLiTe",
 			want:    Sqlite,
-			wantErr: false,
-		},
-		{
-			name:    "mysql lowercase",
-			input:   "mysql",
-			want:    Mysql,
-			wantErr: false,
-		},
-		{
-			name:    "mysql uppercase",
-			input:   "MYSQL",
-			want:    Mysql,
-			wantErr: false,
-		},
-		{
-			name:    "mysql mixed case",
-			input:   "MySql",
-			want:    Mysql,
 			wantErr: false,
 		},
 		{
@@ -162,12 +139,6 @@ func TestDriver_UnmarshalText(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:    "mysql",
-			input:   []byte("mysql"),
-			want:    Mysql,
-			wantErr: false,
-		},
-		{
 			name:    "postgres",
 			input:   []byte("postgres"),
 			want:    Postgres,
@@ -223,7 +194,7 @@ func TestDriver_UnmarshalText(t *testing.T) {
 
 func TestDriver_Enums(t *testing.T) {
 	// Verify enum values are distinct
-	drivers := []Driver{Unknown, Sqlite, Mysql, Postgres}
+	drivers := []Driver{Unknown, Sqlite, Postgres}
 	seen := make(map[Driver]bool)
 
 	for _, d := range drivers {

@@ -32,7 +32,7 @@ The application has three main components:
 
 * **core**: Base domain structures and cross-cutting contracts. *No external dependencies beyond the standard library and `context`*. Examples: `Node`, `Runner`, `Run`, errors, sentinel values, and core interfaces.
 * **service**: Business logic that integrates with **external services** (e.g., GitHub REST API via `go-github`, Firecracker controller). Services depend **only on core interfaces/types** and on **provider interfaces** for extensibility.
-* **store**: Data access layer that interacts with the **datastore** (`sqlite`, `postgres`, or `mysql`). Uses `database/sql` with driver-specific packages. Stores implement **interfaces defined in core**.
+* **store**: Data access layer that interacts with the **datastore** (`sqlite`, or `postgres`). Uses `database/sql` with driver-specific packages. Stores implement **interfaces defined in core**.
 
 **Goals**
 
@@ -142,7 +142,7 @@ When interacting with a service, must use the github sdk and convert to core str
 ### Store Implementations
 
 * `store/sql`: implements `**Stores` interfaces using `database/sql`.
-* Support **sqlite**, **postgres**, **mysql**.
+* Support **sqlite**, **postgres**.
 
 **DB Guidance**
 

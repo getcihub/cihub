@@ -15,7 +15,6 @@ import (
 	"github.com/getcihub/cihub/reaper"
 	"github.com/getcihub/cihub/server"
 
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )

@@ -71,8 +71,6 @@ func (s *store) insertInstallation(execer db.Execer, binder db.Binder, installat
 	switch s.db.Driver() {
 	case db.Postgres:
 		sqlStmt = stmtInsertInstallationPG
-	case db.Mysql:
-		sqlStmt = stmtInsertInstallationMySQL
 	default:
 		sqlStmt = stmtInsertInstallation
 	}
@@ -216,27 +214,6 @@ INSERT INTO installations (
 	:installation_updated
 )
 ON CONFLICT (installation_id) DO NOTHING
-`
-
-// MySQL syntax for idempotent insert
-const stmtInsertInstallationMySQL = `
-INSERT IGNORE INTO installations (
-	installation_id,
-	installation_login,
-	installation_avatar,
-	installation_type,
-	installation_created,
-	installation_suspended,
-	installation_updated
-) VALUES (
-	:installation_id,
-	:installation_login,
-	:installation_avatar,
-	:installation_type,
-	:installation_created,
-	:installation_suspended,
-	:installation_updated
-)
 `
 
 const stmtInsertMembership = `

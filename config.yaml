@@ -84,7 +84,7 @@ agent:
 
 database:
   # Database driver to use for data persistence
-  # Options: "sqlite", "mysql", "postgres"
+  # Options: "sqlite", "postgres"
   #
   # Default: "sqlite"
   driver: "sqlite"
@@ -92,7 +92,6 @@ database:
   # Database connection string
   #
   # - SQLite: path to database file (e.g., "data.sqlite", "/var/lib/cihub/data.db")
-  # - MySQL: "username:password@tcp(host:port)/database"
   # - Postgres: "host=localhost port=5432 user=username password=password dbname=database sslmode=disable"
   datasource: "data.sqlite"
 
@@ -162,6 +161,9 @@ github:
   skip_verify: false
 
   app:
+    # Name of the GitHub App
+    name: "cihub-test"
+
     # GitHub App integration ID (also called "App ID")
     # Find this in your GitHub App settings page under "About"
     # Format: integer value (e.g., 123456)

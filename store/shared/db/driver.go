@@ -12,7 +12,6 @@ type Driver int
 const (
 	Unknown Driver = iota
 	Sqlite
-	Mysql
 	Postgres
 )
 
@@ -21,8 +20,6 @@ func (d *Driver) Set(s string) error {
 	switch {
 	case strings.EqualFold(s, "sqlite"):
 		*d = Sqlite
-	case strings.EqualFold(s, "mysql"):
-		*d = Mysql
 	case strings.EqualFold(s, "postgres"):
 		*d = Postgres
 	default:
@@ -37,8 +34,6 @@ func (d Driver) String() string {
 	switch d {
 	case Sqlite:
 		return "sqlite"
-	case Mysql:
-		return "mysql"
 	case Postgres:
 		return "postgres"
 	default:
