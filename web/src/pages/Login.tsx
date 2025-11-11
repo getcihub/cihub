@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { RiContrast2Line, RiGithubFill } from "@remixicon/react"
+import { RiGithubFill } from "@remixicon/react"
 
 import { Button } from "@/components/Button"
 import { useAuth } from "@/hooks/useAuth"
@@ -54,13 +54,13 @@ export function LoginPage() {
                         ))}
                     </div>
                 </div>
-                <div className="relative mx-auto w-fit rounded-xl bg-gray-50 p-4 shadow-md shadow-black/10 ring-1 ring-black/10">
+                <div className="relative mx-auto w-fit rounded-xl bg-white p-4 shadow-md shadow-black/10 ring-1 ring-black/10">
                     <div className="absolute left-[9%] top-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
                     <div className="absolute right-[9%] top-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
                     <div className="absolute bottom-[9%] left-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
                     <div className="absolute bottom-[9%] right-[9%] size-1 rounded-full bg-gray-100 shadow-inner" />
-                    <div className="w-fit rounded-lg bg-gradient-to-b from-blue-400 to-blue-600 p-3 shadow-sm shadow-blue-500/50 ring-1 ring-inset ring-white/25">
-                        <RiContrast2Line className="size-8 text-white" aria-hidden="true" />
+                    <div className="w-fit rounded-lg bg-black p-3 shadow-sm shadow-black/50 ring-1 ring-inset ring-white/25">
+                        <img src="/favicon.svg" alt="CIHub" className="size-8" />
                     </div>
                 </div>
                 <h2 className="mt-4 text-center text-xl font-semibold text-gray-900">

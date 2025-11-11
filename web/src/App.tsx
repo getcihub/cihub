@@ -1,4 +1,5 @@
 import { Outlet } from '@tanstack/react-router'
+import { Toaster } from 'sonner'
 import { AuthProvider } from './providers/AuthProvider'
 import { InstallationProvider } from './providers/InstallationProvider'
 
@@ -7,6 +8,7 @@ function App() {
         <AuthProvider>
             <InstallationProvider>
                 <Outlet />
+                <Toaster />
             </InstallationProvider>
         </AuthProvider>
     )

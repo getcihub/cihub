@@ -95,7 +95,7 @@ function DropdownUserProfile() {
                                 aria-hidden="true"
                             />
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => window.open("https://docs.cihub.io", "_blank")}>
                             Documentation
                             <RiArrowRightUpLine
                                 className="mb-1 ml-1 size-3 shrink-0 text-gray-500"

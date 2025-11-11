@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { RiArrowLeftLine, RiCheckLine, RiFileCopyLine, RiAddLine, RiCloseLine } from '@remixicon/react'
 import { useMachineMutations } from '@/hooks/useMachineMutations'
 import { Card } from '@/components/Card'
@@ -59,24 +60,27 @@ export function AddMachinePage() {
         // Validate form
         if (!formData.name.trim()) {
             setError('Machine name is required')
+            toast.error('Machine name is required')
             return
         }
 
         // Validate optional CPU if provided
         if (formData.cpu && parseInt(formData.cpu) < 1) {
             setError('CPU must be at least 1')
+            toast.error('CPU must be at least 1')
             return
         }
 
         // Validate optional RAM if provided
         if (formData.ram && parseInt(formData.ram) < 512) {
             setError('RAM must be at least 512 MB')
+            toast.error('RAM must be at least 512 MB')
             return
         }
 
         setError(null)
 
-        try {
+        const createMachinePromise = async () => {
             const payload: any = {
                 name: formData.name,
                 labels,
@@ -97,12 +101,17 @@ export function AddMachinePage() {
             if (response.data?.token) {
                 setMachineToken(response.data.token)
                 setStep('instructions')
+                return { success: true, name: formData.name }
             } else {
-                setError('Failed to get machine token from server')
+                throw new Error('Failed to get machine token from server')
             }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create machine')
         }
+
+        toast.promise(createMachinePromise(), {
+            loading: `Creating machine "${formData.name}"...`,
+            success: (data) => `Machine "${data.name}" created successfully`,
+            error: (err) => `Failed to create machine: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        })
     }
 
     const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cihub.example.com'
@@ -118,6 +127,7 @@ curl -LsSf "https://install.cihub.io" | bash -s -- \\
     const handleCopyCommand = () => {
         navigator.clipboard.writeText(installCommand)
         setCopied(true)
+        toast.success('Installation command copied to clipboard')
         setTimeout(() => setCopied(false), 2000)
     }
 

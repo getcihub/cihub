@@ -18,7 +18,7 @@ That means:
 
 * More **security** (each job runs in its own sandbox)
 * Better **speed** (you control the hardware)
-* Full **control** over your CI/CD environment
+* Full **control** over your CI environment
 
 <p align="center">
   <img src="https://github.com/getcihub/cihub/raw/main/.github/screenshots/machines.png" width="270" />

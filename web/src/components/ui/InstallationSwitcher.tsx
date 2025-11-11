@@ -11,12 +11,14 @@ import {
 } from '@/components/DropdownMenu'
 import { useInstallation } from '@/hooks/useInstallation'
 import { useInstallations } from '@/hooks/useInstallations'
+import { useVarz } from '@/hooks/useVarz'
 import { cx, focusRing } from '@/lib/utils'
 
 export function InstallationSwitcher() {
     const navigate = useNavigate()
     const { selectedInstallation, selectInstallation } = useInstallation()
     const { data: installations = [] } = useInstallations()
+    const { data: varz } = useVarz()
 
     if (!selectedInstallation) {
         return null
@@ -35,8 +37,13 @@ export function InstallationSwitcher() {
     }
 
     const handleAddInstallation = () => {
-        // Navigate to installations page to add a new one
-        navigate({ to: '/' })
+        if (varz?.github?.name) {
+            // Redirect to GitHub App installation page
+            window.location.href = `https://github.com/apps/${varz.github.name}/installations/new`
+        } else {
+            // Fallback to installations page if app name is not available
+            navigate({ to: '/' })
+        }
     }
 
     return (

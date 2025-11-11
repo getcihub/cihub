@@ -71,6 +71,7 @@ func (s Server) Handler() http.Handler {
 	h := http.FileServer(dist.New())
 	h = setupCache(h)
 	r.Handle("/assets/*", h)
+	r.Handle("/favicon.svg", h)
 	r.NotFound(HandleIndex(s.Session))
 
 	return r

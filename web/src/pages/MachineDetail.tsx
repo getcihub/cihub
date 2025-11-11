@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import { RiArrowLeftLine, RiCpuLine, RiRam2Line, RiServerLine, RiMoreLine, RiAlertLine } from '@remixicon/react'
 import { useMachineDetail } from '@/hooks/useMachineDetail'
 import { useInstallation } from '@/hooks/useInstallation'
@@ -90,14 +91,19 @@ export function MachineDetailPage() {
     }
 
     const handleConfirmDelete = async () => {
-        try {
+        const deletePromise = async () => {
             await deleteMachine.mutateAsync(machineName)
             setShowDeleteConfirm(false)
             // Navigate back to machines list after successful deletion
             navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })
-        } catch (error) {
-            console.error('Failed to delete machine:', error)
+            return { success: true, name: machineName }
         }
+
+        toast.promise(deletePromise(), {
+            loading: `Deleting machine "${machineName}"...`,
+            success: (data) => `Machine "${data.name}" deleted successfully`,
+            error: 'Failed to delete machine. Please try again.',
+        })
     }
 
     // Calculate resource usage from machine

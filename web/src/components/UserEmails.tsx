@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './ui/card'
 import {
@@ -14,13 +15,11 @@ import { Skeleton } from './Skeleton'
 
 import { useAuth } from '@/hooks/useAuth'
 import { useEmails } from '@/hooks/useEmails'
-import { useToast } from '@/hooks/useToast'
 import { useUpdateEmail } from '@/hooks/useUpdateEmail'
 import type { UserEmail } from '@/types/user'
 
 export function UserEmails() {
     const { user } = useAuth()
-    const { toast } = useToast()
     const { data: emails = [], isLoading } = useEmails()
     const { mutate: updateEmail, isPending, isSuccess } = useUpdateEmail()
 
@@ -48,6 +47,7 @@ export function UserEmails() {
     useEffect(() => {
         if (isSuccess && selectedEmail) {
             setOriginalEmail(selectedEmail)
+            toast.success(`Email updated to ${selectedEmail}`)
         }
     }, [isSuccess, selectedEmail])
 
@@ -55,13 +55,6 @@ export function UserEmails() {
         if (hasChanges) {
             updateEmail({ email: selectedEmail })
         }
-
-        toast({
-            title: "Email Changed",
-            description: "You email address has been updated.",
-            variant: "info",
-            duration: 3000,
-        })
     }
 
     return (

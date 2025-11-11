@@ -1,5 +1,10 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
+import { RiRefreshLine } from '@remixicon/react'
 import { useAuth } from '@/hooks/useAuth'
+import { useUser } from '@/hooks/useUser'
+import { useInstallations } from '@/hooks/useInstallations'
 import { UserEmails } from '@/components/UserEmails'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/Button'
@@ -7,10 +12,62 @@ import { Button } from '@/components/Button'
 export function AccountPage() {
     const navigate = useNavigate()
     const { user, logout } = useAuth()
+    const { data: userData, refetch: refetchUser } = useUser()
+    const { refetch: refetchInstallations } = useInstallations()
+    const [isSyncing, setIsSyncing] = useState(false)
 
     const handleLogout = async () => {
         await logout()
         navigate({ to: '/login' })
+    }
+
+    // Poll user sync status and refresh installations when sync completes
+    useEffect(() => {
+        if (!userData?.syncing) {
+            return
+        }
+
+        const interval = setInterval(async () => {
+            const result = await refetchUser()
+            // If user is no longer syncing, refetch installations
+            if (!result.data?.syncing) {
+                await refetchInstallations()
+            }
+        }, 2000) // Check every 2 seconds
+
+        return () => clearInterval(interval)
+    }, [userData?.syncing, refetchUser, refetchInstallations])
+
+    const handleSyncInstallations = async () => {
+        setIsSyncing(true)
+
+        const syncPromise = async () => {
+            try {
+                const response = await fetch('/api/user/installations', {
+                    method: 'POST',
+                })
+                if (!response.ok) {
+                    throw new Error('Failed to sync installations')
+                }
+                // Refetch installations immediately in case API returned them
+                await refetchInstallations()
+                // Refetch user data to update syncing status
+                await refetchUser()
+
+                return { success: true }
+            } catch (err) {
+                console.error('Failed to sync installations:', err)
+                throw err
+            } finally {
+                setIsSyncing(false)
+            }
+        }
+
+        toast.promise(syncPromise(), {
+            loading: 'Syncing your installations...',
+            success: () => 'Installations synchronized successfully',
+            error: 'Failed to synchronize installations. Please try again.',
+        })
     }
 
     if (!user) {
@@ -49,6 +106,29 @@ export function AccountPage() {
 
             {/* Email Preferences Section */}
             <UserEmails />
+
+            {/* Installations Sync Section */}
+            <Card className="p-6 mb-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Installations</h2>
+                <p className="text-gray-600 text-sm mb-6">
+                    Synchronize your GitHub installations to ensure they're up to date. This fetches all installations you have access to.
+                </p>
+                <div className="flex items-center gap-4">
+                    <Button
+                        onClick={handleSyncInstallations}
+                        disabled={isSyncing || userData?.syncing}
+                        variant="secondary"
+                    >
+                        <RiRefreshLine className={`mr-2 size-4 ${(isSyncing || userData?.syncing) ? 'animate-spin' : ''}`} />
+                        {isSyncing || userData?.syncing ? 'Syncing...' : 'Sync Installations'}
+                    </Button>
+                    {userData?.synced_at ? (
+                        <p className="text-xs text-gray-500">
+                            Last synced: {new Date(userData.synced_at * 1000).toLocaleString()}
+                        </p>
+                    ) : null}
+                </div>
+            </Card>
 
             {/* Logout Section */}
             <Card className="p-6 border-red-200 bg-red-50">

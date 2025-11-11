@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { RiShieldLine, RiCheckLine, RiBillLine, RiSettingsLine, RiArrowRightLine } from '@remixicon/react'
+import { RiBillLine, RiSettingsLine, RiArrowRightLine, RiExternalLinkLine, RiShieldLine } from '@remixicon/react'
 import { useInstallation } from '@/hooks/useInstallation'
 import { useUsageMetrics } from '@/hooks/useUsageMetrics'
 import { getPlanConfig } from '@/config/plans'
 import { Card } from '@/components/Card'
 import { Button } from '@/components/Button'
-import { UserEmails } from '@/components/UserEmails'
+import { useVarz } from '@/hooks/useVarz'
 
 type SettingsSection = 'general' | 'billing'
 
@@ -18,8 +18,8 @@ interface MenuItemProps {
 export function SettingsPage() {
     const { selectedInstallation } = useInstallation()
     const { machines_used, vcpu_used } = useUsageMetrics()
+    const { data: varz } = useVarz()
     const [activeSection, setActiveSection] = useState<SettingsSection>('general')
-    const [showConfirmDisconnect, setShowConfirmDisconnect] = useState(false)
 
     if (!selectedInstallation) {
         return (
@@ -29,9 +29,10 @@ export function SettingsPage() {
         )
     }
 
-    const handleDisconnectInstallation = () => {
-        console.log('Disconnecting installation...')
-        setShowConfirmDisconnect(false)
+    const handleEditInstallation = () => {
+        if (varz?.github?.name && selectedInstallation.id) {
+            window.location.href = `https://github.com/apps/${varz.github.name}/installations/${selectedInstallation.id}`
+        }
     }
 
     const menuItems: MenuItemProps[] = [
@@ -50,11 +51,10 @@ export function SettingsPage() {
                             <button
                                 key={item.id}
                                 onClick={() => setActiveSection(item.id)}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
-                                    activeSection === item.id
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all ${activeSection === item.id
                                         ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
                                         : 'text-gray-700 hover:bg-gray-50 border-l-4 border-transparent'
-                                }`}
+                                    }`}
                             >
                                 {item.icon}
                                 <span>{item.label}</span>
@@ -112,81 +112,20 @@ export function SettingsPage() {
                                     </div>
                                 </Card>
 
-                                {/* Email Addresses */}
-                                <UserEmails />
-
-
-                                {/* Notification Preferences */}
+                                {/* Installation Settings */}
                                 <Card className="p-6 mb-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Notification Preferences</h3>
-                                    <div className="space-y-4">
-                                        {[
-                                            { title: 'Job Notifications', description: 'Receive alerts when jobs are created, started, or completed' },
-                                            { title: 'Runner Alerts', description: 'Get notified when runners go offline or encounter issues' },
-                                            { title: 'Billing Updates', description: 'Receive information about billing, invoices, and plan changes' },
-                                            { title: 'Security Alerts', description: 'Important notifications about API keys and account security' },
-                                        ].map((pref, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900">{pref.title}</p>
-                                                    <p className="text-xs text-gray-600 mt-1">{pref.description}</p>
-                                                </div>
-                                                <input
-                                                    type="checkbox"
-                                                    defaultChecked={true}
-                                                    className="size-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
-                                                />
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <Button className="mt-4 gap-2">
-                                        <RiCheckLine className="size-4" />
-                                        Save Preferences
+                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Installation Settings</h3>
+                                    <p className="text-gray-600 text-sm mb-6">
+                                        Manage your GitHub App installation settings, permissions, and repository access on GitHub.
+                                    </p>
+                                    <Button
+                                        onClick={handleEditInstallation}
+                                        className="gap-2"
+                                    >
+                                        <RiSettingsLine className="size-4" />
+                                        Edit on GitHub
+                                        <RiExternalLinkLine className="size-4" />
                                     </Button>
-                                </Card>
-
-                                {/* Danger Zone */}
-                                <Card className="p-6 border-red-200 bg-red-50 mt-6">
-                                    <h3 className="text-lg font-semibold text-red-900 mb-4">Danger Zone</h3>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <h4 className="text-sm font-semibold text-red-900">Disconnect Installation</h4>
-                                            <p className="text-sm text-red-800 mt-1">
-                                                This will disconnect the {selectedInstallation.login} installation. All associated runners and jobs will be lost.
-                                                This action cannot be undone.
-                                            </p>
-                                        </div>
-                                        {showConfirmDisconnect ? (
-                                            <div className="space-y-3 p-4 bg-white border border-red-300 rounded-lg">
-                                                <p className="text-sm font-medium text-red-900">
-                                                    Are you sure you want to disconnect this installation?
-                                                </p>
-                                                <div className="flex gap-2">
-                                                    <Button
-                                                        onClick={handleDisconnectInstallation}
-                                                        className="bg-red-600 hover:bg-red-700 text-white gap-2"
-                                                    >
-                                                        <RiShieldLine className="size-4" />
-                                                        Yes, Disconnect
-                                                    </Button>
-                                                    <Button
-                                                        onClick={() => setShowConfirmDisconnect(false)}
-                                                        variant="secondary"
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <Button
-                                                onClick={() => setShowConfirmDisconnect(true)}
-                                                className="bg-red-600 hover:bg-red-700 text-white gap-2"
-                                            >
-                                                <RiShieldLine className="size-4" />
-                                                Disconnect Installation
-                                            </Button>
-                                        )}
-                                    </div>
                                 </Card>
                             </div>
                         </div>

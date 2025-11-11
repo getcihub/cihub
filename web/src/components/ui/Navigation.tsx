@@ -21,12 +21,13 @@ function Navigation() {
                     {/* App Logo */}
                     <button
                         onClick={() => navigate({ to: '/' })}
-                        className="text-xl font-bold text-gray-900 hover:text-gray-700 cursor-pointer transition-colors"
+                        className="flex items-center gap-2 text-xl font-bold text-gray-900 hover:text-gray-700 cursor-pointer transition-colors"
                     >
+                        <img src="/favicon.svg" alt="CIHub" className="size-6 brightness-0" />
                         CIHub
                     </button>
                     {/* Divider */}
-                    <div className="h-6 w-px bg-gray-200" />
+                    {selectedInstallation ? <div className="h-6 w-px bg-gray-200" /> : null}
                     {/* Installation Switcher */}
                     <InstallationSwitcher />
                 </div>
