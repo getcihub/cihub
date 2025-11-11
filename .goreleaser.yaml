@@ -3,8 +3,6 @@ project_name: cihub
 before:
   hooks:
     - go mod tidy
-    - sh -c 'cd web && pnpm build'
-    - go generate ./...
 builds:
   - id: cihub-agent
     goos:
