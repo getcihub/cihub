@@ -57,6 +57,21 @@ export function MachineDetailPage() {
         }
     }
 
+    // Helper function to format last seen date
+    const formatLastSeenDate = (timestamp: number) => {
+        // If timestamp is 0 or very close to epoch (1970), display "never"
+        if (timestamp === 0) {
+            return 'Never'
+        }
+        return new Date(timestamp * 1000).toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        })
+    }
+
     // Handler functions for settings
     const handlePauseMachine = async () => {
         try {
@@ -180,13 +195,7 @@ export function MachineDetailPage() {
                         <div className={`h-3 w-3 rounded-full flex-shrink-0 ${getStatusDotColor(machine.status)}`} />
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
-                        Last seen: {new Date(machine.last_seen_at * 1000).toLocaleString('en-US', {
-                            year: 'numeric',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                        })}
+                        Last seen: {formatLastSeenDate(machine.last_seen_at)}
                     </p>
                 </div>
                 {isAdmin && (
@@ -428,13 +437,7 @@ export function MachineDetailPage() {
                             <div>
                                 <p className="text-xs text-gray-600 mb-1">Last Seen</p>
                                 <p className="text-sm text-gray-900">
-                                    {new Date(machine.last_seen_at * 1000).toLocaleString('en-US', {
-                                        year: 'numeric',
-                                        month: 'short',
-                                        day: 'numeric',
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                    })}
+                                    {formatLastSeenDate(machine.last_seen_at)}
                                 </p>
                             </div>
                         </div>

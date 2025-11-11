@@ -21,7 +21,8 @@ export function AddMachinePage() {
     const [labels, setLabels] = useState<string[]>([])
     const [newLabel, setNewLabel] = useState('')
     const [machineToken, setMachineToken] = useState<string | null>(null)
-    const [copied, setCopied] = useState(false)
+    const [copiedToken, setCopiedToken] = useState(false)
+    const [copiedCommand, setCopiedCommand] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const handleBack = () => {
@@ -115,20 +116,24 @@ export function AddMachinePage() {
     }
 
     const cihubServer = typeof window !== 'undefined' ? window.location.origin : 'https://cihub.example.com'
-    const installCommand = `
-MACHINE_TOKEN="${machineToken}"
-CIHUB_SERVER="${cihubServer}"
-
-# Download and run the agent installer
-curl -LsSf "https://install.cihub.io" | bash -s -- \\
-  --token "$MACHINE_TOKEN" \\
-  --server "$CIHUB_SERVER"`
+    const installCommand = `curl -LsSf "https://install.cihub.io" | bash -s -- \\
+  --token "${machineToken}" \\
+  --server "${cihubServer}"`
 
     const handleCopyCommand = () => {
         navigator.clipboard.writeText(installCommand)
-        setCopied(true)
+        setCopiedCommand(true)
         toast.success('Installation command copied to clipboard')
-        setTimeout(() => setCopied(false), 2000)
+        setTimeout(() => setCopiedCommand(false), 2000)
+    }
+
+    const handleCopyToken = () => {
+        if (machineToken) {
+            navigator.clipboard.writeText(machineToken)
+            setCopiedToken(true)
+            toast.success('Machine token copied to clipboard')
+            setTimeout(() => setCopiedToken(false), 2000)
+        }
     }
 
     return (
@@ -363,8 +368,18 @@ curl -LsSf "https://install.cihub.io" | bash -s -- \\
                         <p className="text-sm text-amber-800 mb-3">
                             Keep this token secure. You will need it to authenticate the agent on this machine.
                         </p>
-                        <div className="bg-white border border-amber-300 rounded p-3 font-mono text-sm break-all text-gray-900">
-                            {machineToken}
+                        <div className="flex gap-3">
+                            <div className="flex-1 bg-white border border-amber-300 rounded p-3 font-mono text-sm break-all text-gray-900">
+                                {machineToken}
+                            </div>
+                            <button
+                                onClick={handleCopyToken}
+                                className="px-4 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded transition-colors flex items-center gap-2 flex-shrink-0"
+                                title="Copy token to clipboard"
+                            >
+                                <RiFileCopyLine className="size-4" />
+                                {copiedToken ? 'Copied!' : 'Copy'}
+                            </button>
                         </div>
                     </Card>
 
@@ -385,7 +400,7 @@ curl -LsSf "https://install.cihub.io" | bash -s -- \\
                             className="gap-2"
                         >
                             <RiFileCopyLine className="size-4" />
-                            {copied ? 'Copied!' : 'Copy Command'}
+                            {copiedCommand ? 'Copied!' : 'Copy Command'}
                         </Button>
                     </Card>
 
