@@ -60,22 +60,32 @@ release:
     name: cihub
   draft: false
   prerelease: auto
-dockers_v2:
-  - id: server
+dockers:
+  - id: server-amd64
     ids: [cihub-server]
     dockerfile: ./Dockerfile
-    images:
-      - ghcr.io/getcihub/cihub-server
-    tags:
-      - "latest"
-      - "{{ .Version }}"
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    labels:
-      org.opencontainers.image.title: cihub-server
-      org.opencontainers.image.version: "{{ .Version }}"
-      org.opencontainers.image.source: "{{ .GitURL }}"
+    image_templates:
+      - ghcr.io/getcihub/cihub-server:latest-amd64
+      - ghcr.io/getcihub/cihub-server:{{ .Version }}-amd64
+    goarch: amd64
+    goos: linux
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title=cihub-server"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+  - id: server-arm64
+    ids: [cihub-server]
+    dockerfile: ./Dockerfile
+    image_templates:
+      - ghcr.io/getcihub/cihub-server:latest-arm64
+      - ghcr.io/getcihub/cihub-server:{{ .Version }}-arm64
+    goarch: arm64
+    goos: linux
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title=cihub-server"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+
 docker_manifests:
   - name_template: ghcr.io/getcihub/cihub-server:latest
     image_templates:
