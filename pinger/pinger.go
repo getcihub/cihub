@@ -2,8 +2,10 @@ package pinger
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/getcihub/cihub/client"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
 )
@@ -33,7 +35,12 @@ func (p *Pinger) Start(ctx context.Context, interval time.Duration) error {
 			// should not exit the runner on error. The reap
 			// function logs all errors, which should be enough
 			// to surface potential issues to an administrator.
-			p.ping(ctx)
+			err := p.ping(ctx)
+
+			// Exist if machine not registered
+			if errors.Is(err, client.ErrMachineNotFound) {
+				return nil
+			}
 		}
 	}
 }
@@ -48,5 +55,13 @@ func (p *Pinger) ping(ctx context.Context) error {
 		return err
 	}
 
-	return p.client.Ping(ctx, resources)
+	err = p.client.Ping(ctx, resources)
+	if errors.Is(err, client.ErrMachineNotFound) {
+		logger.FromContext(ctx).
+			WithError(err).
+			Infoln("pinger: machine not registered on server")
+		return err
+	}
+
+	return err
 }

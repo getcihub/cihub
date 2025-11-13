@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os/signal"
 	"syscall"
@@ -82,7 +83,11 @@ func main() {
 			break
 		}
 
-		if err != nil {
+		if err != nil && errors.Is(err, client.ErrMachineNotFound) {
+			logrus.WithError(err).
+				Infoln("agent: machine not registered")
+			return // Exit 0, systemd no-restart
+		} else if err != nil {
 			logger := logrus.WithError(err)
 			logger.Errorln("agent: cannot ping the remote server")
 			time.Sleep(time.Second)
@@ -113,7 +118,17 @@ func main() {
 		return pinger.Start(ctx, time.Second*10)
 	})
 
-	if err := g.Wait(); err != nil {
+	err = g.Wait()
+	if err != nil {
+		if errors.Is(err, client.ErrMachineNotFound) {
+			logrus.WithError(err).
+				Infoln("agent: no longer registered, exiting")
+
+			// Exit with code 0 so systemd does not restart
+			// No need to leave the cluster
+			return
+		}
+
 		logrus.WithError(err).
 			Fatalln("program terminated")
 	}
