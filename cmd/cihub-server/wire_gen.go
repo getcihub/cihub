@@ -72,7 +72,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(jobStore, runnerStore, scheduler)
+	v := provideEventHandlers(installationStore, jobStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	rpcServer := rpc.New(machineStore, runnerStore, runnerService, scheduler)
