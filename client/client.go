@@ -133,6 +133,12 @@ func (c *client) send(ctx context.Context, path string, in, out interface{}) err
 		return context.DeadlineExceeded
 	}
 
+	// Check the response for a 401 unauthorized. This indicates
+	// that the machine token does not exist or is no longer valid
+	if res.StatusCode == 401 {
+		return ErrMachineNotFound
+	}
+
 	if res.StatusCode > 299 {
 		body, _ := io.ReadAll(res.Body)
 		return &serverError{

@@ -36,6 +36,13 @@ agent:
   # Default: "devmapper"
   snapshotter: "devmapper"
 
+  # Container image used to create Firecracker microVMs for GitHub Actions runners
+  #
+  # This image is used as the filesystem/rootfs for each Firecracker microVM.
+  # The agent extracts the kernel from this image (via kernel.path) and boots microVMs
+  # with this image's filesystem.
+  #
+  # Default: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
   image: "ghcr.io/getcihub/runner-ubuntu24.04:latest"
 
   # Kernel configuration for Firecracker microVMs
@@ -158,6 +165,17 @@ github:
   # See: https://docs.github.com/en/rest?apiVersion=2022-11-28
   api_server: "https://api.github.com"
 
+  # Skip TLS certificate verification for GitHub API connections
+  # SECURITY WARNING: Only disable for self-signed certificates in development/testing
+  # Setting to true makes the application vulnerable to man-in-the-middle attacks
+  #
+  # Use cases for enabling (true):
+  #   - GitHub Enterprise Server with self-signed certificates
+  #   - Development/testing environments only
+  #
+  # MUST be false (default) in production environments
+  #
+  # Default: false
   skip_verify: false
 
   app:
@@ -224,6 +242,22 @@ github:
     # See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
     client_secret: ""
 
+    # OAuth scopes requested during user authentication
+    # Scopes define what permissions the app requests from the user
+    #
+    # Common scopes:
+    #   - "user:email": Access user's email address (required for email-based features)
+    #   - "repo": Full control of private repositories
+    #   - "repo:status": Access commit status information
+    #   - "read:org": Read access to organization membership
+    #   - "workflow": Full control of GitHub Actions workflows
+    #
+    # Add multiple scopes as needed for your application's functionality
+    # Example: ["user:email", "repo:status", "read:org"]
+    #
+    # See: https://docs.github.com/en/developers/apps/building-oauth-apps/scopes-for-oauth-apps
+    #
+    # Default: ["user:email"]
     scope:
       - "user:email"
 
@@ -237,13 +271,6 @@ rpc:
   #   - "host:port" for bind address (e.g., "0.0.0.0:8125" for all interfaces)
   #   - "domain" for external URL (e.g., "cihub.io")
   host: "0.0.0.0:8125"
-
-  # RPC protocol to use
-  #
-  # Options: "http", "https"
-  #
-  # Default: "http"
-  proto: "http"
 
   # RPC authentication secret for server/agent communication
   # SECURITY: Generate with: openssl rand -hex 16

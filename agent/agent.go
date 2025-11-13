@@ -16,6 +16,7 @@ import (
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	"github.com/sirupsen/logrus"
 
+	"github.com/getcihub/cihub/client"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/logger"
 	"github.com/getcihub/cihub/store/shared/db"
@@ -258,7 +259,12 @@ func (a *Agent) Start(ctx context.Context) error {
 			// should not exit the runner on error. The run
 			// function logs all errors, which should be enough
 			// to surface potential issues to an administrator.
-			a.poll(ctx)
+			err := a.poll(ctx)
+
+			// Exist if machine not registered
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 		}
 	}
 }
@@ -269,6 +275,14 @@ func (a *Agent) poll(ctx context.Context) error {
 
 	// Call server and blocks until response or context cancellation
 	runner, err := a.Client.Request(ctx)
+
+	// Check if agent is authorized
+	if errors.Is(err, client.ErrMachineNotFound) {
+		log.WithError(err).
+			Infoln("agent: machine not registered on server, shutting down")
+		return context.Canceled
+	}
+
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		log = log.WithError(err)
 		log.Traceln("agent: request job timeout")
