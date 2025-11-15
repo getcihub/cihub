@@ -184,7 +184,7 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 	metadata := map[string]interface{}{
 		"latest": map[string]interface{}{
 			"meta-data": map[string]interface{}{
-				"fireactions": map[string]interface{}{
+				"cihub": map[string]interface{}{
 					"runner_id":         runner.Name,
 					"runner_jit_config": jit.Token,
 				},
