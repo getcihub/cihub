@@ -16,6 +16,7 @@ import (
 	"github.com/getcihub/cihub/handler/health"
 	"github.com/getcihub/cihub/handler/rpc"
 	"github.com/getcihub/cihub/handler/web"
+	"github.com/getcihub/cihub/hook/installation"
 	"github.com/getcihub/cihub/hook/job"
 	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/server"
@@ -123,8 +124,9 @@ func provideServerOptions(config *config.Config) secure.Options {
 
 // provideEventHandlers is a Wire provider function that returns
 // a list of GitHub webhook event handlers.
-func provideEventHandlers(jobs core.JobStore, runners core.RunnerStore, scheduler core.Scheduler) []githubapp.EventHandler {
+func provideEventHandlers(installations core.InstallationStore, jobs core.JobStore, runners core.RunnerStore, scheduler core.Scheduler) []githubapp.EventHandler {
 	return []githubapp.EventHandler{
+		installation.New(installations),
 		job.New(jobs, runners, scheduler),
 	}
 }
