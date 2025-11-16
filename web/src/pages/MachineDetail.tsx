@@ -1,67 +1,81 @@
-import { useState, useRef, useEffect } from 'react'
-import { useNavigate, useParams } from '@tanstack/react-router'
-import { toast } from 'sonner'
-import { RiArrowLeftLine, RiCpuLine, RiRam2Line, RiServerLine, RiMoreLine, RiAlertLine } from '@remixicon/react'
-import { useMachineDetail } from '@/hooks/useMachineDetail'
-import { useInstallation } from '@/hooks/useInstallation'
-import { useMachineMutations } from '@/hooks/useMachineMutations'
-import { Card } from '@/components/Card'
-import { Button } from '@/components/Button'
-import { Skeleton } from '@/components/Skeleton'
-import { MembershipRoleAdmin } from '@/types/installation'
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { Skeleton } from '@/components/Skeleton';
+import { useInstallation } from '@/hooks/useInstallation';
+import { useMachineDetail } from '@/hooks/useMachineDetail';
+import { useMachineMutations } from '@/hooks/useMachineMutations';
+import { MembershipRoleAdmin } from '@/types/installation';
+import {
+    RiAlertLine,
+    RiArrowLeftLine,
+    RiCpuLine,
+    RiMoreLine,
+    RiRam2Line,
+    RiServerLine,
+} from '@remixicon/react';
+import { useNavigate, useParams } from '@tanstack/react-router';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 export function MachineDetailPage() {
-    const navigate = useNavigate()
-    const { name: machineName, login } = useParams({ from: '/$login/machines/$name' })
-    const { selectedInstallation } = useInstallation()
-    const { data: machine, isLoading, error } = useMachineDetail(machineName)
-    const { pauseMachine, resumeMachine, restartMachine, deleteMachine } = useMachineMutations()
-    const [showSettings, setShowSettings] = useState(false)
-    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-    const settingsRef = useRef<HTMLDivElement>(null)
+    const navigate = useNavigate();
+    const { name: machineName, login } = useParams({
+        from: '/$login/machines/$name',
+    });
+    const { selectedInstallation } = useInstallation();
+    const { data: machine, isLoading, error } = useMachineDetail(machineName);
+    const { pauseMachine, resumeMachine, restartMachine, deleteMachine } =
+        useMachineMutations();
+    const [showSettings, setShowSettings] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const settingsRef = useRef<HTMLDivElement>(null);
 
     // Close settings menu when clicking outside
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
-            if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
-                setShowSettings(false)
+            if (
+                settingsRef.current &&
+                !settingsRef.current.contains(event.target as Node)
+            ) {
+                setShowSettings(false);
             }
         }
 
         if (showSettings) {
-            document.addEventListener('mousedown', handleClickOutside)
+            document.addEventListener('mousedown', handleClickOutside);
             return () => {
-                document.removeEventListener('mousedown', handleClickOutside)
-            }
+                document.removeEventListener('mousedown', handleClickOutside);
+            };
         }
-    }, [showSettings])
+    }, [showSettings]);
 
-    const isAdmin = selectedInstallation?.membership?.role === MembershipRoleAdmin
+    const isAdmin =
+        selectedInstallation?.membership?.role === MembershipRoleAdmin;
 
     // Use login from params or selectedInstallation as fallback
-    const currentLogin = login || selectedInstallation?.login
+    const currentLogin = login || selectedInstallation?.login;
 
     // Helper function to get status dot styling
     const getStatusDotColor = (status: string) => {
         switch (status) {
             case 'online':
-                return 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse'
+                return 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse';
             case 'offline':
-                return 'bg-gray-400'
+                return 'bg-gray-400';
             case 'unhealthy':
-                return 'bg-red-500'
+                return 'bg-red-500';
             case 'paused':
-                return 'bg-yellow-500'
+                return 'bg-yellow-500';
             default:
-                return 'bg-gray-400'
+                return 'bg-gray-400';
         }
-    }
+    };
 
     // Helper function to format last seen date
     const formatLastSeenDate = (timestamp: number) => {
         // If timestamp is 0 or very close to epoch (1970), display "never"
         if (timestamp === 0) {
-            return 'Never'
+            return 'Never';
         }
         return new Date(timestamp * 1000).toLocaleString('en-US', {
             year: 'numeric',
@@ -69,75 +83,93 @@ export function MachineDetailPage() {
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit',
-        })
-    }
+        });
+    };
 
     // Handler functions for settings
     const handlePauseMachine = async () => {
         try {
-            await pauseMachine.mutateAsync(machineName)
-            setShowSettings(false)
+            await pauseMachine.mutateAsync(machineName);
+            setShowSettings(false);
         } catch (error) {
-            console.error('Failed to pause machine:', error)
+            console.error('Failed to pause machine:', error);
         }
-    }
+    };
 
     const handleResumeMachine = async () => {
         try {
-            await resumeMachine.mutateAsync(machineName)
-            setShowSettings(false)
+            await resumeMachine.mutateAsync(machineName);
+            setShowSettings(false);
         } catch (error) {
-            console.error('Failed to resume machine:', error)
+            console.error('Failed to resume machine:', error);
         }
-    }
+    };
 
     const handleRestartMachine = async () => {
         try {
-            await restartMachine.mutateAsync(machineName)
-            setShowSettings(false)
+            await restartMachine.mutateAsync(machineName);
+            setShowSettings(false);
         } catch (error) {
-            console.error('Failed to restart machine:', error)
+            console.error('Failed to restart machine:', error);
         }
-    }
+    };
 
     const handleDeleteMachineClick = () => {
-        setShowDeleteConfirm(true)
-        setShowSettings(false)
-    }
+        setShowDeleteConfirm(true);
+        setShowSettings(false);
+    };
 
     const handleConfirmDelete = async () => {
         const deletePromise = async () => {
-            await deleteMachine.mutateAsync(machineName)
-            setShowDeleteConfirm(false)
+            await deleteMachine.mutateAsync(machineName);
+            setShowDeleteConfirm(false);
             // Navigate back to machines list after successful deletion
-            navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })
-            return { success: true, name: machineName }
-        }
+            navigate({
+                to: '/$login/machines',
+                params: { login: currentLogin || 'org' },
+            });
+            return { success: true, name: machineName };
+        };
 
         toast.promise(deletePromise(), {
             loading: `Deleting machine "${machineName}"...`,
             success: (data) => `Machine "${data.name}" deleted successfully`,
             error: 'Failed to delete machine. Please try again.',
-        })
-    }
+        });
+    };
 
     // Calculate resource usage from machine
-    const machineRunners = machine?.runners ?? []
+    const machineRunners = machine?.runners ?? [];
 
     // Determine effective limits (use total if limit is 0, which means "unknown")
-    const cpuLimit = machine ? (machine.cpu_limit > 0 ? machine.cpu_limit : machine.cpu) : 0
-    const ramLimit = machine ? (machine.ram_limit > 0 ? machine.ram_limit : machine.ram_available) : 0
+    const cpuLimit = machine
+        ? machine.cpu_limit > 0
+            ? machine.cpu_limit
+            : machine.cpu
+        : 0;
+    const ramLimit = machine
+        ? machine.ram_limit > 0
+            ? machine.ram_limit
+            : machine.ram_available
+        : 0;
 
-    const cpuAllocated = machine?.cpu_allocated || 0
-    const ramAllocated = machine?.ram_allocated || 0
-    const cpuUsagePercent = cpuLimit > 0 ? Math.round((cpuAllocated / cpuLimit) * 100) : 0
-    const ramUsagePercent = ramLimit > 0 ? Math.round((ramAllocated / ramLimit) * 100) : 0
+    const cpuAllocated = machine?.cpu_allocated || 0;
+    const ramAllocated = machine?.ram_allocated || 0;
+    const cpuUsagePercent =
+        cpuLimit > 0 ? Math.round((cpuAllocated / cpuLimit) * 100) : 0;
+    const ramUsagePercent =
+        ramLimit > 0 ? Math.round((ramAllocated / ramLimit) * 100) : 0;
 
     if (isLoading) {
         return (
             <div className="space-y-8">
                 <button
-                    onClick={() => navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })}
+                    onClick={() =>
+                        navigate({
+                            to: '/$login/machines',
+                            params: { login: currentLogin || 'org' },
+                        })
+                    }
                     className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
                 >
                     <RiArrowLeftLine className="size-4" aria-hidden="true" />
@@ -153,14 +185,19 @@ export function MachineDetailPage() {
                     </div>
                 </div>
             </div>
-        )
+        );
     }
 
     if (error || !machine) {
         return (
             <div className="space-y-4">
                 <button
-                    onClick={() => navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })}
+                    onClick={() =>
+                        navigate({
+                            to: '/$login/machines',
+                            params: { login: currentLogin || 'org' },
+                        })
+                    }
                     className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
                 >
                     <RiArrowLeftLine className="size-4" aria-hidden="true" />
@@ -168,18 +205,25 @@ export function MachineDetailPage() {
                 </button>
                 <Card className="bg-red-50 border-red-200 p-6">
                     <p className="text-red-800">
-                        {error ? 'Failed to load machine details. Please try again later.' : 'Machine not found.'}
+                        {error
+                            ? 'Failed to load machine details. Please try again later.'
+                            : 'Machine not found.'}
                     </p>
                 </Card>
             </div>
-        )
+        );
     }
 
     return (
         <div className="space-y-8">
             {/* Back Button */}
             <button
-                onClick={() => navigate({ to: '/$login/machines', params: { login: currentLogin || 'org' } })}
+                onClick={() =>
+                    navigate({
+                        to: '/$login/machines',
+                        params: { login: currentLogin || 'org' },
+                    })
+                }
                 className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
             >
                 <RiArrowLeftLine className="size-4" aria-hidden="true" />
@@ -190,9 +234,13 @@ export function MachineDetailPage() {
             <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 min-w-0">
-                        <h1 className="text-3xl font-bold text-gray-900 truncate">{machine.name}</h1>
+                        <h1 className="text-3xl font-bold text-gray-900 truncate">
+                            {machine.name}
+                        </h1>
                         {/* Status dot */}
-                        <div className={`h-3 w-3 rounded-full flex-shrink-0 ${getStatusDotColor(machine.status)}`} />
+                        <div
+                            className={`h-3 w-3 rounded-full flex-shrink-0 ${getStatusDotColor(machine.status)}`}
+                        />
                     </div>
                     <p className="text-sm text-gray-500 mt-1">
                         Last seen: {formatLastSeenDate(machine.last_seen_at)}
@@ -205,7 +253,10 @@ export function MachineDetailPage() {
                             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                             title="Machine settings"
                         >
-                            <RiMoreLine className="size-5 text-gray-600" aria-hidden="true" />
+                            <RiMoreLine
+                                className="size-5 text-gray-600"
+                                aria-hidden="true"
+                            />
                         </button>
                         {showSettings && (
                             <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
@@ -248,7 +299,9 @@ export function MachineDetailPage() {
                         {/* Labels */}
                         {machine.labels && machine.labels.length > 0 && (
                             <div className="mb-6 pb-6 border-b border-gray-200">
-                                <p className="text-sm font-medium text-gray-600 mb-3">Labels</p>
+                                <p className="text-sm font-medium text-gray-600 mb-3">
+                                    Labels
+                                </p>
                                 <div className="flex gap-2 flex-wrap">
                                     {machine.labels.map((label) => (
                                         <span
@@ -264,18 +317,27 @@ export function MachineDetailPage() {
 
                         {/* Resources */}
                         <div>
-                            <h2 className="text-sm font-semibold text-gray-900 mb-4">Resources</h2>
+                            <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                                Resources
+                            </h2>
                             <div className="space-y-6">
                                 {/* CPU */}
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <RiCpuLine className="size-5 text-blue-600" aria-hidden="true" />
-                                            <span className="text-sm font-medium text-gray-600">CPU</span>
+                                            <RiCpuLine
+                                                className="size-5 text-blue-600"
+                                                aria-hidden="true"
+                                            />
+                                            <span className="text-sm font-medium text-gray-600">
+                                                CPU
+                                            </span>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-lg font-semibold text-gray-900">
-                                                {machine.cpu > 0 ? `${cpuUsagePercent}%` : 'Unknown'}
+                                                {machine.cpu > 0
+                                                    ? `${cpuUsagePercent}%`
+                                                    : 'Unknown'}
                                             </p>
                                             <p className="text-xs text-gray-500">
                                                 {machine.cpu > 0
@@ -288,7 +350,9 @@ export function MachineDetailPage() {
                                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                             <div
                                                 className="h-full bg-blue-600 transition-all"
-                                                style={{ width: `${cpuUsagePercent}%` }}
+                                                style={{
+                                                    width: `${cpuUsagePercent}%`,
+                                                }}
                                             />
                                         </div>
                                     )}
@@ -296,22 +360,31 @@ export function MachineDetailPage() {
                                         <div className="mt-3 text-xs text-gray-600 space-y-1">
                                             <div className="flex justify-between">
                                                 <span>Allocated:</span>
-                                                <span className="font-medium">{cpuAllocated} vCPU</span>
+                                                <span className="font-medium">
+                                                    {cpuAllocated} vCPU
+                                                </span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span>Available:</span>
-                                                <span className="font-medium">{cpuLimit - cpuAllocated} vCPU</span>
+                                                <span className="font-medium">
+                                                    {cpuLimit - cpuAllocated}{' '}
+                                                    vCPU
+                                                </span>
                                             </div>
                                             {machine.cpu_limit > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Limit:</span>
-                                                    <span className="font-medium">{cpuLimit} vCPU</span>
+                                                    <span className="font-medium">
+                                                        {cpuLimit} vCPU
+                                                    </span>
                                                 </div>
                                             )}
                                             {machine.cpu > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Total:</span>
-                                                    <span className="font-medium">{machine.cpu} vCPU</span>
+                                                    <span className="font-medium">
+                                                        {machine.cpu} vCPU
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>
@@ -322,12 +395,19 @@ export function MachineDetailPage() {
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <RiRam2Line className="size-5 text-blue-600" aria-hidden="true" />
-                                            <span className="text-sm font-medium text-gray-600">RAM</span>
+                                            <RiRam2Line
+                                                className="size-5 text-blue-600"
+                                                aria-hidden="true"
+                                            />
+                                            <span className="text-sm font-medium text-gray-600">
+                                                RAM
+                                            </span>
                                         </div>
                                         <div className="text-right">
                                             <p className="text-lg font-semibold text-gray-900">
-                                                {machine.ram_available > 0 ? `${ramUsagePercent}%` : 'Unknown'}
+                                                {machine.ram_available > 0
+                                                    ? `${ramUsagePercent}%`
+                                                    : 'Unknown'}
                                             </p>
                                             <p className="text-xs text-gray-500">
                                                 {machine.ram_available > 0
@@ -340,7 +420,9 @@ export function MachineDetailPage() {
                                         <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                             <div
                                                 className="h-full bg-blue-600 transition-all"
-                                                style={{ width: `${ramUsagePercent}%` }}
+                                                style={{
+                                                    width: `${ramUsagePercent}%`,
+                                                }}
                                             />
                                         </div>
                                     )}
@@ -348,22 +430,45 @@ export function MachineDetailPage() {
                                         <div className="mt-3 text-xs text-gray-600 space-y-1">
                                             <div className="flex justify-between">
                                                 <span>Allocated:</span>
-                                                <span className="font-medium">{Math.round(ramAllocated / 1024)} GB</span>
+                                                <span className="font-medium">
+                                                    {Math.round(
+                                                        ramAllocated / 1024,
+                                                    )}{' '}
+                                                    GB
+                                                </span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span>Available:</span>
-                                                <span className="font-medium">{Math.round((ramLimit - ramAllocated) / 1024)} GB</span>
+                                                <span className="font-medium">
+                                                    {Math.round(
+                                                        (ramLimit -
+                                                            ramAllocated) /
+                                                            1024,
+                                                    )}{' '}
+                                                    GB
+                                                </span>
                                             </div>
                                             {machine.ram_limit > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Limit:</span>
-                                                    <span className="font-medium">{Math.round(ramLimit / 1024)} GB</span>
+                                                    <span className="font-medium">
+                                                        {Math.round(
+                                                            ramLimit / 1024,
+                                                        )}{' '}
+                                                        GB
+                                                    </span>
                                                 </div>
                                             )}
                                             {machine.ram_available > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Total:</span>
-                                                    <span className="font-medium">{Math.round(machine.ram_available / 1024)} GB</span>
+                                                    <span className="font-medium">
+                                                        {Math.round(
+                                                            machine.ram_available /
+                                                                1024,
+                                                        )}{' '}
+                                                        GB
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>
@@ -375,27 +480,48 @@ export function MachineDetailPage() {
 
                     {/* Runners on this Machine */}
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Runners on this Machine</h2>
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                            Runners on this Machine
+                        </h2>
                         {machineRunners.length === 0 ? (
                             <Card className="p-8 text-center">
-                                <RiServerLine className="size-12 text-gray-300 mx-auto mb-4" aria-hidden="true" />
-                                <p className="text-lg font-medium text-gray-900 mb-2">No runners yet</p>
-                                <p className="text-gray-600">No runners have been assigned to this machine.</p>
+                                <RiServerLine
+                                    className="size-12 text-gray-300 mx-auto mb-4"
+                                    aria-hidden="true"
+                                />
+                                <p className="text-lg font-medium text-gray-900 mb-2">
+                                    No runners yet
+                                </p>
+                                <p className="text-gray-600">
+                                    No runners have been assigned to this
+                                    machine.
+                                </p>
                             </Card>
                         ) : (
                             <div className="space-y-3">
                                 {machineRunners.map((runner) => (
-                                    <Card key={runner.id} className="p-4 hover:bg-gray-50 transition-colors">
+                                    <Card
+                                        key={runner.id}
+                                        className="p-4 hover:bg-gray-50 transition-colors"
+                                    >
                                         <div className="flex items-center justify-between gap-4">
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900">{runner.name}</p>
+                                                <p className="text-sm font-medium text-gray-900">
+                                                    {runner.name}
+                                                </p>
                                                 <div className="flex items-center gap-3 mt-2">
                                                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 capitalize">
                                                         {runner.status}
                                                     </span>
-                                                    <p className="text-xs text-gray-500">{runner.arch}</p>
                                                     <p className="text-xs text-gray-500">
-                                                        {runner.cpu} vCPU • {Math.round(runner.ram / 1024)} GB RAM
+                                                        {runner.arch}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {runner.cpu} vCPU •{' '}
+                                                        {Math.round(
+                                                            runner.ram / 1024,
+                                                        )}{' '}
+                                                        GB RAM
                                                     </p>
                                                 </div>
                                             </div>
@@ -411,21 +537,34 @@ export function MachineDetailPage() {
                 <div className="space-y-6">
                     {/* Architecture Card */}
                     <Card className="p-6">
-                        <h2 className="text-sm font-semibold text-gray-900 mb-4">Architecture</h2>
+                        <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                            Architecture
+                        </h2>
                         <div className="flex items-center gap-3">
-                            <RiServerLine className="size-5 text-blue-600" aria-hidden="true" />
-                            <span className="text-sm font-medium text-gray-700 capitalize">{machine.arch}</span>
+                            <RiServerLine
+                                className="size-5 text-blue-600"
+                                aria-hidden="true"
+                            />
+                            <span className="text-sm font-medium text-gray-700 capitalize">
+                                {machine.arch}
+                            </span>
                         </div>
                     </Card>
 
                     {/* Dates Card */}
                     <Card className="p-6">
-                        <h2 className="text-sm font-semibold text-gray-900 mb-4">Dates</h2>
+                        <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                            Dates
+                        </h2>
                         <div className="space-y-3">
                             <div>
-                                <p className="text-xs text-gray-600 mb-1">Created</p>
+                                <p className="text-xs text-gray-600 mb-1">
+                                    Created
+                                </p>
                                 <p className="text-sm text-gray-900">
-                                    {new Date(machine.created_at * 1000).toLocaleString('en-US', {
+                                    {new Date(
+                                        machine.created_at * 1000,
+                                    ).toLocaleString('en-US', {
                                         year: 'numeric',
                                         month: 'short',
                                         day: 'numeric',
@@ -435,7 +574,9 @@ export function MachineDetailPage() {
                                 </p>
                             </div>
                             <div>
-                                <p className="text-xs text-gray-600 mb-1">Last Seen</p>
+                                <p className="text-xs text-gray-600 mb-1">
+                                    Last Seen
+                                </p>
                                 <p className="text-sm text-gray-900">
                                     {formatLastSeenDate(machine.last_seen_at)}
                                 </p>
@@ -451,12 +592,21 @@ export function MachineDetailPage() {
                     <Card className="w-full max-w-md mx-4 p-6">
                         <div className="flex items-start gap-4 mb-6">
                             <div className="flex-shrink-0">
-                                <RiAlertLine className="size-6 text-red-600" aria-hidden="true" />
+                                <RiAlertLine
+                                    className="size-6 text-red-600"
+                                    aria-hidden="true"
+                                />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-lg font-semibold text-gray-900">Delete Machine</h3>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    Delete Machine
+                                </h3>
                                 <p className="text-sm text-gray-600 mt-2">
-                                    Are you sure you want to delete <span className="font-mono font-semibold">{machine?.name}</span>? This action cannot be undone.
+                                    Are you sure you want to delete{' '}
+                                    <span className="font-mono font-semibold">
+                                        {machine?.name}
+                                    </span>
+                                    ? This action cannot be undone.
                                 </p>
                             </div>
                         </div>
@@ -474,12 +624,14 @@ export function MachineDetailPage() {
                                 disabled={deleteMachine.isPending}
                                 className="bg-red-600 hover:bg-red-700 text-white"
                             >
-                                {deleteMachine.isPending ? 'Deleting...' : 'Delete'}
+                                {deleteMachine.isPending
+                                    ? 'Deleting...'
+                                    : 'Delete'}
                             </Button>
                         </div>
                     </Card>
                 </div>
             )}
         </div>
-    )
+    );
 }

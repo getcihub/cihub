@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router';
 
 export function NotFoundPage() {
     return (
@@ -8,9 +8,7 @@ export function NotFoundPage() {
                     <h1 className="text-6xl font-bold text-gray-900 mb-2">
                         404
                     </h1>
-                    <p className="text-xl text-gray-600">
-                        Page not found
-                    </p>
+                    <p className="text-xl text-gray-600">Page not found</p>
                 </div>
 
                 <p className="text-gray-500 mb-8 max-w-md mx-auto">
@@ -28,5 +26,5 @@ export function NotFoundPage() {
                 </div>
             </div>
         </div>
-    )
+    );
 }

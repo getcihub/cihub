@@ -1,17 +1,16 @@
-import React from "react"
-import * as ToastPrimitives from "@radix-ui/react-toast"
+import { cx } from '@/lib/utils';
+import * as ToastPrimitives from '@radix-ui/react-toast';
 import {
     RiCheckboxCircleFill,
     RiCloseCircleFill,
     RiErrorWarningFill,
     RiInformationFill,
     RiLoader2Fill,
-} from "@remixicon/react"
+} from '@remixicon/react';
+import React from 'react';
 
-import { cx } from "@/lib/utils"
-
-const ToastProvider = ToastPrimitives.Provider
-ToastProvider.displayName = "ToastProvider"
+const ToastProvider = ToastPrimitives.Provider;
+ToastProvider.displayName = 'ToastProvider';
 
 const ToastViewport = React.forwardRef<
     React.ElementRef<typeof ToastPrimitives.Viewport>,
@@ -20,28 +19,28 @@ const ToastViewport = React.forwardRef<
     <ToastPrimitives.Viewport
         ref={forwardedRef}
         className={cx(
-            "fixed right-0 top-0 z-9999 m-0 flex w-full max-w-[100vw] list-none flex-col gap-2 p-[var(--viewport-padding)] [--viewport-padding:_15px] sm:max-w-md sm:gap-4",
+            'fixed right-0 top-0 z-9999 m-0 flex w-full max-w-[100vw] list-none flex-col gap-2 p-[var(--viewport-padding)] [--viewport-padding:_15px] sm:max-w-md sm:gap-4',
             className,
         )}
         {...props}
     />
-))
+));
 
-ToastViewport.displayName = "ToastViewport"
+ToastViewport.displayName = 'ToastViewport';
 
 interface ActionProps {
-    label: string
-    altText: string
-    onClick: () => void | Promise<void>
+    label: string;
+    altText: string;
+    onClick: () => void | Promise<void>;
 }
 
 interface ToastProps
     extends React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> {
-    variant?: "info" | "success" | "warning" | "error" | "loading"
-    title?: string
-    description?: string
-    action?: ActionProps
-    disableDismiss?: boolean
+    variant?: 'info' | 'success' | 'warning' | 'error' | 'loading';
+    title?: string;
+    description?: string;
+    action?: ActionProps;
+    disableDismiss?: boolean;
 }
 
 const Toast = React.forwardRef<
@@ -60,49 +59,49 @@ const Toast = React.forwardRef<
         }: ToastProps,
         forwardedRef,
     ) => {
-        let Icon: React.ReactNode
+        let Icon: React.ReactNode;
 
         switch (variant) {
-            case "success":
+            case 'success':
                 Icon = (
                     <RiCheckboxCircleFill
                         className="size-5 shrink-0 text-emerald-600 dark:text-emerald-500"
                         aria-hidden="true"
                     />
-                )
-                break
-            case "warning":
+                );
+                break;
+            case 'warning':
                 Icon = (
                     <RiErrorWarningFill
                         className="size-5 shrink-0 text-amber-500 dark:text-amber-500"
                         aria-hidden="true"
                     />
-                )
-                break
-            case "error":
+                );
+                break;
+            case 'error':
                 Icon = (
                     <RiCloseCircleFill
                         className="size-5 shrink-0 text-red-600 dark:text-red-500"
                         aria-hidden="true"
                     />
-                )
-                break
-            case "loading":
+                );
+                break;
+            case 'loading':
                 Icon = (
                     <RiLoader2Fill
                         className="size-5 shrink-0 animate-spin text-gray-600 dark:text-gray-500"
                         aria-hidden="true"
                     />
-                )
-                break
+                );
+                break;
             default:
                 Icon = (
                     <RiInformationFill
                         className="size-5 shrink-0 text-blue-500 dark:text-blue-500"
                         aria-hidden="true"
                     />
-                )
-                break
+                );
+                break;
         }
 
         return (
@@ -110,16 +109,16 @@ const Toast = React.forwardRef<
                 ref={forwardedRef}
                 className={cx(
                     // base
-                    "flex h-fit min-h-16 w-full overflow-hidden rounded-md border shadow-lg shadow-black/5",
+                    'flex h-fit min-h-16 w-full overflow-hidden rounded-md border shadow-lg shadow-black/5',
                     // background color
-                    "bg-white dark:bg-[#090E1A]",
+                    'bg-white dark:bg-[#090E1A]',
                     // border color
-                    "border-gray-200 dark:border-gray-800",
+                    'border-gray-200 dark:border-gray-800',
                     // swipe
-                    "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",
+                    'data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none',
                     // transition
-                    "data-[state=open]:animate-slide-left-and-fade",
-                    "data-[state=closed]:animate-hide",
+                    'data-[state=open]:animate-slide-left-and-fade',
+                    'data-[state=closed]:animate-hide',
                     className,
                 )}
                 tremor-id="tremor-raw"
@@ -128,11 +127,11 @@ const Toast = React.forwardRef<
                 <div
                     className={cx(
                         // base
-                        "flex flex-1 items-start gap-3 p-4",
+                        'flex flex-1 items-start gap-3 p-4',
                         // border
                         !disableDismiss || action
-                            ? "border-r border-gray-200 dark:border-gray-800"
-                            : "",
+                            ? 'border-r border-gray-200 dark:border-gray-800'
+                            : '',
                     )}
                 >
                     {Icon}
@@ -156,20 +155,21 @@ const Toast = React.forwardRef<
                                 altText={action.altText}
                                 className={cx(
                                     // base
-                                    "flex flex-1 items-center justify-center px-6 text-sm font-semibold transition-colors",
+                                    'flex flex-1 items-center justify-center px-6 text-sm font-semibold transition-colors',
                                     // hover
-                                    "hover:bg-gray-50 dark:hover:bg-gray-900/30",
+                                    'hover:bg-gray-50 dark:hover:bg-gray-900/30',
                                     // text color
-                                    "text-gray-800 dark:text-gray-100",
+                                    'text-gray-800 dark:text-gray-100',
                                     // active
-                                    "active:bg-gray-100 dark:active:bg-gray-800",
+                                    'active:bg-gray-100 dark:active:bg-gray-800',
                                     {
-                                        "text-red-600 dark:text-red-500": variant === "error",
+                                        'text-red-600 dark:text-red-500':
+                                            variant === 'error',
                                     },
                                 )}
                                 onClick={(event) => {
-                                    event.preventDefault()
-                                    action.onClick()
+                                    event.preventDefault();
+                                    action.onClick();
                                 }}
                                 type="button"
                             >
@@ -182,14 +182,14 @@ const Toast = React.forwardRef<
                         <ToastPrimitives.Close
                             className={cx(
                                 // base
-                                "flex flex-1 items-center justify-center px-6 text-sm transition-colors",
+                                'flex flex-1 items-center justify-center px-6 text-sm transition-colors',
                                 // text color
-                                "text-gray-600 dark:text-gray-400",
+                                'text-gray-600 dark:text-gray-400',
                                 // hover
-                                "hover:bg-gray-50 dark:hover:bg-gray-900/30",
+                                'hover:bg-gray-50 dark:hover:bg-gray-900/30',
                                 // active
-                                "active:bg-gray-100",
-                                action ? "h-1/2" : "h-full",
+                                'active:bg-gray-100',
+                                action ? 'h-1/2' : 'h-full',
                             )}
                             aria-label="Close"
                         >
@@ -198,12 +198,12 @@ const Toast = React.forwardRef<
                     )}
                 </div>
             </ToastPrimitives.Root>
-        )
+        );
     },
-)
-Toast.displayName = "Toast"
+);
+Toast.displayName = 'Toast';
 
-type ToastActionElement = ActionProps
+type ToastActionElement = ActionProps;
 
 export {
     Toast,
@@ -211,4 +211,4 @@ export {
     ToastViewport,
     type ToastActionElement,
     type ToastProps,
-}
+};

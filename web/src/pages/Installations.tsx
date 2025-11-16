@@ -1,128 +1,147 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { toast } from 'sonner'
-import { useInstallations } from '@/hooks/useInstallations'
-import { useInstallation } from '@/hooks/useInstallation'
-import { useUser } from '@/hooks/useUser'
-import { useVarz } from '@/hooks/useVarz'
-import { Card } from '@/components/Card'
-import { Button } from '@/components/Button'
-import { Skeleton } from '@/components/Skeleton'
-import { RiAddLine, RiAddLargeLine } from '@remixicon/react'
+import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { Skeleton } from '@/components/Skeleton';
+import { useInstallation } from '@/hooks/useInstallation';
+import { useInstallations } from '@/hooks/useInstallations';
+import { useUser } from '@/hooks/useUser';
+import { useVarz } from '@/hooks/useVarz';
+import { RiAddLargeLine, RiAddLine } from '@remixicon/react';
+import { useNavigate } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 export function InstallationsPage() {
-    const navigate = useNavigate()
-    const [isSyncingRequest, setIsSyncingRequest] = useState(false)
-    const { data: user, refetch: refetchUser } = useUser()
-    const { data: installations = [], isLoading, error, refetch: refetchInstallations } = useInstallations()
-    const { selectInstallation, selectedInstallation, isLoading: installationLoading } = useInstallation()
-    const { data: varz } = useVarz()
+    const navigate = useNavigate();
+    const [isSyncingRequest, setIsSyncingRequest] = useState(false);
+    const { data: user, refetch: refetchUser } = useUser();
+    const {
+        data: installations = [],
+        isLoading,
+        error,
+        refetch: refetchInstallations,
+    } = useInstallations();
+    const {
+        selectInstallation,
+        selectedInstallation,
+        isLoading: installationLoading,
+    } = useInstallation();
+    const { data: varz } = useVarz();
 
     // Poll user sync status and refresh installations when sync completes
     useEffect(() => {
         if (!user?.syncing) {
-            return
+            return;
         }
 
         // Reset request loading state once backend confirms syncing
-        setIsSyncingRequest(false)
+        setIsSyncingRequest(false);
 
         const interval = setInterval(async () => {
-            const result = await refetchUser()
+            const result = await refetchUser();
             // If user is no longer syncing, refetch installations
             if (!result.data?.syncing) {
-                await refetchInstallations()
+                await refetchInstallations();
             }
-        }, 2000) // Check every 2 seconds
+        }, 2000); // Check every 2 seconds
 
-        return () => clearInterval(interval)
-    }, [user?.syncing, refetchUser, refetchInstallations])
+        return () => clearInterval(interval);
+    }, [user?.syncing, refetchUser, refetchInstallations]);
 
     // Auto-redirect to selected installation if available
     useEffect(() => {
         if (!installationLoading && selectedInstallation) {
-            navigate({ to: '/$login/machines', params: { login: selectedInstallation.login } })
+            navigate({
+                to: '/$login/machines',
+                params: { login: selectedInstallation.login },
+            });
         }
-    }, [selectedInstallation, installationLoading, navigate])
+    }, [selectedInstallation, installationLoading, navigate]);
 
     const handleSelectInstallation = async (installationId: number) => {
-        const installation = installations.find((i) => i.id === installationId)
-        if (!installation) return
+        const installation = installations.find((i) => i.id === installationId);
+        if (!installation) return;
 
         try {
-            await selectInstallation(installation)
-            navigate({ to: '/$login/machines', params: { login: installation.login } })
+            await selectInstallation(installation);
+            navigate({
+                to: '/$login/machines',
+                params: { login: installation.login },
+            });
         } catch (err) {
-            console.error('Failed to select installation:', err)
+            console.error('Failed to select installation:', err);
         }
-    }
+    };
 
     const handleAddInstallation = () => {
         if (varz?.github?.name) {
             // Redirect to GitHub App installation page
-            window.location.href = `https://github.com/apps/${varz.github.name}/installations/new`
+            window.location.href = `https://github.com/apps/${varz.github.name}/installations/new`;
         } else {
             // Fallback to auth install if app name is not available
-            window.location.href = '/auth/install'
+            window.location.href = '/auth/install';
         }
-    }
+    };
 
     const handleSyncInstallations = async () => {
-        setIsSyncingRequest(true)
+        setIsSyncingRequest(true);
 
         const syncPromise = async () => {
             try {
                 const response = await fetch('/api/user/installations', {
                     method: 'POST',
-                })
+                });
                 if (!response.ok) {
-                    throw new Error('Failed to sync installations')
+                    throw new Error('Failed to sync installations');
                 }
                 // Refetch installations immediately in case API returned them
-                await refetchInstallations()
+                await refetchInstallations();
                 // Refetch user data to update syncing status
-                await refetchUser()
+                await refetchUser();
 
-                return { success: true }
+                return { success: true };
             } catch (err) {
-                console.error('Failed to sync installations:', err)
-                throw err
+                console.error('Failed to sync installations:', err);
+                throw err;
             } finally {
-                setIsSyncingRequest(false)
+                setIsSyncingRequest(false);
             }
-        }
+        };
 
         toast.promise(syncPromise(), {
             loading: 'Syncing your installations...',
             success: () => 'Installations synchronized successfully',
             error: 'Failed to synchronize installations. Please try again.',
-        })
-    }
+        });
+    };
 
     if (isLoading) {
         return (
             <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                <h1 className="text-3xl font-bold text-gray-900 mb-8">Select an Installation</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-8">
+                    Select an Installation
+                </h1>
                 <div className="space-y-4">
                     {[...Array(3)].map((_, i) => (
                         <Skeleton key={i} className="h-24 w-full rounded-lg" />
                     ))}
                 </div>
             </div>
-        )
+        );
     }
 
     if (error) {
         return (
             <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                <h1 className="text-3xl font-bold text-gray-900 mb-8">Select an Installation</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-8">
+                    Select an Installation
+                </h1>
                 <Card className="bg-red-50 border-red-200 p-6">
                     <p className="text-red-800">
                         Failed to load installations. Please try again later.
                     </p>
                 </Card>
             </div>
-        )
+        );
     }
 
     if (installations.length === 0) {
@@ -130,7 +149,9 @@ export function InstallationsPage() {
         if (user?.syncing) {
             return (
                 <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-8">Select an Installation</h1>
+                    <h1 className="text-3xl font-bold text-gray-900 mb-8">
+                        Select an Installation
+                    </h1>
                     <Card className="p-8">
                         <div className="text-center">
                             <div className="mx-auto w-fit mb-4">
@@ -161,19 +182,22 @@ export function InstallationsPage() {
                                 Syncing Your Data
                             </h3>
                             <p className="text-gray-600">
-                                We're fetching your installation data. Please wait a moment.
+                                We're fetching your installation data. Please
+                                wait a moment.
                             </p>
                         </div>
                     </Card>
                 </div>
-            )
+            );
         }
 
         // Show empty state only when not syncing and no installations
         return (
             <div className="mx-auto max-w-2xl">
                 <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">Select an Installation</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">
+                        Select an Installation
+                    </h1>
                 </div>
                 <Card className="p-8">
                     <div className="text-center">
@@ -187,28 +211,37 @@ export function InstallationsPage() {
                             You don't have access to any installations yet.
                         </p>
                         <p className="text-sm text-gray-500 mb-6">
-                            Add a new installation to get started, or contact your organization administrator to grant you access.
+                            Add a new installation to get started, or contact
+                            your organization administrator to grant you access.
                         </p>
                         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
                             <Button onClick={handleAddInstallation}>
                                 <RiAddLine className="mr-2 size-4" />
                                 Add Installation
                             </Button>
-                            <Button onClick={handleSyncInstallations} variant="secondary" disabled={user?.syncing || isSyncingRequest}>
-                                {user?.syncing || isSyncingRequest ? 'Syncing...' : "Can't see your installation? Synchronize"}
+                            <Button
+                                onClick={handleSyncInstallations}
+                                variant="secondary"
+                                disabled={user?.syncing || isSyncingRequest}
+                            >
+                                {user?.syncing || isSyncingRequest
+                                    ? 'Syncing...'
+                                    : "Can't see your installation? Synchronize"}
                             </Button>
                         </div>
                     </div>
                 </Card>
             </div>
-        )
+        );
     }
 
     return (
         <div className="fixed inset-0 flex items-center justify-center px-4 sm:px-6 overflow-hidden">
             <div className="w-full max-w-2xl">
                 <div className="text-center mb-12">
-                    <h1 className="text-3xl font-bold text-gray-900">Select an Installation</h1>
+                    <h1 className="text-3xl font-bold text-gray-900">
+                        Select an Installation
+                    </h1>
                 </div>
 
                 <div className="space-y-6">
@@ -217,7 +250,9 @@ export function InstallationsPage() {
                         {installations.map((installation) => (
                             <button
                                 key={installation.id}
-                                onClick={() => handleSelectInstallation(installation.id)}
+                                onClick={() =>
+                                    handleSelectInstallation(installation.id)
+                                }
                                 className="w-full text-left"
                             >
                                 <Card className="p-4 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer">
@@ -230,7 +265,9 @@ export function InstallationsPage() {
                                             />
                                         ) : (
                                             <div className="size-12 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold">
-                                                {installation.login.charAt(0).toUpperCase()}
+                                                {installation.login
+                                                    .charAt(0)
+                                                    .toUpperCase()}
                                             </div>
                                         )}
                                         <div className="flex-1 min-w-0">
@@ -290,8 +327,14 @@ export function InstallationsPage() {
                         </div>
                     ) : (
                         <div className="flex flex-col gap-3 justify-center">
-                            <Button onClick={handleSyncInstallations} variant="secondary" disabled={user?.syncing || isSyncingRequest}>
-                                {user?.syncing || isSyncingRequest ? 'Syncing...' : "Can't see your installation? Synchronize"}
+                            <Button
+                                onClick={handleSyncInstallations}
+                                variant="secondary"
+                                disabled={user?.syncing || isSyncingRequest}
+                            >
+                                {user?.syncing || isSyncingRequest
+                                    ? 'Syncing...'
+                                    : "Can't see your installation? Synchronize"}
                             </Button>
                             <Button onClick={handleAddInstallation}>
                                 <RiAddLine className="mr-2 size-4" />
@@ -302,5 +345,5 @@ export function InstallationsPage() {
                 </div>
             </div>
         </div>
-    )
+    );
 }

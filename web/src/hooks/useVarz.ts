@@ -1,26 +1,26 @@
-import { useQuery } from '@tanstack/react-query'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse } from '@/types/api';
+import { useQuery } from '@tanstack/react-query';
 
 interface VarzData {
     github: {
-        name: string
-    }
+        name: string;
+    };
 }
 
 export function useVarz() {
     return useQuery({
         queryKey: ['varz'],
         queryFn: async () => {
-            const response = await fetch('/api/varz')
+            const response = await fetch('/api/varz');
             if (!response.ok) {
-                throw new Error('Failed to fetch varz')
+                throw new Error('Failed to fetch varz');
             }
-            const data: ApiResponse<VarzData> = await response.json()
+            const data: ApiResponse<VarzData> = await response.json();
             if (data.error) {
-                throw new Error(data.reason || 'Failed to fetch varz')
+                throw new Error(data.reason || 'Failed to fetch varz');
             }
-            return data.data
+            return data.data;
         },
         staleTime: 1000 * 60 * 5, // 5 minutes
-    })
+    });
 }

@@ -1,13 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { User } from '@/types/user'
-import type { ApiResponse } from '@/types/api'
+import type { ApiResponse } from '@/types/api';
+import type { User } from '@/types/user';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface UpdateEmailPayload {
-    email: string
+    email: string;
 }
 
 export function useUpdateEmail() {
-    const queryClient = useQueryClient()
+    const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: async (payload: UpdateEmailPayload) => {
@@ -17,22 +17,22 @@ export function useUpdateEmail() {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify(payload),
-            })
+            });
 
             if (!response.ok) {
-                throw new Error('Failed to update email')
+                throw new Error('Failed to update email');
             }
 
-            const data: ApiResponse<User> = await response.json()
+            const data: ApiResponse<User> = await response.json();
             if (data.error) {
-                throw new Error(data.reason || 'Failed to update email')
+                throw new Error(data.reason || 'Failed to update email');
             }
 
-            return data.data
+            return data.data;
         },
         onSuccess: () => {
             // Invalidate user query to refetch
-            queryClient.invalidateQueries({ queryKey: ['user'] })
+            queryClient.invalidateQueries({ queryKey: ['user'] });
         },
-    })
+    });
 }
