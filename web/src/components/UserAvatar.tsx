@@ -1,11 +1,11 @@
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth } from '@/hooks/useAuth';
 
 export function UserAvatar() {
-    const { user, isAuthenticated } = useAuth()
+    const { user, isAuthenticated } = useAuth();
 
     // If not authenticated, don't show anything
     if (!isAuthenticated || !user) {
-        return null
+        return null;
     }
 
     return (
@@ -19,7 +19,9 @@ export function UserAvatar() {
 
             {/* User Info */}
             <div>
-                <p className="text-sm font-medium text-gray-900">{user.login}</p>
+                <p className="text-sm font-medium text-gray-900">
+                    {user.login}
+                </p>
                 <p className="text-xs text-gray-500">{user.email}</p>
             </div>
 
@@ -30,5 +32,5 @@ export function UserAvatar() {
                 </span>
             )}
         </div>
-    )
+    );
 }

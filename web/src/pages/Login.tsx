@@ -1,21 +1,20 @@
-import { useEffect } from "react"
-import { useNavigate } from "@tanstack/react-router"
-import { RiGithubFill } from "@remixicon/react"
-
-import { Button } from "@/components/Button"
-import { Logo } from "@/components/Logo"
-import { useAuth } from "@/hooks/useAuth"
+import { Button } from '@/components/Button';
+import { Logo } from '@/components/Logo';
+import { useAuth } from '@/hooks/useAuth';
+import { RiGithubFill } from '@remixicon/react';
+import { useNavigate } from '@tanstack/react-router';
+import { useEffect } from 'react';
 
 export function LoginPage() {
-    const { isAuthenticated, isLoading } = useAuth()
-    const navigate = useNavigate()
+    const { isAuthenticated, isLoading } = useAuth();
+    const navigate = useNavigate();
 
     // Redirect to dashboard if already authenticated
     useEffect(() => {
         if (!isLoading && isAuthenticated) {
-            navigate({ to: "/" })
+            navigate({ to: '/' });
         }
-    }, [isLoading, isAuthenticated, navigate])
+    }, [isLoading, isAuthenticated, navigate]);
 
     // Show loading state while checking auth
     if (isLoading) {
@@ -26,7 +25,7 @@ export function LoginPage() {
                     <p className="text-gray-600">Loading...</p>
                 </div>
             </div>
-        )
+        );
     }
 
     return (
@@ -36,9 +35,10 @@ export function LoginPage() {
                     className="pointer-events-none absolute -top-[25%] left-1/2 -translate-x-1/2 select-none opacity-60"
                     aria-hidden="true"
                     style={{
-                        maskImage: "radial-gradient(rgba(0, 0, 0, 1) 0%, transparent 80%)",
+                        maskImage:
+                            'radial-gradient(rgba(0, 0, 0, 1) 0%, transparent 80%)',
                         WebkitMaskImage:
-                            "radial-gradient(rgba(0, 0, 0, 1) 0%, transparent 80%)",
+                            'radial-gradient(rgba(0, 0, 0, 1) 0%, transparent 80%)',
                     }}
                 >
                     <div className="flex flex-col gap-1">
@@ -69,8 +69,14 @@ export function LoginPage() {
                 </h2>
                 <div className="mt-4">
                     <Button asChild variant="primary" className="mt-4 w-full">
-                        <a href="/auth/login" className="inline-flex items-center gap-2">
-                            <RiGithubFill className="size-5" aria-hidden={true} />
+                        <a
+                            href="/auth/login"
+                            className="inline-flex items-center gap-2"
+                        >
+                            <RiGithubFill
+                                className="size-5"
+                                aria-hidden={true}
+                            />
                             Continue with GitHub
                         </a>
                     </Button>
@@ -80,5 +86,5 @@ export function LoginPage() {
                 </p>
             </div>
         </div>
-    )
+    );
 }

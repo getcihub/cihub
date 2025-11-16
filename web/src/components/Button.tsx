@@ -1,16 +1,15 @@
-import React from "react"
-import { Slot } from "@radix-ui/react-slot"
-import { RiLoader2Fill } from "@remixicon/react"
-import { tv, type VariantProps } from "tailwind-variants"
-
-import { cx, focusRing } from "@/lib/utils"
+import { cx, focusRing } from '@/lib/utils';
+import { Slot } from '@radix-ui/react-slot';
+import { RiLoader2Fill } from '@remixicon/react';
+import React from 'react';
+import { type VariantProps, tv } from 'tailwind-variants';
 
 const buttonVariants = tv({
     base: [
         // base
-        "relative inline-flex items-center justify-center whitespace-nowrap rounded-md border px-3 py-2 text-center text-sm font-medium shadow-xs transition-all duration-100 ease-in-out",
+        'relative inline-flex items-center justify-center whitespace-nowrap rounded-md border px-3 py-2 text-center text-sm font-medium shadow-xs transition-all duration-100 ease-in-out',
         // disabled
-        "disabled:pointer-events-none disabled:shadow-none",
+        'disabled:pointer-events-none disabled:shadow-none',
         // focus
         focusRing,
     ],
@@ -18,79 +17,79 @@ const buttonVariants = tv({
         variant: {
             primary: [
                 // border
-                "border-transparent",
+                'border-transparent',
                 // text color
-                "text-white",
+                'text-white',
                 // background color
-                "bg-black",
+                'bg-black',
                 // hover color
-                "hover:bg-gray-800",
+                'hover:bg-gray-800',
                 // disabled
-                "disabled:bg-neutral-100 disabled:text-neutral-400 disabled:border-neutral-200",
+                'disabled:bg-neutral-100 disabled:text-neutral-400 disabled:border-neutral-200',
             ],
             secondary: [
                 // border
-                "border-gray-300",
+                'border-gray-300',
                 // text color
-                "text-gray-900",
+                'text-gray-900',
                 // background color
-                "bg-white",
+                'bg-white',
                 //hover color
-                "hover:bg-gray-50",
+                'hover:bg-gray-50',
                 // disabled
-                "disabled:text-gray-400",
+                'disabled:text-gray-400',
             ],
             light: [
                 // base
-                "shadow-none",
+                'shadow-none',
                 // border
-                "border-transparent",
+                'border-transparent',
                 // text color
-                "text-gray-900",
+                'text-gray-900',
                 // background color
-                "bg-gray-200",
+                'bg-gray-200',
                 // hover color
-                "hover:bg-gray-300/70",
+                'hover:bg-gray-300/70',
                 // disabled
-                "disabled:bg-gray-100 disabled:text-gray-400",
+                'disabled:bg-gray-100 disabled:text-gray-400',
             ],
             ghost: [
                 // base
-                "shadow-none",
+                'shadow-none',
                 // border
-                "border-transparent",
+                'border-transparent',
                 // text color
-                "text-gray-900",
+                'text-gray-900',
                 // hover color
-                "bg-transparent hover:bg-gray-100",
+                'bg-transparent hover:bg-gray-100',
                 // disabled
-                "disabled:text-gray-400",
+                'disabled:text-gray-400',
             ],
             destructive: [
                 // text color
-                "text-white",
+                'text-white',
                 // border
-                "border-transparent",
+                'border-transparent',
                 // background color
-                "bg-red-600",
+                'bg-red-600',
                 // hover color
-                "hover:bg-red-700",
+                'hover:bg-red-700',
                 // disabled
-                "disabled:bg-red-300 disabled:text-white",
+                'disabled:bg-red-300 disabled:text-white',
             ],
         },
     },
     defaultVariants: {
-        variant: "primary",
+        variant: 'primary',
     },
-})
+});
 
 interface ButtonProps
-    extends React.ComponentPropsWithoutRef<"button">,
-    VariantProps<typeof buttonVariants> {
-    asChild?: boolean
-    isLoading?: boolean
-    loadingText?: string
+    extends React.ComponentPropsWithoutRef<'button'>,
+        VariantProps<typeof buttonVariants> {
+    asChild?: boolean;
+    isLoading?: boolean;
+    loadingText?: string;
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -107,7 +106,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         }: ButtonProps,
         forwardedRef,
     ) => {
-        const Component = asChild ? Slot : "button"
+        const Component = asChild ? Slot : 'button';
         return (
             <Component
                 ref={forwardedRef}
@@ -122,7 +121,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
                             aria-hidden="true"
                         />
                         <span className="sr-only">
-                            {loadingText ? loadingText : "Loading"}
+                            {loadingText ? loadingText : 'Loading'}
                         </span>
                         {loadingText ? loadingText : children}
                     </span>
@@ -130,10 +129,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
                     children
                 )}
             </Component>
-        )
+        );
     },
-)
+);
 
-Button.displayName = "Button"
+Button.displayName = 'Button';
 
-export { Button, buttonVariants, type ButtonProps }
+export { Button, buttonVariants, type ButtonProps };

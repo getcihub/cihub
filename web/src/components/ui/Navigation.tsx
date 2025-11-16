@@ -1,18 +1,20 @@
-import { Link, useLocation, useNavigate } from '@tanstack/react-router'
-import { TabNavigation, TabNavigationLink } from "@/components/TabNavigation"
+import { TabNavigation, TabNavigationLink } from '@/components/TabNavigation';
+import { useInstallation } from '@/hooks/useInstallation';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+
+import { InstallationSwitcher } from './InstallationSwitcher';
 // import { Notifications } from "./Notifications"
-import { DropdownUserProfile } from "./UserProfile"
-import { InstallationSwitcher } from "./InstallationSwitcher"
-import { useInstallation } from '@/hooks/useInstallation'
+import { DropdownUserProfile } from './UserProfile';
 
 function Navigation() {
-    const location = useLocation()
-    const pathname = location.pathname
-    const navigate = useNavigate()
-    const { selectedInstallation } = useInstallation()
+    const location = useLocation();
+    const pathname = location.pathname;
+    const navigate = useNavigate();
+    const { selectedInstallation } = useInstallation();
 
     // Only show installation-specific navigation if an installation is selected
-    const showInstallationNav = selectedInstallation && pathname !== '/' && pathname !== '/account'
+    const showInstallationNav =
+        selectedInstallation && pathname !== '/' && pathname !== '/account';
 
     return (
         <div className="shadow-s sticky top-0 z-20 bg-white">
@@ -23,11 +25,17 @@ function Navigation() {
                         onClick={() => navigate({ to: '/' })}
                         className="flex items-center gap-2 text-xl font-bold text-gray-900 hover:text-gray-700 cursor-pointer transition-colors"
                     >
-                        <img src="/favicon.svg" alt="CIHub" className="size-6 brightness-0" />
+                        <img
+                            src="/favicon.svg"
+                            alt="CIHub"
+                            className="size-6 brightness-0"
+                        />
                         CIHub
                     </button>
                     {/* Divider */}
-                    {selectedInstallation ? <div className="h-6 w-px bg-gray-200" /> : null}
+                    {selectedInstallation ? (
+                        <div className="h-6 w-px bg-gray-200" />
+                    ) : null}
                     {/* Installation Switcher */}
                     <InstallationSwitcher />
                 </div>
@@ -43,27 +51,42 @@ function Navigation() {
                             asChild
                             active={pathname.includes('/machines')}
                         >
-                            <Link to="/$login/machines" params={{ login: selectedInstallation.login }}>Machines</Link>
+                            <Link
+                                to="/$login/machines"
+                                params={{ login: selectedInstallation.login }}
+                            >
+                                Machines
+                            </Link>
                         </TabNavigationLink>
                         <TabNavigationLink
                             className="inline-flex gap-2"
                             asChild
                             active={pathname.includes('/jobs')}
                         >
-                            <Link to="/$login/jobs" params={{ login: selectedInstallation.login }}>Jobs</Link>
+                            <Link
+                                to="/$login/jobs"
+                                params={{ login: selectedInstallation.login }}
+                            >
+                                Jobs
+                            </Link>
                         </TabNavigationLink>
                         <TabNavigationLink
                             className="inline-flex gap-2"
                             asChild
                             active={pathname.endsWith('/settings')}
                         >
-                            <Link to="/$login/settings" params={{ login: selectedInstallation.login }}>Settings</Link>
+                            <Link
+                                to="/$login/settings"
+                                params={{ login: selectedInstallation.login }}
+                            >
+                                Settings
+                            </Link>
                         </TabNavigationLink>
                     </div>
                 </TabNavigation>
             )}
         </div>
-    )
+    );
 }
 
-export { Navigation }
+export { Navigation };

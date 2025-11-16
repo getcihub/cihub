@@ -1,16 +1,16 @@
 export interface PlanConfig {
-    id: string
-    name: string
-    price: number | null
-    billing_period?: string
-    max_machines: number
-    max_vcpu: number
-    description: string
-    cta?: string
+    id: string;
+    name: string;
+    price: number | null;
+    billing_period?: string;
+    max_machines: number;
+    max_vcpu: number;
+    description: string;
+    cta?: string;
 }
 
 export const PLANS: Record<string, PlanConfig> = {
-    'Free': {
+    Free: {
         id: 'Free',
         name: 'Free',
         price: null,
@@ -19,7 +19,7 @@ export const PLANS: Record<string, PlanConfig> = {
         description: 'Get started with CIHub',
         cta: 'Upgrade to Startup',
     },
-    'startup': {
+    startup: {
         id: 'startup',
         name: 'Startup',
         price: 29,
@@ -28,7 +28,7 @@ export const PLANS: Record<string, PlanConfig> = {
         max_vcpu: 200,
         description: 'For growing teams',
     },
-}
+};
 
 /**
  * Get plan configuration by Stripe product ID
@@ -36,7 +36,7 @@ export const PLANS: Record<string, PlanConfig> = {
  */
 export function getPlanConfig(stripProductId?: string): PlanConfig {
     if (!stripProductId) {
-        return PLANS['Free']
+        return PLANS['Free'];
     }
-    return PLANS[stripProductId] || PLANS['Free']
+    return PLANS[stripProductId] || PLANS['Free'];
 }

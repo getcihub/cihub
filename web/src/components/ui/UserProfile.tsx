@@ -6,41 +6,41 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from "@/components/DropdownMenu"
-import { cx, focusRing } from "@/lib/utils"
+} from '@/components/DropdownMenu';
+import { useAuth } from '@/hooks/useAuth';
+import { cx, focusRing } from '@/lib/utils';
 import {
     RiArrowRightUpLine,
     RiLogoutBoxLine,
     RiSettingsLine,
-} from "@remixicon/react"
-import { useAuth } from "@/hooks/useAuth"
-import { useNavigate } from "@tanstack/react-router"
-import React from "react"
+} from '@remixicon/react';
+import { useNavigate } from '@tanstack/react-router';
+import React from 'react';
 
 function DropdownUserProfile() {
-    const [mounted, setMounted] = React.useState(false)
-    const { user, logout } = useAuth()
-    const navigate = useNavigate()
+    const [mounted, setMounted] = React.useState(false);
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
 
     React.useEffect(() => {
-        setMounted(true)
-    }, [])
+        setMounted(true);
+    }, []);
 
     // Get user initials from login
     const getInitials = (login: string) => {
         return login
             .split(/[._-]/)
-            .map(part => part[0])
+            .map((part) => part[0])
             .join('')
             .toUpperCase()
-            .slice(0, 2)
-    }
+            .slice(0, 2);
+    };
 
     if (!mounted || !user) {
-        return null
+        return null;
     }
 
-    const initials = getInitials(user.login)
+    const initials = getInitials(user.login);
 
     return (
         <>
@@ -50,7 +50,7 @@ function DropdownUserProfile() {
                         aria-label="open settings"
                         className={cx(
                             focusRing,
-                            "group rounded-full p-1 hover:bg-gray-100 data-[state=open]:bg-gray-100",
+                            'group rounded-full p-1 hover:bg-gray-100 data-[state=open]:bg-gray-100',
                         )}
                     >
                         {user.avatar_url ? (
@@ -78,7 +78,9 @@ function DropdownUserProfile() {
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
-                        <DropdownMenuItem onClick={() => navigate({ to: '/account' })}>
+                        <DropdownMenuItem
+                            onClick={() => navigate({ to: '/account' })}
+                        >
                             <RiSettingsLine
                                 className="mb-1 mr-2 size-4 shrink-0"
                                 aria-hidden="true"
@@ -95,7 +97,11 @@ function DropdownUserProfile() {
                                 aria-hidden="true"
                             />
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => window.open("https://docs.cihub.io", "_blank")}>
+                        <DropdownMenuItem
+                            onClick={() =>
+                                window.open('https://docs.cihub.io', '_blank')
+                            }
+                        >
                             Documentation
                             <RiArrowRightUpLine
                                 className="mb-1 ml-1 size-3 shrink-0 text-gray-500"
@@ -123,7 +129,7 @@ function DropdownUserProfile() {
                 </DropdownMenuContent>
             </DropdownMenu>
         </>
-    )
+    );
 }
 
-export { DropdownUserProfile }
+export { DropdownUserProfile };

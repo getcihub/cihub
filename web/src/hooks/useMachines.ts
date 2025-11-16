@@ -1,29 +1,33 @@
-import { useQuery } from '@tanstack/react-query'
-import type { Machine } from '@/types/machine'
-import type { PaginatedApiResponse } from '@/types/api'
-import { useInstallation } from './useInstallation'
+import type { PaginatedApiResponse } from '@/types/api';
+import type { Machine } from '@/types/machine';
+import { useQuery } from '@tanstack/react-query';
+
+import { useInstallation } from './useInstallation';
 
 export function useMachines() {
-    const { selectedInstallation } = useInstallation()
+    const { selectedInstallation } = useInstallation();
 
     return useQuery({
         queryKey: ['installations', selectedInstallation?.login, 'machines'],
         queryFn: async () => {
             if (!selectedInstallation) {
-                return []
+                return [];
             }
 
-            const response = await fetch(`/api/installations/${selectedInstallation.login}/machines`)
+            const response = await fetch(
+                `/api/installations/${selectedInstallation.login}/machines`,
+            );
             if (!response.ok) {
-                throw new Error('Failed to fetch machines')
+                throw new Error('Failed to fetch machines');
             }
-            const data = (await response.json()) as PaginatedApiResponse<Machine>
+            const data =
+                (await response.json()) as PaginatedApiResponse<Machine>;
             if (data.error) {
-                throw new Error(data.reason || 'Failed to fetch machines')
+                throw new Error(data.reason || 'Failed to fetch machines');
             }
-            return data.data || []
+            return data.data || [];
         },
         enabled: !!selectedInstallation,
         refetchInterval: 5000,
-    })
+    });
 }

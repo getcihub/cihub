@@ -1,67 +1,75 @@
-import { useState, useEffect } from 'react'
-import { toast } from 'sonner'
+import { useAuth } from '@/hooks/useAuth';
+import { useEmails } from '@/hooks/useEmails';
+import { useUpdateEmail } from '@/hooks/useUpdateEmail';
+import type { UserEmail } from '@/types/user';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './ui/card'
+import { Badge } from './Badge';
+import { Button } from './Button';
 import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
-    SelectValue
-} from "./Select"
-import { Badge } from './Badge'
-import { Button } from './Button'
-import { Skeleton } from './Skeleton'
-
-import { useAuth } from '@/hooks/useAuth'
-import { useEmails } from '@/hooks/useEmails'
-import { useUpdateEmail } from '@/hooks/useUpdateEmail'
-import type { UserEmail } from '@/types/user'
+    SelectValue,
+} from './Select';
+import { Skeleton } from './Skeleton';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from './ui/card';
 
 export function UserEmails() {
-    const { user } = useAuth()
-    const { data: emails = [], isLoading } = useEmails()
-    const { mutate: updateEmail, isPending, isSuccess } = useUpdateEmail()
+    const { user } = useAuth();
+    const { data: emails = [], isLoading } = useEmails();
+    const { mutate: updateEmail, isPending, isSuccess } = useUpdateEmail();
 
-    const [selectedEmail, setSelectedEmail] = useState('')
-    const [originalEmail, setOriginalEmail] = useState('')
-    const [hasChanges, setHasChanges] = useState(false)
+    const [selectedEmail, setSelectedEmail] = useState('');
+    const [originalEmail, setOriginalEmail] = useState('');
+    const [hasChanges, setHasChanges] = useState(false);
 
     // Set selected email from user context on initial load
     useEffect(() => {
         if (user?.email && originalEmail === '') {
-            setSelectedEmail(user.email)
-            setOriginalEmail(user.email)
+            setSelectedEmail(user.email);
+            setOriginalEmail(user.email);
         } else if (emails.length > 0 && originalEmail === '' && !user?.email) {
-            setSelectedEmail(emails[0].email)
-            setOriginalEmail(emails[0].email)
+            setSelectedEmail(emails[0].email);
+            setOriginalEmail(emails[0].email);
         }
-    }, [user?.email, emails, originalEmail])
+    }, [user?.email, emails, originalEmail]);
 
     // Track if email has changed from the original
     useEffect(() => {
-        setHasChanges(selectedEmail !== originalEmail && selectedEmail !== '')
-    }, [selectedEmail, originalEmail])
+        setHasChanges(selectedEmail !== originalEmail && selectedEmail !== '');
+    }, [selectedEmail, originalEmail]);
 
     // Update original email when user email changes (after successful save)
     useEffect(() => {
         if (isSuccess && selectedEmail) {
-            setOriginalEmail(selectedEmail)
-            toast.success(`Email updated to ${selectedEmail}`)
+            setOriginalEmail(selectedEmail);
+            toast.success(`Email updated to ${selectedEmail}`);
         }
-    }, [isSuccess, selectedEmail])
+    }, [isSuccess, selectedEmail]);
 
     const handleSave = () => {
         if (hasChanges) {
-            updateEmail({ email: selectedEmail })
+            updateEmail({ email: selectedEmail });
         }
-    }
+    };
 
     return (
-        <Card className='mb-6'>
+        <Card className="mb-6">
             <CardHeader>
                 <CardTitle>Email address</CardTitle>
-                <CardDescription>Email address used for account-related notifications</CardDescription>
+                <CardDescription>
+                    Email address used for account-related notifications
+                </CardDescription>
             </CardHeader>
             <CardContent>
                 {isLoading ? (
@@ -79,14 +87,21 @@ export function UserEmails() {
                             </SelectTrigger>
                             <SelectContent>
                                 {emails.map((email: UserEmail) => (
-                                    <SelectItem key={email.email} value={email.email}>
+                                    <SelectItem
+                                        key={email.email}
+                                        value={email.email}
+                                    >
                                         <div className="flex items-center gap-2">
                                             {email.email}
                                             {email.verified && (
-                                                <Badge variant="success">verified</Badge>
+                                                <Badge variant="success">
+                                                    verified
+                                                </Badge>
                                             )}
                                             {email.primary && (
-                                                <Badge variant="default">primary</Badge>
+                                                <Badge variant="default">
+                                                    primary
+                                                </Badge>
                                             )}
                                         </div>
                                     </SelectItem>
@@ -107,5 +122,5 @@ export function UserEmails() {
                 </Button>
             </CardFooter>
         </Card>
-    )
+    );
 }

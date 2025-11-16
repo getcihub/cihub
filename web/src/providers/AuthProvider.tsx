@@ -1,27 +1,27 @@
-import { useNavigate } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
-import { AuthContext, type AuthProviderProps } from '@/context/AuthContext'
-import { useUser } from '@/hooks/useUser'
+import { AuthContext, type AuthProviderProps } from '@/context/AuthContext';
+import { useUser } from '@/hooks/useUser';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 
 export function AuthProvider({ children }: AuthProviderProps) {
-    const navigate = useNavigate()
-    const queryClient = useQueryClient()
-    const { data: user = null, isLoading } = useUser()
+    const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const { data: user = null, isLoading } = useUser();
 
     const checkAuth = async () => {
-        await queryClient.invalidateQueries({ queryKey: ['user'] })
-    }
+        await queryClient.invalidateQueries({ queryKey: ['user'] });
+    };
 
     const logout = async () => {
         try {
-            await fetch('/auth/logout', { method: 'POST' })
+            await fetch('/auth/logout', { method: 'POST' });
         } catch (error) {
-            console.error('Failed to logout:', error)
+            console.error('Failed to logout:', error);
         } finally {
-            queryClient.setQueryData(['user'], null)
-            navigate({ to: '/login' })
+            queryClient.setQueryData(['user'], null);
+            navigate({ to: '/login' });
         }
-    }
+    };
 
     return (
         <AuthContext.Provider
@@ -35,5 +35,5 @@ export function AuthProvider({ children }: AuthProviderProps) {
         >
             {children}
         </AuthContext.Provider>
-    )
+    );
 }

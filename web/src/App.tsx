@@ -1,7 +1,8 @@
-import { Outlet } from '@tanstack/react-router'
-import { Toaster } from 'sonner'
-import { AuthProvider } from './providers/AuthProvider'
-import { InstallationProvider } from './providers/InstallationProvider'
+import { Outlet } from '@tanstack/react-router';
+import { Toaster } from 'sonner';
+
+import { AuthProvider } from './providers/AuthProvider';
+import { InstallationProvider } from './providers/InstallationProvider';
 
 function App() {
     return (
@@ -11,7 +12,7 @@ function App() {
                 <Toaster />
             </InstallationProvider>
         </AuthProvider>
-    )
+    );
 }
 
-export default App
+export default App;
