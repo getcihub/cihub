@@ -107,7 +107,7 @@ func (s Server) Handler() http.Handler {
 				r.Get("/{name}", machines.HandleFind(s.Machines))
 				r.With(acl.CheckAdmin()).
 					Delete("/{name}", machines.HandleDelete(s.Machines, s.Runners, s.Scheduler))
-				r.With(acl.CheckAdmin()).Patch("/{name}", machines.HandleUpdate())
+				r.With(acl.CheckAdmin()).Patch("/{name}", machines.HandleUpdate(s.Machines))
 				r.Get("/{name}/runners", machines.HandleRunners(s.Machines, s.Runners))
 			})
 

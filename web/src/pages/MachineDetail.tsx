@@ -9,7 +9,10 @@ import {
     RiAlertLine,
     RiArrowLeftLine,
     RiCpuLine,
+    RiDeleteBin6Line,
     RiMoreLine,
+    RiPauseCircleLine,
+    RiPlayCircleLine,
     RiRam2Line,
     RiServerLine,
 } from '@remixicon/react';
@@ -24,10 +27,12 @@ export function MachineDetailPage() {
     });
     const { selectedInstallation } = useInstallation();
     const { data: machine, isLoading, error } = useMachineDetail(machineName);
-    const { pauseMachine, resumeMachine, restartMachine, deleteMachine } =
+    const { pauseMachine, resumeMachine, deleteMachine } =
         useMachineMutations();
     const [showSettings, setShowSettings] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showPauseConfirm, setShowPauseConfirm] = useState(false);
+    const [showResumeConfirm, setShowResumeConfirm] = useState(false);
     const settingsRef = useRef<HTMLDivElement>(null);
 
     // Close settings menu when clicking outside
@@ -85,30 +90,31 @@ export function MachineDetailPage() {
     };
 
     // Handler functions for settings
-    const handlePauseMachine = async () => {
+    const handlePauseMachine = () => {
+        setShowPauseConfirm(true);
+        setShowSettings(false);
+    };
+
+    const handleConfirmPause = async () => {
         try {
             await pauseMachine.mutateAsync(machineName);
-            setShowSettings(false);
+            setShowPauseConfirm(false);
         } catch (error) {
             console.error('Failed to pause machine:', error);
         }
     };
 
-    const handleResumeMachine = async () => {
-        try {
-            await resumeMachine.mutateAsync(machineName);
-            setShowSettings(false);
-        } catch (error) {
-            console.error('Failed to resume machine:', error);
-        }
+    const handleResumeMachine = () => {
+        setShowResumeConfirm(true);
+        setShowSettings(false);
     };
 
-    const handleRestartMachine = async () => {
+    const handleConfirmResume = async () => {
         try {
-            await restartMachine.mutateAsync(machineName);
-            setShowSettings(false);
+            await resumeMachine.mutateAsync(machineName);
+            setShowResumeConfirm(false);
         } catch (error) {
-            console.error('Failed to restart machine:', error);
+            console.error('Failed to resume machine:', error);
         }
     };
 
@@ -258,28 +264,38 @@ export function MachineDetailPage() {
                         </button>
                         {showSettings && (
                             <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                                <button
-                                    onClick={handlePauseMachine}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors"
-                                >
-                                    Pause Machine
-                                </button>
-                                <button
-                                    onClick={handleResumeMachine}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors"
-                                >
-                                    Resume Machine
-                                </button>
-                                <button
-                                    onClick={handleRestartMachine}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors"
-                                >
-                                    Restart Machine
-                                </button>
+                                {machine.status === 'online' && (
+                                    <button
+                                        onClick={handlePauseMachine}
+                                        className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                    >
+                                        <RiPauseCircleLine
+                                            className="size-4 text-gray-600"
+                                            aria-hidden="true"
+                                        />
+                                        Pause Machine
+                                    </button>
+                                )}
+                                {machine.status === 'paused' && (
+                                    <button
+                                        onClick={handleResumeMachine}
+                                        className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                    >
+                                        <RiPlayCircleLine
+                                            className="size-4 text-gray-600"
+                                            aria-hidden="true"
+                                        />
+                                        Resume Machine
+                                    </button>
+                                )}
                                 <button
                                     onClick={handleDeleteMachineClick}
-                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
                                 >
+                                    <RiDeleteBin6Line
+                                        className="size-4 text-red-600"
+                                        aria-hidden="true"
+                                    />
                                     Delete Machine
                                 </button>
                             </div>
@@ -584,6 +600,98 @@ export function MachineDetailPage() {
                 </div>
             </div>
 
+            {/* Pause Confirmation Modal */}
+            {showPauseConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <Card className="w-full max-w-md mx-4 p-6">
+                        <div className="flex items-start gap-4 mb-6">
+                            <div className="flex-shrink-0">
+                                <RiAlertLine
+                                    className="size-6 text-yellow-600"
+                                    aria-hidden="true"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    Pause Machine
+                                </h3>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    Are you sure you want to pause{' '}
+                                    <span className="font-mono font-semibold">
+                                        {machine?.name}
+                                    </span>
+                                    ? The machine will not accept new jobs until resumed.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 justify-end">
+                            <Button
+                                onClick={() => setShowPauseConfirm(false)}
+                                variant="secondary"
+                                disabled={pauseMachine.isPending}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmPause}
+                                variant="primary"
+                                disabled={pauseMachine.isPending}
+                                className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                            >
+                                {pauseMachine.isPending ? 'Pausing...' : 'Pause'}
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Resume Confirmation Modal */}
+            {showResumeConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <Card className="w-full max-w-md mx-4 p-6">
+                        <div className="flex items-start gap-4 mb-6">
+                            <div className="flex-shrink-0">
+                                <RiAlertLine
+                                    className="size-6 text-green-600"
+                                    aria-hidden="true"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    Resume Machine
+                                </h3>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    Are you sure you want to resume{' '}
+                                    <span className="font-mono font-semibold">
+                                        {machine?.name}
+                                    </span>
+                                    ? The machine will be available for new jobs.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3 justify-end">
+                            <Button
+                                onClick={() => setShowResumeConfirm(false)}
+                                variant="secondary"
+                                disabled={resumeMachine.isPending}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmResume}
+                                variant="primary"
+                                disabled={resumeMachine.isPending}
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                                {resumeMachine.isPending
+                                    ? 'Resuming...'
+                                    : 'Resume'}
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -608,7 +716,7 @@ export function MachineDetailPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex gap-3">
+                        <div className="flex gap-3 justify-end">
                             <Button
                                 onClick={() => setShowDeleteConfirm(false)}
                                 variant="secondary"
