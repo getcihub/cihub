@@ -2,13 +2,11 @@ import type { Runner } from './runner';
 
 export const MachineStatusOnline = 'online';
 export const MachineStatusOffline = 'offline';
-export const MachineStatusUnhealthy = 'unhealthy';
 export const MachineStatusPaused = 'paused';
 
 export type MachineStatus =
     | typeof MachineStatusOnline
     | typeof MachineStatusOffline
-    | typeof MachineStatusUnhealthy
     | typeof MachineStatusPaused;
 
 export interface Machine {

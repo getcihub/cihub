@@ -9,9 +9,6 @@ const (
 	// MachineStatusOffline indicates the machine is offline (graceful shutdown)
 	MachineStatusOffline = "offline"
 
-	// MachineStatusUnhealthy indicates the machine is online but not responding to requests
-	MachineStatusUnhealthy = "unhealthy"
-
 	// MachineStatusPaused indicates the machine is paused and will not accept new jobs
 	MachineStatusPaused = "paused"
 )

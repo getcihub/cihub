@@ -46,8 +46,6 @@ export function MachinesPage() {
                 return 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse';
             case 'offline':
                 return 'bg-gray-400';
-            case 'unhealthy':
-                return 'bg-red-500';
             case 'paused':
                 return 'bg-yellow-500';
             default:
@@ -163,7 +161,7 @@ export function MachinesPage() {
 
             {/* Filter Bar */}
             <div className="flex gap-2 pb-2 overflow-x-auto">
-                {['all', 'online', 'offline', 'unhealthy', 'paused'].map(
+                {['all', 'online', 'offline', 'paused'].map(
                     (status) => (
                         <button
                             key={status}

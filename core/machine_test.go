@@ -14,32 +14,13 @@ func TestMachineCanAccept(t *testing.T) {
 		{
 			name: "machine offline should reject",
 			machine: &Machine{
-				Name:        "offline-machine",
-				Owner:       "alice",
-				Arch:        ArchAmd64,
-				CPU:         8,
-				RAMTotal:    16384,
+				Name:         "offline-machine",
+				Owner:        "alice",
+				Arch:         ArchAmd64,
+				CPU:          8,
+				RAMTotal:     16384,
 				RAMAvailable: 8192,
-				Status:      MachineStatusOffline,
-			},
-			runner: &Runner{
-				Owner: "alice",
-				Arch:  ArchAmd64,
-				CPU:   2,
-				RAM:   2048,
-			},
-			want: false,
-		},
-		{
-			name: "unhealthy machine should reject",
-			machine: &Machine{
-				Name:        "unhealthy-machine",
-				Owner:       "alice",
-				Arch:        ArchAmd64,
-				CPU:         8,
-				RAMTotal:    16384,
-				RAMAvailable: 8192,
-				Status:      MachineStatusUnhealthy,
+				Status:       MachineStatusOffline,
 			},
 			runner: &Runner{
 				Owner: "alice",
@@ -52,13 +33,13 @@ func TestMachineCanAccept(t *testing.T) {
 		{
 			name: "paused machine should reject",
 			machine: &Machine{
-				Name:        "paused-machine",
-				Owner:       "alice",
-				Arch:        ArchAmd64,
-				CPU:         8,
-				RAMTotal:    16384,
+				Name:         "paused-machine",
+				Owner:        "alice",
+				Arch:         ArchAmd64,
+				CPU:          8,
+				RAMTotal:     16384,
 				RAMAvailable: 8192,
-				Status:      MachineStatusPaused,
+				Status:       MachineStatusPaused,
 			},
 			runner: &Runner{
 				Owner: "alice",
@@ -71,13 +52,13 @@ func TestMachineCanAccept(t *testing.T) {
 		{
 			name: "owner mismatch should reject",
 			machine: &Machine{
-				Name:        "machine1",
-				Owner:       "alice",
-				Arch:        ArchAmd64,
-				CPU:         8,
-				RAMTotal:    16384,
+				Name:         "machine1",
+				Owner:        "alice",
+				Arch:         ArchAmd64,
+				CPU:          8,
+				RAMTotal:     16384,
 				RAMAvailable: 8192,
-				Status:      MachineStatusOnline,
+				Status:       MachineStatusOnline,
 			},
 			runner: &Runner{
 				Owner: "bob",
@@ -90,13 +71,13 @@ func TestMachineCanAccept(t *testing.T) {
 		{
 			name: "architecture mismatch amd64 vs arm64 should reject",
 			machine: &Machine{
-				Name:        "machine1",
-				Owner:       "alice",
-				Arch:        ArchAmd64,
-				CPU:         8,
-				RAMTotal:    16384,
+				Name:         "machine1",
+				Owner:        "alice",
+				Arch:         ArchAmd64,
+				CPU:          8,
+				RAMTotal:     16384,
 				RAMAvailable: 8192,
-				Status:      MachineStatusOnline,
+				Status:       MachineStatusOnline,
 			},
 			runner: &Runner{
 				Owner: "alice",
@@ -109,13 +90,13 @@ func TestMachineCanAccept(t *testing.T) {
 		{
 			name: "architecture mismatch arm64 vs amd64 should reject",
 			machine: &Machine{
-				Name:        "machine1",
-				Owner:       "alice",
-				Arch:        ArchArm64,
-				CPU:         8,
-				RAMTotal:    16384,
+				Name:         "machine1",
+				Owner:        "alice",
+				Arch:         ArchArm64,
+				CPU:          8,
+				RAMTotal:     16384,
 				RAMAvailable: 8192,
-				Status:      MachineStatusOnline,
+				Status:       MachineStatusOnline,
 			},
 			runner: &Runner{
 				Owner: "alice",

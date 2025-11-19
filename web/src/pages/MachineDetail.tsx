@@ -62,8 +62,6 @@ export function MachineDetailPage() {
                 return 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse';
             case 'offline':
                 return 'bg-gray-400';
-            case 'unhealthy':
-                return 'bg-red-500';
             case 'paused':
                 return 'bg-yellow-500';
             default:
