@@ -4,10 +4,8 @@ import {
     MachineStatusOffline,
     MachineStatusOnline,
     MachineStatusPaused,
-    MachineStatusUnhealthy,
 } from '@/types/machine';
 import {
-    RiAlertLine,
     RiCheckboxCircleLine,
     RiCloseCircleLine,
     RiPauseLine,
@@ -54,22 +52,6 @@ export function MachineStatusBadge({
                     />
                     <span className="text-sm font-medium text-gray-700">
                         Offline
-                    </span>
-                </div>
-            );
-        case MachineStatusUnhealthy:
-            return (
-                <div
-                    className={cx(
-                        'inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-200',
-                    )}
-                >
-                    <RiAlertLine
-                        className={cx(iconSize, 'text-red-600')}
-                        aria-hidden="true"
-                    />
-                    <span className="text-sm font-medium text-red-700">
-                        Unhealthy
                     </span>
                 </div>
             );
