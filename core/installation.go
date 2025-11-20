@@ -31,6 +31,9 @@ type (
 
 	// InstallationStore defines operations for working with installation on a datastore.
 	InstallationStore interface {
+		// Count returns a count of active installations from the datastore.
+		Count(ctx context.Context) (int64, error)
+
 		// Create persists a new installation to the datastore.
 		Create(ctx context.Context, installation *Installation) error
 

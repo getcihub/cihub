@@ -16,6 +16,15 @@ func New(db *db.DB) core.InstallationStore {
 	return &store{db}
 }
 
+// Count returns a count of active installations from the datastore.
+func (s *store) Count(ctx context.Context) (int64, error) {
+	var out int64
+	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
+		return queryer.QueryRow(queryCount).Scan(&out)
+	})
+	return out, err
+}
+
 // Create persists a new installation to the datastore.
 func (s *store) Create(ctx context.Context, installation *core.Installation) error {
 	return s.db.Lock(func(execer db.Execer, binder db.Binder) error {
@@ -104,6 +113,12 @@ func (s *store) Update(ctx context.Context, installation *core.Installation) err
 		return err
 	})
 }
+
+const queryCount = `
+SELECT COUNT(*)
+FROM installations
+WHERE installation_suspended = 0
+`
 
 const queryBase = `
 SELECT

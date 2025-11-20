@@ -4,6 +4,8 @@ import (
 	"github.com/google/wire"
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
+	"github.com/getcihub/cihub/core"
+	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/store/batch"
 	"github.com/getcihub/cihub/store/installation"
 	"github.com/getcihub/cihub/store/job"
@@ -21,7 +23,7 @@ import (
 var storeSet = wire.NewSet(
 	provideDatabase,
 	provideEncrypter,
-	installation.New,
+	provideInstallationStore,
 	batch.New,
 	job.New,
 	machine.New,
@@ -44,4 +46,12 @@ func provideDatabase(config *config.Config) (*db.DB, error) {
 // database encrypter.
 func provideEncrypter(config *config.Config) (encrypter.Encrypter, error) {
 	return encrypter.New(config.Database.Secret)
+}
+
+// provideInstallationStore is a Wire provider function that provides an
+// installation store, with metrics enabled.
+func provideInstallationStore(db *db.DB) core.InstallationStore {
+	store := installation.New(db)
+	metric.InstallationCount(store)
+	return store
 }

@@ -25,16 +25,13 @@ func HandleMetrics(token string) http.HandlerFunc {
 		}
 
 		header := r.Header.Get("Authorization")
-		if header == "" {
+		switch {
+		case header == "":
 			http.Error(w, errAccessDenied.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		if header != "Bearer "+token {
+		case header != "Bearer "+token:
 			http.Error(w, errInvalidToken.Error(), http.StatusForbidden)
-			return
+		default:
+			handler.ServeHTTP(w, r)
 		}
-
-		handler.ServeHTTP(w, r)
 	}
 }

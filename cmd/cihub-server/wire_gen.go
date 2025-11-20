@@ -11,12 +11,11 @@ import (
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/rpc"
 	"github.com/getcihub/cihub/handler/web"
-	installation2 "github.com/getcihub/cihub/service/installation"
+	"github.com/getcihub/cihub/service/installation"
 	runner2 "github.com/getcihub/cihub/service/runner"
 	"github.com/getcihub/cihub/service/syncer"
 	user2 "github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/store/batch"
-	"github.com/getcihub/cihub/store/installation"
 	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/machine"
 	"github.com/getcihub/cihub/store/membership"
@@ -52,10 +51,10 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	}
 	scheduler := provideScheduler(runnerStore, redisDB)
 	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
-	installationStore := installation.New(db)
+	installationStore := provideInstallationStore(db)
 	userStore := user.New(db, encrypter)
 	refresher := provideRefresher(userStore, conf)
-	installationService := installation2.New(clientCreator, refresher)
+	installationService := installation.New(clientCreator, refresher)
 	jobStore := job.New(db)
 	machineStore := machine.New(db)
 	membershipStore := membership.New(db)
