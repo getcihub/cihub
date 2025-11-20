@@ -58,13 +58,8 @@ export function MachinesPage() {
     const onlineMachines = machines.filter(
         (m) => m.status === MachineStatusOnline,
     ).length;
-    const totalCPU = machines.reduce((sum, m) => sum + m.cpu, 0);
     const totalCPUAllocated = machines.reduce(
         (sum, m) => sum + m.cpu_allocated,
-        0,
-    );
-    const totalRAMAvailable = machines.reduce(
-        (sum, m) => sum + m.ram_available,
         0,
     );
     const totalRAMAllocated = machines.reduce(
@@ -72,14 +67,30 @@ export function MachinesPage() {
         0,
     );
 
+    // Calculate total CPU limit based on machine limits
+    const totalCPULimit = machines.reduce((sum, m) => {
+        if (m.cpu_limit > 0) {
+            return sum + m.cpu_limit;
+        }
+        return sum + m.cpu;
+    }, 0);
+
+    // Calculate total RAM limit based on machine limits
+    const totalRAMLimit = machines.reduce((sum, m) => {
+        if (m.ram_limit > 0) {
+            return sum + m.ram_limit;
+        }
+        return sum + m.ram_total;
+    }, 0);
+
     const cpuUsagePercent =
-        totalCPU > 0 ? Math.round((totalCPUAllocated / totalCPU) * 100) : 0;
+        totalCPULimit > 0 ? Math.round((totalCPUAllocated / totalCPULimit) * 100) : 0;
     const ramUsagePercent =
-        totalRAMAvailable > 0
-            ? Math.round((totalRAMAllocated / totalRAMAvailable) * 100)
+        totalRAMLimit > 0
+            ? Math.round((totalRAMAllocated / totalRAMLimit) * 100)
             : 0;
     const ramUsageGB = Math.round(totalRAMAllocated / 1024);
-    const totalRAMGB = Math.round(totalRAMAvailable / 1024);
+    const totalRAMGB = Math.round(totalRAMLimit / 1024);
 
     const handleMachineClick = (machineName: string) => {
         navigate({
@@ -219,7 +230,7 @@ export function MachinesPage() {
                                     {cpuUsagePercent}%
                                 </p>
                                 <p className="text-sm text-gray-500 mt-1">
-                                    {totalCPUAllocated} / {totalCPU} vCPU
+                                    {totalCPUAllocated} / {totalCPULimit} vCPU
                                 </p>
                             </div>
                         </div>

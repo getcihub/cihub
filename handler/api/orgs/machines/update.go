@@ -2,7 +2,9 @@ package machines
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -12,7 +14,8 @@ import (
 )
 
 type machineUpdate struct {
-	Status *string `json:"status,omitempty"`
+	Status *string             `json:"status,omitempty"`
+	Limit  *core.ResourceLimit `json:"limit,omitempty"`
 }
 
 // HandleUpdate returns an http.HandlerFunc that processes http
@@ -51,6 +54,29 @@ func HandleUpdate(machines core.MachineStore) http.HandlerFunc {
 				return
 			}
 		}
+
+		if in.Limit != nil {
+			// Only validate limits if machine has discovered resources
+			if machine.CPU > 0 {
+				if in.Limit.CPU > machine.CPU {
+					render.BadRequestWithReason(w, fmt.Sprintf("cpu limit cannot exceed discovered cpu (%d vCPU)", machine.CPU))
+					return
+				}
+			}
+
+			if machine.RAMTotal > 0 {
+				if in.Limit.RAM > machine.RAMTotal {
+					ramGB := machine.RAMTotal / 1024
+					render.BadRequestWithReason(w, fmt.Sprintf("ram limit cannot exceed total ram (%d GB)", ramGB))
+					return
+				}
+			}
+
+			machine.CPULimit = in.Limit.CPU
+			machine.RAMLimit = in.Limit.RAM
+		}
+
+		machine.Updated = time.Now().Unix()
 
 		err = machines.Update(r.Context(), machine)
 		if err != nil {
