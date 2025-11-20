@@ -10,6 +10,7 @@ import {
     RiArrowLeftLine,
     RiCpuLine,
     RiDeleteBin6Line,
+    RiEditLine,
     RiMoreLine,
     RiPauseCircleLine,
     RiPlayCircleLine,
@@ -27,12 +28,16 @@ export function MachineDetailPage() {
     });
     const { selectedInstallation } = useInstallation();
     const { data: machine, isLoading, error } = useMachineDetail(machineName);
-    const { pauseMachine, resumeMachine, deleteMachine } =
+    const { pauseMachine, resumeMachine, deleteMachine, updateMachineLimit } =
         useMachineMutations();
     const [showSettings, setShowSettings] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showPauseConfirm, setShowPauseConfirm] = useState(false);
     const [showResumeConfirm, setShowResumeConfirm] = useState(false);
+    const [showEditLimits, setShowEditLimits] = useState(false);
+    const [editCPULimit, setEditCPULimit] = useState<string>('');
+    const [editRAMLimit, setEditRAMLimit] = useState<string>('');
+    const [limitsError, setLimitsError] = useState<string>('');
     const settingsRef = useRef<HTMLDivElement>(null);
 
     // Close settings menu when clicking outside
@@ -140,6 +145,77 @@ export function MachineDetailPage() {
             success: (data) => `Machine "${data.name}" deleted successfully`,
             error: 'Failed to delete machine. Please try again.',
         });
+    };
+
+    const handleEditLimitsClick = () => {
+        if (machine) {
+            const cpuLimitStr = machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '';
+            const ramLimitStr = machine.ram_limit > 0 ? Math.round(machine.ram_limit / 1024).toString() : '';
+            setEditCPULimit(cpuLimitStr);
+            setEditRAMLimit(ramLimitStr);
+            setLimitsError('');
+            setShowEditLimits(true);
+            setShowSettings(false);
+        }
+    };
+
+    // Check if there are any changes from the original limits
+    const hasChanges = machine && (
+        editCPULimit !== (machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '') ||
+        editRAMLimit !== (machine.ram_limit > 0 ? Math.round(machine.ram_limit / 1024).toString() : '')
+    );
+
+    const handleConfirmEditLimits = async () => {
+        setLimitsError('');
+
+        const cpuLimit = editCPULimit ? parseInt(editCPULimit, 10) : 0;
+        const ramLimitGB = editRAMLimit ? parseInt(editRAMLimit, 10) : 0;
+        const ramLimitMB = ramLimitGB * 1024;
+
+        // Validate that inputs are valid numbers if provided
+        if (editCPULimit && isNaN(cpuLimit)) {
+            setLimitsError('Invalid CPU limit');
+            return;
+        }
+
+        if (editRAMLimit && isNaN(ramLimitGB)) {
+            setLimitsError('Invalid RAM limit');
+            return;
+        }
+
+        // Validate against discovered resources
+        if (machine) {
+            if (machine.cpu > 0 && cpuLimit > 0 && cpuLimit > machine.cpu) {
+                setLimitsError(
+                    `CPU limit cannot exceed discovered CPU (${machine.cpu} vCPU)`
+                );
+                return;
+            }
+
+            if (
+                machine.ram_total > 0 &&
+                ramLimitGB > 0 &&
+                ramLimitMB > machine.ram_total
+            ) {
+                setLimitsError(
+                    `RAM limit cannot exceed discovered RAM (${Math.round(machine.ram_total / 1024)} GB)`
+                );
+                return;
+            }
+        }
+
+        try {
+            await updateMachineLimit.mutateAsync({
+                machineName,
+                cpu: cpuLimit,
+                ram: ramLimitMB,
+            });
+            setShowEditLimits(false);
+            toast.success('Machine limits updated successfully');
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Failed to update limits';
+            setLimitsError(errorMsg);
+        }
     };
 
     // Calculate resource usage from machine
@@ -264,6 +340,16 @@ export function MachineDetailPage() {
                         </button>
                         {showSettings && (
                             <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                <button
+                                    onClick={handleEditLimitsClick}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                >
+                                    <RiEditLine
+                                        className="size-4 text-gray-600"
+                                        aria-hidden="true"
+                                    />
+                                    Edit Resource Limits
+                                </button>
                                 {machine.status === 'online' && (
                                     <button
                                         onClick={handlePauseMachine}
@@ -473,12 +559,12 @@ export function MachineDetailPage() {
                                                     </span>
                                                 </div>
                                             )}
-                                            {machine.ram_available > 0 && (
+                                            {machine.ram_total > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Total:</span>
                                                     <span className="font-medium">
                                                         {Math.round(
-                                                            machine.ram_available /
+                                                            machine.ram_total /
                                                                 1024,
                                                         )}{' '}
                                                         GB
@@ -733,6 +819,116 @@ export function MachineDetailPage() {
                                 {deleteMachine.isPending
                                     ? 'Deleting...'
                                     : 'Delete'}
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
+
+            {/* Edit Resource Limits Modal */}
+            {showEditLimits && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <Card className="w-full max-w-md mx-4 p-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                            Edit Resource Limits
+                        </h3>
+
+                        {/* Current Resources Info */}
+                        {machine && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                <p className="text-sm font-medium text-blue-900 mb-2">
+                                    Discovered Resources
+                                </p>
+                                <div className="space-y-1 text-sm text-blue-800">
+                                    {machine.cpu > 0 ? (
+                                        <p>CPU: {machine.cpu} vCPU</p>
+                                    ) : (
+                                        <p className="text-blue-600">
+                                            CPU: Not yet discovered
+                                        </p>
+                                    )}
+                                    {machine.ram_total > 0 ? (
+                                        <p>
+                                            RAM:{' '}
+                                            {Math.round(
+                                                machine.ram_total / 1024
+                                            )}{' '}
+                                            GB
+                                        </p>
+                                    ) : (
+                                        <p className="text-blue-600">
+                                            RAM: Not yet discovered
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Error Message */}
+                        {limitsError && (
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                                <p className="text-sm text-red-800">{limitsError}</p>
+                            </div>
+                        )}
+
+                        {/* Input Fields */}
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    CPU Limit (vCPU)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={editCPULimit}
+                                    onChange={(e) =>
+                                        setEditCPULimit(e.target.value)
+                                    }
+                                    placeholder="Leave empty for unlimited"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Leave empty to unset the limit
+                                </p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    RAM Limit (GB)
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={editRAMLimit}
+                                    onChange={(e) =>
+                                        setEditRAMLimit(e.target.value)
+                                    }
+                                    placeholder="Leave empty for unlimited"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Leave empty to unset the limit
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Buttons */}
+                        <div className="flex gap-3 justify-end">
+                            <Button
+                                onClick={() => setShowEditLimits(false)}
+                                variant="secondary"
+                                disabled={updateMachineLimit.isPending}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmEditLimits}
+                                variant="primary"
+                                disabled={!hasChanges || updateMachineLimit.isPending}
+                            >
+                                {updateMachineLimit.isPending
+                                    ? 'Saving...'
+                                    : 'Save Limits'}
                             </Button>
                         </div>
                     </Card>

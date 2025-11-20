@@ -183,11 +183,56 @@ export function useMachineMutations() {
         },
     });
 
+    const updateMachineLimit = useMutation({
+        mutationFn: async (data: {
+            machineName: string;
+            cpu: number;
+            ram: number;
+        }) => {
+            if (!selectedInstallation) {
+                throw new Error('No installation selected');
+            }
+
+            const response = await fetch(
+                `/api/installations/${selectedInstallation.login}/machines/${data.machineName}`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        limit: {
+                            cpu: data.cpu,
+                            ram: data.ram,
+                        },
+                    }),
+                },
+            );
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.reason || 'Failed to update machine limits');
+            }
+
+            return response.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: [
+                    'installations',
+                    selectedInstallation?.login,
+                    'machines',
+                ],
+            });
+        },
+    });
+
     return {
         createMachine,
         pauseMachine,
         resumeMachine,
         restartMachine,
         deleteMachine,
+        updateMachineLimit,
     };
 }
