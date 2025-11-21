@@ -211,7 +211,9 @@ export function useMachineMutations() {
 
             if (!response.ok) {
                 const error = await response.json().catch(() => ({}));
-                throw new Error(error.reason || 'Failed to update machine limits');
+                throw new Error(
+                    error.reason || 'Failed to update machine limits',
+                );
             }
 
             return response.json();
