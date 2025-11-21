@@ -102,7 +102,7 @@ func (q *queue) signal(ctx context.Context) error {
 
 	loop:
 		for w := range q.workers {
-			if !w.machine.CanAccept(runner) {
+			if !machineMatches(w.machine, runner) {
 				continue
 			}
 
