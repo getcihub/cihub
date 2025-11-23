@@ -16,21 +16,22 @@ const (
 type (
 	// Machine represents a server running an agent.
 	Machine struct {
-		Name         string `json:"name"`
-		Owner        string `json:"owner"`
-		Arch         Arch   `json:"arch"`
-		CPU          int64  `json:"cpu"`
-		CPULimit     int64  `json:"cpu_limit"`
-		CPUAllocated int64  `json:"cpu_allocated"`
-		RAMAvailable int64  `json:"ram_available"`
-		RAMLimit     int64  `json:"ram_limit"`
-		RAMAllocated int64  `json:"ram_allocated"`
-		RAMTotal     int64  `json:"ram_total"`
-		Status       string `json:"status"`
-		Created      int64  `json:"created_at"`
-		LastSeen     int64  `json:"last_seen_at"`
-		Updated      int64  `json:"updated_at"`
-		Token        string `json:"-"`
+		Name         string   `json:"name"`
+		Owner        string   `json:"owner"`
+		Arch         Arch     `json:"arch"`
+		CPU          int64    `json:"cpu"`
+		CPULimit     int64    `json:"cpu_limit"`
+		CPUAllocated int64    `json:"cpu_allocated"`
+		Labels       []string `json:"labels"`
+		RAMAvailable int64    `json:"ram_available"`
+		RAMLimit     int64    `json:"ram_limit"`
+		RAMAllocated int64    `json:"ram_allocated"`
+		RAMTotal     int64    `json:"ram_total"`
+		Status       string   `json:"status"`
+		Created      int64    `json:"created_at"`
+		LastSeen     int64    `json:"last_seen_at"`
+		Updated      int64    `json:"updated_at"`
+		Token        string   `json:"-"`
 	}
 
 	// MachineStore defines operations for working with machine on a datastore.

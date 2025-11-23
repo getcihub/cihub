@@ -160,7 +160,8 @@ SELECT
 	machine_created,
 	machine_last_seen,
 	machine_updated,
-	machine_token
+	machine_token,
+	machine_labels
 `
 
 const queryFind = queryBase + `
@@ -204,7 +205,8 @@ INSERT INTO machines (
 	machine_created,
 	machine_last_seen,
 	machine_updated,
-	machine_token
+	machine_token,
+	machine_labels
 ) VALUES (
 	:machine_name,
 	:machine_owner,
@@ -220,7 +222,8 @@ INSERT INTO machines (
 	:machine_created,
 	:machine_last_seen,
 	:machine_updated,
-	:machine_token
+	:machine_token,
+	:machine_labels
 )
 `
 
@@ -246,7 +249,8 @@ SET
 	machine_created         = :machine_created,
 	machine_last_seen       = :machine_last_seen,
 	machine_updated         = :machine_updated,
-	machine_token           = :machine_token
+	machine_token           = :machine_token,
+	machine_labels          = :machine_labels
 WHERE machine_name = :machine_name
   AND machine_owner = :machine_owner
 `
