@@ -17,8 +17,36 @@ var migrations = []struct {
 		stmt: createTableJobs,
 	},
 	{
+		name: "create-index-jobs-run-id",
+		stmt: createIndexJobsRunId,
+	},
+	{
+		name: "create-index-jobs-status",
+		stmt: createIndexJobsStatus,
+	},
+	{
+		name: "create-index-jobs-runner-id",
+		stmt: createIndexJobsRunnerId,
+	},
+	{
+		name: "create-index-jobs-created",
+		stmt: createIndexJobsCreated,
+	},
+	{
 		name: "create-table-runners",
 		stmt: createTableRunners,
+	},
+	{
+		name: "create-index-runners-status",
+		stmt: createIndexRunnersStatus,
+	},
+	{
+		name: "create-index-runners-machine",
+		stmt: createIndexRunnersMachine,
+	},
+	{
+		name: "create-index-runners-created",
+		stmt: createIndexRunnersCreated,
 	},
 	{
 		name: "create-table-installations",
@@ -182,10 +210,21 @@ CREATE TABLE IF NOT EXISTS jobs (
   job_updated         BIGINT,
   job_version         BIGINT
 );
+`
 
+var createIndexJobsRunId = `
 CREATE INDEX IF NOT EXISTS ix_job_run_id ON jobs (job_run_id);
+`
+
+var createIndexJobsStatus = `
 CREATE INDEX IF NOT EXISTS ix_job_status ON jobs (job_status);
+`
+
+var createIndexJobsRunnerId = `
 CREATE INDEX IF NOT EXISTS ix_job_runner_id ON jobs (job_runner_id);
+`
+
+var createIndexJobsCreated = `
 CREATE INDEX IF NOT EXISTS ix_job_created ON jobs (job_created);
 `
 
@@ -215,10 +254,18 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_updated         BIGINT,
   runner_token           TEXT
 );
+`
 
+var createIndexRunnersStatus = `
 CREATE INDEX IF NOT EXISTS ix_runner_status ON runners (runner_status);
-CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
+`
+
+var createIndexRunnersMachine = `
 CREATE INDEX IF NOT EXISTS ix_runner_machine ON runners (runner_machine);
+`
+
+var createIndexRunnersCreated = `
+CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
 `
 
 //

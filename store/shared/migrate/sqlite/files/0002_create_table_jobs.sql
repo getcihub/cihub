@@ -26,7 +26,18 @@ CREATE TABLE IF NOT EXISTS jobs (
   job_version         INTEGER
 );
 
+-- name: create-index-jobs-run-id
+
 CREATE INDEX IF NOT EXISTS ix_job_run_id ON jobs (job_run_id);
+
+-- name: create-index-jobs-status
+
 CREATE INDEX IF NOT EXISTS ix_job_status ON jobs (job_status);
+
+-- name: create-index-jobs-runner-id
+
 CREATE INDEX IF NOT EXISTS ix_job_runner_id ON jobs (job_runner_id);
+
+-- name: create-index-jobs-created
+
 CREATE INDEX IF NOT EXISTS ix_job_created ON jobs (job_created);

@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS runners (
   runner_token           TEXT
 );
 
+-- name: create-index-runners-status
+
 CREATE INDEX IF NOT EXISTS ix_runner_status ON runners (runner_status);
-CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
+
+-- name: create-index-runners-machine
+
 CREATE INDEX IF NOT EXISTS ix_runner_machine ON runners (runner_machine);
+
+-- name: create-index-runners-created
+
+CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
