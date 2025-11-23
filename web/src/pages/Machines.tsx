@@ -84,7 +84,9 @@ export function MachinesPage() {
     }, 0);
 
     const cpuUsagePercent =
-        totalCPULimit > 0 ? Math.round((totalCPUAllocated / totalCPULimit) * 100) : 0;
+        totalCPULimit > 0
+            ? Math.round((totalCPUAllocated / totalCPULimit) * 100)
+            : 0;
     const ramUsagePercent =
         totalRAMLimit > 0
             ? Math.round((totalRAMAllocated / totalRAMLimit) * 100)
@@ -172,26 +174,24 @@ export function MachinesPage() {
 
             {/* Filter Bar */}
             <div className="flex gap-2 pb-2 overflow-x-auto">
-                {['all', 'online', 'offline', 'paused'].map(
-                    (status) => (
-                        <button
-                            key={status}
-                            onClick={() => setSelectedStatus(status)}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all ${
-                                selectedStatus === status
-                                    ? 'bg-black text-white border-b-2 border-black'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            }`}
-                        >
-                            <span className="capitalize">
-                                {status === 'all' ? 'All Machines' : status}
-                            </span>
-                            <span className="ml-2 text-xs opacity-75">
-                                ({getStatusCount(status)})
-                            </span>
-                        </button>
-                    ),
-                )}
+                {['all', 'online', 'offline', 'paused'].map((status) => (
+                    <button
+                        key={status}
+                        onClick={() => setSelectedStatus(status)}
+                        className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all ${
+                            selectedStatus === status
+                                ? 'bg-black text-white border-b-2 border-black'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                    >
+                        <span className="capitalize">
+                            {status === 'all' ? 'All Machines' : status}
+                        </span>
+                        <span className="ml-2 text-xs opacity-75">
+                            ({getStatusCount(status)})
+                        </span>
+                    </button>
+                ))}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -149,8 +149,12 @@ export function MachineDetailPage() {
 
     const handleEditLimitsClick = () => {
         if (machine) {
-            const cpuLimitStr = machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '';
-            const ramLimitStr = machine.ram_limit > 0 ? Math.round(machine.ram_limit / 1024).toString() : '';
+            const cpuLimitStr =
+                machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '';
+            const ramLimitStr =
+                machine.ram_limit > 0
+                    ? Math.round(machine.ram_limit / 1024).toString()
+                    : '';
             setEditCPULimit(cpuLimitStr);
             setEditRAMLimit(ramLimitStr);
             setLimitsError('');
@@ -160,10 +164,14 @@ export function MachineDetailPage() {
     };
 
     // Check if there are any changes from the original limits
-    const hasChanges = machine && (
-        editCPULimit !== (machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '') ||
-        editRAMLimit !== (machine.ram_limit > 0 ? Math.round(machine.ram_limit / 1024).toString() : '')
-    );
+    const hasChanges =
+        machine &&
+        (editCPULimit !==
+            (machine.cpu_limit > 0 ? machine.cpu_limit.toString() : '') ||
+            editRAMLimit !==
+                (machine.ram_limit > 0
+                    ? Math.round(machine.ram_limit / 1024).toString()
+                    : ''));
 
     const handleConfirmEditLimits = async () => {
         setLimitsError('');
@@ -187,7 +195,7 @@ export function MachineDetailPage() {
         if (machine) {
             if (machine.cpu > 0 && cpuLimit > 0 && cpuLimit > machine.cpu) {
                 setLimitsError(
-                    `CPU limit cannot exceed discovered CPU (${machine.cpu} vCPU)`
+                    `CPU limit cannot exceed discovered CPU (${machine.cpu} vCPU)`,
                 );
                 return;
             }
@@ -198,7 +206,7 @@ export function MachineDetailPage() {
                 ramLimitMB > machine.ram_total
             ) {
                 setLimitsError(
-                    `RAM limit cannot exceed discovered RAM (${Math.round(machine.ram_total / 1024)} GB)`
+                    `RAM limit cannot exceed discovered RAM (${Math.round(machine.ram_total / 1024)} GB)`,
                 );
                 return;
             }
@@ -213,7 +221,10 @@ export function MachineDetailPage() {
             setShowEditLimits(false);
             toast.success('Machine limits updated successfully');
         } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : 'Failed to update limits';
+            const errorMsg =
+                error instanceof Error
+                    ? error.message
+                    : 'Failed to update limits';
             setLimitsError(errorMsg);
         }
     };
@@ -706,7 +717,8 @@ export function MachineDetailPage() {
                                     <span className="font-mono font-semibold">
                                         {machine?.name}
                                     </span>
-                                    ? The machine will not accept new jobs until resumed.
+                                    ? The machine will not accept new jobs until
+                                    resumed.
                                 </p>
                             </div>
                         </div>
@@ -724,7 +736,9 @@ export function MachineDetailPage() {
                                 disabled={pauseMachine.isPending}
                                 className="bg-yellow-600 hover:bg-yellow-700 text-white"
                             >
-                                {pauseMachine.isPending ? 'Pausing...' : 'Pause'}
+                                {pauseMachine.isPending
+                                    ? 'Pausing...'
+                                    : 'Pause'}
                             </Button>
                         </div>
                     </Card>
@@ -751,7 +765,8 @@ export function MachineDetailPage() {
                                     <span className="font-mono font-semibold">
                                         {machine?.name}
                                     </span>
-                                    ? The machine will be available for new jobs.
+                                    ? The machine will be available for new
+                                    jobs.
                                 </p>
                             </div>
                         </div>
@@ -851,7 +866,7 @@ export function MachineDetailPage() {
                                         <p>
                                             RAM:{' '}
                                             {Math.round(
-                                                machine.ram_total / 1024
+                                                machine.ram_total / 1024,
                                             )}{' '}
                                             GB
                                         </p>
@@ -867,7 +882,9 @@ export function MachineDetailPage() {
                         {/* Error Message */}
                         {limitsError && (
                             <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                                <p className="text-sm text-red-800">{limitsError}</p>
+                                <p className="text-sm text-red-800">
+                                    {limitsError}
+                                </p>
                             </div>
                         )}
 
@@ -924,7 +941,9 @@ export function MachineDetailPage() {
                             <Button
                                 onClick={handleConfirmEditLimits}
                                 variant="primary"
-                                disabled={!hasChanges || updateMachineLimit.isPending}
+                                disabled={
+                                    !hasChanges || updateMachineLimit.isPending
+                                }
                             >
                                 {updateMachineLimit.isPending
                                     ? 'Saving...'
