@@ -46,8 +46,13 @@ export function AddMachinePage() {
     };
 
     const handleAddLabel = () => {
-        if (newLabel.trim() && !labels.includes(newLabel.trim())) {
-            setLabels([...labels, newLabel.trim()]);
+        const newLabels = newLabel
+            .split(',')
+            .map((label) => label.trim())
+            .filter((label) => label && !labels.includes(label));
+
+        if (newLabels.length > 0) {
+            setLabels([...labels, ...newLabels]);
             setNewLabel('');
         }
     };
@@ -56,7 +61,7 @@ export function AddMachinePage() {
         setLabels(labels.filter((label) => label !== labelToRemove));
     };
 
-    const handleLabelKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleLabelKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             handleAddLabel();
@@ -237,7 +242,7 @@ curl -LsSf "https://install.cihub.io" | bash -s -- \\
                                         onChange={(e) =>
                                             setNewLabel(e.target.value)
                                         }
-                                        onKeyPress={handleLabelKeyPress}
+                                        onKeyDown={handleLabelKeyDown}
                                         placeholder="gpu, production, testing"
                                         className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-xs placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-black focus:border-transparent"
                                     />

@@ -3,7 +3,10 @@ package machines
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,9 +16,15 @@ import (
 	"github.com/getcihub/cihub/logger"
 )
 
+type machineLabelUpdate struct {
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
+}
+
 type machineUpdate struct {
 	Status *string             `json:"status,omitempty"`
 	Limit  *core.ResourceLimit `json:"limit,omitempty"`
+	Labels *machineLabelUpdate `json:"labels,omitempty"`
 }
 
 // HandleUpdate returns an http.HandlerFunc that processes http
@@ -74,6 +83,25 @@ func HandleUpdate(machines core.MachineStore) http.HandlerFunc {
 
 			machine.CPULimit = in.Limit.CPU
 			machine.RAMLimit = in.Limit.RAM
+		}
+
+		if in.Labels != nil {
+			s := map[string]struct{}{}
+			for _, label := range machine.Labels {
+				s[label] = struct{}{}
+			}
+
+			for _, label := range in.Labels.Remove {
+				delete(s, label)
+			}
+
+			for _, label := range in.Labels.Add {
+				if !strings.HasPrefix(label, "cihub-") {
+					s[label] = struct{}{}
+				}
+			}
+
+			machine.Labels = slices.Collect(maps.Keys(s))
 		}
 
 		machine.Updated = time.Now().Unix()

@@ -3,6 +3,7 @@ package machines
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dchest/uniuri"
@@ -14,8 +15,9 @@ import (
 )
 
 type createInput struct {
-	Name  string              `json:"name"`
-	Limit *core.ResourceLimit `json:"limit,omitempty"`
+	Name   string              `json:"name"`
+	Labels []string            `json:"labels,omitempty"`
+	Limit  *core.ResourceLimit `json:"limit,omitempty"`
 }
 
 type machineWithToken struct {
@@ -50,6 +52,17 @@ func HandleCreate(machines core.MachineStore) http.HandlerFunc {
 		if in.Limit != nil {
 			machine.CPULimit = in.Limit.CPU
 			machine.RAMLimit = in.Limit.RAM
+		}
+
+		// Add labels, excluding reserved "cihub-" prefixed labels
+		if len(in.Labels) > 0 {
+			labels := []string{}
+			for _, label := range in.Labels {
+				if !strings.HasPrefix(label, "cihub-") {
+					labels = append(labels, label)
+				}
+			}
+			machine.Labels = labels
 		}
 
 		err = machines.Create(r.Context(), machine)

@@ -80,6 +80,10 @@ var migrations = []struct {
 		name: "create-index-machines-last-seen",
 		stmt: createIndexMachinesLastSeen,
 	},
+	{
+		name: "alter-table-machines-add-column-labels",
+		stmt: alterTableMachinesAddColumnLabels,
+	},
 }
 
 // Migrate performs the database migration. If the migration fails
@@ -349,4 +353,8 @@ CREATE INDEX IF NOT EXISTS ix_machine_status ON machines (machine_status);
 
 var createIndexMachinesLastSeen = `
 CREATE INDEX IF NOT EXISTS ix_machine_last_seen ON machines (machine_last_seen);
+`
+
+var alterTableMachinesAddColumnLabels = `
+ALTER TABLE machines ADD COLUMN machine_labels TEXT DEFAULT '';
 `

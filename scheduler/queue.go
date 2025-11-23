@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +107,12 @@ func (q *queue) signal(ctx context.Context) error {
 				continue
 			}
 
+			if len(runner.Labels) > 1 && len(w.machine.Labels) > 0 {
+				if !checkLabels(runner.Labels, w.machine.Labels) {
+					continue
+				}
+			}
+
 			sendWork := func() bool {
 				select {
 				case w.channel <- runner:
@@ -145,4 +152,22 @@ type worker struct {
 	channel chan *core.Runner
 	done    <-chan struct{}
 	machine *core.Machine
+}
+
+func checkLabels(r, m []string) bool {
+	// Get all labels from runner that are not prefixed with reserved "cihub-"
+	s := map[string]struct{}{}
+	for _, v := range r {
+		if !strings.HasPrefix(v, "cihub-") {
+			s[v] = struct{}{}
+		}
+	}
+
+	// Check that all non-reserved labels on runner are present on machine
+	for _, v := range m {
+		if _, ok := s[v]; !ok {
+			return false
+		}
+	}
+	return true
 }

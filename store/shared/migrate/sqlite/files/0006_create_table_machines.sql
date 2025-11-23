@@ -32,3 +32,7 @@ CREATE INDEX IF NOT EXISTS ix_machine_status ON machines (machine_status);
 -- name: create-index-machines-last-seen
 
 CREATE INDEX IF NOT EXISTS ix_machine_last_seen ON machines (machine_last_seen);
+
+-- name: alter-table-machines-add-column-labels
+
+ALTER TABLE machines ADD COLUMN machine_labels TEXT DEFAULT '';
