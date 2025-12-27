@@ -547,6 +547,8 @@ do_all_cihub() {
 install_cihub_agent() {
     local tag="$1"
 
+    tempdir=$(mktemp -d)
+
     say_info "Installing CIHub agent version $tag to $INSTALL_PATH"
 
     if [[ "$tag" == "$DEFAULT_VERSION" ]]; then
@@ -555,7 +557,12 @@ install_cihub_agent() {
 
     bin=$(build_cihub_agent_release_bin_name "$tag" "$ARCH")
     url=$(build_download_url "$CIHUB_AGENT_REPO" "$tag" "$bin")
-    install_release_tar "$url" "$(dirname $INSTALL_PATH)" || die "could not install cihub-agent"
+
+    curl -sL "$url" | tar xz -C "$tempdir" || die "could not download cihub-agent"
+
+    cp "$tempdir/$CIHUB_AGENT_BIN" "$INSTALL_PATH/$CIHUB_AGENT_BIN" || die "could not install cihub-agent"
+
+    rm -rf "$tempdir"
 
     say_info "CIHub agent version $tag successfully installed"
 }
