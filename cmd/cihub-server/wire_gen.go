@@ -67,7 +67,10 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	system := provideSystem(conf)
 	userService := user2.New(clientCreator, refresher)
 	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, system, userStore, userService)
-	middleware := provideLogin(conf)
+	middleware, err := provideLogin(conf)
+	if err != nil {
+		return application{}, err
+	}
 	options := provideServerOptions(conf)
 	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)
 	mainHealthzHandler := provideHealthz()

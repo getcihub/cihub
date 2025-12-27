@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/drone/go-login/login"
 	"github.com/drone/go-login/login/github"
 	"github.com/google/wire"
@@ -16,10 +18,11 @@ var loginSet = wire.NewSet(
 
 // provideGithubLogin is a Wire provider function that returns
 // a GitHub authenticator based on the environment configuration.
-func provideLogin(config *config.Config) login.Middleware {
-	if config.GitHub.OAuth.ClientID == "" {
-		return nil
+func provideLogin(config *config.Config) (login.Middleware, error) {
+	if config.GitHub.OAuth.ClientID == "" || config.GitHub.OAuth.ClientSecret == "" {
+		return nil, fmt.Errorf("invalid github oauth configuration")
 	}
+
 	return &github.Config{
 		ClientID:     config.GitHub.OAuth.ClientID,
 		ClientSecret: config.GitHub.OAuth.ClientSecret,
@@ -27,5 +30,5 @@ func provideLogin(config *config.Config) login.Middleware {
 		Server:       config.GitHub.Server,
 		Client:       defaultClient(config.GitHub.SkipVerify),
 		Logger:       logrus.StandardLogger(),
-	}
+	}, nil
 }
