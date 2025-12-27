@@ -21,7 +21,7 @@ import (
 
 func main() {
 	var confpath string
-	flag.StringVar(&confpath, "c", "./config.toml", "Path to the configuration file")
+	flag.StringVar(&confpath, "c", "./config.yaml", "Path to the configuration file")
 	flag.Parse()
 
 	config, err := config.Load(confpath)
