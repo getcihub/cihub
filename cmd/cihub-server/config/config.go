@@ -23,6 +23,7 @@ type (
 		Logger   Logger   `koanf:"logger"`
 		Metric   Metric   `koanf:"metric"`
 		Reaper   Reaper   `koanf:"reaper"`
+		Redis    Redis    `koanf:"redis"`
 		RPC      RPC      `koanf:"rpc"`
 		Server   Server   `koanf:"server"`
 		Session  Session  `koanf:"session"`
@@ -106,6 +107,14 @@ type (
 		Disabled bool          `koanf:"disabled"`
 		Interval time.Duration `koanf:"interval"`
 		Reclaim  time.Duration `koanf:"reclaim"`
+	}
+
+	// Redis provides the redis configuration.
+	Redis struct {
+		ConnectionString string `koanf:"connection"`
+		Addr             string `koanf:"addr"`
+		Password         string `koanf:"password"`
+		DB               int    `koanf:"db"`
 	}
 
 	// RPC provides the RPC server configuration.

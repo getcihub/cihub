@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/go-redsync/redsync/v4"
 	"github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/redis/go-redis/v9"
@@ -22,17 +23,32 @@ type RedisDB interface {
 	Subscribe(ctx context.Context, channelName string, channelSize int, proc PubSubProcessor)
 }
 
-func New(uri string) (RedisDB, error) {
-	opts, err := redis.ParseURL(uri)
-	if err != nil {
-		return nil, err
+func New(config config.Config) (RedisDB, error) {
+	var (
+		err  error
+		opts *redis.Options
+	)
+
+	if config.Redis.ConnectionString != "" {
+		opts, err = redis.ParseURL(config.Redis.ConnectionString)
+		if err != nil {
+			return nil, err
+		}
+	} else if config.Redis.Addr != "" {
+		opts = &redis.Options{
+			Addr:     config.Redis.Addr,
+			Password: config.Redis.Password,
+			DB:       config.Redis.DB,
+		}
+	} else {
+		return nil, nil
 	}
 
 	rdb := redis.NewClient(opts)
 
 	_, err = rdb.Ping(context.Background()).Result()
 	if err != nil {
-		return nil, fmt.Errorf("redisdb: failed to ping redis, err: %w", err)
+		return nil, fmt.Errorf("redis: not accessible, err: %w", err)
 	}
 
 	return &service{

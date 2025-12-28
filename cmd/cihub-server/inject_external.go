@@ -12,6 +12,8 @@ var externalSet = wire.NewSet(
 	provideRedisClient,
 )
 
+// provideRedisClient is a Wire provider function that returns
+// a Redis client configured from environment.
 func provideRedisClient(config *config.Config) (redisdb.RedisDB, error) {
-	return nil, nil
+	return redisdb.New(*config)
 }
