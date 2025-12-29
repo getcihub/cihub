@@ -473,19 +473,19 @@ func (mr *MockRunnerStoreMockRecorder) ListMachine(arg0, arg1 any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListMachine", reflect.TypeOf((*MockRunnerStore)(nil).ListMachine), arg0, arg1)
 }
 
-// ListPending mocks base method.
-func (m *MockRunnerStore) ListPending(arg0 context.Context) ([]*core.Runner, error) {
+// ListStatus mocks base method.
+func (m *MockRunnerStore) ListStatus(ctx context.Context, status core.RunnerStatus) ([]*core.Runner, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListPending", arg0)
+	ret := m.ctrl.Call(m, "ListStatus", ctx, status)
 	ret0, _ := ret[0].([]*core.Runner)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// ListPending indicates an expected call of ListPending.
-func (mr *MockRunnerStoreMockRecorder) ListPending(arg0 any) *gomock.Call {
+// ListStatus indicates an expected call of ListStatus.
+func (mr *MockRunnerStoreMockRecorder) ListStatus(ctx, status any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPending", reflect.TypeOf((*MockRunnerStore)(nil).ListPending), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListStatus", reflect.TypeOf((*MockRunnerStore)(nil).ListStatus), ctx, status)
 }
 
 // Purge mocks base method.

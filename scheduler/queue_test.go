@@ -27,9 +27,9 @@ func TestQueue(t *testing.T) {
 	defer cancel()
 
 	store := mock.NewMockRunnerStore(controller)
-	store.EXPECT().ListPending(ctx).Return(runners, nil).Times(1)
-	store.EXPECT().ListPending(ctx).Return(runners[1:], nil).Times(1)
-	store.EXPECT().ListPending(ctx).Return(runners[2:], nil).Times(1)
+	store.EXPECT().ListStatus(ctx, core.RunnerStatusPending).Return(runners, nil).Times(1)
+	store.EXPECT().ListStatus(ctx, core.RunnerStatusPending).Return(runners[1:], nil).Times(1)
+	store.EXPECT().ListStatus(ctx, core.RunnerStatusPending).Return(runners[2:], nil).Times(1)
 
 	q := newQueue(ctx, store)
 	machine := &core.Machine{
@@ -60,7 +60,7 @@ func TestQueueCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	store := mock.NewMockRunnerStore(controller)
-	store.EXPECT().ListPending(ctx).Return(nil, nil)
+	store.EXPECT().ListStatus(ctx, core.RunnerStatusPending).Return(nil, nil)
 
 	q := newQueue(ctx, store)
 
@@ -110,7 +110,7 @@ func TestQueueDeadlock(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	store := mock.NewMockRunnerStore(controller)
-	store.EXPECT().ListPending(ctx).Return(incompleteRunners(n), nil).AnyTimes()
+	store.EXPECT().ListStatus(ctx, core.RunnerStatusPending).Return(incompleteRunners(n), nil).AnyTimes()
 
 	q := newQueue(ctx, store)
 	machine := &core.Machine{
