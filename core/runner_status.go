@@ -31,9 +31,9 @@ func (r *RunnerStatus) Set(s string) error {
 		*r = RunnerStatusPending
 	case strings.EqualFold(s, "registered"):
 		*r = RunnerStatusRegistered
-	case strings.EqualFold(s, "created"):
-		*r = RunnerStatusIdle
 	case strings.EqualFold(s, "idle"):
+		*r = RunnerStatusIdle
+	case strings.EqualFold(s, "busy"):
 		*r = RunnerStatusBusy
 	case strings.EqualFold(s, "completed"):
 		*r = RunnerStatusCompleted
