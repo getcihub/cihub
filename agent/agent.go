@@ -194,30 +194,45 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 
 	machine.Handlers.FcInit = machine.Handlers.FcInit.Append(firecracker.NewSetMetadataHandler(metadata))
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	vmCtx, vmCancel := context.WithCancel(ctx)
+	defer vmCancel()
 
 	go func() {
 		logger.Debugln("agent: watch cancellation started")
 
 		done, _ := a.Client.Watch(ctx, runner)
 		if done {
-			cancel()
+			vmCancel()
 			logger.Debugln("agent: watch cancellation received")
 		} else {
 			logger.Debugln("agent: watch cancellation finished")
 		}
 	}()
 
-	if err := machine.Start(ctx); err != nil {
+	if err := machine.Start(vmCtx); err != nil {
 		logger = logger.WithError(err)
 		logger.Errorln("agent: start VM failed")
 		return err
 	}
 
+	defer func() {
+		if err := machine.StopVMM(); err != nil {
+			logger = logger.WithError(err)
+			logger.Errorln("agent: cannot stop firecracker VM")
+		}
+	}()
+
 	logger.Infoln("agent: start VM ok")
 
-	err = machine.Wait(ctx)
+	// Signal control-plane that the VM has started.
+	if err := a.Client.Started(ctx, runner); err != nil {
+		logger = logger.WithError(err)
+		logger.Errorln("agent: cannot signal runner started")
+		return err
+	}
+
+	// Wait for the VM to exit
+	err = machine.Wait(vmCtx)
 	if err != nil {
 		logger = logger.WithError(err)
 		logger.Warnln("agent: wait VM failed")
