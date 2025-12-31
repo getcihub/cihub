@@ -2,13 +2,6 @@ package core
 
 import "context"
 
-const (
-	RunnerStatusPending   = "pending"
-	RunnerStatusIdle      = "idle"
-	RunnerStatusBusy      = "busy"
-	RunnerStatusCompleted = "completed"
-)
-
 type (
 	// RegisterRunnerOpts defines optional instructions for
 	// registering runner instances at the organization level.
@@ -22,24 +15,24 @@ type (
 
 	// Runner represents a GitHub Actions runner.
 	Runner struct {
-		Name           string   `json:"name"`
-		Machine        string   `json:"machine"`
-		ID             int64    `json:"id"`
-		InstallationID int64    `json:"installation_id"`
-		Owner          string   `json:"owner"`
-		Status         string   `json:"status"`
-		Arch           Arch     `json:"arch"`
-		CPU            int64    `json:"cpu"`
-		RAM            int64    `json:"ram"`
-		GroupID        int64    `json:"group_id"`
-		Labels         []string `json:"labels"`
-		Cancelled      int64    `json:"cancelled"`
-		Created        int64    `json:"created"`
-		Accepted       int64    `json:"accepted"`
-		Started        int64    `json:"started"`
-		Stopped        int64    `json:"stopped"`
-		Updated        int64    `json:"updated"`
-		Token          string   `json:"-"`
+		Name           string       `json:"name"`
+		Machine        string       `json:"machine"`
+		ID             int64        `json:"id"`
+		InstallationID int64        `json:"installation_id"`
+		Owner          string       `json:"owner"`
+		Status         RunnerStatus `json:"status"`
+		Arch           Arch         `json:"arch"`
+		CPU            int64        `json:"cpu"`
+		RAM            int64        `json:"ram"`
+		GroupID        int64        `json:"group_id"`
+		Labels         []string     `json:"labels"`
+		Cancelled      int64        `json:"cancelled"`
+		Created        int64        `json:"created"`
+		Accepted       int64        `json:"accepted"`
+		Started        int64        `json:"started"`
+		Stopped        int64        `json:"stopped"`
+		Updated        int64        `json:"updated"`
+		Token          string       `json:"-"`
 	}
 
 	RunnerWithToken struct {
@@ -96,8 +89,8 @@ type (
 		// FindID returns a runner from the datastore by its GitHub runner ID.
 		FindID(ctx context.Context, id int64) (*Runner, error)
 
-		// ListPending returns a slice of pending runner.
-		ListPending(context.Context) ([]*Runner, error)
+		// ListStatus returns a slice of runners by status.
+		ListStatus(ctx context.Context, status RunnerStatus) ([]*Runner, error)
 
 		// ListMachine returns a slice of runners for a given machine.
 		ListMachine(context.Context, *Machine) ([]*Runner, error)

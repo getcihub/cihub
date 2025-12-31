@@ -60,6 +60,7 @@ func HandleRegister(runners core.RunnerStore, runnerz core.RunnerService) http.H
 		}
 
 		runner.ID = jit.ID
+		runner.Status = core.RunnerStatusRegistered
 		runner.Token = jit.Token
 		runner.Updated = time.Now().Unix()
 

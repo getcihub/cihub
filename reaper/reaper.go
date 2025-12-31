@@ -70,7 +70,7 @@ func (r *Reaper) reap(ctx context.Context) error {
 
 	logrus.Traceln("reaper: find zombie runners")
 
-	pending, err := r.Runners.ListPending(ctx)
+	idle, err := r.Runners.ListStatus(ctx, core.RunnerStatusIdle)
 	if err != nil {
 		logrus.WithError(err).
 			Errorln("reaper: cannot get pending runners")
@@ -78,7 +78,7 @@ func (r *Reaper) reap(ctx context.Context) error {
 	}
 
 	var result error
-	for _, runner := range pending {
+	for _, runner := range idle {
 		logger := logrus.WithFields(
 			logrus.Fields{
 				"runner_name":    runner.Name,

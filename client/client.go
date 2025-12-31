@@ -76,6 +76,10 @@ func (c *client) Register(ctx context.Context, runner *core.Runner) (*core.Runne
 	return out, err
 }
 
+func (c *client) Started(ctx context.Context, runner *core.Runner) error {
+	return c.send(ctx, "/rpc/v1/started", runner, nil)
+}
+
 func (c *client) Lock(ctx context.Context, runner *core.Runner) error {
 	return c.send(ctx, "/rpc/v1/lock", runner, nil)
 }

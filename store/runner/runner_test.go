@@ -52,7 +52,7 @@ func testRunnerCreate(store *store) func(t *testing.T) {
 
 		t.Run("Find", testRunnerFind(store, runner))
 		t.Run("FindID", testRunnerFindID(store, runner))
-		t.Run("ListPending", testRunnerListPending(store))
+		t.Run("ListStatus", testRunnerListStatus(store))
 		t.Run("ListMachine", testRunnerListMachine(store))
 		t.Run("Update", testRunnerUpdate(store, runner))
 		t.Run("Purge", testRunnerPurge(store, runner))
@@ -83,9 +83,9 @@ func testRunnerFindID(runners *store, created *core.Runner) func(t *testing.T) {
 	}
 }
 
-func testRunnerListPending(runners *store) func(t *testing.T) {
+func testRunnerListStatus(runners *store) func(t *testing.T) {
 	return func(t *testing.T) {
-		list, err := runners.ListPending(noContext)
+		list, err := runners.ListStatus(noContext, core.RunnerStatusPending)
 		if err != nil {
 			t.Error(err)
 			return

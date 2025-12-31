@@ -38,7 +38,7 @@ func (s *service) Register(ctx context.Context, opts core.RegisterRunnerOpts) (*
 		InstallationID: opts.InstallationID,
 		Owner:          opts.Owner,
 		ID:             runner.GetRunner().GetID(),
-		Status:         runner.GetRunner().GetStatus(),
+		Status:         core.RunnerStatusRegistered,
 		GroupID:        opts.GroupID,
 		Labels:         opts.Labels,
 		Created:        time.Now().Unix(),
@@ -71,7 +71,7 @@ func (s *service) Find(ctx context.Context, owner string, installationID, runner
 		return nil, err
 	}
 
-	status := runner.GetStatus()
+	status := convertRunnerStatus(runner.GetStatus())
 	if runner.GetBusy() {
 		status = core.RunnerStatusBusy
 	}

@@ -76,11 +76,16 @@ func (s *store) FindID(ctx context.Context, id int64) (*core.Runner, error) {
 	return out, err
 }
 
-// ListPending returns a slice of pending runners.
-func (s *store) ListPending(ctx context.Context) ([]*core.Runner, error) {
+// ListStatus returns a slice of runners by status.
+func (s *store) ListStatus(ctx context.Context, status core.RunnerStatus) ([]*core.Runner, error) {
 	var out []*core.Runner
 	err := s.db.View(func(queryer db.Queryer, binder db.Binder) error {
-		rows, err := queryer.Query(queryListPending)
+		params := map[string]interface{}{"runner_status": status}
+		query, args, err := binder.BindNamed(queryListStatus, params)
+		if err != nil {
+			return err
+		}
+		rows, err := queryer.Query(query, args...)
 		if err != nil {
 			return err
 		}
@@ -174,9 +179,9 @@ FROM runners
 WHERE runner_id = :runner_id
 `
 
-const queryListPending = queryBase + `
+const queryListStatus = queryBase + `
 FROM runners
-WHERE runner_status = 'pending'
+WHERE runner_status = :runner_status
 ORDER BY runner_name
 `
 

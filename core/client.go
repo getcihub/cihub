@@ -22,6 +22,9 @@ type Client interface {
 	// Register registers the runner to GitHub.
 	Register(ctx context.Context, runner *Runner) (*RunnerWithToken, error)
 
+	// Started signals the runner has started.
+	Started(ctx context.Context, runner *Runner) error
+
 	// Lock locks resources for a Runner.
 	Lock(ctx context.Context, runner *Runner) error
 

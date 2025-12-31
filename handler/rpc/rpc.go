@@ -45,6 +45,7 @@ func (s Server) Handler() http.Handler {
 	r.Post("/request", HandleRequest(s.Scheduler))
 	r.Post("/accept", HandleAccept(s.Runners))
 	r.Post("/register", HandleRegister(s.Runners, s.Runnerz))
+	r.Post("/started", HandleStarted(s.Runners))
 	r.Post("/lock", HandleLock(s.Machines))
 	r.Post("/unlock", HandleUnlock(s.Machines))
 	r.Post("/watch", HandleWatch(s.Scheduler))

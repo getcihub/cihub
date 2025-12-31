@@ -89,7 +89,7 @@ func (q *queue) signal(ctx context.Context) error {
 		return nil
 	}
 
-	runners, err := q.store.ListPending(ctx)
+	runners, err := q.store.ListStatus(ctx, core.RunnerStatusPending)
 	if err != nil {
 		return err
 	}
