@@ -28,6 +28,8 @@ func HandleAccept(runners core.RunnerStore) http.HandlerFunc {
 			return
 		}
 
+		log = log.WithField("runner_name", in.Name)
+
 		runner, err := runners.Find(r.Context(), in.Name)
 		if err != nil {
 			writeError(w, err)
