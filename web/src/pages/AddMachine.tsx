@@ -135,7 +135,7 @@ export function AddMachinePage() {
             : 'https://cloud.cihub.io';
     const installCommand = `
 # Download and run the agent installer
-curl -LsSf "https://install.cihub.io" | bash -s -- \\
+curl -LsSf "https://install.cihub.io" | sudo bash -s -- \\
   --token "${machineToken}" \\
   --server "${cihubServer}"`;
 
