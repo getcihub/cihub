@@ -40,11 +40,10 @@ func Disconnect(d *db.DB) error {
 func Reset(d *db.DB) {
 	d.Lock(func(tx db.Execer, _ db.Binder) error {
 		tx.Exec("DELETE FROM users")
-		tx.Exec("DELETE FROM jobs")
-		tx.Exec("DELETE FROM runners")
-		tx.Exec("DELETE FROM installations")
 		tx.Exec("DELETE FROM memberships")
+		tx.Exec("DELETE FROM runners")
 		tx.Exec("DELETE FROM machines")
+		tx.Exec("DELETE FROM installations")
 		return nil
 	})
 }

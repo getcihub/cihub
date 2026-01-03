@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS installations (
   installation_created      BIGINT,
   installation_suspended    BIGINT,
   installation_updated      BIGINT,
+
   UNIQUE(installation_login)
 );

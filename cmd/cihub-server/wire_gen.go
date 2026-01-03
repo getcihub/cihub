@@ -16,7 +16,6 @@ import (
 	"github.com/getcihub/cihub/service/syncer"
 	user2 "github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/store/batch"
-	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/machine"
 	"github.com/getcihub/cihub/store/membership"
 	"github.com/getcihub/cihub/store/runner"
@@ -55,7 +54,6 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	userStore := user.New(db, encrypter)
 	refresher := provideRefresher(userStore, conf)
 	installationService := installation.New(clientCreator, refresher)
-	jobStore := job.New(db)
 	machineStore := machine.New(db)
 	membershipStore := membership.New(db)
 	session, err := provideSession(userStore, conf)
@@ -66,7 +64,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	coreSyncer := syncer.New(batcher, installationService, installationStore, userStore)
 	system := provideSystem(conf)
 	userService := user2.New(clientCreator, refresher)
-	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, system, userStore, userService)
+	server := api.New(installationStore, installationService, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, system, userStore, userService)
 	middleware, err := provideLogin(conf)
 	if err != nil {
 		return application{}, err
@@ -74,7 +72,7 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	options := provideServerOptions(conf)
 	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(installationStore, jobStore, runnerStore, scheduler)
+	v := provideEventHandlers(installationStore, runnerStore, scheduler)
 	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	rpcServer := rpc.New(machineStore, runnerStore, runnerService, scheduler)

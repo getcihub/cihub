@@ -8,5 +8,6 @@ CREATE TABLE IF NOT EXISTS installations (
   installation_created      INTEGER,
   installation_suspended    INTEGER,
   installation_updated      INTEGER,
+
   UNIQUE(installation_login COLLATE NOCASE)
 );

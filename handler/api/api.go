@@ -11,7 +11,6 @@ import (
 	"github.com/getcihub/cihub/handler/api/acl"
 	"github.com/getcihub/cihub/handler/api/auth"
 	"github.com/getcihub/cihub/handler/api/orgs"
-	"github.com/getcihub/cihub/handler/api/orgs/jobs"
 	"github.com/getcihub/cihub/handler/api/orgs/machines"
 	"github.com/getcihub/cihub/handler/api/orgs/runners"
 	"github.com/getcihub/cihub/handler/api/user"
@@ -32,7 +31,6 @@ var corsOpts = cors.Options{
 type Server struct {
 	Installations core.InstallationStore
 	Installationz core.InstallationService
-	Jobs          core.JobStore
 	Machines      core.MachineStore
 	Memberships   core.MembershipStore
 	Runners       core.RunnerStore
@@ -47,7 +45,6 @@ type Server struct {
 func New(
 	installations core.InstallationStore,
 	installationz core.InstallationService,
-	jobs core.JobStore,
 	machines core.MachineStore,
 	memberships core.MembershipStore,
 	runners core.RunnerStore,
@@ -61,7 +58,6 @@ func New(
 	return Server{
 		Installations: installations,
 		Installationz: installationz,
-		Jobs:          jobs,
 		Machines:      machines,
 		Memberships:   memberships,
 		Runners:       runners,
@@ -95,11 +91,6 @@ func (s Server) Handler() http.Handler {
 			r.Use(acl.CheckMember())
 
 			r.Get("/", orgs.HandleFind())
-
-			r.Route("/jobs", func(r chi.Router) {
-				r.Get("/", jobs.HandleList(s.Jobs))
-				r.Get("/{id}", jobs.HandleFind(s.Jobs))
-			})
 
 			r.Route("/machines", func(r chi.Router) {
 				r.Get("/", machines.HandleList(s.Machines))

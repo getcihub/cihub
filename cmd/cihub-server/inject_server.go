@@ -124,9 +124,13 @@ func provideServerOptions(config *config.Config) secure.Options {
 
 // provideEventHandlers is a Wire provider function that returns
 // a list of GitHub webhook event handlers.
-func provideEventHandlers(installations core.InstallationStore, jobs core.JobStore, runners core.RunnerStore, scheduler core.Scheduler) []githubapp.EventHandler {
+func provideEventHandlers(
+	installations core.InstallationStore,
+	runners core.RunnerStore,
+	scheduler core.Scheduler,
+) []githubapp.EventHandler {
 	return []githubapp.EventHandler{
 		installation.New(installations),
-		job.New(jobs, runners, scheduler),
+		job.New(runners, scheduler),
 	}
 }

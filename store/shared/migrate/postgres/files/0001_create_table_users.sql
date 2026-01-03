@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   user_oauth_refresh  BYTEA,
   user_oauth_expiry   BIGINT,
   user_token          VARCHAR(255),
+
   UNIQUE(user_login),
   UNIQUE(user_token)
 );

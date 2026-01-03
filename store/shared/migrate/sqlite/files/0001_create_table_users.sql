@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   user_oauth_refresh  TEXT,
   user_oauth_expiry   INTEGER,
   user_token          TEXT,
+
   UNIQUE(user_login COLLATE NOCASE),
   UNIQUE(user_token)
 );

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS machines (
   machine_token           TEXT,
 
   PRIMARY KEY(machine_name, machine_owner),
+
   UNIQUE(machine_token)
 );
 

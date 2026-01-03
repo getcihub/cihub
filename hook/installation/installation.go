@@ -22,11 +22,10 @@ func New(installations core.InstallationStore) githubapp.EventHandler {
 	return &handler{installations}
 }
 
-func (h *handler) Handles() []string {
-	return []string{"installation"}
-}
+func (h *handler) Handles() []string { return []string{"installation"} }
 
 func (h *handler) Handle(ctx context.Context, eventType, deliveryID string, payload []byte) error {
+	// Parse the GitHub webhook payload
 	var event github.InstallationEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
 		return fmt.Errorf("hook: failed to parse installation event payload: %w", err)

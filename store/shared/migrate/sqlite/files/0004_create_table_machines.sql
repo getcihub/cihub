@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS machines (
   machine_updated        INTEGER,
   machine_token          TEXT,
 
-  PRIMARY KEY(machine_name, machine_owner)
+  PRIMARY KEY(machine_name, machine_owner),
+
   UNIQUE(machine_token)
 );
 

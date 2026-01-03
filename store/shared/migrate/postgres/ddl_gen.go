@@ -13,42 +13,6 @@ var migrations = []struct {
 		stmt: createTableUsers,
 	},
 	{
-		name: "create-table-jobs",
-		stmt: createTableJobs,
-	},
-	{
-		name: "create-index-jobs-run-id",
-		stmt: createIndexJobsRunId,
-	},
-	{
-		name: "create-index-jobs-status",
-		stmt: createIndexJobsStatus,
-	},
-	{
-		name: "create-index-jobs-runner-id",
-		stmt: createIndexJobsRunnerId,
-	},
-	{
-		name: "create-index-jobs-created",
-		stmt: createIndexJobsCreated,
-	},
-	{
-		name: "create-table-runners",
-		stmt: createTableRunners,
-	},
-	{
-		name: "create-index-runners-status",
-		stmt: createIndexRunnersStatus,
-	},
-	{
-		name: "create-index-runners-machine",
-		stmt: createIndexRunnersMachine,
-	},
-	{
-		name: "create-index-runners-created",
-		stmt: createIndexRunnersCreated,
-	},
-	{
 		name: "create-table-installations",
 		stmt: createTableInstallations,
 	},
@@ -83,6 +47,22 @@ var migrations = []struct {
 	{
 		name: "alter-table-machines-add-column-labels",
 		stmt: alterTableMachinesAddColumnLabels,
+	},
+	{
+		name: "create-table-runners",
+		stmt: createTableRunners,
+	},
+	{
+		name: "create-index-runners-status",
+		stmt: createIndexRunnersStatus,
+	},
+	{
+		name: "create-index-runners-machine",
+		stmt: createIndexRunnersMachine,
+	},
+	{
+		name: "create-index-runners-created",
+		stmt: createIndexRunnersCreated,
 	},
 }
 
@@ -179,61 +159,105 @@ CREATE TABLE IF NOT EXISTS users (
   user_oauth_refresh  BYTEA,
   user_oauth_expiry   BIGINT,
   user_token          VARCHAR(255),
+
   UNIQUE(user_login),
   UNIQUE(user_token)
 );
 `
 
 //
-// 0002_create_table_jobs.sql
+// 0002_create_table_installations.sql
 //
 
-var createTableJobs = `
-CREATE TABLE IF NOT EXISTS jobs (
-  job_id              BIGINT PRIMARY KEY,
-  job_run_id          BIGINT,
-  job_installation_id BIGINT,
-  job_owner           VARCHAR(255),
-  job_repo            VARCHAR(255),
-  job_workflow        VARCHAR(500),
-  job_name            VARCHAR(500),
-  job_branch          VARCHAR(255),
-  job_sha             VARCHAR(255),
-  job_status          VARCHAR(50),
-  job_conclusion      VARCHAR(50),
-  job_labels          TEXT,
-  job_runner_id       BIGINT,
-  job_runner_name     VARCHAR(255),
-  job_url             VARCHAR(1000),
-  job_author_login    VARCHAR(255),
-  job_author_avatar   VARCHAR(1000),
-  job_queued          BIGINT,
-  job_started         BIGINT,
-  job_completed       BIGINT,
-  job_created         BIGINT,
-  job_updated         BIGINT,
-  job_version         BIGINT
+var createTableInstallations = `
+CREATE TABLE IF NOT EXISTS installations (
+  installation_id           BIGINT PRIMARY KEY,
+  installation_login        VARCHAR(255) NOT NULL,
+  installation_avatar       VARCHAR(1000),
+  installation_type         VARCHAR(50) NOT NULL,
+  installation_created      BIGINT,
+  installation_suspended    BIGINT,
+  installation_updated      BIGINT,
+
+  UNIQUE(installation_login)
 );
 `
 
-var createIndexJobsRunId = `
-CREATE INDEX IF NOT EXISTS ix_job_run_id ON jobs (job_run_id);
+//
+// 0003_create_table_memberships.sql
+//
+
+var createTableMemberships = `
+CREATE TABLE IF NOT EXISTS memberships (
+  membership_installation_id BIGINT NOT NULL,
+  membership_user_id         BIGINT NOT NULL,
+  membership_role            VARCHAR(50) NOT NULL,
+  membership_state           VARCHAR(50) NOT NULL,
+  membership_synced          BIGINT,
+  membership_created         BIGINT,
+  membership_updated         BIGINT,
+
+  PRIMARY KEY (membership_installation_id, membership_user_id),
+
+  FOREIGN KEY (membership_installation_id) REFERENCES installations(installation_id) ON DELETE CASCADE,
+  FOREIGN KEY (membership_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
 `
 
-var createIndexJobsStatus = `
-CREATE INDEX IF NOT EXISTS ix_job_status ON jobs (job_status);
+var createIndexMembershipsUser = `
+CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(membership_user_id);
 `
 
-var createIndexJobsRunnerId = `
-CREATE INDEX IF NOT EXISTS ix_job_runner_id ON jobs (job_runner_id);
-`
-
-var createIndexJobsCreated = `
-CREATE INDEX IF NOT EXISTS ix_job_created ON jobs (job_created);
+var createIndexMembershipsInstallation = `
+CREATE INDEX IF NOT EXISTS idx_memberships_installation_id ON memberships(membership_installation_id);
 `
 
 //
-// 0003_create_table_runners.sql
+// 0004_create_table_machines.sql
+//
+
+var createTableMachines = `
+CREATE TABLE IF NOT EXISTS machines (
+  machine_name            VARCHAR(255),
+  machine_owner           VARCHAR(255),
+  machine_arch            VARCHAR(50),
+  machine_cpu             BIGINT,
+  machine_cpu_limit       BIGINT,
+  machine_cpu_allocated   BIGINT,
+  machine_ram_total       BIGINT,
+  machine_ram_available   BIGINT,
+  machine_ram_limit       BIGINT,
+  machine_ram_allocated   BIGINT,
+  machine_status          VARCHAR(50),
+  machine_created         BIGINT,
+  machine_last_seen       BIGINT,
+  machine_updated         BIGINT,
+  machine_token           TEXT,
+
+  PRIMARY KEY(machine_name, machine_owner),
+
+  UNIQUE(machine_token)
+);
+`
+
+var createIndexMachinesOwner = `
+CREATE INDEX IF NOT EXISTS ix_machine_owner ON machines (machine_owner);
+`
+
+var createIndexMachinesStatus = `
+CREATE INDEX IF NOT EXISTS ix_machine_status ON machines (machine_status);
+`
+
+var createIndexMachinesLastSeen = `
+CREATE INDEX IF NOT EXISTS ix_machine_last_seen ON machines (machine_last_seen);
+`
+
+var alterTableMachinesAddColumnLabels = `
+ALTER TABLE machines ADD COLUMN machine_labels TEXT DEFAULT '';
+`
+
+//
+// 0005_create_table_runners.sql
 //
 
 var createTableRunners = `
@@ -270,91 +294,4 @@ CREATE INDEX IF NOT EXISTS ix_runner_machine ON runners (runner_machine);
 
 var createIndexRunnersCreated = `
 CREATE INDEX IF NOT EXISTS ix_runner_created ON runners (runner_created);
-`
-
-//
-// 0004_create_table_installations.sql
-//
-
-var createTableInstallations = `
-CREATE TABLE IF NOT EXISTS installations (
-  installation_id           BIGINT PRIMARY KEY,
-  installation_login        VARCHAR(255) NOT NULL,
-  installation_avatar       VARCHAR(1000),
-  installation_type         VARCHAR(50) NOT NULL,
-  installation_created      BIGINT,
-  installation_suspended    BIGINT,
-  installation_updated      BIGINT,
-  UNIQUE(installation_login)
-);
-`
-
-//
-// 0005_create_table_memberships.sql
-//
-
-var createTableMemberships = `
-CREATE TABLE IF NOT EXISTS memberships (
-  membership_installation_id BIGINT NOT NULL,
-  membership_user_id         BIGINT NOT NULL,
-  membership_role            VARCHAR(50) NOT NULL,
-  membership_state           VARCHAR(50) NOT NULL,
-  membership_synced          BIGINT,
-  membership_created         BIGINT,
-  membership_updated         BIGINT,
-  PRIMARY KEY (membership_installation_id, membership_user_id),
-  FOREIGN KEY (membership_installation_id) REFERENCES installations(installation_id) ON DELETE CASCADE,
-  FOREIGN KEY (membership_user_id) REFERENCES users(user_id) ON DELETE CASCADE
-);
-`
-
-var createIndexMembershipsUser = `
-CREATE INDEX IF NOT EXISTS idx_memberships_user_id ON memberships(membership_user_id);
-`
-
-var createIndexMembershipsInstallation = `
-CREATE INDEX IF NOT EXISTS idx_memberships_installation_id ON memberships(membership_installation_id);
-`
-
-//
-// 0006_create_table_machines.sql
-//
-
-var createTableMachines = `
-CREATE TABLE IF NOT EXISTS machines (
-  machine_name            VARCHAR(255),
-  machine_owner           VARCHAR(255),
-  machine_arch            VARCHAR(50),
-  machine_cpu             BIGINT,
-  machine_cpu_limit       BIGINT,
-  machine_cpu_allocated   BIGINT,
-  machine_ram_total       BIGINT,
-  machine_ram_available   BIGINT,
-  machine_ram_limit       BIGINT,
-  machine_ram_allocated   BIGINT,
-  machine_status          VARCHAR(50),
-  machine_created         BIGINT,
-  machine_last_seen       BIGINT,
-  machine_updated         BIGINT,
-  machine_token           TEXT,
-
-  PRIMARY KEY(machine_name, machine_owner),
-  UNIQUE(machine_token)
-);
-`
-
-var createIndexMachinesOwner = `
-CREATE INDEX IF NOT EXISTS ix_machine_owner ON machines (machine_owner);
-`
-
-var createIndexMachinesStatus = `
-CREATE INDEX IF NOT EXISTS ix_machine_status ON machines (machine_status);
-`
-
-var createIndexMachinesLastSeen = `
-CREATE INDEX IF NOT EXISTS ix_machine_last_seen ON machines (machine_last_seen);
-`
-
-var alterTableMachinesAddColumnLabels = `
-ALTER TABLE machines ADD COLUMN machine_labels TEXT DEFAULT '';
 `

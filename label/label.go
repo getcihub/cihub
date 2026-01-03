@@ -106,10 +106,12 @@ func Resolve(labels []string) (*Label, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		if l != nil {
-			return l, nil
+			return l, l.Validate()
 		}
 	}
+
 	return nil, nil
 }
 

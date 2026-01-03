@@ -8,7 +8,6 @@ import (
 	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/store/batch"
 	"github.com/getcihub/cihub/store/installation"
-	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/machine"
 	"github.com/getcihub/cihub/store/membership"
 	"github.com/getcihub/cihub/store/runner"
@@ -25,7 +24,6 @@ var storeSet = wire.NewSet(
 	provideEncrypter,
 	provideInstallationStore,
 	batch.New,
-	job.New,
 	machine.New,
 	membership.New,
 	runner.New,
