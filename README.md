@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="CIHub Dashboard" src="docs/assets/screenshot.png">
+  <img alt="CIHub Dashboard" src="docs/src/assets/screenshot.png">
 </p>
 
 > ⚠️ **This project is under heavy development.** The API, configuration, and behavior may change significantly. Use at your own risk and expect breaking changes between releases.
