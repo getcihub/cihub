@@ -1,6 +1,3 @@
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
-import { Skeleton } from '@/components/Skeleton';
 import { useInstallation } from '@/hooks/useInstallation';
 import { useMachineDetail } from '@/hooks/useMachineDetail';
 import { useMachineMutations } from '@/hooks/useMachineMutations';
@@ -18,6 +15,7 @@ import {
     RiServerLine,
 } from '@remixicon/react';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -69,13 +67,13 @@ export function MachineDetailPage() {
     const getStatusDotColor = (status: string) => {
         switch (status) {
             case 'online':
-                return 'bg-green-500 shadow-lg shadow-green-500/50 animate-pulse';
+                return 'bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse';
             case 'offline':
-                return 'bg-gray-400';
+                return 'bg-white/30';
             case 'paused':
-                return 'bg-yellow-500';
+                return 'bg-amber-500';
             default:
-                return 'bg-gray-400';
+                return 'bg-white/30';
         }
     };
 
@@ -261,18 +259,18 @@ export function MachineDetailPage() {
                             params: { login: currentLogin || 'org' },
                         })
                     }
-                    className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
+                    className="flex items-center gap-2 font-mono text-sm text-amber-400 transition-colors hover:text-amber-300"
                 >
                     <RiArrowLeftLine className="size-4" aria-hidden="true" />
                     Back to Machines
                 </button>
-                <Skeleton className="h-12 w-48 rounded-lg" />
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="h-12 w-48 animate-pulse rounded-lg bg-white/[0.02]" />
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                     <div className="lg:col-span-2">
-                        <Skeleton className="h-64 w-full rounded-lg" />
+                        <div className="h-64 w-full animate-pulse rounded-xl bg-white/[0.02]" />
                     </div>
                     <div>
-                        <Skeleton className="h-64 w-full rounded-lg" />
+                        <div className="h-64 w-full animate-pulse rounded-xl bg-white/[0.02]" />
                     </div>
                 </div>
             </div>
@@ -289,24 +287,29 @@ export function MachineDetailPage() {
                             params: { login: currentLogin || 'org' },
                         })
                     }
-                    className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
+                    className="flex items-center gap-2 font-mono text-sm text-amber-400 transition-colors hover:text-amber-300"
                 >
                     <RiArrowLeftLine className="size-4" aria-hidden="true" />
                     Back to Machines
                 </button>
-                <Card className="bg-red-50 border-red-200 p-6">
-                    <p className="text-red-800">
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6">
+                    <p className="font-mono text-sm text-red-400">
                         {error
                             ? 'Failed to load machine details. Please try again later.'
                             : 'Machine not found.'}
                     </p>
-                </Card>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="space-y-8">
+        <motion.div
+            className="space-y-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+        >
             {/* Back Button */}
             <button
                 onClick={() =>
@@ -315,7 +318,7 @@ export function MachineDetailPage() {
                         params: { login: currentLogin || 'org' },
                     })
                 }
-                className="text-blue-600 hover:text-blue-700 flex items-center gap-2 font-medium"
+                className="flex items-center gap-2 font-mono text-sm text-amber-400 transition-colors hover:text-amber-300"
             >
                 <RiArrowLeftLine className="size-4" aria-hidden="true" />
                 Back to Machines
@@ -323,17 +326,17 @@ export function MachineDetailPage() {
 
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 min-w-0">
-                        <h1 className="text-3xl font-bold text-gray-900 truncate">
+                <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <h1 className="truncate font-display text-3xl text-white">
                             {machine.name}
                         </h1>
                         {/* Status dot */}
                         <div
-                            className={`h-3 w-3 rounded-full flex-shrink-0 ${getStatusDotColor(machine.status)}`}
+                            className={`h-3 w-3 flex-shrink-0 rounded-full ${getStatusDotColor(machine.status)}`}
                         />
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="mt-1 font-mono text-sm text-white/50">
                         Last seen: {formatLastSeenDate(machine.last_seen_at)}
                     </p>
                 </div>
@@ -341,22 +344,22 @@ export function MachineDetailPage() {
                     <div className="relative flex-shrink-0" ref={settingsRef}>
                         <button
                             onClick={() => setShowSettings(!showSettings)}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="rounded-lg p-2 transition-colors hover:bg-white/5"
                             title="Machine settings"
                         >
                             <RiMoreLine
-                                className="size-5 text-gray-600"
+                                className="size-5 text-white/60"
                                 aria-hidden="true"
                             />
                         </button>
                         {showSettings && (
-                            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                            <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-white/10 bg-[#0a0a0c] shadow-lg">
                                 <button
                                     onClick={handleEditLimitsClick}
-                                    className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                    className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-2 text-left font-mono text-sm text-white/80 transition-colors hover:bg-white/5"
                                 >
                                     <RiEditLine
-                                        className="size-4 text-gray-600"
+                                        className="size-4 text-white/50"
                                         aria-hidden="true"
                                     />
                                     Edit Resource Limits
@@ -364,10 +367,10 @@ export function MachineDetailPage() {
                                 {machine.status === 'online' && (
                                     <button
                                         onClick={handlePauseMachine}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                        className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-2 text-left font-mono text-sm text-white/80 transition-colors hover:bg-white/5"
                                     >
                                         <RiPauseCircleLine
-                                            className="size-4 text-gray-600"
+                                            className="size-4 text-white/50"
                                             aria-hidden="true"
                                         />
                                         Pause Machine
@@ -376,10 +379,10 @@ export function MachineDetailPage() {
                                 {machine.status === 'paused' && (
                                     <button
                                         onClick={handleResumeMachine}
-                                        className="w-full text-left px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 border-b border-gray-200 transition-colors flex items-center gap-3"
+                                        className="flex w-full items-center gap-3 border-b border-white/10 px-4 py-2 text-left font-mono text-sm text-white/80 transition-colors hover:bg-white/5"
                                     >
                                         <RiPlayCircleLine
-                                            className="size-4 text-gray-600"
+                                            className="size-4 text-white/50"
                                             aria-hidden="true"
                                         />
                                         Resume Machine
@@ -387,10 +390,10 @@ export function MachineDetailPage() {
                                 )}
                                 <button
                                     onClick={handleDeleteMachineClick}
-                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
+                                    className="flex w-full items-center gap-3 px-4 py-2 text-left font-mono text-sm text-red-400 transition-colors hover:bg-red-500/10"
                                 >
                                     <RiDeleteBin6Line
-                                        className="size-4 text-red-600"
+                                        className="size-4 text-red-400"
                                         aria-hidden="true"
                                     />
                                     Delete Machine
@@ -402,22 +405,22 @@ export function MachineDetailPage() {
             </div>
 
             {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                 {/* Left Column - Primary Info */}
-                <div className="lg:col-span-2 space-y-6">
+                <div className="space-y-6 lg:col-span-2">
                     {/* Machine Details - Combined Card */}
-                    <Card className="p-6">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
                         {/* Labels */}
                         {machine.labels && machine.labels.length > 0 && (
-                            <div className="mb-6 pb-6 border-b border-gray-200">
-                                <p className="text-sm font-medium text-gray-600 mb-3">
+                            <div className="mb-6 border-b border-white/10 pb-6">
+                                <p className="mb-3 font-mono text-xs text-white/50">
                                     Labels
                                 </p>
-                                <div className="flex gap-2 flex-wrap">
+                                <div className="flex flex-wrap gap-2">
                                     {machine.labels.map((label) => (
                                         <span
                                             key={label}
-                                            className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700"
+                                            className="inline-flex items-center rounded-full bg-white/5 px-3 py-1 font-mono text-xs text-white/70"
                                         >
                                             {label}
                                         </span>
@@ -428,29 +431,29 @@ export function MachineDetailPage() {
 
                         {/* Resources */}
                         <div>
-                            <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                            <h2 className="mb-4 font-display text-sm text-white">
                                 Resources
                             </h2>
                             <div className="space-y-6">
                                 {/* CPU */}
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
+                                    <div className="mb-3 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <RiCpuLine
-                                                className="size-5 text-blue-600"
+                                                className="size-5 text-purple-400"
                                                 aria-hidden="true"
                                             />
-                                            <span className="text-sm font-medium text-gray-600">
+                                            <span className="font-mono text-xs text-white/50">
                                                 CPU
                                             </span>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-lg font-semibold text-gray-900">
+                                            <p className="font-display text-lg text-white">
                                                 {machine.cpu > 0
                                                     ? `${cpuUsagePercent}%`
                                                     : 'Unknown'}
                                             </p>
-                                            <p className="text-xs text-gray-500">
+                                            <p className="font-mono text-xs text-white/40">
                                                 {machine.cpu > 0
                                                     ? `${cpuAllocated} / ${cpuLimit} vCPU`
                                                     : 'Data unavailable'}
@@ -458,9 +461,9 @@ export function MachineDetailPage() {
                                         </div>
                                     </div>
                                     {machine.cpu > 0 && (
-                                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                                             <div
-                                                className="h-full bg-blue-600 transition-all"
+                                                className="h-full bg-purple-500 transition-all"
                                                 style={{
                                                     width: `${cpuUsagePercent}%`,
                                                 }}
@@ -468,16 +471,16 @@ export function MachineDetailPage() {
                                         </div>
                                     )}
                                     {machine.cpu > 0 && (
-                                        <div className="mt-3 text-xs text-gray-600 space-y-1">
+                                        <div className="mt-3 space-y-1 font-mono text-xs text-white/40">
                                             <div className="flex justify-between">
                                                 <span>Allocated:</span>
-                                                <span className="font-medium">
+                                                <span className="text-white/60">
                                                     {cpuAllocated} vCPU
                                                 </span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span>Available:</span>
-                                                <span className="font-medium">
+                                                <span className="text-white/60">
                                                     {cpuLimit - cpuAllocated}{' '}
                                                     vCPU
                                                 </span>
@@ -485,7 +488,7 @@ export function MachineDetailPage() {
                                             {machine.cpu_limit > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Limit:</span>
-                                                    <span className="font-medium">
+                                                    <span className="text-white/60">
                                                         {cpuLimit} vCPU
                                                     </span>
                                                 </div>
@@ -493,7 +496,7 @@ export function MachineDetailPage() {
                                             {machine.cpu > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Total:</span>
-                                                    <span className="font-medium">
+                                                    <span className="text-white/60">
                                                         {machine.cpu} vCPU
                                                     </span>
                                                 </div>
@@ -504,23 +507,23 @@ export function MachineDetailPage() {
 
                                 {/* RAM */}
                                 <div>
-                                    <div className="flex items-center justify-between mb-3">
+                                    <div className="mb-3 flex items-center justify-between">
                                         <div className="flex items-center gap-2">
                                             <RiRam2Line
-                                                className="size-5 text-blue-600"
+                                                className="size-5 text-orange-400"
                                                 aria-hidden="true"
                                             />
-                                            <span className="text-sm font-medium text-gray-600">
+                                            <span className="font-mono text-xs text-white/50">
                                                 RAM
                                             </span>
                                         </div>
                                         <div className="text-right">
-                                            <p className="text-lg font-semibold text-gray-900">
+                                            <p className="font-display text-lg text-white">
                                                 {machine.ram_available > 0
                                                     ? `${ramUsagePercent}%`
                                                     : 'Unknown'}
                                             </p>
-                                            <p className="text-xs text-gray-500">
+                                            <p className="font-mono text-xs text-white/40">
                                                 {machine.ram_available > 0
                                                     ? `${Math.round(ramAllocated / 1024)} / ${Math.round(ramLimit / 1024)} GB`
                                                     : 'Data unavailable'}
@@ -528,9 +531,9 @@ export function MachineDetailPage() {
                                         </div>
                                     </div>
                                     {machine.ram_available > 0 && (
-                                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                                             <div
-                                                className="h-full bg-blue-600 transition-all"
+                                                className="h-full bg-orange-500 transition-all"
                                                 style={{
                                                     width: `${ramUsagePercent}%`,
                                                 }}
@@ -538,10 +541,10 @@ export function MachineDetailPage() {
                                         </div>
                                     )}
                                     {machine.ram_available > 0 && (
-                                        <div className="mt-3 text-xs text-gray-600 space-y-1">
+                                        <div className="mt-3 space-y-1 font-mono text-xs text-white/40">
                                             <div className="flex justify-between">
                                                 <span>Allocated:</span>
-                                                <span className="font-medium">
+                                                <span className="text-white/60">
                                                     {Math.round(
                                                         ramAllocated / 1024,
                                                     )}{' '}
@@ -550,7 +553,7 @@ export function MachineDetailPage() {
                                             </div>
                                             <div className="flex justify-between">
                                                 <span>Available:</span>
-                                                <span className="font-medium">
+                                                <span className="text-white/60">
                                                     {Math.round(
                                                         (ramLimit -
                                                             ramAllocated) /
@@ -562,7 +565,7 @@ export function MachineDetailPage() {
                                             {machine.ram_limit > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Limit:</span>
-                                                    <span className="font-medium">
+                                                    <span className="text-white/60">
                                                         {Math.round(
                                                             ramLimit / 1024,
                                                         )}{' '}
@@ -573,7 +576,7 @@ export function MachineDetailPage() {
                                             {machine.ram_total > 0 && (
                                                 <div className="flex justify-between">
                                                     <span>Total:</span>
-                                                    <span className="font-medium">
+                                                    <span className="text-white/60">
                                                         {Math.round(
                                                             machine.ram_total /
                                                                 1024,
@@ -587,47 +590,47 @@ export function MachineDetailPage() {
                                 </div>
                             </div>
                         </div>
-                    </Card>
+                    </div>
 
                     {/* Runners on this Machine */}
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                        <h2 className="mb-4 font-display text-lg text-white">
                             Runners on this Machine
                         </h2>
                         {machineRunners.length === 0 ? (
-                            <Card className="p-8 text-center">
+                            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
                                 <RiServerLine
-                                    className="size-12 text-gray-300 mx-auto mb-4"
+                                    className="mx-auto mb-4 size-12 text-white/20"
                                     aria-hidden="true"
                                 />
-                                <p className="text-lg font-medium text-gray-900 mb-2">
+                                <p className="mb-2 font-display text-lg text-white">
                                     No runners yet
                                 </p>
-                                <p className="text-gray-600">
+                                <p className="font-mono text-xs text-white/50">
                                     No runners have been assigned to this
                                     machine.
                                 </p>
-                            </Card>
+                            </div>
                         ) : (
                             <div className="space-y-3">
                                 {machineRunners.map((runner) => (
-                                    <Card
+                                    <div
                                         key={runner.id}
-                                        className="p-4 hover:bg-gray-50 transition-colors"
+                                        className="rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]"
                                     >
                                         <div className="flex items-center justify-between gap-4">
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-gray-900">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="font-mono text-sm text-white">
                                                     {runner.name}
                                                 </p>
-                                                <div className="flex items-center gap-3 mt-2">
-                                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 capitalize">
+                                                <div className="mt-2 flex items-center gap-3">
+                                                    <span className="inline-flex items-center rounded border border-blue-500/20 bg-blue-500/10 px-2.5 py-0.5 font-mono text-xs capitalize text-blue-400">
                                                         {runner.status}
                                                     </span>
-                                                    <p className="text-xs text-gray-500">
+                                                    <p className="font-mono text-xs text-white/40">
                                                         {runner.arch}
                                                     </p>
-                                                    <p className="text-xs text-gray-500">
+                                                    <p className="font-mono text-xs text-white/40">
                                                         {runner.cpu} vCPU •{' '}
                                                         {Math.round(
                                                             runner.ram / 1024,
@@ -637,7 +640,7 @@ export function MachineDetailPage() {
                                                 </div>
                                             </div>
                                         </div>
-                                    </Card>
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -647,32 +650,32 @@ export function MachineDetailPage() {
                 {/* Right Column - Architecture & Dates */}
                 <div className="space-y-6">
                     {/* Architecture Card */}
-                    <Card className="p-6">
-                        <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+                        <h2 className="mb-4 font-display text-sm text-white">
                             Architecture
                         </h2>
                         <div className="flex items-center gap-3">
                             <RiServerLine
-                                className="size-5 text-blue-600"
+                                className="size-5 text-blue-400"
                                 aria-hidden="true"
                             />
-                            <span className="text-sm font-medium text-gray-700 capitalize">
+                            <span className="font-mono text-sm capitalize text-white/70">
                                 {machine.arch}
                             </span>
                         </div>
-                    </Card>
+                    </div>
 
                     {/* Dates Card */}
-                    <Card className="p-6">
-                        <h2 className="text-sm font-semibold text-gray-900 mb-4">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
+                        <h2 className="mb-4 font-display text-sm text-white">
                             Dates
                         </h2>
                         <div className="space-y-3">
                             <div>
-                                <p className="text-xs text-gray-600 mb-1">
+                                <p className="mb-1 font-mono text-xs text-white/40">
                                     Created
                                 </p>
-                                <p className="text-sm text-gray-900">
+                                <p className="font-mono text-sm text-white/70">
                                     {new Date(
                                         machine.created_at * 1000,
                                     ).toLocaleString('en-US', {
@@ -685,36 +688,36 @@ export function MachineDetailPage() {
                                 </p>
                             </div>
                             <div>
-                                <p className="text-xs text-gray-600 mb-1">
+                                <p className="mb-1 font-mono text-xs text-white/40">
                                     Last Seen
                                 </p>
-                                <p className="text-sm text-gray-900">
+                                <p className="font-mono text-sm text-white/70">
                                     {formatLastSeenDate(machine.last_seen_at)}
                                 </p>
                             </div>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             </div>
 
             {/* Pause Confirmation Modal */}
             {showPauseConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <Card className="w-full max-w-md mx-4 p-6">
-                        <div className="flex items-start gap-4 mb-6">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                    <div className="mx-4 w-full max-w-md rounded-xl border border-white/10 bg-[#0a0a0c] p-6">
+                        <div className="mb-6 flex items-start gap-4">
                             <div className="flex-shrink-0">
                                 <RiAlertLine
-                                    className="size-6 text-yellow-600"
+                                    className="size-6 text-amber-400"
                                     aria-hidden="true"
                                 />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-lg font-semibold text-gray-900">
+                                <h3 className="font-display text-lg text-white">
                                     Pause Machine
                                 </h3>
-                                <p className="text-sm text-gray-600 mt-2">
+                                <p className="mt-2 font-mono text-sm text-white/60">
                                     Are you sure you want to pause{' '}
-                                    <span className="font-mono font-semibold">
+                                    <span className="font-semibold text-white">
                                         {machine?.name}
                                     </span>
                                     ? The machine will not accept new jobs until
@@ -722,47 +725,46 @@ export function MachineDetailPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex gap-3 justify-end">
-                            <Button
+                        <div className="flex justify-end gap-3">
+                            <button
                                 onClick={() => setShowPauseConfirm(false)}
-                                variant="secondary"
                                 disabled={pauseMachine.isPending}
+                                className="rounded-md border border-white/10 bg-white/[0.02] px-4 py-2 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:opacity-50"
                             >
                                 Cancel
-                            </Button>
-                            <Button
+                            </button>
+                            <button
                                 onClick={handleConfirmPause}
-                                variant="primary"
                                 disabled={pauseMachine.isPending}
-                                className="bg-yellow-600 hover:bg-yellow-700 text-white"
+                                className="rounded-md bg-amber-500 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-amber-400 disabled:opacity-50"
                             >
                                 {pauseMachine.isPending
                                     ? 'Pausing...'
                                     : 'Pause'}
-                            </Button>
+                            </button>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
             {/* Resume Confirmation Modal */}
             {showResumeConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <Card className="w-full max-w-md mx-4 p-6">
-                        <div className="flex items-start gap-4 mb-6">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                    <div className="mx-4 w-full max-w-md rounded-xl border border-white/10 bg-[#0a0a0c] p-6">
+                        <div className="mb-6 flex items-start gap-4">
                             <div className="flex-shrink-0">
                                 <RiAlertLine
-                                    className="size-6 text-green-600"
+                                    className="size-6 text-emerald-400"
                                     aria-hidden="true"
                                 />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-lg font-semibold text-gray-900">
+                                <h3 className="font-display text-lg text-white">
                                     Resume Machine
                                 </h3>
-                                <p className="text-sm text-gray-600 mt-2">
+                                <p className="mt-2 font-mono text-sm text-white/60">
                                     Are you sure you want to resume{' '}
-                                    <span className="font-mono font-semibold">
+                                    <span className="font-semibold text-white">
                                         {machine?.name}
                                     </span>
                                     ? The machine will be available for new
@@ -770,95 +772,93 @@ export function MachineDetailPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="flex gap-3 justify-end">
-                            <Button
+                        <div className="flex justify-end gap-3">
+                            <button
                                 onClick={() => setShowResumeConfirm(false)}
-                                variant="secondary"
                                 disabled={resumeMachine.isPending}
+                                className="rounded-md border border-white/10 bg-white/[0.02] px-4 py-2 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:opacity-50"
                             >
                                 Cancel
-                            </Button>
-                            <Button
+                            </button>
+                            <button
                                 onClick={handleConfirmResume}
-                                variant="primary"
                                 disabled={resumeMachine.isPending}
-                                className="bg-green-600 hover:bg-green-700 text-white"
+                                className="rounded-md bg-emerald-500 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-emerald-400 disabled:opacity-50"
                             >
                                 {resumeMachine.isPending
                                     ? 'Resuming...'
                                     : 'Resume'}
-                            </Button>
+                            </button>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <Card className="w-full max-w-md mx-4 p-6">
-                        <div className="flex items-start gap-4 mb-6">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                    <div className="mx-4 w-full max-w-md rounded-xl border border-white/10 bg-[#0a0a0c] p-6">
+                        <div className="mb-6 flex items-start gap-4">
                             <div className="flex-shrink-0">
                                 <RiAlertLine
-                                    className="size-6 text-red-600"
+                                    className="size-6 text-red-400"
                                     aria-hidden="true"
                                 />
                             </div>
                             <div className="flex-1">
-                                <h3 className="text-lg font-semibold text-gray-900">
+                                <h3 className="font-display text-lg text-white">
                                     Delete Machine
                                 </h3>
-                                <p className="text-sm text-gray-600 mt-2">
+                                <p className="mt-2 font-mono text-sm text-white/60">
                                     Are you sure you want to delete{' '}
-                                    <span className="font-mono font-semibold">
+                                    <span className="font-semibold text-white">
                                         {machine?.name}
                                     </span>
                                     ? This action cannot be undone.
                                 </p>
                             </div>
                         </div>
-                        <div className="flex gap-3 justify-end">
-                            <Button
+                        <div className="flex justify-end gap-3">
+                            <button
                                 onClick={() => setShowDeleteConfirm(false)}
-                                variant="secondary"
                                 disabled={deleteMachine.isPending}
+                                className="rounded-md border border-white/10 bg-white/[0.02] px-4 py-2 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:opacity-50"
                             >
                                 Cancel
-                            </Button>
-                            <Button
+                            </button>
+                            <button
                                 onClick={handleConfirmDelete}
-                                variant="primary"
                                 disabled={deleteMachine.isPending}
-                                className="bg-red-600 hover:bg-red-700 text-white"
+                                className="rounded-md bg-red-500 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-red-400 disabled:opacity-50"
                             >
                                 {deleteMachine.isPending
                                     ? 'Deleting...'
                                     : 'Delete'}
-                            </Button>
+                            </button>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
 
             {/* Edit Resource Limits Modal */}
             {showEditLimits && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <Card className="w-full max-w-md mx-4 p-6">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                    <div className="mx-4 w-full max-w-md rounded-xl border border-white/10 bg-[#0a0a0c] p-6">
+                        <h3 className="mb-4 font-display text-lg text-white">
                             Edit Resource Limits
                         </h3>
 
                         {/* Current Resources Info */}
                         {machine && (
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                                <p className="text-sm font-medium text-blue-900 mb-2">
+                            <div className="mb-6 rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
+                                <p className="mb-2 font-mono text-sm text-blue-400">
                                     Discovered Resources
                                 </p>
-                                <div className="space-y-1 text-sm text-blue-800">
+                                <div className="space-y-1 font-mono text-sm text-blue-300/80">
                                     {machine.cpu > 0 ? (
                                         <p>CPU: {machine.cpu} vCPU</p>
                                     ) : (
-                                        <p className="text-blue-600">
+                                        <p className="text-blue-400/60">
                                             CPU: Not yet discovered
                                         </p>
                                     )}
@@ -871,7 +871,7 @@ export function MachineDetailPage() {
                                             GB
                                         </p>
                                     ) : (
-                                        <p className="text-blue-600">
+                                        <p className="text-blue-400/60">
                                             RAM: Not yet discovered
                                         </p>
                                     )}
@@ -881,17 +881,17 @@ export function MachineDetailPage() {
 
                         {/* Error Message */}
                         {limitsError && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                                <p className="text-sm text-red-800">
+                            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+                                <p className="font-mono text-sm text-red-400">
                                     {limitsError}
                                 </p>
                             </div>
                         )}
 
                         {/* Input Fields */}
-                        <div className="space-y-4 mb-6">
+                        <div className="mb-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="mb-1 block font-mono text-xs text-white/60">
                                     CPU Limit (vCPU)
                                 </label>
                                 <input
@@ -902,15 +902,15 @@ export function MachineDetailPage() {
                                         setEditCPULimit(e.target.value)
                                     }
                                     placeholder="Leave empty for unlimited"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                    className="w-full rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 font-mono text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="mt-1 font-mono text-[11px] text-white/30">
                                     Leave empty to unset the limit
                                 </p>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                <label className="mb-1 block font-mono text-xs text-white/60">
                                     RAM Limit (GB)
                                 </label>
                                 <input
@@ -921,38 +921,38 @@ export function MachineDetailPage() {
                                         setEditRAMLimit(e.target.value)
                                     }
                                     placeholder="Leave empty for unlimited"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                                    className="w-full rounded-md border border-white/10 bg-white/[0.02] px-3 py-2 font-mono text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30"
                                 />
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="mt-1 font-mono text-[11px] text-white/30">
                                     Leave empty to unset the limit
                                 </p>
                             </div>
                         </div>
 
                         {/* Buttons */}
-                        <div className="flex gap-3 justify-end">
-                            <Button
+                        <div className="flex justify-end gap-3">
+                            <button
                                 onClick={() => setShowEditLimits(false)}
-                                variant="secondary"
                                 disabled={updateMachineLimit.isPending}
+                                className="rounded-md border border-white/10 bg-white/[0.02] px-4 py-2 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:opacity-50"
                             >
                                 Cancel
-                            </Button>
-                            <Button
+                            </button>
+                            <button
                                 onClick={handleConfirmEditLimits}
-                                variant="primary"
                                 disabled={
                                     !hasChanges || updateMachineLimit.isPending
                                 }
+                                className="rounded-md bg-amber-500 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {updateMachineLimit.isPending
                                     ? 'Saving...'
                                     : 'Save Limits'}
-                            </Button>
+                            </button>
                         </div>
-                    </Card>
+                    </div>
                 </div>
             )}
-        </div>
+        </motion.div>
     );
 }

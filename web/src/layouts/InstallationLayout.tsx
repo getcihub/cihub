@@ -10,7 +10,7 @@ import { Outlet } from '@tanstack/react-router';
 export function InstallationLayout() {
     return (
         <ProtectedInstallationRoute>
-            <div>
+            <div className="min-h-screen bg-[#050507] grid-bg">
                 <Navigation />
                 <InstallationTypeWarning />
                 <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">

@@ -1,5 +1,3 @@
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
 import { useInstallation } from '@/hooks/useInstallation';
 import { useVarz } from '@/hooks/useVarz';
 import {
@@ -7,6 +5,7 @@ import {
     RiSettingsLine,
     RiShieldLine,
 } from '@remixicon/react';
+import { motion } from 'framer-motion';
 import { useState } from 'react';
 
 type SettingsSection = 'general' | 'billing';
@@ -26,7 +25,9 @@ export function SettingsPage() {
     if (!selectedInstallation) {
         return (
             <main>
-                <p className="text-gray-600">No installation selected</p>
+                <p className="font-mono text-sm text-white/50">
+                    No installation selected
+                </p>
             </main>
         );
     }
@@ -48,18 +49,23 @@ export function SettingsPage() {
     return (
         <main>
             {/* Settings Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
                 {/* Sidebar Menu */}
-                <aside className="lg:col-span-1">
-                    <nav className="space-y-1 sticky top-6">
+                <motion.aside
+                    className="lg:col-span-1"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3 }}
+                >
+                    <nav className="sticky top-6 space-y-1">
                         {menuItems.map((item) => (
                             <button
                                 key={item.id}
                                 onClick={() => setActiveSection(item.id)}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all ${
+                                className={`flex w-full items-center gap-3 rounded-lg border-l-4 px-4 py-3 font-mono text-sm transition-all ${
                                     activeSection === item.id
-                                        ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600'
-                                        : 'text-gray-700 hover:bg-gray-50 border-l-4 border-transparent'
+                                        ? 'border-white bg-white/10 text-white'
+                                        : 'border-transparent text-white/50 hover:border-white/20 hover:bg-white/5 hover:text-white/70'
                                 }`}
                             >
                                 {item.icon}
@@ -67,109 +73,111 @@ export function SettingsPage() {
                             </button>
                         ))}
                     </nav>
-                </aside>
+                </motion.aside>
 
                 {/* Main Content */}
                 <div className="lg:col-span-3">
                     {/* General Section */}
                     {activeSection === 'general' && (
-                        <div className="space-y-6">
+                        <motion.div
+                            className="space-y-6"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.3, delay: 0.1 }}
+                        >
                             <div>
-                                <h2 className="text-2xl font-semibold text-gray-900">
+                                <h2 className="font-display text-2xl text-white">
                                     General Settings
                                 </h2>
-                                <p className="text-gray-600 text-sm mt-1">
+                                <p className="mt-1 font-mono text-sm text-white/50">
                                     Manage installation information and contact
                                     preferences
                                 </p>
                             </div>
                             <div>
                                 {/* Installation Overview */}
-                                <Card className="p-6 mb-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                <motion.div
+                                    className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-6"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3, delay: 0.2 }}
+                                >
+                                    <h3 className="mb-4 font-display text-lg text-white">
                                         Installation Overview
                                     </h3>
                                     <div className="flex items-start gap-6">
                                         <img
-                                            src={
-                                                selectedInstallation.avatar_url
-                                            }
+                                            src={selectedInstallation.avatar_url}
                                             alt={selectedInstallation.login}
-                                            className="size-20 rounded-lg object-cover flex-shrink-0"
+                                            className="size-20 flex-shrink-0 rounded-lg border border-white/10 object-cover"
                                         />
                                         <div className="flex-1">
-                                            <h4 className="text-lg font-semibold text-gray-900">
+                                            <h4 className="font-display text-lg text-white">
                                                 {selectedInstallation.login}
                                             </h4>
-                                            <p className="text-sm text-gray-600 mt-2">
+                                            <p className="mt-2 font-mono text-sm text-white/50">
                                                 Type:{' '}
-                                                <span className="font-medium capitalize">
-                                                    {
-                                                        selectedInstallation.account_type
-                                                    }
+                                                <span className="capitalize text-white/70">
+                                                    {selectedInstallation.account_type}
                                                 </span>
                                             </p>
                                             {selectedInstallation.membership && (
-                                                <p className="text-sm text-gray-600 mt-1">
+                                                <p className="mt-1 font-mono text-sm text-white/50">
                                                     Role:{' '}
-                                                    <span className="font-medium capitalize">
-                                                        {
-                                                            selectedInstallation
-                                                                .membership.role
-                                                        }
+                                                    <span className="capitalize text-white/70">
+                                                        {selectedInstallation.membership.role}
                                                     </span>
                                                 </p>
                                             )}
-                                            <p className="text-sm text-gray-600 mt-1">
+                                            <p className="mt-1 font-mono text-sm text-white/50">
                                                 Created:{' '}
-                                                <span className="font-medium">
+                                                <span className="text-white/70">
                                                     {new Date(
-                                                        selectedInstallation.created_at *
-                                                            1000,
-                                                    ).toLocaleDateString(
-                                                        'en-US',
-                                                        {
-                                                            year: 'numeric',
-                                                            month: 'long',
-                                                            day: 'numeric',
-                                                        },
-                                                    )}
+                                                        selectedInstallation.created_at * 1000,
+                                                    ).toLocaleDateString('en-US', {
+                                                        year: 'numeric',
+                                                        month: 'long',
+                                                        day: 'numeric',
+                                                    })}
                                                 </span>
                                             </p>
-                                            {selectedInstallation.suspended_at !==
-                                                0 && (
-                                                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
-                                                    <RiShieldLine className="size-4 text-red-600" />
-                                                    <span className="text-xs font-medium text-red-700">
+                                            {selectedInstallation.suspended_at !== 0 && (
+                                                <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5">
+                                                    <RiShieldLine className="size-4 text-red-400" />
+                                                    <span className="font-mono text-xs text-red-400">
                                                         Suspended
                                                     </span>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                </Card>
+                                </motion.div>
 
                                 {/* Installation Settings */}
-                                <Card className="p-6 mb-6">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                                <motion.div
+                                    className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-6"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3, delay: 0.3 }}
+                                >
+                                    <h3 className="mb-4 font-display text-lg text-white">
                                         Installation Settings
                                     </h3>
-                                    <p className="text-gray-600 text-sm mb-6">
-                                        Manage your GitHub App installation
-                                        settings, permissions, and repository
-                                        access on GitHub.
+                                    <p className="mb-6 font-mono text-sm text-white/50">
+                                        Manage your GitHub App installation settings,
+                                        permissions, and repository access on GitHub.
                                     </p>
-                                    <Button
+                                    <button
                                         onClick={handleEditInstallation}
-                                        className="gap-2"
+                                        className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-mono text-sm text-black transition-colors hover:bg-white/90"
                                     >
                                         <RiSettingsLine className="size-4" />
                                         Edit on GitHub
                                         <RiExternalLinkLine className="size-4" />
-                                    </Button>
-                                </Card>
+                                    </button>
+                                </motion.div>
                             </div>
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             </div>

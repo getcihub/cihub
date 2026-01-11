@@ -50,18 +50,18 @@ function DropdownUserProfile() {
                         aria-label="open settings"
                         className={cx(
                             focusRing,
-                            'group rounded-full p-1 hover:bg-gray-100 data-[state=open]:bg-gray-100',
+                            'group rounded-full p-1 transition-colors hover:bg-white/5 data-[state=open]:bg-white/10',
                         )}
                     >
                         {user.avatar_url ? (
                             <img
                                 src={user.avatar_url}
                                 alt={user.login}
-                                className="size-8 shrink-0 rounded-full border border-gray-300 object-cover"
+                                className="size-8 shrink-0 rounded-full border border-white/10 object-cover"
                             />
                         ) : (
                             <span
-                                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-xs font-medium text-gray-700"
+                                className="flex size-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 font-mono text-xs text-white/70"
                                 aria-hidden="true"
                             >
                                 {initials}
@@ -93,7 +93,7 @@ function DropdownUserProfile() {
                         <DropdownMenuItem>
                             Changelog
                             <RiArrowRightUpLine
-                                className="mb-1 ml-1 size-3 shrink-0 text-gray-500"
+                                className="mb-1 ml-1 size-3 shrink-0 text-white/50"
                                 aria-hidden="true"
                             />
                         </DropdownMenuItem>
@@ -104,14 +104,14 @@ function DropdownUserProfile() {
                         >
                             Documentation
                             <RiArrowRightUpLine
-                                className="mb-1 ml-1 size-3 shrink-0 text-gray-500"
+                                className="mb-1 ml-1 size-3 shrink-0 text-white/50"
                                 aria-hidden="true"
                             />
                         </DropdownMenuItem>
                         <DropdownMenuItem>
                             Join Slack community
                             <RiArrowRightUpLine
-                                className="mb-1 ml-1 size-3 shrink-0 text-gray-500"
+                                className="mb-1 ml-1 size-3 shrink-0 text-white/50"
                                 aria-hidden="true"
                             />
                         </DropdownMenuItem>

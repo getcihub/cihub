@@ -1,9 +1,7 @@
-import { TabNavigation, TabNavigationLink } from '@/components/TabNavigation';
 import { useInstallation } from '@/hooks/useInstallation';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 
 import { InstallationSwitcher } from './InstallationSwitcher';
-// import { Notifications } from "./Notifications"
 import { DropdownUserProfile } from './UserProfile';
 
 function Navigation() {
@@ -17,24 +15,24 @@ function Navigation() {
         selectedInstallation && pathname !== '/' && pathname !== '/account';
 
     return (
-        <div className="shadow-s sticky top-0 z-20 bg-white">
-            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 pt-3">
+        <div className="sticky top-0 z-20 border-b border-white/10 bg-[#050507]/80 backdrop-blur-sm">
+            <div className="mx-auto flex max-w-7xl items-center justify-between px-4 pt-3 sm:px-6">
                 <div className="flex items-center gap-6">
                     {/* App Logo */}
                     <button
                         onClick={() => navigate({ to: '/' })}
-                        className="flex items-center gap-2 text-xl font-bold text-gray-900 hover:text-gray-700 cursor-pointer transition-colors"
+                        className="flex cursor-pointer items-center gap-2 font-display text-xl text-white transition-colors hover:text-white/80"
                     >
                         <img
                             src="/favicon.svg"
                             alt="CIHub"
-                            className="size-6 brightness-0"
+                            className="size-6 invert"
                         />
                         CIHub
                     </button>
                     {/* Divider */}
                     {selectedInstallation ? (
-                        <div className="h-6 w-px bg-gray-200" />
+                        <div className="h-6 w-px bg-white/10" />
                     ) : null}
                     {/* Installation Switcher */}
                     <InstallationSwitcher />
@@ -44,46 +42,52 @@ function Navigation() {
                 </div>
             </div>
             {showInstallationNav && selectedInstallation && (
-                <TabNavigation className="mt-5">
-                    <div className="mx-auto flex w-full max-w-7xl items-center px-6">
-                        <TabNavigationLink
-                            className="inline-flex gap-2"
-                            asChild
-                            active={pathname.includes('/machines')}
+                <nav className="mt-4">
+                    <div className="mx-auto flex w-full max-w-7xl items-center gap-1 px-6">
+                        <Link
+                            to="/$login/machines"
+                            params={{ login: selectedInstallation.login }}
+                            className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
+                                pathname.includes('/machines')
+                                    ? 'text-white'
+                                    : 'text-white/50 hover:text-white/70'
+                            }`}
                         >
-                            <Link
-                                to="/$login/machines"
-                                params={{ login: selectedInstallation.login }}
-                            >
-                                Machines
-                            </Link>
-                        </TabNavigationLink>
-                        <TabNavigationLink
-                            className="inline-flex gap-2"
-                            asChild
-                            active={pathname.includes('/jobs')}
+                            Machines
+                            {pathname.includes('/machines') && (
+                                <span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
+                            )}
+                        </Link>
+                        <Link
+                            to="/$login/jobs"
+                            params={{ login: selectedInstallation.login }}
+                            className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
+                                pathname.includes('/jobs')
+                                    ? 'text-white'
+                                    : 'text-white/50 hover:text-white/70'
+                            }`}
                         >
-                            <Link
-                                to="/$login/jobs"
-                                params={{ login: selectedInstallation.login }}
-                            >
-                                Jobs
-                            </Link>
-                        </TabNavigationLink>
-                        <TabNavigationLink
-                            className="inline-flex gap-2"
-                            asChild
-                            active={pathname.endsWith('/settings')}
+                            Jobs
+                            {pathname.includes('/jobs') && (
+                                <span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
+                            )}
+                        </Link>
+                        <Link
+                            to="/$login/settings"
+                            params={{ login: selectedInstallation.login }}
+                            className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
+                                pathname.endsWith('/settings')
+                                    ? 'text-white'
+                                    : 'text-white/50 hover:text-white/70'
+                            }`}
                         >
-                            <Link
-                                to="/$login/settings"
-                                params={{ login: selectedInstallation.login }}
-                            >
-                                Settings
-                            </Link>
-                        </TabNavigationLink>
+                            Settings
+                            {pathname.endsWith('/settings') && (
+                                <span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
+                            )}
+                        </Link>
                     </div>
-                </TabNavigation>
+                </nav>
             )}
         </div>
     );

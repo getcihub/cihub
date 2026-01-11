@@ -3,7 +3,6 @@ import { AuthLayout } from '@/layouts/AuthLayout';
 import { InstallationLayout } from '@/layouts/InstallationLayout';
 import { RootLayout } from '@/layouts/RootLayout';
 import { AccountPage } from '@/pages/Account';
-import { AddMachinePage } from '@/pages/AddMachine';
 import { InstallationsPage } from '@/pages/Installations';
 import { JobDetailPage } from '@/pages/JobDetail';
 import { JobsPage } from '@/pages/Jobs';
@@ -84,13 +83,6 @@ const machineDetailRoute = new Route({
     component: MachineDetailPage,
 });
 
-// Add machine route - requires installation context
-const addMachineRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/machines/add',
-    component: AddMachinePage,
-});
-
 // Settings route - requires installation context
 const settingsRoute = new Route({
     getParentRoute: () => installationLayoutRoute,
@@ -114,7 +106,6 @@ const routeTree = rootRoute.addChildren([
     installationLayoutRoute.addChildren([
         machinesRoute,
         machineDetailRoute,
-        addMachineRoute,
         jobsRoute,
         jobDetailRoute,
         settingsRoute,

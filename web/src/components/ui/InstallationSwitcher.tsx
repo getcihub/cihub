@@ -52,30 +52,30 @@ export function InstallationSwitcher() {
                 <button
                     className={cx(
                         focusRing,
-                        'group rounded-lg p-2 hover:bg-gray-100 data-[state=open]:bg-gray-100 flex items-center gap-2',
+                        'group flex items-center gap-2 rounded-lg p-2 transition-colors hover:bg-white/5 data-[state=open]:bg-white/10',
                     )}
                     aria-label="Switch installation"
                 >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
                         {selectedInstallation.avatar_url ? (
                             <img
                                 src={selectedInstallation.avatar_url}
                                 alt={selectedInstallation.login}
-                                className="size-6 rounded-md border border-gray-200 object-cover flex-shrink-0"
+                                className="size-6 flex-shrink-0 rounded-md border border-white/10 object-cover"
                             />
                         ) : (
-                            <div className="size-6 rounded-md bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-xs">
+                            <div className="flex size-6 flex-shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-semibold text-white">
                                 {selectedInstallation.login
                                     .charAt(0)
                                     .toUpperCase()}
                             </div>
                         )}
-                        <span className="text-sm font-medium text-gray-900 truncate">
+                        <span className="truncate font-mono text-sm text-white">
                             {selectedInstallation.login}
                         </span>
                     </div>
                     <RiArrowDownSLine
-                        className="size-4 text-gray-500 flex-shrink-0"
+                        className="size-4 flex-shrink-0 text-white/50"
                         aria-hidden="true"
                     />
                 </button>
@@ -91,16 +91,16 @@ export function InstallationSwitcher() {
                                 onSelect={() =>
                                     handleSelectInstallation(installation.login)
                                 }
-                                className="flex items-center gap-3 cursor-pointer"
+                                className="flex cursor-pointer items-center gap-3"
                             >
                                 {installation.avatar_url ? (
                                     <img
                                         src={installation.avatar_url}
                                         alt={installation.login}
-                                        className="size-5 rounded border border-gray-200 object-cover flex-shrink-0"
+                                        className="size-5 flex-shrink-0 rounded border border-white/10 object-cover"
                                     />
                                 ) : (
-                                    <div className="size-5 rounded bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold text-xs">
+                                    <div className="flex size-5 flex-shrink-0 items-center justify-center rounded bg-gradient-to-br from-blue-400 to-blue-600 text-xs font-semibold text-white">
                                         {installation.login
                                             .charAt(0)
                                             .toUpperCase()}
@@ -112,14 +112,14 @@ export function InstallationSwitcher() {
                                 {selectedInstallation.id ===
                                     installation.id && (
                                     <RiCheckLine
-                                        className="size-4 text-green-600 flex-shrink-0"
+                                        className="size-4 flex-shrink-0 text-green-400"
                                         aria-hidden="true"
                                     />
                                 )}
                             </DropdownMenuItem>
                         ))
                     ) : (
-                        <div className="px-3 py-2 text-sm text-gray-500">
+                        <div className="px-3 py-2 font-mono text-sm text-white/50">
                             No installations available
                         </div>
                     )}
@@ -128,7 +128,7 @@ export function InstallationSwitcher() {
                 <DropdownMenuGroup>
                     <DropdownMenuItem
                         onSelect={handleAddInstallation}
-                        className="flex items-center gap-2 cursor-pointer"
+                        className="flex cursor-pointer items-center gap-2"
                     >
                         <RiAddLine
                             className="size-4 flex-shrink-0"

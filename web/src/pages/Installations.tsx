@@ -1,12 +1,10 @@
-import { Button } from '@/components/Button';
-import { Card } from '@/components/Card';
-import { Skeleton } from '@/components/Skeleton';
 import { useInstallation } from '@/hooks/useInstallation';
 import { useInstallations } from '@/hooks/useInstallations';
 import { useUser } from '@/hooks/useUser';
 import { useVarz } from '@/hooks/useVarz';
-import { RiAddLargeLine, RiAddLine } from '@remixicon/react';
+import { RiAddLargeLine, RiAddLine, RiArrowRightSLine } from '@remixicon/react';
 import { useNavigate } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -114,236 +112,212 @@ export function InstallationsPage() {
         });
     };
 
+    // Loading state
     if (isLoading) {
         return (
-            <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                <h1 className="text-3xl font-bold text-gray-900 mb-8">
-                    Select an Installation
-                </h1>
-                <div className="space-y-4">
-                    {[...Array(3)].map((_, i) => (
-                        <Skeleton key={i} className="h-24 w-full rounded-lg" />
-                    ))}
+            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507] px-4">
+                <div className="w-full max-w-md">
+                    <h1 className="mb-8 text-center font-display text-2xl text-white">
+                        Select an Installation
+                    </h1>
+                    <div className="space-y-3">
+                        {[...Array(3)].map((_, i) => (
+                            <div
+                                key={i}
+                                className="h-20 animate-pulse rounded-xl bg-white/[0.02] ring-1 ring-white/5"
+                            />
+                        ))}
+                    </div>
                 </div>
             </div>
         );
     }
 
+    // Error state
     if (error) {
         return (
-            <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                <h1 className="text-3xl font-bold text-gray-900 mb-8">
-                    Select an Installation
-                </h1>
-                <Card className="bg-red-50 border-red-200 p-6">
-                    <p className="text-red-800">
-                        Failed to load installations. Please try again later.
-                    </p>
-                </Card>
+            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507] px-4">
+                <div className="w-full max-w-md">
+                    <h1 className="mb-8 text-center font-display text-2xl text-white">
+                        Select an Installation
+                    </h1>
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6">
+                        <p className="text-center font-mono text-sm text-red-400">
+                            Failed to load installations. Please try again later.
+                        </p>
+                    </div>
+                </div>
             </div>
         );
     }
 
-    if (installations.length === 0) {
-        // Show loading state if user data is being synced
-        if (user?.syncing) {
-            return (
-                <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-8">
+    // Empty state - syncing
+    if (installations.length === 0 && user?.syncing) {
+        return (
+            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507] px-4">
+                <div className="w-full max-w-md">
+                    <h1 className="mb-8 text-center font-display text-2xl text-white">
                         Select an Installation
                     </h1>
-                    <Card className="p-8">
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8">
                         <div className="text-center">
-                            <div className="mx-auto w-fit mb-4">
-                                <div className="inline-block">
-                                    <svg
-                                        className="size-8 text-blue-500 animate-spin"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <circle
-                                            className="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="10"
-                                            stroke="currentColor"
-                                            strokeWidth="4"
-                                        />
-                                        <path
-                                            className="opacity-75"
-                                            fill="currentColor"
-                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                        />
-                                    </svg>
-                                </div>
+                            <div className="mx-auto mb-4 w-fit">
+                                <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-amber-500" />
                             </div>
-                            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                            <h3 className="mb-2 font-display text-lg text-white">
                                 Syncing Your Data
                             </h3>
-                            <p className="text-gray-600">
-                                We're fetching your installation data. Please
-                                wait a moment.
+                            <p className="font-mono text-xs text-white/50">
+                                We're fetching your installation data. Please wait a moment.
                             </p>
                         </div>
-                    </Card>
-                </div>
-            );
-        }
-
-        // Show empty state only when not syncing and no installations
-        return (
-            <div className="mx-auto max-w-2xl">
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900">
-                        Select an Installation
-                    </h1>
-                </div>
-                <Card className="p-8">
-                    <div className="text-center">
-                        <div className="mx-auto w-fit mb-4 rounded-lg bg-gray-100 p-3">
-                            <RiAddLargeLine className="size-4" />
-                        </div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                            No Installations Yet
-                        </h3>
-                        <p className="text-gray-600 mb-2">
-                            You don't have access to any installations yet.
-                        </p>
-                        <p className="text-sm text-gray-500 mb-6">
-                            Add a new installation to get started, or contact
-                            your organization administrator to grant you access.
-                        </p>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-                            <Button onClick={handleAddInstallation}>
-                                <RiAddLine className="mr-2 size-4" />
-                                Add Installation
-                            </Button>
-                            <Button
-                                onClick={handleSyncInstallations}
-                                variant="secondary"
-                                disabled={user?.syncing || isSyncingRequest}
-                            >
-                                {user?.syncing || isSyncingRequest
-                                    ? 'Syncing...'
-                                    : "Can't see your installation? Synchronize"}
-                            </Button>
-                        </div>
                     </div>
-                </Card>
+                </div>
             </div>
         );
     }
 
-    return (
-        <div className="fixed inset-0 flex items-center justify-center px-4 sm:px-6 overflow-hidden">
-            <div className="w-full max-w-2xl">
-                <div className="text-center mb-12">
-                    <h1 className="text-3xl font-bold text-gray-900">
+    // Empty state - no installations
+    if (installations.length === 0) {
+        return (
+            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507] px-4">
+                <motion.div
+                    className="w-full max-w-md"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                >
+                    <h1 className="mb-8 text-center font-display text-2xl text-white">
                         Select an Installation
                     </h1>
-                </div>
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8">
+                        <div className="text-center">
+                            <div className="mx-auto mb-4 w-fit rounded-lg bg-white/5 p-3">
+                                <RiAddLargeLine className="size-5 text-white/40" />
+                            </div>
+                            <h3 className="mb-2 font-display text-lg text-white">
+                                No Installations Yet
+                            </h3>
+                            <p className="mb-1 font-mono text-xs text-white/50">
+                                You don't have access to any installations yet.
+                            </p>
+                            <p className="mb-6 font-mono text-[11px] text-white/30">
+                                Add a new installation to get started, or contact your
+                                organization administrator to grant you access.
+                            </p>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={handleAddInstallation}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2.5 font-mono text-sm text-white transition-all hover:bg-amber-400"
+                                >
+                                    <RiAddLine className="size-4" />
+                                    Add Installation
+                                </button>
+                                <button
+                                    onClick={handleSyncInstallations}
+                                    disabled={user?.syncing || isSyncingRequest}
+                                    className="inline-flex w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.02] px-4 py-2.5 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    {user?.syncing || isSyncingRequest
+                                        ? 'Syncing...'
+                                        : "Can't see your installation? Synchronize"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
+        );
+    }
+
+    // Main view with installations
+    return (
+        <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507] px-4">
+            {/* Ambient glow effect */}
+            <div
+                className="pointer-events-none fixed left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 opacity-[0.03]"
+                style={{
+                    background: 'radial-gradient(circle, #ffffff 0%, transparent 70%)',
+                }}
+            />
+
+            <motion.div
+                className="relative z-10 w-full max-w-md"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+            >
+                <h1 className="mb-8 text-center font-display text-2xl text-white">
+                    Select an Installation
+                </h1>
 
                 <div className="space-y-6">
-                    {/* Installations Grid */}
+                    {/* Installations List */}
                     <div className="space-y-3">
-                        {installations.map((installation) => (
-                            <button
+                        {installations.map((installation, index) => (
+                            <motion.button
                                 key={installation.id}
-                                onClick={() =>
-                                    handleSelectInstallation(installation.id)
-                                }
-                                className="w-full text-left"
+                                onClick={() => handleSelectInstallation(installation.id)}
+                                className="group w-full text-left"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.3, delay: index * 0.05 }}
                             >
-                                <Card className="p-4 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer">
-                                    <div className="flex items-center gap-4">
-                                        {installation.avatar_url ? (
-                                            <img
-                                                src={installation.avatar_url}
-                                                alt={installation.login}
-                                                className="size-12 rounded-lg border border-gray-200 object-cover flex-shrink-0"
-                                            />
-                                        ) : (
-                                            <div className="size-12 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold">
-                                                {installation.login
-                                                    .charAt(0)
-                                                    .toUpperCase()}
-                                            </div>
-                                        )}
-                                        <div className="flex-1 min-w-0">
-                                            <h2 className="text-base font-semibold text-gray-900 truncate">
-                                                {installation.login}
-                                            </h2>
+                                <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all hover:border-white/20 hover:bg-white/[0.04]">
+                                    {installation.avatar_url ? (
+                                        <img
+                                            src={installation.avatar_url}
+                                            alt={installation.login}
+                                            className="size-12 flex-shrink-0 rounded-lg border border-white/10 object-cover"
+                                        />
+                                    ) : (
+                                        <div className="flex size-12 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 font-display text-lg font-semibold text-white">
+                                            {installation.login.charAt(0).toUpperCase()}
                                         </div>
-                                        <div className="flex-shrink-0">
-                                            <svg
-                                                className="size-5 text-gray-400"
-                                                fill="none"
-                                                viewBox="0 0 24 24"
-                                                stroke="currentColor"
-                                            >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth={2}
-                                                    d="M9 5l7 7-7 7"
-                                                />
-                                            </svg>
-                                        </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                        <h2 className="truncate font-mono text-sm text-white">
+                                            {installation.login}
+                                        </h2>
                                     </div>
-                                </Card>
-                            </button>
+                                    <div className="flex-shrink-0">
+                                        <RiArrowRightSLine className="size-5 text-white/30 transition-all group-hover:translate-x-0.5 group-hover:text-white/50" />
+                                    </div>
+                                </div>
+                            </motion.button>
                         ))}
                     </div>
 
                     {/* Sync Section */}
                     {user?.syncing ? (
-                        <div className="text-center py-8">
-                            <div className="inline-block mb-4">
-                                <svg
-                                    className="size-8 text-blue-500 animate-spin"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <circle
-                                        className="opacity-25"
-                                        cx="12"
-                                        cy="12"
-                                        r="10"
-                                        stroke="currentColor"
-                                        strokeWidth="4"
-                                    />
-                                    <path
-                                        className="opacity-75"
-                                        fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                    />
-                                </svg>
-                            </div>
-                            <p className="text-gray-600 font-medium">
+                        <div className="py-6 text-center">
+                            <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-amber-500" />
+                            <p className="font-mono text-xs text-white/50">
                                 Syncing your installations...
                             </p>
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-3 justify-center">
-                            <Button
+                        <div className="flex flex-col gap-3">
+                            <button
                                 onClick={handleSyncInstallations}
-                                variant="secondary"
                                 disabled={user?.syncing || isSyncingRequest}
+                                className="inline-flex w-full items-center justify-center rounded-md border border-white/10 bg-white/[0.02] px-4 py-2.5 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {user?.syncing || isSyncingRequest
                                     ? 'Syncing...'
                                     : "Can't see your installation? Synchronize"}
-                            </Button>
-                            <Button onClick={handleAddInstallation}>
-                                <RiAddLine className="mr-2 size-4" />
+                            </button>
+                            <button
+                                onClick={handleAddInstallation}
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-amber-500 px-4 py-2.5 font-mono text-sm text-white transition-all hover:bg-amber-400"
+                            >
+                                <RiAddLine className="size-4" />
                                 Add Installation
-                            </Button>
+                            </button>
                         </div>
                     )}
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 }

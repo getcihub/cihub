@@ -1,11 +1,10 @@
-import { Button } from '@/components/Button';
 import { UserEmails } from '@/components/UserEmails';
-import { Card } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstallations } from '@/hooks/useInstallations';
 import { useUser } from '@/hooks/useUser';
 import { RiRefreshLine } from '@remixicon/react';
 import { useNavigate } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -72,100 +71,125 @@ export function AccountPage() {
 
     if (!user) {
         return (
-            <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-                <p className="text-gray-600">Loading...</p>
+            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507]">
+                <p className="font-mono text-sm text-white/50">Loading...</p>
             </div>
         );
     }
 
     return (
-        <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
-            <div className="mb-8">
-                <h1 className="text-3xl font-bold text-gray-900">
-                    Account Settings
-                </h1>
-                <p className="text-gray-600 mt-2">
-                    Manage your account and preferences
-                </p>
-            </div>
-
-            {/* Profile Section */}
-            <Card className="p-6 mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-6">
-                    Profile
-                </h2>
-                <div className="flex items-center gap-6 mb-8">
-                    <img
-                        src={user.avatar_url}
-                        alt={user.login}
-                        className="size-16 rounded-full border-2 border-gray-200 object-cover"
-                    />
-                    <div>
-                        <h3 className="text-lg font-medium text-gray-900">
-                            {user.login}
-                        </h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                            {user.email}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-2">
-                            Member since{' '}
-                            {new Date(
-                                user.created_at * 1000,
-                            ).toLocaleDateString()}
-                        </p>
-                    </div>
+        <div className="grid-bg min-h-screen bg-[#050507] px-4 py-10 sm:px-6">
+            <motion.div
+                className="mx-auto max-w-2xl"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+            >
+                <div className="mb-8">
+                    <h1 className="font-display text-3xl text-white">
+                        Account Settings
+                    </h1>
+                    <p className="mt-2 font-mono text-sm text-white/50">
+                        Manage your account and preferences
+                    </p>
                 </div>
-            </Card>
 
-            {/* Email Preferences Section */}
-            <UserEmails />
-
-            {/* Installations Sync Section */}
-            <Card className="p-6 mb-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                    Installations
-                </h2>
-                <p className="text-gray-600 text-sm mb-6">
-                    Synchronize your GitHub installations to ensure they're up
-                    to date. This fetches all installations you have access to.
-                </p>
-                <div className="flex items-center gap-4">
-                    <Button
-                        onClick={handleSyncInstallations}
-                        disabled={isSyncing || userData?.syncing}
-                        variant="secondary"
-                    >
-                        <RiRefreshLine
-                            className={`mr-2 size-4 ${isSyncing || userData?.syncing ? 'animate-spin' : ''}`}
+                {/* Profile Section */}
+                <motion.div
+                    className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-6"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.1 }}
+                >
+                    <h2 className="mb-6 font-display text-lg text-white">
+                        Profile
+                    </h2>
+                    <div className="mb-8 flex items-center gap-6">
+                        <img
+                            src={user.avatar_url}
+                            alt={user.login}
+                            className="size-16 rounded-full border-2 border-white/10 object-cover"
                         />
-                        {isSyncing || userData?.syncing
-                            ? 'Syncing...'
-                            : 'Sync Installations'}
-                    </Button>
-                    {userData?.synced_at ? (
-                        <p className="text-xs text-gray-500">
-                            Last synced:{' '}
-                            {new Date(
-                                userData.synced_at * 1000,
-                            ).toLocaleString()}
-                        </p>
-                    ) : null}
-                </div>
-            </Card>
+                        <div>
+                            <h3 className="font-mono text-base text-white">
+                                {user.login}
+                            </h3>
+                            <p className="mt-1 font-mono text-sm text-white/50">
+                                {user.email}
+                            </p>
+                            <p className="mt-2 font-mono text-xs text-white/30">
+                                Member since{' '}
+                                {new Date(
+                                    user.created_at * 1000,
+                                ).toLocaleDateString()}
+                            </p>
+                        </div>
+                    </div>
+                </motion.div>
 
-            {/* Logout Section */}
-            <Card className="p-6 border-red-200 bg-red-50">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">
-                    Session
-                </h2>
-                <p className="text-gray-600 text-sm mb-4">
-                    Sign out from your account. You'll need to authenticate
-                    again to access this app.
-                </p>
-                <Button onClick={handleLogout} variant="destructive">
-                    Sign Out
-                </Button>
-            </Card>
+                {/* Email Preferences Section */}
+                <UserEmails />
+
+                {/* Installations Sync Section */}
+                <motion.div
+                    className="mb-6 rounded-xl border border-white/10 bg-white/[0.02] p-6"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.2 }}
+                >
+                    <h2 className="mb-4 font-display text-lg text-white">
+                        Installations
+                    </h2>
+                    <p className="mb-6 font-mono text-xs text-white/50">
+                        Synchronize your GitHub installations to ensure they're up
+                        to date. This fetches all installations you have access to.
+                    </p>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={handleSyncInstallations}
+                            disabled={isSyncing || userData?.syncing}
+                            className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.02] px-4 py-2 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            <RiRefreshLine
+                                className={`size-4 ${isSyncing || userData?.syncing ? 'animate-spin' : ''}`}
+                            />
+                            {isSyncing || userData?.syncing
+                                ? 'Syncing...'
+                                : 'Sync Installations'}
+                        </button>
+                        {userData?.synced_at ? (
+                            <p className="font-mono text-xs text-white/30">
+                                Last synced:{' '}
+                                {new Date(
+                                    userData.synced_at * 1000,
+                                ).toLocaleString()}
+                            </p>
+                        ) : null}
+                    </div>
+                </motion.div>
+
+                {/* Logout Section */}
+                <motion.div
+                    className="rounded-xl border border-red-500/20 bg-red-500/5 p-6"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.3 }}
+                >
+                    <h2 className="mb-4 font-display text-lg text-white">
+                        Session
+                    </h2>
+                    <p className="mb-4 font-mono text-xs text-white/50">
+                        Sign out from your account. You'll need to authenticate
+                        again to access this app.
+                    </p>
+                    <button
+                        onClick={handleLogout}
+                        className="inline-flex items-center rounded-md bg-red-500 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-red-400"
+                    >
+                        Sign Out
+                    </button>
+                </motion.div>
+            </motion.div>
         </div>
     );
 }

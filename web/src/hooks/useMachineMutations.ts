@@ -145,9 +145,9 @@ export function useMachineMutations() {
     const createMachine = useMutation({
         mutationFn: async (machineData: {
             name: string;
-            arch: string;
-            cpu: number;
-            ram: number;
+            arch?: string;
+            cpu?: number;
+            ram?: number;
             labels: string[];
         }) => {
             if (!selectedInstallation) {

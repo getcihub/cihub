@@ -1,6 +1,4 @@
-import { Card } from '@/components/Card';
 import { JobStatusBadge } from '@/components/JobStatusBadge';
-import { Skeleton } from '@/components/Skeleton';
 import { useInstallation } from '@/hooks/useInstallation';
 import { useJobs } from '@/hooks/useJobs';
 import {
@@ -11,6 +9,7 @@ import {
 } from '@/types/job';
 import { RiArrowRightLine, RiBriefcaseLine } from '@remixicon/react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 
 const JOBS_PAGE_SIZE = 25;
@@ -112,19 +111,25 @@ export function JobsPage() {
         return (
             <div className="space-y-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Jobs</h1>
-                    <p className="text-gray-600 mt-2">
+                    <h1 className="font-display text-3xl text-white">Jobs</h1>
+                    <p className="mt-2 font-mono text-sm text-white/50">
                         Manage and monitor your job queue
                     </p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     {[...Array(3)].map((_, i) => (
-                        <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                        <div
+                            key={i}
+                            className="h-32 animate-pulse rounded-xl border border-white/10 bg-white/[0.02]"
+                        />
                     ))}
                 </div>
                 <div className="space-y-4">
                     {[...Array(5)].map((_, i) => (
-                        <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                        <div
+                            key={i}
+                            className="h-16 animate-pulse rounded-xl border border-white/10 bg-white/[0.02]"
+                        />
                     ))}
                 </div>
             </div>
@@ -134,27 +139,36 @@ export function JobsPage() {
     if (error) {
         return (
             <div className="space-y-4">
-                <h1 className="text-3xl font-bold text-gray-900">Jobs</h1>
-                <Card className="bg-red-50 border-red-200 p-6">
-                    <p className="text-red-800">
+                <h1 className="font-display text-3xl text-white">Jobs</h1>
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6">
+                    <p className="font-mono text-sm text-red-400">
                         Failed to load jobs. Please try again later.
                     </p>
-                </Card>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="space-y-8">
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900">Jobs</h1>
-                <p className="text-gray-600 mt-2">
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+            >
+                <h1 className="font-display text-3xl text-white">Jobs</h1>
+                <p className="mt-2 font-mono text-sm text-white/50">
                     Manage and monitor your job queue
                 </p>
-            </div>
+            </motion.div>
 
             {/* Filter Bar */}
-            <div className="flex gap-2 pb-2 overflow-x-auto">
+            <motion.div
+                className="flex gap-2 overflow-x-auto pb-2"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+            >
                 {(['incomplete', 'completed'] as const).map((status) => (
                     <button
                         key={status}
@@ -164,160 +178,175 @@ export function JobsPage() {
                                 setCompletedCursor(0);
                             }
                         }}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-all ${
+                        className={`whitespace-nowrap rounded-lg px-4 py-2 font-mono text-sm transition-all ${
                             activeTab === status
-                                ? 'bg-black text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                ? 'bg-white text-black'
+                                : 'border border-white/10 bg-white/[0.02] text-white/70 hover:border-white/20 hover:bg-white/5 hover:text-white'
                         }`}
                     >
-                        <span className="capitalize">
+                        <span>
                             {status === 'incomplete' ? 'Active' : 'Completed'}{' '}
                             Jobs
                         </span>
                     </button>
                 ))}
-            </div>
+            </motion.div>
 
             {/* Incomplete Jobs Section */}
             {activeTab === 'incomplete' && (
                 <>
                     {/* Statistics Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Card className="p-6">
+                    <motion.div
+                        className="grid grid-cols-1 gap-4 md:grid-cols-3"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.2 }}
+                    >
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <p className="text-sm font-medium text-gray-600">
+                                    <p className="font-mono text-sm text-white/50">
                                         Total Active Jobs
                                     </p>
                                     <div className="mt-2">
-                                        <p className="text-3xl font-bold text-gray-900">
+                                        <p className="font-display text-3xl text-white">
                                             {totalJobs}
                                         </p>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <p className="mt-1 font-mono text-xs text-white/30">
                                             {activeJobs} running or waiting
                                         </p>
                                     </div>
                                 </div>
-                                <div className="rounded-lg bg-blue-100 p-3">
+                                <div className="rounded-lg bg-blue-500/20 p-3">
                                     <RiBriefcaseLine
-                                        className="size-6 text-blue-600"
+                                        className="size-6 text-blue-400"
                                         aria-hidden="true"
                                     />
                                 </div>
                             </div>
-                        </Card>
+                        </div>
 
-                        <Card className="p-6">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <p className="text-sm font-medium text-gray-600">
+                                    <p className="font-mono text-sm text-white/50">
                                         In Progress
                                     </p>
                                     <div className="mt-2">
-                                        <p className="text-3xl font-bold text-gray-900">
+                                        <p className="font-display text-3xl text-white">
                                             {inProgressJobs.length}
                                         </p>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <p className="mt-1 font-mono text-xs text-white/30">
                                             Currently running
                                         </p>
                                     </div>
                                 </div>
-                                <div className="rounded-lg bg-green-100 p-3">
+                                <div className="rounded-lg bg-green-500/20 p-3">
                                     <RiBriefcaseLine
-                                        className="size-6 text-green-600"
+                                        className="size-6 text-green-400"
                                         aria-hidden="true"
                                     />
                                 </div>
                             </div>
-                        </Card>
+                        </div>
 
-                        <Card className="p-6">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-6">
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <p className="text-sm font-medium text-gray-600">
+                                    <p className="font-mono text-sm text-white/50">
                                         Queued
                                     </p>
                                     <div className="mt-2">
-                                        <p className="text-3xl font-bold text-gray-900">
+                                        <p className="font-display text-3xl text-white">
                                             {queuedJobs.length}
                                         </p>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <p className="mt-1 font-mono text-xs text-white/30">
                                             Waiting to run
                                         </p>
                                     </div>
                                 </div>
-                                <div className="rounded-lg bg-yellow-100 p-3">
+                                <div className="rounded-lg bg-yellow-500/20 p-3">
                                     <RiBriefcaseLine
-                                        className="size-6 text-yellow-600"
+                                        className="size-6 text-yellow-400"
                                         aria-hidden="true"
                                     />
                                 </div>
                             </div>
-                        </Card>
-                    </div>
+                        </div>
+                    </motion.div>
 
                     {/* Incomplete Jobs List */}
-                    <div>
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.3 }}
+                    >
                         {incompleteJobs.length === 0 ? (
-                            <Card className="p-8 text-center">
+                            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
                                 <RiBriefcaseLine
-                                    className="size-12 text-gray-300 mx-auto mb-4"
+                                    className="mx-auto mb-4 size-12 text-white/20"
                                     aria-hidden="true"
                                 />
-                                <p className="text-lg font-medium text-gray-900 mb-2">
+                                <p className="mb-2 font-display text-lg text-white">
                                     No active jobs
                                 </p>
-                                <p className="text-gray-600">
+                                <p className="font-mono text-sm text-white/50">
                                     All jobs have been completed. Trigger a
                                     workflow to get started.
                                 </p>
-                            </Card>
+                            </div>
                         ) : (
                             <div className="space-y-3">
-                                {sortedIncompleteJobs.map((job) => (
-                                    <Card
+                                {sortedIncompleteJobs.map((job, index) => (
+                                    <motion.div
                                         key={job.id}
-                                        className="p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{
+                                            duration: 0.3,
+                                            delay: 0.3 + index * 0.05,
+                                        }}
                                         onClick={() =>
                                             handleJobClick(String(job.id))
                                         }
+                                        className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all hover:border-white/20 hover:bg-white/5"
                                     >
                                         <div className="flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                            <div className="flex min-w-0 flex-1 items-center gap-3">
                                                 {/* Author Avatar */}
                                                 <img
                                                     src={job.author_avatar}
                                                     alt={job.author_login}
-                                                    className="size-8 rounded-full flex-shrink-0 object-cover"
+                                                    className="size-8 flex-shrink-0 rounded-full border border-white/10 object-cover"
                                                     title={job.author_login}
                                                 />
                                                 {/* Job Info */}
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-semibold text-gray-900 truncate">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="truncate font-mono text-sm font-medium text-white">
                                                         {job.name}
                                                     </p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <p className="text-xs text-gray-500 truncate">
+                                                    <div className="mt-1 flex items-center gap-2">
+                                                        <p className="truncate font-mono text-xs text-white/50">
                                                             {job.owner}/
                                                             {job.repo}
                                                         </p>
-                                                        <span className="text-xs text-gray-400">
+                                                        <span className="text-white/30">
                                                             •
                                                         </span>
-                                                        <p className="text-xs text-gray-500 truncate">
+                                                        <p className="truncate font-mono text-xs text-white/50">
                                                             {job.branch}
                                                         </p>
-                                                        <span className="text-xs text-gray-400">
+                                                        <span className="text-white/30">
                                                             •
                                                         </span>
-                                                        <p className="text-xs text-gray-500 font-mono truncate">
+                                                        <p className="truncate font-mono text-xs text-white/50">
                                                             {job.sha.substring(
                                                                 0,
                                                                 7,
                                                             )}
                                                         </p>
                                                     </div>
-                                                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                                                    <p className="mt-0.5 truncate font-mono text-xs text-white/30">
                                                         {job.workflow} /{' '}
                                                         {job.name}
                                                     </p>
@@ -331,75 +360,85 @@ export function JobsPage() {
                                                 />
                                             </div>
                                         </div>
-                                    </Card>
+                                    </motion.div>
                                 ))}
                             </div>
                         )}
-                    </div>
+                    </motion.div>
                 </>
             )}
 
             {/* Completed Jobs Section */}
             {activeTab === 'completed' && (
-                <div>
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.2 }}
+                >
                     {completedJobs.length === 0 ? (
-                        <Card className="p-8 text-center">
+                        <div className="rounded-xl border border-white/10 bg-white/[0.02] p-8 text-center">
                             <RiBriefcaseLine
-                                className="size-12 text-gray-300 mx-auto mb-4"
+                                className="mx-auto mb-4 size-12 text-white/20"
                                 aria-hidden="true"
                             />
-                            <p className="text-lg font-medium text-gray-900 mb-2">
+                            <p className="mb-2 font-display text-lg text-white">
                                 No completed jobs
                             </p>
-                            <p className="text-gray-600">
+                            <p className="font-mono text-sm text-white/50">
                                 You haven't completed any jobs yet.
                             </p>
-                        </Card>
+                        </div>
                     ) : (
                         <div className="space-y-3">
-                            {completedJobs.map((job) => (
-                                <Card
+                            {completedJobs.map((job, index) => (
+                                <motion.div
                                     key={job.id}
-                                    className="p-4 hover:shadow-md hover:border-gray-300 cursor-pointer transition-all"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{
+                                        duration: 0.3,
+                                        delay: index * 0.05,
+                                    }}
                                     onClick={() =>
                                         handleJobClick(String(job.id))
                                     }
+                                    className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.02] p-4 transition-all hover:border-white/20 hover:bg-white/5"
                                 >
                                     <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        <div className="flex min-w-0 flex-1 items-center gap-3">
                                             {/* Author Avatar */}
                                             <img
                                                 src={job.author_avatar}
                                                 alt={job.author_login}
-                                                className="size-8 rounded-full flex-shrink-0 object-cover"
+                                                className="size-8 flex-shrink-0 rounded-full border border-white/10 object-cover"
                                                 title={job.author_login}
                                             />
                                             {/* Job Info */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-semibold text-gray-900 truncate">
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate font-mono text-sm font-medium text-white">
                                                     {job.name}
                                                 </p>
-                                                <div className="flex items-center gap-2 mt-1">
-                                                    <p className="text-xs text-gray-500 truncate">
+                                                <div className="mt-1 flex items-center gap-2">
+                                                    <p className="truncate font-mono text-xs text-white/50">
                                                         {job.owner}/{job.repo}
                                                     </p>
-                                                    <span className="text-xs text-gray-400">
+                                                    <span className="text-white/30">
                                                         •
                                                     </span>
-                                                    <p className="text-xs text-gray-500 truncate">
+                                                    <p className="truncate font-mono text-xs text-white/50">
                                                         {job.branch}
                                                     </p>
-                                                    <span className="text-xs text-gray-400">
+                                                    <span className="text-white/30">
                                                         •
                                                     </span>
-                                                    <p className="text-xs text-gray-500 font-mono truncate">
+                                                    <p className="truncate font-mono text-xs text-white/50">
                                                         {job.sha.substring(
                                                             0,
                                                             7,
                                                         )}
                                                     </p>
                                                 </div>
-                                                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                                                <p className="mt-0.5 truncate font-mono text-xs text-white/30">
                                                     {job.workflow} / {job.name}
                                                 </p>
                                             </div>
@@ -412,7 +451,7 @@ export function JobsPage() {
                                             />
                                         </div>
                                     </div>
-                                </Card>
+                                </motion.div>
                             ))}
 
                             {/* Load More Button */}
@@ -420,7 +459,7 @@ export function JobsPage() {
                                 <button
                                     onClick={handleLoadMoreCompleted}
                                     disabled={completedLoading}
-                                    className="w-full px-4 py-3 text-center font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 font-mono text-sm text-white/70 transition-all hover:border-white/20 hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {completedLoading
                                         ? 'Loading...'
@@ -432,7 +471,7 @@ export function JobsPage() {
                             )}
                         </div>
                     )}
-                </div>
+                </motion.div>
             )}
         </div>
     );
