@@ -31,41 +31,51 @@ func (s *service) List(ctx context.Context, user *core.User) ([]*core.Installati
 		return nil, err
 	}
 
-	installations := []*core.Installation{}
-	opts := &github.ListOptions{PerPage: 100}
-	for {
-		result, meta, err := client.Apps.ListUserInstallations(ctx, opts)
-		if err != nil {
-			return nil, err
-		}
-		for _, src := range result {
-			installations = append(installations, convertInstallation(src))
-		}
-		opts.Page = meta.NextPage
-		if opts.Page == 0 {
-			break
-		}
+	out, _, err := client.Apps.ListUserInstallations(ctx, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return nil, err
+	}
+
+	var installations []*core.Installation
+	for _, installation := range out {
+		installations = append(installations, &core.Installation{
+			Avatar: installation.Account.GetAvatarURL(),
+			ID:     installation.GetID(),
+			Login:  installation.Account.GetLogin(),
+		})
 	}
 
 	return installations, nil
 }
 
-// FindMembership returns the membership of the user for an organization.
-func (s *service) FindMembership(ctx context.Context, user *core.User, org string) (*core.Membership, error) {
+func (s *service) Membership(ctx context.Context, user *core.User, org string) (bool, bool, error) {
+	if user.Login == org {
+		return true, true, nil
+	}
+
 	err := s.refresh.Refresh(ctx, user, false)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
 	result, _, err := client.Organizations.GetOrgMembership(ctx, "", org)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
-	return convertMembership(result), nil
+	switch {
+	case result.GetState() != "active":
+		return false, false, nil
+	case result.GetRole() == "admin":
+		return true, true, nil
+	case result.GetRole() == "member":
+		return true, false, nil
+	default:
+		return false, false, nil
+	}
 }

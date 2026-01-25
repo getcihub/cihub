@@ -4,12 +4,13 @@ import { InstallationLayout } from '@/layouts/InstallationLayout';
 import { RootLayout } from '@/layouts/RootLayout';
 import { AccountPage } from '@/pages/Account';
 import { InstallationsPage } from '@/pages/Installations';
-import { JobDetailPage } from '@/pages/JobDetail';
-import { JobsPage } from '@/pages/Jobs';
 import { LoginPage } from '@/pages/Login';
 import { MachineDetailPage } from '@/pages/MachineDetail';
 import { MachinesPage } from '@/pages/Machines';
 import { NotFoundPage } from '@/pages/NotFound';
+import { OverviewPage } from '@/pages/Overview';
+import { RunnerDetailPage } from '@/pages/RunnerDetail';
+import { RunnersPage } from '@/pages/Runners';
 import { SettingsPage } from '@/pages/Settings';
 import { RootRoute, Route, Router } from '@tanstack/react-router';
 
@@ -55,20 +56,6 @@ const installationLayoutRoute = new Route({
     component: InstallationLayout,
 });
 
-// Jobs route - requires installation context
-const jobsRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/jobs',
-    component: JobsPage,
-});
-
-// Job detail route - requires installation context
-const jobDetailRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/jobs/$jobId',
-    component: JobDetailPage,
-});
-
 // Machines route - requires installation context
 const machinesRoute = new Route({
     getParentRoute: () => installationLayoutRoute,
@@ -81,6 +68,27 @@ const machineDetailRoute = new Route({
     getParentRoute: () => installationLayoutRoute,
     path: '/machines/$name',
     component: MachineDetailPage,
+});
+
+// Runners route - requires installation context
+const runnersRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/runners',
+    component: RunnersPage,
+});
+
+// Runner detail route - requires installation context
+const runnerDetailRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/runners/$name',
+    component: RunnerDetailPage,
+});
+
+// Overview route - requires installation context (index route)
+const overviewRoute = new Route({
+    getParentRoute: () => installationLayoutRoute,
+    path: '/',
+    component: OverviewPage,
 });
 
 // Settings route - requires installation context
@@ -104,10 +112,11 @@ const routeTree = rootRoute.addChildren([
         loginRoute,
     ]),
     installationLayoutRoute.addChildren([
+        overviewRoute,
         machinesRoute,
         machineDetailRoute,
-        jobsRoute,
-        jobDetailRoute,
+        runnersRoute,
+        runnerDetailRoute,
         settingsRoute,
     ]),
 ]);

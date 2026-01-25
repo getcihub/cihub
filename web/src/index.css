@@ -1,10 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Grid background pattern */
-.grid-bg {
+:root {
     --background: #050507;
+    --foreground: #ffffff;
+    --amber-500: #f59e0b;
+    --cyan-500: #06b6d4;
+    --emerald-400: #34d399;
+    --red-400: #f87171;
+
+    /* Standardized text opacity levels for dark backgrounds */
+    --text-primary: rgba(255, 255, 255, 1);
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --text-muted: rgba(255, 255, 255, 0.5);
+    --text-faint: rgba(255, 255, 255, 0.3);
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-mono: var(--font-geist-mono), monospace;
+    --font-display: 'Outfit', sans-serif;
+}
+
+body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-geist-mono), monospace;
+    text-rendering: geometricPrecision;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Utility classes */
+.font-display {
+    font-family: 'Outfit', sans-serif;
+}
+
+.font-mono {
+    font-family: var(--font-geist-mono), monospace;
+}
+
+/* Standardized text color classes */
+.text-primary {
+    color: var(--text-primary);
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.text-faint {
+    color: var(--text-faint);
+}
+
+/* Grid background with vignette */
+.grid-bg {
     background-image:
         radial-gradient(ellipse at 50% 0%, transparent 0%, var(--background) 70%),
         linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
@@ -12,30 +87,67 @@
     background-size: 100% 100%, 40px 40px, 40px 40px;
 }
 
-@theme {
-    --animate-hide: hide 150ms cubic-bezier(0.16, 1, 0.3, 1);
-    --animate-slide-left-and-fade: slideLeftAndFade 150ms
-        cubic-bezier(0.16, 1, 0.3, 1);
+/* Noise overlay */
+.noise-overlay::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.015;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    z-index: 50;
+}
 
-    @keyframes hide {
-        from {
-            opacity: 1;
-        }
-
-        to {
-            opacity: 0;
-        }
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
     }
 
-    @keyframes slideLeftAndFade {
-        from {
-            opacity: 0;
-            transform: translateX(6px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateX(0);
-        }
+    to {
+        opacity: 1;
     }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-up {
+    animation: slideUp 0.5s ease-out;
+}
+
+/* Loading progress bar */
+@keyframes progress {
+    0% {
+        width: 0%;
+        left: 0;
+    }
+
+    50% {
+        width: 30%;
+        left: 35%;
+    }
+
+    100% {
+        width: 0%;
+        left: 100%;
+    }
+}
+
+.animate-progress {
+    position: absolute;
+    animation: progress 1s ease-in-out infinite;
 }

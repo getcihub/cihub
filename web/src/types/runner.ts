@@ -1,10 +1,12 @@
 export const RunnerStatusPending = 'pending';
+export const RunnerStatusRegistered = 'registered';
 export const RunnerStatusIdle = 'idle';
 export const RunnerStatusBusy = 'busy';
 export const RunnerStatusCompleted = 'completed';
 
 export type RunnerStatus =
     | typeof RunnerStatusPending
+    | typeof RunnerStatusRegistered
     | typeof RunnerStatusIdle
     | typeof RunnerStatusBusy
     | typeof RunnerStatusCompleted;
@@ -27,4 +29,19 @@ export interface Runner {
     started: number;
     stopped: number;
     updated: number;
+}
+
+// Extended runner with job information for the UI
+export interface RunnerWithJob extends Runner {
+    job?: {
+        id: number;
+        name: string;
+        workflow: string;
+        repo: string;
+        branch: string;
+        sha: string;
+        author_login: string;
+        author_avatar: string;
+        started_at: number;
+    };
 }

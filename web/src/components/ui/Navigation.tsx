@@ -15,7 +15,7 @@ function Navigation() {
         selectedInstallation && pathname !== '/' && pathname !== '/account';
 
     return (
-        <div className="sticky top-0 z-20 border-b border-white/10 bg-[#050507]/80 backdrop-blur-sm">
+        <div className="border-b border-white/10 bg-transparent">
             <div className="mx-auto flex max-w-7xl items-center justify-between px-4 pt-3 sm:px-6">
                 <div className="flex items-center gap-6">
                     {/* App Logo */}
@@ -45,6 +45,20 @@ function Navigation() {
                 <nav className="mt-4">
                     <div className="mx-auto flex w-full max-w-7xl items-center gap-1 px-6">
                         <Link
+                            to="/$login"
+                            params={{ login: selectedInstallation.login }}
+                            className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
+                                pathname === `/${selectedInstallation.login}` || pathname === `/${selectedInstallation.login}/`
+                                    ? 'text-white'
+                                    : 'text-white/50 hover:text-white/70'
+                            }`}
+                        >
+                            Overview
+                            {(pathname === `/${selectedInstallation.login}` || pathname === `/${selectedInstallation.login}/`) && (
+                                <span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
+                            )}
+                        </Link>
+                        <Link
                             to="/$login/machines"
                             params={{ login: selectedInstallation.login }}
                             className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
@@ -59,16 +73,16 @@ function Navigation() {
                             )}
                         </Link>
                         <Link
-                            to="/$login/jobs"
+                            to="/$login/runners"
                             params={{ login: selectedInstallation.login }}
                             className={`relative flex items-center px-3 pb-3 font-mono text-sm transition-colors ${
-                                pathname.includes('/jobs')
+                                pathname.includes('/runners')
                                     ? 'text-white'
                                     : 'text-white/50 hover:text-white/70'
                             }`}
                         >
-                            Jobs
-                            {pathname.includes('/jobs') && (
+                            Runners
+                            {pathname.includes('/runners') && (
                                 <span className="absolute bottom-0 left-0 right-0 h-px bg-white" />
                             )}
                         </Link>

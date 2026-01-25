@@ -3,13 +3,16 @@ import { Toaster } from 'sonner';
 
 import { AuthProvider } from './providers/AuthProvider';
 import { InstallationProvider } from './providers/InstallationProvider';
+import { TimeRangeProvider } from './context/TimeRangeContext';
 
 function App() {
     return (
         <AuthProvider>
             <InstallationProvider>
-                <Outlet />
-                <Toaster />
+                <TimeRangeProvider>
+                    <Outlet />
+                    <Toaster />
+                </TimeRangeProvider>
             </InstallationProvider>
         </AuthProvider>
     );

@@ -30,11 +30,9 @@ var corsOpts = cors.Options{
 
 // Server is a http.Handler exposing CIHub functionality over HTTP.
 type Server struct {
-	Installations core.InstallationStore
 	Installationz core.InstallationService
 	Jobs          core.JobStore
 	Machines      core.MachineStore
-	Memberships   core.MembershipStore
 	Runners       core.RunnerStore
 	Scheduler     core.Scheduler
 	Session       core.Session
@@ -45,11 +43,9 @@ type Server struct {
 }
 
 func New(
-	installations core.InstallationStore,
 	installationz core.InstallationService,
 	jobs core.JobStore,
 	machines core.MachineStore,
-	memberships core.MembershipStore,
 	runners core.RunnerStore,
 	scheduler core.Scheduler,
 	session core.Session,
@@ -59,11 +55,9 @@ func New(
 	userz core.UserService,
 ) Server {
 	return Server{
-		Installations: installations,
 		Installationz: installationz,
 		Jobs:          jobs,
 		Machines:      machines,
-		Memberships:   memberships,
 		Runners:       runners,
 		Scheduler:     scheduler,
 		Session:       session,
