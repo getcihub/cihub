@@ -12,15 +12,13 @@ type (
 	// User represents a user of the system
 	User struct {
 		ID      int64  `json:"id"`
-		Login   string `json:"login"`
-		Email   string `json:"email"`
-		Avatar  string `json:"avatar_url"`
 		Active  bool   `json:"active"`
 		Admin   bool   `json:"admin"`
+		Avatar  string `json:"avatar_url"`
 		Created int64  `json:"created_at"`
+		Email   string `json:"email"`
+		Login   string `json:"login"`
 		Updated int64  `json:"updated_at"`
-		Synced  int64  `json:"synced_at"`
-		Syncing bool   `json:"syncing"`
 		Access  string `json:"-"`
 		Refresh string `json:"-"`
 		Expiry  int64  `json:"-"`

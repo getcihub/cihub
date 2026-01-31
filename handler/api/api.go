@@ -10,10 +10,9 @@ import (
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api/acl"
 	"github.com/getcihub/cihub/handler/api/auth"
-	"github.com/getcihub/cihub/handler/api/orgs"
-	"github.com/getcihub/cihub/handler/api/orgs/jobs"
-	"github.com/getcihub/cihub/handler/api/orgs/machines"
-	"github.com/getcihub/cihub/handler/api/orgs/runners"
+	"github.com/getcihub/cihub/handler/api/installations"
+	"github.com/getcihub/cihub/handler/api/installations/machines"
+	"github.com/getcihub/cihub/handler/api/installations/runners"
 	"github.com/getcihub/cihub/handler/api/user"
 	"github.com/getcihub/cihub/handler/api/users"
 	"github.com/getcihub/cihub/logger"
@@ -30,44 +29,35 @@ var corsOpts = cors.Options{
 
 // Server is a http.Handler exposing CIHub functionality over HTTP.
 type Server struct {
-	Installations core.InstallationStore
 	Installationz core.InstallationService
-	Jobs          core.JobStore
 	Machines      core.MachineStore
-	Memberships   core.MembershipStore
 	Runners       core.RunnerStore
+	Runnerz       core.RunnerService
 	Scheduler     core.Scheduler
 	Session       core.Session
-	Syncer        core.Syncer
 	System        *core.System
 	Users         core.UserStore
 	Userz         core.UserService
 }
 
 func New(
-	installations core.InstallationStore,
 	installationz core.InstallationService,
-	jobs core.JobStore,
 	machines core.MachineStore,
-	memberships core.MembershipStore,
 	runners core.RunnerStore,
+	runnerz core.RunnerService,
 	scheduler core.Scheduler,
 	session core.Session,
-	syncer core.Syncer,
 	system *core.System,
 	users core.UserStore,
 	userz core.UserService,
 ) Server {
 	return Server{
-		Installations: installations,
 		Installationz: installationz,
-		Jobs:          jobs,
 		Machines:      machines,
-		Memberships:   memberships,
 		Runners:       runners,
+		Runnerz:       runnerz,
 		Scheduler:     scheduler,
 		Session:       session,
-		Syncer:        syncer,
 		System:        system,
 		Users:         users,
 		Userz:         userz,
@@ -88,31 +78,24 @@ func (s Server) Handler() http.Handler {
 	r.Use(cors.Handler)
 
 	r.Route("/installations", func(r chi.Router) {
-		r.With(acl.AuthorizeAdmin).Get("/", orgs.HandleList())
+		r.With(acl.AuthorizeAdmin).Get("/", installations.HandleList())
 
 		r.Route("/{owner}", func(r chi.Router) {
-			r.Use(acl.InjectOrganization(s.Installations, s.Installationz, s.Memberships))
-			r.Use(acl.CheckMember())
-
-			r.Get("/", orgs.HandleFind())
-
-			r.Route("/jobs", func(r chi.Router) {
-				r.Get("/", jobs.HandleList(s.Jobs))
-				r.Get("/{id}", jobs.HandleFind(s.Jobs))
-			})
+			r.Use(acl.CheckAccess(s.Installationz, false))
 
 			r.Route("/machines", func(r chi.Router) {
 				r.Get("/", machines.HandleList(s.Machines))
-				r.With(acl.CheckAdmin()).Post("/", machines.HandleCreate(s.Machines))
+				r.Post("/", machines.HandleCreate(s.Machines))
 				r.Get("/{name}", machines.HandleFind(s.Machines))
-				r.With(acl.CheckAdmin()).
-					Delete("/{name}", machines.HandleDelete(s.Machines, s.Runners, s.Scheduler))
-				r.With(acl.CheckAdmin()).Patch("/{name}", machines.HandleUpdate(s.Machines))
+				r.Delete("/{name}", machines.HandleDelete(s.Machines, s.Runners, s.Scheduler))
+				r.Patch("/{name}", machines.HandleUpdate(s.Machines))
 				r.Get("/{name}/runners", machines.HandleRunners(s.Machines, s.Runners))
 			})
 
 			r.Route("/runners", func(r chi.Router) {
+				r.Get("/", runners.HandleList(s.Runners))
 				r.Get("/{name}", runners.HandleFind(s.Runners))
+				r.Delete("/{name}", runners.HandleCancel(s.Runners, s.Runnerz, s.Scheduler))
 			})
 		})
 	})
@@ -128,8 +111,7 @@ func (s Server) Handler() http.Handler {
 		r.Get("/", user.HandleFind())
 		r.Patch("/", user.HandleUpdate(s.Users))
 		r.Get("/emails", user.HandleEmails(s.Userz))
-		r.Get("/installations", user.HandleInstallations(s.Installations))
-		r.Post("/installations", user.HandleSync(s.Syncer, s.Installations))
+		r.Get("/installations", user.HandleInstallations(s.Installationz))
 	})
 
 	r.Get("/varz", HandleVarz(s.System))

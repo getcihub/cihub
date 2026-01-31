@@ -1,116 +1,68 @@
-import App from '@/App';
-import { AuthLayout } from '@/layouts/AuthLayout';
-import { InstallationLayout } from '@/layouts/InstallationLayout';
-import { RootLayout } from '@/layouts/RootLayout';
-import { AccountPage } from '@/pages/Account';
-import { InstallationsPage } from '@/pages/Installations';
-import { JobDetailPage } from '@/pages/JobDetail';
-import { JobsPage } from '@/pages/Jobs';
-import { LoginPage } from '@/pages/Login';
-import { MachineDetailPage } from '@/pages/MachineDetail';
-import { MachinesPage } from '@/pages/Machines';
-import { NotFoundPage } from '@/pages/NotFound';
-import { SettingsPage } from '@/pages/Settings';
-import { RootRoute, Route, Router } from '@tanstack/react-router';
+import { Router, createRootRoute, createRoute } from "@tanstack/react-router";
 
-// Root route layout - applies to all pages
-const rootRoute = new RootRoute({
+import App from "@/App";
+import LoginPage from "@/pages/Login";
+import InstallationsPage from "@/pages/Installation";
+import MachinePage from "./pages/Machines";
+import RunnersPage from "./pages/Runners";
+import SettingsPage from "./pages/Settings";
+
+// Root layout applied to all pages
+const root = createRootRoute({
     component: App,
-    notFoundComponent: NotFoundPage,
+    errorComponent: null,
 });
 
-// Root layout - global styles for all pages
-const rootLayoutRoute = new Route({
-    getParentRoute: () => rootRoute,
-    id: 'root',
-    component: RootLayout,
-});
-
-// Auth layout - for authenticated routes that don't require installation context
-const authLayoutRoute = new Route({
-    getParentRoute: () => rootLayoutRoute,
-    id: 'auth',
-    component: AuthLayout,
-});
-
-// Installations index route (protected, no installation context needed)
-const installationsRoute = new Route({
-    getParentRoute: () => authLayoutRoute,
+// Installations index route
+const installationsRoute = createRoute({
+    getParentRoute: () => root,
     path: '/',
-    component: InstallationsPage,
+    component: InstallationsPage
 });
 
-// Account route - protected, no installation context needed
-const accountRoute = new Route({
-    getParentRoute: () => authLayoutRoute,
-    path: '/account',
-    component: AccountPage,
+// Installation layout route with :owner param
+const installationRoute = createRoute({
+    getParentRoute: () => root,
+    path: '/installations/$owner',
 });
 
-// Installation layout - for routes that require installation context
-// Scoped to a specific installation login parameter
-const installationLayoutRoute = new Route({
-    getParentRoute: () => rootRoute,
-    path: '/$login',
-    component: InstallationLayout,
-});
-
-// Jobs route - requires installation context
-const jobsRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/jobs',
-    component: JobsPage,
-});
-
-// Job detail route - requires installation context
-const jobDetailRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/jobs/$jobId',
-    component: JobDetailPage,
-});
-
-// Machines route - requires installation context
-const machinesRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
+// Machines route nested under installation
+const machinesRoute = createRoute({
+    getParentRoute: () => installationRoute,
     path: '/machines',
-    component: MachinesPage,
+    component: MachinePage,
 });
 
-// Machine detail route - requires installation context
-const machineDetailRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/machines/$name',
-    component: MachineDetailPage,
+// Runners route nested under installation
+const runnersRoute = createRoute({
+    getParentRoute: () => installationRoute,
+    path: '/runners',
+    component: RunnersPage,
 });
 
-// Settings route - requires installation context
-const settingsRoute = new Route({
-    getParentRoute: () => installationLayoutRoute,
-    path: '/settings',
-    component: SettingsPage,
-});
-
-// Login route - uses root layout only
-const loginRoute = new Route({
-    getParentRoute: () => rootLayoutRoute,
-    path: '/login',
+// Login route
+const loginRoute = createRoute({
+    getParentRoute: () => root,
+    path: "/login",
     component: LoginPage,
-});
+})
+
+const settingsRoute = createRoute({
+    getParentRoute: () => root,
+    path: "/settings",
+    component: SettingsPage,
+})
 
 // Create the route tree
-const routeTree = rootRoute.addChildren([
-    rootLayoutRoute.addChildren([
-        authLayoutRoute.addChildren([installationsRoute, accountRoute]),
-        loginRoute,
-    ]),
-    installationLayoutRoute.addChildren([
+const routeTree = root.addChildren([
+    installationsRoute,
+    loginRoute,
+    settingsRoute,
+    installationRoute.addChildren([
         machinesRoute,
-        machineDetailRoute,
-        jobsRoute,
-        jobDetailRoute,
-        settingsRoute,
+        runnersRoute,
     ]),
-]);
+])
 
 // Create the router
 export const router = new Router({ routeTree });

@@ -11,16 +11,12 @@ import (
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/rpc"
 	"github.com/getcihub/cihub/handler/web"
-	"github.com/getcihub/cihub/service/installation"
 	runner2 "github.com/getcihub/cihub/service/runner"
-	"github.com/getcihub/cihub/service/syncer"
 	user2 "github.com/getcihub/cihub/service/user"
-	"github.com/getcihub/cihub/store/batch"
-	"github.com/getcihub/cihub/store/job"
 	"github.com/getcihub/cihub/store/machine"
-	"github.com/getcihub/cihub/store/membership"
 	"github.com/getcihub/cihub/store/runner"
 	"github.com/getcihub/cihub/store/user"
+	"github.com/getcihub/cihub/trigger"
 )
 
 import (
@@ -51,34 +47,29 @@ func InitializeApplication(conf *config.Config) (application, error) {
 	}
 	scheduler := provideScheduler(runnerStore, redisDB)
 	reaper := provideReaper(runnerStore, runnerService, scheduler, conf)
-	installationStore := provideInstallationStore(db)
 	userStore := user.New(db, encrypter)
 	refresher := provideRefresher(userStore, conf)
-	installationService := installation.New(clientCreator, refresher)
-	jobStore := job.New(db)
+	installationService := provideInstallationService(clientCreator, refresher)
 	machineStore := machine.New(db)
-	membershipStore := membership.New(db)
 	session, err := provideSession(userStore, conf)
 	if err != nil {
 		return application{}, err
 	}
-	batcher := batch.New(db)
-	coreSyncer := syncer.New(batcher, installationService, installationStore, userStore)
 	system := provideSystem(conf)
 	userService := user2.New(clientCreator, refresher)
-	server := api.New(installationStore, installationService, jobStore, machineStore, membershipStore, runnerStore, scheduler, session, coreSyncer, system, userStore, userService)
+	server := api.New(installationService, machineStore, runnerStore, runnerService, scheduler, session, system, userStore, userService)
+	hookParser := providerHookParser(conf)
 	middleware, err := provideLogin(conf)
 	if err != nil {
 		return application{}, err
 	}
 	options := provideServerOptions(conf)
-	webServer := web.New(middleware, options, session, coreSyncer, userStore, userService)
+	triggerer := trigger.New(runnerStore, runnerService, scheduler)
+	webServer := web.New(hookParser, middleware, options, runnerStore, session, triggerer, userStore, userService)
 	mainHealthzHandler := provideHealthz()
-	v := provideEventHandlers(installationStore, jobStore, runnerStore, scheduler)
-	mainHookHandler := provideHook(conf, v)
 	mainPprofHandler := providePprof(conf)
 	rpcServer := rpc.New(machineStore, runnerStore, runnerService, scheduler)
-	mux := provideRouter(server, webServer, mainHealthzHandler, mainHookHandler, mainPprofHandler, rpcServer, conf)
+	mux := provideRouter(server, webServer, mainHealthzHandler, mainPprofHandler, rpcServer, conf)
 	serverServer := provideServer(mux, conf)
 	mainApplication := newApplication(reaper, serverServer, userStore)
 	return mainApplication, nil

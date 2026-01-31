@@ -48,11 +48,11 @@ func (c *client) Ping(ctx context.Context, resource *core.Resource) error {
 	return c.send(ctx, "/rpc/v1/ping", resource, nil)
 }
 
-func (c *client) Request(ctx context.Context) (*core.Runner, error) {
+func (c *client) Request(ctx context.Context) (*core.RunnerWithToken, error) {
 	timeout, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 
-	out := &core.Runner{}
+	out := &core.RunnerWithToken{}
 	err := c.send(timeout, "/rpc/v1/request", nil, out)
 
 	// The request is performing long polling and is subject
@@ -68,12 +68,6 @@ func (c *client) Request(ctx context.Context) (*core.Runner, error) {
 
 func (c *client) Accept(ctx context.Context, runner *core.Runner) error {
 	return c.send(ctx, "/rpc/v1/accept", runner, nil)
-}
-
-func (c *client) Register(ctx context.Context, runner *core.Runner) (*core.RunnerWithToken, error) {
-	out := &core.RunnerWithToken{}
-	err := c.send(ctx, "/rpc/v1/register", runner, out)
-	return out, err
 }
 
 func (c *client) Started(ctx context.Context, runner *core.Runner) error {

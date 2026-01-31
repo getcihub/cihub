@@ -1,41 +1,25 @@
-import { cx } from '@/lib/utils';
-import React from 'react';
-import { type VariantProps, tv } from 'tailwind-variants';
+import { type ReactNode } from 'react';
 
-const badgeVariants = tv({
-    base: cx(
-        'inline-flex items-center gap-x-1 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset',
-    ),
-    variants: {
-        variant: {
-            default: ['bg-blue-50 text-blue-900 ring-blue-500/30'],
-            neutral: ['bg-gray-50 text-gray-900 ring-gray-500/30'],
-            success: ['bg-emerald-50 text-emerald-900 ring-emerald-600/30'],
-            error: ['bg-red-50 text-red-900 ring-red-600/20'],
-            warning: ['bg-yellow-50 text-yellow-900 ring-yellow-600/30'],
-        },
-    },
-    defaultVariants: {
-        variant: 'default',
-    },
-});
+interface BadgeProps {
+    children: ReactNode;
+    variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+    className?: string;
+}
 
-interface BadgeProps
-    extends React.ComponentPropsWithoutRef<'span'>,
-        VariantProps<typeof badgeVariants> {}
+export function Badge({ children, variant = 'default', className = '' }: BadgeProps) {
+    const variants = {
+        default: 'bg-white/5 text-white/70 border-white/10',
+        success: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        warning: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+        danger: 'bg-red-500/10 text-red-400 border-red-500/20',
+        info: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    };
 
-const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
-    ({ className, variant, ...props }: BadgeProps, forwardedRef) => {
-        return (
-            <span
-                ref={forwardedRef}
-                className={cx(badgeVariants({ variant }), className)}
-                {...props}
-            />
-        );
-    },
-);
-
-Badge.displayName = 'Badge';
-
-export { Badge, badgeVariants, type BadgeProps };
+    return (
+        <span
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs ${variants[variant]} ${className}`}
+        >
+            {children}
+        </span>
+    );
+}

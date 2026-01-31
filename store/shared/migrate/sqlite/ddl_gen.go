@@ -173,8 +173,6 @@ CREATE TABLE IF NOT EXISTS users (
   user_avatar         TEXT,
   user_created        INTEGER,
   user_updated        INTEGER,
-  user_synced         INTEGER,
-  user_syncing        BOOLEAN,
   user_oauth_token    TEXT,
   user_oauth_refresh  TEXT,
   user_oauth_expiry   INTEGER,

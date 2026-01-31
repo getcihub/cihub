@@ -14,13 +14,10 @@ type Client interface {
 	Ping(ctx context.Context, resource *Resource) error
 
 	// Request requests the next available runner for execution.
-	Request(ctx context.Context) (*Runner, error)
+	Request(ctx context.Context) (*RunnerWithToken, error)
 
 	// Accept accepts the runner for execution.
 	Accept(ctx context.Context, runner *Runner) error
-
-	// Register registers the runner to GitHub.
-	Register(ctx context.Context, runner *Runner) (*RunnerWithToken, error)
 
 	// Started signals the runner has started.
 	Started(ctx context.Context, runner *Runner) error

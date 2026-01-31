@@ -1,138 +1,37 @@
-import { cx, focusRing } from '@/lib/utils';
-import { Slot } from '@radix-ui/react-slot';
-import { RiLoader2Fill } from '@remixicon/react';
-import React from 'react';
-import { type VariantProps, tv } from 'tailwind-variants';
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 
-const buttonVariants = tv({
-    base: [
-        // base
-        'relative inline-flex items-center justify-center whitespace-nowrap rounded-md border px-3 py-2 text-center text-sm font-medium shadow-xs transition-all duration-100 ease-in-out',
-        // disabled
-        'disabled:pointer-events-none disabled:shadow-none',
-        // focus
-        focusRing,
-    ],
-    variants: {
-        variant: {
-            primary: [
-                // border
-                'border-transparent',
-                // text color
-                'text-white',
-                // background color
-                'bg-black',
-                // hover color
-                'hover:bg-gray-800',
-                // disabled
-                'disabled:bg-neutral-100 disabled:text-neutral-400 disabled:border-neutral-200',
-            ],
-            secondary: [
-                // border
-                'border-gray-300',
-                // text color
-                'text-gray-900',
-                // background color
-                'bg-white',
-                //hover color
-                'hover:bg-gray-50',
-                // disabled
-                'disabled:text-gray-400',
-            ],
-            light: [
-                // base
-                'shadow-none',
-                // border
-                'border-transparent',
-                // text color
-                'text-gray-900',
-                // background color
-                'bg-gray-200',
-                // hover color
-                'hover:bg-gray-300/70',
-                // disabled
-                'disabled:bg-gray-100 disabled:text-gray-400',
-            ],
-            ghost: [
-                // base
-                'shadow-none',
-                // border
-                'border-transparent',
-                // text color
-                'text-gray-900',
-                // hover color
-                'bg-transparent hover:bg-gray-100',
-                // disabled
-                'disabled:text-gray-400',
-            ],
-            destructive: [
-                // text color
-                'text-white',
-                // border
-                'border-transparent',
-                // background color
-                'bg-red-600',
-                // hover color
-                'hover:bg-red-700',
-                // disabled
-                'disabled:bg-red-300 disabled:text-white',
-            ],
-        },
-    },
-    defaultVariants: {
-        variant: 'primary',
-    },
-});
-
-interface ButtonProps
-    extends React.ComponentPropsWithoutRef<'button'>,
-        VariantProps<typeof buttonVariants> {
-    asChild?: boolean;
-    isLoading?: boolean;
-    loadingText?: string;
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  children: ReactNode;
 }
 
-const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-    (
-        {
-            asChild,
-            isLoading = false,
-            loadingText,
-            className,
-            disabled,
-            variant,
-            children,
-            ...props
-        }: ButtonProps,
-        forwardedRef,
-    ) => {
-        const Component = asChild ? Slot : 'button';
-        return (
-            <Component
-                ref={forwardedRef}
-                className={cx(buttonVariants({ variant }), className)}
-                disabled={disabled || isLoading}
-                {...props}
-            >
-                {isLoading ? (
-                    <span className="pointer-events-none flex shrink-0 items-center justify-center gap-1.5">
-                        <RiLoader2Fill
-                            className="size-4 shrink-0 animate-spin"
-                            aria-hidden="true"
-                        />
-                        <span className="sr-only">
-                            {loadingText ? loadingText : 'Loading'}
-                        </span>
-                        {loadingText ? loadingText : children}
-                    </span>
-                ) : (
-                    children
-                )}
-            </Component>
-        );
-    },
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  function Button({ variant = 'primary', size = 'md', className = '', children, disabled, ...props }, ref) {
+    const baseClasses = 'inline-flex items-center justify-center gap-2 rounded-md font-mono transition-all disabled:opacity-50 disabled:cursor-not-allowed';
+
+    const variants = {
+      primary: 'bg-amber-500 text-black hover:bg-amber-400 border border-amber-500',
+      secondary: 'bg-white/[0.02] text-white hover:bg-white/5 border border-white/10 hover:border-white/20',
+      danger: 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30',
+      ghost: 'text-white hover:bg-white/5',
+    };
+
+    const sizes = {
+      sm: 'px-3 py-1.5 text-xs',
+      md: 'px-4 py-2 text-sm',
+      lg: 'px-5 py-3 text-base',
+    };
+
+    return (
+      <button
+        ref={ref}
+        className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
+        disabled={disabled}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
 );
-
-Button.displayName = 'Button';
-
-export { Button, buttonVariants, type ButtonProps };

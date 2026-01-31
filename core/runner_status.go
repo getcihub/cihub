@@ -2,6 +2,7 @@ package core
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -23,6 +24,21 @@ const (
 	// RunnerStatusCompleted indicates a runner has completed running a job.
 	RunnerStatusCompleted
 )
+
+// MarshalJSON implements the json.Marshaler interface.
+func (r RunnerStatus) MarshalJSON() ([]byte, error) {
+	return json.Marshal(r.String())
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (r *RunnerStatus) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	return r.Set(s)
+}
 
 // Set implements the flag.Value interface.
 func (r *RunnerStatus) Set(s string) error {

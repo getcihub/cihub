@@ -1,32 +1,9 @@
-import { Logo } from '@/components/Logo';
-import { useAuth } from '@/hooks/useAuth';
-import { RiGithubFill } from '@remixicon/react';
-import { useNavigate } from '@tanstack/react-router';
-import { motion } from 'framer-motion';
-import { useEffect } from 'react';
+import { motion } from "framer-motion";
+import { RiGithubFill } from "@remixicon/react";
+import { Suspense } from "react";
+import { Logo } from "@/components/Logo";
 
-export function LoginPage() {
-    const { isAuthenticated, isLoading } = useAuth();
-    const navigate = useNavigate();
-
-    // Redirect to dashboard if already authenticated
-    useEffect(() => {
-        if (!isLoading && isAuthenticated) {
-            navigate({ to: '/' });
-        }
-    }, [isLoading, isAuthenticated, navigate]);
-
-    // Show loading state while checking auth
-    if (isLoading) {
-        return (
-            <div className="grid-bg flex min-h-screen items-center justify-center bg-[#050507]">
-                <div className="text-center">
-                    <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-white/10 border-t-amber-500" />
-                    <p className="font-mono text-xs text-white/50">Loading...</p>
-                </div>
-            </div>
-        );
-    }
+function LoginContent() {
 
     return (
         <div className="grid-bg flex min-h-screen flex-col items-center justify-center bg-[#050507] px-4 lg:px-6">
@@ -57,7 +34,7 @@ export function LoginPage() {
                     <div className="absolute bottom-[9%] left-[9%] size-1 rounded-full bg-white/10" />
                     <div className="absolute bottom-[9%] right-[9%] size-1 rounded-full bg-white/10" />
                     <div className="w-fit rounded-lg bg-amber-500 p-3 shadow-lg shadow-amber-500/20">
-                        <Logo color="white" className="size-8" />
+                        <Logo className="size-8" />
                     </div>
                 </motion.div>
 
@@ -99,4 +76,18 @@ export function LoginPage() {
             </motion.div>
         </div>
     );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense
+            fallback={
+                <div className="flex-1 bg-[#050507] grid-bg flex items-center justify-center">
+                    <div className="font-mono text-muted text-sm">Loading...</div>
+                </div>
+            }
+        >
+            <LoginContent />
+        </Suspense>
+    )
 }

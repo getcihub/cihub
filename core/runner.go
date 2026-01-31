@@ -46,15 +46,11 @@ type (
 		// Request requests the next available runner that matches
 		// machine's capacities. Returns the runner if found, nil if no matching
 		// runner available.
-		Request(ctx context.Context, params *Filter) (*Runner, error)
+		Request(ctx context.Context, params *Filter) (*RunnerWithToken, error)
 
 		// Accept accepts a runner for execution. This operation uses optimistic
 		// locking to prevent multiple agents from executing the same runner.
 		Accept(ctx context.Context, name, machine string) error
-
-		// Register registers the runner on GitHub and retrieve its just-in-time
-		// configuration.
-		Register(ctx context.Context, name string) (*RunnerWithToken, error)
 
 		// Watch watches the runner for cancellation.
 		// It returns true if the runner has been cancelled, false otherwise.
@@ -100,5 +96,8 @@ type (
 
 		// Update persists an updated runner to the datastore.
 		Update(ctx context.Context, runner *Runner) error
+
+		// UpdateStatus persists an updated runner status to the datastor.
+		UpdateStatus(ctx context.Context, id int64, status RunnerStatus) error
 	}
 )

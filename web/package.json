@@ -1,7 +1,13 @@
 {
-  "name": "console",
+  "name": "cihub",
+  "description": "Supercharged GitHub Actions Runners",
   "private": true,
   "type": "module",
+  "author": "Nicolas Lecoy",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcihub/cihub.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

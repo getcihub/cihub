@@ -72,14 +72,6 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 		logger.WithField("path", "/var/lib/cihub").Debugln("agent: create directory ok")
 	}
 
-	logger.Debugln("agent: register runner")
-	jit, err := a.Client.Register(ctx, runner)
-	if err != nil {
-		logger = logger.WithError(err)
-		logger.Warnln("agent: cannot register runner")
-		return err
-	}
-
 	imageExists, err := a.Images.Exists(ctx, a.Image)
 	if err != nil {
 		logger = logger.WithError(err).
@@ -186,7 +178,7 @@ func (a *Agent) Run(ctx context.Context, runner *core.Runner) error {
 			"meta-data": map[string]interface{}{
 				"cihub": map[string]interface{}{
 					"runner_id":         runner.Name,
-					"runner_jit_config": jit.Token,
+					"runner_jit_config": runner.Token,
 				},
 			},
 		},
@@ -319,7 +311,7 @@ func (a *Agent) poll(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = a.Client.Accept(ctx, runner)
+	err = a.Client.Accept(ctx, runner.Runner)
 	if err == db.ErrOptimisticLock {
 		return nil
 	} else if err != nil {
@@ -329,7 +321,7 @@ func (a *Agent) poll(ctx context.Context) error {
 	}
 
 	// Lock resources
-	err = a.Client.Lock(ctx, runner)
+	err = a.Client.Lock(ctx, runner.Runner)
 	if err != nil {
 		log = log.WithError(err)
 		log.Warnln("agent: cannot lock runner resources")
@@ -337,7 +329,7 @@ func (a *Agent) poll(ctx context.Context) error {
 	}
 
 	// Start microVM in a goroutine
-	go a.Run(context.Background(), runner)
+	go a.Run(context.Background(), runner.Runner)
 
 	return nil
 }

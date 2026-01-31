@@ -19,12 +19,14 @@ func init() {
 // Reason codes for API responses
 const (
 	// Success reasons
-	ReasonResolved = "resolved"
-	ReasonListed   = "listed"
-	ReasonCreated  = "created"
-	ReasonUpdated  = "updated"
-	ReasonDeleted  = "deleted"
-	ReasonIgnored  = "ignored"
+	ReasonAccepted  = "accepted"
+	ReasonCreated   = "created"
+	ReasonDeleted   = "deleted"
+	ReasonIgnored   = "ignored"
+	ReasonListed    = "listed"
+	ReasonNoContent = "no_content"
+	ReasonResolved  = "resolved"
+	ReasonUpdated   = "updated"
 
 	// Error reasons
 	ReasonUnauthorized   = "unauthorized"
@@ -80,65 +82,75 @@ func Error(w http.ResponseWriter, reason string, status int) {
 	}, status)
 }
 
+// Accepted writes a success response with 202 status
+func Accepted(w http.ResponseWriter, data interface{}) {
+	Success(w, ReasonCreated, data, http.StatusAccepted)
+}
+
 // OK writes a success response with 200 status and custom reason
 func OK(w http.ResponseWriter, reason string, data interface{}) {
-	Success(w, reason, data, 200)
+	Success(w, reason, data, http.StatusOK)
 }
 
 // Created writes a success response with 201 status
 func Created(w http.ResponseWriter, data interface{}) {
-	Success(w, ReasonCreated, data, 201)
+	Success(w, ReasonCreated, data, http.StatusAccepted)
+}
+
+// NoContent writes a success response with 204 status
+func NoContent(w http.ResponseWriter) {
+	Success(w, ReasonNoContent, nil, http.StatusNoContent)
 }
 
 // InternalError writes error with 500 status
 func InternalError(w http.ResponseWriter) {
-	Error(w, ReasonInternalError, 500)
+	Error(w, ReasonInternalError, http.StatusInternalServerError)
 }
 
 // InternalErrorf writes formatted error with 500 status
 func InternalErrorf(w http.ResponseWriter, format string, a ...interface{}) {
 	// Log the actual error but return generic reason
-	Error(w, ReasonInternalError, 500)
+	Error(w, ReasonInternalError, http.StatusInternalServerError)
 }
 
 // NotImplemented writes error with 501 status
 func NotImplemented(w http.ResponseWriter) {
-	Error(w, ReasonNotImplemented, 501)
+	Error(w, ReasonNotImplemented, http.StatusNotImplemented)
 }
 
 // NotFound writes error with 404 status
 func NotFound(w http.ResponseWriter) {
-	Error(w, ReasonNotFound, 404)
+	Error(w, ReasonNotFound, http.StatusNotFound)
 }
 
 // NotFoundf writes formatted error with 404 status
 func NotFoundWithReason(w http.ResponseWriter, reason string) {
-	Error(w, reason, 404)
+	Error(w, reason, http.StatusNotFound)
 }
 
 // Unauthorized writes error with 401 status
 func Unauthorized(w http.ResponseWriter) {
-	Error(w, ReasonUnauthorized, 401)
+	Error(w, ReasonUnauthorized, http.StatusUnauthorized)
 }
 
 // UnauthorizedWithReason writes error with 401 status and custom reason
 func UnauthorizedWithReason(w http.ResponseWriter, reason string) {
-	Error(w, reason, 401)
+	Error(w, reason, http.StatusUnauthorized)
 }
 
 // Forbidden writes error with 403 status
 func Forbidden(w http.ResponseWriter) {
-	Error(w, ReasonForbidden, 403)
+	Error(w, ReasonForbidden, http.StatusForbidden)
 }
 
 // BadRequest writes error with 400 status
 func BadRequest(w http.ResponseWriter) {
-	Error(w, ReasonBadRequest, 400)
+	Error(w, ReasonBadRequest, http.StatusBadRequest)
 }
 
 // BadRequestWithReason writes error with 400 status and custom reason
 func BadRequestWithReason(w http.ResponseWriter, reason string) {
-	Error(w, reason, 400)
+	Error(w, reason, http.StatusBadRequest)
 }
 
 func write(w http.ResponseWriter, v interface{}, status int) {

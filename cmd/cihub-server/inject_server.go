@@ -7,24 +7,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/wire"
-	"github.com/palantir/go-githubapp/githubapp"
 	"github.com/unrolled/secure"
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
-	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/handler/api"
 	"github.com/getcihub/cihub/handler/health"
 	"github.com/getcihub/cihub/handler/rpc"
 	"github.com/getcihub/cihub/handler/web"
-	"github.com/getcihub/cihub/hook/installation"
-	"github.com/getcihub/cihub/hook/job"
 	"github.com/getcihub/cihub/metric"
 	"github.com/getcihub/cihub/server"
 )
 
 type (
 	healthzHandler http.Handler
-	hookHandler    http.Handler
 	pprofHandler   http.Handler
 )
 
@@ -35,9 +30,7 @@ var serverSet = wire.NewSet(
 	api.New,
 	web.New,
 	rpc.New,
-	provideEventHandlers,
 	provideHealthz,
-	provideHook,
 	providePprof,
 	provideRouter,
 	provideServer,
@@ -48,12 +41,6 @@ var serverSet = wire.NewSet(
 // that returns a healthcheck HTTP handler.
 func provideHealthz() healthzHandler {
 	return healthzHandler(health.New())
-}
-
-// provideHook is a Wire provider function
-// that returns a webhook HTTP handler.
-func provideHook(config *config.Config, handlers []githubapp.EventHandler) hookHandler {
-	return hookHandler(githubapp.NewEventDispatcher(handlers, config.GitHub.App.WebhookSecret))
 }
 
 // providePprof is a Wire provider function
@@ -69,7 +56,7 @@ func providePprof(config *config.Config) pprofHandler {
 
 // provideRouter is a Wire provider function that returns
 // a router that serves the provided handlers.
-func provideRouter(api api.Server, web web.Server, healthz healthzHandler, hook hookHandler, pprof pprofHandler, rpc rpc.Server, config *config.Config) *chi.Mux {
+func provideRouter(api api.Server, web web.Server, healthz healthzHandler, pprof pprofHandler, rpc rpc.Server, config *config.Config) *chi.Mux {
 	r := chi.NewRouter()
 
 	m := chiprometheus.NewMiddleware("server")
@@ -78,7 +65,6 @@ func provideRouter(api api.Server, web web.Server, healthz healthzHandler, hook 
 	r.Mount("/healthz", healthz)
 	r.Mount("/metrics", metric.HandleMetrics(config.Metric.Secret))
 	r.Mount("/api", api.Handler())
-	r.Mount("/hook", hook)
 	r.Mount("/rpc/v1", rpc.Handler())
 	r.Mount("/", web.Handler())
 	r.Mount("/debug", pprof)
@@ -119,14 +105,5 @@ func provideServerOptions(config *config.Config) secure.Options {
 		BrowserXssFilter:      config.HTTP.BrowserXSSFilter,
 		ContentSecurityPolicy: config.HTTP.ContentSecurityPolicy,
 		ReferrerPolicy:        config.HTTP.ReferrerPolicy,
-	}
-}
-
-// provideEventHandlers is a Wire provider function that returns
-// a list of GitHub webhook event handlers.
-func provideEventHandlers(installations core.InstallationStore, jobs core.JobStore, runners core.RunnerStore, scheduler core.Scheduler) []githubapp.EventHandler {
-	return []githubapp.EventHandler{
-		installation.New(installations),
-		job.New(jobs, runners, scheduler),
 	}
 }

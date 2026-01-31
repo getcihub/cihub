@@ -2,33 +2,48 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/google/wire"
+	"github.com/palantir/go-githubapp/githubapp"
 
 	"github.com/getcihub/cihub/cmd/cihub-server/config"
 	"github.com/getcihub/cihub/core"
 	"github.com/getcihub/cihub/reaper"
+	"github.com/getcihub/cihub/service/hook"
 	"github.com/getcihub/cihub/service/installation"
 	"github.com/getcihub/cihub/service/refresher"
 	"github.com/getcihub/cihub/service/runner"
-	"github.com/getcihub/cihub/service/syncer"
 	"github.com/getcihub/cihub/service/user"
 	"github.com/getcihub/cihub/session"
+	"github.com/getcihub/cihub/trigger"
 )
 
 // wire set for loading the services.
-//
-//nolint:unused
 var serviceSet = wire.NewSet(
-	installation.New,
 	runner.New,
-	syncer.New,
 	user.New,
+	trigger.New,
+
+	provideInstallationService,
 	provideReaper,
 	provideRefresher,
+	providerHookParser,
 	provideSession,
 	provideSystem,
 )
+
+// provideInstallationService is a Wire provider function that returns
+// an installation service wrapped with a simple cache.
+func provideInstallationService(client githubapp.ClientCreator, refresh core.Refresher) core.InstallationService {
+	return installation.NewCache(installation.New(client, refresh), 10, time.Minute*5)
+}
+
+// providerHookParser is a Wire provider function that returns
+// an hook parser.
+func providerHookParser(config *config.Config) core.HookParser {
+	return hook.New(config.GitHub.App.WebhookSecret)
+}
 
 // provideRefresher is a Wire provider function that returns an
 // access token refresh based on the environment configuration.
@@ -69,7 +84,8 @@ func provideReaper(
 // system details structure.
 func provideSystem(config *config.Config) *core.System {
 	return &core.System{
-		AppName: config.GitHub.App.Name,
-		Server:  config.GitHub.Server,
+		AppName:        config.GitHub.App.Name,
+		InstallationID: config.GitHub.App.IntegrationID,
+		Server:         config.GitHub.Server,
 	}
 }

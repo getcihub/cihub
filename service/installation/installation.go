@@ -16,10 +16,12 @@ type service struct {
 
 // New returns a new InstallationService.
 func New(client githubapp.ClientCreator, refresh core.Refresher) core.InstallationService {
-	return &service{client: client, refresh: refresh}
+	return &service{
+		client:  client,
+		refresh: refresh,
+	}
 }
 
-// List returns a slice of installation the user has access to.
 func (s *service) List(ctx context.Context, user *core.User) ([]*core.Installation, error) {
 	err := s.refresh.Refresh(ctx, user, false)
 	if err != nil {
@@ -31,41 +33,47 @@ func (s *service) List(ctx context.Context, user *core.User) ([]*core.Installati
 		return nil, err
 	}
 
-	installations := []*core.Installation{}
-	opts := &github.ListOptions{PerPage: 100}
-	for {
-		result, meta, err := client.Apps.ListUserInstallations(ctx, opts)
-		if err != nil {
-			return nil, err
-		}
-		for _, src := range result {
-			installations = append(installations, convertInstallation(src))
-		}
-		opts.Page = meta.NextPage
-		if opts.Page == 0 {
-			break
-		}
+	out, _, err := client.Apps.ListUserInstallations(ctx, &github.ListOptions{PerPage: 100})
+	if err != nil {
+		return nil, err
+	}
+
+	var installations []*core.Installation
+	for _, install := range out {
+		installations = append(installations, &core.Installation{
+			Avatar: install.Account.GetAvatarURL(),
+			ID:     install.GetID(),
+			Name:   install.Account.GetLogin(),
+		})
 	}
 
 	return installations, nil
 }
 
-// FindMembership returns the membership of the user for an organization.
-func (s *service) FindMembership(ctx context.Context, user *core.User, org string) (*core.Membership, error) {
+func (s *service) Membership(ctx context.Context, user *core.User, name string) (bool, bool, error) {
 	err := s.refresh.Refresh(ctx, user, false)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
 	client, err := s.client.NewTokenClient(user.Access)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
-	result, _, err := client.Organizations.GetOrgMembership(ctx, "", org)
+	out, _, err := client.Organizations.GetOrgMembership(ctx, "", name)
 	if err != nil {
-		return nil, err
+		return false, false, err
 	}
 
-	return convertMembership(result), nil
+	switch {
+	case out.GetState() != "active":
+		return false, false, nil
+	case out.GetRole() == "admin":
+		return true, true, nil
+	case out.GetRole() == "member":
+		return true, false, nil
+	default:
+		return false, false, nil
+	}
 }

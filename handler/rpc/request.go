@@ -26,8 +26,12 @@ func HandleRequest(scheduler core.Scheduler) http.HandlerFunc {
 		runner, err := scheduler.Request(ctx, machine)
 		if err != nil {
 			writeError(w, err)
-		} else {
-			writeJSON(w, runner)
+			return
 		}
+
+		writeJSON(w, &core.RunnerWithToken{
+			Runner: runner,
+			Token:  runner.Token,
+		})
 	}
 }

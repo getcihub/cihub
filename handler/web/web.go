@@ -13,30 +13,36 @@ import (
 )
 
 type Server struct {
-	Login   login.Middleware
-	Options secure.Options
-	Session core.Session
-	Syncer  core.Syncer
-	Users   core.UserStore
-	Userz   core.UserService
+	Hooks     core.HookParser
+	Login     login.Middleware
+	Options   secure.Options
+	Runners   core.RunnerStore
+	Session   core.Session
+	Triggerer core.Triggerer
+	Users     core.UserStore
+	Userz     core.UserService
 }
 
 // Server is a http.Handler which exposes CIHub UI over HTTP.
 func New(
+	hooks core.HookParser,
 	login login.Middleware,
 	options secure.Options,
+	runners core.RunnerStore,
 	session core.Session,
-	syncer core.Syncer,
+	triggerer core.Triggerer,
 	users core.UserStore,
 	userz core.UserService,
 ) Server {
 	return Server{
-		Login:   login,
-		Options: options,
-		Session: session,
-		Syncer:  syncer,
-		Users:   users,
-		Userz:   userz,
+		Hooks:     hooks,
+		Login:     login,
+		Options:   options,
+		Runners:   runners,
+		Session:   session,
+		Triggerer: triggerer,
+		Users:     users,
+		Userz:     userz,
 	}
 }
 
@@ -51,6 +57,10 @@ func (s Server) Handler() http.Handler {
 	security := secure.New(s.Options)
 	r.Use(security.Handler)
 
+	r.Route("/hook", func(r chi.Router) {
+		r.Post("/", HandleHook(s.Runners, s.Triggerer, s.Hooks))
+	})
+
 	r.Route("/auth", func(r chi.Router) {
 		r.Get("/logout", HandleLogout(s.Session))
 		r.Post("/logout", HandleLogout(s.Session))
@@ -61,7 +71,6 @@ func (s Server) Handler() http.Handler {
 						s.Users,
 						s.Userz,
 						s.Session,
-						s.Syncer,
 					),
 				),
 			),

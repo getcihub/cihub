@@ -1,17 +1,10 @@
 import { Outlet } from '@tanstack/react-router';
-import { Toaster } from 'sonner';
-
-import { AuthProvider } from './providers/AuthProvider';
-import { InstallationProvider } from './providers/InstallationProvider';
 
 function App() {
     return (
-        <AuthProvider>
-            <InstallationProvider>
-                <Outlet />
-                <Toaster />
-            </InstallationProvider>
-        </AuthProvider>
+        <div className='flex-1 flex flex-col'>
+            <Outlet />
+        </div>
     );
 }
 

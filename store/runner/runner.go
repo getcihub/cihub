@@ -147,6 +147,11 @@ func (s *store) Update(ctx context.Context, runner *core.Runner) error {
 	})
 }
 
+// UpdateStatus persists an updated runner status to the datastor.
+func (s *store) UpdateStatus(ctx context.Context, id int64, status core.RunnerStatus) error {
+	return nil
+}
+
 const queryBase = `
 SELECT
 	runner_name,
