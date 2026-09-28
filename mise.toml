@@ -1,0 +1,12 @@
+[tools]
+"cargo:cargo-deny" = "0.20.2"
+"cargo:cargo-nextest" = "0.9.146"
+
+[tasks.check]
+description = "Run the CI checks locally"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo deny check",
+  "cargo nextest run --workspace --no-tests=pass",
+]

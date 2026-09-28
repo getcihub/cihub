@@ -1,0 +1,51 @@
+[graph]
+all-features = true
+
+[advisories]
+ignore = []
+
+[licenses]
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0"]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+# The pure core crates (domain, conditions, config, contracts, mq-core,
+# flaky-core) and the CLI must not reach these crates. Each entry lists the
+# only crates allowed to depend on it directly. When a new external crate
+# needs one of them (for example hyper needs tokio), add it here.
+deny = [
+    { crate = "tokio", wrappers = [
+        "cihub-github-sim",
+        "cihub-platform",
+        "cihub-mergequeue",
+        "cihub-flakytests",
+        "cihubd",
+        "cihub-cli",
+    ] },
+    { crate = "sqlx", wrappers = [
+        "cihub-store",
+        "cihub-platform",
+        "cihub-analytics",
+        "cihub-mergequeue",
+        "cihub-flakytests",
+    ] },
+    { crate = "reqwest", wrappers = [
+        "cihub-github",
+        "cihub-platform",
+        "cihub-client",
+    ] },
+    { crate = "axum", wrappers = [
+        "cihub-github-sim",
+        "cihub-platform",
+        "cihub-http",
+        "cihub-mergequeue",
+        "cihub-flakytests",
+    ] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
