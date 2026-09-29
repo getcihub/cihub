@@ -5,7 +5,6 @@
 
 mod config;
 mod health;
-mod logs;
 
 use anyhow::{Context, anyhow};
 use tokio::net::TcpListener;
@@ -19,7 +18,7 @@ use crate::config::Config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
-    logs::init(&config)?;
+    config.logs.init()?;
     let listener = TcpListener::bind(config.internal_addr)
         .await
         .with_context(|| format!("cannot listen on {}", config.internal_addr))?;

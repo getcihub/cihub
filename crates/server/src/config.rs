@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
 use anyhow::{Context, bail};
+use cihub_telemetry::{LogFormat, Logs};
 use serde::Serialize;
-use tracing_subscriber::EnvFilter;
 
 /// A role of the process (`AGENTS.md` D8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -36,20 +36,13 @@ impl Role {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LogFormat {
-    Json,
-    Pretty,
-}
-
 /// The configuration of the server, read from the `CIHUB_*` variables.
 #[derive(Debug)]
 pub struct Config {
     pub roles: BTreeSet<Role>,
     /// Address of `/healthz` and `/readyz`, separate from the public routes.
     pub internal_addr: SocketAddr,
-    pub log_filter: EnvFilter,
-    pub log_format: LogFormat,
+    pub logs: Logs,
 }
 
 const DEFAULT_INTERNAL_ADDR: &str = "127.0.0.1:8081";
@@ -69,19 +62,18 @@ impl Config {
         let internal_addr = internal_addr
             .parse()
             .with_context(|| format!("CIHUB_INTERNAL_ADDR `{internal_addr}` is not an address"))?;
-        let log = get("CIHUB_LOG").unwrap_or_else(|| "info".to_owned());
-        let log_filter = EnvFilter::try_new(&log)
-            .with_context(|| format!("CIHUB_LOG `{log}` is not a valid filter"))?;
         let log_format = match get("CIHUB_LOG_FORMAT").as_deref() {
             None | Some("json") => LogFormat::Json,
             Some("pretty") => LogFormat::Pretty,
             Some(other) => bail!("CIHUB_LOG_FORMAT `{other}` must be `json` or `pretty`"),
         };
+        let log = get("CIHUB_LOG").unwrap_or_else(|| "info".to_owned());
+        let logs = Logs::new(&log, log_format)
+            .with_context(|| format!("CIHUB_LOG `{log}` is not a valid filter"))?;
         Ok(Self {
             roles,
             internal_addr,
-            log_filter,
-            log_format,
+            logs,
         })
     }
 }
@@ -115,7 +107,7 @@ mod tests {
         let config = config(&[]).unwrap();
         assert_eq!(config.roles, Role::ALL.into_iter().collect());
         assert_eq!(config.internal_addr, DEFAULT_INTERNAL_ADDR.parse().unwrap());
-        assert_eq!(config.log_format, LogFormat::Json);
+        assert_eq!(config.logs.format(), LogFormat::Json);
     }
 
     #[test]
@@ -141,6 +133,6 @@ mod tests {
     #[test]
     fn pretty_format() {
         let config = config(&[("CIHUB_LOG_FORMAT", "pretty")]).unwrap();
-        assert_eq!(config.log_format, LogFormat::Pretty);
+        assert_eq!(config.logs.format(), LogFormat::Pretty);
     }
 }

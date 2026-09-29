@@ -15,7 +15,7 @@ Chaque processus émet des traces OpenTelemetry, des métriques Prometheus et de
 ## Logs
 
 Les logs utilisent `tracing` et `tracing-subscriber` (`AGENTS.md` D13). Seul `cihub-server` (et la CLI pour ses
-propres messages) installe le subscriber ; les crates de bibliothèque écrivent avec les macros de `tracing`
+propres messages) installe le subscriber, par `cihub-telemetry` (`AGENTS.md` D34) ; les crates de bibliothèque écrivent avec les macros de `tracing`
 (`info!`, `warn!`…) et ouvrent des spans. Les crates pures n'écrivent pas de logs : l'appelant écrit leurs
 décisions.
 
@@ -24,7 +24,7 @@ décisions.
 | Variable            | Défaut | Rôle                                                                                                                              |
 | ------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `CIHUB_LOG`         | `info` | Filtre de niveau, global ou par crate, à la syntaxe de `EnvFilter` : `info,cihub_github=debug` passe une seule crate en `debug` |
-| `CIHUB_LOG_FORMAT`  | `json` | `json` (une ligne JSON par enregistrement, pour le stockage de logs) ou `pretty` (texte en couleur, pour un terminal)             |
+| `CIHUB_LOG_FORMAT`  | `json` | `json` (une ligne JSON par enregistrement, pour le stockage de logs) ou `pretty` (une ligne de texte en couleur, pour un terminal)    |
 
 Une valeur invalide arrête le processus au démarrage. `mise run dev` utilise `pretty`.
 
@@ -39,7 +39,7 @@ des champs de l'événement, pour qu'une requête sur `queue_id` trouve toutes l
 
 `timestamp` est en RFC 3339 UTC, `level` vaut `DEBUG`, `INFO`, `WARN` ou `ERROR`, `target` est le module Rust qui
 écrit. Le format JSON standard de `tracing-subscriber` place les champs des spans dans une liste `spans` et non au
-premier niveau : `cihub-server` les met à plat avec son propre formateur (`crates/server/src/logs.rs`), sans
+premier niveau : `cihub-telemetry` les met à plat avec son propre formateur (`crates/telemetry/src/logs.rs`), sans
 autre dépendance. Les clés d'une ligne sont dans l'ordre alphabétique. Les `trace_id` et `span_id` s'ajoutent quand les traces OpenTelemetry arrivent.
 
 ### Clés de corrélation

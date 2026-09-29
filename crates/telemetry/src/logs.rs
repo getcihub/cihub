@@ -4,25 +4,77 @@ use std::fmt;
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::macros::format_description;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::fmt::format::{JsonFields, Writer};
+use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::fmt::{FmtContext, FormatEvent, FormatFields, FormattedFields};
 use tracing_subscriber::registry::LookupSpan;
 
-use crate::config::{Config, LogFormat};
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::ParseError;
 
-/// Installs the global subscriber (`docs/OBSERVABILITY.md`).
-pub fn init(config: &Config) -> anyhow::Result<()> {
-    let builder = tracing_subscriber::fmt().with_env_filter(config.log_filter.clone());
-    match config.log_format {
-        LogFormat::Json => builder
-            .fmt_fields(JsonFields::new())
-            .event_format(FlatJson)
-            .try_init(),
-        LogFormat::Pretty => builder.pretty().try_init(),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LogFormat {
+    /// One JSON object per line, for a log store.
+    Json,
+    /// One colored line of text, for a terminal.
+    Pretty,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LogsError {
+    #[error("invalid log filter")]
+    InvalidFilter(#[source] ParseError),
+    #[error("a global subscriber is already installed")]
+    AlreadyInstalled(#[source] Box<dyn Error + Send + Sync>),
+}
+
+/// The settings of the logs, checked before they are installed.
+#[derive(Debug)]
+pub struct Logs {
+    filter: EnvFilter,
+    format: LogFormat,
+}
+
+impl Logs {
+    /// `filter` uses the syntax of `EnvFilter`: `info,cihub_github=debug`.
+    ///
+    /// # Errors
+    ///
+    /// `filter` is not a valid filter.
+    pub fn new(filter: &str, format: LogFormat) -> Result<Self, LogsError> {
+        let filter = EnvFilter::try_new(filter).map_err(LogsError::InvalidFilter)?;
+        Ok(Self { filter, format })
     }
-    .map_err(|err| anyhow::anyhow!(err))
+
+    pub fn format(&self) -> LogFormat {
+        self.format
+    }
+
+    /// Installs the global subscriber (`docs/OBSERVABILITY.md`).
+    ///
+    /// # Errors
+    ///
+    /// A global subscriber is already installed.
+    pub fn init(self) -> Result<(), LogsError> {
+        let builder = tracing_subscriber::fmt().with_env_filter(self.filter);
+        match self.format {
+            LogFormat::Json => builder
+                .fmt_fields(JsonFields::new())
+                .event_format(FlatJson)
+                .try_init(),
+            LogFormat::Pretty => builder
+                .compact()
+                .with_target(false)
+                .with_timer(UtcTime::new(format_description!(
+                    "[hour]:[minute]:[second].[subsecond digits:3]"
+                )))
+                .try_init(),
+        }
+        .map_err(LogsError::AlreadyInstalled)
+    }
 }
 
 /// Writes one JSON object per line, with the fields of the open spans at the
@@ -181,12 +233,28 @@ mod tests {
         assert!(!line.contains_key("spans"));
     }
 
+    #[derive(Debug, thiserror::Error)]
+    #[error("outer")]
+    struct Outer(#[source] Root);
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("root")]
+    struct Root;
+
     #[test]
     fn errors_keep_their_causes() {
-        let err = anyhow::anyhow!("root").context("outer");
-        let err: &(dyn Error + 'static) = err.as_ref();
-        let lines = lines(|| warn!(error = err, "github call retried"));
+        let err = Outer(Root);
+        let lines = lines(|| warn!(error = &err as &dyn Error, "github call retried"));
         assert_eq!(lines[0]["error"], "outer: root");
+    }
+
+    #[test]
+    fn invalid_filters_are_refused() {
+        assert!(matches!(
+            Logs::new("info,=[", LogFormat::Json),
+            Err(LogsError::InvalidFilter(_))
+        ));
+        assert!(Logs::new("info,cihub_github=debug", LogFormat::Pretty).is_ok());
     }
 
     #[test]

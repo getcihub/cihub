@@ -1,0 +1,19 @@
+[package]
+name = "cihub-telemetry"
+description = "CIHub telemetry: logs, then traces and metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+thiserror.workspace = true
+time = { workspace = true, features = ["macros"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["ansi", "env-filter", "fmt", "json", "registry", "std", "time"] }
+
+[lints]
+workspace = true

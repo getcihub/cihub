@@ -11,13 +11,11 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
+cihub-telemetry.workspace = true
 serde.workspace = true
-serde_json.workspace = true
-time.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal"] }
 tokio-util.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["ansi", "env-filter", "fmt", "json", "registry", "std"] }
 
 [lints]
 workspace = true

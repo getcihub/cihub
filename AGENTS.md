@@ -236,6 +236,9 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   (36 caractères au total), envoyé par `Authorization: Bearer`. Le serveur garde seulement l'empreinte SHA-256 du
   jeton et le retrouve par cette empreinte. `cht` n'est jamais un type d'identifiant typedid.
 - **D33** L'API est servie sous `/api/v1`, sur l'adresse de l'instance, à côté du tableau de bord.
+- **D34** Complète D29 : le lot 2 crée aussi la crate `cihub-telemetry` (`crates/telemetry/`), qui installe les
+  logs (D13), puis les traces OpenTelemetry et les métriques Prometheus quand elles arrivent. Seuls les binaires
+  l'utilisent. En `pretty`, un log est une ligne : heure UTC en millisecondes, niveau, message et champs.
 
 ### 4.1 Questions ouvertes
 

@@ -193,11 +193,20 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cihub-telemetry",
  "serde",
- "serde_json",
- "time",
  "tokio",
  "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "cihub-telemetry"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+ "time",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1034,6 +1043,7 @@ dependencies = [
  "serde_json",
  "sharded-slab",
  "thread_local",
+ "time",
  "tracing",
  "tracing-core",
  "tracing-serde",

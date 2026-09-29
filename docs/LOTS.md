@@ -373,8 +373,8 @@ Autres valeurs fermées :
     lancent le binaire en tout-en-un et avec un seul rôle.
   - Reste : `cihub-store`, migrations et `migrate` ; tables de tenancy et RLS ; `events` ; outbox ; jetons et
     contrat `Module` ; tâches `migrate`, `test-integration` et `dev`. `/readyz` ne vérifie pas encore Postgres.
-  - Écarts : les logs sont dans `cihub-server`, pas dans une crate `cihub-telemetry` (`docs/ARCHITECTURE.md`),
-    car D29 ne crée que `cihub-server` et `cihub-store`. L'adresse interne par défaut est `127.0.0.1:8081`.
+  - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : la crate `cihub-telemetry` arrive dès ce lot et porte
+    les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`.
     `deny.toml` permet `axum` dans `cihub-server` (pour l'adresse interne), et `tokio` dans `axum`, `hyper`,
     `hyper-util`, `tokio-util` et `tower`.
 
