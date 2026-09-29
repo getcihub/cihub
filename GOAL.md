@@ -21,7 +21,7 @@ ses décisions.**
    par défaut, pas du code dans le noyau.
 3. **Agnostique de la CI.** CIHub ne lance jamais la CI : il pousse une branche de test et attend les statuts et
    check runs requis. GitHub Actions, Buildkite, CircleCI, Jenkins fonctionnent sans modification.
-4. **Simple à installer et à exploiter.** Une image, un Postgres 16, une GitHub App créée par l'assistant ;
+4. **Simple à installer et à exploiter.** Une image, un Postgres 17, une GitHub App créée par l'assistant ;
    `docker compose up` suffit pour une organisation. Moins de trente minutes de la première commande à la
    première PR mergée.
 5. **Chaque décision s'explique.** Chaque transition porte une raison d'un vocabulaire fermé ; un journal
@@ -57,6 +57,6 @@ ses décisions.**
 - Héberger ou lancer la CI.
 - La revue de code, une extension de navigateur, une app Slack au-delà des webhooks sortants, un provider
   Terraform.
-- GitLab et Bitbucket : l'interface `scm` les prévoit, la v1 ne les implémente pas.
-- ClickHouse lui-même : il arrive quand le volume le justifie, derrière `core.AnalyticsStore`.
+- GitLab et Bitbucket : le trait `Scm` les prévoit, la v1 ne les implémente pas.
+- ClickHouse lui-même : il arrive quand le volume le justifie, derrière le trait `AnalyticsStore`.
 - La spéculation probabiliste à la Uber : hors v1, mais le journal garde dès maintenant les attributs utiles.

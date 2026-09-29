@@ -1,0 +1,307 @@
+# CIHub : architecture et manuel de travail pour les contributeurs (humains et agents)
+
+Contexte : **tout le monde, en premier.** À lire avant de toucher au dépôt : les contraintes auxquelles la
+conception répond (§1), le cœur du système (§2), les principes sur lesquels une PR est jugée (§3), les décisions en
+vigueur et les questions ouvertes (§4), et les règles de travail (§5). L'ordre de lecture commence par `GOAL.md` ;
+§0 donne la carte de tous les autres documents.
+
+> **Pas de compatibilité ascendante avant la première version publiée.** On ne doit rien aux formes précédentes
+> du système : pas d'alias, de repli, de route dépréciée, d'ancienne clé de configuration. Quand une décision
+> change une forme, **supprimer l'ancienne forme dans le même changement** : code, routes, clients, tests, docs.
+> Si vous écrivez « encore accepté pour… » ou « legacy », arrêtez-vous et supprimez la chose. À partir de la
+> première version publiée, deux choses deviennent durables : le journal d'événements (il doit rester rejouable) et
+> les migrations publiées (en avant seulement, rétrocompatibles sur une version, voir `docs/DEPLOYMENT.md`).
+
+CIHub est une file de merge pour GitHub, open source et auto-hébergée, écrite en Rust au-dessus de Postgres. Elle
+prend les PR approuvées et vertes, les ordonne par branche cible, reteste chacune au-dessus de tout ce qui la
+précède selon la stratégie de la file, et ne merge que ce qui passe encore. Son second module, `flakytests`,
+conserve l'historique des résultats de tests pour dire si un test est instable. `GOAL.md` dit pourquoi, ce fichier
+garde les règles.
+
+## 0. Carte des documents (une seule place par fait : lier, ne pas copier)
+
+**Le code est la source de vérité (D1).** Les documents disent l'intention, les règles et le vocabulaire commun ;
+ils peuvent être en retard sur le code. Quand un document et le code divergent, le code fait foi et on corrige le
+document.
+
+| Document                 | Qui le lit, et quand                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `GOAL.md`                | Tout le monde, en premier. La phrase, le tableau d'acceptation, ce qu'on n'optimise pas.                   |
+| `AGENTS.md` (ce fichier) | Tout le monde. Contraintes §1, cœur §2, principes §3, décisions §4, règles §5.                             |
+| `docs/LOTS.md`           | Qui commence un travail : les phases, les lots, leur contenu, leurs critères de sortie et leur suivi.      |
+| `docs/ARCHITECTURE.md`   | Tout le monde, avant le premier changement de code : parcours d'un événement, rôles, workspace, crates.    |
+| `docs/DOMAIN.md`         | Qui touche aux états, transitions et raisons : le contrat de vocabulaire.                                  |
+| `docs/ALGORITHMS.md`     | Qui touche au noyau (`cihub-mq-core`) ou à la boucle de réconciliation (`cihub-mergequeue`).               |
+| `docs/GITHUB.md`         | Qui touche à `cihub-github`, aux permissions, aux webhooks, aux surfaces sur la PR.                        |
+| `docs/CI.md`             | Qui touche au contrat entre la file et la CI.                                                              |
+| `docs/DATA_MODEL.md`     | Qui écrit une migration ou une requête, ou touche à la RLS.                                                |
+| `docs/ANALYTICS.md`      | Qui touche à `cihub-analytics`, aux tables de faits, aux métriques produit.                                |
+| `docs/FLAKY_TESTS.md`    | Qui touche au module `flakytests` (`cihub-flakytests`) ou au trait `FlakeOracle`.                          |
+| `docs/API.md`            | Qui ajoute une route, un code d'erreur, un webhook sortant, une commande de CLI.                           |
+| `docs/CONFIGURATION.md`  | Qui ajoute un réglage, une stratégie ou une clé du fichier `.cihub.yaml`.                                  |
+| `docs/RELIABILITY.md`    | Qui touche à un job, un appel GitHub, la boucle de réparation. Chaque panne a un traitement nommé.         |
+| `docs/SECURITY.md`       | Qui touche à l'authentification, aux jetons, aux secrets.                                                  |
+| `docs/OBSERVABILITY.md`  | Qui écrit un log, ajoute une métrique ou une alerte. Les règles d'écriture des logs y sont.                |
+| `docs/DEPLOYMENT.md`     | Qui touche au `compose.yaml`, à l'image, aux migrations, à la CI du projet.                                |
+| `docs/COMPETITION.md`    | Qui justifie un écart avec Trunk, Mergify, GitHub, GitLab, bors, Zuul, Aviator, Graphite.                  |
+
+---
+
+## 1. Contraintes pour lesquelles on conçoit
+
+### 1.1 L'installation
+
+- **Une image, un Postgres 17, une GitHub App.** Pas de broker, pas de Redis, pas de stockage objet en v1. Chaque
+  dépendance ajoutée est une étape de plus pour un auto-hébergeur ; elle doit être justifiée par une mesure.
+- **Quatre rôles sans état** (`api`, `scheduler`, `worker`, `notifier`) dans un seul binaire, `cihub-server`.
+  Par défaut, un processus exécute les quatre rôles ; `CIHUB_ROLES` en choisit une partie, pour donner à chaque
+  rôle ses propres processus et le dimensionner seul (D8). Tout l'état est dans Postgres.
+- **Moins de trente minutes** de `docker compose up` à la première PR mergée, avec l'assistant qui crée la GitHub
+  App par le flux de manifeste.
+
+### 1.2 GitHub
+
+- **GitHub perd des webhooks et ne réessaie pas.** Il les livre aussi en double et dans le désordre. Rien ne doit
+  dépendre de la livraison d'un webhook : la boucle de réparation relit ce qui compte.
+- **Le budget est de 5 000 points par heure et par installation**, plus des limites secondaires. C'est une
+  ressource partagée par toutes les files d'une installation.
+- **GitHub est la vérité de l'état git**, Postgres celle de l'état de la file. En cas de désaccord, on croit
+  GitHub et on enregistre la transition.
+- **`mergeable` est calculé paresseusement par GitHub** (`UNKNOWN`) : on relit, on ne calcule pas.
+
+### 1.3 La CI des utilisateurs
+
+- On ne la lance jamais, on ne la modifie jamais. Le seul contrat est un SHA de test et des noms de statuts
+  requis. Un nom qui ne rapporte jamais donne un timeout, pas un échec.
+- La CI est lente (minutes à heures) et instable : un seul échec ne suffit jamais à désigner un coupable.
+
+### 1.4 L'échelle visée
+
+- Une instance standard : 1 000 organisations, 20 000 dépôts, 5 000 files, 50 000 soumissions par jour, un à
+  deux milliers de webhooks par minute en pointe. Au plus 500 entrées vivantes par file.
+- L'équipe : un développeur qui pilote des agents de code. D'où des lots d'une semaine, des interfaces figées et
+  des critères de sortie automatisés (`docs/LOTS.md`).
+
+---
+
+## 2. Le cœur, en une page
+
+Le détail est dans `docs/ARCHITECTURE.md` et `docs/ALGORITHMS.md` ; ce résumé sert à juger un changement.
+
+- **Journal d'événements par file.** L'état d'une file est un journal en ajout seul, de faits (ce qui a été
+  observé) et de décisions (ce que la file a choisi). Les tables `queue_items`, `test_groups`, `test_runs` sont des
+  projections, reconstructibles par rejeu, avec un instantané tous les 500 événements.
+- **Réconciliateur pur.** `plan(état, now) → plan` n'a aucune E/S. Le plan décrit un **état voulu** (les refs de
+  test et leur composition, les PR à merger, les statuts et commentaires à afficher), jamais une suite d'appels.
+- **Convergence.** On compare le plan à l'état observé et on n'émet que les jobs qui comblent l'écart. Chaque job
+  vérifie l'état réel avant d'agir et n'a pas d'effet si l'état est déjà atteint. Son résultat revient dans l'inbox
+  comme un événement.
+- **Une file, une instance à la fois.** Un bail (ou `pg_try_advisory_xact_lock`) désigne le scheduler d'une file ;
+  les transitions sont gardées en SQL (`UPDATE … WHERE id = $1 AND state = $2`).
+- **Ingestion inconditionnelle.** Vérifier la signature, stocker, acquitter en moins de 2 s. Aucune décision.
+- **Budget GitHub ordonnancé.** Chaque job a une classe : `interactive` > `merge` > `speculate` > `repair`. Quand
+  le budget baisse, la spéculation est réduite en premier, le merge en dernier.
+- **Modes dégradés explicites** par installation : `normal`, `throttled`, `github_unavailable`, `paused`.
+
+---
+
+## 3. Principes (ce sur quoi une PR est jugée)
+
+Une idée : **la file est un journal ; tout le reste est une projection du journal ou une convergence vers l'état
+qu'il décrit.** Dix conséquences. Un changement qui semble naturel dans un service classique (appeler GitHub
+depuis un handler, garder un état en mémoire, ajouter une file de messages) est souvent une violation ici. Une
+violation veut dire que le principe est faux (le corriger par une décision en §4, validée selon §4) ou que la PR
+l'est ; jamais « on corrigera plus tard ».
+
+| #        | Principe                                                                                                                                                                                      | L'indice dans une PR                                                                                                                                                         | La question à se poser                                                                  |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **I**    | **Le journal est la source de vérité de la file.** Les tables d'état sont des projections.                                                                                                    | Une écriture dans `queue_items` sans événement ; un état gardé en mémoire entre deux réconciliations.                                                                        | « Si je rejoue le journal de cette file, est-ce que j'obtiens le même état ? »          |
+| **II**   | **Le noyau est pur.** Les crates pures (`cihub-domain`, `cihub-conditions`, `cihub-config`, `cihub-mq-core`, `cihub-flaky-core`) ne font aucune E/S et ne lisent ni l'horloge ni le hasard. | Une dépendance à `tokio`, `sqlx`, `reqwest` ou `axum` ; un appel à `OffsetDateTime::now_utc`, `SystemTime::now` ou `Ulid::generate` sans exception locale (D16) ; un trait de store ou de SCM dans le noyau. | « Ce test de table peut-il tourner sans Postgres ni GitHub ? »                          |
+| **III**  | **Converger, ne pas piloter.** Un job décrit un état voulu et vérifie l'état réel avant d'agir.                                                                                               | Une séquence d'appels GitHub dans le réconciliateur ; un job qui échoue si l'état est déjà atteint.                                                                          | « Si ce job tourne deux fois, ou s'arrête au milieu et reprend, que se passe-t-il ? »   |
+| **IV**   | **La branche cible reste verte.** Une PR ne merge qu'après un test sur un commit qui contient tous ses prédécesseurs.                                                                         | Un merge sans exécution valide ; des statuts requis lus depuis la branche de la PR.                                                                                          | « Quel commit a été testé, et est-ce exactement ce qui atterrit (ou son arbre) ? »      |
+| **V**    | **Aucune intention perdue.** L'ingestion stocke avant de décider ; un webhook perdu est un retard.                                                                                            | Un traitement dans le handler de webhook ; une transition qui n'arrive que par un webhook.                                                                                   | « Si ce webhook n'arrive jamais, qui le rattrape, et en combien de temps ? »            |
+| **VI**   | **Chaque décision s'explique.** Chaque transition porte une raison du vocabulaire fermé (`docs/DOMAIN.md`).                                                                                   | Une nouvelle raison hors du vocabulaire ; une sortie de file sans raison ; une chaîne libre en guise de raison.                                                              | « Que lit l'utilisateur sur sa PR, et que lit l'opérateur dans la chronologie ? »       |
+| **VII**  | **Le budget GitHub est ordonnancé.** Tout appel passe par le trait `Scm`, porte une classe et consomme le budget de l'installation.                                                           | Un client `reqwest` vers GitHub hors de `cihub-github` ; un appel sans classe ; une boucle de lectures non groupées.                                                         | « Combien de points par heure coûte ce changement pour 50 PR en attente ? »             |
+| **VIII** | **Isolation par organisation.** Chaque table de tenant porte `org_id` et la RLS ; chaque requête du scheduler filtre par `queue_id`.                                                          | Une table sans `org_id` ; une requête sans filtre ; un cache partagé entre organisations.                                                                                    | « Une organisation peut-elle lire, ralentir ou déduire quoi que ce soit d'une autre ? » |
+| **IX**   | **Les modules ne se connaissent pas.** `cihub-mergequeue` et `cihub-flakytests` communiquent par les traits de `cihub-contracts` (`FlakeOracle`) et par les événements.                     | Une dépendance de `cihub-mergequeue` vers `cihub-flakytests`, ou l'inverse.                                                                                                  | « Si ce module est désactivé, la file se comporte-t-elle exactement comme avant ? »     |
+| **X**    | **Garder CIHub petit.** Postgres seul ; une stratégie est une table de valeurs par défaut ; chaque dépendance est validée (D2).                                                                | Une nouvelle dépendance ou une nouvelle crate sans validation ; du code de stratégie dans le noyau ; une option sans utilisateur.                                             | « Quelle ligne de `GOAL.md` ce changement sert-il ? »                                   |
+
+---
+
+## 4. Décisions
+
+**Une décision est validée avant d'être appliquée.** Un agent propose chaque choix d'architecture, de
+dépendance, de crate, de vocabulaire, de format public ou de nom à l'utilisateur, ou à la personne qui développe
+la feature, et attend son accord avant de l'écrire ou de l'appliquer. Un agent n'ajoute jamais une décision seul.
+
+**Le journal des décisions est en ajout seul.** Chaque décision a un identifiant stable (`Dn`), une date et le nom
+de la personne qui l'a validée. On ne modifie ni ne supprime une décision : pour la changer, on ajoute une nouvelle
+décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Remplacée par Dn_ (superseded-by).
+
+**29 septembre 2026, validées par Nicolas Lecoy.** Le projet passe de Go à Rust ; le journal repart de D1.
+
+- **D1** Le code est la source de vérité. Les documents disent l'intention, les règles et le vocabulaire commun,
+  et peuvent être en retard. `docs/DOMAIN.md` est le contrat de vocabulaire : il définit chaque terme et renvoie
+  au code pour la liste des valeurs. Ce qui n'est pas encore codé est décrit dans le lot qui le construit
+  (`docs/LOTS.md`), pas dans `docs/DOMAIN.md`.
+- **D2** La liste des dépendances est `[workspace.dependencies]` dans `Cargo.toml`. Une nouvelle dépendance
+  externe est validée selon §4.
+- **D3** Chaque lot a un statut (`à faire`, `en cours`, `terminé`, `bloqué` avec la cause) et, dès qu'il commence,
+  un bloc « Suivi » (fait, reste, écarts avec le plan) dans `docs/LOTS.md`, mis à jour dans le même changement que
+  le code.
+- **D4** Les identifiants sont des ULID typés au format texte `typedid` (`org_0627ank54ajth78mw4353dqpw5dvt5kp`),
+  dans `cihub-domain`.
+- **D5** Le journal d'une file contient des faits et des décisions ; le rejeu applique les événements avec la
+  fonction pure `apply` et n'appelle jamais `plan` ; les identifiants des décisions sont des ULID déterministes.
+  Le détail est la cible du lot 1 (`docs/LOTS.md`).
+- **D6** Une seule énumération `Reason` et une table des transitions permises, dont la clé est (état de départ,
+  état d'arrivée) et la valeur la liste des raisons permises, pour les entrées, les groupes, les exécutions et la
+  file. Elle remplace les énumérations de raisons par état d'arrivée (lot 1).
+- **D7** Pas de variante pour les PR empilées (`ConflictCulprit::StackedPr`, `stacked_pr_*`) avant le lot des PR
+  empilées.
+- **D8** Deux binaires. `cihub-server` (`crates/server/`) porte les quatre rôles, tout-en-un par défaut ;
+  `CIHUB_ROLES` (`api`, `scheduler`, `worker`, `notifier`, séparés par des virgules) choisit ceux du processus. Pas
+  de crate par rôle : un rôle lance des boucles dont le code est dans les crates de bibliothèque. Les rôles d'un
+  même processus ne partagent que le pool Postgres. `cihub` est la CLI, distribuée seule, sans code serveur.
+- **D9** Une crate se crée quand un lot en a besoin, après validation. `docs/ARCHITECTURE.md` décrit les crates qui
+  existent et la liste cible. Le squelette de `cihub-server` arrive au lot 2.
+- **D10** Les tâches sont dans `mise.toml` à la racine ; une tâche existe seulement quand elle a quelque chose à
+  exécuter (§5). La CI appelle les tâches `mise`, sans répéter leurs commandes.
+- **D11** Les crates pures ont une couverture de lignes d'au moins 90 %, mesurée par `cargo-llvm-cov`
+  (`mise run cover`) et contrôlée en CI.
+- **D12** `compose.yaml` à la racine démarre seulement Postgres (`postgres:17.5-alpine`) pour le développement,
+  publié sur `127.0.0.1`, avec un mot de passe de développement écrit dans le fichier.
+- **D13** Les logs utilisent `tracing` et `tracing-subscriber`, en JSON par défaut ou en `pretty`, avec les clés de
+  corrélation portées par les spans ; les secrets sont dans des `secrecy::SecretString`. Le format et les règles
+  sont dans `docs/OBSERVABILITY.md`.
+- **D14** Les migrations sont explicites. `cihub-server migrate` les applique puis s'arrête ; au démarrage,
+  `cihub-server` n'applique rien et s'arrête si une migration embarquée manque en base. Un processus dédié les
+  lance avant les rôles : `mise run migrate` en développement, un service `cihub-migrate` dans le `docker compose`
+  d'installation, un `Job` en hook Helm `pre-install` et `pre-upgrade` sur Kubernetes.
+- **D15** Les pratiques Rust de §5 (erreurs, lints, tests, asynchrone, dépendances, documentation du code).
+- **D16** (Q11) L'horloge et le hasard sont interdits partout par `disallowed-methods` dans le `clippy.toml` de la
+  racine (`SystemTime::now`, `Instant::now`, `OffsetDateTime::now_utc`, `Ulid::generate`, `Generator::generate`).
+  Le seul endroit qui les lit porte un `#[expect(clippy::disallowed_methods, reason = "…")]` local.
+- **D17** Toute la suite d'outils s'installe par `mise` : Rust (version fixée, profil `minimal`, composants
+  `clippy`, `rustfmt` et `llvm-tools`) et les outils de `mise.toml`. `mise.lock` fixe les versions et les sommes de
+  contrôle par plateforme ; la CI installe avec `--locked`.
+- **D18** La CI suit l'organisation de `home-operations/external-dns-unifi-webhook` : un job par tâche `mise`, un
+  job `Workflow Lint` (`actionlint`, `zizmor`), et un job `Build Success` qui les réunit et sert de statut requis.
+  Chaque action est épinglée par le SHA de son commit, avec la version en commentaire
+  (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`).
+- **D19** Les versions sont publiées par release-please (`release-please-config.json`,
+  `.release-please-manifest.json`), à partir des titres de commits au format Conventional Commits. Type `simple` :
+  le type `rust` ne gère pas un workspace dont la racine n'a pas de `[package]`. release-please met à jour
+  `[workspace.package].version` dans `Cargo.toml`, les versions des crates `cihub-*` dans `Cargo.lock` et
+  `CHANGELOG.md` ; les tags sont `vX.Y.Z`. Le workflow utilise la GitHub App de bot du projet (secrets
+  `BOT_CLIENT_ID` et `BOT_APP_PRIVATE_KEY`). L'image et son workflow de publication arrivent au lot 9.
+- **D20** Complète D16 : les constructeurs d'identifiants (`OrgId::new()` et les autres) sont aussi interdits par
+  `disallowed-methods` ; ils portent l'exception locale et n'ont pas d'`impl Default`. Les tests utilisent des
+  identifiants fixes (`OrgId::from_ulid(Ulid(1))`).
+- **D21** Renovate tourne dans ce dépôt par `.github/workflows/renovate.yaml`, copié de `nlecoy/home-ops`, avec la
+  GitHub App de bot, et peut exécuter `mise` pour mettre à jour `mise.lock`. Sa configuration `.renovaterc.json5`
+  est propre au projet (pas de preset `home-operations`) : actions épinglées par SHA avec la version en commentaire,
+  titres Conventional Commits, groupes (actions GitHub, outils `mise`, toolchain Rust), attente de 3 jours après une
+  publication, mise à jour mensuelle des lockfiles. Pas de merge automatique : une personne merge chaque mise à
+  jour.
+
+### 4.1 Questions ouvertes
+
+Chaque question porte un identifiant ; `docs/LOTS.md` indique le lot qui a besoin de la réponse. Une question
+tranchée devient une décision ci-dessus et sort de cette liste.
+
+- **Q1** La raison `tests_restarted_flake_suspected` (`docs/FLAKY_TESTS.md`) n'est pas dans le vocabulaire fermé.
+  _(lot 14)_
+- **Q2** `fast_forward` : méthode par défaut de la stratégie `sequential` (le commit testé atterrit) ou option,
+  car elle exige un contournement de protection de branche. _(lot 7)_
+- **Q3** Merge optimiste après l'éviction d'un prédécesseur : règle stricte (redémarrer l'aval) par défaut, la
+  souple restant une option. _(lot 12)_
+- **Q4** Push sur une PR en file : annuler (sûr, mais boucles avec Dependabot) ou resoumettre automatiquement.
+  Proposition : annuler par défaut, `resubmit_on_push` comme réglage. _(lot 7)_
+- **Q5** Permission optionnelle `actions: write` pour annuler la CI des branches remplacées et relancer les seuls
+  jobs en échec : vaut-elle une demande d'installation plus intimidante ? _(lot 4)_
+- **Q6** Spéculation probabiliste à la Uber : hors v1, mais le journal doit garder dès maintenant les attributs
+  nécessaires (taille du diff, auteur, fichiers, durées). _(lot 2)_
+- **Q7** Conventions sémantiques OpenTelemetry pour les tests : suivre la proposition du groupe CI/CD, ou figer
+  des attributs `cihub.*` tant qu'elle n'est pas stable. _(lot 14)_
+- **Q8** Seuils de bascule vers ClickHouse et vers NATS : volumes à partir desquels la documentation les
+  recommande. _(lot 15)_
+- **Q9** Stack du tableau de bord : React avec le client TypeScript généré est l'hypothèse ; à confirmer.
+  _(lot 10)_
+- **Q10** Noms des tables de la file : `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`) ou un
+  préfixe par module (`mq_items`, `mq_groups`, `mq_runs`), qui suit le préfixe des fichiers de migration.
+  _(lot 2)_
+- **Q12** `docs/FLAKY_TESTS.md` abonne le module à `mergequeue.run.completed`, qui n'est pas un type d'événement
+  de `docs/DOMAIN.md` (`run.transitioned` ?). _(lot 14)_
+
+---
+
+## 5. Règles de travail
+
+- **Pas de compatibilité avant la première version publiée** (bandeau en haut) : changer la forme et supprimer
+  l'ancienne dans le même changement.
+- **Proposer, puis appliquer.** Tout choix qui relève d'une décision (§4) est proposé et validé avant d'être
+  écrit. En cas de doute, c'est une décision.
+- **Un lot à la fois.** Prendre le lot suivant dans `docs/LOTS.md`, respecter ses interfaces figées, ne pas
+  anticiper les lots suivants. Le critère de sortie automatisé est la définition de « terminé ». Dans le même
+  changement que le code, mettre à jour le statut du lot et son bloc « Suivi » (D3) : ce qui est fait, ce qui
+  reste, les écarts validés avec le plan.
+- **Documentation.** Le code fait foi (D1). Un changement de comportement met à jour le document du sujet (§0)
+  dans le même changement quand c'est possible ; sinon, le bloc « Suivi » du lot note la mise à jour qui manque.
+- **Vocabulaire fermé.** Un nouvel état, une nouvelle raison ou un nouveau type d'événement se déclare dans
+  `cihub-domain` (avec un commentaire `///` qui donne son sens) et dans l'enum Postgres, dans le même changement ;
+  un test compare les deux énumérations. `docs/DOMAIN.md` définit le terme s'il est nouveau.
+- **Noyau sans E/S.** Les crates pures reçoivent l'heure et les identifiants par paramètre, ne dépendent ni de
+  `tokio`, ni de `sqlx`, ni de `reqwest`, ni d'`axum` (règles `bans` de `deny.toml`), et n'écrivent pas de logs :
+  l'appelant écrit leurs décisions. Leurs tests sont des tables, des tests de propriété et des instantanés.
+- **Tout appel GitHub passe par le trait `Scm`**, avec une classe de priorité. Le réconciliateur n'en fait aucun.
+  Pas de client HTTP vers GitHub hors de `cihub-github`.
+- **Transitions gardées en SQL** et vérification du nombre de lignes modifiées.
+- **Tests** : unitaires avec `cargo nextest` ; intégration contre un vrai Postgres avec `#[sqlx::test]` (une base
+  neuve par test) ; le simulateur GitHub (`cihub-github-sim`) pour tout scénario de file. Jamais de test contre le
+  vrai GitHub hors du test de bout en bout de staging.
+- **Tâches `mise`** (`mise.toml`) :
+
+  | Tâche              | Contenu                                                                               | Disponible |
+  | ------------------ | ------------------------------------------------------------------------------------- | ---------- |
+  | `fmt`              | `cargo fmt --all`                                                                     | oui        |
+  | `lint`             | `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo deny check` | oui        |
+  | `test`             | `cargo nextest run --workspace`                                                       | oui        |
+  | `cover`            | couverture des crates pures, 90 % au moins (D11)                                      | oui        |
+  | `lint-workflows`   | `actionlint` et `zizmor` sur `.github/workflows`                                      | oui        |
+  | `check`            | `lint`, puis `test`                                                                   | oui        |
+  | `db`               | Postgres de `compose.yaml`                                                            | oui        |
+  | `migrate`          | `cihub-server migrate` sur le Postgres de développement (D14)                         | lot 2      |
+  | `test-integration` | tests contre Postgres                                                                 | lot 2      |
+  | `dev`              | Postgres, puis `cihub-server` en local avec les quatre rôles                          | lot 2      |
+  | `sim`              | tests d'injection de pannes                                                           | lot 7      |
+
+  La CI exécute `lint`, `test`, `cover` et `lint-workflows`, un job par tâche (D18). Une nouvelle tâche est ajoutée
+  au tableau dans le même changement.
+- **Logs** : suivre les règles d'écriture de `docs/OBSERVABILITY.md`. Les lints clippy en contrôlent une partie.
+- **Secrets** : jamais dans le dépôt, ni dans les tests, ni dans les journaux. La clé privée de l'App et le secret
+  de webhook viennent de l'environnement ou d'un gestionnaire de secrets.
+
+### 5.1 Pratiques Rust (D15)
+
+- **Erreurs.** Une crate de bibliothèque déclare ses erreurs dans une énumération `thiserror`, qui garde la cause
+  (`#[source]`). `anyhow` seulement dans les binaires (`cihub-server`, `cihub`), qui ajoutent le contexte pour
+  l'opérateur.
+- **Pas de panic implicite.** `unwrap()` et `expect()` sont interdits hors des tests (lints `unwrap_used` et
+  `expect_used`). Un `expect` reste permis avec un `#[expect(clippy::expect_used, reason = "…")]` local quand
+  l'invariant est prouvé.
+- **Lints.** `unsafe_code = "forbid"`, `clippy::pedantic`, et `print_stdout`, `print_stderr`, `dbg_macro`, `todo`,
+  `unimplemented` (`Cargo.toml`, `[workspace.lints]`). Un exemple en ligne de commande peut autoriser
+  `print_stdout` et `print_stderr` pour lui seul.
+- **Tests.** `proptest` pour les tests de propriété, `insta` pour les instantanés des plans, `#[sqlx::test]` pour
+  l'intégration.
+- **Asynchrone.** Le noyau et `plan` sont synchrones. Un calcul long passe par `spawn_blocking`. Chaque boucle
+  reçoit un `CancellationToken` et s'arrête quand il est annulé. Un verrou n'est jamais gardé pendant un `.await`
+  (lint `await_holding_lock`).
+- **Outils.** Rust et les outils s'installent par `mise install` (D17) ; un changement de version met à jour
+  `mise.lock` (`mise lock`) dans le même changement.
+- **Dépendances.** Toutes les versions dans `[workspace.dependencies]` ; `default-features = false` quand c'est
+  possible ; TLS par `rustls`, jamais OpenSSL.
+- **Binaires.** Le profil `release` (`lto = "thin"`, `codegen-units = 1`) est ajouté avec l'image, pas avant.
+- **Documentation du code.** Chaque crate commence par un commentaire `//!` qui dit son rôle et ce qu'elle ne fait
+  pas. Chaque variante du vocabulaire fermé porte un commentaire `///` qui donne son sens.
