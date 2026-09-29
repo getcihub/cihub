@@ -6,6 +6,12 @@
 //! cargo run -p cihub-config --example check < .cihub.yaml
 //! ```
 
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a command-line example writes its result to the terminal"
+)]
+
 use std::fmt::Debug;
 use std::process::ExitCode;
 

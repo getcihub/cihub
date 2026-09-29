@@ -23,7 +23,16 @@ macro_rules! id_type {
             pub const PREFIX: &'static str = $prefix;
 
             /// Generates a new ULID from the system clock and random bytes.
-            /// The pure planner must receive identifiers, not call this.
+            /// Pure code receives identifiers instead: `clippy.toml` forbids
+            /// this call without a local `#[expect]`.
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the one place that makes identifiers from the clock and randomness"
+            )]
+            #[expect(
+                clippy::new_without_default,
+                reason = "a `Default` would read the clock and randomness past the lint"
+            )]
             pub fn new() -> Self {
                 Self(Ulid::generate())
             }
@@ -41,12 +50,6 @@ macro_rules! id_type {
             pub fn created_at(&self) -> Option<OffsetDateTime> {
                 let nanos = i128::from(self.0.timestamp_ms()) * 1_000_000;
                 OffsetDateTime::from_unix_timestamp_nanos(nanos).ok()
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
             }
         }
 
@@ -137,7 +140,7 @@ fn encode(prefix: &str, ulid: Ulid) -> String {
 
     let mut out = format!("{prefix}_");
     // Standard base32 bit order without padding: 5 bytes give 8 characters.
-    for chunk in data.chunks_exact(5) {
+    for chunk in data.as_chunks::<5>().0 {
         let bits = chunk.iter().fold(0u64, |acc, &b| acc << 8 | u64::from(b));
         for i in (0..8).rev() {
             out.push(char::from(ALPHABET[(bits >> (5 * i) & 0x1f) as usize]));
@@ -161,8 +164,10 @@ fn parse(prefix: &'static str, s: &str) -> Result<Ulid, IdParseError> {
     let mut data = [0u8; 20];
     for (chunk, out) in main
         .as_bytes()
-        .chunks_exact(8)
-        .zip(data.chunks_exact_mut(5))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .zip(data.as_chunks_mut::<5>().0)
     {
         let mut bits = 0u64;
         for &c in chunk {
@@ -330,7 +335,7 @@ mod tests {
             r#""org_0627ank54ajth78mw4353dqpw5dvt5kp""#
         );
 
-        let queue = QueueId::new().to_string();
+        let queue = QueueId::from_ulid(ulid("01GHTNCS92MPM9T5710S8VDXQ1")).to_string();
         assert_eq!(
             queue.parse::<ItemId>(),
             Err(IdParseError::WrongType { expected: "item" })

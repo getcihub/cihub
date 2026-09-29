@@ -22,7 +22,7 @@ deny = [
         "cihub-platform",
         "cihub-mergequeue",
         "cihub-flakytests",
-        "cihubd",
+        "cihub-server",
         "cihub-cli",
     ] },
     { crate = "sqlx", wrappers = [

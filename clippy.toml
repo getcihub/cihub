@@ -1,1 +1,21 @@
 doc-valid-idents = ["CIHub", ".."]
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# Principle II: the clock and randomness are read in one place, which carries
+# a local `#[expect(clippy::disallowed_methods, reason = "...")]`; everything
+# else receives the time and the identifiers as parameters.
+disallowed-methods = [
+  { path = "std::time::SystemTime::now", reason = "receive the time as a parameter" },
+  { path = "std::time::Instant::now", reason = "receive the time as a parameter" },
+  { path = "time::OffsetDateTime::now_utc", reason = "receive the time as a parameter" },
+  { path = "ulid::Ulid::generate", reason = "receive identifiers as parameters" },
+  { path = "ulid::Generator::generate", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::OrgId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::RepoId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::QueueId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::ItemId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::GroupId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::RunId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::EventId::new", reason = "receive identifiers as parameters" },
+]

@@ -176,6 +176,7 @@ const fn failed_from(reason: FailedReason) -> ItemState {
 mod tests {
     use strum::IntoEnumIterator;
     use time::OffsetDateTime;
+    use ulid::Ulid;
 
     use super::*;
     use crate::{Actor, EventId, OrgId, Priority};
@@ -237,9 +238,9 @@ mod tests {
 
     fn item(state: ItemState) -> Item {
         Item {
-            id: ItemId::new(),
-            org_id: OrgId::new(),
-            queue_id: QueueId::new(),
+            id: ItemId::from_ulid(Ulid(1)),
+            org_id: OrgId::from_ulid(Ulid(2)),
+            queue_id: QueueId::from_ulid(Ulid(3)),
             pr_number: 1,
             head_sha: "0123456789abcdef0123456789abcdef01234567".into(),
             state,
@@ -253,7 +254,7 @@ mod tests {
 
     fn event(item: &Item, to: Target) -> Event {
         Event {
-            id: EventId::new(),
+            id: EventId::from_ulid(Ulid(4)),
             org_id: item.org_id,
             queue_id: item.queue_id,
             item_id: Some(item.id),
@@ -292,7 +293,7 @@ mod tests {
     fn rejects_an_event_for_another_item() {
         let item = item(ItemState::Pending);
         let mut event = event(&item, Target::Testing);
-        event.item_id = Some(ItemId::new());
+        event.item_id = Some(ItemId::from_ulid(Ulid(5)));
         assert!(matches!(
             transition(&item, &event),
             Err(TransitionError::ItemMismatch { .. })

@@ -6,6 +6,12 @@
 //! cargo run -p cihub-conditions --example eval < my.conditions
 //! ```
 
+#![allow(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "a command-line example writes its result to the terminal"
+)]
+
 use std::process::ExitCode;
 use std::time::Duration;
 
