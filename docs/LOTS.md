@@ -35,7 +35,7 @@ phase 1).
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
-| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | Q6, Q10   | à faire                                  |
+| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | Q10       | à faire                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
@@ -138,10 +138,9 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     `docs/RELIABILITY.md`). Tests : tables des transitions, scénarios rejoués, test de propriété (20 000 cas
     vérifiés en local). `mise run cover` couvre aussi `cihub-mq-core`. Exemple `simulate`, qui joue un
     scénario ligne par ligne et affiche les décisions (`crates/mq-core/examples/`).
-  - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : les réglages sont un paramètre de `plan` et de `check`,
-    comme l'heure, car `cihub-domain` ne peut pas dépendre de `cihub-config` ; `queue.settings_changed` ne porte
-    que le mode avant et après. `item.submitted` porte `author`, `additions`, `deletions` et `changed_files`
-    (Q6). Dépendances `thiserror` et `proptest` (développement) ; pas d'`insta` à ce lot. Vocabulaire neutre du
+  - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : crate `cihub-mq-core` (`AGENTS.md` D24) ; réglages en
+    paramètre de `plan` et de `check` (D25) ; dépendances `thiserror` et `proptest`, pas d'`insta` à ce lot (D26) ;
+    `item.submitted` porte `author`, `additions`, `deletions` et `changed_files` (D27). Vocabulaire neutre du
     journal (`AGENTS.md` D23) : `Mergeability` (`mergeable`, `behind`, `conflict`, `blocked`, `unknown`, qui
     couvre aussi la valeur `DRAFT` de GitHub, absente avant), raisons d'échec du merge `merge_*` à la place de
     `github_api_*`, faits `access.lost` et `access.restored` à la place de `installation.*`, `CheckKind`
@@ -155,8 +154,7 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
   - Reste pour les lots suivants : conditions d'entrée et exception du statut de la file (lot 5), fenêtre
     adaptative (lot 8), profondeur d'échec en attente au-delà de 0 et merge optimiste (lot 12), lots et bissection
     (lot 12), merge direct (lot 7), `not_ready_timeout_hours` (lot 5), sérialisation du `Snapshot` pour
-    l'instantané (lot 5). Les décisions de ce lot (crate, dépendances, réglages en paramètre, Q6) sont à écrire
-    dans `AGENTS.md` §4 après validation du texte.
+    l'instantané (lot 5).
 
 #### Cible du lot 1 : journal, faits et décisions
 
@@ -181,7 +179,7 @@ Faits :
 
 | Type                                                 | Source                                                       | Payload                                                                                                                                              |
 | ---------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `item.submitted`                                     | commande, label, API, tableau de bord, CLI                   | numéro de PR, SHA de tête, priorité, `no_batch`, `direct`, `submitted_via`, attributs de Q6                                                          |
+| `item.submitted`                                     | commande, label, API, tableau de bord, CLI                   | numéro de PR, SHA de tête, priorité, `no_batch`, `direct`, `submitted_via`, attributs de D27                                                         |
 | `item.cancel_requested`                              | `/cihub cancel`, API, CLI                                    | `by_admin` ; donne `admin_requested` ou `user_requested`                                                                                             |
 | `item.restart_requested`                             | `/cihub restart`, API, CLI                                   | `by_api` ; donne `tests_restarted_by_user` ou `tests_restarted_by_api_request`                                                                       |
 | `pr.observed`                                        | webhook `pull_request` ou `pull_request_review`, tic, resync | état complet lu : ouverte, fermée ou mergée, SHA de tête, branche de base, brouillon, labels, mergeabilité, décision de revue, checks de la PR        |
@@ -352,7 +350,7 @@ Autres valeurs fermées :
   - Tables `orgs`, `installations`, `repos`, `users`, `memberships`, `api_tokens`, `audit_log` ; RLS avec
     `cihub.org_id` ; table `events` partitionnée par mois et sérialisation de `Event` (lot 1) ; `outbox`,
     abonnements ; contrat `Module` et activation par organisation ; jetons hachés en SHA-256 et scopes. Le schéma
-    d'événement garde les attributs de Q6.
+    d'événement garde les attributs de D27.
   - Tâches `migrate`, `test-integration` et `dev` ; service Postgres dans la CI.
 - **Interfaces figées** : schéma de la table `events` ; contrat `Module` ; politique RLS ; format des jetons ;
   variables `CIHUB_*` du serveur.

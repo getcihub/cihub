@@ -214,6 +214,18 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `merge_branch_protection_unmet`, `merge_already_in_progress` et `merge_repeated_server_errors` ; la perte de
   l'accès au dépôt est un fait `access.lost` ou `access.restored` ; `CheckKind` vaut `check` ou `status`. Les noms
   de Trunk restent dans les webhooks sortants, par une traduction au lot 11.
+- **D24** La crate pure `cihub-mq-core` (`crates/mq-core/`) contient `apply`, le graphe de merge, `plan` et
+  `check`. Elle dépend de `cihub-domain` et ne connaît ni `cihub-config` ni `cihub-conditions`.
+- **D25** Les réglages de la file (`QueueSettings`) sont un paramètre de `plan` et de `check`, comme l'heure :
+  `plan(snapshot, settings, now)` et `check(snapshot, settings)`. Ils ne sont pas dans le snapshot, car
+  `cihub-domain` ne peut pas dépendre de `cihub-config`. Le fait `queue.settings_changed` porte seulement le mode
+  avant et après.
+- **D26** `thiserror` pour les erreurs des crates de bibliothèque (§5.1) ; `proptest` pour les tests de
+  propriété, en dépendance de développement seulement. `insta` arrive avec le premier lot qui compare des plans
+  par instantanés.
+- **D27** (Q6) La spéculation probabiliste reste hors v1. Le fait `item.submitted` garde dès maintenant les
+  attributs dont elle aura besoin : `author`, `additions`, `deletions` et `changed_files`. Les durées viennent des
+  horodatages du journal ; elles ne sont pas un attribut.
 
 ### 4.1 Questions ouvertes
 
@@ -230,8 +242,6 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   Proposition : annuler par défaut, `resubmit_on_push` comme réglage. _(lot 7)_
 - **Q5** Permission optionnelle `actions: write` pour annuler la CI des branches remplacées et relancer les seuls
   jobs en échec : vaut-elle une demande d'installation plus intimidante ? _(lot 4)_
-- **Q6** Spéculation probabiliste à la Uber : hors v1, mais le journal doit garder dès maintenant les attributs
-  nécessaires (taille du diff, auteur, fichiers, durées). _(lot 2)_
 - **Q7** Conventions sémantiques OpenTelemetry pour les tests : suivre la proposition du groupe CI/CD, ou figer
   des attributs `cihub.*` tant qu'elle n'est pas stable. _(lot 14)_
 - **Q8** Seuils de bascule vers ClickHouse et vers NATS : volumes à partir desquels la documentation les

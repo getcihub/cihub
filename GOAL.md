@@ -59,4 +59,4 @@ ses décisions.**
   Terraform.
 - GitLab et Bitbucket : le trait `Scm` les prévoit, la v1 ne les implémente pas.
 - ClickHouse lui-même : il arrive quand le volume le justifie, derrière le trait `AnalyticsStore`.
-- La spéculation probabiliste à la Uber : hors v1, mais le journal garde dès maintenant les attributs utiles.
+- La spéculation probabiliste à la Uber : hors v1, mais le journal garde dès maintenant les attributs utiles (`AGENTS.md` D27).

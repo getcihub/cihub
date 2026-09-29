@@ -38,7 +38,7 @@ pub enum EventKind {
         no_batch: bool,
         direct: bool,
         submitted_via: SubmittedVia,
-        /// Attributes kept for a probabilistic speculation (`AGENTS.md` Q6).
+        /// Attributes kept for a probabilistic speculation (`AGENTS.md` D27).
         author: String,
         additions: u64,
         deletions: u64,
