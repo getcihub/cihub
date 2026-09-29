@@ -28,7 +28,7 @@ run = ["actionlint", "zizmor .github/workflows"]
 
 [tasks.cover]
 description = "Check the line coverage of the pure crates (90 % or more)"
-run = "cargo llvm-cov nextest -p cihub-domain -p cihub-conditions -p cihub-config --fail-under-lines 90"
+run = "cargo llvm-cov nextest -p cihub-domain -p cihub-conditions -p cihub-config -p cihub-mq-core --fail-under-lines 90"
 
 [tasks.check]
 description = "Run lint, then test"

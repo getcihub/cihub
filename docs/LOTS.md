@@ -34,7 +34,7 @@ phase 1).
 | Lot | Titre                                                  | Phase | Dépend de | Questions | Statut                                   |
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
-| 1   | Noyau pur de la file                                   | 1     | 0         | —         | en cours                                 |
+| 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
 | 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | Q6, Q10   | à faire                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
@@ -122,17 +122,40 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
   files aléatoires (soumissions, succès, échecs, annulations, pushes extérieurs) et vérifie `check` après chaque
   pas ; couverture des crates pures ≥ 90 % (`mise run cover`) ; aucune dépendance interdite (`cargo deny`).
 - **Suivi** :
-  - Fait (`cihub-domain`) : identifiants ULID typés (`AGENTS.md` D4) ; `ItemState`, `QueueState` ; réglages et
-    valeurs fermées (`Strategy`, `QueueMode`, `MergeMethod`, `Trigger`, `GroupKind`, `RunStatus`, `CheckKind`,
-    `CheckConclusion`, `SubmittedVia`…) ; `Item`, `Priority`, `BlockReason`, `ImpactedTargets` ; `TestGroup`,
-    `TestRun`, `CheckObservation`, `ConflictCulprit` ; enveloppe `Event` avec une seule variante
-    (`ItemStateChanged`) ; `transition()` pour les entrées.
-  - Reste : une seule énumération `Reason` et les tables de transitions (D6), qui remplacent les énumérations de
-    raisons par état et `Target` ; retirer `ConflictCulprit::StackedPr` (D7) ; faits et décisions (`EventType` et
-    payloads) ; `GroupState`, `Mergeability`, `JobError`, `RequiredStatusesSource`, `ActorKind` avec `bot`,
-    `QueueControl` ; la crate `cihub-mq-core` en entier.
-  - Fait aussi : les constructeurs d'identifiants sont interdits hors de leur exception, sans `impl Default`, et
-    les tests utilisent des identifiants fixes (`AGENTS.md` D20).
+  - Fait (`cihub-domain`) : identifiants ULID typés (`AGENTS.md` D4) ; vocabulaire fermé, dont une seule
+    énumération `Reason` et les tables des transitions des entrées, groupes, exécutions et de la file (D6 :
+    `Lifecycle`, `check_transition`), `GroupState`, `Mergeability`, `JobError`, `RequiredStatusesSource`,
+    `ActorKind` avec `bot`, `QueueControl`, `PrState`, `ReviewDecision` (déplacé depuis `cihub-conditions`) ;
+    `ConflictCulprit::StackedPr` retiré (D7) ; enveloppe `Event` avec `cause_id`, faits et décisions
+    (`EventKind`, `EventType`) ; les constructeurs d'identifiants sont interdits hors de leur exception (D20).
+  - Fait (`cihub-mq-core`) : `Snapshot` ; `apply` (rejeu, demandes, retrait des demandes impossibles, sortie des
+    entités concluses) ; ordre par `position`, insertion par priorité, préemption `urgent`, renumérotation ;
+    graphe de merge par ensembles de cibles ; validité des exécutions (prédécesseurs et base) ; `plan` pour les
+    groupes `single` : admission par la mergeabilité, formation dans une fenêtre fixe (`window.floor`), fin
+    d'exécution (succès, échec, timeout), échec en attente à la profondeur 0 avec le budget d'échec, merge dans
+    l'ordre du graphe, annulations, changements de la PR, push extérieur, merge manuel, pause, drainage,
+    suspension, changement de mode ; identifiants des décisions sans hasard ; `check` (règles de
+    `docs/RELIABILITY.md`). Tests : tables des transitions, scénarios rejoués, test de propriété (20 000 cas
+    vérifiés en local). `mise run cover` couvre aussi `cihub-mq-core`.
+  - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : les réglages sont un paramètre de `plan` et de `check`,
+    comme l'heure, car `cihub-domain` ne peut pas dépendre de `cihub-config` ; `queue.settings_changed` ne porte
+    que le mode avant et après. `item.submitted` porte `author`, `additions`, `deletions` et `changed_files`
+    (Q6). Dépendances `thiserror` et `proptest` (développement) ; pas d'`insta` à ce lot. Vocabulaire neutre du
+    journal (`AGENTS.md` D23) : `Mergeability` (`mergeable`, `behind`, `conflict`, `blocked`, `unknown`, qui
+    couvre aussi la valeur `DRAFT` de GitHub, absente avant), raisons d'échec du merge `merge_*` à la place de
+    `github_api_*`, faits `access.lost` et `access.restored` à la place de `installation.*`, `CheckKind`
+    `check` à la place de `check_run`.
+  - Écarts de lecture des tables, à confirmer : un groupe `dissolved` accepte les raisons de retour en `pending`
+    sans `merge_item_now_ready`, les raisons `cancelled` sans `not_ready_timeout_expired`, et les raisons
+    d'échec du merge sans `direct_merge_rejected`. Un échec de merge direct donne toujours
+    `direct_merge_rejected`, seule raison permise depuis `pending`. Une décision causée par l'horloge
+    (timeout) ou par un changement de mode n'a pas de `cause_id`. Une PR vue mergée alors que la file demande son
+    merge attend le résultat du job de merge.
+  - Reste pour les lots suivants : conditions d'entrée et exception du statut de la file (lot 5), fenêtre
+    adaptative (lot 8), profondeur d'échec en attente au-delà de 0 et merge optimiste (lot 12), lots et bissection
+    (lot 12), merge direct (lot 7), `not_ready_timeout_hours` (lot 5), sérialisation du `Snapshot` pour
+    l'instantané (lot 5). Les décisions de ce lot (crate, dépendances, réglages en paramètre, Q6) sont à écrire
+    dans `AGENTS.md` §4 après validation du texte.
 
 #### Cible du lot 1 : journal, faits et décisions
 
@@ -160,9 +183,9 @@ Faits :
 | `item.submitted`                                     | commande, label, API, tableau de bord, CLI                   | numéro de PR, SHA de tête, priorité, `no_batch`, `direct`, `submitted_via`, attributs de Q6                                                          |
 | `item.cancel_requested`                              | `/cihub cancel`, API, CLI                                    | `by_admin` ; donne `admin_requested` ou `user_requested`                                                                                             |
 | `item.restart_requested`                             | `/cihub restart`, API, CLI                                   | `by_api` ; donne `tests_restarted_by_user` ou `tests_restarted_by_api_request`                                                                       |
-| `pr.observed`                                        | webhook `pull_request` ou `pull_request_review`, tic, resync | état complet lu : ouverte, fermée ou mergée, SHA de tête, branche de base, brouillon, labels, `mergeStateStatus`, décision de revue, checks de la PR |
+| `pr.observed`                                        | webhook `pull_request` ou `pull_request_review`, tic, resync | état complet lu : ouverte, fermée ou mergée, SHA de tête, branche de base, brouillon, labels, mergeabilité, décision de revue, checks de la PR        |
 | `target.pushed`                                      | webhook `push` sur la branche cible, tic                     | SHA `before` (vide pour une lecture du tic), SHA `after`, `sender`                                                                                   |
-| `check.observed`                                     | `check_run`, `status`, tic                                   | SHA de test, nom, nature, état, conclusion, URL ; seulement pour un SHA qu'une exécution vivante attend                                              |
+| `check.observed`                                     | check ou statut de commit, tic                               | SHA de test, nom, nature, état, conclusion, URL ; seulement pour un SHA qu'une exécution vivante attend                                              |
 | `targets.received`                                   | `POST …/impacted-targets`                                    | SHA de tête, cibles ou `ALL`                                                                                                                         |
 | `test_branch.assembled`                              | job d'assemblage                                             | `run_id`, SHA de test, numéro de PR brouillon, statuts requis et leur source                                                                         |
 | `test_branch.assembly_failed`                        | job d'assemblage                                             | `run_id`, erreur de job, `conflict_culprit`                                                                                                          |
@@ -170,7 +193,7 @@ Faits :
 | `merge.failed`                                       | job de merge                                                 | `item_id`, merge direct ou non, erreur de job                                                                                                        |
 | `queue.control_requested`                            | API, CLI                                                     | `pause`, `resume` ou `drain`                                                                                                                         |
 | `queue.settings_changed`                             | API, tableau de bord                                         | réglages avant et après                                                                                                                              |
-| `installation.suspended`, `installation.unsuspended` | webhook `installation`                                       | —                                                                                                                                                    |
+| `access.lost`, `access.restored`                     | webhook `installation` (GitHub)                              | —                                                                                                                                                    |
 
 Un seul fait `pr.observed` porte l'état complet de la PR, quelle que soit l'action GitHub : le webhook, le tic et
 la resync produisent le même événement, un doublon ne change rien, et c'est `plan` qui trouve la différence (push
@@ -224,12 +247,11 @@ famille : la valeur enregistrée est `start_test_run_merge_conflict`, pas `merge
   `start_test_run_no_required_statuses`, `start_test_run_retry_exhausted`, `start_test_run_draft_prs_not_allowed`,
   `start_test_run_permissions_block_test_branch`.
 - `test_run_*` : `test_run_required_status_failed`, `test_run_timeout`, `test_run_failed_by_optimization`.
-- `github_api_*` : `github_api_merge_pr_failed`, `github_api_direct_merge_pr_failed`,
-  `github_api_rate_limit_exceeded`, `github_api_branch_protection_unmet`, `github_api_merge_already_in_progress`,
-  `github_api_repeated_server_errors`.
-- Merge : `pr_updated_at_merge_time`.
+- Échec du merge : `merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`,
+  `merge_branch_protection_unmet`, `merge_already_in_progress`, `merge_repeated_server_errors`,
+  `pr_updated_at_merge_time`.
 - Exécution : `test_branch_assembled`.
-- File : `installation_suspended`, `installation_unsuspended`, `mode_changed`, `mode_switch_completed` (et
+- File : `access_lost`, `access_restored`, `mode_changed`, `mode_switch_completed` (et
   `admin_requested`).
 
 Transitions d'une entrée :
@@ -240,7 +262,7 @@ Transitions d'une entrée :
 | `not_ready`            | `pending`         | `merge_item_now_ready`                                                                                                                                                                                                                                                                        |
 | `pending`              | `testing`         | `test_run_started`                                                                                                                                                                                                                                                                            |
 | `pending`              | `merged`          | `merge_graph_direct_merge`                                                                                                                                                                                                                                                                    |
-| `pending`              | `failed`          | `github_api_direct_merge_pr_failed`                                                                                                                                                                                                                                                           |
+| `pending`              | `failed`          | `direct_merge_rejected`                                                                                                                                                                                                                                                           |
 | `testing`              | `tests_passed`    | `test_run_passed`, `passed_by_optimization`                                                                                                                                                                                                                                                   |
 | `testing`              | `pending_failure` | `test_run_required_status_failed`, `test_run_timeout`                                                                                                                                                                                                                                         |
 | `testing`              | `failed`          | toutes les raisons `start_test_run_*`, `test_run_failed_by_optimization`                                                                                                                                                                                                                      |
@@ -251,7 +273,7 @@ Transitions d'une entrée :
 | `pending_failure`      | `failed`          | `test_run_required_status_failed`, `test_run_timeout`, `test_run_failed_by_optimization`                                                                                                                                                                                                      |
 | `tests_passed`         | `merged`          | `merge_graph_merge`                                                                                                                                                                                                                                                                           |
 | `tests_passed`         | `pending`         | `skip_the_line_interrupted`, `manual_push_to_target_branch`, `prerequisite_merge_item_failed`, `prerequisite_merge_item_cancelled`, `prerequisite_merge_item_manually_merged`                                                                                                                 |
-| `tests_passed`         | `failed`          | `github_api_merge_pr_failed`, `github_api_rate_limit_exceeded`, `github_api_branch_protection_unmet`, `github_api_merge_already_in_progress`, `github_api_repeated_server_errors`, `pr_updated_at_merge_time`                                                                                 |
+| `tests_passed`         | `failed`          | `merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`, `merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`                                                                                 |
 | `not_ready`            | `cancelled`       | `not_ready_timeout_expired`, et les raisons de la ligne suivante                                                                                                                                                                                                                              |
 | tout état non terminal | `cancelled`       | `user_requested`, `admin_requested`, `pr_closed`, `pr_pushed_to`, `pr_base_branch_changed`, `pr_converted_to_draft`, `label_removed`                                                                                                                                                          |
 | tout état non terminal | `merged`          | `manual_merge`                                                                                                                                                                                                                                                                                |
@@ -273,7 +295,7 @@ membres retournent en `pending`. Une transition de groupe porte la raison que se
 | `pending_failure`      | `bisected`        | `bisection_required`                                                                                                                                                                                                                           |
 | `tests_passed`         | `merged`          | `merge_graph_merge`                                                                                                                                                                                                                            |
 | `tests_passed`         | `failed`          | les raisons de `tests_passed` → `failed` d'une entrée                                                                                                                                                                                          |
-| tout état non terminal | `dissolved`       | la raison donnée à l'entrée qui cause l'abandon : raisons de retour en `pending`, raisons `cancelled`, `manual_merge`, `start_test_run_merge_conflict` pour un lot, raisons `github_api_*` et `pr_updated_at_merge_time` pour un membre de lot |
+| tout état non terminal | `dissolved`       | la raison donnée à l'entrée qui cause l'abandon : raisons de retour en `pending`, raisons `cancelled`, `manual_merge`, `start_test_run_merge_conflict` pour un lot, raisons d'échec du merge pour un membre de lot                                  |
 
 Transitions d'une exécution :
 
@@ -292,8 +314,8 @@ Transitions de la file :
 
 | De                                       | Vers              | Raisons permises                              |
 | ---------------------------------------- | ----------------- | --------------------------------------------- |
-| `running`, `draining`, `switching_modes` | `paused`          | `admin_requested`, `installation_suspended`   |
-| `paused`                                 | `running`         | `admin_requested`, `installation_unsuspended` |
+| `running`, `draining`, `switching_modes` | `paused`          | `admin_requested`, `access_lost`   |
+| `paused`                                 | `running`         | `admin_requested`, `access_restored` |
 | `running`                                | `draining`        | `admin_requested`                             |
 | `draining`                               | `running`         | `admin_requested`                             |
 | `running`                                | `switching_modes` | `mode_changed`                                |
@@ -301,8 +323,8 @@ Transitions de la file :
 
 Autres valeurs fermées :
 
-- Mergeabilité d'une entrée (`Mergeability`) : la valeur `mergeStateStatus` de GitHub, en minuscules : `clean`,
-  `blocked`, `behind`, `dirty`, `unstable`, `has_hooks`, `unknown`.
+- Mergeabilité d'une entrée (`Mergeability`), traduite par l'adaptateur du SCM (`AGENTS.md` D23) : `mergeable`,
+  `behind`, `conflict`, `blocked`, `unknown`.
 - Source des statuts requis (`RequiredStatusesSource`), par ordre de précédence : `ui_override`, `repo_config`,
   `branch_protection`.
 - Erreurs de job (`JobError`) : un job rapporte une erreur, jamais une raison ; c'est `plan` qui choisit la raison.
@@ -311,9 +333,8 @@ Autres valeurs fermées :
   `no_required_statuses`, `retry_exhausted`, `draft_prs_not_allowed`, `permissions_block_test_branch` ; chacune
   donne `start_test_run_<erreur>`. Erreurs de merge : `merge_rejected`, `rate_limit_exceeded`,
   `branch_protection_unmet`, `merge_already_in_progress`, `repeated_server_errors`, `head_changed` ;
-  `head_changed` (409 sur le garde-fou `sha`) donne `pr_updated_at_merge_time`, `merge_rejected` donne
-  `github_api_merge_pr_failed` ou `github_api_direct_merge_pr_failed` selon le payload, et les autres donnent
-  `github_api_<erreur>`.
+  `head_changed` (409 sur le garde-fou `sha`) donne `pr_updated_at_merge_time`, un merge direct donne toujours
+  `direct_merge_rejected`, et les autres donnent `merge_rejected` ou `merge_<erreur>`.
 
 ### Lot 2 : socle de données : serveur, tenancy, journal, outbox
 
@@ -405,7 +426,7 @@ Autres valeurs fermées :
   cible ; merge manuel ; push, changement de base, brouillon, fermeture, retrait du label ; boucle de réparation
   (PR vivantes, checks silencieux, tête de la cible, existence des refs) ; `POST /queues/{id}:resync` ; tâche
   `sim`.
-- **Interfaces figées** : raisons `merged`, `cancelled`, `github_api_*`.
+- **Interfaces figées** : raisons `merged`, `cancelled` et d'échec du merge (`merge_rejected`…).
 - **Critère de sortie** : le test d'injection de pannes de `docs/RELIABILITY.md` (5xx, 429, webhooks perdus,
   dupliqués, désordonnés, processus tués à des instants aléatoires) passe sur 1 000 graines : chaque PR verte est
   mergée exactement une fois, dans l'ordre du graphe, et chaque PR rouge porte une raison.

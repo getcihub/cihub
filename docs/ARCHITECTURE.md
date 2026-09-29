@@ -69,6 +69,7 @@ crates/
   domain/                cihub-domain         (existe)
   conditions/            cihub-conditions     (existe)
   config/                cihub-config         (existe)
+  mq-core/               cihub-mq-core        (existe)
   ...                    les autres crates du tableau, avec leur lot
 migrations/              migrations Postgres embarquees dans cihub-server (lot 2)
 web/                     tableau de bord, embarque par le role api (lot 10)
@@ -79,7 +80,7 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-domain`     | Identifiants ULID typés, entités, vocabulaire fermé, enveloppe `Event`, tables des transitions (pur)                                                                   | —                                                                | 1   | existe |
 | `cihub-conditions` | Langage de conditions : analyse, évaluation sur un contexte de PR, erreurs avec position (pur)                                                                         | `domain`                                                         | 8   | existe |
 | `cihub-config`     | Modèle de `.cihub.yaml`, table des stratégies, fusion des sources avec la source de chaque réglage, plages (pur)                                                       | `domain`, `conditions`                                           | 8   | existe |
-| `cihub-mq-core`    | `apply`, graphe de merge, prédécesseurs, validité des exécutions, fenêtre adaptative, lots, bissection, budget d'échec, `plan`, `check` (pur)                          | `domain`, `conditions`, `config`                                 | 1   | cible  |
+| `cihub-mq-core`    | `apply`, graphe de merge, prédécesseurs, validité des exécutions, fenêtre adaptative, lots, bissection, budget d'échec, `plan`, `check` (pur)                          | `domain`, `config`                                               | 1   | existe |
 | `cihub-contracts`  | Trait `FlakeOracle` et l'oracle neutre qui répond « inconnu » (pur)                                                                                                    | `domain`                                                         | 14  | cible  |
 | `cihub-flaky-core` | Signaux de détection, classification `stable` / `suspect` / `flaky` / `broken`, `case_key` (pur)                                                                       | `domain`                                                         | 14  | cible  |
 | `cihub-store`      | Pool Postgres, transactions, `cihub.org_id` pour la RLS, verrous, baux, migrations embarquées, test des enums Postgres                                                | `domain`                                                         | 2   | cible  |

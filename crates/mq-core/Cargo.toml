@@ -1,0 +1,22 @@
+[package]
+name = "cihub-mq-core"
+description = "CIHub merge queue core: apply, merge graph, plan, check"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cihub-config.workspace = true
+cihub-domain.workspace = true
+thiserror.workspace = true
+time.workspace = true
+ulid.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
