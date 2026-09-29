@@ -1,13 +1,16 @@
-//! Postgres store of CIHub: the connection pool and the migrations embedded
-//! from `migrations/` (`AGENTS.md` D14). It holds no queue logic and does not
-//! decide when the migrations run: `cihub-server migrate` applies them, and
-//! `cihub-server` refuses to start while one is missing.
+//! Postgres store of CIHub: the connection pool, the transactions of an
+//! organization or of the system (row level security, `AGENTS.md` D38), and
+//! the migrations embedded from `migrations/` (`AGENTS.md` D14). It holds no
+//! queue logic and does not decide when the migrations run: `cihub-server
+//! migrate` applies them, and `cihub-server` refuses to start while one is
+//! missing.
 
 use std::collections::BTreeSet;
 
+use cihub_domain::OrgId;
 use secrecy::{ExposeSecret, SecretString};
-pub use sqlx::PgPool;
 use sqlx::migrate::{MigrateError, Migrator};
+pub use sqlx::{PgPool, Postgres, Transaction};
 
 /// The migrations of `migrations/`, embedded in the binary.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
@@ -16,6 +19,14 @@ pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 pub enum StoreError {
     #[error("cannot connect to Postgres")]
     Connect(#[source] sqlx::Error),
+    #[error("cannot open a transaction")]
+    Begin(#[source] sqlx::Error),
+    #[error("cannot read the Postgres role")]
+    ReadRole(#[source] sqlx::Error),
+    #[error(
+        "the Postgres role `{0}` is a superuser or has BYPASSRLS: it would see every organization"
+    )]
+    RoleBypassesRowSecurity(String),
     #[error("cannot read the applied migrations")]
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]
@@ -31,6 +42,67 @@ pub async fn connect(url: &SecretString) -> Result<PgPool, StoreError> {
     PgPool::connect(url.expose_secret())
         .await
         .map_err(StoreError::Connect)
+}
+
+/// Checks that the role of `pool` is subject to row level security: a
+/// superuser or a `BYPASSRLS` role sees every organization.
+///
+/// # Errors
+///
+/// The role bypasses row level security, or cannot be read.
+pub async fn check_role(pool: &PgPool) -> Result<(), StoreError> {
+    let (role, bypasses): (String, bool) = sqlx::query_as(
+        "SELECT rolname::text, rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(StoreError::ReadRole)?;
+    if bypasses {
+        return Err(StoreError::RoleBypassesRowSecurity(role));
+    }
+    Ok(())
+}
+
+/// Opens a transaction that sees and writes only the rows of `org`. The API
+/// uses it once the request is authenticated.
+///
+/// # Errors
+///
+/// Postgres refuses the transaction.
+pub async fn begin_org(
+    pool: &PgPool,
+    org: OrgId,
+) -> Result<Transaction<'static, Postgres>, StoreError> {
+    begin_with(pool, "cihub.org_id", &org.to_string()).await
+}
+
+/// Opens a transaction that sees and writes the rows of every organization:
+/// for the work that does not know the organization yet (authentication by
+/// token hash) or that spans them (scheduler, partitions). Each query still
+/// filters by its queue or its organization.
+///
+/// # Errors
+///
+/// Postgres refuses the transaction.
+pub async fn begin_system(pool: &PgPool) -> Result<Transaction<'static, Postgres>, StoreError> {
+    begin_with(pool, "cihub.system", "on").await
+}
+
+/// Sets `name` for the transaction only: it ends with the commit or the
+/// rollback, so a pooled connection never keeps it.
+async fn begin_with(
+    pool: &PgPool,
+    name: &str,
+    value: &str,
+) -> Result<Transaction<'static, Postgres>, StoreError> {
+    let mut tx = pool.begin().await.map_err(StoreError::Begin)?;
+    sqlx::query("SELECT set_config($1, $2, true)")
+        .bind(name)
+        .bind(value)
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::Begin)?;
+    Ok(tx)
 }
 
 /// Whether Postgres answers a query on `pool`.

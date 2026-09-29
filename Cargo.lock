@@ -265,9 +265,12 @@ dependencies = [
 name = "cihub-store"
 version = "0.1.0"
 dependencies = [
+ "cihub-domain",
  "secrecy",
  "sqlx",
+ "strum",
  "thiserror",
+ "ulid",
 ]
 
 [[package]]

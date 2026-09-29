@@ -239,6 +239,24 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D34** Complète D29 : le lot 2 crée aussi la crate `cihub-telemetry` (`crates/telemetry/`), qui installe les
   logs (D13), puis les traces OpenTelemetry et les métriques Prometheus quand elles arrivent. Seuls les binaires
   l'utilisent. En `pretty`, un log est une ligne : heure UTC en millisecondes, niveau, message et champs.
+- **D35** Le contrat `Module` et l'activation d'un module par organisation arrivent au lot 5, avec le premier
+  module (`cihub-mergequeue`), et non au lot 2.
+- **D36** La table `events` est partitionnée par mois. `cihub-server migrate` crée les partitions du mois en cours
+  et du mois suivant ; une boucle du rôle `scheduler` crée chaque jour la partition du mois suivant si elle
+  manque, jusqu'à ce qu'un job la remplace au lot 3. Pas d'extension (`pg_partman`) ni de partition par défaut.
+- **D37** Les colonnes d'identifiant sont en `text` et gardent la forme typedid (`org_0627…`, D4).
+- **D38** Un seul rôle Postgres, celui de `CIHUB_DATABASE_URL`, possède les tables et exécute les requêtes. Chaque
+  table qui porte `org_id` (et `orgs`) a la sécurité au niveau ligne, forcée aussi pour le propriétaire.
+  `cihub-store` ouvre une transaction dans un de deux contextes : `begin_org(org_id)` (paramètre `cihub.org_id`)
+  voit une organisation, `begin_system()` (paramètre `cihub.system`) les voit toutes ; une transaction sans
+  contexte ne voit rien. Le rôle n'est ni superutilisateur ni `BYPASSRLS` : `cihub-server` refuse de démarrer
+  sinon. Le `compose.yaml` de développement crée ce rôle (`cihub`) à côté du superutilisateur `postgres`.
+- **D39** La table `users` est globale, sans `org_id` ni sécurité au niveau ligne : un utilisateur GitHub
+  appartient à plusieurs organisations par `memberships`.
+- **D40** Nouvelles valeurs fermées : `MembershipRole` (`admin`, `member`, `viewer`), `AppKind` (`main`, `sudo`),
+  `ApiScope` (`queues:read`, `queues:write`, `prs:write`, `targets:write`, `metrics:read`). Nouveaux types
+  d'identifiant : `installation`, `user`, `apitoken` (la ligne du jeton ; le secret reste `cht_…`, D32), `audit`.
+- **D41** Un fichier de migration s'appelle `<AAAAMMJJHHMMSS>_<description>.sql` (format de `sqlx migrate add`).
 
 ### 4.1 Questions ouvertes
 

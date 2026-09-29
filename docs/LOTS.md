@@ -377,17 +377,25 @@ Autres valeurs fermées :
     Postgres ne répond pas en 2 s ; tâches `migrate`, `test-integration` et `dev`, et job `Rust Integration Test`
     dans la CI. Les tests contre Postgres sont dans les fichiers `tests/postgres.rs` ; `mise run test` les exclut.
     Vérifié par des tests sur des migrations de test (`crates/store/tests/migrations/`) et sur le binaire.
-  - Reste : tables de tenancy et RLS ; `events` et ses partitions (`AGENTS.md` D36) ; outbox ; jetons. Le test
-    « `cihub-server` refuse de démarrer quand une migration manque » sur le binaire attend la première
-    migration (étape 3) ; il est déjà vérifié sur `cihub-store`. `sqlx-cli` et `.sqlx/` arrivent avec la
+  - Fait (étape 3, tenancy et RLS) : migration `20260929160000_tenancy.sql` avec `orgs`, `installations`,
+    `repos`, `users`, `memberships`, `api_tokens` et `audit_log`, les enums `membership_role`, `app_kind` et
+    `api_scope`, et la politique `tenant` forcée sur chaque table qui porte `org_id` (`AGENTS.md` D37 à D41) ;
+    `begin_org` et `begin_system` dans `cihub-store` ; refus de démarrer quand le rôle Postgres contourne la RLS.
+    Tests contre Postgres : une organisation ne lit, ne modifie, ne supprime ni n'écrit aucune ligne d'une autre,
+    pour chaque table ; sans contexte, une transaction ne voit rien ; un contexte ne reste pas sur la connexion
+    après la transaction ; chaque table qui porte `org_id` a sa politique ; les enums Postgres sont ceux de
+    `cihub-domain` ; le binaire refuse de démarrer quand une migration manque.
+  - Reste : `events` et ses partitions (`AGENTS.md` D36) ; outbox ; jetons. `sqlx-cli` et `.sqlx/` arrivent avec la
     première requête vérifiée à la compilation. Les partitions de plus de 90 jours sont supprimées : chaque file
-    devra garder un instantané plus récent (lot 5).
+    devra garder un instantané plus récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
+    (il demande les identifiants du superutilisateur) ; il est vérifié à la main.
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : la crate `cihub-telemetry` arrive dès ce lot et porte
     les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`. Le contrat `Module` passe au
     lot 5 (D35). Les partitions sont créées par `migrate` et par une boucle du scheduler (D36). `deny.toml` permet
     `axum` dans `cihub-server` (pour l'adresse interne), `sqlx` dans `cihub-server` (tests seulement), `tokio`
     dans les crates externes qui en dépendent, et la licence `Zlib` (`foldhash`, par `sqlx`). La CI lance
-    Postgres par `mise run db`, pas par un service GitHub Actions.
+    Postgres par `mise run db`, pas par un service GitHub Actions. Le `compose.yaml` de développement crée le rôle
+    `cihub` sans droits de superutilisateur (D38).
 
 ### Lot 3 : transport interne : inbox, jobs, baux
 

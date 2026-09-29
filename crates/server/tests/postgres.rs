@@ -77,7 +77,7 @@ fn stop(mut child: Child) {
     assert!(status.success(), "{status}");
 }
 
-#[sqlx::test(migrations = false)]
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn all_in_one_answers_and_stops(pool: PgPool) {
     let addr = free_addr();
     let child = start(&pool, &addr, None);
@@ -93,7 +93,7 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
     stop(child);
 }
 
-#[sqlx::test(migrations = false)]
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn one_role_per_process(pool: PgPool) {
     let addr = free_addr();
     let child = start(&pool, &addr, Some("worker"));
@@ -109,4 +109,11 @@ fn migrate_twice_succeeds(pool: PgPool) {
         let status = command(&pool).arg("migrate").status().unwrap();
         assert!(status.success(), "{status}");
     }
+}
+
+#[sqlx::test(migrations = false)]
+fn a_missing_migration_stops_the_start(pool: PgPool) {
+    let status = command(&pool).status().unwrap();
+    assert!(!status.success(), "{status}");
+    assert!(command(&pool).arg("migrate").status().unwrap().success());
 }

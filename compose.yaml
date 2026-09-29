@@ -1,17 +1,17 @@
-# Development only: Postgres for local work and integration tests.
+# Development only: Postgres for local work and integration tests. The init
+# script runs on an empty volume only (`docker compose down --volumes`).
 services:
   postgres:
     image: postgres:17.5-alpine
     environment:
-      POSTGRES_USER: cihub
-      POSTGRES_PASSWORD: cihub
-      POSTGRES_DB: cihub
+      POSTGRES_PASSWORD: postgres
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres:/var/lib/postgresql/data
+      - ./compose/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "--username=cihub", "--dbname=cihub"]
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=cihub", "--dbname=cihub"]
       interval: 2s
       timeout: 5s
       retries: 15

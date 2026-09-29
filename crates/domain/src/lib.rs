@@ -33,10 +33,14 @@ mod reason;
 mod run;
 mod settings;
 mod state;
+mod tenancy;
 mod transition;
 
 pub use event::{Actor, ActorKind, Event, EventKind, EventType};
-pub use id::{EventId, GroupId, IdParseError, ItemId, OrgId, QueueId, RepoId, RunId};
+pub use id::{
+    ApiTokenId, AuditEntryId, EventId, GroupId, IdParseError, InstallationId, ItemId, OrgId,
+    QueueId, RepoId, RunId, UserId,
+};
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::JobError;
 pub use pr::{CheckReport, Mergeability, PrState, ReviewDecision};
@@ -49,4 +53,5 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
+pub use tenancy::{ApiScope, AppKind, MembershipRole};
 pub use transition::{Lifecycle, TransitionError, check_transition};

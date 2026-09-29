@@ -93,6 +93,13 @@ id_type!(
     GroupId => "group",
     RunId => "run",
     EventId => "event",
+    /// One installation of a GitHub App on an account.
+    InstallationId => "installation",
+    /// A GitHub user, global: memberships link it to organizations.
+    UserId => "user",
+    /// The row of an API token; the secret itself is `cht_…` (`AGENTS.md` D32).
+    ApiTokenId => "apitoken",
+    AuditEntryId => "audit",
 );
 
 /// Parse errors, in the order the checks run. The first five match the

@@ -14,15 +14,18 @@ lot 15.
 
 ## Développement
 
-`compose.yaml`, à la racine, démarre seulement Postgres (`postgres:17.5-alpine`), publié sur `127.0.0.1:5432`,
-avec l'utilisateur, le mot de passe et la base `cihub` (`AGENTS.md` D12). Ces valeurs servent au développement
-seulement.
+`compose.yaml`, à la racine, démarre seulement Postgres (`postgres:17.5-alpine`), publié sur `127.0.0.1:5432`
+(`AGENTS.md` D12). Le superutilisateur est `postgres` (mot de passe `postgres`). Le script
+`compose/postgres-init.sql` crée le rôle `cihub` (mot de passe `cihub`), qui n'est pas superutilisateur et peut
+créer des bases pour les tests, et la base `cihub` qu'il possède (D38). Ces valeurs servent au développement
+seulement. Le script ne tourne que sur un volume vide : après un changement, `docker compose down --volumes`.
 
 ```sh
 mise run db            # docker compose up --detach --wait
 mise run migrate       # Postgres, puis cihub-server migrate
 mise run dev           # migrate, puis cihub-server avec les quatre rôles et les logs pretty
 docker compose down    # arrête Postgres et garde le volume
+docker compose down --volumes   # arrête Postgres et efface ses données
 ```
 
 Les tâches `mise` sont listées dans `AGENTS.md` §5.
@@ -35,7 +38,7 @@ processus au démarrage.
 | Variable              | Défaut                              | Rôle                                                                        |
 | --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
 | `CIHUB_ROLES`         | `api,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
-| `CIHUB_DATABASE_URL`  | aucun, obligatoire                  | `postgres://utilisateur:mot-de-passe@hôte/base`, secret                     |
+| `CIHUB_DATABASE_URL`  | aucun, obligatoire                  | `postgres://utilisateur:mot-de-passe@hôte/base`, secret ; l'utilisateur n'est ni superutilisateur ni `BYPASSRLS` |
 | `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Adresse de `/healthz` et `/readyz`, à ne pas exposer (`docs/SECURITY.md`)   |
 | `CIHUB_LOG`           | `info`                              | Filtre des logs (`docs/OBSERVABILITY.md`)                                   |
 | `CIHUB_LOG_FORMAT`    | `json`                              | `json` ou `pretty` (`docs/OBSERVABILITY.md`)                                |

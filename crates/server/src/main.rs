@@ -36,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
     } = Config::from_env()?;
     logs.init()?;
     let pool = cihub_store::connect(&database_url).await?;
+    cihub_store::check_role(&pool).await?;
     if migrate_only {
         migrate(&pool).await
     } else {
