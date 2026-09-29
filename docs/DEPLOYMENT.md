@@ -25,6 +25,20 @@ docker compose down    # arrête Postgres et garde le volume
 
 Les tâches `mise` sont listées dans `AGENTS.md` §5.
 
+## Variables du serveur
+
+`cihub-server` lit sa configuration dans des variables `CIHUB_*` (`AGENTS.md` D31). Une valeur invalide arrête le
+processus au démarrage.
+
+| Variable              | Défaut                              | Rôle                                                                        |
+| --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
+| `CIHUB_ROLES`         | `api,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
+| `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Adresse de `/healthz` et `/readyz`, à ne pas exposer (`docs/SECURITY.md`)   |
+| `CIHUB_LOG`           | `info`                              | Filtre des logs (`docs/OBSERVABILITY.md`)                                   |
+| `CIHUB_LOG_FORMAT`    | `json`                              | `json` ou `pretty` (`docs/OBSERVABILITY.md`)                                |
+
+Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent.
+
 ## Migrations
 
 Les migrations sont explicites (`AGENTS.md` D14) :

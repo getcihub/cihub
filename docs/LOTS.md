@@ -35,7 +35,7 @@ phase 1).
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
-| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | —         | à faire                                  |
+| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | —         | en cours                                 |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
@@ -364,6 +364,19 @@ Autres valeurs fermées :
   `cihub-server migrate` lancé deux fois ne change rien la seconde fois ; `cihub-server` refuse de démarrer quand
   une migration manque ; `cihub-server` répond `200` sur `/healthz` et `/readyz`, en tout-en-un et avec un rôle
   par processus.
+- **Suivi** :
+  - Fait (étape 1, squelette de `cihub-server`) : configuration `CIHUB_ROLES`, `CIHUB_INTERNAL_ADDR`, `CIHUB_LOG`
+    et `CIHUB_LOG_FORMAT`, une valeur invalide arrête le démarrage ; logs JSON avec les champs des spans au
+    premier niveau, ou `pretty` ; un span `role` et une tâche par rôle, qui attend l'annulation ; arrêt sur
+    `SIGTERM` et `SIGINT`, et arrêt de toutes les tâches quand une tâche s'arrête seule ; `/healthz` et
+    `/readyz` sur l'adresse interne, qui donnent le nom, la version et les rôles. Vérifié par des tests qui
+    lancent le binaire en tout-en-un et avec un seul rôle.
+  - Reste : `cihub-store`, migrations et `migrate` ; tables de tenancy et RLS ; `events` ; outbox ; jetons et
+    contrat `Module` ; tâches `migrate`, `test-integration` et `dev`. `/readyz` ne vérifie pas encore Postgres.
+  - Écarts : les logs sont dans `cihub-server`, pas dans une crate `cihub-telemetry` (`docs/ARCHITECTURE.md`),
+    car D29 ne crée que `cihub-server` et `cihub-store`. L'adresse interne par défaut est `127.0.0.1:8081`.
+    `deny.toml` permet `axum` dans `cihub-server` (pour l'adresse interne), et `tokio` dans `axum`, `hyper`,
+    `hyper-util`, `tokio-util` et `tower`.
 
 ### Lot 3 : transport interne : inbox, jobs, baux
 

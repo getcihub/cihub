@@ -39,8 +39,8 @@ des champs de l'événement, pour qu'une requête sur `queue_id` trouve toutes l
 
 `timestamp` est en RFC 3339 UTC, `level` vaut `DEBUG`, `INFO`, `WARN` ou `ERROR`, `target` est le module Rust qui
 écrit. Le format JSON standard de `tracing-subscriber` place les champs des spans dans une liste `spans` et non au
-premier niveau : le formateur qui les met à plat est à écrire ou à choisir au lot 2 (dépendance à valider selon
-`AGENTS.md` §4). Les `trace_id` et `span_id` s'ajoutent quand les traces OpenTelemetry arrivent.
+premier niveau : `cihub-server` les met à plat avec son propre formateur (`crates/server/src/logs.rs`), sans
+autre dépendance. Les clés d'une ligne sont dans l'ordre alphabétique. Les `trace_id` et `span_id` s'ajoutent quand les traces OpenTelemetry arrivent.
 
 ### Clés de corrélation
 

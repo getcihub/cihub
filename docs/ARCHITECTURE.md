@@ -70,6 +70,7 @@ crates/
   conditions/            cihub-conditions     (existe)
   config/                cihub-config         (existe)
   mq-core/               cihub-mq-core        (existe)
+  server/                cihub-server         (existe)
   ...                    les autres crates du tableau, avec leur lot
 migrations/              migrations Postgres embarquees dans cihub-server (lot 2)
 web/                     tableau de bord, embarque par le role api (lot 10)
@@ -97,7 +98,7 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-analytics`  | Trait `AnalyticsStore`, implémentation Postgres, puis ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | cible  |
 | `cihub-otlp`       | Spans de test OTLP, convertisseur JUnit XML ; utilisé par le serveur et par la CLI                                                                                     | `domain`                                                         | 14  | cible  |
 | `cihub-flakytests` | Module tests instables : réception OTLP, tables `ft_*`, classification, quarantaine, implémentation de `FlakeOracle`, routes `/api/v1/flaky`                             | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | cible  |
-| `cihub-server`     | Binaire `cihub-server` : configuration, rôles, sous-commande `migrate`, enregistrement des modules                                                                     | les crates serveur                                               | 2   | cible  |
+| `cihub-server`     | Binaire `cihub-server` : configuration, rôles, sous-commande `migrate`, enregistrement des modules                                                                     | les crates serveur                                               | 2   | existe |
 
 Quatre règles structurent le découpage, et chacune est vérifiée en CI plutôt que laissée à la discipline :
 
