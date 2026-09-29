@@ -267,8 +267,10 @@ name = "cihub-store"
 version = "0.1.0"
 dependencies = [
  "cihub-domain",
+ "rand 0.10.3",
  "secrecy",
  "serde_json",
+ "sha2 0.11.0",
  "sqlx",
  "strum",
  "thiserror",

@@ -35,7 +35,7 @@ phase 1).
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
-| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | —         | en cours                                 |
+| 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
@@ -339,7 +339,7 @@ Autres valeurs fermées :
   `head_changed` (409 sur le garde-fou `sha`) donne `pr_updated_at_merge_time`, un merge direct donne toujours
   `direct_merge_rejected`, et les autres donnent `merge_rejected` ou `merge_<erreur>`.
 
-### Lot 2 : socle de données : serveur, tenancy, journal, outbox
+### Lot 2 : socle de données : serveur, tenancy, journal
 
 - **Objectif** : les tables partagées par tous les modules, avec l'isolation par organisation dès le départ, et
   le binaire qui les sert.
@@ -352,14 +352,15 @@ Autres valeurs fermées :
     (`migrations/`), requêtes vérifiées à la compilation (`.sqlx/`, `cargo sqlx prepare --check`), test qui compare
     les enums Postgres aux énumérations de `cihub-domain`.
   - Tables `orgs`, `installations`, `repos`, `users`, `memberships`, `api_tokens`, `audit_log` ; RLS avec
-    `cihub.org_id` ; table `events` partitionnée par mois et sérialisation de `Event` (lot 1) ; `outbox`,
-    abonnements ; jetons hachés en SHA-256 et scopes. Le schéma d'événement garde les attributs de D27.
+    `cihub.org_id` ; table `events` partitionnée par mois et sérialisation de `Event` (lot 1) ; jetons hachés en
+    SHA-256 et scopes. Le schéma d'événement garde les attributs de D27. L'outbox passe au lot 3 (`AGENTS.md`
+    D44).
   - Tâches `migrate`, `test-integration` et `dev` ; service Postgres dans la CI.
 - **Interfaces figées** : schéma de la table `events` ; politique RLS ; format des jetons ; variables `CIHUB_*` du
   serveur.
 - **Critère de sortie** : un test d'intégration contre un vrai Postgres prouve qu'une connexion positionnée sur
-  l'organisation A ne lit ni n'écrit aucune ligne de B, pour chaque table ; un événement et son entrée d'outbox
-  sont écrits dans la même transaction ; les partitions du mois suivant sont créées par un job ;
+  l'organisation A ne lit ni n'écrit aucune ligne de B, pour chaque table ; les partitions du mois suivant sont
+  créées par un job ;
   `cihub-server migrate` lancé deux fois ne change rien la seconde fois ; `cihub-server` refuse de démarrer quand
   une migration manque ; `cihub-server` répond `200` sur `/healthz` et `/readyz`, en tout-en-un et avec un rôle
   par processus.
@@ -393,9 +394,17 @@ Autres valeurs fermées :
     journal se relit à l'identique et dans l'ordre de `seq` ; une autre organisation ne le voit pas ; une
     partition isole les organisations ; les partitions couvrent le mois et le suivant, et un événement sans
     partition est refusé.
-  - Reste : outbox ; jetons. `sqlx-cli` et `.sqlx/` arrivent avec la première requête vérifiée à la compilation.
-    Les partitions de plus de 90 jours sont supprimées au lot 3 : chaque file devra garder un instantané plus
-    récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
+  - Fait (étape 5, jetons d'API) : forme `cht_…` dans `cihub-domain` (`format_api_token`, `is_api_token`) ;
+    `new_api_token_secret`, `create_api_token` et `authenticate` dans `cihub-store` (`AGENTS.md` D45). Tests :
+    seule l'empreinte est stockée ; un jeton donne son organisation et ses scopes, puis plus rien après son
+    expiration ; un jeton inconnu ou mal formé ne donne rien ; `last_used_at` avance au plus une fois par minute.
+  - Critères de sortie : isolation de chaque table, partitions, `migrate` deux fois, refus de démarrer sans
+    migration, `/healthz` et `/readyz` en tout-en-un et avec un rôle, vérifiés par `mise run test-integration`.
+    Les partitions sont créées par une boucle du scheduler, pas par un job (D36). Le critère de l'outbox passe au
+    lot 3 (D44). Le job `Rust Integration Test` n'a pas encore tourné sur GitHub.
+  - Reste pour les lots suivants : `sqlx-cli` et `.sqlx/` arrivent avec la première requête vérifiée à la
+    compilation. Les partitions de plus de 90 jours sont supprimées au lot 3 : chaque file devra garder un
+    instantané plus récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
     (il demande les identifiants du superutilisateur) ; il est vérifié à la main.
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : la crate `cihub-telemetry` arrive dès ce lot et porte
     les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`. Le contrat `Module` passe au
@@ -413,12 +422,13 @@ Autres valeurs fermées :
   classe de priorité) ; `queue_leases` ou verrou consultatif par file ; `queues.dirty` et
   `NOTIFY cihub_queue`, `cihub_jobs`, `cihub_outbox` ; tic de 30 s ; traits `Inbox`, `JobQueue`, `Outbox` ; job
   des partitions d'`events` (création, et suppression après 90 jours) à la place de la boucle du scheduler
-  (`AGENTS.md` D36, D43). La
-  façon dont plusieurs répliques se partagent les jobs est une décision de ce lot.
+  (`AGENTS.md` D36, D43) ; `outbox` et abonnements (D44). La façon dont plusieurs répliques se partagent les jobs
+  est une décision de ce lot.
 - **Interfaces figées** : `Inbox`, `JobQueue`, `Outbox` ; format de `idempotency_key` ; classes de priorité.
 - **Critère de sortie** : tests d'intégration : un worker tué pendant un job voit le job repris et exécuté une seule
   fois ; une livraison en double n'a aucun effet ; deux schedulers sur la même file n'ont jamais la même file en
-  même temps ; un `NOTIFY` réveille un scheduler en moins de 1 s, et le tic le réveille quand `NOTIFY` est perdu.
+  même temps ; un `NOTIFY` réveille un scheduler en moins de 1 s, et le tic le réveille quand `NOTIFY` est perdu ;
+  un événement et son entrée d'outbox sont écrits dans la même transaction (D44).
 
 ### Lot 4 : adaptateur GitHub, simulateur et installation de l'App
 

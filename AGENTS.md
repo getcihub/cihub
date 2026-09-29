@@ -268,6 +268,12 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   dans le journal de la file, à partir de 1 : `cihub-store` le calcule à l'écriture, et l'appelant tient le
   verrou de la file (lot 3). Une partition par mois UTC, `events_<AAAA>_<MM>`, avec sa propre politique forcée.
   La suppression des partitions de plus de 90 jours arrive au lot 3, avec les jobs.
+- **D44** L'outbox, les abonnements et le critère « un événement et son entrée d'outbox sont écrits dans la même
+  transaction » passent du lot 2 au lot 3, avec le trait `Outbox`.
+- **D45** Les jetons d'API sont dans `cihub-store` (création, authentification par empreinte dans le contexte
+  système) ; `cihub-domain` porte leur forme texte, sans hasard. Le secret vient du générateur aléatoire du
+  système (`SysRng`), interdit ailleurs par `clippy.toml`. `last_used_at` avance au plus une fois par minute,
+  pour qu'un appel d'API n'écrive pas en base.
 
 ### 4.1 Questions ouvertes
 

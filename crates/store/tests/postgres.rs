@@ -4,14 +4,17 @@
 
 use std::path::Path;
 
+use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, AppKind, Event, EventId, EventKind, EventType, ItemId, ItemState,
     MembershipRole, OrgId, Priority, QueueId, Reason, SubmittedVia, UserId,
 };
 use cihub_store::{
-    append_events, begin_org, begin_system, create_event_partitions, load_events, migrate,
-    missing_migrations,
+    ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
+    create_api_token, create_event_partitions, load_events, migrate, missing_migrations,
+    new_api_token_secret,
 };
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use strum::IntoEnumIterator;
@@ -391,4 +394,74 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
     .await
     .unwrap_err();
     assert!(format!("{err:?}").contains("no partition"), "{err:?}");
+}
+
+fn at(seconds: i64) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1_789_000_000 + seconds).unwrap()
+}
+
+async fn last_used_at(pool: &PgPool) -> Option<OffsetDateTime> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT last_used_at FROM api_tokens")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_token_authenticates_until_it_expires(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("INSERT INTO orgs (id, slug, github_org_id) VALUES ($1, 'org', 1)")
+        .bind(org(1).to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let secret = new_api_token_secret().unwrap();
+    assert!(secret.expose_secret().starts_with("cht_"));
+    let scopes = [ApiScope::QueuesRead, ApiScope::TargetsWrite];
+    let token = NewApiToken {
+        id: ApiTokenId::from_ulid(Ulid(1)),
+        org_id: org(1),
+        name: "ci",
+        scopes: &scopes,
+        created_by: None,
+        expires_at: Some(at(3600)),
+    };
+    let mut tx = begin_org(&pool, org(1)).await.unwrap();
+    create_api_token(&mut tx, &token, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+
+    // Only the hash is stored.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let hash: Vec<u8> = sqlx::query_scalar("SELECT token_hash FROM api_tokens")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(hash.len(), 32);
+    tx.rollback().await.unwrap();
+
+    let grant = ApiTokenGrant {
+        id: token.id,
+        org_id: org(1),
+        scopes: scopes.to_vec(),
+    };
+    assert_eq!(
+        authenticate(&pool, &secret, at(0)).await.unwrap(),
+        Some(grant)
+    );
+    assert_eq!(last_used_at(&pool).await, Some(at(0)));
+    // Within a minute, a new call does not write.
+    authenticate(&pool, &secret, at(30)).await.unwrap().unwrap();
+    assert_eq!(last_used_at(&pool).await, Some(at(0)));
+    authenticate(&pool, &secret, at(90)).await.unwrap().unwrap();
+    assert_eq!(last_used_at(&pool).await, Some(at(90)));
+
+    assert_eq!(authenticate(&pool, &secret, at(3600)).await.unwrap(), None);
+    let other = new_api_token_secret().unwrap();
+    assert_ne!(other.expose_secret(), secret.expose_secret());
+    assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
+    let malformed = SecretString::from("Bearer cht_");
+    assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
 }

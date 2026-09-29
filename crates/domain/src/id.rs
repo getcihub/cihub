@@ -138,7 +138,7 @@ impl std::error::Error for IdParseError {}
 const MAX_TYPE_LEN: usize = 50;
 const MAIN_PART_LEN: usize = 32;
 const MAX_ID_LEN: usize = MAX_TYPE_LEN + 1 + MAIN_PART_LEN;
-const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
+pub(crate) const ALPHABET: &[u8; 32] = b"0123456789abcdefghjkmnpqrstvwxyz";
 
 fn encode(prefix: &str, ulid: Ulid) -> String {
     let mut data = [0u8; 20];
@@ -146,14 +146,19 @@ fn encode(prefix: &str, ulid: Ulid) -> String {
     data[16..].copy_from_slice(&checksum(prefix, ulid).to_be_bytes());
 
     let mut out = format!("{prefix}_");
-    // Standard base32 bit order without padding: 5 bytes give 8 characters.
+    push_base32(&mut out, &data);
+    out
+}
+
+/// Appends the 32 characters of `data`: standard base32 bit order without
+/// padding, 5 bytes give 8 characters.
+pub(crate) fn push_base32(out: &mut String, data: &[u8; 20]) {
     for chunk in data.as_chunks::<5>().0 {
         let bits = chunk.iter().fold(0u64, |acc, &b| acc << 8 | u64::from(b));
         for i in (0..8).rev() {
             out.push(char::from(ALPHABET[(bits >> (5 * i) & 0x1f) as usize]));
         }
     }
-    out
 }
 
 fn parse(prefix: &'static str, s: &str) -> Result<Ulid, IdParseError> {

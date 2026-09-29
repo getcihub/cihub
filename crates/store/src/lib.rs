@@ -6,6 +6,7 @@
 //! missing.
 
 mod events;
+mod tokens;
 
 use std::collections::BTreeSet;
 
@@ -14,6 +15,9 @@ pub use events::{append_events, create_event_partitions, load_events};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};
+pub use tokens::{
+    ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
+};
 
 /// The migrations of `migrations/`, embedded in the binary.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
@@ -40,6 +44,14 @@ pub enum StoreError {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+    #[error("api token {id} does not match the vocabulary of cihub-domain")]
+    ReadToken {
+        id: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("the system has no random source")]
+    Random(#[source] rand::rngs::SysError),
     #[error("cannot read the applied migrations")]
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]

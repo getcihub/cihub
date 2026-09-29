@@ -11,6 +11,7 @@ disallowed-methods = [
   { path = "time::OffsetDateTime::now_utc", reason = "receive the time as a parameter" },
   { path = "ulid::Ulid::generate", reason = "receive identifiers as parameters" },
   { path = "ulid::Generator::generate", reason = "receive identifiers as parameters" },
+  { path = "rand_core::TryRng::try_fill_bytes", reason = "receive random values as parameters" },
   { path = "cihub_domain::OrgId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::RepoId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::QueueId::new", reason = "receive identifiers as parameters" },
