@@ -35,12 +35,12 @@ phase 1).
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
-| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | Q10       | à faire                                  |
+| 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | —         | à faire                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
-| 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4    | à faire                                  |
+| 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
 | 8   | Politique de file                                      | 1     | 6         | —         | en cours (commencé avant son tour)       |
 | 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | à faire                                  |
 | 10  | Tableau de bord                                        | 2     | 9         | Q9        | à faire                                  |
@@ -145,12 +145,13 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     couvre aussi la valeur `DRAFT` de GitHub, absente avant), raisons d'échec du merge `merge_*` à la place de
     `github_api_*`, faits `access.lost` et `access.restored` à la place de `installation.*`, `CheckKind`
     `check` à la place de `check_run`.
-  - Écarts de lecture des tables, à confirmer : un groupe `dissolved` accepte les raisons de retour en `pending`
-    sans `merge_item_now_ready`, les raisons `cancelled` sans `not_ready_timeout_expired`, et les raisons
-    d'échec du merge sans `direct_merge_rejected`. Un échec de merge direct donne toujours
-    `direct_merge_rejected`, seule raison permise depuis `pending`. Une décision causée par l'horloge
-    (timeout) ou par un changement de mode n'a pas de `cause_id`. Une PR vue mergée alors que la file demande son
-    merge attend le résultat du job de merge.
+  - Écarts de lecture des tables, validés (Nicolas Lecoy, 29 septembre 2026) et écrits dans les tables
+    ci-dessous : un groupe `dissolved` accepte les raisons de retour en `pending` sans `merge_item_now_ready`, les
+    raisons `cancelled` sans `not_ready_timeout_expired`, et les raisons d'échec du merge sans
+    `direct_merge_rejected`. Un échec de merge direct donne toujours `direct_merge_rejected`, seule raison permise
+    depuis `pending` (`AGENTS.md` Q13). Une décision causée par l'horloge (timeout) ou par un changement de mode
+    n'a pas de `cause_id`. Une PR vue mergée alors que la file demande son merge attend le résultat du job de
+    merge.
   - Reste pour les lots suivants : conditions d'entrée et exception du statut de la file (lot 5), fenêtre
     adaptative (lot 8), profondeur d'échec en attente au-delà de 0 et merge optimiste (lot 12), lots et bissection
     (lot 12), merge direct (lot 7), `not_ready_timeout_hours` (lot 5), sérialisation du `Snapshot` pour
@@ -166,7 +167,8 @@ règle qui peut changer avec le code (l'exception du statut de la file, la tradu
 produit donc une décision enregistrée, jamais un calcul dans `apply`. Un fait qui ne change pas l'état observé
 n'est pas écrit.
 
-Chaque décision porte l'identifiant du fait qui l'a causée (`cause_id`). Une demande (soumission, annulation,
+Chaque décision porte l'identifiant du fait qui l'a causée (`cause_id`), sauf une décision causée par l'horloge
+(timeout) ou par un changement de mode, qui n'a pas de fait source. Une demande (soumission, annulation,
 relance, résultat de job, demande sur la file, suspension de l'installation) attend une décision. `apply` n'écrit
 pas une demande qui ne peut pas recevoir de décision (annulation d'une entrée terminée, résultat d'une exécution
 remplacée, soumission quand la file n'est pas `running`) ou qui répète une demande en attente ; la décision qui
@@ -226,6 +228,8 @@ Choix du noyau :
   change rien : le tic relit la vraie tête.
 - Une entrée `urgent` passe devant tous les groupes, y compris `pending_failure` et `tests_passed`, qui retournent
   en `pending` avec `skip_the_line_interrupted`.
+- Une PR vue mergée alors que la file a demandé son merge n'est pas un `manual_merge` : la file attend le résultat
+  du job de merge.
 
 #### Cible du lot 1 : transitions et raisons
 
@@ -294,7 +298,7 @@ membres retournent en `pending`. Une transition de groupe porte la raison que se
 | `pending_failure`      | `bisected`        | `bisection_required`                                                                                                                                                                                                                           |
 | `tests_passed`         | `merged`          | `merge_graph_merge`                                                                                                                                                                                                                            |
 | `tests_passed`         | `failed`          | les raisons de `tests_passed` → `failed` d'une entrée                                                                                                                                                                                          |
-| tout état non terminal | `dissolved`       | la raison donnée à l'entrée qui cause l'abandon : raisons de retour en `pending`, raisons `cancelled`, `manual_merge`, `start_test_run_merge_conflict` pour un lot, raisons d'échec du merge pour un membre de lot                                  |
+| tout état non terminal | `dissolved`       | la raison donnée à l'entrée qui cause l'abandon : raisons de retour en `pending` sauf `merge_item_now_ready`, raisons `cancelled` sauf `not_ready_timeout_expired`, `manual_merge`, `start_test_run_merge_conflict` pour un lot, raisons d'échec du merge sauf `direct_merge_rejected` pour un membre de lot |
 
 Transitions d'une exécution :
 
@@ -398,7 +402,7 @@ Autres valeurs fermées :
   transaction) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
   événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours`.
-- **Interfaces figées** : tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`, noms selon Q10) ;
+- **Interfaces figées** : tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`, `AGENTS.md` D28) ;
   types de jobs de la file.
 - **Critère de sortie** : sur `cihub-github-sim`, 20 PR soumises dans des états variés atteignent `pending` ou
   `not_ready` avec la bonne raison ; rejouer le journal reconstruit exactement les mêmes projections ; un scheduler
@@ -412,7 +416,7 @@ Autres valeurs fermées :
   fichier du dépôt, protection) et leur source ; `check_observations` ; succès, échec, timeout ; rapports tardifs
   ignorés ; échec en attente à la profondeur 0 ; redémarrage de l'aval ; suppression des branches de test après
   `keep_test_branches_minutes`.
-- **Interfaces figées** : format des noms de branches ; corps de la PR brouillon ; `GET /v1/test-runs/{run_id}`.
+- **Interfaces figées** : format des noms de branches ; corps de la PR brouillon ; `GET /api/v1/test-runs/{run_id}`.
 - **Critère de sortie** : sur `cihub-github-sim`, une file de 10 PR dont 2 échouent teste chaque PR au-dessus de
   ses prédécesseurs, conclut chaque exécution avec la bonne raison et redémarre l'aval ; un conflit identifie la
   bonne PR coupable ; un check qui ne rapporte jamais donne `test_run_timeout`.
@@ -465,7 +469,7 @@ Autres valeurs fermées :
   `Dockerfile` de l'image `cihub-server` et workflow de publication de l'image sur GHCR à chaque version
   (`AGENTS.md` D19) ; `docker compose` d'installation avec le service `cihub-migrate` (`AGENTS.md` D14) et README
   d'installation.
-- **Interfaces figées** : API v1 publiée dans `/v1/openapi.json` ; commandes de PR ; commandes de la CLI.
+- **Interfaces figées** : API v1 publiée dans `/api/v1/openapi.json` ; commandes de PR ; commandes de la CLI.
 - **Critère de sortie** : un test de bout en bout sur l'instance de staging soumet des PR sur un vrai dépôt et les
   merge ; le dépôt de CIHub passe sur sa propre file ; une personne extérieure suit le README et merge une première
   PR en moins de 30 minutes (critère de la phase 1, mesuré à la main).
@@ -486,7 +490,7 @@ Autres valeurs fermées :
 ### Lot 11 : analytique, métriques et webhooks sortants
 
 - **Contenu** : trait `AnalyticsStore` et son implémentation Postgres (`cihub-analytics`, tables `an_*`) ; le rôle
-  `notifier` ; `/metrics` sur l'adresse interne ; vue Santé ; `GET /v1/metrics` ; webhooks sortants Standard
+  `notifier` ; `/metrics` sur l'adresse interne ; vue Santé ; `GET /api/v1/metrics` ; webhooks sortants Standard
   Webhooks avec les noms de Trunk ; endpoints `/orgs/{org}/webhooks`.
 - **Critère de sortie** : les tables de faits reconstruites depuis `events` égalent celles écrites en continu ;
   chaque type de webhook est émis une seule fois par transition, signé, et retenté après un échec ; `rate()`
@@ -508,7 +512,7 @@ Autres valeurs fermées :
 - **Contenu** : récepteur OTLP/HTTP dans le rôle `api` ; `cihub test-results push --junit` et l'action GitHub ;
   tables `ft_results` et `ft_cases` ; les trois signaux de détection, dont la bissection ; quarantaine ;
   `cihub-flaky-core` et `cihub-flakytests`, implémentation du trait `FlakeOracle` (`cihub-contracts`) et raison de
-  relance (Q1) ; page « Tests instables », API `/v1/flaky/*`, webhooks `flaky.*`. Ce lot peut être scindé en deux
+  relance (Q1) ; page « Tests instables », API `/api/v1/flaky/*`, webhooks `flaky.*`. Ce lot peut être scindé en deux
   (réception et stockage, puis détection et oracle) s'il dépasse une semaine.
 - **Critère de sortie** : critère de la phase 3 ; le module désactivé, la suite de la file passe sans aucun
   changement ; l'oracle répond en moins de 50 ms au p99 sur 1 M de résultats.

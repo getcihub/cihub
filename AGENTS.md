@@ -226,6 +226,16 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D27** (Q6) La spéculation probabiliste reste hors v1. Le fait `item.submitted` garde dès maintenant les
   attributs dont elle aura besoin : `author`, `additions`, `deletions` et `changed_files`. Les durées viennent des
   horodatages du journal ; elles ne sont pas un attribut.
+- **D28** (Q10) Les tables de la file sont `queue_items`, `test_groups` et `test_runs`, sans préfixe de module.
+- **D29** Le lot 2 crée les crates `cihub-server` et `cihub-store`.
+- **D30** Dépendances du lot 2 : `tokio`, `tokio-util`, `sqlx` (Postgres, `rustls`), `axum`, `anyhow` (binaires
+  seulement), `tracing`, `tracing-subscriber`, `secrecy`, `sha2` et `rand`. Toute autre dépendance est proposée
+  selon §4.
+- **D31** Toutes les variables d'environnement du serveur commencent par `CIHUB_`.
+- **D32** Un jeton d'API est `cht_` suivi de 20 octets aléatoires encodés en base32 avec l'alphabet des typedid
+  (36 caractères au total), envoyé par `Authorization: Bearer`. Le serveur garde seulement l'empreinte SHA-256 du
+  jeton et le retrouve par cette empreinte. `cht` n'est jamais un type d'identifiant typedid.
+- **D33** L'API est servie sous `/api/v1`, sur l'adresse de l'instance, à côté du tableau de bord.
 
 ### 4.1 Questions ouvertes
 
@@ -248,11 +258,11 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   recommande. _(lot 15)_
 - **Q9** Stack du tableau de bord : React avec le client TypeScript généré est l'hypothèse ; à confirmer.
   _(lot 10)_
-- **Q10** Noms des tables de la file : `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`) ou un
-  préfixe par module (`mq_items`, `mq_groups`, `mq_runs`), qui suit le préfixe des fichiers de migration.
-  _(lot 2)_
 - **Q12** `docs/FLAKY_TESTS.md` abonne le module à `mergequeue.run.completed`, qui n'est pas un type d'événement
   de `docs/DOMAIN.md` (`run.transitioned` ?). _(lot 14)_
+- **Q13** Un échec de merge direct donne toujours `direct_merge_rejected`, quelle que soit l'erreur du job
+  (limite d'API, protection de branche…) : garder une seule raison, ou permettre les raisons précises d'échec du
+  merge depuis `pending`. _(lot 7)_
 
 ---
 
