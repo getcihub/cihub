@@ -20,6 +20,8 @@ seulement.
 
 ```sh
 mise run db            # docker compose up --detach --wait
+mise run migrate       # Postgres, puis cihub-server migrate
+mise run dev           # migrate, puis cihub-server avec les quatre rôles et les logs pretty
 docker compose down    # arrête Postgres et garde le volume
 ```
 
@@ -33,11 +35,13 @@ processus au démarrage.
 | Variable              | Défaut                              | Rôle                                                                        |
 | --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
 | `CIHUB_ROLES`         | `api,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
+| `CIHUB_DATABASE_URL`  | aucun, obligatoire                  | `postgres://utilisateur:mot-de-passe@hôte/base`, secret                     |
 | `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Adresse de `/healthz` et `/readyz`, à ne pas exposer (`docs/SECURITY.md`)   |
 | `CIHUB_LOG`           | `info`                              | Filtre des logs (`docs/OBSERVABILITY.md`)                                   |
 | `CIHUB_LOG_FORMAT`    | `json`                              | `json` ou `pretty` (`docs/OBSERVABILITY.md`)                                |
 
-Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent.
+Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent. `/healthz`
+répond `200` tant que le processus tourne ; `/readyz` répond `503` quand Postgres ne répond pas en 2 s.
 
 ## Migrations
 

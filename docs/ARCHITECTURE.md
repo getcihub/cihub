@@ -71,6 +71,7 @@ crates/
   config/                cihub-config         (existe)
   mq-core/               cihub-mq-core        (existe)
   server/                cihub-server         (existe)
+  store/                 cihub-store          (existe)
   telemetry/             cihub-telemetry      (existe)
   ...                    les autres crates du tableau, avec leur lot
 migrations/              migrations Postgres embarquees dans cihub-server (lot 2)
@@ -85,9 +86,9 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-mq-core`    | `apply`, graphe de merge, prédécesseurs, validité des exécutions, fenêtre adaptative, lots, bissection, budget d'échec, `plan`, `check` (pur)                          | `domain`, `config`                                               | 1   | existe |
 | `cihub-contracts`  | Trait `FlakeOracle` et l'oracle neutre qui répond « inconnu » (pur)                                                                                                    | `domain`                                                         | 14  | cible  |
 | `cihub-flaky-core` | Signaux de détection, classification `stable` / `suspect` / `flaky` / `broken`, `case_key` (pur)                                                                       | `domain`                                                         | 14  | cible  |
-| `cihub-store`      | Pool Postgres, transactions, `cihub.org_id` pour la RLS, verrous, baux, migrations embarquées, test des enums Postgres                                                | `domain`                                                         | 2   | cible  |
+| `cihub-store`      | Pool Postgres, transactions, `cihub.org_id` pour la RLS, verrous, baux, migrations embarquées, test des enums Postgres                                                | `domain`                                                         | 2   | existe |
 | `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
-| `cihub-platform`   | Contrat `Module`, tenancy (organisations, utilisateurs, rôles, jetons), traits `Inbox`, `JobQueue`, `Outbox` et leur implémentation Postgres, exécution des jobs       | `domain`, `store`, `scm`                                         | 2–3 | cible  |
+| `cihub-platform`   | Contrat `Module`, tenancy (organisations, utilisateurs, rôles, jetons), traits `Inbox`, `JobQueue`, `Outbox` et leur implémentation Postgres, exécution des jobs       | `domain`, `store`, `scm`                                         | 3–5 | cible  |
 | `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel                                                                                                         | `domain`                                                         | 4   | cible  |
 | `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par installation, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | cible  |
 | `cihub-github-sim` | Simulateur GitHub en processus, avec injection de pannes (tests)                                                                                                       | `scm`, `domain`                                                  | 4   | cible  |

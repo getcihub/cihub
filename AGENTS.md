@@ -299,17 +299,17 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   | ------------------ | ------------------------------------------------------------------------------------- | ---------- |
   | `fmt`              | `cargo fmt --all`                                                                     | oui        |
   | `lint`             | `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo deny check` | oui        |
-  | `test`             | `cargo nextest run --workspace`                                                       | oui        |
+  | `test`             | `cargo nextest run --workspace`, sans les fichiers `tests/postgres.rs`                | oui        |
   | `cover`            | couverture des crates pures, 90 % au moins (D11)                                      | oui        |
   | `lint-workflows`   | `actionlint` et `zizmor` sur `.github/workflows`                                      | oui        |
   | `check`            | `lint`, puis `test`                                                                   | oui        |
   | `db`               | Postgres de `compose.yaml`                                                            | oui        |
-  | `migrate`          | `cihub-server migrate` sur le Postgres de développement (D14)                         | lot 2      |
-  | `test-integration` | tests contre Postgres                                                                 | lot 2      |
-  | `dev`              | Postgres, puis `cihub-server` en local avec les quatre rôles                          | lot 2      |
+  | `migrate`          | `cihub-server migrate` sur le Postgres de développement (D14)                         | oui        |
+  | `test-integration` | Postgres, puis les fichiers `tests/postgres.rs` (`#[sqlx::test]`)                     | oui        |
+  | `dev`              | `migrate`, puis `cihub-server` en local avec les quatre rôles, logs `pretty`          | oui        |
   | `sim`              | tests d'injection de pannes                                                           | lot 7      |
 
-  La CI exécute `lint`, `test`, `cover` et `lint-workflows`, un job par tâche (D18). Une nouvelle tâche est ajoutée
+  La CI exécute `lint`, `test`, `test-integration`, `cover` et `lint-workflows`, un job par tâche (D18). Une nouvelle tâche est ajoutée
   au tableau dans le même changement.
 - **Logs** : suivre les règles d'écriture de `docs/OBSERVABILITY.md`. Les lints clippy en contrôlent une partie.
 - **Secrets** : jamais dans le dépôt, ni dans les tests, ni dans les journaux. La clé privée de l'App et le secret

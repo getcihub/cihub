@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, bail};
 use cihub_telemetry::{LogFormat, Logs};
+use secrecy::SecretString;
 use serde::Serialize;
 
 /// A role of the process (`AGENTS.md` D8).
@@ -42,6 +43,8 @@ pub struct Config {
     pub roles: BTreeSet<Role>,
     /// Address of `/healthz` and `/readyz`, separate from the public routes.
     pub internal_addr: SocketAddr,
+    /// `postgres://user:password@host/database`.
+    pub database_url: SecretString,
     pub logs: Logs,
 }
 
@@ -62,6 +65,9 @@ impl Config {
         let internal_addr = internal_addr
             .parse()
             .with_context(|| format!("CIHUB_INTERNAL_ADDR `{internal_addr}` is not an address"))?;
+        let Some(database_url) = get("CIHUB_DATABASE_URL").filter(|url| !url.is_empty()) else {
+            bail!("CIHUB_DATABASE_URL is required");
+        };
         let log_format = match get("CIHUB_LOG_FORMAT").as_deref() {
             None | Some("json") => LogFormat::Json,
             Some("pretty") => LogFormat::Pretty,
@@ -73,6 +79,7 @@ impl Config {
         Ok(Self {
             roles,
             internal_addr,
+            database_url: database_url.into(),
             logs,
         })
     }
@@ -98,7 +105,9 @@ mod tests {
     use super::*;
 
     fn config(vars: &[(&str, &str)]) -> anyhow::Result<Config> {
-        let vars: HashMap<_, _> = vars.iter().copied().collect();
+        let mut vars: HashMap<_, _> = vars.iter().copied().collect();
+        vars.entry("CIHUB_DATABASE_URL")
+            .or_insert("postgres://cihub:cihub@127.0.0.1/cihub");
         Config::from_lookup(|name| vars.get(name).map(|v| (*v).to_owned()))
     }
 
@@ -122,12 +131,19 @@ mod tests {
             [("CIHUB_ROLES", "api,cron")],
             [("CIHUB_ROLES", "")],
             [("CIHUB_INTERNAL_ADDR", "localhost")],
+            [("CIHUB_DATABASE_URL", "")],
             [("CIHUB_LOG", "info,=[")],
             [("CIHUB_LOG_FORMAT", "text")],
         ] {
             let err = config(&vars).unwrap_err();
             assert!(err.to_string().contains(vars[0].0), "{err}");
         }
+    }
+
+    #[test]
+    fn database_url_is_required() {
+        let err = Config::from_lookup(|_| None).unwrap_err();
+        assert_eq!(err.to_string(), "CIHUB_DATABASE_URL is required");
     }
 
     #[test]

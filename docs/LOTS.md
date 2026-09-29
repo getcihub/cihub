@@ -353,11 +353,10 @@ Autres valeurs fermées :
     les enums Postgres aux énumérations de `cihub-domain`.
   - Tables `orgs`, `installations`, `repos`, `users`, `memberships`, `api_tokens`, `audit_log` ; RLS avec
     `cihub.org_id` ; table `events` partitionnée par mois et sérialisation de `Event` (lot 1) ; `outbox`,
-    abonnements ; contrat `Module` et activation par organisation ; jetons hachés en SHA-256 et scopes. Le schéma
-    d'événement garde les attributs de D27.
+    abonnements ; jetons hachés en SHA-256 et scopes. Le schéma d'événement garde les attributs de D27.
   - Tâches `migrate`, `test-integration` et `dev` ; service Postgres dans la CI.
-- **Interfaces figées** : schéma de la table `events` ; contrat `Module` ; politique RLS ; format des jetons ;
-  variables `CIHUB_*` du serveur.
+- **Interfaces figées** : schéma de la table `events` ; politique RLS ; format des jetons ; variables `CIHUB_*` du
+  serveur.
 - **Critère de sortie** : un test d'intégration contre un vrai Postgres prouve qu'une connexion positionnée sur
   l'organisation A ne lit ni n'écrit aucune ligne de B, pour chaque table ; un événement et son entrée d'outbox
   sont écrits dans la même transaction ; les partitions du mois suivant sont créées par un job ;
@@ -367,16 +366,28 @@ Autres valeurs fermées :
 - **Suivi** :
   - Fait (étape 1, squelette de `cihub-server`) : configuration `CIHUB_ROLES`, `CIHUB_INTERNAL_ADDR`, `CIHUB_LOG`
     et `CIHUB_LOG_FORMAT`, une valeur invalide arrête le démarrage ; logs au format JSON de
-    `tracing-subscriber` (spans dans la liste `spans`), ou `pretty` ; un span `role` et une tâche par rôle, qui attend l'annulation ; arrêt sur
+    `tracing-subscriber` (spans dans la liste `spans`), ou `pretty` ; un span `role` et une tâche par rôle, qui
+    attend l'annulation ; arrêt sur
     `SIGTERM` et `SIGINT`, et arrêt de toutes les tâches quand une tâche s'arrête seule ; `/healthz` et
     `/readyz` sur l'adresse interne, qui donnent le nom, la version et les rôles. Vérifié par des tests qui
     lancent le binaire en tout-en-un et avec un seul rôle.
-  - Reste : `cihub-store`, migrations et `migrate` ; tables de tenancy et RLS ; `events` ; outbox ; jetons et
-    contrat `Module` ; tâches `migrate`, `test-integration` et `dev`. `/readyz` ne vérifie pas encore Postgres.
+  - Fait (étape 2, `cihub-store` et migrations) : pool `sqlx` (TLS par `rustls` et les certificats du système) ;
+    migrations embarquées depuis `migrations/`, encore vide ; `cihub-server migrate` ; au démarrage, arrêt si une
+    migration embarquée manque en base ; `CIHUB_DATABASE_URL` en `SecretString` ; `/readyz` répond `503` quand
+    Postgres ne répond pas en 2 s ; tâches `migrate`, `test-integration` et `dev`, et job `Rust Integration Test`
+    dans la CI. Les tests contre Postgres sont dans les fichiers `tests/postgres.rs` ; `mise run test` les exclut.
+    Vérifié par des tests sur des migrations de test (`crates/store/tests/migrations/`) et sur le binaire.
+  - Reste : tables de tenancy et RLS ; `events` et ses partitions (`AGENTS.md` D36) ; outbox ; jetons. Le test
+    « `cihub-server` refuse de démarrer quand une migration manque » sur le binaire attend la première
+    migration (étape 3) ; il est déjà vérifié sur `cihub-store`. `sqlx-cli` et `.sqlx/` arrivent avec la
+    première requête vérifiée à la compilation. Les partitions de plus de 90 jours sont supprimées : chaque file
+    devra garder un instantané plus récent (lot 5).
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : la crate `cihub-telemetry` arrive dès ce lot et porte
-    les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`.
-    `deny.toml` permet `axum` dans `cihub-server` (pour l'adresse interne), et `tokio` dans `axum`, `hyper`,
-    `hyper-util`, `tokio-util` et `tower`.
+    les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`. Le contrat `Module` passe au
+    lot 5 (D35). Les partitions sont créées par `migrate` et par une boucle du scheduler (D36). `deny.toml` permet
+    `axum` dans `cihub-server` (pour l'adresse interne), `sqlx` dans `cihub-server` (tests seulement), `tokio`
+    dans les crates externes qui en dépendent, et la licence `Zlib` (`foldhash`, par `sqlx`). La CI lance
+    Postgres par `mise run db`, pas par un service GitHub Actions.
 
 ### Lot 3 : transport interne : inbox, jobs, baux
 
@@ -410,13 +421,14 @@ Autres valeurs fermées :
 
 - **Objectif** : relier le noyau pur au journal et à GitHub : une PR soumise devient `pending` ou reste
   `not_ready` avec une raison.
-- **Contenu** : dans `cihub-mergequeue`, projection `queue_items`, `test_groups`, `test_runs` depuis le journal,
+- **Contenu** : contrat `Module` et activation d'un module par organisation (`AGENTS.md` D35) ; dans
+  `cihub-mergequeue`, projection `queue_items`, `test_groups`, `test_runs` depuis le journal,
   instantané tous les 500 événements, rejeu ; boucle du scheduler (files `dirty`, verrou, réconciliation en
   transaction) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
   événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours`.
-- **Interfaces figées** : tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`, `AGENTS.md` D28) ;
-  types de jobs de la file.
+- **Interfaces figées** : contrat `Module` ; tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`,
+  `AGENTS.md` D28) ; types de jobs de la file.
 - **Critère de sortie** : sur `cihub-github-sim`, 20 PR soumises dans des états variés atteignent `pending` ou
   `not_ready` avec la bonne raison ; rejouer le journal reconstruit exactement les mêmes projections ; un scheduler
   tué au milieu d'une réconciliation ne laisse aucune écriture partielle.

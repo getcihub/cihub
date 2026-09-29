@@ -5,7 +5,7 @@ all-features = true
 ignore = []
 
 [licenses]
-allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0"]
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.8
 
 [bans]
@@ -27,11 +27,15 @@ deny = [
         "axum",
         "hyper",
         "hyper-util",
+        "sqlx-core",
+        "sqlx-macros-core",
+        "tokio-stream",
         "tokio-util",
         "tower",
     ] },
     { crate = "sqlx", wrappers = [
         "cihub-store",
+        "cihub-server",
         "cihub-platform",
         "cihub-analytics",
         "cihub-mergequeue",
