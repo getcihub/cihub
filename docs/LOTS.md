@@ -136,7 +136,8 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     l'ordre du graphe, annulations, changements de la PR, push extérieur, merge manuel, pause, drainage,
     suspension, changement de mode ; identifiants des décisions sans hasard ; `check` (règles de
     `docs/RELIABILITY.md`). Tests : tables des transitions, scénarios rejoués, test de propriété (20 000 cas
-    vérifiés en local). `mise run cover` couvre aussi `cihub-mq-core`.
+    vérifiés en local). `mise run cover` couvre aussi `cihub-mq-core`. Exemple `simulate`, qui joue un
+    scénario ligne par ligne et affiche les décisions (`crates/mq-core/examples/`).
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : les réglages sont un paramètre de `plan` et de `check`,
     comme l'heure, car `cihub-domain` ne peut pas dépendre de `cihub-config` ; `queue.settings_changed` ne porte
     que le mode avant et après. `item.submitted` porte `author`, `additions`, `deletions` et `changed_files`
