@@ -204,7 +204,6 @@ dependencies = [
 name = "cihub-telemetry"
 version = "0.1.0"
 dependencies = [
- "serde_json",
  "thiserror",
  "time",
  "tracing",

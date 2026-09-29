@@ -30,17 +30,16 @@ Une valeur invalide arrête le processus au démarrage. `mise run dev` utilise `
 
 ### Format
 
-En `json`, un enregistrement est une ligne. Les clés de corrélation des spans ouverts sont au premier niveau, à côté
-des champs de l'événement, pour qu'une requête sur `queue_id` trouve toutes les lignes d'une file :
+En `json`, un enregistrement est une ligne, au format JSON de `tracing-subscriber`. Les champs de l'événement sont
+au premier niveau ; les spans ouverts sont dans la liste `spans`, de la racine à la feuille, chacun avec son nom et
+ses clés de corrélation. Une requête sur une file lit donc `spans[].queue_id` :
 
 ```json
-{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","target":"cihub_mergequeue::reconcile","message":"group formed","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk","group_id":"group_…","predecessors":2}
+{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","message":"group formed","predecessors":2,"target":"cihub_mergequeue::reconcile","spans":[{"name":"role","role":"scheduler"},{"name":"reconcile","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk"}]}
 ```
 
-`timestamp` est en RFC 3339 UTC, `level` vaut `DEBUG`, `INFO`, `WARN` ou `ERROR`, `target` est le module Rust qui
-écrit. Le format JSON standard de `tracing-subscriber` place les champs des spans dans une liste `spans` et non au
-premier niveau : `cihub-telemetry` les met à plat avec son propre formateur (`crates/telemetry/src/logs.rs`), sans
-autre dépendance. Les clés d'une ligne sont dans l'ordre alphabétique. Les `trace_id` et `span_id` s'ajoutent quand les traces OpenTelemetry arrivent.
+`timestamp` est en RFC 3339 UTC, en millisecondes ; `level` vaut `DEBUG`, `INFO`, `WARN` ou `ERROR` ; `target` est
+le module Rust qui écrit. Les `trace_id` et `span_id` s'ajoutent quand les traces OpenTelemetry arrivent.
 
 ### Clés de corrélation
 
@@ -71,8 +70,9 @@ portent la mention _lint_ ; la relecture vérifie les autres.
    `info!("item {pr_number} submitted")`. Une requête sur `message` trouve ainsi toutes les lignes du même type.
 4. **Les champs sont en snake_case.** Une nouvelle clé partagée entre crates est ajoutée à la liste ci-dessus.
 5. **Une erreur utilise le champ `error`** et s'écrit une seule fois, là où elle est traitée :
-   `warn!(error = &err as &dyn std::error::Error, "github call retried")`, pour garder la chaîne des causes. Une
-   fonction qui renvoie l'erreur l'enveloppe (`#[source]`) et ne l'écrit pas.
+   `warn!(error = &err as &dyn std::error::Error, "github call retried")`. Le format `pretty` écrit aussi la
+   chaîne des causes (`error.sources`) ; le format `json` de `tracing-subscriber` n'écrit que le message de
+   l'erreur. Une fonction qui renvoie l'erreur l'enveloppe (`#[source]`) et ne l'écrit pas.
 6. **Une durée est un entier suffixé par son unité** (`duration_ms`), pas un `Duration` ni une chaîne.
 7. **Le niveau dit qui doit lire la ligne.**
 

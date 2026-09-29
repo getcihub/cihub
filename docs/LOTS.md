@@ -366,8 +366,8 @@ Autres valeurs fermées :
   par processus.
 - **Suivi** :
   - Fait (étape 1, squelette de `cihub-server`) : configuration `CIHUB_ROLES`, `CIHUB_INTERNAL_ADDR`, `CIHUB_LOG`
-    et `CIHUB_LOG_FORMAT`, une valeur invalide arrête le démarrage ; logs JSON avec les champs des spans au
-    premier niveau, ou `pretty` ; un span `role` et une tâche par rôle, qui attend l'annulation ; arrêt sur
+    et `CIHUB_LOG_FORMAT`, une valeur invalide arrête le démarrage ; logs au format JSON de
+    `tracing-subscriber` (spans dans la liste `spans`), ou `pretty` ; un span `role` et une tâche par rôle, qui attend l'annulation ; arrêt sur
     `SIGTERM` et `SIGINT`, et arrêt de toutes les tâches quand une tâche s'arrête seule ; `/healthz` et
     `/readyz` sur l'adresse interne, qui donnent le nom, la version et les rôles. Vérifié par des tests qui
     lancent le binaire en tout-en-un et avec un seul rôle.
