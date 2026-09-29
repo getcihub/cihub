@@ -207,6 +207,13 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D22** Complète D17 : un outil de `mise.toml` utilise un backend qui télécharge un binaire précompilé
   (`aqua:`, `github:`), avec sa somme de contrôle dans `mise.lock`. Le backend `cargo:`, qui compile l'outil
   depuis les sources dans chaque job de CI, sert seulement quand l'outil ne publie pas de binaire.
+- **D23** Le journal utilise le vocabulaire de CIHub, pas celui d'un SCM. Chaque adaptateur traduit les valeurs
+  de son SCM en faits neutres ; le noyau ne voit aucune valeur propre à GitHub. « PR » désigne toute demande de
+  changement. `Mergeability` vaut `mergeable`, `behind`, `conflict`, `blocked` ou `unknown` ; les raisons d'échec
+  du merge sont `merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`,
+  `merge_branch_protection_unmet`, `merge_already_in_progress` et `merge_repeated_server_errors` ; la perte de
+  l'accès au dépôt est un fait `access.lost` ou `access.restored` ; `CheckKind` vaut `check` ou `status`. Les noms
+  de Trunk restent dans les webhooks sortants, par une traduction au lot 11.
 
 ### 4.1 Questions ouvertes
 

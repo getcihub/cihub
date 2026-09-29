@@ -1,6 +1,6 @@
 use std::fmt;
 
-use cihub_domain::FailedReason;
+use cihub_domain::JobError;
 
 /// 1-based line and character column in the configuration file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,14 +45,12 @@ impl ConfigError {
         }
     }
 
-    /// The reason that fails a test run started with this configuration.
-    pub fn reason(&self) -> FailedReason {
+    /// The error that the assembly job reports for this configuration.
+    pub fn job_error(&self) -> JobError {
         match self.kind {
-            ConfigErrorKind::Parsing => FailedReason::StartTestRunConfigParsingFailure,
-            ConfigErrorKind::BadVersion => FailedReason::StartTestRunConfigBadVersion,
-            ConfigErrorKind::BadRequiredStatuses => {
-                FailedReason::StartTestRunConfigBadRequiredStatuses
-            }
+            ConfigErrorKind::Parsing => JobError::ConfigParsingFailure,
+            ConfigErrorKind::BadVersion => JobError::ConfigBadVersion,
+            ConfigErrorKind::BadRequiredStatuses => JobError::ConfigBadRequiredStatuses,
         }
     }
 }

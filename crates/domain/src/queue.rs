@@ -13,3 +13,12 @@ pub struct Queue {
     pub state: QueueState,
     pub mode: QueueMode,
 }
+
+closed_enum! {
+    /// What an operator asks of a queue.
+    pub enum QueueControl {
+        Pause,
+        Resume,
+        Drain,
+    }
+}

@@ -1,35 +1,408 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::{EventId, GroupId, ItemId, OrgId, QueueId, RunId, Target};
+use crate::{
+    BlockReason, CheckReport, ConflictCulprit, EventId, GroupId, GroupKind, GroupState,
+    ImpactedTargets, ItemId, ItemState, JobError, Mergeability, OrgId, PrState, Priority,
+    QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource, ReviewDecision,
+    RunId, RunStatus, SubmittedVia,
+};
 
-/// Immutable, append-only record of something that happened in a queue.
+/// Immutable, append-only record of a fact or a decision in the log of a
+/// queue.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub id: EventId,
     pub org_id: OrgId,
     pub queue_id: QueueId,
-    pub item_id: Option<ItemId>,
-    pub group_id: Option<GroupId>,
-    pub run_id: Option<RunId>,
     pub actor: Actor,
     #[serde(with = "time::serde::rfc3339")]
     pub occurred_at: OffsetDateTime,
+    /// The fact that caused a decision; `None` for a fact.
+    pub cause_id: Option<EventId>,
     pub kind: EventKind,
 }
 
+/// Payload of an event. Facts change only the observed state; decisions
+/// change only the state of the queue.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", content = "payload")]
 pub enum EventKind {
-    ItemStateChanged { to: Target },
+    #[serde(rename = "item.submitted")]
+    ItemSubmitted {
+        pr_number: u64,
+        head_sha: String,
+        priority: Priority,
+        no_batch: bool,
+        direct: bool,
+        submitted_via: SubmittedVia,
+        /// Attributes kept for a probabilistic speculation (`AGENTS.md` Q6).
+        author: String,
+        additions: u64,
+        deletions: u64,
+        changed_files: u64,
+    },
+    #[serde(rename = "item.cancel_requested")]
+    ItemCancelRequested { item_id: ItemId, by_admin: bool },
+    #[serde(rename = "item.restart_requested")]
+    ItemRestartRequested { item_id: ItemId, by_api: bool },
+    /// The full state of the PR as read, whatever the SCM action.
+    #[serde(rename = "pr.observed")]
+    PrObserved {
+        pr_number: u64,
+        state: PrState,
+        head_sha: String,
+        base_branch: String,
+        draft: bool,
+        labels: BTreeSet<String>,
+        mergeability: Mergeability,
+        review_decision: ReviewDecision,
+        checks: Vec<CheckReport>,
+    },
+    #[serde(rename = "target.pushed")]
+    TargetPushed {
+        /// `None` for a read of the tick.
+        before: Option<String>,
+        after: String,
+        sender: String,
+    },
+    /// Only for a test SHA that a live run waits for.
+    #[serde(rename = "check.observed")]
+    CheckObserved {
+        test_sha: String,
+        check: CheckReport,
+    },
+    #[serde(rename = "targets.received")]
+    TargetsReceived {
+        pr_number: u64,
+        head_sha: String,
+        targets: ImpactedTargets,
+    },
+    #[serde(rename = "test_branch.assembled")]
+    TestBranchAssembled {
+        run_id: RunId,
+        test_sha: String,
+        draft_pr_number: Option<u64>,
+        required_statuses: Vec<String>,
+        required_statuses_source: RequiredStatusesSource,
+    },
+    #[serde(rename = "test_branch.assembly_failed")]
+    TestBranchAssemblyFailed {
+        run_id: RunId,
+        error: JobError,
+        conflict_culprit: Option<ConflictCulprit>,
+    },
+    #[serde(rename = "merge.succeeded")]
+    MergeSucceeded { item_id: ItemId, merged_sha: String },
+    #[serde(rename = "merge.failed")]
+    MergeFailed {
+        item_id: ItemId,
+        direct: bool,
+        error: JobError,
+    },
+    #[serde(rename = "queue.control_requested")]
+    QueueControlRequested { control: QueueControl },
+    /// Only the mode: the other settings are a parameter of `plan`.
+    #[serde(rename = "queue.settings_changed")]
+    QueueSettingsChanged { before: QueueMode, after: QueueMode },
+    /// CIHub lost its access to the repository: the GitHub App
+    /// installation is suspended or deleted.
+    #[serde(rename = "access.lost")]
+    AccessLost,
+    #[serde(rename = "access.restored")]
+    AccessRestored,
+    /// A creation has no state before.
+    #[serde(rename = "item.transitioned")]
+    ItemTransitioned {
+        item_id: ItemId,
+        from: Option<ItemState>,
+        to: ItemState,
+        reason: Reason,
+        /// Set at admission.
+        position: Option<i64>,
+        verified_by_run_id: Option<RunId>,
+        merged_sha: Option<String>,
+    },
+    /// The full list of block reasons.
+    #[serde(rename = "item.readiness_changed")]
+    ItemReadinessChanged {
+        item_id: ItemId,
+        mergeability: Mergeability,
+        block_reasons: Vec<BlockReason>,
+    },
+    /// New positions after the interval ran out or an `urgent` preemption.
+    #[serde(rename = "queue.renumbered")]
+    QueueRenumbered { positions: BTreeMap<ItemId, i64> },
+    /// A new group, in `testing`.
+    #[serde(rename = "group.formed")]
+    GroupFormed {
+        group_id: GroupId,
+        kind: GroupKind,
+        item_ids: Vec<ItemId>,
+        predecessor_ids: Vec<ItemId>,
+        base_sha: String,
+        parent_group_id: Option<GroupId>,
+    },
+    #[serde(rename = "group.transitioned")]
+    GroupTransitioned {
+        group_id: GroupId,
+        from: GroupState,
+        to: GroupState,
+        reason: Reason,
+    },
+    /// A creation has no status before.
+    #[serde(rename = "run.transitioned")]
+    RunTransitioned {
+        run_id: RunId,
+        group_id: GroupId,
+        from: Option<RunStatus>,
+        to: RunStatus,
+        reason: Reason,
+        attempt: u32,
+        test_branch: String,
+        /// Set when the run ends in failure.
+        failure_causing_statuses: Vec<String>,
+    },
+    #[serde(rename = "queue.transitioned")]
+    QueueTransitioned {
+        from: QueueState,
+        to: QueueState,
+        reason: Reason,
+    },
+    #[serde(rename = "queue.window_changed")]
+    QueueWindowChanged { before: u32, after: u32 },
+}
+
+closed_enum! {
+    /// Type of an event, stored in `events.type`. The name has the form
+    /// `<subject>.<verb>`.
+    pub enum EventType {
+        /// A user, a label, the API or the CLI submitted a PR.
+        #[serde(rename = "item.submitted")]
+        #[strum(serialize = "item.submitted")]
+        ItemSubmitted,
+        /// A user or an administrator asked to cancel an item.
+        #[serde(rename = "item.cancel_requested")]
+        #[strum(serialize = "item.cancel_requested")]
+        ItemCancelRequested,
+        /// A user or the API asked to restart the tests of an item.
+        #[serde(rename = "item.restart_requested")]
+        #[strum(serialize = "item.restart_requested")]
+        ItemRestartRequested,
+        /// A webhook, the tick or a resync read the state of a PR.
+        #[serde(rename = "pr.observed")]
+        #[strum(serialize = "pr.observed")]
+        PrObserved,
+        /// The target branch moved.
+        #[serde(rename = "target.pushed")]
+        #[strum(serialize = "target.pushed")]
+        TargetPushed,
+        /// A check reported on the test SHA of a live run.
+        #[serde(rename = "check.observed")]
+        #[strum(serialize = "check.observed")]
+        CheckObserved,
+        /// The impacted targets of a PR head arrived.
+        #[serde(rename = "targets.received")]
+        #[strum(serialize = "targets.received")]
+        TargetsReceived,
+        /// The assembly job created the test commit.
+        #[serde(rename = "test_branch.assembled")]
+        #[strum(serialize = "test_branch.assembled")]
+        TestBranchAssembled,
+        /// The assembly job failed.
+        #[serde(rename = "test_branch.assembly_failed")]
+        #[strum(serialize = "test_branch.assembly_failed")]
+        TestBranchAssemblyFailed,
+        /// The merge job merged the PR.
+        #[serde(rename = "merge.succeeded")]
+        #[strum(serialize = "merge.succeeded")]
+        MergeSucceeded,
+        /// The merge job failed.
+        #[serde(rename = "merge.failed")]
+        #[strum(serialize = "merge.failed")]
+        MergeFailed,
+        /// An operator asked to pause, resume or drain the queue.
+        #[serde(rename = "queue.control_requested")]
+        #[strum(serialize = "queue.control_requested")]
+        QueueControlRequested,
+        /// An operator changed the mode of the queue.
+        #[serde(rename = "queue.settings_changed")]
+        #[strum(serialize = "queue.settings_changed")]
+        QueueSettingsChanged,
+        /// CIHub lost its access to the repository.
+        #[serde(rename = "access.lost")]
+        #[strum(serialize = "access.lost")]
+        AccessLost,
+        /// CIHub has its access to the repository again.
+        #[serde(rename = "access.restored")]
+        #[strum(serialize = "access.restored")]
+        AccessRestored,
+        /// Decision: an item changed state.
+        #[serde(rename = "item.transitioned")]
+        #[strum(serialize = "item.transitioned")]
+        ItemTransitioned,
+        /// Decision: new mergeability and block reasons of an item.
+        #[serde(rename = "item.readiness_changed")]
+        #[strum(serialize = "item.readiness_changed")]
+        ItemReadinessChanged,
+        /// Decision: new positions.
+        #[serde(rename = "queue.renumbered")]
+        #[strum(serialize = "queue.renumbered")]
+        QueueRenumbered,
+        /// Decision: a new group.
+        #[serde(rename = "group.formed")]
+        #[strum(serialize = "group.formed")]
+        GroupFormed,
+        /// Decision: a group changed state.
+        #[serde(rename = "group.transitioned")]
+        #[strum(serialize = "group.transitioned")]
+        GroupTransitioned,
+        /// Decision: a run changed status.
+        #[serde(rename = "run.transitioned")]
+        #[strum(serialize = "run.transitioned")]
+        RunTransitioned,
+        /// Decision: the queue changed state.
+        #[serde(rename = "queue.transitioned")]
+        #[strum(serialize = "queue.transitioned")]
+        QueueTransitioned,
+        /// Decision: a new speculation window.
+        #[serde(rename = "queue.window_changed")]
+        #[strum(serialize = "queue.window_changed")]
+        QueueWindowChanged,
+    }
+}
+
+impl EventType {
+    /// A decision changes the state of the queue; a fact only the observed
+    /// state.
+    pub const fn is_decision(self) -> bool {
+        matches!(
+            self,
+            Self::ItemTransitioned
+                | Self::ItemReadinessChanged
+                | Self::QueueRenumbered
+                | Self::GroupFormed
+                | Self::GroupTransitioned
+                | Self::RunTransitioned
+                | Self::QueueTransitioned
+                | Self::QueueWindowChanged
+        )
+    }
+}
+
+impl EventKind {
+    pub const fn event_type(&self) -> EventType {
+        match self {
+            Self::ItemSubmitted { .. } => EventType::ItemSubmitted,
+            Self::ItemCancelRequested { .. } => EventType::ItemCancelRequested,
+            Self::ItemRestartRequested { .. } => EventType::ItemRestartRequested,
+            Self::PrObserved { .. } => EventType::PrObserved,
+            Self::TargetPushed { .. } => EventType::TargetPushed,
+            Self::CheckObserved { .. } => EventType::CheckObserved,
+            Self::TargetsReceived { .. } => EventType::TargetsReceived,
+            Self::TestBranchAssembled { .. } => EventType::TestBranchAssembled,
+            Self::TestBranchAssemblyFailed { .. } => EventType::TestBranchAssemblyFailed,
+            Self::MergeSucceeded { .. } => EventType::MergeSucceeded,
+            Self::MergeFailed { .. } => EventType::MergeFailed,
+            Self::QueueControlRequested { .. } => EventType::QueueControlRequested,
+            Self::QueueSettingsChanged { .. } => EventType::QueueSettingsChanged,
+            Self::AccessLost => EventType::AccessLost,
+            Self::AccessRestored => EventType::AccessRestored,
+            Self::ItemTransitioned { .. } => EventType::ItemTransitioned,
+            Self::ItemReadinessChanged { .. } => EventType::ItemReadinessChanged,
+            Self::QueueRenumbered { .. } => EventType::QueueRenumbered,
+            Self::GroupFormed { .. } => EventType::GroupFormed,
+            Self::GroupTransitioned { .. } => EventType::GroupTransitioned,
+            Self::RunTransitioned { .. } => EventType::RunTransitioned,
+            Self::QueueTransitioned { .. } => EventType::QueueTransitioned,
+            Self::QueueWindowChanged { .. } => EventType::QueueWindowChanged,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Actor {
-    /// CIHub itself: the reconciler, a job or the repair loop.
+    /// CIHub itself: the reconciler, the tick or a resync.
     System,
+    /// The account that CIHub acts with on the SCM: the GitHub App, a
+    /// GitLab service account.
+    Bot,
     User {
         login: String,
     },
+}
+
+closed_enum! {
+    /// Kind of the actor of an event, stored next to the login.
+    pub enum ActorKind {
+        /// CIHub itself.
+        System,
+        /// The account that CIHub acts with on the SCM.
+        Bot,
+        /// A user of the SCM.
+        User,
+    }
+}
+
+impl Actor {
+    pub const fn kind(&self) -> ActorKind {
+        match self {
+            Self::System => ActorKind::System,
+            Self::Bot => ActorKind::Bot,
+            Self::User { .. } => ActorKind::User,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use strum::IntoEnumIterator;
+
+    use super::*;
+
+    #[test]
+    fn event_type_names_are_dotted() {
+        for t in EventType::iter() {
+            assert_eq!(serde_json::to_string(&t).unwrap(), format!("\"{t}\""));
+            assert_eq!(EventType::from_str(t.as_str()), Ok(t));
+            assert!(t.as_str().contains('.'), "{t}");
+        }
+    }
+
+    #[test]
+    fn payload_is_tagged_by_event_type() {
+        let kind = EventKind::QueueWindowChanged {
+            before: 2,
+            after: 3,
+        };
+        let json = serde_json::to_value(&kind).unwrap();
+        assert_eq!(json["type"], kind.event_type().as_str());
+        assert_eq!(json["payload"]["after"], 3);
+        assert_eq!(
+            serde_json::to_value(EventKind::AccessLost).unwrap()["type"],
+            "access.lost"
+        );
+    }
+
+    #[test]
+    fn eight_types_are_decisions() {
+        let decisions: Vec<_> = EventType::iter().filter(|t| t.is_decision()).collect();
+        assert_eq!(decisions.len(), 8);
+        assert!(!EventType::PrObserved.is_decision());
+    }
+
+    #[test]
+    fn actor_kind_follows_the_actor() {
+        let user = Actor::User {
+            login: "octocat".into(),
+        };
+        assert_eq!(user.kind(), ActorKind::User);
+        assert_eq!(Actor::Bot.kind(), ActorKind::Bot);
+        assert_eq!(Actor::System.kind(), ActorKind::System);
+    }
 }

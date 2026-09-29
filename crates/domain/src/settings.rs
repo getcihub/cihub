@@ -62,21 +62,34 @@ closed_enum! {
         InProgress,
         Succeeded,
         Failed,
+        /// The queue replaced the run: the group was given up or proved by a
+        /// successor.
         Interrupted,
+        /// A member of the group was cancelled.
         Cancelled,
         TimedOut,
     }
 }
 
+impl RunStatus {
+    pub const fn is_terminal(self) -> bool {
+        !matches!(self, Self::Assembling | Self::InProgress)
+    }
+}
+
 closed_enum! {
+    /// Kind of a report on a commit. Two reports of different kinds can have
+    /// the same name.
     pub enum CheckKind {
-        CheckRun,
+        /// A check with a run: a GitHub check run, a GitLab pipeline job.
+        Check,
+        /// A commit status.
         Status,
     }
 }
 
 closed_enum! {
-    /// Terminal outcome of a check run or commit status.
+    /// Terminal outcome of a check or a commit status.
     pub enum CheckConclusion {
         Success,
         Neutral,

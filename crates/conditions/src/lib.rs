@@ -6,7 +6,7 @@ mod condition;
 mod context;
 mod expr;
 
-pub use attribute::{Attribute, Permission, ReviewDecision};
+pub use attribute::{Attribute, Permission};
 pub use condition::{Condition, Operator, ParseError, ParseErrorKind};
 pub use context::{Check, Context, EvalError};
 pub use expr::{Conditions, Expr};

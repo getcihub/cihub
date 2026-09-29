@@ -545,7 +545,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         assert_eq!(settings.enqueue_label.source, Source::File);
 
         let ctx = Context {
-            review_decision: cihub_conditions::ReviewDecision::Approved,
+            review_decision: cihub_domain::ReviewDecision::Approved,
             ..Context::default()
         };
         assert_eq!(main.queue_conditions.eval(&ctx), Ok(false));
@@ -650,8 +650,8 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         let e = error(&queue("    required_statuses: [ci, ci]\n"));
         assert_eq!(e.kind, ConfigErrorKind::BadRequiredStatuses);
         assert_eq!(
-            e.reason(),
-            cihub_domain::FailedReason::StartTestRunConfigBadRequiredStatuses
+            e.job_error(),
+            cihub_domain::JobError::ConfigBadRequiredStatuses
         );
     }
 

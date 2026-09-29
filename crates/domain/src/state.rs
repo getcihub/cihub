@@ -19,6 +19,35 @@ impl ItemState {
 }
 
 closed_enum! {
+    /// State of a test group. A batch never reaches `failed`: it is bisected.
+    pub enum GroupState {
+        /// A run of the group is in progress.
+        Testing,
+        /// The run failed; the queue waits to know who is at fault.
+        PendingFailure,
+        /// A run proved the group; its members merge in order.
+        TestsPassed,
+        /// Every member merged.
+        Merged,
+        /// The group is at fault.
+        Failed,
+        /// The failed batch was split into two bisection groups.
+        Bisected,
+        /// The queue gave up the group: a member left or a predecessor changed.
+        Dissolved,
+    }
+}
+
+impl GroupState {
+    pub const fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Merged | Self::Failed | Self::Bisected | Self::Dissolved
+        )
+    }
+}
+
+closed_enum! {
     pub enum QueueState {
         /// Accepts and merges.
         Running,

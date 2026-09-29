@@ -1,5 +1,7 @@
 use std::fmt;
 
+use cihub_domain::ReviewDecision;
+
 /// Value type of an attribute. It decides which operators are allowed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -56,7 +58,7 @@ attributes! {
     Number => "number", Kind::Int;
     Title => "title", Kind::Text;
     Body => "body", Kind::Text;
-    GithubReviewDecision => "github-review-decision", Kind::Choice { values: ReviewDecision::NAMES, ordered: false };
+    GithubReviewDecision => "github-review-decision", Kind::Choice { values: REVIEW_DECISION_NAMES, ordered: false };
     ApprovedReviewsBy => "approved-reviews-by", Kind::List;
     ChangesRequestedReviewsBy => "changes-requested-reviews-by", Kind::List;
     ReviewRequested => "review-requested", Kind::List;
@@ -93,24 +95,17 @@ impl fmt::Display for Attribute {
     }
 }
 
-/// GitHub `reviewDecision` of the PR.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum ReviewDecision {
-    Approved,
-    ChangesRequested,
-    ReviewRequired,
-    /// GitHub returns no decision: no review rule applies.
-    #[default]
-    None,
-}
+/// Names of the values of `github-review-decision`, in the order of
+/// `review_decision_rank`.
+const REVIEW_DECISION_NAMES: &[&str] =
+    &["approved", "changes_requested", "review_required", "none"];
 
-impl ReviewDecision {
-    /// Same order as the variants.
-    const NAMES: &'static [&'static str] =
-        &["approved", "changes_requested", "review_required", "none"];
-
-    pub(crate) const fn rank(self) -> i64 {
-        self as i64
+pub(crate) const fn review_decision_rank(decision: ReviewDecision) -> i64 {
+    match decision {
+        ReviewDecision::Approved => 0,
+        ReviewDecision::ChangesRequested => 1,
+        ReviewDecision::ReviewRequired => 2,
+        ReviewDecision::None => 3,
     }
 }
 
@@ -152,15 +147,20 @@ mod tests {
 
     #[test]
     fn choice_names_follow_the_rank() {
-        assert_eq!(
-            ReviewDecision::NAMES[usize::try_from(ReviewDecision::None.rank()).unwrap()],
-            "none"
-        );
+        for decision in [
+            ReviewDecision::Approved,
+            ReviewDecision::ChangesRequested,
+            ReviewDecision::ReviewRequired,
+            ReviewDecision::None,
+        ] {
+            let rank = usize::try_from(review_decision_rank(decision)).unwrap();
+            assert_eq!(REVIEW_DECISION_NAMES[rank], decision.as_str());
+        }
         assert_eq!(
             Permission::NAMES[usize::try_from(Permission::Admin.rank()).unwrap()],
             "admin"
         );
         assert_eq!(Permission::NAMES.len(), 6);
-        assert_eq!(ReviewDecision::NAMES.len(), 4);
+        assert_eq!(REVIEW_DECISION_NAMES.len(), 4);
     }
 }

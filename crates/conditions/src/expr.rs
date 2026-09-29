@@ -70,10 +70,10 @@ fn has(list: &[Expr], ctx: &Context, value: bool) -> Result<bool, EvalError> {
 mod tests {
     use std::time::Duration;
 
-    use cihub_domain::CheckConclusion;
+    use cihub_domain::{CheckConclusion, ReviewDecision};
 
     use super::*;
-    use crate::{Check, Permission, ReviewDecision};
+    use crate::{Check, Permission};
 
     fn condition(s: &str) -> Expr {
         Expr::Condition(s.parse().unwrap())

@@ -1,9 +1,10 @@
 use std::fmt;
 use std::time::Duration;
 
-use cihub_domain::CheckConclusion;
+use cihub_domain::{CheckConclusion, ReviewDecision};
 
-use crate::{Attribute, Permission, ReviewDecision};
+use crate::attribute::review_decision_rank;
+use crate::{Attribute, Permission};
 
 /// What conditions are evaluated on: a PR, its checks, and its place in the
 /// queue. The caller loads it; checks come from the PR head for
@@ -98,7 +99,9 @@ impl Context {
             A::Number => number(self.number),
             A::Title => Value::Texts(vec![&self.title]),
             A::Body => Value::Texts(vec![&self.body]),
-            A::GithubReviewDecision => Value::Number(Some(self.review_decision.rank())),
+            A::GithubReviewDecision => {
+                Value::Number(Some(review_decision_rank(self.review_decision)))
+            }
             A::ApprovedReviewsBy => texts(&self.approved_reviews_by),
             A::ChangesRequestedReviewsBy => texts(&self.changes_requested_reviews_by),
             A::ReviewRequested => texts(&self.review_requested),

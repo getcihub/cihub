@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{
-    CheckConclusion, CheckKind, FailedReason, GroupId, GroupKind, ItemId, OrgId, QueueId, RunId,
-    RunStatus,
+    CheckConclusion, CheckKind, GroupId, GroupKind, GroupState, ItemId, OrgId, QueueId, Reason,
+    RunId, RunStatus,
 };
 
 /// The unit that is tested and held in `pending_failure`: one PR or a batch.
@@ -13,6 +13,9 @@ pub struct TestGroup {
     pub org_id: OrgId,
     pub queue_id: QueueId,
     pub kind: GroupKind,
+    pub state: GroupState,
+    /// Reason of the last transition; the members receive the same one.
+    pub state_reason: Reason,
     /// Members in queue order; each one merges as its own commit.
     pub item_ids: Vec<ItemId>,
     /// The failed batch that a bisection half comes from.
@@ -38,11 +41,15 @@ pub struct TestRun {
     pub draft_pr_number: Option<u64>,
     pub status: RunStatus,
     pub required_statuses: Vec<String>,
+    /// `None` until assembly resolves the required statuses.
+    pub required_statuses_source: Option<RequiredStatusesSource>,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub ended_at: Option<OffsetDateTime>,
-    pub failure_reason: Option<FailedReason>,
+    pub failure_reason: Option<Reason>,
+    /// Required statuses that failed the run.
+    pub failure_causing_statuses: Vec<String>,
     pub conflict_culprit: Option<ConflictCulprit>,
 }
 
@@ -53,7 +60,19 @@ pub struct TestRun {
 pub enum ConflictCulprit {
     QueuePr { pr_number: u64 },
     BaseBranch,
-    StackedPr { pr_number: u64 },
+}
+
+closed_enum! {
+    /// Where the required statuses of a run come from, from the strongest.
+    pub enum RequiredStatusesSource {
+        /// The override in the dashboard.
+        UiOverride,
+        /// `.cihub.yaml` on the target branch at `base_sha`.
+        RepoConfig,
+        /// The rules of the SCM on the target branch: GitHub protections and
+        /// rulesets, GitLab protected branches.
+        BranchProtection,
+    }
 }
 
 /// Last report of a check run or commit status on the test SHA of a run.

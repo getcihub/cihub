@@ -7,7 +7,7 @@ macro_rules! closed_enum {
     ($(#[$meta:meta])* $vis:vis enum $name:ident { $($(#[$vmeta:meta])* $variant:ident),+ $(,)? }) => {
         $(#[$meta])*
         #[derive(
-            Clone, Copy, Debug, PartialEq, Eq, Hash,
+            Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash,
             serde::Serialize, serde::Deserialize,
             strum::Display, strum::EnumString, strum::IntoStaticStr, strum::EnumIter,
         )]
@@ -26,6 +26,8 @@ macro_rules! closed_enum {
 mod event;
 mod id;
 mod item;
+mod job;
+mod pr;
 mod queue;
 mod reason;
 mod run;
@@ -33,16 +35,18 @@ mod settings;
 mod state;
 mod transition;
 
-pub use event::{Actor, Event, EventKind};
+pub use event::{Actor, ActorKind, Event, EventKind, EventType};
 pub use id::{EventId, GroupId, IdParseError, ItemId, OrgId, QueueId, RepoId, RunId};
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
-pub use queue::Queue;
-pub use reason::{CancelledReason, FailedReason, MergedReason, PendingReason, TestsPassedReason};
-pub use run::{CheckObservation, ConflictCulprit, TestGroup, TestRun};
+pub use job::JobError;
+pub use pr::{CheckReport, Mergeability, PrState, ReviewDecision};
+pub use queue::{Queue, QueueControl};
+pub use reason::Reason;
+pub use run::{CheckObservation, ConflictCulprit, RequiredStatusesSource, TestGroup, TestRun};
 pub use settings::{
     BranchProtectionInjection, CheckConclusion, CheckKind, DirectMergeMode, GroupKind,
     MergeCommitTitle, MergeMethod, OptimizationMode, QueueMode, RunStatus, Strategy, SubmittedVia,
     Trigger, UpdateMethod,
 };
-pub use state::{ItemState, QueueState};
-pub use transition::{Target, Transition, TransitionError, transition};
+pub use state::{GroupState, ItemState, QueueState};
+pub use transition::{Lifecycle, TransitionError, check_transition};

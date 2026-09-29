@@ -4,9 +4,13 @@ Contexte : qui touche aux états, aux transitions, aux raisons ou aux types d'é
 d'une exécution ou d'une file. Ce fichier définit les termes que nous utilisons tous, humains et agents. Le code
 est la source de vérité (`AGENTS.md` D1) : la liste des valeurs de chaque vocabulaire fermé est dans
 `cihub-domain`, avec un commentaire `///` qui donne le sens de chaque valeur. Ce qui n'est pas encore codé est
-décrit dans le lot qui le construit (`docs/LOTS.md`, cible du lot 1).
+décrit dans le lot qui le construit (`docs/LOTS.md`).
 
 ## Entités
+
+Le vocabulaire du domaine est celui de CIHub, pas celui d'un SCM (`AGENTS.md` D23) : chaque adaptateur
+(`cihub-github`) traduit les valeurs de son SCM, et le noyau n'en voit aucune. Une **PR** désigne toute demande de
+changement : une pull request GitHub, une merge request GitLab.
 
 Six entités portent tout le produit : une organisation installe la GitHub App sur des dépôts, chaque dépôt a une
 file par branche cible, une file contient des entrées (une par soumission de PR), les entrées sont regroupées en
@@ -43,8 +47,9 @@ Les identifiants sont des ULID typés au format texte `typedid` (`AGENTS.md` D4)
 - **Raison** : la cause lisible d'une transition, issue d'un vocabulaire fermé. Chaque transition en porte une.
 - **Acteur** : qui est à l'origine d'un événement : un utilisateur (avec son login), le compte de l'App, ou CIHub.
 
-Code : `Event` et `Actor`. Aujourd'hui, `Event` n'a qu'une variante (`ItemStateChanged`) et `Actor` n'a pas de
-valeur pour le compte de l'App ; la séparation entre faits et décisions est la cible du lot 1.
+Code : `Event`, `EventKind` (un payload par type), `EventType` (les noms `<sujet>.<verbe>`, avec
+`is_decision`), `Actor` et `ActorKind` dans `cihub-domain` ; `apply` dans `cihub-mq-core`. Une demande en attente
+est un `Request` du snapshot.
 
 ## Entrée de file
 
@@ -90,18 +95,22 @@ stateDiagram-v2
 | `failed`          | Retirée de la file avec une raison ; la PR doit être resoumise                                |
 | `cancelled`       | Annulée par un utilisateur ou par un changement de la PR                                      |
 
-Les transitions permises et leurs raisons sont dans le code (`transition()`). Leur forme cible, une seule
-énumération `Reason` et une table (état de départ, état d'arrivée) → raisons permises (`AGENTS.md` D6), est
-décrite dans le lot 1.
+Les transitions permises et leurs raisons sont dans le code : une seule énumération `Reason` et, pour chaque
+machine à états, une table (état de départ, état d'arrivée) → raisons permises (`AGENTS.md` D6), le trait
+`Lifecycle` et la fonction `check_transition`.
 
 Familles de raisons, pour s'y retrouver : admission et test ; retour en `pending` (changement en amont, relance,
 préemption `urgent`, bissection) ; `tests_passed` ; `merged` ; `cancelled` ; `start_test_run_*` (échec à
-l'assemblage de la branche de test) ; `test_run_*` (échec ou timeout de l'exécution) ; `github_api_*` (échec de
-l'appel de merge) ; raisons de la file.
+l'assemblage de la branche de test) ; `test_run_*` (échec ou timeout de l'exécution) ; échec de l'appel de merge
+(`merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`,
+`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`) ; raisons de la file,
+dont `access_lost` et `access_restored` quand CIHub perd ou retrouve son accès au dépôt.
 
 Une entrée `not_ready` porte en outre des raisons de blocage (`BlockReason`) : ce qui l'empêche d'être admise,
-affiché dans le commentaire de la PR. La mergeabilité est la valeur `mergeStateStatus` lue sur GitHub ; la règle
-d'admission qui en découle est dans `docs/GITHUB.md`.
+affiché dans le commentaire de la PR. La mergeabilité (`Mergeability`) dit si le SCM accepte le merge : `mergeable`, `behind`,
+`conflict`, `blocked` ou `unknown` ; la traduction depuis GitHub et la règle d'admission sont dans
+`docs/GITHUB.md`. Ce que CIHub lit d'une PR : son état
+(`PrState` : `open`, `closed`, `merged`), sa décision de revue (`ReviewDecision`) et ses checks (`CheckReport`).
 
 Priorité (`Priority`) : une valeur de 0 à 255 ; la plus petite passe en premier. Les noms `urgent` (0), `high`
 (10), `medium` (100) et `low` (200) sont ceux de Trunk. Seule la valeur décide de l'ordre
@@ -111,8 +120,11 @@ Priorité (`Priority`) : une valeur de 0 à 255 ; la plus petite passe en premie
 
 Nature d'un groupe (`GroupKind`) : `single` (une PR), `batch` (un lot), `bisection` (une moitié d'un lot en
 échec). Un groupe a son propre état, parce qu'un groupe coupé ou abandonné n'a plus d'entrées, et que les membres
-d'un lot passent un par un à `merged`. Les états des groupes sont la cible du lot 1. La règle de cohérence entre
-l'état d'un groupe et celui de ses entrées est dans `docs/RELIABILITY.md`.
+d'un lot passent un par un à `merged`. États (`GroupState`) : `testing`, `pending_failure`, `tests_passed`,
+`merged`, `failed`, `bisected`, `dissolved` ; les quatre derniers sont terminaux. Un groupe `dissolved` est
+abandonné par la file (un membre est sorti, un prédécesseur ou la base a changé) ; ses membres encore vivants
+retournent en `pending`. La règle de cohérence entre l'état d'un groupe et celui de ses entrées est dans
+`docs/RELIABILITY.md`.
 
 ## Exécution de test
 
@@ -120,14 +132,18 @@ Statuts (`RunStatus`) : `assembling`, `in_progress`, `succeeded`, `failed`, `int
 `timed_out`. Les cinq derniers sont terminaux. `interrupted` veut dire que la file a remplacé l'exécution (groupe
 abandonné, validé par optimisation) ; `cancelled` veut dire qu'un membre du groupe a été annulé.
 
-Nature d'un check observé (`CheckKind`) : `check_run` ou `status`. Conclusion (`CheckConclusion`) : les valeurs de
+Nature d'un check observé (`CheckKind`) : `check` (un check avec une exécution : check run GitHub, job de
+pipeline GitLab) ou `status` (un statut de commit). Conclusion (`CheckConclusion`) : les valeurs de
 GitHub ; `success`, `neutral` et `skipped` passent, les autres font échouer l'exécution. Coupable d'un conflit à
-l'assemblage (`ConflictCulprit`) : une PR de la file ou la branche de base.
+l'assemblage (`ConflictCulprit`) : une PR de la file ou la branche de base. Source des statuts requis
+(`RequiredStatusesSource`) : `ui_override`, `repo_config`, `branch_protection`. Un job qui échoue rapporte une
+erreur (`JobError`), jamais une raison : `plan` choisit la raison.
 
 ## File
 
 États (`QueueState`) : `running` accepte et merge ; `paused` n'accepte rien et ne merge rien mais conserve
 l'ordre ; `draining` n'accepte rien et laisse merger ce qui est en vol ; `switching_modes` est atteint
 automatiquement quand le mode change avec des entrées en vol et se comporte comme `draining` jusqu'à ce que la file
-soit vide. Mode (`QueueMode`) : `single` ou `parallel`. Les réglages de la file sont dans `cihub-config`
+soit vide. Mode (`QueueMode`) : `single` ou `parallel`. Demande d'un opérateur (`QueueControl`) : `pause`,
+`resume`, `drain`. Les réglages de la file sont dans `cihub-config`
 (`docs/CONFIGURATION.md`).

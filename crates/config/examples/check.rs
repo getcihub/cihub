@@ -90,7 +90,7 @@ fn report(name: &str, text: &str, error: &ConfigError) {
         }
         None => eprintln!("{name}: error: {}", error.message),
     }
-    eprintln!("  = test runs fail with `{}`", error.reason());
+    eprintln!("  = the assembly job reports `{}`", error.job_error());
 }
 
 fn print_settings(s: &QueueSettings) {

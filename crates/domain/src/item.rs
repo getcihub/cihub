@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ItemId, ItemState, OrgId, QueueId};
+use crate::{
+    GroupId, ItemId, ItemState, Mergeability, OrgId, QueueId, Reason, RunId, SubmittedVia,
+};
 
 /// One submission of a PR to a queue.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,12 +16,25 @@ pub struct Item {
     /// Head SHA of the PR at submission time.
     pub head_sha: String,
     pub state: ItemState,
+    /// Reason of the last transition.
+    pub state_reason: Reason,
     pub priority: Priority,
     pub no_batch: bool,
+    /// Submitted with `--direct`: merged by `cihub-sudo`.
     pub force_enqueued: bool,
-    pub position: i64,
+    pub submitted_via: SubmittedVia,
+    /// Place in the queue; `None` until admission.
+    pub position: Option<i64>,
     /// True for the live item of this PR; at most one per PR and queue.
     pub is_current: bool,
+    pub mergeability: Mergeability,
+    /// Why a `not_ready` item cannot enter the queue yet.
+    pub block_reasons: Vec<BlockReason>,
+    /// The group that tests the item.
+    pub group_id: Option<GroupId>,
+    /// The run that proved the item: its own or a successor's.
+    pub verified_by_run_id: Option<RunId>,
+    pub merged_sha: Option<String>,
 }
 
 /// Lower value is served first. Named levels have the same names and values
