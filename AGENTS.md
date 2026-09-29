@@ -204,6 +204,9 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   titres Conventional Commits, groupes (actions GitHub, outils `mise`, toolchain Rust), attente de 3 jours après une
   publication, mise à jour mensuelle des lockfiles. Pas de merge automatique : une personne merge chaque mise à
   jour.
+- **D22** Complète D17 : un outil de `mise.toml` utilise un backend qui télécharge un binaire précompilé
+  (`aqua:`, `github:`), avec sa somme de contrôle dans `mise.lock`. Le backend `cargo:`, qui compile l'outil
+  depuis les sources dans chaque job de CI, sert seulement quand l'outil ne publie pas de binaire.
 
 ### 4.1 Questions ouvertes
 
@@ -298,7 +301,7 @@ tranchée devient une décision ci-dessus et sort de cette liste.
 - **Asynchrone.** Le noyau et `plan` sont synchrones. Un calcul long passe par `spawn_blocking`. Chaque boucle
   reçoit un `CancellationToken` et s'arrête quand il est annulé. Un verrou n'est jamais gardé pendant un `.await`
   (lint `await_holding_lock`).
-- **Outils.** Rust et les outils s'installent par `mise install` (D17) ; un changement de version met à jour
+- **Outils.** Rust et les outils s'installent par `mise install` (D17), en binaires précompilés (D22) ; un changement de version met à jour
   `mise.lock` (`mise lock`) dans le même changement.
 - **Dépendances.** Toutes les versions dans `[workspace.dependencies]` ; `default-features = false` quand c'est
   possible ; TLS par `rustls`, jamais OpenSSL.
