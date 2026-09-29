@@ -33,7 +33,7 @@ phase 1).
 
 | Lot | Titre                                                  | Phase | Dépend de | Questions | Statut                                   |
 | --- | ------------------------------------------------------ | ----- | --------- | --------- | ---------------------------------------- |
-| 0   | Fondations du dépôt                                    | 1     | —         | —         | en cours                                 |
+| 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | en cours                                 |
 | 2   | Socle de données : serveur, tenancy, journal, outbox   | 1     | 0         | Q6, Q10   | à faire                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
@@ -99,9 +99,8 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     `mise run check`, `mise run cover` (91,4 % des lignes des crates pures), `mise run lint-workflows` et
     `mise run db`.
     `rust-toolchain.toml` retiré : `mise.toml` fixe Rust. release-please (`AGENTS.md` D19). Renovate
-    (`AGENTS.md` D21), configuration validée par `renovate-config-validator` 44.118.1.
-  - Reste : vérifier la CI, release-please et Renovate sur GitHub ; les secrets `BOT_CLIENT_ID` et
-    `BOT_APP_PRIVATE_KEY` doivent exister dans le dépôt.
+    (`AGENTS.md` D21), configuration validée par `renovate-config-validator` 44.118.1. La CI, release-please et
+    Renovate passent sur GitHub.
   - Plus tard : le dépôt passera de `nlecoy/cihub` à `getcihub/cihub`. `Cargo.toml` et les documents utilisent déjà
     `getcihub` ; les workflows lisent le nom du dépôt dans `github.repository` et ne changent pas. Il faudra
     recréer les secrets et installer la GitHub App de bot sur le nouveau dépôt.
