@@ -121,7 +121,7 @@ impl World {
     pub fn submit(&mut self, pr_number: u64, priority: Priority) -> Outcome {
         let outcome = self.fact(
             Actor::User {
-                login: "octocat".into(),
+                user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
             },
             EventKind::ItemSubmitted {
                 pr_number,
@@ -130,7 +130,7 @@ impl World {
                 no_batch: false,
                 direct: false,
                 submitted_via: SubmittedVia::Comment,
-                author: "octocat".into(),
+                author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
                 additions: 1,
                 deletions: 0,
                 changed_files: 1,
@@ -180,7 +180,7 @@ impl World {
             EventKind::TargetPushed {
                 before,
                 after,
-                sender: "someone".into(),
+                sender_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
             },
         )
     }

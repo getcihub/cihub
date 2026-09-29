@@ -7,7 +7,7 @@ use crate::{
     BlockReason, CheckReport, ConflictCulprit, EventId, GroupId, GroupKind, GroupState,
     ImpactedTargets, ItemId, ItemState, JobError, Mergeability, OrgId, PrState, Priority,
     QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource, ReviewDecision,
-    RunId, RunStatus, SubmittedVia,
+    RunId, RunStatus, SubmittedVia, UserId,
 };
 
 /// Immutable, append-only record of a fact or a decision in the log of a
@@ -38,8 +38,9 @@ pub enum EventKind {
         no_batch: bool,
         direct: bool,
         submitted_via: SubmittedVia,
-        /// Attributes kept for a probabilistic speculation (`AGENTS.md` D27).
-        author: String,
+        /// Attributes kept for a probabilistic speculation (`AGENTS.md` D27,
+        /// D42).
+        author_id: UserId,
         additions: u64,
         deletions: u64,
         changed_files: u64,
@@ -66,7 +67,7 @@ pub enum EventKind {
         /// `None` for a read of the tick.
         before: Option<String>,
         after: String,
-        sender: String,
+        sender_id: UserId,
     },
     /// Only for a test SHA that a live run waits for.
     #[serde(rename = "check.observed")]
@@ -292,7 +293,52 @@ impl EventType {
     }
 }
 
+/// The item, group and run that an event is about, stored next to the event
+/// to read the timeline of one of them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Subjects {
+    pub item_id: Option<ItemId>,
+    pub group_id: Option<GroupId>,
+    pub run_id: Option<RunId>,
+}
+
 impl EventKind {
+    pub const fn subjects(&self) -> Subjects {
+        let (item_id, group_id, run_id) = match self {
+            Self::ItemCancelRequested { item_id, .. }
+            | Self::ItemRestartRequested { item_id, .. }
+            | Self::MergeSucceeded { item_id, .. }
+            | Self::MergeFailed { item_id, .. }
+            | Self::ItemTransitioned { item_id, .. }
+            | Self::ItemReadinessChanged { item_id, .. } => (Some(*item_id), None, None),
+            Self::GroupFormed { group_id, .. } | Self::GroupTransitioned { group_id, .. } => {
+                (None, Some(*group_id), None)
+            }
+            Self::RunTransitioned {
+                run_id, group_id, ..
+            } => (None, Some(*group_id), Some(*run_id)),
+            Self::TestBranchAssembled { run_id, .. }
+            | Self::TestBranchAssemblyFailed { run_id, .. } => (None, None, Some(*run_id)),
+            Self::ItemSubmitted { .. }
+            | Self::PrObserved { .. }
+            | Self::TargetPushed { .. }
+            | Self::CheckObserved { .. }
+            | Self::TargetsReceived { .. }
+            | Self::QueueControlRequested { .. }
+            | Self::QueueSettingsChanged { .. }
+            | Self::AccessLost
+            | Self::AccessRestored
+            | Self::QueueRenumbered { .. }
+            | Self::QueueTransitioned { .. }
+            | Self::QueueWindowChanged { .. } => (None, None, None),
+        };
+        Subjects {
+            item_id,
+            group_id,
+            run_id,
+        }
+    }
+
     pub const fn event_type(&self) -> EventType {
         match self {
             Self::ItemSubmitted { .. } => EventType::ItemSubmitted,
@@ -330,13 +376,12 @@ pub enum Actor {
     /// The account that CIHub acts with on the SCM: the GitHub App, a
     /// GitLab service account.
     Bot,
-    User {
-        login: String,
-    },
+    /// A user of the SCM; the `users` table keeps the login (`AGENTS.md` D42).
+    User { user_id: UserId },
 }
 
 closed_enum! {
-    /// Kind of the actor of an event, stored next to the login.
+    /// Kind of the actor of an event, stored in `events.actor_kind`.
     pub enum ActorKind {
         /// CIHub itself.
         System,
@@ -397,9 +442,40 @@ mod tests {
     }
 
     #[test]
+    fn subjects_name_the_item_group_and_run() {
+        let item_id = ItemId::from_ulid(ulid::Ulid(1));
+        let group_id = GroupId::from_ulid(ulid::Ulid(2));
+        let run_id = RunId::from_ulid(ulid::Ulid(3));
+        let merged = EventKind::MergeSucceeded {
+            item_id,
+            merged_sha: "abc".into(),
+        };
+        assert_eq!(merged.subjects().item_id, Some(item_id));
+        let run = EventKind::RunTransitioned {
+            run_id,
+            group_id,
+            from: None,
+            to: RunStatus::Assembling,
+            reason: Reason::TestRunStarted,
+            attempt: 1,
+            test_branch: "cihub/run".into(),
+            failure_causing_statuses: vec![],
+        };
+        assert_eq!(
+            run.subjects(),
+            Subjects {
+                item_id: None,
+                group_id: Some(group_id),
+                run_id: Some(run_id)
+            }
+        );
+        assert_eq!(EventKind::AccessLost.subjects(), Subjects::default());
+    }
+
+    #[test]
     fn actor_kind_follows_the_actor() {
         let user = Actor::User {
-            login: "octocat".into(),
+            user_id: UserId::from_ulid(ulid::Ulid(1)),
         };
         assert_eq!(user.kind(), ActorKind::User);
         assert_eq!(Actor::Bot.kind(), ActorKind::Bot);

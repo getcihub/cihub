@@ -120,7 +120,7 @@ fn step(w: &mut World, action: &Action) {
             if let Some(pr) = pick(&live_prs(w), k) {
                 w.observe(pr, |p| p.state = PrState::Merged);
                 w.push_target(Actor::User {
-                    login: "admin".into(),
+                    user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
                 });
             }
         }
@@ -138,7 +138,7 @@ fn step(w: &mut World, action: &Action) {
         }
         Action::ExternalPush => {
             w.push_target(Actor::User {
-                login: "admin".into(),
+                user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
             });
         }
         Action::Advance(minutes) => w.advance(minutes),

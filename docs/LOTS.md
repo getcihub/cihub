@@ -140,7 +140,7 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     scénario ligne par ligne et affiche les décisions (`crates/mq-core/examples/`).
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : crate `cihub-mq-core` (`AGENTS.md` D24) ; réglages en
     paramètre de `plan` et de `check` (D25) ; dépendances `thiserror` et `proptest`, pas d'`insta` à ce lot (D26) ;
-    `item.submitted` porte `author`, `additions`, `deletions` et `changed_files` (D27). Vocabulaire neutre du
+    `item.submitted` porte `author_id`, `additions`, `deletions` et `changed_files` (D27, D42). Vocabulaire neutre du
     journal (`AGENTS.md` D23) : `Mergeability` (`mergeable`, `behind`, `conflict`, `blocked`, `unknown`, qui
     couvre aussi la valeur `DRAFT` de GitHub, absente avant), raisons d'échec du merge `merge_*` à la place de
     `github_api_*`, faits `access.lost` et `access.restored` à la place de `installation.*`, `CheckKind`
@@ -185,7 +185,7 @@ Faits :
 | `item.cancel_requested`                              | `/cihub cancel`, API, CLI                                    | `by_admin` ; donne `admin_requested` ou `user_requested`                                                                                             |
 | `item.restart_requested`                             | `/cihub restart`, API, CLI                                   | `by_api` ; donne `tests_restarted_by_user` ou `tests_restarted_by_api_request`                                                                       |
 | `pr.observed`                                        | webhook `pull_request` ou `pull_request_review`, tic, resync | état complet lu : ouverte, fermée ou mergée, SHA de tête, branche de base, brouillon, labels, mergeabilité, décision de revue, checks de la PR        |
-| `target.pushed`                                      | webhook `push` sur la branche cible, tic                     | SHA `before` (vide pour une lecture du tic), SHA `after`, `sender`                                                                                   |
+| `target.pushed`                                      | webhook `push` sur la branche cible, tic                     | SHA `before` (vide pour une lecture du tic), SHA `after`, `sender_id`                                                                                |
 | `check.observed`                                     | check ou statut de commit, tic                               | SHA de test, nom, nature, état, conclusion, URL ; seulement pour un SHA qu'une exécution vivante attend                                              |
 | `targets.received`                                   | `POST …/impacted-targets`                                    | SHA de tête, cibles ou `ALL`                                                                                                                         |
 | `test_branch.assembled`                              | job d'assemblage                                             | `run_id`, SHA de test, numéro de PR brouillon, statuts requis et leur source                                                                         |
@@ -213,7 +213,7 @@ Décisions :
 | `queue.transitioned`     | la file passe d'un état à un autre, avec une raison                                                              | états avant et après                                              |
 | `queue.window_changed`   | nouvelle fenêtre de spéculation                                                                                  | valeurs avant et après                                            |
 
-Acteur d'un événement : `user` (avec son login), `bot` (le compte de l'App), `system` (CIHub : décisions, tic,
+Acteur d'un événement : `user` (avec son identifiant, `AGENTS.md` D42), `bot` (le compte de l'App), `system` (CIHub : décisions, tic,
 resync). Demande d'un opérateur sur la file : `pause`, `resume`, `drain`.
 
 Choix du noyau :
@@ -385,9 +385,17 @@ Autres valeurs fermées :
     pour chaque table ; sans contexte, une transaction ne voit rien ; un contexte ne reste pas sur la connexion
     après la transaction ; chaque table qui porte `org_id` a sa politique ; les enums Postgres sont ceux de
     `cihub-domain` ; le binaire refuse de démarrer quand une migration manque.
-  - Reste : `events` et ses partitions (`AGENTS.md` D36) ; outbox ; jetons. `sqlx-cli` et `.sqlx/` arrivent avec la
-    première requête vérifiée à la compilation. Les partitions de plus de 90 jours sont supprimées : chaque file
-    devra garder un instantané plus récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
+  - Fait (étape 4, journal) : migration `20260929170000_events.sql` (table `events`, enums `event_type` et
+    `actor_kind`, fonction `cihub_create_events_partition`) ; `append_events`, `load_events` et
+    `create_event_partitions` dans `cihub-store` ; `cihub-server migrate` crée les partitions du mois et du mois
+    suivant, et le rôle `scheduler` les vérifie au démarrage puis chaque jour (`AGENTS.md` D36, D43). Les logins
+    sortent du journal : `Actor::User { user_id }`, `author_id`, `sender_id` (D42). Tests contre Postgres : le
+    journal se relit à l'identique et dans l'ordre de `seq` ; une autre organisation ne le voit pas ; une
+    partition isole les organisations ; les partitions couvrent le mois et le suivant, et un événement sans
+    partition est refusé.
+  - Reste : outbox ; jetons. `sqlx-cli` et `.sqlx/` arrivent avec la première requête vérifiée à la compilation.
+    Les partitions de plus de 90 jours sont supprimées au lot 3 : chaque file devra garder un instantané plus
+    récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
     (il demande les identifiants du superutilisateur) ; il est vérifié à la main.
   - Écarts validés (Nicolas Lecoy, 29 septembre 2026) : la crate `cihub-telemetry` arrive dès ce lot et porte
     les logs (`AGENTS.md` D34). L'adresse interne par défaut est `127.0.0.1:8081`. Le contrat `Module` passe au
@@ -403,7 +411,9 @@ Autres valeurs fermées :
 - **Contenu** : dans `cihub-platform`, `webhook_inbox` avec dédoublonnage par `delivery_id` ; jobs (enveloppe
   avec `idempotency_key`, exécuteurs par type, backoff, file de rebut, `locked_until`, quotas par installation,
   classe de priorité) ; `queue_leases` ou verrou consultatif par file ; `queues.dirty` et
-  `NOTIFY cihub_queue`, `cihub_jobs`, `cihub_outbox` ; tic de 30 s ; traits `Inbox`, `JobQueue`, `Outbox`. La
+  `NOTIFY cihub_queue`, `cihub_jobs`, `cihub_outbox` ; tic de 30 s ; traits `Inbox`, `JobQueue`, `Outbox` ; job
+  des partitions d'`events` (création, et suppression après 90 jours) à la place de la boucle du scheduler
+  (`AGENTS.md` D36, D43). La
   façon dont plusieurs répliques se partagent les jobs est une décision de ce lot.
 - **Interfaces figées** : `Inbox`, `JobQueue`, `Outbox` ; format de `idempotency_key` ; classes de priorité.
 - **Critère de sortie** : tests d'intégration : un worker tué pendant un job voit le job repris et exécuté une seule
@@ -434,7 +444,8 @@ Autres valeurs fermées :
   instantané tous les 500 événements, rejeu ; boucle du scheduler (files `dirty`, verrou, réconciliation en
   transaction) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
-  événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours`.
+  événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours` ; clé étrangère
+  `events.queue_id` vers `queues`.
 - **Interfaces figées** : contrat `Module` ; tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`,
   `AGENTS.md` D28) ; types de jobs de la file.
 - **Critère de sortie** : sur `cihub-github-sim`, 20 PR soumises dans des états variés atteignent `pending` ou

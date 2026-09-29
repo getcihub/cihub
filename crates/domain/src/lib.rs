@@ -36,7 +36,7 @@ mod state;
 mod tenancy;
 mod transition;
 
-pub use event::{Actor, ActorKind, Event, EventKind, EventType};
+pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
     ApiTokenId, AuditEntryId, EventId, GroupId, IdParseError, InstallationId, ItemId, OrgId,
     QueueId, RepoId, RunId, UserId,

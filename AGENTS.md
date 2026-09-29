@@ -225,7 +225,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   par instantanés.
 - **D27** (Q6) La spéculation probabiliste reste hors v1. Le fait `item.submitted` garde dès maintenant les
   attributs dont elle aura besoin : `author`, `additions`, `deletions` et `changed_files`. Les durées viennent des
-  horodatages du journal ; elles ne sont pas un attribut.
+  horodatages du journal ; elles ne sont pas un attribut. _Complétée par D42 : `author` devient `author_id`._
 - **D28** (Q10) Les tables de la file sont `queue_items`, `test_groups` et `test_runs`, sans préfixe de module.
 - **D29** Le lot 2 crée les crates `cihub-server` et `cihub-store`.
 - **D30** Dépendances du lot 2 : `tokio`, `tokio-util`, `sqlx` (Postgres, `rustls`), `axum`, `anyhow` (binaires
@@ -257,6 +257,17 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `ApiScope` (`queues:read`, `queues:write`, `prs:write`, `targets:write`, `metrics:read`). Nouveaux types
   d'identifiant : `installation`, `user`, `apitoken` (la ligne du jeton ; le secret reste `cht_…`, D32), `audit`.
 - **D41** Un fichier de migration s'appelle `<AAAAMMJJHHMMSS>_<description>.sql` (format de `sqlx migrate add`).
+- **D42** Complète D27 : le journal ne garde aucun login. Un acteur utilisateur est `Actor::User { user_id }`,
+  stocké en `events.actor_kind` (`system`, `bot`, `user`) et `events.actor_user_id`, qui pointe vers `users` ;
+  `item.submitted` porte `author_id` et `target.pushed` porte `sender_id`. `users` garde le login : un
+  renommage ou une anonymisation change une ligne, jamais le journal. L'ingestion crée ou met à jour la ligne
+  `users` avant d'écrire l'événement (lots 4 et 5).
+- **D43** Table `events` : `id`, `org_id`, `queue_id`, `seq`, `type` (enum `event_type`), `actor_kind`,
+  `actor_user_id`, `cause_id`, `item_id`, `group_id`, `run_id`, `payload` (les champs du type, sérialisés par
+  `cihub-domain`) et `occurred_at` (à la microseconde) ; clé primaire (`id`, `occurred_at`). `seq` est le rang
+  dans le journal de la file, à partir de 1 : `cihub-store` le calcule à l'écriture, et l'appelant tient le
+  verrou de la file (lot 3). Une partition par mois UTC, `events_<AAAA>_<MM>`, avec sa propre politique forcée.
+  La suppression des partitions de plus de 90 jours arrive au lot 3, avec les jobs.
 
 ### 4.1 Questions ouvertes
 

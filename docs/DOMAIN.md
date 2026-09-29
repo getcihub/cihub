@@ -45,7 +45,7 @@ Les identifiants sont des ULID typés au format texte `typedid` (`AGENTS.md` D4)
 - **`apply`** : la fonction pure qui applique un événement à l'état ; le rejeu n'utilise qu'elle.
 - **`plan`** : la fonction pure qui lit l'état et l'heure, et produit des décisions et l'état voulu.
 - **Raison** : la cause lisible d'une transition, issue d'un vocabulaire fermé. Chaque transition en porte une.
-- **Acteur** : qui est à l'origine d'un événement : un utilisateur (avec son login), le compte de l'App, ou CIHub.
+- **Acteur** : qui est à l'origine d'un événement : un utilisateur (son identifiant ; la table `users` garde le login, `AGENTS.md` D42), le compte de l'App, ou CIHub.
 
 Code : `Event`, `EventKind` (un payload par type), `EventType` (les noms `<sujet>.<verbe>`, avec
 `is_decision`), `Actor` et `ActorKind` dans `cihub-domain` ; `apply` dans `cihub-mq-core`. Une demande en attente

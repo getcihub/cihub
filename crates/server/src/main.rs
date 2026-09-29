@@ -9,15 +9,18 @@ mod config;
 mod health;
 
 use std::collections::BTreeSet;
+use std::error::Error;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
 use cihub_store::{MIGRATOR, PgPool};
+use time::{Date, OffsetDateTime};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, info, info_span};
+use tracing::{Instrument, info, info_span, warn};
 
 use crate::config::{Config, Role};
 
@@ -50,7 +53,17 @@ async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
         info!(version, "migration applied");
     }
     info!(applied = applied.len(), "migrations done");
+    cihub_store::create_event_partitions(pool, today()).await?;
+    info!("event partitions ready");
     Ok(())
+}
+
+fn today() -> Date {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the server reads the date to create the partitions of the month"
+    )]
+    OffsetDateTime::now_utc().date()
 }
 
 async fn serve(
@@ -69,22 +82,48 @@ async fn serve(
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
-    tasks.spawn(health::serve(listener, roles.clone(), pool, cancel.clone()));
+    tasks.spawn(health::serve(
+        listener,
+        roles.clone(),
+        pool.clone(),
+        cancel.clone(),
+    ));
     for role in &roles {
         let span = info_span!("role", role = role.as_str());
-        tasks.spawn(run_role(cancel.clone()).instrument(span));
+        tasks.spawn(run_role(*role, pool.clone(), cancel.clone()).instrument(span));
     }
     let result = supervise(tasks, &cancel).await;
     info!("server stopped");
     result
 }
 
-/// Waits for cancellation: the loops of each role arrive with their lot.
-async fn run_role(cancel: CancellationToken) -> anyhow::Result<()> {
+/// Runs the loops of `role` until cancellation. The other loops of each role
+/// arrive with their lot.
+async fn run_role(role: Role, pool: PgPool, cancel: CancellationToken) -> anyhow::Result<()> {
     info!("role started");
-    cancel.cancelled().await;
+    match role {
+        Role::Scheduler => create_partitions_daily(&pool, &cancel).await,
+        Role::Api | Role::Worker | Role::Notifier => cancel.cancelled().await,
+    }
     info!("role stopped");
     Ok(())
+}
+
+/// Creates the partitions of `events` for this month and the next one at the
+/// start, then every day (`AGENTS.md` D36). A job replaces this loop in lot 3.
+async fn create_partitions_daily(pool: &PgPool, cancel: &CancellationToken) {
+    let mut every_day = tokio::time::interval(Duration::from_hours(24));
+    loop {
+        tokio::select! {
+            () = cancel.cancelled() => return,
+            _ = every_day.tick() => {
+                match cihub_store::create_event_partitions(pool, today()).await {
+                    Ok(()) => info!("event partitions ready"),
+                    Err(err) => warn!(error = &err as &dyn Error, "event partitions not created"),
+                }
+            }
+        }
+    }
 }
 
 /// Cancels every task on `SIGTERM`, on `SIGINT`, or when one task stops on its

@@ -315,7 +315,7 @@ impl World {
             })
         };
         let user = Actor::User {
-            login: "octocat".into(),
+            user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
         };
         let kind = match command.text {
             "settings" => return self.settings(*command, args),
@@ -360,7 +360,7 @@ impl World {
                     no_batch: false,
                     direct: false,
                     submitted_via: SubmittedVia::Comment,
-                    author: "octocat".into(),
+                    author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
                     additions: 10,
                     deletions: 2,
                     changed_files: 1,
@@ -540,7 +540,7 @@ impl World {
         EventKind::TargetPushed {
             before: self.snapshot.target.head.as_ref().map(|h| h.value.clone()),
             after,
-            sender: "octocat".into(),
+            sender_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
         }
     }
 

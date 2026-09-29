@@ -5,9 +5,12 @@
 //! migrate` applies them, and `cihub-server` refuses to start while one is
 //! missing.
 
+mod events;
+
 use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
+pub use events::{append_events, create_event_partitions, load_events};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};
@@ -27,6 +30,16 @@ pub enum StoreError {
         "the Postgres role `{0}` is a superuser or has BYPASSRLS: it would see every organization"
     )]
     RoleBypassesRowSecurity(String),
+    #[error("query failed")]
+    Query(#[source] sqlx::Error),
+    #[error("cannot serialize an event")]
+    WriteEvent(#[source] serde_json::Error),
+    #[error("event {id} does not match the events of cihub-domain")]
+    ReadEvent {
+        id: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
     #[error("cannot read the applied migrations")]
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]

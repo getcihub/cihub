@@ -256,6 +256,7 @@ dependencies = [
  "secrecy",
  "serde",
  "sqlx",
+ "time",
  "tokio",
  "tokio-util",
  "tracing",
@@ -267,9 +268,11 @@ version = "0.1.0"
 dependencies = [
  "cihub-domain",
  "secrecy",
+ "serde_json",
  "sqlx",
  "strum",
  "thiserror",
+ "time",
  "ulid",
 ]
 
@@ -1612,6 +1615,7 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
  "thiserror",
+ "time",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -1648,7 +1652,9 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sqlx-core",
+ "sqlx-mysql",
  "sqlx-postgres",
+ "sqlx-sqlite",
  "syn 2.0.119",
  "thiserror",
  "tokio",
@@ -1678,6 +1684,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx-core",
  "thiserror",
+ "time",
  "tracing",
 ]
 
@@ -1712,6 +1719,7 @@ dependencies = [
  "sqlx-core",
  "stringprep",
  "thiserror",
+ "time",
  "tracing",
  "whoami",
 ]
@@ -1736,6 +1744,7 @@ dependencies = [
  "serde",
  "sqlx-core",
  "thiserror",
+ "time",
  "tracing",
  "url",
 ]

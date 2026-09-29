@@ -216,7 +216,7 @@ fn an_external_push_restarts_every_group() {
     w.report(1, CheckConclusion::Success);
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
     w.push_target(Actor::User {
-        login: "admin".into(),
+        user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
     });
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert!(w.log.iter().any(|e| matches!(
@@ -372,7 +372,7 @@ fn a_blocked_pr_stays_not_ready() {
             no_batch: false,
             direct: false,
             submitted_via: cihub_domain::SubmittedVia::Api,
-            author: "octocat".into(),
+            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
             additions: 0,
             deletions: 0,
             changed_files: 0,
