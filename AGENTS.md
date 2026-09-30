@@ -99,9 +99,9 @@ Le détail est dans `docs/ARCHITECTURE.md` et `docs/ALGORITHMS.md` ; ce résumé
 - **Une file, une instance à la fois.** Un bail (ou `pg_try_advisory_xact_lock`) désigne le scheduler d'une file ;
   les transitions sont gardées en SQL (`UPDATE … WHERE id = $1 AND state = $2`).
 - **Ingestion inconditionnelle.** Vérifier la signature, stocker, acquitter en moins de 2 s. Aucune décision.
-- **Budget GitHub ordonnancé.** Chaque job a une classe : `interactive` > `merge` > `speculate` > `repair`. Quand
+- **Budget du SCM ordonnancé.** Chaque job a une classe : `interactive` > `merge` > `speculate` > `repair`. Quand
   le budget baisse, la spéculation est réduite en premier, le merge en dernier.
-- **Modes dégradés explicites** par connexion : `normal`, `throttled`, `github_unavailable`, `paused`.
+- **Modes dégradés explicites** par connexion : `normal`, `throttled`, `scm_unavailable`, `paused`.
 
 ---
 
@@ -121,7 +121,7 @@ l'est ; jamais « on corrigera plus tard ».
 | **IV**   | **La branche cible reste verte.** Une PR ne merge qu'après un test sur un commit qui contient tous ses prédécesseurs.                                                                         | Un merge sans exécution valide ; des statuts requis lus depuis la branche de la PR.                                                                                          | « Quel commit a été testé, et est-ce exactement ce qui atterrit (ou son arbre) ? »      |
 | **V**    | **Aucune intention perdue.** L'ingestion stocke avant de décider ; un webhook perdu est un retard.                                                                                            | Un traitement dans le handler de webhook ; une transition qui n'arrive que par un webhook.                                                                                   | « Si ce webhook n'arrive jamais, qui le rattrape, et en combien de temps ? »            |
 | **VI**   | **Chaque décision s'explique.** Chaque transition porte une raison du vocabulaire fermé (`docs/DOMAIN.md`).                                                                                   | Une nouvelle raison hors du vocabulaire ; une sortie de file sans raison ; une chaîne libre en guise de raison.                                                              | « Que lit l'utilisateur sur sa PR, et que lit l'opérateur dans la chronologie ? »       |
-| **VII**  | **Le budget GitHub est ordonnancé.** Tout appel passe par le trait `Scm`, porte une classe et consomme le budget de la connexion.                                                           | Un client `reqwest` vers GitHub hors de `cihub-github` ; un appel sans classe ; une boucle de lectures non groupées.                                                         | « Combien de points par heure coûte ce changement pour 50 PR en attente ? »             |
+| **VII**  | **Le budget du SCM est ordonnancé.** Tout appel passe par le trait `Scm`, porte une classe et consomme le budget de la connexion.                                                           | Un client `reqwest` vers GitHub hors de `cihub-github` ; un appel sans classe ; une boucle de lectures non groupées.                                                         | « Combien de points par heure coûte ce changement pour 50 PR en attente ? »             |
 | **VIII** | **Isolation par organisation.** Chaque table de tenant porte `org_id` et la RLS ; chaque requête du scheduler filtre par `queue_id`.                                                          | Une table sans `org_id` ; une requête sans filtre ; un cache partagé entre organisations.                                                                                    | « Une organisation peut-elle lire, ralentir ou déduire quoi que ce soit d'une autre ? » |
 | **IX**   | **Les modules ne se connaissent pas.** `cihub-mergequeue` et `cihub-flakytests` communiquent par les traits de `cihub-contracts` (`FlakeOracle`) et par les événements.                     | Une dépendance de `cihub-mergequeue` vers `cihub-flakytests`, ou l'inverse.                                                                                                  | « Si ce module est désactivé, la file se comporte-t-elle exactement comme avant ? »     |
 | **X**    | **Garder CIHub petit.** Postgres seul ; une stratégie est une table de valeurs par défaut ; chaque dépendance est validée (D2).                                                                | Une nouvelle dépendance ou une nouvelle crate sans validation ; du code de stratégie dans le noyau ; une option sans utilisateur.                                             | « Quelle ligne de `GOAL.md` ce changement sert-il ? »                                   |
@@ -361,7 +361,42 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `cihub-http`. Pas de crate `cihub-github-sim`. `cihub-http` dépend de `cihub-api-types` à partir du lot 9.
 - **D74** Dépendances du lot 4 : `reqwest` (`rustls`), `jsonwebtoken` (JWT de l'App) et `hmac` (signature des
   webhooks). Les réponses GitHub enregistrées sont des fichiers JSON rejoués par un serveur `axum` de test, sans
-  bibliothèque de cassettes.
+  bibliothèque de cassettes. _Remplacée en partie par D80._
+- **D75** Le lot 4 n'est pas découpé. Il s'arrête à la livraison stockée, vérifiée et routée vers sa file, et à la
+  traduction d'une livraison en `ScmEvent`, un événement neutre défini dans `cihub-scm` (PR changée, push, check
+  changé, commentaire, accès perdu ou rendu, installation créée). Le lot 4 n'écrit aucun fait dans le journal : au
+  lot 5, la boucle du scheduler lit l'inbox d'une file, traduit les `ScmEvent` en faits et marque la livraison
+  traitée dans la même transaction (D43, D62, D64).
+- **D76** Le trait `Scm` a une implémentation par instance de SCM. Chaque méthode reçoit la connexion, le dépôt et
+  une `JobClass` (D59), qui décide ce que le budget laisse passer. Le lot 4 fige les méthodes des lots 5 à 7 :
+  lectures (état groupé de 50 PR au plus, une PR, tête d'une ref, checks d'un SHA, checks requis, contenu d'un
+  fichier, permission d'un utilisateur) et écritures (créer, déplacer ou supprimer une ref, fusionner un commit dans
+  une ref, merger une PR, publier un statut, créer ou modifier un commentaire, poser ou retirer un label, ouvrir ou
+  fermer une PR brouillon). Les erreurs sont une énumération neutre `ScmError`. Le trait s'utilise en
+  `Arc<dyn Scm>` (D71), sans la crate `async-trait`.
+- **D77** Le budget et le mode d'une connexion sont des colonnes de `scm_connections` : `mode`, `mode_reason`,
+  `rate_remaining`, `rate_limit`, `rate_reset_at`, `paused_until` (D70) et `consecutive_failures`. Valeur fermée
+  `ConnectionMode` (`normal`, `throttled`, `scm_unavailable`, `paused`). Un processus garde les en-têtes de rate
+  limit en mémoire et les écrit au plus toutes les 5 s ; un 429 ou un changement de mode s'écrit tout de suite.
+  Les jetons d'installation restent en mémoire.
+- **D78** Complète D23 : tout le vocabulaire de CIHub est neutre (états, modes, raisons, faits, colonnes, clés de
+  configuration, routes, métriques). Un nom de SCM n'apparaît que dans son adaptateur (`cihub-github`), ses
+  variables d'environnement et `docs/GITHUB.md`, et dans les valeurs qui nomment un SCM (`ScmKind`,
+  `ConnectionKind`). Le mode `github_unavailable` devient `scm_unavailable`.
+- **D79** Les secrets de la GitHub App viennent de l'environnement : `CIHUB_GITHUB_URL` (`https://github.com` par
+  défaut), `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY` (ou `CIHUB_GITHUB_PRIVATE_KEY_FILE`) et
+  `CIHUB_GITHUB_WEBHOOK_SECRET`. L'assistant crée l'App par le flux de manifeste et affiche une seule fois ses
+  secrets et le bloc à copier ; CIHub ne les écrit nulle part. Au démarrage, `cihub-server` crée la ligne
+  `scm_instances` de `CIHUB_GITHUB_URL` si elle manque (D47). L'App `cihub-sudo` et ses variables arrivent avec le
+  merge direct-to-queue.
+- **D80** Remplace `jsonwebtoken` et `hmac` dans D74 : `ring`, déjà là par sqlx, signe le JWT de l'App en RS256
+  et calcule le HMAC-SHA256 des webhooks ; `cihub-github` assemble le JWT et lit la clé PEM avec `base64`.
+  `reqwest` utilise `rustls-no-provider` avec le provider `ring` de rustls. Une seule bibliothèque crypto, sans
+  code C : `jsonwebtoken` n'offre que `aws-lc-rs` ou RustCrypto, dont la crate `rsa` a un avis de sécurité sur
+  la signature (RUSTSEC-2023-0071).
+- **D81** `cargo deny` accepte la licence `CDLA-Permissive-2.0` pour la seule crate `webpki-root-certs` : la liste
+  des autorités racines de Mozilla, que `rustls-platform-verifier` embarque pour `reqwest`. C'est une licence de
+  données, permissive ; sa redistribution demande le texte de la licence dans les notices de l'image (lot 9).
 
 ### 4.1 Questions ouvertes
 
@@ -401,6 +436,8 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   reste, les écarts validés avec le plan.
 - **Documentation.** Le code fait foi (D1). Un changement de comportement met à jour le document du sujet (§0)
   dans le même changement quand c'est possible ; sinon, le bloc « Suivi » du lot note la mise à jour qui manque.
+- **Vocabulaire neutre** (D78). Aucun nom de SCM hors de son adaptateur, de ses variables d'environnement et de
+  son document : on ne conçoit pas CIHub pour un seul SCM.
 - **Vocabulaire fermé.** Un nouvel état, une nouvelle raison ou un nouveau type d'événement se déclare dans
   `cihub-domain` (avec un commentaire `///` qui donne son sens) et dans l'enum Postgres, dans le même changement ;
   un test compare les deux énumérations. `docs/DOMAIN.md` définit le terme s'il est nouveau.
