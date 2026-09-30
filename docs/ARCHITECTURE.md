@@ -29,7 +29,7 @@ Règles de conception sur lesquelles repose le reste de la spécification :
 - **Budget GitHub ordonnancé.** Chaque connexion a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
 - **Boucle de réparation.** Indépendamment des webhooks, chaque file relit périodiquement ce qui compte (PR vivantes, checks des exécutions en cours, tête de la branche cible, existence des références de test) à un intervalle adaptatif de 30 s à 10 min selon l'activité, et injecte ce qu'elle observe dans l'inbox. Un webhook perdu coûte au plus un intervalle.
 - **Modes dégradés explicites.** Par connexion : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `github_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
-- **Transport enfichable, Postgres par défaut.** Inbox, jobs et outbox sont des tables Postgres derrière des interfaces `Inbox`, `JobQueue`, `Outbox` ; une implémentation NATS JetStream est prévue pour les déploiements au-delà de quelques milliers de webhooks par minute, sans changer les modules.
+- **Transport sur Postgres.** Inbox, jobs et outbox sont des tables Postgres, lues et écrites par les fonctions de `cihub-platform` dans la transaction de l'appelant (`AGENTS.md` D62) : une livraison est marquée traitée avec les faits qu'elle établit, un événement est écrit avec son entrée d'outbox (lot 11, D65). Pas de broker en v1 (D63).
 - **Isolation entre organisations.** Sécurité au niveau ligne, quotas par organisation sur l'inbox et les jobs, et ordonnancement équitable des workers : une organisation bruyante ralentit ses propres files, pas celles des autres.
 
 Ce qui passe à l'échelle, et comment :
@@ -38,7 +38,7 @@ Ce qui passe à l'échelle, et comment :
 | ------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Nombre de files          | Aucune, chaque file est indépendante                                     | Baux répartis sur N instances de scheduler ; une instance tient quelques centaines de files actives                                                                           |
 | Profondeur d'une file    | Le réconciliateur est en O(n) sur les entrées vivantes                   | Plafond de 500 entrées vivantes par file, fenêtre de spéculation bornée                                                                                                       |
-| Webhooks                 | Débit d'écriture Postgres                                                | Inbox partitionnée par mois et par organisation ; passage à NATS derrière l'interface au-delà de quelques milliers par minute                                                 |
+| Webhooks                 | Débit d'écriture Postgres                                                | Inbox indexée par file et purgée 7 jours après traitement ; pas de broker en v1 (`AGENTS.md` D63)                                                                                |
 | Appels GitHub            | 5 000 points par heure et par installation, plus les limites secondaires | Budget par connexion, classes de priorité, lectures conditionnelles par ETag, requêtes GraphQL groupées ; plusieurs GitHub Apps par instance pour GitHub Enterprise Server |
 | Historique et analytique | Volume de lignes                                                         | Partitions mensuelles, tables de faits, puis ClickHouse derrière le trait `AnalyticsStore`                                                                                        |
 | Organisations            | Isolation et équité                                                      | RLS, quotas, ordonnancement équitable ; une instance sert des centaines d'organisations                                                                                       |
@@ -88,7 +88,7 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-flaky-core` | Signaux de détection, classification `stable` / `suspect` / `flaky` / `broken`, `case_key` (pur)                                                                       | `domain`                                                         | 14  | cible  |
 | `cihub-store`      | Pool Postgres, transactions d'une organisation ou du système (RLS), tenancy, journal et partitions, jetons d'API, verrous, baux, migrations embarquées, test des enums Postgres | `domain`                                                         | 2   | existe |
 | `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
-| `cihub-platform`   | Contrat `Module`, traits `Inbox`, `JobQueue`, `Outbox` et leur implémentation Postgres, exécution des jobs                                                             | `domain`, `store`, `scm`                                         | 3–5 | cible  |
+| `cihub-platform`   | Baux des files, réveil, inbox, jobs, boucle du worker et registre des exécuteurs, maintenance (`AGENTS.md` D62, D66, D67) ; contrat `Module` (lot 5), outbox (lot 11)  | `domain`, `store` ; `scm` au lot 4 (`AGENTS.md` D53)             | 3–5 | cible  |
 | `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel                                                                                                         | `domain`                                                         | 4   | cible  |
 | `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | cible  |
 | `cihub-github-sim` | Simulateur GitHub en processus, avec injection de pannes (tests)                                                                                                       | `scm`, `domain`                                                  | 4   | cible  |
@@ -135,7 +135,7 @@ variantes de chaque énumération.
 | `api`       | serveur HTTP : API, webhooks, OTLP, tableau de bord | `cihub-http`        |
 | `scheduler` | boucle de réconciliation des files              | `cihub-mergequeue`      |
 | `worker`    | exécution des jobs des modules                  | `cihub-platform`        |
-| `notifier`  | diffusion de l'outbox                           | `cihub-platform`        |
+| `notifier`  | diffusion de l'outbox (lot 11, D65)             | `cihub-platform`        |
 
 `main` lit la configuration, démarre les logs et le pool Postgres, vérifie que le schéma est à jour, puis lance une
 tâche `tokio` par rôle dans un `JoinSet`, avec un seul `CancellationToken`. Sur `SIGTERM`, il annule le jeton :
@@ -163,8 +163,7 @@ exemple un déploiement Kubernetes par rôle :
 Les limites : une file n'est traitée que par une réplique à la fois, pour garder l'ordre, donc ajouter des
 schedulers augmente le nombre de files traitées en parallèle, pas la vitesse d'une file ; au-delà d'un certain
 nombre de workers, c'est le budget GitHub de la connexion qui limite ; Postgres est la ressource commune
-(connexions, avec PgBouncer devant `api`, et débit d'écriture). Au-delà, NATS est prévu derrière les mêmes traits,
-pas en v1.
+(connexions, avec PgBouncer devant `api`, et débit d'écriture). La v1 n'ajoute pas de broker (`AGENTS.md` D63).
 
 ## Le scheduler
 

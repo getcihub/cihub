@@ -36,7 +36,7 @@ phase 1).
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
 | 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
-| 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | à faire                                  |
+| 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | en cours                                 |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
@@ -404,7 +404,7 @@ Autres valeurs fermées :
   - Critères de sortie : isolation de chaque table, partitions, `migrate` deux fois, refus de démarrer sans
     migration, `/healthz` et `/readyz` en tout-en-un et avec un rôle, vérifiés par `mise run test-integration`.
     Les partitions sont créées par une boucle du scheduler, pas par un job (D36). Le critère de l'outbox passe au
-    lot 3 (D44). Le job `Rust Integration Test` n'a pas encore tourné sur GitHub.
+    lot 3 (D44). Le job `Rust Integration Test` passe sur GitHub depuis le 30 septembre 2026.
   - Reste pour les lots suivants : `sqlx-cli` et `.sqlx/` arrivent avec la première requête vérifiée à la
     compilation. Les partitions de plus de 90 jours sont supprimées au lot 3 : chaque file devra garder un
     instantané plus récent (lot 5). Le refus d'un superutilisateur n'a pas de test automatique
@@ -423,18 +423,22 @@ Autres valeurs fermées :
 ### Lot 3 : transport interne : inbox, jobs, baux
 
 - **Objectif** : l'« API interne » entre les rôles, résistante aux crashes et aux doublons.
-- **Contenu** : dans `cihub-platform`, `webhook_inbox` avec dédoublonnage par `delivery_id` ; jobs (enveloppe
-  avec `idempotency_key`, exécuteurs par type, backoff, file de rebut, `locked_until`, quotas par connexion,
-  classe de priorité) ; `queue_leases` ou verrou consultatif par file ; `queues.dirty` et
-  `NOTIFY cihub_queue`, `cihub_jobs`, `cihub_outbox` ; tic de 30 s ; traits `Inbox`, `JobQueue`, `Outbox` ; job
-  des partitions d'`events` (création, et suppression après 90 jours) à la place de la boucle du scheduler
-  (`AGENTS.md` D36, D43) ; `outbox` et abonnements (D44). La façon dont plusieurs répliques se partagent les jobs
-  est une décision de ce lot.
-- **Interfaces figées** : `Inbox`, `JobQueue`, `Outbox` ; format de `idempotency_key` ; classes de priorité.
+- **Contenu** : dans `cihub-platform`, `webhook_inbox` avec dédoublonnage par livraison ; jobs (`idempotency_key`,
+  backoff, file de rebut, `locked_until`, quotas par connexion, classe de priorité) ; boucle du worker et registre
+  des exécuteurs (`AGENTS.md` D66) ; `queue_leases` et verrou consultatif par file (D54) ; `queues.dirty`,
+  `NOTIFY cihub_queue` et `cihub_jobs` ; tic de 30 s ; job quotidien `maintenance` : partitions d'`events` et
+  purges (D67). La boucle du scheduler passe au lot 5 (D64) et l'outbox au lot 11 (D65).
+- **Interfaces figées** : signatures des fonctions de l'inbox, des jobs, des baux et du réveil (D62) ; registre des
+  exécuteurs (D66) ; format de `idempotency_key` (D68) ; classes de priorité.
 - **Critère de sortie** : tests d'intégration : un worker tué pendant un job voit le job repris et exécuté une seule
   fois ; une livraison en double n'a aucun effet ; deux schedulers sur la même file n'ont jamais la même file en
-  même temps ; un `NOTIFY` réveille un scheduler en moins de 1 s, et le tic le réveille quand `NOTIFY` est perdu ;
-  un événement et son entrée d'outbox sont écrits dans la même transaction (D44).
+  même temps ; un `NOTIFY` réveille un scheduler en moins de 1 s, et le tic le réveille quand `NOTIFY` est
+  perdu.
+- **Suivi** :
+  - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : la suppression des partitions passe au lot 5 (D57). Pas de
+    trait pour l'inbox, les jobs et l'outbox (D62), et pas de NATS en v1 (D63). La boucle du scheduler passe au
+    lot 5 (D64) et l'outbox au lot 11 (D65) ; un job `maintenance` quotidien remplace la boucle des partitions
+    (D67).
 
 ### Lot 4 : adaptateur GitHub, simulateur et installation de l'App
 
@@ -457,11 +461,11 @@ Autres valeurs fermées :
   `not_ready` avec une raison.
 - **Contenu** : contrat `Module` et activation d'un module par organisation (`AGENTS.md` D35) ; dans
   `cihub-mergequeue`, projection `queue_items`, `test_groups`, `test_runs` depuis le journal,
-  instantané tous les 500 événements, rejeu ; boucle du scheduler (files `dirty`, verrou, réconciliation en
-  transaction) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
+  instantané tous les 500 événements, rejeu ; boucle du scheduler, avec les baux, le réveil et la transaction
+  d'une file du lot 3 (`AGENTS.md` D64) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
-  événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours` ; clé étrangère
-  `events.queue_id` vers `queues`.
+  événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours` ; suppression des
+  partitions d'`events` de plus de 90 jours, une fois les instantanés en place (`AGENTS.md` D57).
 - **Interfaces figées** : contrat `Module` ; tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`,
   `AGENTS.md` D28) ; types de jobs de la file.
 - **Critère de sortie** : sur `cihub-github-sim`, 20 PR soumises dans des états variés atteignent `pending` ou
@@ -550,9 +554,11 @@ Autres valeurs fermées :
 ### Lot 11 : analytique, métriques et webhooks sortants
 
 - **Contenu** : trait `AnalyticsStore` et son implémentation Postgres (`cihub-analytics`, tables `an_*`) ; le rôle
-  `notifier` ; `/metrics` sur l'adresse interne ; vue Santé ; `GET /api/v1/metrics` ; webhooks sortants Standard
+  `notifier` ; l'outbox et ses abonnements, écrits avec leur événement dans la même transaction (`AGENTS.md` D65) ;
+  `/metrics` sur l'adresse interne ; vue Santé ; `GET /api/v1/metrics` ; webhooks sortants Standard
   Webhooks avec les noms de Trunk ; endpoints `/orgs/{org}/webhooks`.
-- **Critère de sortie** : les tables de faits reconstruites depuis `events` égalent celles écrites en continu ;
+- **Critère de sortie** : un événement et son entrée d'outbox sont écrits dans la même transaction ; les tables de
+  faits reconstruites depuis `events` égalent celles écrites en continu ;
   chaque type de webhook est émis une seule fois par transition, signé, et retenté après un échec ; `rate()`
   fonctionne sur les compteurs exposés.
 

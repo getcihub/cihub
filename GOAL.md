@@ -34,8 +34,8 @@ ses décisions.**
    de Trunk, Mergify ou de la file native GitHub sont convertibles, sans imposer leur vocabulaire.
 9. **Multi-tenant par construction.** Une instance sert plusieurs organisations GitHub, ou un hébergeur tiers ;
    une organisation bruyante ralentit ses propres files, pas celles des autres.
-10. **Rester petit.** Postgres est la seule dépendance en v1 : pas de broker, pas de cache externe. ClickHouse et
-    NATS arrivent derrière des interfaces quand une mesure le justifie.
+10. **Rester petit.** Postgres est la seule dépendance en v1 : pas de broker, pas de cache externe. ClickHouse
+    arrive derrière une interface quand une mesure le justifie.
 
 ## Comment on sait qu'on y est (acceptation)
 

@@ -270,7 +270,8 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   verrou de la file (lot 3). Une partition par mois UTC, `events_<AAAA>_<MM>`, avec sa propre politique forcée.
   La suppression des partitions de plus de 90 jours arrive au lot 3, avec les jobs.
 - **D44** L'outbox, les abonnements et le critère « un événement et son entrée d'outbox sont écrits dans la même
-  transaction » passent du lot 2 au lot 3, avec le trait `Outbox`.
+  transaction » passent du lot 2 au lot 3, avec le trait `Outbox`. _Complétée par D62 : pas de trait. Remplacée par
+  D65._
 - **D45** Les jetons d'API sont dans `cihub-store` (création, authentification par empreinte dans le contexte
   système) ; `cihub-domain` porte leur forme texte, sans hasard. Le secret vient du générateur aléatoire du
   système (`SysRng`), interdit ailleurs par `clippy.toml`. `last_used_at` avance au plus une fois par minute,
@@ -304,6 +305,48 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   la base `cihub` à l'état voulu à chaque démarrage (création s'ils manquent, puis `ALTER`). Il remplace le script
   d'initialisation, qui ne tournait que sur un volume vide. `mise run db` démarre Postgres puis lance ce service ;
   `mise run db-reset` efface les données puis lance `mise run db`.
+- **D53** Le lot 3 crée la crate `cihub-platform` (`crates/platform/`). Elle dépend de `cihub-domain` et de
+  `cihub-store` ; la dépendance vers `cihub-scm` arrive au lot 4.
+- **D54** Une file est attribuée à une réplique du scheduler par un bail de la table `queue_leases` (propriétaire,
+  expiration à 15 s), et chaque réconciliation prend en plus `pg_try_advisory_xact_lock` sur la file, qui garantit
+  une seule réconciliation à la fois, même pendant la reprise d'un bail expiré.
+- **D55** Les répliques du worker se partagent les jobs par `SELECT … FOR UPDATE SKIP LOCKED` ; `locked_until`
+  rend le job d'une réplique arrêtée à une autre.
+- **D56** Le lot 3 crée une table `queues` minimale (`id`, `org_id`, `repo_id`, `target_branch`, `dirty`,
+  `next_tick_at`) et la clé étrangère de `events.queue_id` vers `queues`. Le lot 5 ajoute l'état, le mode et les
+  réglages de la file.
+- **D57** Complète D36 et D43 : le lot 3 remplace la boucle du scheduler par un job qui crée les partitions
+  d'`events`. La suppression des partitions de plus de 90 jours arrive au lot 5, avec les instantanés : sans
+  instantané, une file inactive perdrait son journal et son `seq` repartirait à 1. _Complétée par D67._
+- **D58** Complète D49 : `jobs` et `webhook_inbox` portent `connection_id`, qui porte les quotas et le budget.
+- **D59** Valeur fermée `JobClass` (`interactive`, `merge`, `speculate`, `repair`), dans `cihub-domain` et en enum
+  Postgres.
+- **D60** Une `idempotency_key` a la forme `<type de job>:<sujet>:<version>` (par exemple `merge_pr:item_…:1`) et
+  est unique dans `jobs`. La grammaire exacte est proposée avec le premier type de job. _Complétée par D68._
+- **D61** Le lot 3 n'ajoute pas de dépendance externe tant que `sqlx` suffit (`PgListener` pour `LISTEN/NOTIFY`).
+- **D62** L'inbox, les jobs et l'outbox n'ont pas de trait : ce sont des fonctions de `cihub-platform` sur une
+  connexion Postgres, et leurs signatures sont les interfaces figées du lot 3. Marquer une livraison comme traitée,
+  écrire un événement et son entrée d'outbox, ou émettre les jobs d'une réconciliation se fait dans la transaction
+  de l'appelant, qu'aucune autre implémentation ne pourrait rejoindre. Un trait arrivera avec une seconde
+  implémentation, pas avant.
+- **D63** Pas de NATS en v1 : Postgres est le seul transport entre les rôles. Une autre dépendance de transport
+  demande une mesure et une décision.
+
+- **D64** La boucle du scheduler, qui assemble les baux, le réveil et la transaction d'une file, arrive au lot 5
+  dans `cihub-mergequeue`, avec la réconciliation. Le lot 3 livre ses pièces dans `cihub-platform`.
+- **D65** Remplace D44 : l'outbox, les abonnements et le critère « un événement et son entrée d'outbox sont écrits
+  dans la même transaction » passent au lot 11, le premier lot qui les consomme (webhooks sortants, ClickHouse).
+- **D66** Un exécuteur est le code d'un type de job ; le worker a un registre, du type de job vers son exécuteur.
+  Un exécuteur répond : terminé, à refaire plus tard (avec l'erreur), ou échec définitif (avec l'erreur). Les types
+  de jobs et leurs exécuteurs sont neutres : un exécuteur appelle le SCM par le trait `Scm` (lot 4), selon la
+  connexion du job ; le code propre à un SCM reste dans son adaptateur. Le contrat `Module` (lot 5) déclare ses
+  exécuteurs dans ce registre.
+- **D67** Complète D36 et D57 : un job quotidien `maintenance` crée les partitions d'`events` du mois et du mois
+  suivant, supprime les livraisons traitées depuis plus de 7 jours et les jobs terminés depuis plus de 3 jours.
+  Chaque réplique du scheduler le demande toutes les heures avec la clé du jour (`maintenance:<AAAA-MM-JJ>:1`) : la
+  clé n'admet qu'un job par jour, qu'un seul worker exécute. Il remplace la boucle quotidienne des partitions.
+- **D68** Complète D60 : dans une `idempotency_key`, le type est en `snake_case`, le sujet ne contient pas `:`, et
+  la version est un entier à partir de 1.
 
 ### 4.1 Questions ouvertes
 
@@ -322,8 +365,7 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   jobs en échec : vaut-elle une demande d'installation plus intimidante ? _(lot 4)_
 - **Q7** Conventions sémantiques OpenTelemetry pour les tests : suivre la proposition du groupe CI/CD, ou figer
   des attributs `cihub.*` tant qu'elle n'est pas stable. _(lot 14)_
-- **Q8** Seuils de bascule vers ClickHouse et vers NATS : volumes à partir desquels la documentation les
-  recommande. _(lot 15)_
+- **Q8** Seuil de bascule vers ClickHouse : volume à partir duquel la documentation le recommande. _(lot 15)_
 - **Q9** Stack du tableau de bord : React avec le client TypeScript généré est l'hypothèse ; à confirmer.
   _(lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` abonne le module à `mergequeue.run.completed`, qui n'est pas un type d'événement
