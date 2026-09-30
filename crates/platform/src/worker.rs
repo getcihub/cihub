@@ -23,6 +23,12 @@ pub const JOB_POLL: Duration = Duration::from_secs(5);
 /// A worker claims at most this many jobs at a time and runs them together.
 pub const JOBS_PER_CLAIM: i64 = 16;
 
+/// A worker stops an executor after this long and retries its job, so that
+/// the lock of the job ([`JOB_LOCK`](crate::JOB_LOCK)) does not expire while
+/// the executor runs and another worker does not run the job at the same
+/// time. An executor must accept to stop at any `.await`.
+pub const JOB_TIMEOUT: Duration = Duration::from_secs(50);
+
 /// What an executor answers for a job (`AGENTS.md` D66).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -118,7 +124,7 @@ pub async fn run_worker(
         for job in jobs {
             let span = info_span!("job", key = job.idempotency_key, job_type = job.job_type);
             let key = job.idempotency_key.clone();
-            let outcome = executors.run(pool.clone(), job, now);
+            let outcome = within(JOB_TIMEOUT, executors.run(pool.clone(), job, now));
             let run = outcome.instrument(span.clone());
             running.spawn(async move { (key, run.await, span) });
         }
@@ -133,6 +139,12 @@ pub async fn run_worker(
         }
     }
     Ok(())
+}
+
+async fn within(limit: Duration, run: ExecutorFuture) -> Outcome {
+    tokio::time::timeout(limit, run).await.unwrap_or_else(|_| {
+        Outcome::Retry(format!("job still running after {} ms", limit.as_millis()))
+    })
 }
 
 async fn claim(
@@ -196,4 +208,30 @@ pub fn error_chain(err: &dyn Error) -> String {
         source = err.source();
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_ends_before_the_lock() {
+        assert!(JOB_TIMEOUT < crate::JOB_LOCK);
+    }
+
+    #[tokio::test]
+    async fn a_slow_executor_is_retried() {
+        let slow: ExecutorFuture = Box::pin(std::future::pending());
+        let outcome = within(Duration::from_millis(10), slow).await;
+        assert_eq!(
+            outcome,
+            Outcome::Retry("job still running after 10 ms".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_fast_executor_keeps_its_outcome() {
+        let fast: ExecutorFuture = Box::pin(async { Outcome::Done });
+        assert_eq!(within(JOB_TIMEOUT, fast).await, Outcome::Done);
+    }
 }

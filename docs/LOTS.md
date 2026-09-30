@@ -36,8 +36,8 @@ phase 1).
 | 0   | Fondations du dépôt                                    | 1     | —         | —         | terminé                                  |
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
 | 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
-| 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | en cours                                 |
-| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | Q5        | à faire                                  |
+| 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | terminé                                  |
+| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | à faire                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
@@ -477,14 +477,15 @@ Autres valeurs fermées :
   - Fait (exemple) : `cargo run -p cihub-platform --example transport` joue le lot sur une base temporaire
     (`cihub_transport_demo`, supprimée à la fin) et affiche les baux, le verrou, les livraisons et le réveil, une
     écriture pendant une réconciliation, un worker arrêté, les reprises, le quota et la maintenance.
-  - Reste : la revue des interfaces figées et le statut du lot ; la lecture des livraisons
-    non routées arrive avec l'ingestion (lot 4) ; la pause des jobs d'une connexion sur un 429 arrive avec le
-    budget (lot 4) ; un job plus long que `JOB_LOCK` (60 s) est repris par un autre worker, car le verrou ne se
-    renouvelle pas encore.
+  - Fait (revue des interfaces figées) : le worker arrête un exécuteur après `JOB_TIMEOUT` (50 s), plus court que
+    `JOB_LOCK`, et remet son job en attente (D69). Tests : un exécuteur trop lent est remis en attente, un
+    exécuteur rapide garde sa réponse. `Outcome` et `Executors::register` ne changent pas (D70, D71).
+  - Reste, passé au lot 4 : la lecture des livraisons non routées arrive avec l'ingestion ; la pause des jobs d'une
+    connexion sur un 429 (`scm_connections.paused_until`, respectée par `claim_jobs`) arrive avec le budget (D70).
   - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : la suppression des partitions passe au lot 5 (D57). Pas de
     trait pour l'inbox, les jobs et l'outbox (D62), et pas de NATS en v1 (D63). La boucle du scheduler passe au
     lot 5 (D64) et l'outbox au lot 11 (D65) ; un job `maintenance` quotidien remplace la boucle des partitions
-    (D67).
+    (D67). Un timeout par exécuteur remplace le renouvellement du verrou (D69).
 
 ### Lot 4 : adaptateur GitHub, simulateur et installation de l'App
 
@@ -493,11 +494,12 @@ Autres valeurs fermées :
   client REST et GraphQL groupé pour la mergeabilité jusqu'à 50 PR, lecture des protections et rulesets, suivi du
   budget par les en-têtes, modes dégradés `normal`, `throttled`, `github_unavailable`) ; ingestion dans le rôle
   `api` (`cihub-http` : HMAC, stockage, acquittement en moins de 2 s) ; traduction des webhooks en faits du
-  domaine ; `cihub-github-sim`, un simulateur GitHub (refs, merges, PR, checks, protections) qui sait injecter
-  5xx, 429, webhooks perdus, dupliqués et désordonnés ; flux de manifeste pour créer l'App ; vérificateur de
-  configuration en endpoint d'API (l'interface arrive au lot 10) ; balayage de `GET /app/hook/deliveries`.
+  domaine ; dans `cihub-scm`, derrière la feature `sim` (`AGENTS.md` D73), un simulateur GitHub (refs, merges,
+  PR, checks, protections) qui sait injecter 5xx, 429, webhooks perdus, dupliqués et désordonnés ; flux de
+  manifeste pour créer l'App ; vérificateur de configuration en endpoint d'API (l'interface arrive au lot 10) ;
+  balayage de `GET /app/hook/deliveries`.
 - **Interfaces figées** : trait `Scm` ; faits du domaine issus de GitHub ; permissions de l'App (`docs/GITHUB.md`).
-- **Critère de sortie** : une suite de contrat unique passe contre `cihub-github-sim` et contre des réponses
+- **Critère de sortie** : une suite de contrat unique passe contre le simulateur et contre des réponses
   GitHub enregistrées ; un 429 met en pause les jobs de la connexion jusqu'au reset ; l'assistant crée une App
   sur une organisation de test et enregistre ses secrets (test manuel documenté, seul test non automatisé du lot).
 
@@ -514,7 +516,7 @@ Autres valeurs fermées :
   partitions d'`events` de plus de 90 jours, une fois les instantanés en place (`AGENTS.md` D57).
 - **Interfaces figées** : contrat `Module` ; tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`,
   `AGENTS.md` D28) ; types de jobs de la file.
-- **Critère de sortie** : sur `cihub-github-sim`, 20 PR soumises dans des états variés atteignent `pending` ou
+- **Critère de sortie** : sur le simulateur, 20 PR soumises dans des états variés atteignent `pending` ou
   `not_ready` avec la bonne raison ; rejouer le journal reconstruit exactement les mêmes projections ; un scheduler
   tué au milieu d'une réconciliation ne laisse aucune écriture partielle.
 
@@ -527,7 +529,7 @@ Autres valeurs fermées :
   ignorés ; échec en attente à la profondeur 0 ; redémarrage de l'aval ; suppression des branches de test après
   `keep_test_branches_minutes`.
 - **Interfaces figées** : format des noms de branches ; corps de la PR brouillon ; `GET /api/v1/test-runs/{run_id}`.
-- **Critère de sortie** : sur `cihub-github-sim`, une file de 10 PR dont 2 échouent teste chaque PR au-dessus de
+- **Critère de sortie** : sur le simulateur, une file de 10 PR dont 2 échouent teste chaque PR au-dessus de
   ses prédécesseurs, conclut chaque exécution avec la bonne raison et redémarre l'aval ; un conflit identifie la
   bonne PR coupable ; un check qui ne rapporte jamais donne `test_run_timeout`.
 
@@ -555,7 +557,7 @@ Autres valeurs fermées :
 - **Interfaces figées** : schéma du fichier de configuration (version 1) ; grammaire des conditions ; noms des
   réglages (`docs/CONFIGURATION.md`).
 - **Critère de sortie** : tests de table de la grammaire des conditions (analyse et évaluation) ; sur
-  `cihub-github-sim`, une file `pipelined` sous 20 % d'échecs aléatoires contracte sa fenêtre au plancher puis la
+  le simulateur, une file `pipelined` sous 20 % d'échecs aléatoires contracte sa fenêtre au plancher puis la
   rouvre ; une PR ne peut pas modifier ses propres conditions (test dédié) ; chaque stratégie est une table sans
   code dans `cihub-mq-core`.
 - **Suivi** :
@@ -612,7 +614,7 @@ Autres valeurs fermées :
 
 - **Contenu** : formation des lots, `no_batch`, attente maximale ; bissection avec cache des résultats et pool
   `bisection_concurrency` ; `pending_failure_depth > 0` ; merge optimiste (Q3) ; stratégie `batched`.
-- **Critère de sortie** : critère de la phase 2 sur une charge synthétique de `cihub-github-sim` : p50 réduit de
+- **Critère de sortie** : critère de la phase 2 sur une charge synthétique du simulateur : p50 réduit de
   40 % à 20 PR par heure contre `pipelined`, et un échec planté isolé en ≤ log2(taille du lot) exécutions.
 
 ---
@@ -638,7 +640,7 @@ Autres valeurs fermées :
 - **Contenu** : `POST /repos/{owner}/{name}/prs/{pr}/impacted-targets` (jeton `targets:write` ou exécution
   GitHub Actions pour les forks, limite de 20 Mo) ; voies par recouvrement ; lots par voie ; stratégie `parallel` ;
   actions d'exemple pour Bazel et Nx.
-- **Critère de sortie** : sur `cihub-github-sim`, des PR aux cibles disjointes sont testées et mergées en
+- **Critère de sortie** : sur le simulateur, des PR aux cibles disjointes sont testées et mergées en
   parallèle, et une PR `ALL` sérialise tout ce qui la suit ; critère de la phase 4 sur un monodépôt pilote.
 
 ### Lot 15 : échelle : ClickHouse, Helm, durcissement

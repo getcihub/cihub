@@ -347,6 +347,21 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   clé n'admet qu'un job par jour, qu'un seul worker exécute. Il remplace la boucle quotidienne des partitions.
 - **D68** Complète D60 : dans une `idempotency_key`, le type est en `snake_case`, le sujet ne contient pas `:`, et
   la version est un entier à partir de 1.
+- **D69** Le worker arrête un exécuteur après `JOB_TIMEOUT` (50 s), plus court que `JOB_LOCK` (60 s), et remet son
+  job en attente avec le backoff. Le verrou d'un job ne se renouvelle pas. Un exécuteur accepte d'être arrêté à
+  chaque `.await` (principe III).
+- **D70** Un 429 met en pause les jobs d'une connexion : une colonne `paused_until` sur `scm_connections`, que
+  `claim_jobs` respecte. L'adaptateur du SCM écrit la pause (lot 4) ; `Outcome` ne change pas.
+- **D71** Un exécuteur reçoit le SCM par sa closure (`Arc<dyn Scm>` capturé à l'enregistrement) : la signature de
+  `Executors::register` ne change pas.
+- **D72** (Q5) La permission `actions: write` est une case de l'assistant, décochée par défaut. Sans elle, CIHub
+  n'annule aucune CI et ne relance aucun job.
+- **D73** Le lot 4 crée trois crates : `cihub-scm` (trait `Scm`, types neutres, et le simulateur GitHub dans un
+  module derrière la feature `sim`, utilisée seulement en dépendance de développement), `cihub-github` et
+  `cihub-http`. Pas de crate `cihub-github-sim`. `cihub-http` dépend de `cihub-api-types` à partir du lot 9.
+- **D74** Dépendances du lot 4 : `reqwest` (`rustls`), `jsonwebtoken` (JWT de l'App) et `hmac` (signature des
+  webhooks). Les réponses GitHub enregistrées sont des fichiers JSON rejoués par un serveur `axum` de test, sans
+  bibliothèque de cassettes.
 
 ### 4.1 Questions ouvertes
 
@@ -361,8 +376,6 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   souple restant une option. _(lot 12)_
 - **Q4** Push sur une PR en file : annuler (sûr, mais boucles avec Dependabot) ou resoumettre automatiquement.
   Proposition : annuler par défaut, `resubmit_on_push` comme réglage. _(lot 7)_
-- **Q5** Permission optionnelle `actions: write` pour annuler la CI des branches remplacées et relancer les seuls
-  jobs en échec : vaut-elle une demande d'installation plus intimidante ? _(lot 4)_
 - **Q7** Conventions sémantiques OpenTelemetry pour les tests : suivre la proposition du groupe CI/CD, ou figer
   des attributs `cihub.*` tant qu'elle n'est pas stable. _(lot 14)_
 - **Q8** Seuil de bascule vers ClickHouse : volume à partir duquel la documentation le recommande. _(lot 15)_
@@ -398,7 +411,7 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   Pas de client HTTP vers GitHub hors de `cihub-github`.
 - **Transitions gardées en SQL** et vérification du nombre de lignes modifiées.
 - **Tests** : unitaires avec `cargo nextest` ; intégration contre un vrai Postgres avec `#[sqlx::test]` (une base
-  neuve par test) ; le simulateur GitHub (`cihub-github-sim`) pour tout scénario de file. Jamais de test contre le
+  neuve par test) ; le simulateur GitHub (`cihub-scm`, feature `sim`, D73) pour tout scénario de file. Jamais de test contre le
   vrai GitHub hors du test de bout en bout de staging.
 - **Tâches `mise`** (`mise.toml`) :
 

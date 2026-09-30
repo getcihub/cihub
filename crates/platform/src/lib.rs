@@ -24,7 +24,9 @@ pub use maintenance::{
 pub use wake::{
     QUEUE_CHANNEL, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
 };
-pub use worker::{Executors, JOB_POLL, JOBS_PER_CLAIM, Outcome, error_chain, run_worker};
+pub use worker::{
+    Executors, JOB_POLL, JOB_TIMEOUT, JOBS_PER_CLAIM, Outcome, error_chain, run_worker,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {

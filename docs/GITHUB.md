@@ -14,7 +14,7 @@ CIHub se présente comme une GitHub App (`cihub-io`) installée par organisation
 | Administration  | read              | lire les protections de branche et les rulesets pour déduire les checks requis et faire tourner le vérificateur de configuration      |
 | Issues          | write             | labels sur les PR (label d'entrée, labels d'état)                                                                                     |
 | Members         | read              | associer les logins GitHub aux rôles de l'organisation pour les commandes réservées aux admins                                        |
-| Actions         | write (optionnel) | annuler les workflows des branches de test remplacées pour économiser des minutes de CI                                               |
+| Actions         | write (optionnel) | annuler les workflows des branches de test remplacées et relancer les seuls jobs en échec ; case de l'assistant, décochée par défaut (`AGENTS.md` D72) |
 
 Événements webhook souscrits : `installation`, `installation_repositories`, `pull_request` (opened, synchronize, closed, reopened, edited, converted\_to\_draft, ready\_for\_review, labeled, unlabeled), `pull_request_review`, `issue_comment` (commandes), `push` (branches cibles et têtes de PR), `check_run`, `check_suite`, `status`, `branch_protection_rule`, `repository` (renommé, supprimé). Chaque livraison est vérifiée avec le secret HMAC, dédoublonnée par `X-GitHub-Delivery`, stockée et acquittée en moins de 2 s ; le traitement est asynchrone.
 
