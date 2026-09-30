@@ -474,7 +474,10 @@ Autres valeurs fermées :
     avec son exécuteur, et un type sans exécuteur échoue ; un nouveau job réveille un worker en moins de 1 s ; la
     maintenance n'a qu'un job par jour et ne supprime que les lignes trop anciennes ; le binaire en tout-en-un
     exécute la maintenance du jour.
-  - Reste : l'exemple de démonstration, la revue des interfaces figées et le statut du lot ; la lecture des livraisons
+  - Fait (exemple) : `cargo run -p cihub-platform --example transport` joue le lot sur une base temporaire
+    (`cihub_transport_demo`, supprimée à la fin) et affiche les baux, le verrou, les livraisons et le réveil, une
+    écriture pendant une réconciliation, un worker arrêté, les reprises, le quota et la maintenance.
+  - Reste : la revue des interfaces figées et le statut du lot ; la lecture des livraisons
     non routées arrive avec l'ingestion (lot 4) ; la pause des jobs d'une connexion sur un 429 arrive avec le
     budget (lot 4) ; un job plus long que `JOB_LOCK` (60 s) est repris par un autre worker, car le verrou ne se
     renouvelle pas encore.
