@@ -257,6 +257,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-util",
+ "tracing",
  "ulid",
 ]
 
@@ -266,6 +267,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cihub-platform",
  "cihub-store",
  "cihub-telemetry",
  "secrecy",
@@ -275,6 +277,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "ulid",
 ]
 
 [[package]]

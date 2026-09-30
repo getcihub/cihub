@@ -44,7 +44,7 @@ pub use id::{
     RepoId, RunId, ScmAccountId, ScmInstanceId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
-pub use job::JobError;
+pub use job::{JobClass, JobError, JobState};
 pub use pr::{CheckReport, Mergeability, PrState, ReviewDecision};
 pub use queue::{Queue, QueueControl};
 pub use reason::Reason;

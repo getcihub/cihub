@@ -11,11 +11,13 @@ mod health;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
-use cihub_store::{MIGRATOR, PgPool};
-use time::{Date, OffsetDateTime};
+use cihub_platform::{Executors, JOB_POLL, MAINTENANCE, execute_maintenance, request_maintenance};
+use cihub_store::{MIGRATOR, PgPool, begin_system};
+use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
@@ -53,17 +55,28 @@ async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
         info!(version, "migration applied");
     }
     info!(applied = applied.len(), "migrations done");
-    cihub_store::create_event_partitions(pool, today()).await?;
+    cihub_store::create_event_partitions(pool, now().date()).await?;
     info!("event partitions ready");
     Ok(())
 }
 
-fn today() -> Date {
+/// The clock of the process: the library crates receive the time from here.
+fn now() -> OffsetDateTime {
     #[expect(
         clippy::disallowed_methods,
-        reason = "the server reads the date to create the partitions of the month"
+        reason = "the one place where the server reads the clock"
     )]
-    OffsetDateTime::now_utc().date()
+    OffsetDateTime::now_utc()
+}
+
+/// A name unique to this process, which owns its jobs and leases.
+fn process_name() -> String {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one place where the server draws a random name"
+    )]
+    let id = ulid::Ulid::generate();
+    format!("cihub-{}", id.to_string().to_lowercase())
 }
 
 async fn serve(
@@ -88,9 +101,11 @@ async fn serve(
         pool.clone(),
         cancel.clone(),
     ));
+    let process = process_name();
     for role in &roles {
         let span = info_span!("role", role = role.as_str());
-        tasks.spawn(run_role(*role, pool.clone(), cancel.clone()).instrument(span));
+        tasks
+            .spawn(run_role(*role, pool.clone(), process.clone(), cancel.clone()).instrument(span));
     }
     let result = supervise(tasks, &cancel).await;
     info!("server stopped");
@@ -99,31 +114,50 @@ async fn serve(
 
 /// Runs the loops of `role` until cancellation. The other loops of each role
 /// arrive with their lot.
-async fn run_role(role: Role, pool: PgPool, cancel: CancellationToken) -> anyhow::Result<()> {
+async fn run_role(
+    role: Role,
+    pool: PgPool,
+    process: String,
+    cancel: CancellationToken,
+) -> anyhow::Result<()> {
     info!("role started");
     match role {
-        Role::Scheduler => create_partitions_daily(&pool, &cancel).await,
-        Role::Api | Role::Worker | Role::Notifier => cancel.cancelled().await,
+        Role::Scheduler => request_maintenance_hourly(&pool, &cancel).await,
+        Role::Worker => {
+            let mut executors = Executors::default();
+            executors.register(MAINTENANCE, execute_maintenance);
+            cihub_platform::run_worker(pool, process, Arc::new(executors), now, JOB_POLL, cancel)
+                .await?;
+        }
+        Role::Api | Role::Notifier => cancel.cancelled().await,
     }
     info!("role stopped");
     Ok(())
 }
 
-/// Creates the partitions of `events` for this month and the next one at the
-/// start, then every day (`AGENTS.md` D36). A job replaces this loop in lot 3.
-async fn create_partitions_daily(pool: &PgPool, cancel: &CancellationToken) {
-    let mut every_day = tokio::time::interval(Duration::from_hours(24));
+/// Requests the maintenance job of the day at the start, then every hour
+/// (`AGENTS.md` D67). Each replica does it; the key of the day admits one job.
+async fn request_maintenance_hourly(pool: &PgPool, cancel: &CancellationToken) {
+    let mut every_hour = tokio::time::interval(Duration::from_hours(1));
     loop {
         tokio::select! {
             () = cancel.cancelled() => return,
-            _ = every_day.tick() => {
-                match cihub_store::create_event_partitions(pool, today()).await {
-                    Ok(()) => info!("event partitions ready"),
-                    Err(err) => warn!(error = &err as &dyn Error, "event partitions not created"),
+            _ = every_hour.tick() => {
+                if let Err(err) = request_maintenance_now(pool).await {
+                    warn!(error = &*err as &dyn Error, "maintenance not requested");
                 }
             }
         }
     }
+}
+
+async fn request_maintenance_now(pool: &PgPool) -> anyhow::Result<()> {
+    let mut tx = begin_system(pool).await?;
+    if request_maintenance(&mut tx, now()).await? {
+        info!("maintenance requested");
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Cancels every task on `SIGTERM`, on `SIGINT`, or when one task stops on its

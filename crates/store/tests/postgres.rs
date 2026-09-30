@@ -7,7 +7,8 @@ use std::path::Path;
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, ConnectionKind, Event, EventId, EventKind, EventType, ItemId,
-    ItemState, MembershipRole, OrgId, Priority, QueueId, Reason, ScmKind, SubmittedVia, UserId,
+    ItemState, JobClass, JobState, MembershipRole, OrgId, Priority, QueueId, Reason, ScmKind,
+    SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -61,7 +62,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 11] = [
+const TENANT_TABLES: [&str; 12] = [
     "orgs",
     "scm_accounts",
     "scm_connections",
@@ -69,6 +70,7 @@ const TENANT_TABLES: [&str; 11] = [
     "queues",
     "queue_leases",
     "webhook_inbox",
+    "jobs",
     "memberships",
     "api_tokens",
     "audit_log",
@@ -103,6 +105,9 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{queue}', '{org}', 'scheduler', '2026-09-15T00:00:00Z');
          INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
              VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
+         INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
+             VALUES ('job-{n}', 'test', 'repair', '{org}', '{{}}', '2026-09-15T00:00:00Z',
+                     '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role) VALUES ('{org}', 'user-1', 'admin');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
              VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
@@ -293,6 +298,8 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("api_scope", values::<ApiScope>()),
         ("connection_kind", values::<ConnectionKind>()),
         ("event_type", values::<EventType>()),
+        ("job_class", values::<JobClass>()),
+        ("job_state", values::<JobState>()),
         ("membership_role", values::<MembershipRole>()),
         ("scm_kind", values::<ScmKind>()),
     ];

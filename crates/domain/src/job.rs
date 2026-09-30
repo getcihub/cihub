@@ -38,3 +38,36 @@ closed_enum! {
         HeadChanged,
     }
 }
+
+closed_enum! {
+    /// The priority of a job on the budget of its connection, highest first
+    /// (`AGENTS.md` D59). When the budget runs low, `speculate` waits first and
+    /// `merge` last.
+    pub enum JobClass {
+        /// A reply that a person waits for: a command, a status, a comment.
+        Interactive,
+        /// A merge of a PR that passed its tests.
+        Merge,
+        /// A test branch built ahead of the merges.
+        Speculate,
+        /// A read of the repair loop.
+        Repair,
+    }
+}
+
+closed_enum! {
+    /// Where a job is in its life.
+    pub enum JobState {
+        /// Waits for its `run_after`, then for a worker.
+        Queued,
+        /// A worker holds it until `locked_until`; past that time, another
+        /// worker takes it back.
+        Running,
+        /// Its executor finished it.
+        Done,
+        /// Its executor reported an error that a retry cannot fix.
+        Failed,
+        /// Every retry failed: it waits for an operator.
+        Dead,
+    }
+}

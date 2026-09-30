@@ -447,6 +447,15 @@ Autres valeurs fermées :
     change rien ; le même identifiant sur une autre instance est une autre livraison ; les livraisons d'une file
     arrivent dans l'ordre de réception jusqu'à leur traitement ; une livraison non routée n'est visible que du
     système, et une livraison routée exige son organisation.
+  - Fait (étape 3, jobs) : migration `20260930110000_jobs.sql` ; valeurs fermées `JobClass` et `JobState` ;
+    `enqueue_job`, `claim_jobs`, `complete_job` et `fail_job`. Un job a pour clé son `idempotency_key` (D60) ; le
+    worker le garde `JOB_LOCK` (60 s) ; un échec le remet en attente après 2, 4, 8… secondes (5 minutes au plus),
+    puis `dead` après 8 tentatives, ou `failed` quand une nouvelle tentative ne corrigerait rien ; une connexion a au
+    plus 100 jobs en cours. Tests contre Postgres : une seconde demande d'un job ne change rien ; les jobs dus
+    arrivent par classe puis par heure ; le job d'un worker arrêté est repris après `JOB_LOCK`, la réponse tardive
+    du premier worker ne change rien, et le job est terminé une seule fois ; deux workers en même temps ne
+    partagent jamais un job ; un job en échec attend son délai puis meurt après sa dernière tentative ; une
+    connexion ne reçoit plus de job au-delà de son quota.
   - Fait (étape 4, réveil) : `mark_dirty` marque une file et envoie `NOTIFY cihub_queue` dans la transaction de
     l'appelant ; `store_delivery` l'appelle pour une nouvelle livraison d'une file ; `begin_reconciliation` ouvre
     la transaction d'une file, avec son verrou, et remet `dirty` à faux dès le début, pour qu'une écriture pendant
@@ -455,8 +464,20 @@ Autres valeurs fermées :
     livraison réveille un scheduler en moins de 1 s, et une copie ne le réveille pas ; le tic trouve une file dont
     la notification est perdue ; une écriture pendant une réconciliation attend le commit puis marque la file de
     nouveau.
-  - Reste : jobs, boucle du worker et registre des exécuteurs, job `maintenance` ; la lecture des livraisons non
-    routées arrive avec l'ingestion (lot 4).
+  - Fait (étape 5, worker et maintenance) : registre `Executors` et boucle `run_worker` : elle prend les jobs dus, les
+    exécute ensemble (16 au plus), enregistre leur résultat (terminé, à refaire, échec définitif) et écrit une
+    ligne par job ; elle se réveille sur `NOTIFY cihub_jobs`, envoyé par `enqueue_job`, ou toutes les 5 s. Job
+    `maintenance` : partitions d'`events` du mois et du suivant, suppression des livraisons traitées depuis plus
+    de 7 jours et des jobs terminés depuis plus de 3 jours (colonne `finished_at`). Dans `cihub-server`, le rôle
+    `scheduler` demande la maintenance du jour au démarrage puis toutes les heures, et le rôle `worker` lance la
+    boucle ; la boucle quotidienne des partitions disparaît. Tests contre Postgres : un worker exécute chaque job
+    avec son exécuteur, et un type sans exécuteur échoue ; un nouveau job réveille un worker en moins de 1 s ; la
+    maintenance n'a qu'un job par jour et ne supprime que les lignes trop anciennes ; le binaire en tout-en-un
+    exécute la maintenance du jour.
+  - Reste : l'exemple de démonstration, la revue des interfaces figées et le statut du lot ; la lecture des livraisons
+    non routées arrive avec l'ingestion (lot 4) ; la pause des jobs d'une connexion sur un 429 arrive avec le
+    budget (lot 4) ; un job plus long que `JOB_LOCK` (60 s) est repris par un autre worker, car le verrou ne se
+    renouvelle pas encore.
   - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : la suppression des partitions passe au lot 5 (D57). Pas de
     trait pour l'inbox, les jobs et l'outbox (D62), et pas de NATS en v1 (D63). La boucle du scheduler passe au
     lot 5 (D64) et l'outbox au lot 11 (D65) ; un job `maintenance` quotidien remplace la boucle des partitions

@@ -117,3 +117,33 @@ fn a_missing_migration_stops_the_start(pool: PgPool) {
     assert!(!status.success(), "{status}");
     assert!(command(&pool).arg("migrate").status().unwrap().success());
 }
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
+    let addr = free_addr();
+    let child = start(&pool, &addr, None);
+    let mut done: Vec<String> = Vec::new();
+    for _ in 0..100 {
+        let mut tx = cihub_store::begin_system(&pool).await.unwrap();
+        done = sqlx::query_scalar(
+            "SELECT idempotency_key FROM jobs WHERE type = 'maintenance' AND state = 'done'",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        tx.rollback().await.unwrap();
+        if !done.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    stop(child);
+    assert_eq!(done.len(), 1, "{done:?}");
+    assert!(done[0].starts_with("maintenance:"), "{done:?}");
+    let partitions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM pg_inherits WHERE inhparent = 'events'::regclass")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(partitions, 2);
+}

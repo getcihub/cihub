@@ -15,6 +15,7 @@ cihub-conditions = { path = "crates/conditions" }
 cihub-config = { path = "crates/config" }
 cihub-domain = { path = "crates/domain" }
 cihub-mq-core = { path = "crates/mq-core" }
+cihub-platform = { path = "crates/platform" }
 cihub-store = { path = "crates/store" }
 cihub-telemetry = { path = "crates/telemetry" }
 anyhow = "1.0.104"
