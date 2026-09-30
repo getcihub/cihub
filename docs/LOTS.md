@@ -418,7 +418,7 @@ Autres valeurs fermées :
     `cihub` sans droits de superutilisateur (D38).
   - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : le modèle de tenancy ne dépend plus de GitHub (D46 à
     D51). La migration `20260929160000_tenancy.sql` est réécrite, car aucune version n'est publiée : une base de
-    développement qui l'a déjà appliquée doit être recréée (`docker compose down --volumes`).
+    développement qui l'a déjà appliquée doit être recréée (`mise run db-reset`, D52).
 
 ### Lot 3 : transport interne : inbox, jobs, baux
 

@@ -170,7 +170,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D11** Les crates pures ont une couverture de lignes d'au moins 90 %, mesurée par `cargo-llvm-cov`
   (`mise run cover`) et contrôlée en CI.
 - **D12** `compose.yaml` à la racine démarre seulement Postgres (`postgres:17.5-alpine`) pour le développement,
-  publié sur `127.0.0.1`, avec un mot de passe de développement écrit dans le fichier.
+  publié sur `127.0.0.1`, avec un mot de passe de développement écrit dans le fichier. _Complétée par D52._
 - **D13** Les logs utilisent `tracing` et `tracing-subscriber`, en JSON par défaut ou en `pretty`, avec les clés de
   corrélation portées par les spans ; les secrets sont dans des `secrecy::SecretString`. Le format et les règles
   sont dans `docs/OBSERVABILITY.md`.
@@ -300,6 +300,10 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   (`scm_instance_id`, `external_id`, `login`), unique (`scm_instance_id`, `external_id`). Les comptes d'une même
   personne sont des lignes séparées, sans lien ; une table de personnes pourra les regrouper plus tard sans
   changer le journal, qui pointe vers le compte qui a agi.
+- **D52** Complète D12 : `compose.yaml` ajoute un service ponctuel `postgres-setup`, qui amène le rôle `cihub` et
+  la base `cihub` à l'état voulu à chaque démarrage (création s'ils manquent, puis `ALTER`). Il remplace le script
+  d'initialisation, qui ne tournait que sur un volume vide. `mise run db` démarre Postgres puis lance ce service ;
+  `mise run db-reset` efface les données puis lance `mise run db`.
 
 ### 4.1 Questions ouvertes
 
@@ -364,7 +368,8 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   | `cover`            | couverture des crates pures, 90 % au moins (D11)                                      | oui        |
   | `lint-workflows`   | `actionlint` et `zizmor` sur `.github/workflows`                                      | oui        |
   | `check`            | `lint`, puis `test`                                                                   | oui        |
-  | `db`               | Postgres de `compose.yaml`                                                            | oui        |
+  | `db`               | Postgres de `compose.yaml`, puis le rôle `cihub` par `postgres-setup` (D52)           | oui        |
+  | `db-reset`         | `docker compose down --volumes`, puis `db`                                            | oui        |
   | `migrate`          | `cihub-server migrate` sur le Postgres de développement (D14)                         | oui        |
   | `test-integration` | Postgres, puis les fichiers `tests/postgres.rs` (`#[sqlx::test]`)                     | oui        |
   | `dev`              | `migrate`, puis `cihub-server` en local avec les quatre rôles, logs `pretty`          | oui        |

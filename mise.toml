@@ -46,8 +46,15 @@ description = "Run lint, then test"
 run = ["mise run lint", "mise run test"]
 
 [tasks.db]
-description = "Start the development Postgres of compose.yaml"
-run = "docker compose up --detach --wait"
+description = "Start the development Postgres of compose.yaml, then create or update the cihub role"
+run = [
+  "docker compose up --detach --wait postgres",
+  "docker compose run --rm postgres-setup",
+]
+
+[tasks.db-reset]
+description = "Delete the data of the development Postgres, then start it again"
+run = ["docker compose down --volumes", "mise run db"]
 
 [tasks.migrate]
 description = "Apply the migrations to the development Postgres"

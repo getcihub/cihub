@@ -1,5 +1,16 @@
-# Development only: Postgres for local work and integration tests. The init
-# script runs on an empty volume only (`docker compose down --volumes`).
+# Development only (AGENTS.md D12, D52): Postgres 17 for local work and the
+# integration tests. The credentials are fixed for local use: never use them
+# elsewhere.
+#
+# Usage:
+#   mise run db          # start Postgres, then create or update the cihub role
+#   mise run db-reset    # delete the data, then mise run db
+#   docker compose down  # stop Postgres, keep the data
+#
+# postgres/postgres is the superuser. cihub-server connects as cihub/cihub,
+# which is neither superuser nor BYPASSRLS (D38) and can create the databases
+# of #[sqlx::test].
+
 services:
   postgres:
     image: postgres:17.5-alpine
@@ -9,12 +20,36 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres:/var/lib/postgresql/data
-      - ./compose/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=cihub", "--dbname=cihub"]
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=postgres"]
       interval: 2s
       timeout: 5s
       retries: 15
+
+  # One-shot: bring the cihub role and database to the wanted state. It runs
+  # on every start, so a change here applies without deleting the data.
+  postgres-setup:
+    image: postgres:17.5-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    command:
+      - sh
+      - -c
+      - |
+        psql --quiet --set ON_ERROR_STOP=1 <<'SQL'
+        SELECT 'CREATE ROLE cihub'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cihub') \gexec
+        ALTER ROLE cihub LOGIN PASSWORD 'cihub' CREATEDB NOSUPERUSER NOBYPASSRLS;
+        SELECT 'CREATE DATABASE cihub OWNER cihub'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'cihub') \gexec
+        ALTER DATABASE cihub OWNER TO cihub;
+        SQL
+    restart: "no"
 
 volumes:
   postgres:

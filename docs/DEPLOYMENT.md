@@ -15,17 +15,17 @@ lot 15.
 ## Développement
 
 `compose.yaml`, à la racine, démarre seulement Postgres (`postgres:17.5-alpine`), publié sur `127.0.0.1:5432`
-(`AGENTS.md` D12). Le superutilisateur est `postgres` (mot de passe `postgres`). Le script
-`compose/postgres-init.sql` crée le rôle `cihub` (mot de passe `cihub`), qui n'est pas superutilisateur et peut
-créer des bases pour les tests, et la base `cihub` qu'il possède (D38). Ces valeurs servent au développement
-seulement. Le script ne tourne que sur un volume vide : après un changement, `docker compose down --volumes`.
+(`AGENTS.md` D12). Le superutilisateur est `postgres` (mot de passe `postgres`). Le service ponctuel
+`postgres-setup` amène le rôle `cihub` (mot de passe `cihub`), qui n'est pas superutilisateur et peut créer des
+bases pour les tests, et la base `cihub` qu'il possède, à l'état voulu (D38, D52). Il tourne à chaque démarrage :
+un changement de sa commande s'applique sans effacer les données. Ces valeurs servent au développement seulement.
 
 ```sh
-mise run db            # docker compose up --detach --wait
+mise run db            # Postgres, puis postgres-setup
+mise run db-reset      # efface les données, puis mise run db (après la réécriture d'une migration)
 mise run migrate       # Postgres, puis cihub-server migrate
 mise run dev           # migrate, puis cihub-server avec les quatre rôles et les logs pretty
 docker compose down    # arrête Postgres et garde le volume
-docker compose down --volumes   # arrête Postgres et efface ses données
 ```
 
 Les tâches `mise` sont listées dans `AGENTS.md` §5.
