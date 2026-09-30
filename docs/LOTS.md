@@ -37,7 +37,7 @@ phase 1).
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
 | 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | terminé                                  |
-| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | à faire                                  |
+| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | en cours                                 |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
@@ -492,7 +492,7 @@ Autres valeurs fermées :
 - **Objectif** : parler à GitHub à travers une seule interface, et pouvoir tester toute la file sans GitHub.
 - **Contenu** : trait `Scm` (`cihub-scm`) ; `cihub-github` (authentification App, jetons d'installation en cache,
   client REST et GraphQL groupé pour la mergeabilité jusqu'à 50 PR, lecture des protections et rulesets, suivi du
-  budget par les en-têtes, modes dégradés `normal`, `throttled`, `github_unavailable`) ; ingestion dans le rôle
+  budget par les en-têtes, modes dégradés `normal`, `throttled`, `scm_unavailable`) ; ingestion dans le rôle
   `api` (`cihub-http` : HMAC, stockage, acquittement en moins de 2 s) ; traduction des webhooks en faits du
   domaine ; dans `cihub-scm`, derrière la feature `sim` (`AGENTS.md` D73), un simulateur GitHub (refs, merges,
   PR, checks, protections) qui sait injecter 5xx, 429, webhooks perdus, dupliqués et désordonnés ; flux de
@@ -501,7 +501,38 @@ Autres valeurs fermées :
 - **Interfaces figées** : trait `Scm` ; faits du domaine issus de GitHub ; permissions de l'App (`docs/GITHUB.md`).
 - **Critère de sortie** : une suite de contrat unique passe contre le simulateur et contre des réponses
   GitHub enregistrées ; un 429 met en pause les jobs de la connexion jusqu'au reset ; l'assistant crée une App
-  sur une organisation de test et enregistre ses secrets (test manuel documenté, seul test non automatisé du lot).
+  sur une organisation de test et affiche ses secrets, puis le serveur redémarré avec ces variables reçoit un
+  webhook signé (test manuel documenté, seul test non automatisé du lot).
+- **Suivi** :
+  - Fait : les décisions du lot (`AGENTS.md` D72 à D81) ; crate `cihub-scm` avec le trait `Scm`, ses types
+    neutres, `ScmError` et `ScmEvent` (D73, D75, D76). Simulateur (`cihub_scm::sim`, feature `sim`) : dépôts
+    avec commits, branches, merges à trois voies et conflits, PR, checks, commentaires, labels, règles et
+    permissions ; journal des appels avec leur classe ; pannes d'appels (`Fault`) ; livraisons perdues, en double
+    ou désordonnées par une graine (`WebhookFaults`). Suite de contrat (`cihub_scm::contract`) : lectures,
+    branches, merges dans une branche, statuts, commentaires, labels, PR brouillons et merge gardé par la tête.
+    Tests : le simulateur passe la suite ; une panne échoue ses appels puis s'arrête ; une connexion suspendue perd
+    son accès ; chaque changement envoie sa livraison ; une PR en retard attend quand les règles le demandent ; les
+    pannes de livraisons sont reproductibles.
+  - Fait (budget et pause) : valeur fermée `ConnectionMode` ; migration `20260930120000_connection_budget.sql`
+    (colonnes de D77 sur `scm_connections`) ; `pause_connection`, et `claim_jobs` ne donne aucun job d'une
+    connexion en pause (D70). Test contre Postgres : une connexion en pause ne reçoit aucun job jusqu'à la fin de sa
+    pause, et une pause plus courte ne la raccourcit pas. `ScmError::Throttled` : le budget garde ses appels pour
+    les classes avant `speculate`.
+  - Fait (`cihub-github`) : clé de l'App (PKCS#1 ou PKCS#8) et JWT RS256 par `ring` ; signature HMAC-SHA256 des
+    webhooks ; jetons d'installation en mémoire, renouvelés 5 minutes avant leur fin ; budget par connexion en
+    mémoire (`throttled` sous 20 %, retour à `normal` après 5 minutes au-dessus de 40 %, `scm_unavailable` après 3
+    échecs avec une sonde toutes les 30 s, pause jusqu'au reset sur une limite primaire ou secondaire) ; trait
+    `Scm` en GraphQL pour les lectures de PR et de checks (50 PR par requête) et en REST pour le reste. Tests
+    unitaires : budget, classement des réponses, JWT, signature, mergeabilité et checks de GitHub.
+  - Fait (exemple) : `cargo run -p cihub-github --example github` appelle un vrai GitHub avec l'App de
+    l'environnement (D79) et affiche chaque réponse et le budget de la connexion : installations de l'App, lectures
+    du trait `Scm`, et quelques écritures limitées (`cihub-temp/example`, un statut, un commentaire, un label).
+  - Reste : la suite de contrat de `cihub-github` sur des réponses enregistrées, l'écriture des budgets en base,
+    `cihub-http` et l'ingestion, la traduction et le routage des livraisons, le balayage des livraisons, le flux de
+    manifeste, le vérificateur de configuration.
+  - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : le lot n'écrit aucun fait dans le journal ; il livre la
+    livraison routée et sa traduction en `ScmEvent`, et le lot 5 écrit les faits (D75). Les secrets de l'App
+    viennent de l'environnement (D79). Le simulateur est un module de `cihub-scm` (D73).
 
 ### Lot 5 : réconciliateur et admission
 
@@ -509,7 +540,8 @@ Autres valeurs fermées :
   `not_ready` avec une raison.
 - **Contenu** : contrat `Module` et activation d'un module par organisation (`AGENTS.md` D35) ; dans
   `cihub-mergequeue`, projection `queue_items`, `test_groups`, `test_runs` depuis le journal,
-  instantané tous les 500 événements, rejeu ; boucle du scheduler, avec les baux, le réveil et la transaction
+  instantané tous les 500 événements, rejeu ; lecture de l'inbox d'une file, traduction des `ScmEvent` en faits et
+  livraison marquée traitée dans la même transaction (`AGENTS.md` D75) ; boucle du scheduler, avec les baux, le réveil et la transaction
   d'une file du lot 3 (`AGENTS.md` D64) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
   événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours` ; suppression des

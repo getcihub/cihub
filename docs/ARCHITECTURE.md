@@ -26,9 +26,9 @@ Règles de conception sur lesquelles repose le reste de la spécification :
 - **Convergence, pas pilotage.** Le plan décrit un état voulu (« la référence `cihub-merge/pr-12/…` doit exister au commit composé de A, B, C »), jamais une séquence d'appels. Chaque job vérifie l'état réel avant d'agir et est sans effet s'il est déjà atteint.
 - **Bail par file.** Une table `queue_leases` (propriétaire, battement, expiration à 15 s) désigne l'instance qui traite une file ; toute instance peut reprendre un bail expiré. Les files d'une même organisation sont préférentiellement groupées sur une instance pour partager le cache GitHub, sans que ce soit une contrainte.
 - **Inbox partitionnée, acquittement inconditionnel.** L'ingestion n'échoue jamais faute de traitement : elle stocke et acquitte en moins de 2 s, même si Postgres est lent (file locale bornée en mémoire avec rejeu). L'ordre est garanti par file, pas globalement.
-- **Budget GitHub ordonnancé.** Chaque connexion a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
+- **Budget du SCM ordonnancé.** Chaque connexion a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
 - **Boucle de réparation.** Indépendamment des webhooks, chaque file relit périodiquement ce qui compte (PR vivantes, checks des exécutions en cours, tête de la branche cible, existence des références de test) à un intervalle adaptatif de 30 s à 10 min selon l'activité, et injecte ce qu'elle observe dans l'inbox. Un webhook perdu coûte au plus un intervalle.
-- **Modes dégradés explicites.** Par connexion : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `github_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
+- **Modes dégradés explicites.** Par connexion : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `scm_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
 - **Transport sur Postgres.** Inbox, jobs et outbox sont des tables Postgres, lues et écrites par les fonctions de `cihub-platform` dans la transaction de l'appelant (`AGENTS.md` D62) : une livraison est marquée traitée avec les faits qu'elle établit, un événement est écrit avec son entrée d'outbox (lot 11, D65). Pas de broker en v1 (D63).
 - **Isolation entre organisations.** Sécurité au niveau ligne, quotas par organisation sur l'inbox et les jobs, et ordonnancement équitable des workers : une organisation bruyante ralentit ses propres files, pas celles des autres.
 
@@ -70,6 +70,8 @@ crates/
   conditions/            cihub-conditions     (existe)
   config/                cihub-config         (existe)
   mq-core/               cihub-mq-core        (existe)
+  scm/                   cihub-scm            (existe)
+  github/                cihub-github         (existe)
   server/                cihub-server         (existe)
   store/                 cihub-store          (existe)
   telemetry/             cihub-telemetry      (existe)
@@ -89,8 +91,8 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-store`      | Pool Postgres, transactions d'une organisation ou du système (RLS), tenancy, journal et partitions, jetons d'API, verrous, baux, migrations embarquées, test des enums Postgres | `domain`                                                         | 2   | existe |
 | `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
 | `cihub-platform`   | Baux des files, réveil, inbox, jobs, boucle du worker et registre des exécuteurs, maintenance (`AGENTS.md` D62, D66, D67) ; contrat `Module` (lot 5), outbox (lot 11)  | `domain`, `store` ; `scm` au lot 4 (`AGENTS.md` D53)             | 3–5 | existe |
-| `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel ; simulateur GitHub avec injection de pannes, feature `sim` (`AGENTS.md` D73) | `domain`                                                         | 4   | cible  |
-| `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | cible  |
+| `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel ; simulateur GitHub avec injection de pannes, feature `sim` (`AGENTS.md` D73) | `domain`                                                         | 4   | existe |
+| `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | existe |
 | `cihub-http`       | Serveur HTTP du rôle `api` : auth, sessions, CSRF, limite de débit, erreurs problem+json, webhooks GitHub, `/api/v1/openapi.json`, tableau de bord                         | `platform`, `github`, `telemetry` ; `api-types` au lot 9 | 4   | cible  |
 | `cihub-mergequeue` | Module merge queue : boucle de réconciliation, projections, exécuteurs de jobs, routes `/api/v1/queues`, rendu des commentaires de PR                                     | `mq-core`, `config`, `contracts`, `platform`, `scm`, `analytics` | 5   | cible  |
 | `cihub-api-types`  | Requêtes et réponses de l'API publique, codes d'erreur                                                                                                                 | `domain`                                                         | 9   | cible  |
@@ -161,7 +163,7 @@ exemple un déploiement Kubernetes par rôle :
 
 Les limites : une file n'est traitée que par une réplique à la fois, pour garder l'ordre, donc ajouter des
 schedulers augmente le nombre de files traitées en parallèle, pas la vitesse d'une file ; au-delà d'un certain
-nombre de workers, c'est le budget GitHub de la connexion qui limite ; Postgres est la ressource commune
+nombre de workers, c'est le budget du SCM de la connexion qui limite ; Postgres est la ressource commune
 (connexions, avec PgBouncer devant `api`, et débit d'écriture). La v1 n'ajoute pas de broker (`AGENTS.md` D63).
 
 ## Le scheduler

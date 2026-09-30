@@ -1,0 +1,26 @@
+[package]
+name = "cihub-scm"
+description = "CIHub SCM contract: the Scm trait, its neutral types and events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cihub-domain.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[features]
+# The simulator and the contract suite, for the tests of other crates
+# (`AGENTS.md` D73).
+sim = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+ulid.workspace = true
+
+[lints]
+workspace = true
