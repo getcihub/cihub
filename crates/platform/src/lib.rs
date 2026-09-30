@@ -14,7 +14,7 @@ mod worker;
 pub use inbox::{Delivery, mark_processed, pending_deliveries, store_delivery};
 pub use jobs::{
     JOB_CHANNEL, JOB_LOCK, JOBS_PER_CONNECTION, Job, MAX_ATTEMPTS, Retry, backoff, claim_jobs,
-    complete_job, enqueue_job, fail_job,
+    complete_job, enqueue_job, fail_job, pause_connection,
 };
 pub use lease::{LEASE_TTL, acquire_leases, lock_queue, release_leases};
 pub use maintenance::{

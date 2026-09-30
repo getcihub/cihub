@@ -87,6 +87,29 @@ pub async fn enqueue_job(
     Ok(enqueued)
 }
 
+/// Pauses the jobs of `connection` until `until` (`AGENTS.md` D70): the SCM
+/// refuses its calls until then, after a 429 for example. A shorter pause
+/// does not shorten the current one.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn pause_connection(
+    conn: &mut PgConnection,
+    connection: ConnectionId,
+    until: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    sqlx::query(
+        "UPDATE scm_connections SET paused_until = greatest(paused_until, $2) WHERE id = $1",
+    )
+    .bind(connection.to_string())
+    .bind(until)
+    .execute(conn)
+    .await
+    .map_err(PlatformError::Query)?;
+    Ok(())
+}
+
 type JobRow = (
     String,
     String,
@@ -102,7 +125,8 @@ type JobRow = (
 /// Gives `worker` at most `limit` jobs that are due at `now`, highest class
 /// first, until `now + JOB_LOCK`. A job whose worker stopped is due again when
 /// its lock expires. A connection gets no more jobs once it has
-/// [`JOBS_PER_CONNECTION`] in progress. Runs in the system context: a worker
+/// [`JOBS_PER_CONNECTION`] in progress, nor while it is paused
+/// ([`pause_connection`]). Runs in the system context: a worker
 /// serves every organization.
 ///
 /// # Errors
@@ -126,8 +150,12 @@ pub async fn claim_jobs(
              GROUP BY connection_id
          ), candidates AS (
              SELECT idempotency_key, connection_id, class, run_after FROM jobs
-             WHERE (state = 'queued' AND run_after <= $2)
-                OR (state = 'running' AND locked_until <= $2)
+             WHERE ((state = 'queued' AND run_after <= $2)
+                    OR (state = 'running' AND locked_until <= $2))
+               AND NOT EXISTS (
+                   SELECT 1 FROM scm_connections s
+                   WHERE s.id = jobs.connection_id AND s.paused_until > $2
+               )
              ORDER BY class, run_after, idempotency_key
              LIMIT $4 * 10
              FOR UPDATE SKIP LOCKED

@@ -9,8 +9,8 @@ use cihub_platform::{
     Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL, MAX_ATTEMPTS, Outcome,
     QueueWakeup, Retry, Wake, acquire_leases, backoff, begin_reconciliation, claim_jobs,
     complete_job, enqueue_job, fail_job, lock_queue, maintenance_job, mark_processed,
-    pending_deliveries, release_leases, request_maintenance, run_maintenance, run_worker,
-    schedule_tick, store_delivery,
+    pause_connection, pending_deliveries, release_leases, request_maintenance, run_maintenance,
+    run_worker, schedule_tick, store_delivery,
 };
 use cihub_store::{begin_org, begin_system};
 use serde_json::json;
@@ -382,6 +382,26 @@ async fn a_connection_gets_no_more_jobs_past_its_quota(pool: PgPool) {
         claim(&pool, "b", at(3), 1_000).await,
         [format!("j{quota:03}")]
     );
+}
+
+async fn pause(pool: &PgPool, until: OffsetDateTime) {
+    let mut tx = begin_system(pool).await.unwrap();
+    pause_connection(&mut tx, connection(), until)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_paused_connection_gets_no_job_until_the_end_of_its_pause(pool: PgPool) {
+    seed(&pool).await;
+    enqueue(&pool, &job("connection", JobClass::Interactive), at(0)).await;
+    enqueue(&pool, &system_job("system"), at(0)).await;
+    pause(&pool, at(60)).await;
+    assert_eq!(claim(&pool, "a", at(10), 10).await, ["system"]);
+    pause(&pool, at(30)).await;
+    assert_eq!(claim(&pool, "a", at(40), 10).await, Vec::<String>::new());
+    assert_eq!(claim(&pool, "a", at(60), 10).await, ["connection"]);
 }
 
 async fn queue_state(pool: &PgPool, queue: QueueId) -> (bool, Option<OffsetDateTime>) {

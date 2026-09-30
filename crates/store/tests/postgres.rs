@@ -6,9 +6,9 @@ use std::path::Path;
 
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
-    Actor, ActorKind, ApiScope, ConnectionKind, Event, EventId, EventKind, EventType, ItemId,
-    ItemState, JobClass, JobState, MembershipRole, OrgId, Priority, QueueId, Reason, ScmKind,
-    SubmittedVia, UserId,
+    Actor, ActorKind, ApiScope, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
+    EventType, ItemId, ItemState, JobClass, JobState, MembershipRole, OrgId, Priority, QueueId,
+    Reason, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -297,6 +297,7 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("actor_kind", values::<ActorKind>()),
         ("api_scope", values::<ApiScope>()),
         ("connection_kind", values::<ConnectionKind>()),
+        ("connection_mode", values::<ConnectionMode>()),
         ("event_type", values::<EventType>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),

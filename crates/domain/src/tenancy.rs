@@ -30,6 +30,21 @@ closed_enum! {
 }
 
 closed_enum! {
+    /// How much a connection may call its SCM (`docs/RELIABILITY.md`,
+    /// `AGENTS.md` D77).
+    pub enum ConnectionMode {
+        /// Every call goes out.
+        Normal,
+        /// The budget is low: the speculation waits, the rest goes out.
+        Throttled,
+        /// The SCM keeps failing: only a probe goes out, the jobs wait.
+        ScmUnavailable,
+        /// An admin or the SCM suspended the connection: nothing goes out.
+        Paused,
+    }
+}
+
+closed_enum! {
     /// What an API token may do (`docs/API.md`).
     pub enum ApiScope {
         /// Read the queues, their items and their timeline.

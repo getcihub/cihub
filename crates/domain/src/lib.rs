@@ -55,5 +55,5 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, ConnectionKind, MembershipRole, ScmKind};
+pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, MembershipRole, ScmKind};
 pub use transition::{Lifecycle, TransitionError, check_transition};
