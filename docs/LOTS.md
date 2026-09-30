@@ -169,7 +169,7 @@ n'est pas écrit.
 
 Chaque décision porte l'identifiant du fait qui l'a causée (`cause_id`), sauf une décision causée par l'horloge
 (timeout) ou par un changement de mode, qui n'a pas de fait source. Une demande (soumission, annulation,
-relance, résultat de job, demande sur la file, suspension de l'installation) attend une décision. `apply` n'écrit
+relance, résultat de job, demande sur la file, suspension de la connexion) attend une décision. `apply` n'écrit
 pas une demande qui ne peut pas recevoir de décision (annulation d'une entrée terminée, résultat d'une exécution
 remplacée, soumission quand la file n'est pas `running`) ou qui répète une demande en attente ; la décision qui
 cite une demande comme cause la retire, et une demande qu'une autre décision rend impossible est retirée aussi. La
@@ -424,7 +424,7 @@ Autres valeurs fermées :
 
 - **Objectif** : l'« API interne » entre les rôles, résistante aux crashes et aux doublons.
 - **Contenu** : dans `cihub-platform`, `webhook_inbox` avec dédoublonnage par `delivery_id` ; jobs (enveloppe
-  avec `idempotency_key`, exécuteurs par type, backoff, file de rebut, `locked_until`, quotas par installation,
+  avec `idempotency_key`, exécuteurs par type, backoff, file de rebut, `locked_until`, quotas par connexion,
   classe de priorité) ; `queue_leases` ou verrou consultatif par file ; `queues.dirty` et
   `NOTIFY cihub_queue`, `cihub_jobs`, `cihub_outbox` ; tic de 30 s ; traits `Inbox`, `JobQueue`, `Outbox` ; job
   des partitions d'`events` (création, et suppression après 90 jours) à la place de la boucle du scheduler
@@ -448,7 +448,7 @@ Autres valeurs fermées :
   configuration en endpoint d'API (l'interface arrive au lot 10) ; balayage de `GET /app/hook/deliveries`.
 - **Interfaces figées** : trait `Scm` ; faits du domaine issus de GitHub ; permissions de l'App (`docs/GITHUB.md`).
 - **Critère de sortie** : une suite de contrat unique passe contre `cihub-github-sim` et contre des réponses
-  GitHub enregistrées ; un 429 met en pause les jobs de l'installation jusqu'au reset ; l'assistant crée une App
+  GitHub enregistrées ; un 429 met en pause les jobs de la connexion jusqu'au reset ; l'assistant crée une App
   sur une organisation de test et enregistre ses secrets (test manuel documenté, seul test non automatisé du lot).
 
 ### Lot 5 : réconciliateur et admission

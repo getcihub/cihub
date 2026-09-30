@@ -11,7 +11,7 @@ flowchart LR
   LEASE --> CELL[Cellule scheduler<br/>journal + projection + plan]
   CELL -->|etat git voulu| DIFF[Convergence<br/>voulu vs observe]
   DIFF --> JOBS[Jobs par classe<br/>interactive > merge > speculate > repair]
-  JOBS -->|budget par installation| GH
+  JOBS -->|budget par connexion| GH
   REP[Boucle de reparation<br/>relectures periodiques] --> IN
   CELL -->|evenements| OUT[Outbox]
   OUT --> RM[Modele de lecture<br/>API, UI, analytique, webhooks]
@@ -26,9 +26,9 @@ Règles de conception sur lesquelles repose le reste de la spécification :
 - **Convergence, pas pilotage.** Le plan décrit un état voulu (« la référence `cihub-merge/pr-12/…` doit exister au commit composé de A, B, C »), jamais une séquence d'appels. Chaque job vérifie l'état réel avant d'agir et est sans effet s'il est déjà atteint.
 - **Bail par file.** Une table `queue_leases` (propriétaire, battement, expiration à 15 s) désigne l'instance qui traite une file ; toute instance peut reprendre un bail expiré. Les files d'une même organisation sont préférentiellement groupées sur une instance pour partager le cache GitHub, sans que ce soit une contrainte.
 - **Inbox partitionnée, acquittement inconditionnel.** L'ingestion n'échoue jamais faute de traitement : elle stocke et acquitte en moins de 2 s, même si Postgres est lent (file locale bornée en mémoire avec rejeu). L'ordre est garanti par file, pas globalement.
-- **Budget GitHub ordonnancé.** Chaque installation a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
+- **Budget GitHub ordonnancé.** Chaque connexion a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
 - **Boucle de réparation.** Indépendamment des webhooks, chaque file relit périodiquement ce qui compte (PR vivantes, checks des exécutions en cours, tête de la branche cible, existence des références de test) à un intervalle adaptatif de 30 s à 10 min selon l'activité, et injecte ce qu'elle observe dans l'inbox. Un webhook perdu coûte au plus un intervalle.
-- **Modes dégradés explicites.** Par installation : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `github_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
+- **Modes dégradés explicites.** Par connexion : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `github_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
 - **Transport enfichable, Postgres par défaut.** Inbox, jobs et outbox sont des tables Postgres derrière des interfaces `Inbox`, `JobQueue`, `Outbox` ; une implémentation NATS JetStream est prévue pour les déploiements au-delà de quelques milliers de webhooks par minute, sans changer les modules.
 - **Isolation entre organisations.** Sécurité au niveau ligne, quotas par organisation sur l'inbox et les jobs, et ordonnancement équitable des workers : une organisation bruyante ralentit ses propres files, pas celles des autres.
 
@@ -39,7 +39,7 @@ Ce qui passe à l'échelle, et comment :
 | Nombre de files          | Aucune, chaque file est indépendante                                     | Baux répartis sur N instances de scheduler ; une instance tient quelques centaines de files actives                                                                           |
 | Profondeur d'une file    | Le réconciliateur est en O(n) sur les entrées vivantes                   | Plafond de 500 entrées vivantes par file, fenêtre de spéculation bornée                                                                                                       |
 | Webhooks                 | Débit d'écriture Postgres                                                | Inbox partitionnée par mois et par organisation ; passage à NATS derrière l'interface au-delà de quelques milliers par minute                                                 |
-| Appels GitHub            | 5 000 points par heure et par installation, plus les limites secondaires | Budget par installation, classes de priorité, lectures conditionnelles par ETag, requêtes GraphQL groupées ; plusieurs GitHub Apps par instance pour GitHub Enterprise Server |
+| Appels GitHub            | 5 000 points par heure et par installation, plus les limites secondaires | Budget par connexion, classes de priorité, lectures conditionnelles par ETag, requêtes GraphQL groupées ; plusieurs GitHub Apps par instance pour GitHub Enterprise Server |
 | Historique et analytique | Volume de lignes                                                         | Partitions mensuelles, tables de faits, puis ClickHouse derrière le trait `AnalyticsStore`                                                                                        |
 | Organisations            | Isolation et équité                                                      | RLS, quotas, ordonnancement équitable ; une instance sert des centaines d'organisations                                                                                       |
 
@@ -90,7 +90,7 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
 | `cihub-platform`   | Contrat `Module`, traits `Inbox`, `JobQueue`, `Outbox` et leur implémentation Postgres, exécution des jobs                                                             | `domain`, `store`, `scm`                                         | 3–5 | cible  |
 | `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel                                                                                                         | `domain`                                                         | 4   | cible  |
-| `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par installation, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | cible  |
+| `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | cible  |
 | `cihub-github-sim` | Simulateur GitHub en processus, avec injection de pannes (tests)                                                                                                       | `scm`, `domain`                                                  | 4   | cible  |
 | `cihub-http`       | Serveur HTTP du rôle `api` : auth, sessions, CSRF, limite de débit, erreurs problem+json, webhooks GitHub, `/api/v1/openapi.json`, tableau de bord                         | `platform`, `api-types`, `github`, `telemetry`                   | 4   | cible  |
 | `cihub-mergequeue` | Module merge queue : boucle de réconciliation, projections, exécuteurs de jobs, routes `/api/v1/queues`, rendu des commentaires de PR                                     | `mq-core`, `config`, `contracts`, `platform`, `scm`, `analytics` | 5   | cible  |
@@ -162,7 +162,7 @@ exemple un déploiement Kubernetes par rôle :
 
 Les limites : une file n'est traitée que par une réplique à la fois, pour garder l'ordre, donc ajouter des
 schedulers augmente le nombre de files traitées en parallèle, pas la vitesse d'une file ; au-delà d'un certain
-nombre de workers, c'est le budget GitHub de l'installation qui limite ; Postgres est la ressource commune
+nombre de workers, c'est le budget GitHub de la connexion qui limite ; Postgres est la ressource commune
 (connexions, avec PgBouncer devant `api`, et débit d'écriture). Au-delà, NATS est prévu derrière les mêmes traits,
 pas en v1.
 
