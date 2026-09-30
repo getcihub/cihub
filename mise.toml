@@ -59,6 +59,7 @@ run = ["docker compose down --volumes", "mise run db"]
 [tasks.migrate]
 description = "Apply the migrations to the development Postgres"
 depends = ["db"]
+env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- migrate"
 
 [tasks.dev]
