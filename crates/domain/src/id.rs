@@ -93,9 +93,14 @@ id_type!(
     GroupId => "group",
     RunId => "run",
     EventId => "event",
-    /// One installation of a GitHub App on an account.
-    InstallationId => "installation",
-    /// A GitHub user, global: memberships link it to organizations.
+    /// An SCM instance: github.com, a GitHub Enterprise Server.
+    ScmInstanceId => "scminstance",
+    /// An account of an SCM instance linked to an organization.
+    ScmAccountId => "scmaccount",
+    /// How CIHub reaches the repositories of an SCM account.
+    ConnectionId => "connection",
+    /// A user account of an SCM instance, global: memberships link it to
+    /// organizations.
     UserId => "user",
     /// The row of an API token; the secret itself is `cht_…` (`AGENTS.md` D32).
     ApiTokenId => "apitoken",

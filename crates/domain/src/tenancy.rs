@@ -11,12 +11,21 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// The GitHub App of an installation.
-    pub enum AppKind {
-        /// The App of the queue.
-        Main,
-        /// The opt-in `cihub-sudo` App, used only to merge forced items.
-        Sudo,
+    /// The product of an SCM instance.
+    pub enum ScmKind {
+        /// github.com or GitHub Enterprise Server.
+        Github,
+    }
+}
+
+closed_enum! {
+    /// How CIHub reaches the repositories of an SCM account.
+    pub enum ConnectionKind {
+        /// An installation of the App of the queue.
+        GithubApp,
+        /// An installation of the opt-in `cihub-sudo` App, used only to merge
+        /// forced items.
+        GithubSudoApp,
     }
 }
 
@@ -59,6 +68,7 @@ mod tests {
             r#""metrics:read""#
         );
         assert_eq!(MembershipRole::Viewer.as_str(), "viewer");
-        assert_eq!(AppKind::Sudo.to_string(), "sudo");
+        assert_eq!(ConnectionKind::GithubSudoApp.to_string(), "github_sudo_app");
+        assert_eq!(ScmKind::Github.as_str(), "github");
     }
 }

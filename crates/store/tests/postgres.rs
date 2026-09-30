@@ -6,8 +6,8 @@ use std::path::Path;
 
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
-    Actor, ActorKind, ApiScope, AppKind, Event, EventId, EventKind, EventType, ItemId, ItemState,
-    MembershipRole, OrgId, Priority, QueueId, Reason, SubmittedVia, UserId,
+    Actor, ActorKind, ApiScope, ConnectionKind, Event, EventId, EventKind, EventType, ItemId,
+    ItemState, MembershipRole, OrgId, Priority, QueueId, Reason, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -61,9 +61,10 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 7] = [
+const TENANT_TABLES: [&str; 8] = [
     "orgs",
-    "installations",
+    "scm_accounts",
+    "scm_connections",
     "repos",
     "memberships",
     "api_tokens",
@@ -76,15 +77,22 @@ fn september() -> Date {
     Date::from_calendar_date(2026, Month::September, 15).unwrap()
 }
 
+/// The SCM instance of the tests, a global row.
+const GITHUB: &str = "scminstance-1";
+
 /// Inserts the rows of `org` in every tenant table; `n` keeps the unique
 /// columns apart.
 fn rows(org: OrgId, n: u8) -> String {
     format!(
-        "INSERT INTO orgs (id, slug, github_org_id) VALUES ('{org}', 'org-{n}', {n});
-         INSERT INTO installations (id, org_id, github_installation_id, app_kind, account_type)
-             VALUES ('installation-{n}', '{org}', {n}, 'main', 'organization');
-         INSERT INTO repos (id, org_id, installation_id, github_repo_id, owner, name, default_branch)
-             VALUES ('repo-{n}', '{org}', 'installation-{n}', {n}, 'owner-{n}', 'name', 'main');
+        "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
+         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
+             VALUES ('scmaccount-{n}', '{org}', '{GITHUB}', '{n}', 'account-{n}');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
+             VALUES ('connection-{n}', '{org}', '{GITHUB}', 'scmaccount-{n}', 'github_app', '{n}');
+         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
+                            name, default_branch)
+             VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
+                     'name', 'main');
          INSERT INTO memberships (org_id, user_id, role) VALUES ('{org}', 'user-1', 'admin');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
              VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
@@ -96,13 +104,23 @@ fn rows(org: OrgId, n: u8) -> String {
     )
 }
 
+/// Inserts the global rows: the SCM instance and one user.
+async fn seed_global(conn: &mut PgConnection) {
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO scm_instances (id, kind, base_url)
+             VALUES ('{GITHUB}', 'github', 'https://github.com');
+         INSERT INTO users (id, scm_instance_id, external_id, login)
+             VALUES ('user-1', '{GITHUB}', '1', 'octocat');"
+    )))
+    .execute(conn)
+    .await
+    .unwrap();
+}
+
 async fn seed(pool: &PgPool) {
     create_event_partitions(pool, september()).await.unwrap();
     let mut tx = begin_system(pool).await.unwrap();
-    sqlx::raw_sql("INSERT INTO users (id, github_user_id, login) VALUES ('user-1', 1, 'octocat')")
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+    seed_global(&mut tx).await;
     for n in [1, 2] {
         sqlx::raw_sql(AssertSqlSafe(rows(org(n.into()), n)))
             .execute(&mut *tx)
@@ -169,6 +187,7 @@ async fn a_transaction_without_context_sees_nothing(pool: PgPool) {
     for table in TENANT_TABLES {
         assert_eq!(count(&mut tx, table).await, 0, "{table}");
     }
+    assert_eq!(count(&mut tx, "scm_instances").await, 1);
     assert_eq!(count(&mut tx, "users").await, 1);
 }
 
@@ -194,6 +213,30 @@ async fn a_committed_context_does_not_stay_on_the_connection(pool: PgPool) {
         .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(count(&mut conn, "orgs").await, 0);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn an_external_id_is_unique_within_its_instance_only(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    seed_global(&mut tx).await;
+    sqlx::raw_sql(
+        "INSERT INTO scm_instances (id, kind, base_url)
+             VALUES ('scminstance-2', 'github', 'https://github.example.com');
+         INSERT INTO users (id, scm_instance_id, external_id, login)
+             VALUES ('user-2', 'scminstance-2', '1', 'octocat');",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let err = sqlx::query(
+        "INSERT INTO users (id, scm_instance_id, external_id, login)
+             VALUES ('user-3', $1, '1', 'other')",
+    )
+    .bind(GITHUB)
+    .execute(&mut *tx)
+    .await
+    .unwrap_err();
+    assert_eq!(err.as_database_error().unwrap().code().unwrap(), "23505");
 }
 
 /// A new table with `org_id` fails here until it has its policy.
@@ -238,9 +281,10 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
     let expected: Vec<(&str, Vec<String>)> = vec![
         ("actor_kind", values::<ActorKind>()),
         ("api_scope", values::<ApiScope>()),
-        ("app_kind", values::<AppKind>()),
+        ("connection_kind", values::<ConnectionKind>()),
         ("event_type", values::<EventType>()),
         ("membership_role", values::<MembershipRole>()),
+        ("scm_kind", values::<ScmKind>()),
     ];
     let names: Vec<String> = sqlx::query_scalar(
         "SELECT t.typname::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -284,11 +328,14 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     seed(&pool).await;
     let user_id = UserId::from_ulid(Ulid(7));
     let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("INSERT INTO users (id, github_user_id, login) VALUES ($1, 7, 'hubot')")
-        .bind(user_id.to_string())
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+    sqlx::query(
+        "INSERT INTO users (id, scm_instance_id, external_id, login) VALUES ($1, $2, '7', 'hubot')",
+    )
+    .bind(user_id.to_string())
+    .bind(GITHUB)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     let submitted = event(
@@ -382,7 +429,7 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
 
     // Without a partition for its month, an event is refused.
     let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("INSERT INTO orgs (id, slug, github_org_id) VALUES ($1, 'org', 1)")
+    sqlx::query("INSERT INTO orgs (id, slug) VALUES ($1, 'org')")
         .bind(org(1).to_string())
         .execute(&mut *tx)
         .await
@@ -411,7 +458,7 @@ async fn last_used_at(pool: &PgPool) -> Option<OffsetDateTime> {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_token_authenticates_until_it_expires(pool: PgPool) {
     let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("INSERT INTO orgs (id, slug, github_org_id) VALUES ($1, 'org', 1)")
+    sqlx::query("INSERT INTO orgs (id, slug) VALUES ($1, 'org')")
         .bind(org(1).to_string())
         .execute(&mut *tx)
         .await

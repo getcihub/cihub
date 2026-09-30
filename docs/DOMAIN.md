@@ -20,8 +20,11 @@ découle.
 
 | Entité               | Identité                     | Sens                                                                                                                                          | Code (`cihub-domain`)  |
 | -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Organisation         | `org_id`                     | Frontière de tenancy : toutes les autres tables portent `org_id`                                                                              | `OrgId`                |
-| Dépôt                | `repo_id`                    | Un dépôt GitHub rattaché à une installation ; une installation peut couvrir plusieurs dépôts                                                 | `RepoId`               |
+| Organisation         | `org_id`                     | Frontière de tenancy : toutes les autres tables portent `org_id`, sauf `scm_instances` et `users`                                             | `OrgId`                |
+| Instance de SCM      | `scm_instance_id`            | Une instance d'un SCM (github.com, un GitHub Enterprise Server) ; un identifiant du SCM est unique dans son instance seulement                | `ScmInstanceId`        |
+| Compte du SCM        | `scm_account_id`             | Un compte du SCM (une organisation GitHub) rattaché à une organisation ; une organisation peut en avoir plusieurs                             | `ScmAccountId`         |
+| Connexion            | `connection_id`              | Le moyen par lequel CIHub atteint les dépôts d'un compte (`ConnectionKind`) ; porte le budget, les quotas et les modes dégradés               | `ConnectionId`         |
+| Dépôt                | `repo_id`                    | Un dépôt rattaché à une connexion ; une connexion peut couvrir plusieurs dépôts                                                               | `RepoId`               |
 | File                 | `queue_id`                   | Une par branche cible d'un dépôt, avec son état, son mode et ses réglages                                                                     | `Queue`                |
 | Entrée de file       | `item_id`                    | Une soumission d'une PR ; une resoumission après annulation crée une nouvelle entrée, et `is_current` désigne l'entrée vivante de cette PR   | `Item`                 |
 | Groupe de test       | `group_id`                   | L'unité testée et retenue en échec en attente : une PR seule, un lot, ou une moitié de bissection                                            | `TestGroup`            |
@@ -45,7 +48,7 @@ Les identifiants sont des ULID typés au format texte `typedid` (`AGENTS.md` D4)
 - **`apply`** : la fonction pure qui applique un événement à l'état ; le rejeu n'utilise qu'elle.
 - **`plan`** : la fonction pure qui lit l'état et l'heure, et produit des décisions et l'état voulu.
 - **Raison** : la cause lisible d'une transition, issue d'un vocabulaire fermé. Chaque transition en porte une.
-- **Acteur** : qui est à l'origine d'un événement : un utilisateur (son identifiant ; la table `users` garde le login, `AGENTS.md` D42), le compte de l'App, ou CIHub.
+- **Acteur** : qui est à l'origine d'un événement : un compte d'utilisateur du SCM (son identifiant ; la table `users` garde le login, `AGENTS.md` D42 et D51), le compte de l'App, ou CIHub.
 
 Code : `Event`, `EventKind` (un payload par type), `EventType` (les noms `<sujet>.<verbe>`, avec
 `is_decision`), `Actor` et `ActorKind` dans `cihub-domain` ; `apply` dans `cihub-mq-core`. Une demande en attente

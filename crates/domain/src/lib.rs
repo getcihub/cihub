@@ -40,8 +40,8 @@ mod transition;
 pub use api_token::{API_TOKEN_PREFIX, format_api_token, is_api_token};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
-    ApiTokenId, AuditEntryId, EventId, GroupId, IdParseError, InstallationId, ItemId, OrgId,
-    QueueId, RepoId, RunId, UserId,
+    ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
+    RepoId, RunId, ScmAccountId, ScmInstanceId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::JobError;
@@ -55,5 +55,5 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, AppKind, MembershipRole};
+pub use tenancy::{ApiScope, ConnectionKind, MembershipRole, ScmKind};
 pub use transition::{Lifecycle, TransitionError, check_transition};

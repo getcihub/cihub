@@ -351,7 +351,8 @@ Autres valeurs fermées :
   - `cihub-store` : pool `sqlx`, transactions, positionnement de `cihub.org_id` pour la RLS, migrations embarquées
     (`migrations/`), requêtes vérifiées à la compilation (`.sqlx/`, `cargo sqlx prepare --check`), test qui compare
     les enums Postgres aux énumérations de `cihub-domain`.
-  - Tables `orgs`, `installations`, `repos`, `users`, `memberships`, `api_tokens`, `audit_log` ; RLS avec
+  - Tables `scm_instances`, `orgs`, `scm_accounts`, `scm_connections`, `repos`, `users`, `memberships`,
+    `api_tokens`, `audit_log` ; RLS avec
     `cihub.org_id` ; table `events` partitionnée par mois et sérialisation de `Event` (lot 1) ; jetons hachés en
     SHA-256 et scopes. Le schéma d'événement garde les attributs de D27. L'outbox passe au lot 3 (`AGENTS.md`
     D44).
@@ -378,14 +379,16 @@ Autres valeurs fermées :
     Postgres ne répond pas en 2 s ; tâches `migrate`, `test-integration` et `dev`, et job `Rust Integration Test`
     dans la CI. Les tests contre Postgres sont dans les fichiers `tests/postgres.rs` ; `mise run test` les exclut.
     Vérifié par des tests sur des migrations de test (`crates/store/tests/migrations/`) et sur le binaire.
-  - Fait (étape 3, tenancy et RLS) : migration `20260929160000_tenancy.sql` avec `orgs`, `installations`,
-    `repos`, `users`, `memberships`, `api_tokens` et `audit_log`, les enums `membership_role`, `app_kind` et
-    `api_scope`, et la politique `tenant` forcée sur chaque table qui porte `org_id` (`AGENTS.md` D37 à D41) ;
+  - Fait (étape 3, tenancy et RLS) : migration `20260929160000_tenancy.sql` avec `scm_instances`, `orgs`,
+    `scm_accounts`, `scm_connections`, `repos`, `users`, `memberships`, `api_tokens` et `audit_log`, les enums
+    `membership_role`, `scm_kind`, `connection_kind` et `api_scope`, et la politique `tenant` forcée sur chaque
+    table qui porte `org_id` (`AGENTS.md` D37 à D41, D46 à D51) ;
     `begin_org` et `begin_system` dans `cihub-store` ; refus de démarrer quand le rôle Postgres contourne la RLS.
     Tests contre Postgres : une organisation ne lit, ne modifie, ne supprime ni n'écrit aucune ligne d'une autre,
     pour chaque table ; sans contexte, une transaction ne voit rien ; un contexte ne reste pas sur la connexion
     après la transaction ; chaque table qui porte `org_id` a sa politique ; les enums Postgres sont ceux de
-    `cihub-domain` ; le binaire refuse de démarrer quand une migration manque.
+    `cihub-domain` ; un `external_id` est unique dans son instance de SCM seulement ; le binaire refuse de
+    démarrer quand une migration manque.
   - Fait (étape 4, journal) : migration `20260929170000_events.sql` (table `events`, enums `event_type` et
     `actor_kind`, fonction `cihub_create_events_partition`) ; `append_events`, `load_events` et
     `create_event_partitions` dans `cihub-store` ; `cihub-server migrate` crée les partitions du mois et du mois
@@ -413,6 +416,9 @@ Autres valeurs fermées :
     dans les crates externes qui en dépendent, et la licence `Zlib` (`foldhash`, par `sqlx`). La CI lance
     Postgres par `mise run db`, pas par un service GitHub Actions. Le `compose.yaml` de développement crée le rôle
     `cihub` sans droits de superutilisateur (D38).
+  - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : le modèle de tenancy ne dépend plus de GitHub (D46 à
+    D51). La migration `20260929160000_tenancy.sql` est réécrite, car aucune version n'est publiée : une base de
+    développement qui l'a déjà appliquée doit être recréée (`docker compose down --volumes`).
 
 ### Lot 3 : transport interne : inbox, jobs, baux
 

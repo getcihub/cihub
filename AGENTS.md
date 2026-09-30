@@ -252,16 +252,17 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   contexte ne voit rien. Le rôle n'est ni superutilisateur ni `BYPASSRLS` : `cihub-server` refuse de démarrer
   sinon. Le `compose.yaml` de développement crée ce rôle (`cihub`) à côté du superutilisateur `postgres`.
 - **D39** La table `users` est globale, sans `org_id` ni sécurité au niveau ligne : un utilisateur GitHub
-  appartient à plusieurs organisations par `memberships`.
+  appartient à plusieurs organisations par `memberships`. _Complétée par D51._
 - **D40** Nouvelles valeurs fermées : `MembershipRole` (`admin`, `member`, `viewer`), `AppKind` (`main`, `sudo`),
   `ApiScope` (`queues:read`, `queues:write`, `prs:write`, `targets:write`, `metrics:read`). Nouveaux types
   d'identifiant : `installation`, `user`, `apitoken` (la ligne du jeton ; le secret reste `cht_…`, D32), `audit`.
+  _`AppKind` et le type `installation` remplacés par D49._
 - **D41** Un fichier de migration s'appelle `<AAAAMMJJHHMMSS>_<description>.sql` (format de `sqlx migrate add`).
 - **D42** Complète D27 : le journal ne garde aucun login. Un acteur utilisateur est `Actor::User { user_id }`,
   stocké en `events.actor_kind` (`system`, `bot`, `user`) et `events.actor_user_id`, qui pointe vers `users` ;
   `item.submitted` porte `author_id` et `target.pushed` porte `sender_id`. `users` garde le login : un
   renommage ou une anonymisation change une ligne, jamais le journal. L'ingestion crée ou met à jour la ligne
-  `users` avant d'écrire l'événement (lots 4 et 5).
+  `users` avant d'écrire l'événement (lots 4 et 5). _Complétée par D51._
 - **D43** Table `events` : `id`, `org_id`, `queue_id`, `seq`, `type` (enum `event_type`), `actor_kind`,
   `actor_user_id`, `cause_id`, `item_id`, `group_id`, `run_id`, `payload` (les champs du type, sérialisés par
   `cihub-domain`) et `occurred_at` (à la microseconde) ; clé primaire (`id`, `occurred_at`). `seq` est le rang
@@ -274,6 +275,31 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   système) ; `cihub-domain` porte leur forme texte, sans hasard. Le secret vient du générateur aléatoire du
   système (`SysRng`), interdit ailleurs par `clippy.toml`. `last_used_at` avance au plus une fois par minute,
   pour qu'un appel d'API n'écrive pas en base.
+
+**30 septembre 2026, validées par Nicolas Lecoy.**
+
+- **D46** Le modèle de données ne dépend d'aucun SCM, comme le journal (D23). Un identifiant du SCM est une colonne
+  `external_id` en `text`, unique dans son instance de SCM seulement : chaque clé d'unicité porte
+  `scm_instance_id`.
+- **D47** Table `scm_instances` (`id`, `kind`, `base_url` unique) : github.com ou un GitHub Enterprise Server. Elle
+  est globale, sans `org_id` ni sécurité au niveau ligne, car les organisations partagent une instance. Valeur
+  fermée `ScmKind` (`github`) ; type d'identifiant `scminstance`. La migration ne crée aucune instance :
+  l'assistant d'installation la crée (lot 4), car une GitHub App appartient à une seule instance.
+- **D48** `orgs` n'a plus de colonne propre à un SCM ni de colonne `settings`. Table `scm_accounts` (`id`,
+  `org_id`, `scm_instance_id`, `external_id`, `path`), unique (`scm_instance_id`, `external_id`) : le compte du SCM
+  (une organisation GitHub) rattaché à une organisation, qui peut en avoir plusieurs. Type d'identifiant
+  `scmaccount`.
+- **D49** Table `scm_connections` (`id`, `org_id`, `scm_instance_id`, `scm_account_id`, `kind`, `external_id`,
+  `suspended_at`, `claimed_at`), unique (`scm_instance_id`, `kind`, `external_id`) : le moyen par lequel CIHub
+  atteint les dépôts d'un compte. Elle remplace `installations`. Valeur fermée `ConnectionKind` (`github_app`,
+  `github_sudo_app`) à la place d'`AppKind` ; type d'identifiant `connection` à la place d'`installation`. Le
+  budget, les quotas et les modes dégradés sont par connexion.
+- **D50** `repos` : `scm_instance_id`, `connection_id`, `external_id`, `namespace`, `name`, `default_branch`,
+  unique (`scm_instance_id`, `external_id`).
+- **D51** Complète D39 et D42 : une ligne `users` est un compte d'utilisateur d'une instance de SCM
+  (`scm_instance_id`, `external_id`, `login`), unique (`scm_instance_id`, `external_id`). Les comptes d'une même
+  personne sont des lignes séparées, sans lien ; une table de personnes pourra les regrouper plus tard sans
+  changer le journal, qui pointe vers le compte qui a agi.
 
 ### 4.1 Questions ouvertes
 
