@@ -435,6 +435,28 @@ Autres valeurs fermées :
   même temps ; un `NOTIFY` réveille un scheduler en moins de 1 s, et le tic le réveille quand `NOTIFY` est
   perdu.
 - **Suivi** :
+  - Fait (étape 1, baux) : crate `cihub-platform` (`AGENTS.md` D53) ; migration `20260930090000_queues.sql` avec
+    `queues` minimale, `queue_leases` et la clé étrangère de `events.queue_id` (D54, D56) ; `acquire_leases`,
+    `release_leases` et `lock_queue`. Tests contre Postgres : un bail va à un seul propriétaire jusqu'à son
+    expiration ; deux propriétaires en même temps ne partagent jamais une file ; un bail libéré est libre tout de
+    suite ; une seule transaction à la fois tient le verrou d'une file.
+  - Fait (étape 2, inbox) : migration `20260930100000_webhook_inbox.sql` ; `store_delivery`,
+    `pending_deliveries` et `mark_processed`. Une livraison a pour clé (`scm_instance_id`, `delivery_id`), car son
+    identifiant vient du SCM (D46) ; l'organisation, la connexion et la file restent vides tant que l'ingestion ne
+    sait pas la router, et seul le contexte système la voit. Tests contre Postgres : une copie d'une livraison ne
+    change rien ; le même identifiant sur une autre instance est une autre livraison ; les livraisons d'une file
+    arrivent dans l'ordre de réception jusqu'à leur traitement ; une livraison non routée n'est visible que du
+    système, et une livraison routée exige son organisation.
+  - Fait (étape 4, réveil) : `mark_dirty` marque une file et envoie `NOTIFY cihub_queue` dans la transaction de
+    l'appelant ; `store_delivery` l'appelle pour une nouvelle livraison d'une file ; `begin_reconciliation` ouvre
+    la transaction d'une file, avec son verrou, et remet `dirty` à faux dès le début, pour qu'une écriture pendant
+    la réconciliation marque la file de nouveau après le commit ; `schedule_tick` fixe le prochain passage ;
+    `QueueWakeup` attend une notification, le tic (`TICK`, 30 s) ou l'arrêt. Tests contre Postgres : une nouvelle
+    livraison réveille un scheduler en moins de 1 s, et une copie ne le réveille pas ; le tic trouve une file dont
+    la notification est perdue ; une écriture pendant une réconciliation attend le commit puis marque la file de
+    nouveau.
+  - Reste : jobs, boucle du worker et registre des exécuteurs, job `maintenance` ; la lecture des livraisons non
+    routées arrive avec l'ingestion (lot 4).
   - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : la suppression des partitions passe au lot 5 (D57). Pas de
     trait pour l'inbox, les jobs et l'outbox (D62), et pas de NATS en v1 (D63). La boucle du scheduler passe au
     lot 5 (D64) et l'outbox au lot 11 (D65) ; un job `maintenance` quotidien remplace la boucle des partitions

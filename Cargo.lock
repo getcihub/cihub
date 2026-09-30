@@ -246,6 +246,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cihub-platform"
+version = "0.1.0"
+dependencies = [
+ "cihub-domain",
+ "cihub-store",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-util",
+ "ulid",
+]
+
+[[package]]
 name = "cihub-server"
 version = "0.1.0"
 dependencies = [

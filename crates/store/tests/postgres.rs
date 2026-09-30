@@ -61,11 +61,14 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 8] = [
+const TENANT_TABLES: [&str; 11] = [
     "orgs",
     "scm_accounts",
     "scm_connections",
     "repos",
+    "queues",
+    "queue_leases",
+    "webhook_inbox",
     "memberships",
     "api_tokens",
     "audit_log",
@@ -83,6 +86,7 @@ const GITHUB: &str = "scminstance-1";
 /// Inserts the rows of `org` in every tenant table; `n` keeps the unique
 /// columns apart.
 fn rows(org: OrgId, n: u8) -> String {
+    let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
          INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
@@ -93,13 +97,19 @@ fn rows(org: OrgId, n: u8) -> String {
                             name, default_branch)
              VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
                      'name', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{queue}', '{org}', 'repo-{n}', 'main');
+         INSERT INTO queue_leases (queue_id, org_id, owner, expires_at)
+             VALUES ('{queue}', '{org}', 'scheduler', '2026-09-15T00:00:00Z');
+         INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
+             VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role) VALUES ('{org}', 'user-1', 'admin');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
              VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
          INSERT INTO audit_log (id, org_id, action, target)
              VALUES ('audit-{n}', '{org}', 'queue.paused', 'queue-{n}');
          INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, payload, occurred_at)
-             VALUES ('event-{n}', '{org}', 'queue-{n}', 1, 'access.lost', 'system', 'null',
+             VALUES ('event-{n}', '{org}', '{queue}', 1, 'access.lost', 'system', 'null',
                      '2026-09-15T00:00:00Z');"
     )
 }
@@ -333,6 +343,14 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     )
     .bind(user_id.to_string())
     .bind(GITHUB)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO queues (id, org_id, repo_id, target_branch) VALUES ($1, $2, 'repo-1', 'next')",
+    )
+    .bind(QueueId::from_ulid(Ulid(1)).to_string())
+    .bind(org(1).to_string())
     .execute(&mut *tx)
     .await
     .unwrap();

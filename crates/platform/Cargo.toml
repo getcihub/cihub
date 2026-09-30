@@ -1,0 +1,26 @@
+[package]
+name = "cihub-platform"
+description = "CIHub internal transport: queue leases, inbox, jobs and outbox on Postgres"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cihub-domain.workspace = true
+cihub-store.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
+tokio-util.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt"] }
+ulid.workspace = true
+
+[lints]
+workspace = true

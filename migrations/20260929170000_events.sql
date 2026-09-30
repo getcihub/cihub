@@ -10,12 +10,13 @@ CREATE TYPE event_type AS ENUM (
     'item.readiness_changed', 'queue.renumbered', 'group.formed', 'group.transitioned',
     'run.transitioned', 'queue.transitioned', 'queue.window_changed'
 );
+
 CREATE TYPE actor_kind AS ENUM ('system', 'bot', 'user');
 
 CREATE TABLE events (
     id            text        NOT NULL,
     org_id        text        NOT NULL REFERENCES orgs (id),
-    -- The foreign key to `queues` arrives with the table (lot 5).
+    -- The foreign key to `queues` arrives with the table (20260930090000_queues.sql).
     queue_id      text        NOT NULL,
     -- Rank in the log of the queue, from 1: the replay order.
     seq           bigint      NOT NULL CHECK (seq > 0),
