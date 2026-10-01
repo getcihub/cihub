@@ -53,11 +53,11 @@ document.
 
 - **Une image, un Postgres 17, une GitHub App.** Pas de broker, pas de Redis, pas de stockage objet en v1. Chaque
   dépendance ajoutée est une étape de plus pour un auto-hébergeur ; elle doit être justifiée par une mesure.
-- **Quatre rôles sans état** (`api`, `scheduler`, `worker`, `notifier`) dans un seul binaire, `cihub-server`.
+- **Quatre rôles sans état** (`web`, `scheduler`, `worker`, `notifier`) dans un seul binaire, `cihub-server`.
   Par défaut, un processus exécute les quatre rôles ; `CIHUB_ROLES` en choisit une partie, pour donner à chaque
   rôle ses propres processus et le dimensionner seul (D8). Tout l'état est dans Postgres.
-- **Moins de trente minutes** de `docker compose up` à la première PR mergée, avec l'assistant qui crée la GitHub
-  App par le flux de manifeste.
+- **Moins de trente minutes** de `docker compose up` à la première PR mergée, avec une GitHub App créée à la main
+  selon `docs/GITHUB.md` (D92).
 
 ### 1.2 GitHub
 
@@ -163,6 +163,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `CIHUB_ROLES` (`api`, `scheduler`, `worker`, `notifier`, séparés par des virgules) choisit ceux du processus. Pas
   de crate par rôle : un rôle lance des boucles dont le code est dans les crates de bibliothèque. Les rôles d'un
   même processus ne partagent que le pool Postgres. `cihub` est la CLI, distribuée seule, sans code serveur.
+  _Le rôle `api` est renommé par D91._
 - **D9** Une crate se crée quand un lot en a besoin, après validation. `docs/ARCHITECTURE.md` décrit les crates qui
   existent et la liste cible. Le squelette de `cihub-server` arrive au lot 2.
 - **D10** Les tâches sont dans `mise.toml` à la racine ; une tâche existe seulement quand elle a quelque chose à
@@ -286,6 +287,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   est globale, sans `org_id` ni sécurité au niveau ligne, car les organisations partagent une instance. Valeur
   fermée `ScmKind` (`github`) ; type d'identifiant `scminstance`. La migration ne crée aucune instance :
   l'assistant d'installation la crée (lot 4), car une GitHub App appartient à une seule instance.
+  _Complétée par D92 : `cihub-server` la crée au démarrage, depuis la configuration de l'App (D79)._
 - **D48** `orgs` n'a plus de colonne propre à un SCM ni de colonne `settings`. Table `scm_accounts` (`id`,
   `org_id`, `scm_instance_id`, `external_id`, `path`), unique (`scm_instance_id`, `external_id`) : le compte du SCM
   (une organisation GitHub) rattaché à une organisation, qui peut en avoir plusieurs. Type d'identifiant
@@ -355,10 +357,11 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D71** Un exécuteur reçoit le SCM par sa closure (`Arc<dyn Scm>` capturé à l'enregistrement) : la signature de
   `Executors::register` ne change pas.
 - **D72** (Q5) La permission `actions: write` est une case de l'assistant, décochée par défaut. Sans elle, CIHub
-  n'annule aucune CI et ne relance aucun job.
+  n'annule aucune CI et ne relance aucun job. _Complétée par D92 : une permission optionnelle, cochée à la main._
 - **D73** Le lot 4 crée trois crates : `cihub-scm` (trait `Scm`, types neutres, et le simulateur GitHub dans un
   module derrière la feature `sim`, utilisée seulement en dépendance de développement), `cihub-github` et
   `cihub-http`. Pas de crate `cihub-github-sim`. `cihub-http` dépend de `cihub-api-types` à partir du lot 9.
+  _`cihub-http` est renommée par D91._
 - **D74** Dépendances du lot 4 : `reqwest` (`rustls`), `jsonwebtoken` (JWT de l'App) et `hmac` (signature des
   webhooks). Les réponses GitHub enregistrées sont des fichiers JSON rejoués par un serveur `axum` de test, sans
   bibliothèque de cassettes. _Remplacée en partie par D80._
@@ -388,7 +391,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `CIHUB_GITHUB_WEBHOOK_SECRET`. L'assistant crée l'App par le flux de manifeste et affiche une seule fois ses
   secrets et le bloc à copier ; CIHub ne les écrit nulle part. Au démarrage, `cihub-server` crée la ligne
   `scm_instances` de `CIHUB_GITHUB_URL` si elle manque (D47). L'App `cihub-sudo` et ses variables arrivent avec le
-  merge direct-to-queue.
+  merge direct-to-queue. _Complétée par D92 : pas d'assistant, l'App se crée à la main._
 - **D80** Remplace `jsonwebtoken` et `hmac` dans D74 : `ring`, déjà là par sqlx, signe le JWT de l'App en RS256
   et calcule le HMAC-SHA256 des webhooks ; `cihub-github` assemble le JWT et lit la clé PEM avec `base64`.
   `reqwest` utilise `rustls-no-provider` avec le provider `ring` de rustls. Une seule bibliothèque crypto, sans
@@ -397,6 +400,47 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D81** `cargo deny` accepte la licence `CDLA-Permissive-2.0` pour la seule crate `webpki-root-certs` : la liste
   des autorités racines de Mozilla, que `rustls-platform-verifier` embarque pour `reqwest`. C'est une licence de
   données, permissive ; sa redistribution demande le texte de la licence dans les notices de l'image (lot 9).
+- **D82** L'adresse publique du serveur est `CIHUB_HTTP_ADDR` (`0.0.0.0:8080` par défaut) : elle sert les
+  webhooks, l'assistant et, plus tard, l'API. `CIHUB_INTERNAL_ADDR` garde `/healthz` et `/readyz`.
+  `CIHUB_PUBLIC_URL` est l'URL de l'instance vue d'Internet ; l'assistant en a besoin pour le manifeste de l'App.
+  _Complétée par D92 : pas d'assistant, donc pas de `CIHUB_PUBLIC_URL`._
+- **D83** Les webhooks de GitHub arrivent sur `POST /webhooks/github`, hors de `/api/v1`. La route appartient à
+  l'adaptateur (D78).
+- **D84** Le handler de webhook vérifie la signature, stocke la livraison sans la router et répond. Une boucle du
+  rôle `api` lit les livraisons non routées, les traduit en `ScmDelivery`, les route, écrit la ligne routée et
+  marque la file (`mark_dirty`). _Complétée par D91 : le rôle `web`._
+- **D85** Le routage est partiel : il remplit `org_id` et `connection_id` dès que la connexion est connue, et
+  `queue_id` seulement quand une seule file est sûre (PR avec sa branche de base, push sur une branche cible,
+  check d'une branche de test). Le lot 5 lit les livraisons de sa file et celles de sa connexion sans file.
+- **D86** Une livraison dont la connexion n'est pas connue (`installation.created` avant toute organisation) reste
+  non routée, visible du seul contexte système. Le lot 4 ne crée aucune ligne `orgs`, `scm_connections` ou `repos`
+  depuis un webhook ; ses tests créent ces lignes directement.
+- **D87** Le vérificateur de configuration passe au lot 9, avec l'API, les dépôts connus et une méthode du trait
+  `Scm` qui lit les rulesets.
+- **D88** Complète D76 : le trait `Scm` gagne deux méthodes au niveau de l'instance, sans connexion : lire les
+  livraisons récentes et redemander une livraison. Un job `sweep_deliveries` de classe `repair`, demandé par chaque
+  réplique du scheduler toutes les 5 minutes avec la clé de la fenêtre
+  (`sweep_deliveries:<scm_instance_id>-<AAAAMMJJTHHMM>:1`), redemande les livraisons absentes de l'inbox.
+- **D89** L'assistant (`/setup`) répond seulement quand aucune App n'est configurée ; le serveur démarre donc sans
+  les variables de GitHub. Il relie le retour de GitHub au navigateur qui a commencé le flux par un paramètre
+  `state` aléatoire, gardé dans un cookie `HttpOnly` et `SameSite=Lax`, et refuse un retour dont le `state`
+  diffère. La page des secrets porte `Cache-Control: no-store`. _Remplacée par D92._
+- **D90** Les réponses enregistrées de GitHub (lot 4) viennent de l'exemple `github` en mode `--record` : il prépare
+  le dépôt de test (branches, fichier, PR mergeable, en conflit et brouillon), attend l'approbation d'un second
+  compte, puis joue la suite de contrat et écrit chaque réponse dans `crates/github/tests/recorded/`, sans secret.
+- **D91** Complète D8 et D73 : le rôle `api` devient `web`, et la crate `cihub-http` devient `cihub-web`
+  (`crates/web/`). Le rôle sert l'adresse publique : l'API, le tableau de bord, les webhooks et l'assistant ; un
+  nom étroit comme `api`, ou `server`, déjà le nom du binaire, prêterait à confusion. Les routes restent dans une
+  bibliothèque, pour que ses tests appellent le routeur et que les modules y déclarent leurs routes (D8).
+
+**1er octobre 2026, validée par Nicolas Lecoy.**
+
+- **D92** Remplace D89, et complète D47, D72, D79 et D82. Pas d'assistant de création de l'App : CIHub ne se
+  conçoit pas pour un seul SCM, et une création à la main suffit. L'opérateur crée la GitHub App selon
+  `docs/GITHUB.md` (permissions, événements, URL des webhooks) et donne `CIHUB_GITHUB_APP_ID`, la clé privée
+  (`CIHUB_GITHUB_PRIVATE_KEY` ou `CIHUB_GITHUB_PRIVATE_KEY_FILE`) et `CIHUB_GITHUB_WEBHOOK_SECRET`. Sans elles,
+  `cihub-server` s'arrête au démarrage avec un message qui les nomme ; `cihub-server migrate` n'en a pas besoin.
+  `CIHUB_PUBLIC_URL` disparaît. Plusieurs SCM viendront plus tard, chacun avec ses variables.
 
 ### 4.1 Questions ouvertes
 
@@ -421,6 +465,9 @@ tranchée devient une décision ci-dessus et sort de cette liste.
 - **Q13** Un échec de merge direct donne toujours `direct_merge_rejected`, quelle que soit l'erreur du job
   (limite d'API, protection de branche…) : garder une seule raison, ou permettre les raisons précises d'échec du
   merge depuis `pending`. _(lot 7)_
+- **Q14** Utiliser CIHub sans le tableau de bord : une commande d'admin de `cihub-server` crée la première
+  organisation, la relie à une connexion et affiche un jeton admin ; un serveur MCP (`cihub mcp`) comme client de
+  l'API. _(lot 9)_
 
 ---
 

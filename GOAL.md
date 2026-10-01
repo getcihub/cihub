@@ -21,7 +21,7 @@ ses décisions.**
    par défaut, pas du code dans le noyau.
 3. **Agnostique de la CI.** CIHub ne lance jamais la CI : il pousse une branche de test et attend les statuts et
    check runs requis. GitHub Actions, Buildkite, CircleCI, Jenkins fonctionnent sans modification.
-4. **Simple à installer et à exploiter.** Une image, un Postgres 17, une GitHub App créée par l'assistant ;
+4. **Simple à installer et à exploiter.** Une image, un Postgres 17, une GitHub App créée selon `docs/GITHUB.md` ;
    `docker compose up` suffit pour une organisation. Moins de trente minutes de la première commande à la
    première PR mergée.
 5. **Chaque décision s'explique.** Chaque transition porte une raison d'un vocabulaire fermé ; un journal
