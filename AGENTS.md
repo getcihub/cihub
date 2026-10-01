@@ -505,6 +505,20 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   avec les surfaces de la PR.
 - **D113** Une soumission reste possible quand la file est en `paused` (`docs/RELIABILITY.md`) : elle attend la
   reprise de la file pour créer son entrée.
+- **D114** Le mode `inplace` met à jour la branche de la PR par un merge de la cible (`update_method: merge`) ;
+  `rebase` arrive avec un lot ultérieur, et `UpdateMethod` n'a que `merge` d'ici là.
+- **D115** Complète D33 et D94 : le format de `GET /api/v1/test-runs/{run_id}` est figé dans `docs/API.md` au
+  lot 6 ; la route est servie au lot 9, avec les autres.
+- **D116** Complète D72 : le lot 6 n'annule aucun workflow d'une exécution remplacée ; ses rapports sont stockés
+  puis ignorés. La méthode du trait `Scm` arrive avec la permission optionnelle `actions: write`.
+- **D117** Deux jobs du cycle de test : `assemble_test_branch:<run_id>:1` (classe `speculate`), que le scheduler
+  demande pour chaque exécution `assembling` de l'état voulu, et `cleanup_test_branch:<run_id>:1` (classe
+  `repair`), qu'il demande quand il écrit la décision qui termine une exécution, à exécuter après
+  `keep_test_branches_minutes` ; ce job lit `test_runs`, ferme la PR brouillon et supprime la branche de test et
+  la branche temporaire.
+- **D118** Un rapport de check pour le SHA de test d'une exécution qui n'est plus vivante est stocké dans
+  `check_observations` sans fait dans le journal ; le rejeu (`rebuild`) conserve ces lignes, et la table n'a pas
+  de clé étrangère vers `test_runs`.
 
 ### 4.1 Questions ouvertes
 
