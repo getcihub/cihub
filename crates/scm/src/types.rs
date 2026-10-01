@@ -102,3 +102,13 @@ pub enum MergeIntoRef {
     /// The commit conflicts with the ref.
     Conflict,
 }
+
+/// An attempt of the SCM to send a webhook delivery to CIHub
+/// (`AGENTS.md` D88).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecentDelivery {
+    /// The identifier that the delivery carries; its new attempts share it.
+    pub delivery_id: String,
+    /// The identifier of this attempt, to ask for the delivery again.
+    pub attempt_id: String,
+}

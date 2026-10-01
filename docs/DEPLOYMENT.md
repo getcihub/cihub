@@ -6,10 +6,10 @@ dépôt sont la source de vérité (`AGENTS.md` D1).
 ## Cible d'installation
 
 L'installation de référence tient en une image, un Postgres 17 et une GitHub App. L'image contient le binaire
-`cihub-server`, qui exécute par défaut les quatre rôles (`api`, `scheduler`, `worker`, `notifier`) dans un
+`cihub-server`, qui exécute par défaut les quatre rôles (`web`, `scheduler`, `worker`, `notifier`) dans un
 processus ; `CIHUB_ROLES` en choisit une partie pour donner à chaque rôle ses propres processus
-(`docs/ARCHITECTURE.md`, « Passer à l'échelle »). L'assistant de première configuration, servi par le rôle `api`,
-crée la GitHub App par le flux de manifeste. Le `docker compose` d'installation arrive au lot 9, le chart Helm au
+(`docs/ARCHITECTURE.md`, « Passer à l'échelle »). La GitHub App se crée à la main, selon `docs/GITHUB.md`
+(`AGENTS.md` D92). Le `docker compose` d'installation arrive au lot 9, le chart Helm au
 lot 15.
 
 ## Développement
@@ -28,6 +28,21 @@ mise run dev           # migrate, puis cihub-server avec les quatre rôles et le
 docker compose down    # arrête Postgres et garde le volume
 ```
 
+`mise run dev` demande une GitHub App de test, créée selon `docs/GITHUB.md` (D92). Ses variables vont dans
+`mise.local.toml`, à la racine du dépôt : `mise` le charge avec `mise.toml`, et `.gitignore` l'exclut. La clé
+privée reste hors du dépôt, et le fichier ne donne que son chemin.
+
+```toml
+# mise.local.toml : jamais commité
+[env]
+CIHUB_GITHUB_APP_ID = "123456"
+CIHUB_GITHUB_PRIVATE_KEY_FILE = "/Users/<vous>/.config/cihub/cihub-test.private-key.pem"
+CIHUB_GITHUB_WEBHOOK_SECRET = "<le secret de webhook de l'App>"
+```
+
+La première fois, `mise trust mise.local.toml` autorise le fichier. Pour recevoir les webhooks en local, l'URL
+de webhook de l'App pointe vers un tunnel qui mène au port 8080.
+
 Les tâches `mise` sont listées dans `AGENTS.md` §5.
 
 ## Variables du serveur
@@ -37,11 +52,17 @@ processus au démarrage.
 
 | Variable              | Défaut                              | Rôle                                                                        |
 | --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `CIHUB_ROLES`         | `api,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
+| `CIHUB_ROLES`         | `web,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
 | `CIHUB_DATABASE_URL`  | aucun, obligatoire                  | `postgres://utilisateur:mot-de-passe@hôte/base`, secret ; l'utilisateur n'est ni superutilisateur ni `BYPASSRLS` |
 | `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Adresse de `/healthz` et `/readyz`, à ne pas exposer (`docs/SECURITY.md`)   |
+| `CIHUB_HTTP_ADDR`     | `0.0.0.0:8080`                      | Adresse publique du rôle `web` : webhooks sur `POST /webhooks/github`, puis l'API (`AGENTS.md` D82, D83) |
 | `CIHUB_LOG`           | `info`                              | Filtre des logs (`docs/OBSERVABILITY.md`)                                   |
 | `CIHUB_LOG_FORMAT`    | `json`                              | `json` ou `pretty` (`docs/OBSERVABILITY.md`)                                |
+| `CIHUB_GITHUB_URL`    | `https://github.com`                | github.com ou l'adresse d'un GitHub Enterprise Server (`AGENTS.md` D79)     |
+| `CIHUB_GITHUB_APP_ID` | aucun, obligatoire pour le serveur  | Identifiant de la GitHub App ; `cihub-server migrate` n'en a pas besoin (`AGENTS.md` D92) |
+| `CIHUB_GITHUB_PRIVATE_KEY` | aucun                          | Clé privée PEM de l'App, secret ; exigée avec `CIHUB_GITHUB_APP_ID`, ou `CIHUB_GITHUB_PRIVATE_KEY_FILE` |
+| `CIHUB_GITHUB_PRIVATE_KEY_FILE` | aucun                     | Fichier qui contient la clé privée, à la place de `CIHUB_GITHUB_PRIVATE_KEY` |
+| `CIHUB_GITHUB_WEBHOOK_SECRET` | aucun                       | Secret qui signe les webhooks de l'App ; exigé avec `CIHUB_GITHUB_APP_ID` |
 
 Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent. `/healthz`
 répond `200` tant que le processus tourne ; `/readyz` répond `503` quand Postgres ne répond pas en 2 s.

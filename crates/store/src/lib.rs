@@ -6,12 +6,14 @@
 //! missing.
 
 mod events;
+mod instances;
 mod tokens;
 
 use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
 pub use events::{append_events, create_event_partitions, load_events};
+pub use instances::ensure_scm_instance;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};
@@ -46,6 +48,12 @@ pub enum StoreError {
     },
     #[error("api token {id} does not match the vocabulary of cihub-domain")]
     ReadToken {
+        id: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("scm instance {id} does not match the identifiers of cihub-domain")]
+    ReadInstance {
         id: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,

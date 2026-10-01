@@ -4,14 +4,16 @@
 
 use std::sync::Arc;
 
-use cihub_domain::{ConnectionId, JobClass, OrgId, QueueId, ScmInstanceId};
+use cihub_domain::{ConnectionId, ConnectionMode, JobClass, OrgId, QueueId, ScmInstanceId};
 use cihub_platform::{
-    Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL, MAX_ATTEMPTS, Outcome,
-    QueueWakeup, Retry, Wake, acquire_leases, backoff, begin_reconciliation, claim_jobs,
-    complete_job, enqueue_job, fail_job, lock_queue, maintenance_job, mark_processed,
-    pause_connection, pending_deliveries, release_leases, request_maintenance, run_maintenance,
-    run_worker, schedule_tick, store_delivery,
+    ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
+    MAX_ATTEMPTS, Outcome, QueueWakeup, Retry, Wake, acquire_leases, backoff, begin_reconciliation,
+    claim_jobs, complete_job, enqueue_job, fail_job, lock_queue, maintenance_job, mark_processed,
+    pending_deliveries, record_budgets, release_leases, request_maintenance, run_budget_writer,
+    run_maintenance, run_router, run_sweep, run_worker, schedule_tick, store_delivery,
 };
+use cihub_scm::sim::Sim;
+use cihub_scm::{ConnectionRef, RepoRef, ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{begin_org, begin_system};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -384,12 +386,115 @@ async fn a_connection_gets_no_more_jobs_past_its_quota(pool: PgPool) {
     );
 }
 
-async fn pause(pool: &PgPool, until: OffsetDateTime) {
+fn budget(paused_until: Option<OffsetDateTime>) -> ConnectionBudget {
+    ConnectionBudget {
+        mode: ConnectionMode::Normal,
+        mode_reason: None,
+        rate_remaining: None,
+        rate_limit: None,
+        rate_reset_at: None,
+        paused_until,
+        consecutive_failures: 0,
+    }
+}
+
+async fn record(pool: &PgPool, budget: ConnectionBudget) {
     let mut tx = begin_system(pool).await.unwrap();
-    pause_connection(&mut tx, connection(), until)
+    record_budgets(&mut tx, &[(connection(), budget)])
         .await
         .unwrap();
     tx.commit().await.unwrap();
+}
+
+async fn pause(pool: &PgPool, until: OffsetDateTime) {
+    record(pool, budget(Some(until))).await;
+}
+
+type BudgetRow = (
+    String,
+    Option<String>,
+    Option<i32>,
+    Option<i32>,
+    Option<OffsetDateTime>,
+    Option<OffsetDateTime>,
+    i32,
+);
+
+async fn recorded_budget(pool: &PgPool) -> BudgetRow {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT mode::text, mode_reason, rate_remaining, rate_limit, rate_reset_at, paused_until,
+                consecutive_failures
+         FROM scm_connections WHERE id = $1",
+    )
+    .bind(connection().to_string())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_budget_is_recorded_on_its_connection(pool: PgPool) {
+    seed(&pool).await;
+    record(
+        &pool,
+        ConnectionBudget {
+            mode: ConnectionMode::ScmUnavailable,
+            mode_reason: Some("3 failures in a row".into()),
+            rate_remaining: Some(900),
+            rate_limit: Some(5_000),
+            rate_reset_at: Some(at(3_600)),
+            paused_until: None,
+            consecutive_failures: 3,
+        },
+    )
+    .await;
+    assert_eq!(
+        recorded_budget(&pool).await,
+        (
+            "scm_unavailable".into(),
+            Some("3 failures in a row".into()),
+            Some(900),
+            Some(5_000),
+            Some(at(3_600)),
+            None,
+            3
+        )
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn an_urgent_budget_is_written_before_the_next_period(pool: PgPool) {
+    seed(&pool).await;
+    let changed = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let urgent = Arc::new(tokio::sync::Notify::new());
+    let cancel = CancellationToken::new();
+    let writer = tokio::spawn(run_budget_writer(
+        pool.clone(),
+        {
+            let changed = Arc::clone(&changed);
+            move || std::mem::take(&mut *changed.lock().unwrap())
+        },
+        Arc::clone(&urgent),
+        cancel.clone(),
+    ));
+    // The first period passes at once; the next one is 5 s later.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    changed
+        .lock()
+        .unwrap()
+        .push((connection(), budget(Some(at(60)))));
+    urgent.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while recorded_budget(&pool).await.5.is_none() {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(recorded_budget(&pool).await.5, Some(at(60)));
+    cancel.cancel();
+    writer.await.unwrap();
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -659,4 +764,184 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(partitions, ["events_2026_10", "events_2026_11"]);
+}
+
+/// A delivery of a fake SCM whose payload says what it is: the routing does
+/// not depend on one SCM.
+fn fake_translate(
+    event: &str,
+    payload: &serde_json::Value,
+) -> Result<ScmDelivery, std::fmt::Error> {
+    let text = |key: &str| payload[key].as_str().unwrap_or_default().to_owned();
+    let scm_event = match event {
+        "pr" => ScmEvent::PrChanged {
+            repo_external_id: text("repo"),
+            number: 1,
+            base_branch: text("branch"),
+        },
+        "push" => ScmEvent::Pushed {
+            repo_external_id: text("repo"),
+            branch: text("branch"),
+            before: None,
+            after: Some("a".repeat(40)),
+            sender: ScmUser {
+                external_id: "3".into(),
+                login: "alice".into(),
+            },
+        },
+        "rules" => ScmEvent::RulesChanged {
+            repo_external_id: text("repo"),
+        },
+        "broken" => return Err(std::fmt::Error),
+        _ => ScmEvent::Ignored,
+    };
+    Ok(ScmDelivery {
+        connection_external_id: payload["installation"].as_str().map(str::to_owned),
+        event: scm_event,
+    })
+}
+
+fn unrouted(id: &str, event: &str, payload: serde_json::Value) -> Delivery {
+    Delivery {
+        org_id: None,
+        connection_id: None,
+        queue_id: None,
+        event: event.to_owned(),
+        action: None,
+        payload,
+        ..delivery(id, 0)
+    }
+}
+
+type RouteRow = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    bool,
+    bool,
+);
+
+async fn routes(pool: &PgPool) -> Vec<RouteRow> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT delivery_id, org_id, connection_id, queue_id, routed_at IS NOT NULL,
+                processed_at IS NOT NULL
+         FROM webhook_inbox ORDER BY delivery_id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: PgPool) {
+    seed(&pool).await;
+    let cancel = CancellationToken::new();
+    let router = tokio::spawn(run_router(
+        pool.clone(),
+        fake_translate,
+        || at(5),
+        std::time::Duration::from_secs(60),
+        cancel.clone(),
+    ));
+    // The first pass finds nothing; a notification wakes the next one.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let known = json!({ "installation": "1", "repo": "1", "branch": "release" });
+    for delivery in [
+        unrouted("a-pr", "pr", known.clone()),
+        unrouted(
+            "b-push",
+            "push",
+            json!({ "installation": "1", "repo": "1", "branch": "next" }),
+        ),
+        unrouted(
+            "c-other-branch",
+            "pr",
+            json!({ "installation": "1", "repo": "1", "branch": "dev" }),
+        ),
+        unrouted("d-rules", "rules", known.clone()),
+        unrouted(
+            "e-unknown",
+            "pr",
+            json!({ "installation": "99", "repo": "1", "branch": "main" }),
+        ),
+        unrouted("f-ignored", "ping", known.clone()),
+        unrouted("g-broken", "broken", known),
+    ] {
+        store(&pool, &delivery).await;
+    }
+    let (o, c) = (Some(org().to_string()), Some(connection().to_string()));
+    let expected: Vec<RouteRow> = vec![
+        (
+            "a-pr".into(),
+            o.clone(),
+            c.clone(),
+            Some(queue(2).to_string()),
+            true,
+            false,
+        ),
+        (
+            "b-push".into(),
+            o.clone(),
+            c.clone(),
+            Some(queue(3).to_string()),
+            true,
+            false,
+        ),
+        (
+            "c-other-branch".into(),
+            o.clone(),
+            c.clone(),
+            None,
+            true,
+            false,
+        ),
+        ("d-rules".into(), o, c, None, true, false),
+        ("e-unknown".into(), None, None, None, true, false),
+        ("f-ignored".into(), None, None, None, true, true),
+        ("g-broken".into(), None, None, None, true, true),
+    ];
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while routes(&pool).await != expected {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert_eq!(routes(&pool).await, expected, "routed within a second");
+    // The queues of a routed delivery are dirty.
+    assert!(queue_state(&pool, queue(2)).await.0);
+    assert!(queue_state(&pool, queue(3)).await.0);
+    cancel.cancel();
+    router.await.unwrap().unwrap();
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_sweep_asks_again_only_for_the_deliveries_missing_from_the_inbox(pool: PgPool) {
+    seed(&pool).await;
+    let repo = RepoRef {
+        connection: ConnectionRef {
+            id: connection(),
+            external_id: "1".into(),
+        },
+        external_id: "1".into(),
+        namespace: "acme".into(),
+        name: "app".into(),
+    };
+    let sim = Sim::new();
+    let root = sim.add_repo(&repo, "main", &[]);
+    let alice = ScmUser {
+        external_id: "3".into(),
+        login: "alice".into(),
+    };
+    for branch in ["a", "b", "c"] {
+        sim.push(&repo, branch, &root, &alice).unwrap();
+    }
+    let sent = sim.take_deliveries();
+    // The inbox got the first and the third delivery; the second was lost.
+    for id in ["sim-1", "sim-3"] {
+        store(&pool, &unrouted(id, "push", json!({}))).await;
+    }
+    assert_eq!(run_sweep(&pool, &sim, instance(1), at(0)).await.unwrap(), 1);
+    assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
 }

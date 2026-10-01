@@ -8,12 +8,12 @@ use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
     EventType, ItemId, ItemState, JobClass, JobState, MembershipRole, OrgId, Priority, QueueId,
-    Reason, ScmKind, SubmittedVia, UserId,
+    Reason, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
-    create_api_token, create_event_partitions, load_events, migrate, missing_migrations,
-    new_api_token_secret,
+    create_api_token, create_event_partitions, ensure_scm_instance, load_events, migrate,
+    missing_migrations, new_api_token_secret,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
@@ -537,4 +537,24 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
     assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
     let malformed = SecretString::from("Bearer cht_");
     assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn an_scm_instance_is_created_once_per_address(pool: PgPool) {
+    let (first, second) = (
+        ScmInstanceId::from_ulid(Ulid(1)),
+        ScmInstanceId::from_ulid(Ulid(2)),
+    );
+    let mut tx = begin_system(&pool).await.unwrap();
+    let github = "https://github.com";
+    let created = ensure_scm_instance(&mut tx, first, ScmKind::Github, github)
+        .await
+        .unwrap();
+    let again = ensure_scm_instance(&mut tx, second, ScmKind::Github, github)
+        .await
+        .unwrap();
+    let other = ensure_scm_instance(&mut tx, second, ScmKind::Github, "https://ghe.example.com")
+        .await
+        .unwrap();
+    assert_eq!((created, again, other), (first, first, second));
 }

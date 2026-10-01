@@ -18,6 +18,6 @@ pub use error::ScmError;
 pub use event::{ScmDelivery, ScmEvent};
 pub use scm::{MAX_PRS_PER_READ, Scm, ScmFuture};
 pub use types::{
-    CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RepoPermission, RepoRef,
-    RequiredChecks, ScmUser, StatusUpdate,
+    CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoPermission,
+    RepoRef, RequiredChecks, ScmUser, StatusUpdate,
 };

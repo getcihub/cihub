@@ -1,0 +1,141 @@
+//! Tests against Postgres: each `#[sqlx::test]` gets a new database.
+
+#![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
+
+use std::fmt::Write;
+
+use cihub_domain::{ScmInstanceId, ScmKind};
+use cihub_store::{begin_system, ensure_scm_instance};
+use cihub_web::GithubWebhooks;
+use ring::hmac;
+use secrecy::SecretString;
+use sqlx::PgPool;
+use time::OffsetDateTime;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::sync::CancellationToken;
+use ulid::Ulid;
+
+const SECRET: &str = "webhook secret";
+const BODY: &str = r#"{"action":"opened","number":1}"#;
+
+fn now() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap()
+}
+
+fn instance() -> ScmInstanceId {
+    ScmInstanceId::from_ulid(Ulid(1))
+}
+
+/// Serves the router on a free address and returns it.
+async fn start(pool: &PgPool) -> String {
+    let mut tx = begin_system(pool).await.unwrap();
+    ensure_scm_instance(&mut tx, instance(), ScmKind::Github, "https://github.com")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let github = GithubWebhooks {
+        scm_instance_id: instance(),
+        secret: SecretString::from(SECRET),
+    };
+    let router = cihub_web::router(pool.clone(), now, github);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    tokio::spawn(cihub_web::serve(listener, router, CancellationToken::new()));
+    addr
+}
+
+fn signature(secret: &str, body: &str) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+    let tag = hmac::sign(&key, body.as_bytes());
+    let hex = tag.as_ref().iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    });
+    format!("sha256={hex}")
+}
+
+/// Sends `POST /webhooks/github` and returns the status code.
+async fn post(addr: &str, headers: &[(&str, &str)], body: &str) -> u16 {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let mut request = format!(
+        "POST /webhooks/github HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\n",
+        body.len()
+    );
+    for (name, value) in headers {
+        let _ = write!(request, "{name}: {value}\r\n");
+    }
+    request.push_str("\r\n");
+    request.push_str(body);
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response.split(' ').nth(1).unwrap().parse().unwrap()
+}
+
+type InboxRow = (
+    String,
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    OffsetDateTime,
+);
+
+async fn inbox(pool: &PgPool) -> Vec<InboxRow> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT delivery_id, org_id, queue_id, event, action, received_at
+         FROM webhook_inbox ORDER BY delivery_id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_signed_delivery_is_stored_once_and_unrouted(pool: PgPool) {
+    let addr = start(&pool).await;
+    let signature = signature(SECRET, BODY);
+    let headers = [
+        ("X-GitHub-Delivery", "d1"),
+        ("X-GitHub-Event", "pull_request"),
+        ("X-Hub-Signature-256", signature.as_str()),
+    ];
+    assert_eq!(post(&addr, &headers, BODY).await, 202);
+    // GitHub sends copies: a copy is accepted and changes nothing.
+    assert_eq!(post(&addr, &headers, BODY).await, 202);
+    assert_eq!(
+        inbox(&pool).await,
+        [(
+            "d1".into(),
+            None,
+            None,
+            "pull_request".into(),
+            Some("opened".into()),
+            now()
+        )]
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: PgPool) {
+    let addr = start(&pool).await;
+    let wrong = signature("another secret", BODY);
+    let unsigned = [("X-GitHub-Delivery", "d1"), ("X-GitHub-Event", "ping")];
+    let wrongly_signed = [
+        ("X-GitHub-Delivery", "d1"),
+        ("X-GitHub-Event", "ping"),
+        ("X-Hub-Signature-256", wrong.as_str()),
+    ];
+    assert_eq!(post(&addr, &unsigned, BODY).await, 401);
+    assert_eq!(post(&addr, &wrongly_signed, BODY).await, 401);
+    let right = signature(SECRET, BODY);
+    let no_event = [
+        ("X-GitHub-Delivery", "d1"),
+        ("X-Hub-Signature-256", right.as_str()),
+    ];
+    assert_eq!(post(&addr, &no_event, BODY).await, 400);
+    assert_eq!(inbox(&pool).await, []);
+}

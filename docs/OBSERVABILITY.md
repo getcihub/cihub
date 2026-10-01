@@ -47,10 +47,10 @@ Chaque unité de travail ouvre un span qui porte ses clés ; toutes les lignes �
 
 | Span        | Ouvert par                                    | Clés                              |
 | ----------- | --------------------------------------------- | --------------------------------- |
-| `webhook`   | réception d'un webhook (rôle `api`)           | `delivery_id`                     |
+| `webhook`   | réception d'un webhook (rôle `web`)           | `delivery_id`                     |
 | `reconcile` | réconciliation d'une file (rôle `scheduler`)  | `org_id`, `queue_id`              |
 | `job`       | exécution d'un job (rôle `worker`)            | `job_type`, `job_id`, et `run_id` quand le job concerne une exécution |
-| `request`   | requête de l'API (rôle `api`)                 | `request_id`, puis `org_id` après l'authentification |
+| `request`   | requête de l'API (rôle `web`)                 | `request_id`, puis `org_id` après l'authentification |
 
 Chaque processus ouvre aussi un span par rôle, avec la clé `role`. Les noms de clés ci-dessus sont les seuls
 permis pour ces données (`org_id`, `queue_id`, `item_id`, `group_id`, `run_id`, `delivery_id`, `job_id`,

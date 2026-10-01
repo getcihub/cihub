@@ -11,10 +11,12 @@ use cihub_domain::{
     ReviewDecision,
 };
 
+use time::OffsetDateTime;
+
 use crate::contract::Fixture;
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RepoPermission, RepoRef, RequiredChecks, Scm,
-    ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmUser, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoPermission, RepoRef,
+    RequiredChecks, Scm, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmUser, StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -115,6 +117,13 @@ struct State {
     faults: VecDeque<Fault>,
     calls: Vec<SimCall>,
     deliveries: Vec<ScmDelivery>,
+    /// Each attempt taken, with the identifier of its delivery: the attempt
+    /// `n` is at `n - 1`.
+    attempts: Vec<(String, ScmDelivery)>,
+    /// The attempts asked again, sent at the next take.
+    redelivered: Vec<usize>,
+    /// The number of new deliveries taken.
+    delivered: u64,
 }
 
 /// The simulator. Every method takes `&self`, so that the tests and the
@@ -387,9 +396,24 @@ impl Sim {
         })
     }
 
-    /// The deliveries sent since the last take, in their order.
+    /// The deliveries sent since the last take, in their order, then the
+    /// attempts asked again. The `n`-th new delivery taken has the identifier
+    /// `sim-n`; an attempt asked again keeps the identifier of its delivery.
     pub fn take_deliveries(&self) -> Vec<ScmDelivery> {
-        self.with(|state| std::mem::take(&mut state.deliveries))
+        self.with(|state| {
+            let mut taken = std::mem::take(&mut state.deliveries);
+            for delivery in &taken {
+                state.delivered += 1;
+                let id = format!("sim-{}", state.delivered);
+                state.attempts.push((id, delivery.clone()));
+            }
+            for attempt in std::mem::take(&mut state.redelivered) {
+                let again = state.attempts[attempt].clone();
+                taken.push(again.1.clone());
+                state.attempts.push(again);
+            }
+            taken
+        })
     }
 
     /// The deliveries sent since the last take, lost, sent twice and
@@ -413,6 +437,24 @@ impl Sim {
             }
         }
         deliveries
+    }
+
+    /// Runs a call of the trait on the whole instance: records it and applies
+    /// the faults.
+    fn instance_call<T: Send + 'static>(
+        &self,
+        name: &'static str,
+        class: JobClass,
+        run: impl FnOnce(&mut State) -> Result<T, ScmError>,
+    ) -> ScmFuture<'_, T> {
+        let result = self.with(|state| {
+            state.calls.push(SimCall { name, class });
+            match state.take_fault(name) {
+                Some(error) => Err(error),
+                None => run(state),
+            }
+        });
+        Box::pin(std::future::ready(result))
     }
 
     /// Runs a call of the trait: records it, applies the faults and the
@@ -1157,6 +1199,38 @@ impl Scm for Sim {
             Ok(())
         })
     }
+
+    /// Every attempt taken: the simulator has no clock.
+    fn recent_deliveries(
+        &self,
+        _since: OffsetDateTime,
+        class: JobClass,
+    ) -> ScmFuture<'_, Vec<RecentDelivery>> {
+        self.instance_call("recent_deliveries", class, |state| {
+            Ok(state
+                .attempts
+                .iter()
+                .enumerate()
+                .map(|(n, (id, _))| RecentDelivery {
+                    delivery_id: id.clone(),
+                    attempt_id: (n + 1).to_string(),
+                })
+                .collect())
+        })
+    }
+
+    fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()> {
+        self.instance_call("redeliver", class, move |state| {
+            let attempt = attempt_id
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .filter(|n| *n < state.attempts.len())
+                .ok_or_else(|| ScmError::NotFound(format!("attempt {attempt_id}")))?;
+            state.redelivered.push(attempt);
+            Ok(())
+        })
+    }
 }
 
 /// Builds in a new simulator the world of the contract suite, on the
@@ -1392,6 +1466,41 @@ mod tests {
             sim.push(&repo, &format!("b{n}"), &root, &bot()).unwrap();
         }
         sim
+    }
+
+    #[tokio::test]
+    async fn a_lost_delivery_is_listed_and_sent_again_with_its_identifier() {
+        let sim = deliveries(3);
+        let lose_all = &mut WebhookFaults {
+            seed: 1,
+            lose_percent: 100,
+            duplicate_percent: 0,
+            reorder: false,
+        };
+        let sent = sim.take_deliveries();
+        assert_eq!(sim.take_deliveries_with(lose_all), []);
+        let since = OffsetDateTime::UNIX_EPOCH;
+        let recent = sim
+            .recent_deliveries(since, JobClass::Repair)
+            .await
+            .unwrap();
+        let ids: Vec<_> = recent.iter().map(|r| r.delivery_id.as_str()).collect();
+        assert_eq!(ids, ["sim-1", "sim-2", "sim-3"]);
+        sim.redeliver("2", JobClass::Repair).await.unwrap();
+        assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
+        let recent = sim
+            .recent_deliveries(since, JobClass::Repair)
+            .await
+            .unwrap();
+        assert_eq!(
+            recent[3],
+            RecentDelivery {
+                delivery_id: "sim-2".into(),
+                attempt_id: "4".into()
+            }
+        );
+        let missing = sim.redeliver("9", JobClass::Repair).await;
+        assert!(matches!(missing, Err(ScmError::NotFound(_))));
     }
 
     #[test]

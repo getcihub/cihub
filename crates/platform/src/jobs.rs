@@ -87,29 +87,6 @@ pub async fn enqueue_job(
     Ok(enqueued)
 }
 
-/// Pauses the jobs of `connection` until `until` (`AGENTS.md` D70): the SCM
-/// refuses its calls until then, after a 429 for example. A shorter pause
-/// does not shorten the current one.
-///
-/// # Errors
-///
-/// Postgres fails.
-pub async fn pause_connection(
-    conn: &mut PgConnection,
-    connection: ConnectionId,
-    until: OffsetDateTime,
-) -> Result<(), PlatformError> {
-    sqlx::query(
-        "UPDATE scm_connections SET paused_until = greatest(paused_until, $2) WHERE id = $1",
-    )
-    .bind(connection.to_string())
-    .bind(until)
-    .execute(conn)
-    .await
-    .map_err(PlatformError::Query)?;
-    Ok(())
-}
-
 type JobRow = (
     String,
     String,
@@ -126,7 +103,7 @@ type JobRow = (
 /// first, until `now + JOB_LOCK`. A job whose worker stopped is due again when
 /// its lock expires. A connection gets no more jobs once it has
 /// [`JOBS_PER_CONNECTION`] in progress, nor while it is paused
-/// ([`pause_connection`]). Runs in the system context: a worker
+/// ([`record_budgets`](crate::record_budgets)). Runs in the system context: a worker
 /// serves every organization.
 ///
 /// # Errors

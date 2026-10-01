@@ -19,15 +19,14 @@ stratégies et des modules, pas des réécritures.
 
 | Phase                       | Lots            | Périmètre                                                                                                                                                                                                                                                                                                                                                         | Critère de sortie                                                                                                                                                             |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Merge queue installable  | 0 à 9           | Socle (tenancy, journal, jobs, adaptateur GitHub), noyau pur, réconciliateur, cycle de test complet, conditions d'entrée et de merge, fenêtre adaptative, budget d'échec, stratégies `sequential` et `pipelined`, méthodes squash / merge / rebase / fast-forward, merge direct, surfaces PR, API et CLI, `docker compose` et assistant de première configuration | Le dépôt de CIHub merge par CIHub pendant 2 semaines sans merge rouge ; une personne extérieure installe et merge une première PR en moins de 30 minutes en suivant le README |
+| 1. Merge queue installable  | 0 à 9           | Socle (tenancy, journal, jobs, adaptateur GitHub), noyau pur, réconciliateur, cycle de test complet, conditions d'entrée et de merge, fenêtre adaptative, budget d'échec, stratégies `sequential` et `pipelined`, méthodes squash / merge / rebase / fast-forward, merge direct, surfaces PR, API et CLI, `docker compose` et procédure de création de l'App     | Le dépôt de CIHub merge par CIHub pendant 2 semaines sans merge rouge ; une personne extérieure installe et merge une première PR en moins de 30 minutes en suivant le README |
 | 2. Débit et visibilité      | 10 à 12         | Tableau de bord, analytique Postgres, vue Santé, Prometheus, webhooks sortants, stratégie `batched` (lots, bissection, profondeur d'échec, merge optimiste)                                                                                                                                                                                                       | Temps en file p50 réduit de 40 % sur une charge synthétique de 20 PR par heure ; la bissection isole un échec planté en ≤ log2(lot) exécutions                                |
 | 3. Tests instables          | 14 (avancé)     | Récepteur OTLP, convertisseur JUnit et action GitHub, tables `ft_*`, détection, quarantaine, trait `FlakeOracle` consommé par la file, page dédiée                                                                                                                                                                                                                | Le module s'ajoute sans modifier la merge queue hors de l'appel au trait ; sur un dépôt avec un test instable connu, zéro PR évincée à tort                                   |
 | 4. Échelle et écosystème    | 13, 15 et suite | Stratégie `parallel` avec cibles impactées, actions Bazel et Nx, ClickHouse derrière `AnalyticsStore`, chart Helm, durcissement, puis PR empilées, direct-to-queue, Slack, Terraform, GitLab derrière `Scm`                                                                                                                                                       | Un monodépôt pilote merge des PR disjointes en parallèle ; une instance tient 1 000 PR par jour avec ClickHouse activé ; première organisation extérieure en production       |
 
 Les deux risques les plus élevés sont les invariants du réconciliateur sous des événements GitHub concurrents
 (atténués par le noyau pur et ses tests de propriété, livrés en premier) et les rulesets GitHub mal configurés chez
-les utilisateurs (atténués par le vérificateur de configuration et l'assistant d'installation, tous deux en
-phase 1).
+les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 
 ## Vue d'ensemble
 
@@ -37,7 +36,7 @@ phase 1).
 | 1   | Noyau pur de la file                                   | 1     | 0         | —         | terminé                                  |
 | 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | terminé                                  |
-| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | en cours                                 |
+| 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | terminé                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
@@ -493,16 +492,16 @@ Autres valeurs fermées :
 - **Contenu** : trait `Scm` (`cihub-scm`) ; `cihub-github` (authentification App, jetons d'installation en cache,
   client REST et GraphQL groupé pour la mergeabilité jusqu'à 50 PR, lecture des protections et rulesets, suivi du
   budget par les en-têtes, modes dégradés `normal`, `throttled`, `scm_unavailable`) ; ingestion dans le rôle
-  `api` (`cihub-http` : HMAC, stockage, acquittement en moins de 2 s) ; traduction des webhooks en faits du
+  `web` (`cihub-web` : HMAC, stockage, acquittement en moins de 2 s) ; traduction des webhooks en faits du
   domaine ; dans `cihub-scm`, derrière la feature `sim` (`AGENTS.md` D73), un simulateur GitHub (refs, merges,
-  PR, checks, protections) qui sait injecter 5xx, 429, webhooks perdus, dupliqués et désordonnés ; flux de
-  manifeste pour créer l'App ; vérificateur de configuration en endpoint d'API (l'interface arrive au lot 10) ;
+  PR, checks, protections) qui sait injecter 5xx, 429, webhooks perdus, dupliqués et désordonnés ; création
+  de l'App à la main selon `docs/GITHUB.md` (`AGENTS.md` D92) ; vérificateur de configuration en endpoint d'API (l'interface arrive au lot 10) ;
   balayage de `GET /app/hook/deliveries`.
 - **Interfaces figées** : trait `Scm` ; faits du domaine issus de GitHub ; permissions de l'App (`docs/GITHUB.md`).
 - **Critère de sortie** : une suite de contrat unique passe contre le simulateur et contre des réponses
-  GitHub enregistrées ; un 429 met en pause les jobs de la connexion jusqu'au reset ; l'assistant crée une App
-  sur une organisation de test et affiche ses secrets, puis le serveur redémarré avec ces variables reçoit un
-  webhook signé (test manuel documenté, seul test non automatisé du lot).
+  GitHub enregistrées ; un 429 met en pause les jobs de la connexion jusqu'au reset ; une App créée à la main
+  selon `docs/GITHUB.md` sur une organisation de test, le serveur démarré avec ses variables reçoit un webhook
+  signé (test manuel documenté, seul test non automatisé du lot).
 - **Suivi** :
   - Fait : les décisions du lot (`AGENTS.md` D72 à D81) ; crate `cihub-scm` avec le trait `Scm`, ses types
     neutres, `ScmError` et `ScmEvent` (D73, D75, D76). Simulateur (`cihub_scm::sim`, feature `sim`) : dépôts
@@ -527,12 +526,63 @@ Autres valeurs fermées :
   - Fait (exemple) : `cargo run -p cihub-github --example github` appelle un vrai GitHub avec l'App de
     l'environnement (D79) et affiche chaque réponse et le budget de la connexion : installations de l'App, lectures
     du trait `Scm`, et quelques écritures limitées (`cihub-temp/example`, un statut, un commentaire, un label).
-  - Reste : la suite de contrat de `cihub-github` sur des réponses enregistrées, l'écriture des budgets en base,
-    `cihub-http` et l'ingestion, la traduction et le routage des livraisons, le balayage des livraisons, le flux de
-    manifeste, le vérificateur de configuration.
+  - Fait (budgets en base) : `record_budgets` écrit le budget d'une connexion sur `scm_connections` (mode, raison,
+    la limite qui a la plus petite part restante, pause, échecs), sans raccourcir une pause plus longue ; il remplace
+    `pause_connection`. La boucle `run_budget_writer` écrit les budgets changés toutes les 5 s, et tout de suite
+    quand `GithubApp` signale une pause ou un changement de mode ; une écriture en échec est refaite à la suivante.
+    `cihub-server` lit les variables de l'App (D79), s'arrête sans elles (D92), et lance la boucle dans le rôle
+    `worker`. Tests contre Postgres : un budget est écrit sur sa connexion ; un budget urgent est écrit en moins de
+    1 s, avant la période suivante. Tests unitaires : une pause ou un changement de mode est urgent.
+  - Fait (réponses enregistrées, partie 1) : format des enregistrements (`tests/support/cassette.rs`) et faux GitHub
+    qui les rejoue dans l'ordre (`tests/support/replay.rs`, `axum` en dépendance de développement, D74) ; clé RSA
+    jetable `tests/test-only-key.pem`, qui n'ouvre rien. L'exemple `github` gagne `prepare-base`, `prepare-pr` et
+    `record` : il prépare le dépôt de test, puis joue la suite de contrat à travers un proxy qui enregistre chaque
+    échange sans le jeton (D90). Test : un 429 met la connexion en pause jusqu'au reset, le signale tout de suite,
+    et aucun appel ne part avant le reset.
+  - Fait (réponses enregistrées, partie 2) : premier enregistrement `tests/recorded/contract.json` (57 échanges,
+    30 septembre 2026) sur le dépôt public `getsyncr/contracts` : les rulesets ne s'appliquent pas à un dépôt privé
+    d'une organisation GitHub Free. La suite de contrat passe sur le simulateur et sur cet enregistrement.
+  - Fait (ingestion) : crate `cihub-web` (D73, D91) et adresse publique `CIHUB_HTTP_ADDR` du rôle `web` (D82).
+    `POST /webhooks/github` (D83) : `cihub_github::receive` vérifie la signature et lit les en-têtes ; la livraison
+    est stockée sans routage, visible du seul contexte système, puis la route répond `202` (une copie aussi), `401`
+    sur une signature fausse, `400` sur un en-tête manquant, `503` quand le stockage échoue ou dépasse 2 s (D84).
+    Au démarrage, `cihub-server` crée la ligne `scm_instances` de `CIHUB_GITHUB_URL` si elle manque
+    (`ensure_scm_instance`, D79) ; `CIHUB_GITHUB_WEBHOOK_SECRET` est exigé avec l'App. Tests contre Postgres : une
+    livraison signée est stockée une fois, non routée ; une signature fausse ou un en-tête manquant est refusé
+    sans rien stocker ; une instance est créée une fois par adresse ; le binaire stocke un webhook signé.
+  - Fait (traduction et routage) : `cihub_github::translate` traduit une livraison en `ScmDelivery` (PR et revue,
+    commentaire créé sur une PR, push sur une branche, check run, statut, règle de protection, dépôt, installation,
+    dépôts de l'installation ; le reste est ignoré). Migration `20260930130000_inbox_routing.sql` : colonne
+    `routed_at`. Une livraison non routée envoie `NOTIFY cihub_inbox` ; la boucle `run_router` du rôle `web` la
+    traduit, trouve la connexion, et la file quand une seule est sûre (PR par sa branche de base, push par sa
+    branche), écrit la ligne routée et marque la file (D84, D85). Une connexion inconnue laisse la livraison sans
+    organisation (D86) ; une livraison ignorée ou illisible est routée comme traitée. Tests : traduction de chaque
+    événement ; contre Postgres, chaque cas de routage en moins de 1 s et les files marquées ; le binaire route un
+    webhook reçu.
+  - Fait (balayage) : `RecentDelivery`, et les méthodes `recent_deliveries` et `redeliver` du trait `Scm`, au niveau
+    de l'instance (D88) ; le simulateur garde chaque tentative de livraison ; `cihub-github` appelle
+    `GET /app/hook/deliveries` page par page avec le JWT de l'App, jusqu'à une tentative plus ancienne que 10
+    minutes. Job `sweep_deliveries` (classe `repair`, clé de la fenêtre de 5 minutes), demandé par le scheduler
+    toutes les 5 minutes et exécuté par le worker. Tests : le simulateur liste une
+    livraison perdue et la renvoie avec son identifiant ; les pages de GitHub s'arrêtent à la première tentative
+    trop ancienne ; contre Postgres, le balayage redemande seulement les livraisons absentes de l'inbox.
+  - Fait (configuration de l'App, D92) : pas d'assistant ; `docs/GITHUB.md` décrit la création de l'App à la main.
+    `cihub-server` s'arrête au démarrage sans les variables de l'App, avec un message qui les nomme ;
+    `cihub-server migrate` n'en a pas besoin. Les tests du binaire utilisent la clé de test et une adresse de
+    GitHub où rien n'écoute. Test contre Postgres : sans App, le serveur s'arrête avec ce message et `migrate`
+    réussit.
+  - Fait (test manuel du critère de sortie, 1er octobre 2026) : une App créée à la main selon `docs/GITHUB.md`,
+    le serveur démarré avec ses variables derrière une URL publique. Un webhook `pull_request` signé de GitHub est
+    stocké puis routé sans organisation (D86) ; un `workflow_run` est routé comme traité. Avec une organisation, sa
+    connexion, le dépôt et la file créés à la main, une nouvelle livraison de la PR est routée vers sa connexion et
+    sa file, et la file est marquée.
+  - Reste, passé au lot 5 : un test de bout en bout de la chaîne « 429 de GitHub, pause en base, aucun job », avec
+    le premier exécuteur qui appelle le SCM par une connexion ; ses maillons ont chacun un test.
   - Écarts validés (Nicolas Lecoy, 30 septembre 2026) : le lot n'écrit aucun fait dans le journal ; il livre la
     livraison routée et sa traduction en `ScmEvent`, et le lot 5 écrit les faits (D75). Les secrets de l'App
-    viennent de l'environnement (D79). Le simulateur est un module de `cihub-scm` (D73).
+    viennent de l'environnement (D79). Le simulateur est un module de `cihub-scm` (D73). Le vérificateur de
+    configuration passe au lot 9 (D87). Aucune organisation n'est créée depuis un webhook (D86). Écart validé
+    (Nicolas Lecoy, 1er octobre 2026) : pas d'assistant ni de flux de manifeste, l'App se crée à la main (D92).
 
 ### Lot 5 : réconciliateur et admission
 
@@ -545,7 +595,8 @@ Autres valeurs fermées :
   d'une file du lot 3 (`AGENTS.md` D64) ; convergence plan contre état observé et émission des jobs ; soumission par commande et par label ;
   mergeabilité, `block_reasons[]`, exception du statut de la file elle-même ; revérifications pilotées par les
   événements et sondage progressif de 1 à 15 minutes ; `not_ready_timeout_hours` ; suppression des
-  partitions d'`events` de plus de 90 jours, une fois les instantanés en place (`AGENTS.md` D57).
+  partitions d'`events` de plus de 90 jours, une fois les instantanés en place (`AGENTS.md` D57) ; test de bout en
+  bout « 429 du SCM, pause en base, aucun job », reporté du lot 4.
 - **Interfaces figées** : contrat `Module` ; tables `queue_items`, `test_groups`, `test_runs` (`docs/DATA_MODEL.md`,
   `AGENTS.md` D28) ; types de jobs de la file.
 - **Critère de sortie** : sur le simulateur, 20 PR soumises dans des états variés atteignent `pending` ou
@@ -609,10 +660,11 @@ Autres valeurs fermées :
 - **Contenu** : statut `CIHub Merge Queue (<branche>)`, commentaire du bot modifié sur place, labels d'état ;
   commandes `/cihub merge|cancel|restart` et les alias `/trunk`, avec vérification des permissions ; API REST v1
   de `docs/API.md` (hors métriques et webhooks sortants), erreurs `problem+json`, limite de débit, OpenAPI 3.1
-  généré depuis le code (`cihub-http`, `cihub-api-types`) ; client Rust `cihub-client` ; CLI `cihub` ;
+  généré depuis le code (`cihub-web`, `cihub-api-types`) ; client Rust `cihub-client` ; CLI `cihub` ;
   `Dockerfile` de l'image `cihub-server` et workflow de publication de l'image sur GHCR à chaque version
   (`AGENTS.md` D19) ; `docker compose` d'installation avec le service `cihub-migrate` (`AGENTS.md` D14) et README
-  d'installation.
+  d'installation ; vérificateur de configuration en endpoint d'API, avec la lecture des rulesets par le trait
+  `Scm` (`AGENTS.md` D87).
 - **Interfaces figées** : API v1 publiée dans `/api/v1/openapi.json` ; commandes de PR ; commandes de la CLI.
 - **Critère de sortie** : un test de bout en bout sur l'instance de staging soumet des PR sur un vrai dépôt et les
   merge ; le dépôt de CIHub passe sur sa propre file ; une personne extérieure suit le README et merge une première
@@ -624,7 +676,7 @@ Autres valeurs fermées :
 
 ### Lot 10 : tableau de bord
 
-- **Contenu** : `web/` (Q9), servi et embarqué par le rôle `api` ; connexion OAuth GitHub, sessions, CSRF ; pages
+- **Contenu** : `web/` (Q9), servi et embarqué par le rôle `web` ; connexion OAuth GitHub, sessions, CSRF ; pages
   file, PR et chronologie, exécution (statuts requis contre statuts observés), graphe en direct ; vérificateur de
   configuration et assistant ; réglages avec journal d'audit.
 - **Critère de sortie** : tests de composants et un test de navigateur de bout en bout sur `docker compose` :
@@ -655,7 +707,7 @@ Autres valeurs fermées :
 
 ### Lot 14 : module `flakytests`
 
-- **Contenu** : récepteur OTLP/HTTP dans le rôle `api` ; `cihub test-results push --junit` et l'action GitHub ;
+- **Contenu** : récepteur OTLP/HTTP dans le rôle `web` ; `cihub test-results push --junit` et l'action GitHub ;
   tables `ft_results` et `ft_cases` ; les trois signaux de détection, dont la bissection ; quarantaine ;
   `cihub-flaky-core` et `cihub-flakytests`, implémentation du trait `FlakeOracle` (`cihub-contracts`) et raison de
   relance (Q1) ; page « Tests instables », API `/api/v1/flaky/*`, webhooks `flaky.*`. Ce lot peut être scindé en deux

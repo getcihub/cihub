@@ -5,6 +5,9 @@ use time::OffsetDateTime;
 
 use crate::{PlatformError, mark_dirty};
 
+/// The channel that says a delivery waits for its routing.
+pub const INBOX_CHANNEL: &str = "cihub_inbox";
+
 /// A webhook delivery as the ingestion receives it: stored as is, before any
 /// decision.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,8 +27,10 @@ pub struct Delivery {
 }
 
 /// Stores `delivery` and returns `true`, or returns `false` when the inbox
-/// already has it: a copy of a delivery changes nothing. A new delivery of a
-/// queue marks the queue dirty in the same transaction.
+/// already has it: a copy of a delivery changes nothing. A delivery with its
+/// organization is routed; a new delivery of a queue marks the queue dirty in
+/// the same transaction. A new delivery without organization waits for the
+/// routing loop, which [`INBOX_CHANNEL`] wakes.
 ///
 /// # Errors
 ///
@@ -37,8 +42,8 @@ pub async fn store_delivery(
 ) -> Result<bool, PlatformError> {
     let done = sqlx::query(
         "INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, connection_id, queue_id,
-                                    event, action, payload, received_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                                    event, action, payload, received_at, routed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $3 IS NULL THEN NULL ELSE $9 END)
          ON CONFLICT (scm_instance_id, delivery_id) DO NOTHING",
     )
     .bind(delivery.scm_instance_id.to_string())
@@ -54,8 +59,16 @@ pub async fn store_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let stored = done.rows_affected() == 1;
-    if let (true, Some(queue)) = (stored, delivery.queue_id) {
-        mark_dirty(conn, queue).await?;
+    match (stored, delivery.org_id, delivery.queue_id) {
+        (true, _, Some(queue)) => mark_dirty(conn, queue).await?,
+        (true, None, _) => {
+            sqlx::query("SELECT pg_notify($1, '')")
+                .bind(INBOX_CHANNEL)
+                .execute(conn)
+                .await
+                .map_err(PlatformError::Query)?;
+        }
+        _ => {}
     }
     Ok(stored)
 }

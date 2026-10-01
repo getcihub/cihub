@@ -1,7 +1,7 @@
 //! The HTTP client of the App: the tokens of its installations, the budget of
 //! each connection, and the errors of GitHub in the terms of CIHub.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use cihub_domain::{ConnectionId, JobClass};
@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
+use tokio::sync::Notify;
 
 use crate::auth::AppKey;
 use crate::budget::{Budget, Observation, Rate, SECONDARY_WAIT};
@@ -93,7 +94,41 @@ pub struct GithubApp {
     http: Client,
     clock: Clock,
     tokens: Mutex<HashMap<String, (SecretString, OffsetDateTime)>>,
-    budgets: Mutex<HashMap<ConnectionId, Budget>>,
+    budgets: Mutex<Budgets>,
+    urgent: Arc<Notify>,
+}
+
+/// The budgets of the connections that this process called, and those that
+/// changed since the last write.
+#[derive(Default)]
+struct Budgets {
+    all: HashMap<ConnectionId, Budget>,
+    changed: HashSet<ConnectionId>,
+}
+
+impl Budgets {
+    /// Records what a call on `connection` observed, and returns `true` when
+    /// the pause or the mode of the connection changed.
+    fn observe(
+        &mut self,
+        connection: ConnectionId,
+        observation: Observation,
+        now: OffsetDateTime,
+    ) -> bool {
+        let budget = self.all.entry(connection).or_default();
+        let before = (budget.mode, budget.paused_until);
+        budget.observe(observation, now);
+        self.changed.insert(connection);
+        before != (budget.mode, budget.paused_until)
+    }
+
+    fn take_changed(&mut self) -> Vec<(ConnectionId, Budget)> {
+        let Self { all, changed } = self;
+        changed
+            .drain()
+            .filter_map(|id| all.get(&id).map(|budget| (id, budget.clone())))
+            .collect()
+    }
 }
 
 impl GithubApp {
@@ -126,20 +161,35 @@ impl GithubApp {
             http,
             clock,
             tokens: Mutex::new(HashMap::new()),
-            budgets: Mutex::new(HashMap::new()),
+            budgets: Mutex::new(Budgets::default()),
+            urgent: Arc::new(Notify::new()),
         })
     }
 
-    /// The budgets of the connections that this process called, for the
-    /// loop that writes them (`AGENTS.md` D77).
-    pub fn budgets(&self) -> Vec<(ConnectionId, Budget)> {
-        let budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
-        budgets.iter().map(|(id, b)| (*id, b.clone())).collect()
+    /// The budgets that changed since the last call, for the loop that
+    /// writes them (`AGENTS.md` D77).
+    pub fn take_changed_budgets(&self) -> Vec<(ConnectionId, Budget)> {
+        let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
+        budgets.take_changed()
     }
 
-    fn with_budget<T>(&self, connection: ConnectionId, run: impl FnOnce(&mut Budget) -> T) -> T {
+    /// Notified when a budget pauses its connection or changes its mode: the
+    /// loop that writes the budgets writes it at once (`AGENTS.md` D77).
+    pub fn budget_urgent(&self) -> Arc<Notify> {
+        Arc::clone(&self.urgent)
+    }
+
+    fn admit(&self, connection: ConnectionId, class: JobClass) -> Result<(), ScmError> {
         let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
-        run(budgets.entry(connection).or_default())
+        let budget = budgets.all.entry(connection).or_default();
+        budget.admit(class, (self.clock)())
+    }
+
+    fn observe(&self, connection: ConnectionId, observation: Observation, now: OffsetDateTime) {
+        let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
+        if budgets.observe(connection, observation, now) {
+            self.urgent.notify_one();
+        }
     }
 
     /// Sends `request` with the token of its installation.
@@ -172,9 +222,51 @@ impl GithubApp {
         self.send_to(request, self.graphql_url.clone()).await
     }
 
+    /// Sends `method path` as the App, with its JWT: a call on the whole
+    /// instance, outside the budget of a connection. Returns the answer and
+    /// the path of its next page, when the answer has one.
+    pub(crate) async fn send_as_app(
+        &self,
+        method: Method,
+        path: &str,
+    ) -> Result<(Answer, Option<String>), ScmError> {
+        let now = (self.clock)();
+        let jwt = self
+            .key
+            .jwt(&self.app_id, now)
+            .map_err(|err| ScmError::Protocol(err.to_string()))?;
+        let response = self
+            .http
+            .request(method, format!("{}{path}", self.api_url))
+            .header(AUTHORIZATION, format!("Bearer {jwt}"))
+            .header(ACCEPT, JSON)
+            .header("X-GitHub-Api-Version", API_VERSION)
+            .send()
+            .await
+            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body = response
+            .bytes()
+            .await
+            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
+        let answer = Answer {
+            status,
+            body: body.to_vec(),
+        };
+        if let (_, Some(error)) = classify(&answer, &headers, now) {
+            return Err(error);
+        }
+        let next = headers
+            .get("link")
+            .and_then(|link| link.to_str().ok())
+            .and_then(|link| next_page(link, path));
+        Ok((answer, next))
+    }
+
     async fn send_to(&self, request: Request<'_>, url: String) -> Result<Answer, ScmError> {
         let connection = request.connection.id;
-        self.with_budget(connection, |b| b.admit(request.class, (self.clock)()))?;
+        self.admit(connection, request.class)?;
         let token = self.token(request.connection).await?;
         let mut builder = self
             .http
@@ -202,13 +294,13 @@ impl GithubApp {
         let (status, headers, body) = match answer {
             Ok(answer) => answer,
             Err(err) => {
-                self.with_budget(connection, |b| b.observe(Observation::Failed, now));
+                self.observe(connection, Observation::Failed, now);
                 return Err(ScmError::Unavailable(err.to_string()));
             }
         };
         let answer = Answer { status, body };
         let (observation, error) = classify(&answer, &headers, now);
-        self.with_budget(connection, |b| b.observe(observation, now));
+        self.observe(connection, observation, now);
         if status == StatusCode::UNAUTHORIZED {
             // The token is refused: the next call asks for a new one, which
             // tells whether the installation still exists.
@@ -224,20 +316,24 @@ impl GithubApp {
     /// is spent, until the reset of that limit.
     pub(crate) fn graphql_limit_reached(&self, connection: ConnectionId) -> ScmError {
         let now = (self.clock)();
-        self.with_budget(connection, |budget| {
-            let until = budget
-                .rates
-                .get("graphql")
-                .map_or(now + SECONDARY_WAIT, |rate| rate.reset_at.max(now));
-            budget.observe(
-                Observation::RateLimited {
-                    until,
-                    secondary: false,
-                },
-                now,
-            );
-            ScmError::RateLimited { until }
-        })
+        let reset_at = {
+            let budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
+            budgets
+                .all
+                .get(&connection)
+                .and_then(|budget| budget.rates.get("graphql"))
+                .map(|rate| rate.reset_at)
+        };
+        let until = reset_at.map_or(now + SECONDARY_WAIT, |reset_at| reset_at.max(now));
+        self.observe(
+            connection,
+            Observation::RateLimited {
+                until,
+                secondary: false,
+            },
+            now,
+        );
+        ScmError::RateLimited { until }
     }
 
     fn forget_token(&self, installation: &str) {
@@ -316,6 +412,16 @@ impl std::fmt::Debug for GithubApp {
             .field("app_id", &self.app_id)
             .finish_non_exhaustive()
     }
+}
+
+/// The path of the `next` page in a `Link` header, from the path of the call
+/// on: the header gives a full address.
+fn next_page(link: &str, path: &str) -> Option<String> {
+    let base = path.split('?').next()?;
+    link.split(',')
+        .find(|part| part.contains(r#"rel="next""#))
+        .and_then(|part| part.split_once('<')?.1.split_once('>'))
+        .and_then(|(url, _)| url.find(base).map(|start| url[start..].to_owned()))
 }
 
 /// What an answer tells the budget, and the error it is for CIHub when it is
@@ -452,10 +558,45 @@ mod tests {
     }
 
     #[test]
+    fn the_next_page_comes_from_the_link_header() {
+        let link = r#"<https://api.github.com/app/hook/deliveries?per_page=100&cursor=v1_9>; rel="next", <https://api.github.com/app/hook/deliveries?per_page=100>; rel="first""#;
+        assert_eq!(
+            next_page(link, "/app/hook/deliveries?per_page=100"),
+            Some("/app/hook/deliveries?per_page=100&cursor=v1_9".into())
+        );
+        let last = r#"<https://api.github.com/app/hook/deliveries?per_page=100>; rel="first""#;
+        assert_eq!(next_page(last, "/app/hook/deliveries?per_page=100"), None);
+    }
+
+    #[test]
     fn a_server_error_is_a_failure() {
         let (observation, error) = classify(&answer(502, "bad gateway"), &headers(&[]), at(0));
         assert_eq!(observation, Observation::Failed);
         assert!(matches!(error, Some(ScmError::Unavailable(_))));
+    }
+
+    #[test]
+    fn a_pause_or_a_change_of_mode_is_urgent_and_every_call_is_a_change() {
+        let connection = ConnectionId::from_ulid(ulid::Ulid(1));
+        let mut budgets = Budgets::default();
+        let answered = Observation::Answered {
+            resource: "core".into(),
+            rate: None,
+        };
+        assert!(!budgets.observe(connection, answered.clone(), at(0)));
+        assert_eq!(budgets.take_changed().len(), 1);
+        assert!(budgets.take_changed().is_empty());
+        let limited = Observation::RateLimited {
+            until: at(60),
+            secondary: false,
+        };
+        assert!(budgets.observe(connection, limited.clone(), at(1)));
+        assert!(!budgets.observe(connection, limited, at(2)));
+        let changed = budgets.take_changed();
+        assert_eq!(changed[0].1.paused_until, Some(at(60)));
+        assert!(!budgets.observe(connection, Observation::Failed, at(3)));
+        assert!(!budgets.observe(connection, Observation::Failed, at(4)));
+        assert!(budgets.observe(connection, Observation::Failed, at(5)));
     }
 
     #[test]

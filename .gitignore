@@ -1,1 +1,3 @@
 /target
+# Local settings and secrets of each developer (docs/DEPLOYMENT.md).
+mise.local.toml

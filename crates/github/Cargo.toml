@@ -20,9 +20,12 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+axum = { workspace = true, features = ["http1", "tokio"] }
+cihub-scm = { workspace = true, features = ["sim"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 ulid.workspace = true
 
 [lints]

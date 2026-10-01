@@ -2,10 +2,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use cihub_domain::{CheckReport, JobClass};
+use time::OffsetDateTime;
 
 use crate::{
-    MergeIntoRef, PrMerge, PrSnapshot, RepoPermission, RepoRef, RequiredChecks, ScmError, ScmUser,
-    StatusUpdate,
+    MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoPermission, RepoRef, RequiredChecks,
+    ScmError, ScmUser, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -174,4 +175,16 @@ pub trait Scm: Send + Sync {
     /// Closes the PR; a closed PR is a success.
     fn close_pr<'a>(&'a self, repo: &'a RepoRef, number: u64, class: JobClass)
     -> ScmFuture<'a, ()>;
+
+    /// The webhook deliveries that the instance sent to CIHub since `since`,
+    /// each attempt once, for every connection (`AGENTS.md` D88). No
+    /// connection makes the call, so no budget of a connection applies.
+    fn recent_deliveries(
+        &self,
+        since: OffsetDateTime,
+        class: JobClass,
+    ) -> ScmFuture<'_, Vec<RecentDelivery>>;
+
+    /// Asks the instance to send the attempt `attempt_id` of a delivery again.
+    fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
 }

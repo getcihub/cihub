@@ -33,12 +33,29 @@
 //!   status `cihub-example` on a commit;
 //! - `comment <pr> <body>` (write): comments on a PR, then edits the comment;
 //! - `label <pr> <label>` (write): adds the label twice, then removes it twice.
+//!
+//! The recording of the contract suite (`AGENTS.md` D90), on a test
+//! repository whose default branch is `main`:
+//!
+//! 1. `prepare-base` (write), once: commits the file of the suite on `main`,
+//!    opens a PR in conflict with `main` and a draft PR. Then add a ruleset
+//!    on `main` that requires the status `cihub-contract-ci` and one approval,
+//!    without "branches up to date".
+//! 2. `prepare-pr` (write), before each recording: opens a PR and passes its
+//!    required status. Approve it on GitHub: the App is its author, so any
+//!    person with the write permission can approve it.
+//! 3. `record <admin> <mergeable> <conflicting> <draft>` (write): plays the
+//!    suite through a recording proxy, merges the mergeable PR, and writes
+//!    `tests/recorded/contract.json` without the token. `<admin>` is the login
+//!    of an admin of the repository.
 
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,
     reason = "a command-line example writes its result to the terminal"
 )]
+
+mod record;
 
 use std::error::Error;
 use std::fmt::Debug;
@@ -59,7 +76,8 @@ const CLASS: JobClass = JobClass::Interactive;
 const USAGE: &str = "usage: github installations
        github <installation> <owner>/<repo> <command> [arguments]
 commands: prs, branch, checks, rules, file, permission,
-          branch-roundtrip, status, comment, label (see the example documentation)";
+          branch-roundtrip, status, comment, label,
+          prepare-base, prepare-pr, record (see the example documentation)";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -108,10 +126,33 @@ async fn run(args: Vec<String>) -> Result<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["installations"] => installations(&config).await,
+        [installation, repo, "prepare-base"] => {
+            record::prepare_base(&app, &config, &repo_ref(installation, repo)?).await
+        }
+        [installation, repo, "prepare-pr"] => {
+            record::prepare_pr(&app, &config, &repo_ref(installation, repo)?).await
+        }
+        [
+            installation,
+            repo,
+            "record",
+            admin,
+            mergeable,
+            conflicting,
+            draft,
+        ] => {
+            let prs = record::Prs {
+                mergeable: mergeable.parse()?,
+                conflicting: conflicting.parse()?,
+                draft: draft.parse()?,
+                admin: (*admin).to_owned(),
+            };
+            record::record(&app, &config, &repo_ref(installation, repo)?, prs).await
+        }
         [installation, repo, command, rest @ ..] => {
             let repo = repo_ref(installation, repo)?;
             command_on(&app, &repo, command, rest).await?;
-            for (_, budget) in app.budgets() {
+            for (_, budget) in app.take_changed_budgets() {
                 println!("\nbudget: {budget:#?}");
             }
             Ok(())
@@ -250,12 +291,7 @@ async fn branch_roundtrip(app: &GithubApp, repo: &RepoRef, from: &str) -> Result
 async fn installations(config: &GithubConfig) -> Result<()> {
     let key = AppKey::from_pem(&config.private_key)?;
     let jwt = key.jwt(&config.app_id, now())?;
-    let url = config.url.trim_end_matches('/');
-    let api = if url == "https://github.com" {
-        "https://api.github.com".to_owned()
-    } else {
-        format!("{url}/api/v3")
-    };
+    let (api, _) = api_urls(&config.url);
     let response = reqwest::Client::builder()
         .user_agent("cihub")
         .build()?
@@ -279,4 +315,18 @@ async fn installations(config: &GithubConfig) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// The addresses of the REST and GraphQL APIs of a GitHub, as `GithubApp`
+/// reaches them.
+fn api_urls(github_url: &str) -> (String, String) {
+    let url = github_url.trim_end_matches('/');
+    if url == "https://github.com" {
+        (
+            "https://api.github.com".to_owned(),
+            "https://api.github.com/graphql".to_owned(),
+        )
+    } else {
+        (format!("{url}/api/v3"), format!("{url}/api/graphql"))
+    }
 }

@@ -10,11 +10,14 @@ use cihub_domain::{
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
-    RepoPermission, RepoRef, RequiredChecks, Scm, ScmError, ScmFuture, ScmUser, StatusUpdate,
+    RecentDelivery, RepoPermission, RepoRef, RequiredChecks, Scm, ScmError, ScmFuture, ScmUser,
+    StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 use crate::GithubApp;
 use crate::client::{Answer, JSON, Request};
@@ -926,6 +929,54 @@ impl Scm for GithubApp {
                 .rest(repo, class, Method::PATCH, &rest, Some(body))
                 .await?;
             expect(answer, &[StatusCode::OK]).map(drop)
+        })
+    }
+
+    /// The pages of `GET /app/hook/deliveries`, newest first, until an
+    /// attempt older than `since`.
+    fn recent_deliveries(
+        &self,
+        since: OffsetDateTime,
+        _class: JobClass,
+    ) -> ScmFuture<'_, Vec<RecentDelivery>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Attempt {
+                id: u64,
+                guid: String,
+                delivered_at: String,
+            }
+            let mut path = Some("/app/hook/deliveries?per_page=100".to_owned());
+            let mut recent = Vec::new();
+            while let Some(page) = path.take() {
+                let (answer, next) = self.send_as_app(Method::GET, &page).await?;
+                let attempts: Vec<Attempt> = expect(answer, &[StatusCode::OK])?.json()?;
+                let mut older = false;
+                for attempt in attempts {
+                    let at = OffsetDateTime::parse(&attempt.delivered_at, &Rfc3339)
+                        .map_err(|err| ScmError::Protocol(err.to_string()))?;
+                    if at < since {
+                        older = true;
+                        break;
+                    }
+                    recent.push(RecentDelivery {
+                        delivery_id: attempt.guid,
+                        attempt_id: attempt.id.to_string(),
+                    });
+                }
+                if !older {
+                    path = next;
+                }
+            }
+            Ok(recent)
+        })
+    }
+
+    fn redeliver<'a>(&'a self, attempt_id: &'a str, _class: JobClass) -> ScmFuture<'a, ()> {
+        Box::pin(async move {
+            let path = format!("/app/hook/deliveries/{}/attempts", encode(attempt_id));
+            let (answer, _) = self.send_as_app(Method::POST, &path).await?;
+            expect(answer, &[StatusCode::ACCEPTED]).map(drop)
         })
     }
 }

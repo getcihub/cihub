@@ -26,6 +26,7 @@ deny = [
     { crate = "tokio", wrappers = [
         "cihub-scm",
         "cihub-github",
+        "cihub-web",
         "cihub-platform",
         "cihub-mergequeue",
         "cihub-flakytests",
@@ -47,6 +48,8 @@ deny = [
     ] },
     { crate = "sqlx", wrappers = [
         "cihub-store",
+        # A dev-dependency only: its tests against Postgres.
+        "cihub-web",
         "cihub-server",
         "cihub-platform",
         "cihub-analytics",
@@ -59,8 +62,10 @@ deny = [
         "cihub-client",
     ] },
     { crate = "axum", wrappers = [
+        # A dev-dependency only: the replay of recorded answers (AGENTS.md D74).
+        "cihub-github",
         "cihub-platform",
-        "cihub-http",
+        "cihub-web",
         "cihub-mergequeue",
         "cihub-flakytests",
         "cihub-server",

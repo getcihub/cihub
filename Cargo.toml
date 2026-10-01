@@ -18,6 +18,7 @@ cihub-mq-core = { path = "crates/mq-core" }
 cihub-platform = { path = "crates/platform" }
 cihub-scm = { path = "crates/scm" }
 cihub-github = { path = "crates/github" }
+cihub-web = { path = "crates/web" }
 cihub-store = { path = "crates/store" }
 cihub-telemetry = { path = "crates/telemetry" }
 anyhow = "1.0.104"

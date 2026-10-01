@@ -75,9 +75,10 @@ crates/
   server/                cihub-server         (existe)
   store/                 cihub-store          (existe)
   telemetry/             cihub-telemetry      (existe)
+  web/                   cihub-web            (existe)
   ...                    les autres crates du tableau, avec leur lot
 migrations/              migrations Postgres embarquees dans cihub-server (lot 2)
-web/                     tableau de bord, embarque par le role api (lot 10)
+web/                     tableau de bord, embarque par le role web (lot 10)
 ```
 
 | Crate              | Responsabilité                                                                                                                                                         | Dépend de (workspace)                                            | Lot | État   |
@@ -90,10 +91,10 @@ web/                     tableau de bord, embarque par le role api (lot 10)
 | `cihub-flaky-core` | Signaux de détection, classification `stable` / `suspect` / `flaky` / `broken`, `case_key` (pur)                                                                       | `domain`                                                         | 14  | cible  |
 | `cihub-store`      | Pool Postgres, transactions d'une organisation ou du système (RLS), tenancy, journal et partitions, jetons d'API, verrous, baux, migrations embarquées, test des enums Postgres | `domain`                                                         | 2   | existe |
 | `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
-| `cihub-platform`   | Baux des files, réveil, inbox, jobs, boucle du worker et registre des exécuteurs, maintenance (`AGENTS.md` D62, D66, D67) ; contrat `Module` (lot 5), outbox (lot 11)  | `domain`, `store` ; `scm` au lot 4 (`AGENTS.md` D53)             | 3–5 | existe |
+| `cihub-platform`   | Baux des files, réveil, inbox, routage et balayage des livraisons, budgets des connexions, jobs, boucle du worker et registre des exécuteurs, maintenance (`AGENTS.md` D62, D66, D67, D84 à D88) ; contrat `Module` (lot 5), outbox (lot 11)  | `domain`, `store`, `scm` (`AGENTS.md` D53)                       | 3–5 | existe |
 | `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel ; simulateur GitHub avec injection de pannes, feature `sim` (`AGENTS.md` D73) | `domain`                                                         | 4   | existe |
 | `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | existe |
-| `cihub-http`       | Serveur HTTP du rôle `api` : auth, sessions, CSRF, limite de débit, erreurs problem+json, webhooks GitHub, `/api/v1/openapi.json`, tableau de bord                         | `platform`, `github`, `telemetry` ; `api-types` au lot 9 | 4   | cible  |
+| `cihub-web`        | Serveur HTTP de l'adresse publique du rôle `web` : webhooks du SCM (signature par l'adaptateur, stockage non routé, `AGENTS.md` D82 à D84, D91) ; puis auth, sessions, CSRF, limite de débit, erreurs problem+json, `/api/v1/openapi.json`, tableau de bord | `domain`, `store`, `platform`, `github` ; `api-types` au lot 9 | 4   | existe |
 | `cihub-mergequeue` | Module merge queue : boucle de réconciliation, projections, exécuteurs de jobs, routes `/api/v1/queues`, rendu des commentaires de PR                                     | `mq-core`, `config`, `contracts`, `platform`, `scm`, `analytics` | 5   | cible  |
 | `cihub-api-types`  | Requêtes et réponses de l'API publique, codes d'erreur                                                                                                                 | `domain`                                                         | 9   | cible  |
 | `cihub-client`     | Client typé de l'API publique, pour la CLI et les tests de bout en bout                                                                                                | `api-types`                                                      | 9   | cible  |
@@ -133,7 +134,7 @@ variantes de chaque énumération.
 
 | Rôle        | Ce que le rôle lance                            | Crate qui porte le code |
 | ----------- | ----------------------------------------------- | ----------------------- |
-| `api`       | serveur HTTP : API, webhooks, OTLP, tableau de bord | `cihub-http`        |
+| `web`       | serveur HTTP : API, webhooks, OTLP, tableau de bord | `cihub-web`         |
 | `scheduler` | boucle de réconciliation des files              | `cihub-mergequeue`      |
 | `worker`    | exécution des jobs des modules                  | `cihub-platform`        |
 | `notifier`  | diffusion de l'outbox (lot 11, D65)             | `cihub-platform`        |

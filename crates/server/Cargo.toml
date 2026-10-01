@@ -11,7 +11,11 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
+cihub-domain.workspace = true
+cihub-github.workspace = true
+cihub-web.workspace = true
 cihub-platform.workspace = true
+cihub-scm.workspace = true
 cihub-store.workspace = true
 cihub-telemetry.workspace = true
 secrecy.workspace = true
@@ -23,6 +27,7 @@ tracing.workspace = true
 ulid.workspace = true
 
 [dev-dependencies]
+ring.workspace = true
 sqlx.workspace = true
 
 [lints]

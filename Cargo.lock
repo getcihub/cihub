@@ -243,6 +243,7 @@ dependencies = [
 name = "cihub-github"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.22.1",
  "cihub-domain",
  "cihub-scm",
@@ -275,6 +276,7 @@ name = "cihub-platform"
 version = "0.1.0"
 dependencies = [
  "cihub-domain",
+ "cihub-scm",
  "cihub-store",
  "serde_json",
  "sqlx",
@@ -303,9 +305,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cihub-domain",
+ "cihub-github",
  "cihub-platform",
+ "cihub-scm",
  "cihub-store",
  "cihub-telemetry",
+ "cihub-web",
+ "ring",
  "secrecy",
  "serde",
  "sqlx",
@@ -340,6 +347,26 @@ dependencies = [
  "time",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "cihub-web"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "cihub-domain",
+ "cihub-github",
+ "cihub-platform",
+ "cihub-store",
+ "ring",
+ "secrecy",
+ "serde_json",
+ "sqlx",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]
