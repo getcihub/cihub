@@ -6,10 +6,10 @@ use std::path::Path;
 
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
-    Actor, ActorKind, ApiScope, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
-    EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState, MembershipRole,
-    Mergeability, ModuleName, OrgId, Priority, QueueId, QueueMode, QueueState, Reason,
-    RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
+    EventId, EventKind, EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState,
+    MembershipRole, Mergeability, ModuleName, OrgId, Priority, QueueId, QueueMode, QueueState,
+    Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -63,7 +63,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 18] = [
+const TENANT_TABLES: [&str; 19] = [
     "orgs",
     "org_modules",
     "scm_accounts",
@@ -82,6 +82,7 @@ const TENANT_TABLES: [&str; 18] = [
     "test_runs",
     "queue_snapshots",
     "queue_inbox",
+    "check_observations",
 ];
 
 /// The month of the events of the tests.
@@ -138,9 +139,13 @@ fn rows(org: OrgId, n: u8) -> String {
                      'testing', 'test_run_started', '2026-09-15T00:00:00Z');
          INSERT INTO test_runs (id, org_id, queue_id, group_id, attempt, test_branch, status,
                                 status_reason, required_statuses, started_at,
-                                failure_causing_statuses)
+                                failure_causing_statuses, base_sha, head_shas,
+                                tested_pr_numbers)
              VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'cihub-merge/pr-1',
-                     'assembling', 'test_run_started', '{{}}', '2026-09-15T00:00:00Z', '{{}}');
+                     'assembling', 'test_run_started', '{{}}', '2026-09-15T00:00:00Z', '{{}}',
+                     'abc', '{{abc}}', '{{1}}');
+         INSERT INTO check_observations (org_id, run_id, name, kind, required, observed_at)
+             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, '2026-09-15T00:00:00Z');
          INSERT INTO queue_snapshots (org_id, queue_id, seq, payload, created_at)
              VALUES ('{org}', '{queue}', 1, '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
@@ -326,6 +331,8 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
     let expected: Vec<(&str, Vec<String>)> = vec![
         ("actor_kind", values::<ActorKind>()),
         ("api_scope", values::<ApiScope>()),
+        ("check_conclusion", values::<CheckConclusion>()),
+        ("check_kind", values::<CheckKind>()),
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("event_type", values::<EventType>()),

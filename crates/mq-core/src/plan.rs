@@ -9,8 +9,9 @@ use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, Event, EventId, EventKind, GroupId, GroupKind, GroupState,
     Item, ItemId, ItemState, JobError, Lifecycle, Mergeability, PrState, QueueControl, QueueMode,
-    QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup, TestRun,
+    QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup, TestRun, test_branch,
 };
+use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
 use crate::graph::{insertion_index, position_at, predecessors, renumber};
@@ -47,13 +48,21 @@ pub struct Read {
 }
 
 /// A test branch that must exist: `base_sha`, then the heads merged in
-/// order (predecessors, then members).
+/// order: the predecessors of the group, then its members.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TestBranch {
     pub run_id: RunId,
     pub name: String,
     pub base_sha: String,
-    pub head_shas: Vec<String>,
+    pub predecessors: Vec<Head>,
+    pub members: Vec<Head>,
+}
+
+/// The head of a PR, as the assembly merges it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Head {
+    pub pr_number: u64,
+    pub sha: String,
 }
 
 /// A PR that must be merged, with the `sha` guard on its head.
@@ -226,10 +235,7 @@ fn new_run(
         to: RunStatus::Assembling,
         reason,
         attempt,
-        test_branch: format!(
-            "{}-merge/pr-{first_pr}/{run_id}",
-            settings.branch_prefix.value
-        ),
+        test_branch: test_branch(&settings.branch_prefix.value, first_pr, run_id),
         failure_causing_statuses: Vec::new(),
     }
 }
@@ -980,7 +986,15 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
 }
 
 fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
-    let head = |id: &ItemId| s.items.get(id).map(|i| i.head_sha.clone());
+    let heads = |ids: &[ItemId]| -> Vec<Head> {
+        ids.iter()
+            .filter_map(|id| s.items.get(id))
+            .map(|item| Head {
+                pr_number: item.pr_number,
+                sha: item.head_sha.clone(),
+            })
+            .collect()
+    };
     let test_branches = s
         .runs
         .values()
@@ -991,12 +1005,8 @@ fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
                 run_id: run.id,
                 name: run.test_branch.clone(),
                 base_sha: group.base_sha.clone(),
-                head_shas: group
-                    .predecessor_ids
-                    .iter()
-                    .chain(&group.item_ids)
-                    .filter_map(head)
-                    .collect(),
+                predecessors: heads(&group.predecessor_ids),
+                members: heads(&group.item_ids),
             })
         })
         .collect();

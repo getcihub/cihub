@@ -3,10 +3,13 @@
 //! its writing and at a replay. A transition is guarded by the state before
 //! (`UPDATE … WHERE state = $from`), and its row count is checked.
 
-use cihub_domain::{Event, EventKind, Item, Priority, RunStatus};
+use cihub_domain::{
+    CheckObservation, CheckReport, Event, EventKind, Item, OrgId, Priority, QueueId, RunStatus,
+};
 use cihub_mq_core::Snapshot;
 use sqlx::PgConnection;
 use sqlx::postgres::PgQueryResult;
+use time::OffsetDateTime;
 
 use crate::MergeQueueError;
 
@@ -165,11 +168,28 @@ pub(crate) async fn project(
             test_branch,
             ..
         } => {
+            let group = after.groups.get(group_id).ok_or_else(mismatch)?;
+            let items = |ids: &[cihub_domain::ItemId]| {
+                ids.iter()
+                    .filter_map(|id| after.items.get(id))
+                    .collect::<Vec<_>>()
+            };
+            let head_shas: Vec<String> = items(&group.predecessor_ids)
+                .into_iter()
+                .chain(items(&group.item_ids))
+                .map(|item| item.head_sha.clone())
+                .collect();
+            let tested: Vec<i64> = items(&group.item_ids)
+                .into_iter()
+                .map(|item| number(item.pr_number))
+                .collect::<Result<_, _>>()?;
             sqlx::query(
                 "INSERT INTO test_runs (id, org_id, queue_id, group_id, attempt, test_branch,
                                         status, status_reason, required_statuses, started_at,
-                                        failure_causing_statuses)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7::run_status, $8::reason, '{}', $9, '{}')",
+                                        failure_causing_statuses, base_sha, head_shas,
+                                        tested_pr_numbers)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7::run_status, $8::reason, '{}', $9, '{}', $10,
+                         $11, $12)",
             )
             .bind(run_id.to_string())
             .bind(event.org_id.to_string())
@@ -180,6 +200,9 @@ pub(crate) async fn project(
             .bind(to.as_str())
             .bind(reason.as_str())
             .bind(at)
+            .bind(&group.base_sha)
+            .bind(head_shas)
+            .bind(tested)
             .execute(&mut *conn)
             .await
             .map_err(MergeQueueError::Query)?;
@@ -264,6 +287,19 @@ pub(crate) async fn project(
                 .await;
             one_row(done, event)?;
         }
+        EventKind::CheckObserved { test_sha, check } => {
+            let run = after
+                .runs
+                .values()
+                .find(|r| !r.status.is_terminal() && r.test_sha.as_deref() == Some(test_sha))
+                .ok_or_else(mismatch)?;
+            let observed = after
+                .checks
+                .get(&run.id)
+                .and_then(|checks| checks.get(&(check.name.clone(), check.kind)))
+                .ok_or_else(mismatch)?;
+            upsert_check(conn, &observed.value).await?;
+        }
         // The other facts change only the observed state, and the window has
         // no column before lot 8.
         EventKind::ItemSubmitted { .. }
@@ -271,7 +307,6 @@ pub(crate) async fn project(
         | EventKind::ItemRestartRequested { .. }
         | EventKind::PrObserved { .. }
         | EventKind::TargetPushed { .. }
-        | EventKind::CheckObserved { .. }
         | EventKind::TargetsReceived { .. }
         | EventKind::MergeSucceeded { .. }
         | EventKind::MergeFailed { .. }
@@ -331,6 +366,86 @@ async fn create_item(
     .execute(conn)
     .await;
     one_row(done, event)
+}
+
+/// Writes the last report of a check on the test SHA of its run, when it is
+/// newer than the one stored, and the time of the last report of the run.
+/// The same rows come from a fact of the log and from a late report (D118),
+/// so a replay of the log keeps the late reports.
+pub(crate) async fn upsert_check(
+    conn: &mut PgConnection,
+    check: &CheckObservation,
+) -> Result<(), MergeQueueError> {
+    sqlx::query(
+        "INSERT INTO check_observations (org_id, run_id, name, kind, required, conclusion,
+                                         details_url, observed_at)
+         VALUES ($1, $2, $3, $4::check_kind, $5, $6::check_conclusion, $7, $8)
+         ON CONFLICT (run_id, name, kind) DO UPDATE
+             SET required = excluded.required, conclusion = excluded.conclusion,
+                 details_url = excluded.details_url, observed_at = excluded.observed_at
+             WHERE excluded.observed_at >= check_observations.observed_at",
+    )
+    .bind(check.org_id.to_string())
+    .bind(check.run_id.to_string())
+    .bind(&check.name)
+    .bind(check.kind.as_str())
+    .bind(check.required)
+    .bind(check.conclusion.map(cihub_domain::CheckConclusion::as_str))
+    .bind(&check.details_url)
+    .bind(check.observed_at)
+    .execute(&mut *conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    sqlx::query(
+        "UPDATE test_runs
+         SET last_report_at = (SELECT max(observed_at) FROM check_observations WHERE run_id = $1)
+         WHERE id = $1",
+    )
+    .bind(check.run_id.to_string())
+    .execute(conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    Ok(())
+}
+
+/// Stores a report on the test SHA of a run of `queue` that is no longer
+/// live, without a fact in the log (`AGENTS.md` D118). Returns `false` when
+/// no run of the queue has this test SHA.
+pub(crate) async fn record_late_check(
+    conn: &mut PgConnection,
+    org_id: OrgId,
+    queue: QueueId,
+    test_sha: &str,
+    check: &CheckReport,
+    at: OffsetDateTime,
+) -> Result<bool, MergeQueueError> {
+    let run: Option<(String, Vec<String>)> = sqlx::query_as(
+        "SELECT id, required_statuses FROM test_runs
+         WHERE queue_id = $1 AND test_sha = $2
+         ORDER BY started_at DESC LIMIT 1",
+    )
+    .bind(queue.to_string())
+    .bind(test_sha)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    let Some((run_id, required)) = run else {
+        return Ok(false);
+    };
+    let observation = CheckObservation {
+        org_id,
+        run_id: run_id
+            .parse()
+            .map_err(|source| MergeQueueError::ReadQueue { id: run_id, source })?,
+        name: check.name.clone(),
+        kind: check.kind,
+        required: required.contains(&check.name),
+        conclusion: check.conclusion,
+        details_url: check.details_url.clone(),
+        observed_at: at,
+    };
+    upsert_check(conn, &observation).await?;
+    Ok(true)
 }
 
 fn one_row(done: Result<PgQueryResult, sqlx::Error>, event: &Event) -> Result<(), MergeQueueError> {

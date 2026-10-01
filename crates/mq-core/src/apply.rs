@@ -230,10 +230,15 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
         EventKind::TargetPushed { before, after, .. } => {
             target_pushed(snapshot, event, before.as_deref(), after)
         }
+        // A live run has its test SHA from the assembly fact, before the
+        // decision that makes it `in_progress`: a check reported meanwhile
+        // counts.
         EventKind::CheckObserved { test_sha, check } => {
-            let Some(run) = snapshot.runs.values().find(|r| {
-                r.status == RunStatus::InProgress && r.test_sha.as_deref() == Some(test_sha)
-            }) else {
+            let Some(run) = snapshot
+                .runs
+                .values()
+                .find(|r| !r.status.is_terminal() && r.test_sha.as_deref() == Some(test_sha))
+            else {
                 return Outcome::Ignored;
             };
             let run_id = run.id;

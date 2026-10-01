@@ -245,8 +245,14 @@ fn merge_queue(
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
     });
     let scm: Arc<dyn Scm> = github.app.clone();
-    cihub_mergequeue::module(pool.clone(), scm, translate, process.to_owned(), now)
-        .context("the merge queue cannot start")
+    cihub_mergequeue::module(
+        pool.clone(),
+        scm,
+        translate,
+        process.to_owned(),
+        Arc::new(now),
+    )
+    .context("the merge queue cannot start")
 }
 
 /// Starts the client of the GitHub App, and creates the row of its SCM

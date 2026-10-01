@@ -95,7 +95,7 @@ web/                     tableau de bord, embarque par le role web (lot 10)
 | `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel ; simulateur GitHub avec injection de pannes, feature `sim` (`AGENTS.md` D73) | `domain`                                                         | 4   | existe |
 | `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | existe |
 | `cihub-web`        | Serveur HTTP de l'adresse publique du rôle `web` : webhooks du SCM (signature par l'adaptateur, stockage non routé, `AGENTS.md` D82 à D84, D91) ; puis auth, sessions, CSRF, limite de débit, erreurs problem+json, `/api/v1/openapi.json`, tableau de bord | `domain`, `store`, `platform`, `github` ; `api-types` au lot 9 | 4   | existe |
-| `cihub-mergequeue` | Module merge queue : journal de chaque file, projections, instantanés et rejeu ; puis boucle de réconciliation, exécuteurs de jobs (lot 5), routes `/api/v1/queues`, rendu des commentaires de PR | `domain`, `mq-core`, `store`, puis `config`, `platform`, `scm` (`AGENTS.md` D93) ; `contracts` au lot 14, `analytics` au lot 11 | 5   | existe |
+| `cihub-mergequeue` | Module merge queue : journal de chaque file, projections, instantanés et rejeu ; boucle de réconciliation et exécuteurs de jobs (lots 5 et 6) ; puis routes `/api/v1/queues`, rendu des commentaires de PR | `domain`, `mq-core`, `store`, puis `config`, `platform`, `scm` (`AGENTS.md` D93) ; `contracts` au lot 14, `analytics` au lot 11 | 5   | existe |
 | `cihub-api-types`  | Requêtes et réponses de l'API publique, codes d'erreur                                                                                                                 | `domain`                                                         | 9   | cible  |
 | `cihub-client`     | Client typé de l'API publique, pour la CLI et les tests de bout en bout                                                                                                | `api-types`                                                      | 9   | cible  |
 | `cihub-cli`        | Binaire `cihub`                                                                                                                                                        | `client`, `api-types`, `otlp`                                    | 9   | cible  |
@@ -179,10 +179,12 @@ résultat de job, par l'API) positionne `dirty` et émet `NOTIFY cihub_queue, '<
 file ne s'exécute jamais en parallèle d'elle-même et n'attend aucune E/S autre que Postgres : une réplique gère
 donc des centaines de files.
 
-Une réconciliation (`cihub-mergequeue`, lot 5) se fait dans une seule transaction : charger le dernier instantané
-et les événements qui le suivent, lire les livraisons de la file et les faits de `queue_inbox`, écrire les faits
-qui changent l'état avec leurs projections, exécuter `plan`, écrire ses décisions, demander les jobs de l'état
-voulu (lectures de PR, soumissions) et fixer `next_tick_at` à `wake_at`. Un arrêt à n'importe quel moment ne
+Une réconciliation (`cihub-mergequeue`, lots 5 et 6) se fait dans une seule transaction : charger le dernier
+instantané et les événements qui le suivent, écrire les faits de `queue_inbox` qui changent l'état avec leurs
+projections, puis ceux des livraisons de la file (une livraison de check arrivée avant le fait d'assemblage de
+son exécution attend la réconciliation suivante), exécuter `plan`, écrire ses décisions, demander les jobs de
+l'état voulu (lectures de PR, soumissions, assemblage des branches de test) et le nettoyage des exécutions que les
+décisions terminent (`AGENTS.md` D117), et fixer `next_tick_at` à `wake_at`. Un arrêt à n'importe quel moment ne
 laisse rien : la transaction est annulée et la réconciliation suivante refait le même travail. Une passe de
 chaque réplique lit aussi les livraisons d'une connexion sans file (`AGENTS.md` D103) : un accès perdu ou rendu
 va dans `queue_inbox` de chaque file de la connexion, et une commande `/cihub merge` demande un job

@@ -3,30 +3,32 @@
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, ConnectionId, Event, EventId,
-    EventKind, ItemState, JobClass, Mergeability, OrgId, PrState, Priority, QueueId, RepoId,
-    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, ScmAccountId, ScmInstanceId,
-    SubmittedVia, UserId,
+    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, ConflictCulprit, ConnectionId,
+    Event, EventId, EventKind, ItemState, JobClass, MergeMethod, Mergeability, OrgId, PrState,
+    Priority, QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus,
+    ScmAccountId, ScmInstanceId, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
-    MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
+    Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
     queue_status_context, rebuild, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, Job, begin_reconciliation, claim_jobs, enqueue_job,
-    find_route, run_budget_writer, run_maintenance, run_worker, store_delivery,
+    find_route, mark_dirty, run_budget_writer, run_maintenance, run_worker, store_delivery,
 };
-use cihub_scm::sim::{PrChange, Sim};
+use cihub_scm::sim::{Fault, PrChange, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoPermission, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmUser,
+    ConnectionRef, PrMerge, RepoPermission, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError,
+    ScmUser,
 };
-use cihub_store::{begin_system, create_event_partitions};
+use cihub_store::{begin_system, create_event_partitions, deposit_fact};
 use secrecy::SecretString;
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
@@ -319,6 +321,9 @@ async fn projections(conn: &mut PgConnection) -> Vec<Value> {
         "SELECT to_jsonb(t) FROM queue_items t WHERE queue_id = $1 ORDER BY id",
         "SELECT to_jsonb(t) FROM test_groups t WHERE queue_id = $1 ORDER BY id",
         "SELECT to_jsonb(t) FROM test_runs t WHERE queue_id = $1 ORDER BY id",
+        "SELECT to_jsonb(c) FROM check_observations c
+         WHERE run_id IN (SELECT id FROM test_runs WHERE queue_id = $1)
+         ORDER BY run_id, name, kind",
         "SELECT jsonb_build_object('state', state, 'mode', mode) FROM queues WHERE id = $1",
     ] {
         let found: Vec<Value> = sqlx::query_scalar(query)
@@ -415,11 +420,50 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     assert_eq!(item.5, Some(user().to_string()));
 }
 
+/// The clock of the loops of a [`SimQueue`]: the fixed time of [`clock`],
+/// plus the time elapsed since the start of the test, so that a job retried
+/// after its backoff comes due, plus the minutes that a test adds to it.
+#[derive(Clone)]
+struct TestClock {
+    started: std::time::Instant,
+    added_minutes: Arc<AtomicI64>,
+}
+
+impl TestClock {
+    fn new() -> Self {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the one place where the simulator tests read the clock"
+        )]
+        let started = std::time::Instant::now();
+        Self {
+            started,
+            added_minutes: Arc::default(),
+        }
+    }
+
+    fn now(&self) -> OffsetDateTime {
+        clock()
+            + self.started.elapsed()
+            + Duration::minutes(self.added_minutes.load(Ordering::SeqCst))
+    }
+
+    fn advance(&self, minutes: i64) {
+        self.added_minutes.fetch_add(minutes, Ordering::SeqCst);
+    }
+
+    fn shared(&self) -> Clock {
+        let clock = self.clone();
+        Arc::new(move || clock.now())
+    }
+}
+
 /// The queue of the tests on the simulator, with the scheduler and the
 /// worker of the server running against it.
 struct SimQueue {
     pool: PgPool,
     sim: Arc<Sim>,
+    clock: TestClock,
     deliveries: Arc<Mutex<HashMap<String, ScmDelivery>>>,
     sent: usize,
     cancel: CancellationToken,
@@ -459,6 +503,7 @@ impl SimQueue {
     async fn new(pool: PgPool) -> Self {
         seed(&pool).await;
         let sim = Arc::new(Sim::new());
+        let clock = TestClock::new();
         let deliveries = Arc::new(Mutex::new(HashMap::new()));
         let scm: Arc<dyn Scm> = sim.clone();
         let module = cihub_mergequeue::module(
@@ -466,17 +511,18 @@ impl SimQueue {
             scm,
             translate(&deliveries),
             "scheduler".into(),
-            clock,
+            clock.shared(),
         )
         .unwrap();
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
         let cancel = CancellationToken::new();
+        let worker_clock = clock.clone();
         let worker = run_worker(
             pool.clone(),
             "worker".into(),
             Arc::new(executors),
-            clock,
+            move || worker_clock.now(),
             std::time::Duration::from_millis(50),
             cancel.clone(),
         );
@@ -488,6 +534,7 @@ impl SimQueue {
         Self {
             pool,
             sim,
+            clock,
             deliveries,
             sent: 0,
             cancel,
@@ -512,16 +559,90 @@ impl SimQueue {
                 event: "sim".into(),
                 action: None,
                 payload: serde_json::json!({ "id": id }),
-                received_at: clock(),
+                received_at: self.clock.now(),
             };
             store_delivery(&mut tx, &stored).await.unwrap();
         }
         tx.commit().await.unwrap();
     }
 
+    /// Wakes the queue, as a change would: after a move of the clock.
+    async fn wake(&self) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        mark_dirty(&mut tx, queue()).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    /// Merges the PRs of the desired state, as the merge job of lot 7 will:
+    /// the merge on the simulator, then its fact. Returns their number.
+    async fn merge_desired(&self) -> usize {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let log = QueueLog::load(&mut tx, queue()).await.unwrap();
+        tx.commit().await.unwrap();
+        let settings = cihub_mergequeue::default_settings().unwrap();
+        let merges = plan(&log.snapshot, &settings, self.clock.now())
+            .unwrap()
+            .desired
+            .merges;
+        for merge in &merges {
+            let request = PrMerge {
+                number: merge.pr_number,
+                head_sha: merge.head_sha.clone(),
+                method: MergeMethod::Squash,
+                title: format!("PR {}", merge.pr_number),
+                message: String::new(),
+            };
+            let merged_sha = self
+                .sim
+                .merge_pr(&repo(), &request, JobClass::Merge)
+                .await
+                .unwrap();
+            let fact = Event {
+                id: EventId::from_ulid(Ulid::from_parts(
+                    u64::try_from(self.clock.now().unix_timestamp()).unwrap(),
+                    u128::from(merge.pr_number) + 1_000_000,
+                )),
+                org_id: org(),
+                queue_id: queue(),
+                actor: Actor::Bot,
+                occurred_at: self.clock.now(),
+                cause_id: None,
+                kind: EventKind::MergeSucceeded {
+                    item_id: merge.item_id,
+                    merged_sha,
+                },
+            };
+            let mut tx = begin_system(&self.pool).await.unwrap();
+            deposit_fact(&mut tx, &fact, self.clock.now())
+                .await
+                .unwrap();
+            mark_dirty(&mut tx, queue()).await.unwrap();
+            tx.commit().await.unwrap();
+        }
+        merges.len()
+    }
+
+    /// The runs in progress: identifier, test SHA and PRs tested.
+    async fn runs_in_progress(&self) -> Vec<(RunId, String, Vec<u64>)> {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let rows: Vec<(String, String, Vec<i64>)> = sqlx::query_as(
+            "SELECT id, test_sha, tested_pr_numbers FROM test_runs
+             WHERE status = 'in_progress' ORDER BY started_at, id",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        rows.into_iter()
+            .map(|(id, sha, prs)| {
+                let prs = prs.into_iter().map(|n| u64::try_from(n).unwrap()).collect();
+                (id.parse().unwrap(), sha, prs)
+            })
+            .collect()
+    }
+
     /// Waits until every delivery, fact and job is done.
     async fn settle(&self) {
-        for _ in 0..400 {
+        for _ in 0..800 {
             let mut tx = begin_system(&self.pool).await.unwrap();
             let busy: bool = sqlx::query_scalar(
                 "SELECT EXISTS (SELECT 1 FROM webhook_inbox WHERE processed_at IS NULL)
@@ -951,7 +1072,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         scm,
         translate(&Arc::default()),
         "scheduler".into(),
-        clock,
+        Arc::new(clock),
     )
     .unwrap();
     let mut executors = Executors::default();
@@ -1016,6 +1137,399 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
     );
     let after = claim_jobs(&mut tx, "worker", reset, 10).await.unwrap();
     assert_eq!(after.len(), 2);
+}
+
+/// Opens the PR of `branch` from bob, with `files` on `parent`.
+fn open_pr_with(sim: &Sim, parent: &str, n: u64, files: &[(&str, Option<&str>)]) -> (u64, String) {
+    let branch = format!("pr-{n}");
+    let head = sim.commit(&repo(), parent, files).unwrap();
+    sim.push(&repo(), &branch, &head, &bob()).unwrap();
+    (sim.open_pr(&repo(), &branch, "main", &bob()).unwrap(), head)
+}
+
+/// A repository on the simulator whose queue knows the head of `main`,
+/// requires `ci`, and lets alice submit. Returns the head of `main`.
+fn target_repo(sim: &Sim, files: &[(&str, &str)]) -> String {
+    let root = sim.add_repo(&repo(), "main", files);
+    let main = sim
+        .commit(&repo(), &root, &[("README.md", Some("cihub"))])
+        .unwrap();
+    sim.push(&repo(), "main", &main, &alice()).unwrap();
+    let rules = RequiredChecks {
+        names: BTreeSet::from([REQUIRED.to_owned()]),
+        up_to_date: false,
+    };
+    sim.set_rules(&repo(), "main", rules).unwrap();
+    sim.set_permission(&repo(), &alice(), RepoPermission::Write)
+        .unwrap();
+    main
+}
+
+/// The rows of `test_runs`, in the order of the runs.
+type RunRow = (
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    Vec<String>,
+    Vec<i64>,
+    Vec<String>,
+    Option<String>,
+    Option<Value>,
+    String,
+    Option<i64>,
+);
+
+async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
+    sqlx::query_as(
+        "SELECT id, test_sha, status::text, failure_reason::text, head_shas, tested_pr_numbers,
+                required_statuses, required_statuses_source::text, conflict_culprit, test_branch,
+                draft_pr_number
+         FROM test_runs ORDER BY started_at, id",
+    )
+    .fetch_all(conn)
+    .await
+    .unwrap()
+}
+
+/// The exit criterion of lot 6 (`docs/LOTS.md`): ten PRs, two with a red CI,
+/// one in conflict with a PR ahead of it, one whose CI never reports. Each
+/// PR is tested on top of its predecessors, each run ends with its reason,
+/// the PRs behind a failed one restart without it, and the merge job of lot 7
+/// is played by the test.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
+    const FAILING: [u64; 2] = [3, 8];
+    const CONFLICTING: u64 = 6;
+    const SILENT: u64 = 9;
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    // The PRs are opened first, so that their numbers are 1 to 10: the draft
+    // PRs of the queue come after them.
+    let mut heads: HashMap<String, u64> = HashMap::new();
+    for n in 1..=10 {
+        let path = format!("f{n}.txt");
+        let mut files = vec![(path.as_str(), Some("x"))];
+        if n == CONFLICTING - 1 {
+            files.push(("shared.txt", Some("five")));
+        }
+        if n == CONFLICTING {
+            files.push(("shared.txt", Some("six")));
+        }
+        let (number, head) = open_pr_with(&sim, &main, n, &files);
+        assert_eq!(number, n);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        heads.insert(head, n);
+    }
+    // One submission at a time: the queue order is the order of the PRs.
+    for n in 1..=10 {
+        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    // The CI of the simulator: each round, the merge job plays, then the CI
+    // reports on the runs in progress; the silent PR never reports, and its
+    // runs time out when the clock moves.
+    let mut rounds = 0;
+    loop {
+        q.deliver().await;
+        q.settle().await;
+        let merged = q.merge_desired().await;
+        let runs = q.runs_in_progress().await;
+        let mut reported = 0;
+        for (_, test_sha, prs) in &runs {
+            if prs.contains(&SILENT) {
+                continue;
+            }
+            let passed = !prs.iter().any(|pr| FAILING.contains(pr));
+            sim.report_check(&repo(), test_sha, check(REQUIRED, passed))
+                .unwrap();
+            reported += 1;
+        }
+        if merged + reported == 0 {
+            if runs.is_empty() {
+                break;
+            }
+            q.clock.advance(301);
+            q.wake().await;
+        }
+        rounds += 1;
+        assert!(rounds < 40, "the queue does not conclude");
+    }
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(i64, String, String, Option<String>)> = sqlx::query_as(
+        "SELECT pr_number, state::text, state_reason::text, verified_by_run_id
+         FROM queue_items WHERE is_current ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let summary: Vec<(i64, &str, &str)> = items
+        .iter()
+        .map(|(n, state, reason, _)| (*n, state.as_str(), reason.as_str()))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (1, "merged", "merge_graph_merge"),
+            (2, "merged", "merge_graph_merge"),
+            (3, "failed", "test_run_required_status_failed"),
+            (4, "merged", "merge_graph_merge"),
+            (5, "merged", "merge_graph_merge"),
+            (6, "failed", "start_test_run_merge_conflict"),
+            (7, "merged", "merge_graph_merge"),
+            (8, "failed", "test_run_required_status_failed"),
+            (9, "failed", "test_run_timeout"),
+            (10, "merged", "merge_graph_merge"),
+        ]
+    );
+
+    let runs = test_runs(&mut tx).await;
+    let pr_of = |sha: &String| heads[sha];
+    // An assembled run has its required statuses from the file, and its
+    // test commit holds the change of every head merged in it.
+    for (_, test_sha, _, _, head_shas, _, required, source, ..) in &runs {
+        let Some(test_sha) = test_sha else {
+            continue;
+        };
+        assert_eq!(required, &[REQUIRED.to_owned()]);
+        assert_eq!(source.as_deref(), Some("repo_config"));
+        for sha in head_shas {
+            let path = format!("f{}.txt", pr_of(sha));
+            let file = sim
+                .file(&repo(), test_sha, &path, JobClass::Repair)
+                .await
+                .unwrap();
+            assert!(file.is_some(), "{path} is not in {test_sha}");
+        }
+    }
+    // The run that proved a merged PR tested it on top of merged PRs only.
+    let merged: BTreeSet<i64> = summary
+        .iter()
+        .filter(|(_, state, _)| *state == "merged")
+        .map(|(n, ..)| *n)
+        .collect();
+    for (n, _, _, verified) in &items {
+        if !merged.contains(n) {
+            continue;
+        }
+        let verified = verified.as_ref().expect("a merged item has its run");
+        let run = runs.iter().find(|r| r.0 == *verified).unwrap();
+        let tested: Vec<i64> = run
+            .4
+            .iter()
+            .map(|sha| i64::try_from(pr_of(sha)).unwrap())
+            .collect();
+        assert!(
+            tested.iter().all(|pr| merged.contains(pr)),
+            "PR {n} was proved on top of {tested:?}"
+        );
+        assert_eq!(run.5, vec![*n]);
+    }
+    // The conflict names the PR ahead that the member conflicts with.
+    let conflicts: Vec<&RunRow> = runs
+        .iter()
+        .filter(|r| r.3.as_deref() == Some("start_test_run_merge_conflict"))
+        .collect();
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(conflicts[0].5, vec![i64::try_from(CONFLICTING).unwrap()]);
+    assert_eq!(
+        conflicts[0].8,
+        Some(
+            serde_json::to_value(ConflictCulprit::QueuePr {
+                pr_number: CONFLICTING - 1
+            })
+            .unwrap()
+        )
+    );
+    // The silent PR timed out twice: its run, then the retry of the failure
+    // budget; a run restarted behind a failed PR was interrupted before.
+    let silent: Vec<&str> = runs
+        .iter()
+        .filter(|r| r.5 == vec![i64::try_from(SILENT).unwrap()])
+        .map(|r| r.2.as_str())
+        .collect();
+    assert_eq!(silent.iter().filter(|s| **s == "timed_out").count(), 2);
+    assert!(
+        silent
+            .iter()
+            .all(|s| matches!(*s, "timed_out" | "interrupted")),
+        "{silent:?}"
+    );
+    // The PRs behind a failed PR restarted without it: at least the PR behind
+    // the silent one, tested on top of it until its timeout.
+    let restarts: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events
+         WHERE type = 'item.transitioned' AND payload->>'reason' = $1",
+    )
+    .bind(Reason::PrerequisiteMergeItemFailed.as_str())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert!(restarts >= 1, "{restarts} restarts");
+    // Every report on a test SHA is kept, with the required ones marked: the
+    // red CI of the two failing PRs, at least twice each (the budget retries
+    // once, and a group restarted behind a failed PR starts a new budget).
+    let reports: Vec<(Vec<i64>, String, String)> = sqlx::query_as(
+        "SELECT t.tested_pr_numbers, t.status::text, c.conclusion::text
+         FROM check_observations c JOIN test_runs t ON t.id = c.run_id
+         WHERE c.required AND c.name = $1
+         ORDER BY c.conclusion, t.tested_pr_numbers, t.started_at",
+    )
+    .bind(REQUIRED)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let mut failures: BTreeMap<&[i64], usize> = BTreeMap::new();
+    for (prs, status, conclusion) in &reports {
+        if conclusion == "failure" {
+            assert_eq!(status, "failed", "{prs:?}");
+            *failures.entry(prs.as_slice()).or_default() += 1;
+        }
+    }
+    let failing: Vec<&[i64]> = failures.keys().copied().collect();
+    assert_eq!(failing, [&[3][..], &[8][..]]);
+    assert!(failures.values().all(|n| *n >= 2), "{failures:?}");
+    let passed = reports.iter().filter(|r| r.2 == "success").count();
+    assert!(passed >= 6, "{reports:?}");
+    drop(tx);
+
+    // The branches of every run are gone and its draft PR is closed.
+    for (_, _, _, _, _, _, _, _, _, test_branch, draft) in &runs {
+        assert_eq!(sim.branch(&repo(), test_branch), None, "{test_branch}");
+        let temp = temp_branch(test_branch).unwrap();
+        assert_eq!(sim.branch(&repo(), &temp), None, "{temp}");
+        if let Some(number) = draft {
+            let number = u64::try_from(*number).unwrap();
+            let pr = sim
+                .pull_request(&repo(), number, JobClass::Repair)
+                .await
+                .unwrap();
+            assert_eq!(pr.state, PrState::Closed, "draft PR {number}");
+        }
+    }
+
+    // A report that comes after the end of a run is stored without a fact.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let events_before: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    drop(tx);
+    let proved = items[0].3.as_ref().unwrap();
+    let run = runs.iter().find(|r| r.0 == *proved).unwrap();
+    let test_sha = run.1.as_ref().unwrap();
+    q.clock.advance(1);
+    sim.report_check(&repo(), test_sha, check("late", true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let late: (String, bool) = sqlx::query_as(
+        "SELECT conclusion::text, required FROM check_observations WHERE run_id = $1 AND name = 'late'",
+    )
+    .bind(proved)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(late, ("success".into(), false));
+    let events_after: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(events_after, events_before);
+
+    // The replay of the log gives the same projections, late report included.
+    let before = projections(&mut tx).await;
+    rebuild(&mut tx, queue(), q.clock.now()).await.unwrap();
+    assert_eq!(projections(&mut tx).await, before);
+    drop(tx);
+    q.stop().await;
+}
+
+/// Without a configuration file, the required statuses come from the rules
+/// of the target branch; a branch protection that then refuses the test
+/// branch fails the run with `start_test_run_permissions_block_test_branch`.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let submit = |n: u64| {
+        let path = format!("f{n}.txt");
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+    };
+    // The first PR meets the protection; the second, submitted after it,
+    // assembles.
+    submit(1);
+    sim.fail(Fault {
+        call: Some("set_branch"),
+        error: ScmError::Forbidden("Protected branch update failed".into()),
+        times: 1,
+    });
+    q.deliver().await;
+    q.settle().await;
+    submit(2);
+    q.deliver().await;
+    q.settle().await;
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT pr_number, state::text, state_reason::text FROM queue_items WHERE is_current
+         ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(
+        items,
+        [
+            (
+                1,
+                "failed".into(),
+                "start_test_run_permissions_block_test_branch".into()
+            ),
+            (2, "tests_passed".into(), "test_run_passed".into()),
+        ]
+    );
+    let runs = test_runs(&mut tx).await;
+    assert_eq!(runs.len(), 2);
+    let (_, test_sha, status, reason, ..) = &runs[0];
+    assert_eq!((test_sha.as_deref(), status.as_str()), (None, "failed"));
+    assert_eq!(
+        reason.as_deref(),
+        Some("start_test_run_permissions_block_test_branch")
+    );
+    let (_, test_sha, status, _, _, _, required, source, ..) = &runs[1];
+    assert_eq!((test_sha.is_some(), status.as_str()), (true, "succeeded"));
+    assert_eq!(required, &[REQUIRED.to_owned()]);
+    assert_eq!(source.as_deref(), Some("branch_protection"));
+    // Both runs ended: the failed one and the successful one are cleaned.
+    let cleaned: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM jobs WHERE type = 'cleanup_test_branch' AND state = 'done'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(cleaned, 2);
+    drop(tx);
+    q.stop().await;
 }
 
 async fn partition_exists(pool: &PgPool, name: &str) -> bool {

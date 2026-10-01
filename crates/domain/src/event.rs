@@ -69,7 +69,7 @@ pub enum EventKind {
         after: String,
         sender_id: UserId,
     },
-    /// Only for a test SHA that a live run waits for.
+    /// Only for the test SHA of a live run.
     #[serde(rename = "check.observed")]
     CheckObserved {
         test_sha: String,

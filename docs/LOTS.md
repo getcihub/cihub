@@ -38,7 +38,7 @@ les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | terminé                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | terminé                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | terminé                                  |
-| 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
+| 6   | Cycle de test                                          | 1     | 5         | —         | terminé                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
 | 8   | Politique de file                                      | 1     | 6         | —         | en cours (commencé avant son tour)       |
 | 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | à faire                                  |
@@ -671,6 +671,68 @@ Autres valeurs fermées :
 - **Critère de sortie** : sur le simulateur, une file de 10 PR dont 2 échouent teste chaque PR au-dessus de
   ses prédécesseurs, conclut chaque exécution avec la bonne raison et redémarre l'aval ; un conflit identifie la
   bonne PR coupable ; un check qui ne rapporte jamais donne `test_run_timeout`.
+- **Suivi** :
+  - Fait : les décisions du lot (`AGENTS.md` D114 à D118). Migration `20261001120000_test_cycle.sql` : enums
+    `check_kind` et `check_conclusion`, colonnes `base_sha`, `head_shas`, `tested_pr_numbers` et `last_report_at`
+    de `test_runs`, table `check_observations` avec la sécurité au niveau ligne. Dans `cihub-domain`, les noms de
+    branches de test (`test_branch`, `temp_branch`, `run_of_test_branch`) ; dans `cihub-mq-core`, l'état voulu
+    porte les têtes avec leur numéro de PR (`TestBranch { predecessors, members }`, `Head`), et un
+    `check.observed` est accepté pour une exécution `assembling` dont le fait d'assemblage a donné le SHA de
+    test. Dans `cihub-platform`, un check est routé vers sa file par le nom de sa branche de test, ou par son SHA
+    de test une fois la branche supprimée. Dans `cihub-mergequeue` : job `assemble_test_branch` (statuts requis
+    depuis le tableau de bord, `.cihub.yaml` ou `.cihub.yml` lu au `base_sha`, puis la protection de la cible
+    sans le statut de la file ; branche temporaire au `base_sha`, merges des prédécesseurs puis des membres,
+    branche de test, suppression de la temporaire ; PR brouillon en mode `draft_pr`, rien en mode `push` ;
+    `conflict_culprit` ; erreurs `permissions_block_test_branch`, `draft_prs_not_allowed`,
+    `no_required_statuses`, `config_*`, `retry_exhausted` après 5 tentatives) ; job `cleanup_test_branch` ; le
+    scheduler écrit les faits de `queue_inbox` avant ceux des livraisons, traduit un check en `check.observed`,
+    diffère une livraison arrivée avant le fait d'assemblage de son exécution, stocke un rapport tardif, demande
+    l'assemblage des exécutions `assembling` et le nettoyage des exécutions terminées ; projections de
+    `check_observations` et des nouvelles colonnes ; `submit_pr` crée les comptes dans sa propre transaction
+    (interblocage avec la réconciliation sur `users`). Tests : tables des clés, du corps de la PR brouillon et du
+    fichier de configuration ; sur le simulateur, sans Postgres, l'assemblage et ses erreurs (conflit avec la base,
+    avec un prédécesseur, entre prédécesseurs, protection, brouillons refusés, sources des statuts requis) ;
+    contre Postgres et le simulateur, avec les vraies boucles : 10 PR dont 2 CI rouges, un conflit et un check muet
+    (le test joue le job de merge du lot 7) ; une protection qui refuse la branche de test.
+  - Fait (test manuel, 1er octobre 2026, sur `getsyncr/contracts`, avec un workflow `ci` sur `pull_request` et
+    `required_statuses: [ci]` dans `.cihub.yaml`) : chemin nominal (assemblage, PR brouillon, `ci` vert,
+    `tests_passed`, nettoyage en moins de 30 s) ; deux exécutions en parallèle, chacune au-dessus de ses
+    prédécesseurs ; CI rouge, relance du budget puis `test_run_required_status_failed` ; conflit à l'assemblage
+    avec `conflict_culprit` sur la PR devant ; fermeture de PR en file (`pr_closed`, aval dissous puis annulé) ;
+    resoumission d'une PR échouée. Pas faits à la main : rapport tardif, arrêt brutal, timeout ; les tests
+    automatiques les couvrent. Observé en passant : (a) une PR étiquetée avant son propre merge a eu une
+    exécution formée par le push de ce merge, dont l'assemblage a reçu un 422 de GitHub (tête déjà dans `main`),
+    traité comme passager puis abandonné quand `manual_merge` a remplacé l'exécution ; un abandon immédiat
+    serait plus juste (lot 7, avec les changements extérieurs) ; (b) la fermeture d'une PR en tête dissout et
+    réassemble les groupes derrière elle avant que leurs propres fermetures n'arrivent : deux assemblages
+    pour rien, à mesurer au lot 7 ; (c) les livraisons d'une installation sans connexion (D86) ne sont jamais
+    supprimées par la maintenance, qui ne supprime que les livraisons traitées.
+  - Reste, passé aux lots suivants : le mode `inplace`, qui demande une décision (écart 8) ; l'annulation des
+    workflows (D116) ; la relecture de la tête de la cible et des checks d'une exécution silencieuse, l'existence
+    des refs et le 422 ci-dessus (lot 7) ; la route `GET /api/v1/test-runs/{run_id}` (lot 9, D115) ; la colonne
+    `deadline_at` avec `queues.settings` (lot 8) ; la rétention des livraisons sans connexion (lot 7 ou 15) ;
+    un test automatique de `start_test_run_retry_exhausted` (le backoff des jobs le rend lent).
+  - Écarts validés (Nicolas Lecoy, 1er octobre 2026) : D114 à D118. Le simulateur n'a pas gagné de panne ciblée
+    sur un SHA : son merge à trois voies donne un conflit à partir du contenu des fichiers.
+  - Écarts à valider : (1) `TestBranch` de l'état voulu porte `predecessors` et `members` (des `Head` avec le
+    numéro de PR et le SHA) à la place de `head_shas`, pour que le job nomme la PR coupable et les PR testées ;
+    (2) le nettoyage n'est pas dans l'état voulu, car une exécution terminée sort de l'instantané : le scheduler
+    le demande quand il écrit la décision qui la termine (D117) ; (3) la réconciliation écrit les faits de
+    `queue_inbox` avant ceux des livraisons, et diffère une livraison de check arrivée avant le fait
+    d'assemblage de son exécution (elle n'est pas marquée traitée) ; (4) `conflict_culprit` dit avec quoi le
+    membre entre en conflit : `base_branch` quand il ne merge pas sur le `base_sha` seul, sinon la première PR
+    devant lui qui ne merge pas sur `base_sha` plus le membre (une seconde passe de merges, dans le cas du
+    conflit seulement) ; un conflit entre deux prédécesseurs fait réessayer le job, car l'exécution du second
+    décide ; (5) `check_observations` n'a pas de colonne `status` (le code n'a que `conclusion`, `NULL` tant
+    que le check n'a pas conclu) ; (6) `test_runs.deadline_at` n'est pas projetée : elle dépend de
+    `testing_timeout_minutes`, qu'une projection du journal ne connaît pas avant `queues.settings` (lot 8) ;
+    (7) un échec d'assemblage fait échouer l'entrée sans relance du budget, comme les tables du lot 1 le
+    disent (`testing` → `failed` pour `start_test_run_*`) ; (8) le mode `inplace` n'est pas livré : il change la
+    tête de la PR, que le noyau lit comme un push (`pr_pushed_to`), et le routage de ses checks n'a pas de
+    branche de test ; sa conception demande une décision : exemption dans `pr_changes` quand la tête observée est
+    le SHA de test de l'exécution vivante, garde `sha` du merge sur ce SHA, formation seulement sans prédécesseur
+    vivant, `head_branch` dans `PrSnapshot` (contrat du trait `Scm` et cassette enregistrée), routage des checks
+    par SHA ; d'ici là, un `trigger: inplace` fait échouer l'exécution avec `start_test_run_invalid_event`.
 
 ### Lot 7 : merge et changements extérieurs
 

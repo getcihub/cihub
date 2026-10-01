@@ -1,10 +1,10 @@
 //! The scheduler of the merge queue (`AGENTS.md` D64): it takes the leases of
 //! the queues that have work, and reconciles each one in one transaction
-//! under its lock. A reconciliation reads the deliveries and the facts of the
-//! queue, writes the facts to the log, runs `plan`, writes its decisions, and
-//! requests the jobs that make the SCM converge. A crash at any point leaves
-//! nothing: the transaction rolls back and the next reconciliation does the
-//! same work again.
+//! under its lock. A reconciliation writes the facts of `queue_inbox` to the
+//! log, then those of the deliveries of the queue, runs `plan`, writes its
+//! decisions, and requests the jobs that make the SCM converge. A crash at
+//! any point leaves nothing: the transaction rolls back and the next
+//! reconciliation does the same work again.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, ScmInstanceId, SubmittedVia,
+    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RunId, RunStatus, ScmInstanceId,
+    SubmittedVia, run_of_test_branch,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -23,12 +24,14 @@ use cihub_scm::{MAX_PRS_PER_READ, ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
 use serde_json::Value;
 use sqlx::PgConnection;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
+use crate::assembly::{assemble, cleanup};
 use crate::command::{Merge, parse_merge};
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
+use crate::projection::record_late_check;
 use crate::target::QueueTarget;
 use crate::{COVER_AFTER, MergeQueueError, QueueLog};
 
@@ -98,13 +101,24 @@ impl Reconciler {
                 .map_err(MergeQueueError::Platform);
         }
         let mut log = QueueLog::load(conn, queue).await?;
+        // The facts that the jobs gave back come first: a check reported on
+        // a test branch needs the assembly fact of its run.
+        let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION)
+            .await
+            .map_err(MergeQueueError::Store)?;
+        let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
+        let mut written = log.write(conn, given, now).await?.len();
+        mark_facts_processed(conn, &given_ids, now)
+            .await
+            .map_err(MergeQueueError::Store)?;
         let mut facts = Vec::new();
         let mut jobs = Vec::new();
         let deliveries = pending_deliveries(conn, queue, INBOX_PER_RECONCILIATION)
             .await
             .map_err(MergeQueueError::Platform)?;
+        let mut deferred = 0;
         for delivery in &deliveries {
-            let error = match (self.translate)(&delivery.event, &delivery.payload) {
+            let (processed, error) = match (self.translate)(&delivery.event, &delivery.payload) {
                 Ok(read) => {
                     let work = Work {
                         target: &target,
@@ -112,11 +126,15 @@ impl Reconciler {
                         log: &log,
                         delivery,
                     };
-                    work.read(conn, read.event, &mut facts, &mut jobs).await?;
-                    None
+                    let processed = work.read(conn, read.event, &mut facts, &mut jobs).await?;
+                    (processed, None)
                 }
-                Err(err) => Some(err.to_string()),
+                Err(err) => (true, Some(err.to_string())),
             };
+            if !processed {
+                deferred += 1;
+                continue;
+            }
             mark_processed(
                 conn,
                 delivery.scm_instance_id,
@@ -127,38 +145,25 @@ impl Reconciler {
             .await
             .map_err(MergeQueueError::Platform)?;
         }
-        let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION)
-            .await
-            .map_err(MergeQueueError::Store)?;
-        let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
-        facts.extend(given);
-        let written = log.write(conn, facts, now).await?.len();
-        mark_facts_processed(conn, &given_ids, now)
-            .await
-            .map_err(MergeQueueError::Store)?;
+        written += log.write(conn, facts, now).await?.len();
         let plan = plan(&log.snapshot, &self.settings, now).map_err(MergeQueueError::Plan)?;
+        let ended = ended_runs(&plan.decisions);
         let decisions = log.write(conn, plan.decisions, now).await?.len();
-        for (point, prs) in reads_by_point(&plan.desired.observe) {
-            for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
-                jobs.push(refresh_at(&target, point, chunk, prs.to_vec()));
-            }
-        }
-        let mut requested = 0;
-        for job in &jobs {
-            if enqueue_job(conn, job, now, now)
-                .await
-                .map_err(MergeQueueError::Platform)?
-            {
-                requested += 1;
-            }
-        }
+        let converge = Converge {
+            target: &target,
+            log: &log,
+            desired: &plan.desired,
+            ended: &ended,
+        };
+        let requested = self.request_jobs(conn, &converge, jobs, now).await?;
         log.cover(conn, now).await?;
         schedule_tick(conn, queue, plan.wake_at)
             .await
             .map_err(MergeQueueError::Platform)?;
-        if written + decisions + requested > 0 {
+        if written + decisions + requested + deferred > 0 {
             info!(
                 deliveries = deliveries.len(),
+                deferred,
                 facts = written,
                 decisions,
                 jobs = requested,
@@ -167,6 +172,77 @@ impl Reconciler {
         }
         Ok(())
     }
+
+    /// Requests `jobs`, then the jobs that make the SCM converge to the
+    /// desired state: the reads of the PRs that are due, the assembly of each
+    /// run that waits for its test branch, and the cleanup of each run that
+    /// ended, after the retention (`AGENTS.md` D117). Returns the number of
+    /// new jobs.
+    async fn request_jobs(
+        &self,
+        conn: &mut PgConnection,
+        converge: &Converge<'_>,
+        mut jobs: Vec<Job>,
+        now: OffsetDateTime,
+    ) -> Result<usize, MergeQueueError> {
+        let target = converge.target;
+        for (point, prs) in reads_by_point(&converge.desired.observe) {
+            for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
+                jobs.push(refresh_at(target, point, chunk, prs.to_vec()));
+            }
+        }
+        for branch in &converge.desired.test_branches {
+            let assembling = converge
+                .log
+                .snapshot
+                .runs
+                .get(&branch.run_id)
+                .is_some_and(|run| run.status == RunStatus::Assembling);
+            if assembling {
+                jobs.push(assemble(target, branch));
+            }
+        }
+        let keep = Duration::minutes(i64::from(self.settings.keep_test_branches_minutes.value));
+        let cleanups = converge
+            .ended
+            .iter()
+            .map(|run_id| (cleanup(target, *run_id), now + keep));
+        let mut requested = 0;
+        for (job, run_after) in jobs.iter().map(|job| (job.clone(), now)).chain(cleanups) {
+            if enqueue_job(conn, &job, run_after, now)
+                .await
+                .map_err(MergeQueueError::Platform)?
+            {
+                requested += 1;
+            }
+        }
+        Ok(requested)
+    }
+}
+
+/// What a reconciliation converges to, once its decisions are written.
+struct Converge<'a> {
+    target: &'a QueueTarget,
+    log: &'a QueueLog,
+    desired: &'a cihub_mq_core::Desired,
+    /// The runs that the decisions ended.
+    ended: &'a [RunId],
+}
+
+/// The runs that `decisions` end.
+fn ended_runs(decisions: &[Event]) -> Vec<RunId> {
+    decisions
+        .iter()
+        .filter_map(|event| match &event.kind {
+            EventKind::RunTransitioned {
+                run_id,
+                from: Some(_),
+                to,
+                ..
+            } if to.is_terminal() => Some(*run_id),
+            _ => None,
+        })
+        .collect()
 }
 
 fn reads_by_point(reads: &[cihub_mq_core::Read]) -> BTreeMap<OffsetDateTime, Vec<u64>> {
@@ -187,14 +263,16 @@ struct Work<'a> {
 
 impl Work<'_> {
     /// What the delivery asks: a fact that it holds, or a job that reads
-    /// what it does not hold. The other events wait for their lots.
+    /// what it does not hold. The other events wait for their lots. Returns
+    /// `false` for a delivery that waits for the next reconciliation: a check
+    /// reported on a test branch whose assembly fact has not come yet.
     async fn read(
         &self,
         conn: &mut PgConnection,
         event: ScmEvent,
         facts: &mut Vec<Event>,
         jobs: &mut Vec<Job>,
-    ) -> Result<(), MergeQueueError> {
+    ) -> Result<bool, MergeQueueError> {
         let delivery_id = self.delivery.delivery_id.as_str();
         let snapshot = &self.log.snapshot;
         match event {
@@ -251,18 +329,73 @@ impl Work<'_> {
             ScmEvent::AccessRestored => {
                 facts.push(self.fact(Actor::System, EventKind::AccessRestored));
             }
+            ScmEvent::CheckChanged {
+                sha,
+                branches,
+                check,
+                ..
+            } => return self.check_changed(conn, sha, &branches, check, facts).await,
             // A comment names no base branch: it comes through the pass of
             // the connection.
             ScmEvent::Pushed { .. }
             | ScmEvent::Commented { .. }
-            | ScmEvent::CheckChanged { .. }
             | ScmEvent::RulesChanged { .. }
             | ScmEvent::RepoChanged { .. }
             | ScmEvent::ConnectionCreated { .. }
             | ScmEvent::ReposChanged { .. }
             | ScmEvent::Ignored => {}
         }
-        Ok(())
+        Ok(true)
+    }
+
+    /// A report on the test SHA of a live run is a fact; one that comes
+    /// before the assembly fact of its run waits for it (`false`); one that
+    /// comes after the end of the run is stored without a fact
+    /// (`AGENTS.md` D118).
+    async fn check_changed(
+        &self,
+        conn: &mut PgConnection,
+        sha: String,
+        branches: &[String],
+        check: cihub_domain::CheckReport,
+        facts: &mut Vec<Event>,
+    ) -> Result<bool, MergeQueueError> {
+        let snapshot = &self.log.snapshot;
+        let live = snapshot
+            .runs
+            .values()
+            .any(|run| !run.status.is_terminal() && run.test_sha.as_deref() == Some(&sha));
+        if live {
+            facts.push(self.fact(
+                Actor::System,
+                EventKind::CheckObserved {
+                    test_sha: sha,
+                    check,
+                },
+            ));
+            return Ok(true);
+        }
+        let awaited = branches
+            .iter()
+            .filter_map(|branch| run_of_test_branch(branch))
+            .any(|run_id| {
+                snapshot.runs.get(&run_id).is_some_and(|run| {
+                    run.status == RunStatus::Assembling && run.test_sha.is_none()
+                })
+            });
+        if awaited {
+            return Ok(false);
+        }
+        record_late_check(
+            conn,
+            self.target.org_id,
+            self.target.queue_id,
+            &sha,
+            &check,
+            self.delivery.received_at,
+        )
+        .await?;
+        Ok(true)
     }
 
     /// A fact of the delivery, at the time CIHub received it.

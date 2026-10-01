@@ -1,7 +1,8 @@
-//! The jobs of the merge queue that lot 5 runs: `refresh_prs` reads PRs
+//! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
 //! again (`AGENTS.md` D96, D101), `submit_pr` submits a PR after a command
-//! or a label (D102). Each one gives its facts back to the queue through
-//! `queue_inbox` (D100) and marks the queue dirty; it never writes the log.
+//! or a label (D102); the jobs of the test cycle are in `assembly`. Each one
+//! gives its facts back to the queue through `queue_inbox` (D100) and marks
+//! the queue dirty; it never writes the log.
 
 use std::sync::Arc;
 
@@ -79,7 +80,7 @@ fn subject(text: &str) -> String {
     text.replace(':', "-")
 }
 
-fn job(
+pub(crate) fn job(
     target: &QueueTarget,
     key: String,
     job_type: &str,
@@ -230,7 +231,7 @@ pub(crate) async fn user_of(
 
 /// Deposits `kinds` in the inbox of the queue of `target`, then marks the
 /// queue dirty.
-async fn give_back(
+pub(crate) async fn give_back(
     conn: &mut PgConnection,
     org_id: OrgId,
     queue_id: QueueId,
@@ -257,7 +258,7 @@ async fn give_back(
 }
 
 /// Why a job failed, and whether a retry can fix it.
-enum Failure {
+pub(crate) enum Failure {
     Retry(String),
     Never(String),
 }
@@ -278,7 +279,7 @@ impl From<ScmError> for Failure {
     }
 }
 
-fn outcome(result: Result<(), Failure>) -> Outcome {
+pub(crate) fn outcome(result: Result<(), Failure>) -> Outcome {
     match result {
         Ok(()) => Outcome::Done,
         Err(Failure::Retry(text)) => Outcome::Retry(text),
@@ -286,11 +287,11 @@ fn outcome(result: Result<(), Failure>) -> Outcome {
     }
 }
 
-fn read_payload<T: for<'de> Deserialize<'de>>(job: &Job) -> Result<T, Failure> {
+pub(crate) fn read_payload<T: for<'de> Deserialize<'de>>(job: &Job) -> Result<T, Failure> {
     serde_json::from_value(job.payload.clone()).map_err(|err| Failure::Never(error_chain(&err)))
 }
 
-async fn target_of(pool: &PgPool, job: &Job) -> Result<QueueTarget, Failure> {
+pub(crate) async fn target_of(pool: &PgPool, job: &Job) -> Result<QueueTarget, Failure> {
     let queue = job
         .queue_id
         .ok_or_else(|| Failure::Never("the job has no queue".into()))?;
@@ -419,6 +420,9 @@ async fn submit_pr(
         .required_checks(&target.repo, &target.target_branch, job.class)
         .await?;
     let own = queue_status_context(&target.target_branch);
+    // The accounts come in their own transaction: the one that gives the
+    // facts back waits for the reconciliation of the queue, which may need
+    // the same rows of `users`.
     let mut tx = begin_system(pool)
         .await
         .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
@@ -429,6 +433,12 @@ async fn submit_pr(
         },
         None => Actor::System,
     };
+    tx.commit()
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let mut tx = begin_system(pool)
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
     let submitted = EventKind::ItemSubmitted {
         pr_number,
         head_sha: pr.head_sha.clone(),

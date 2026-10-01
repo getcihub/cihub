@@ -97,7 +97,7 @@ Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et
 | `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward`                         |
 | `merge_commit_title`                                           | `pr_title`                          | `pr_title`, `pr_title_and_number`                                          |
 | `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`, `inplace` (stratégie `sequential` seulement)           |
-| `update_method`                                                | `merge`                             | `merge`, `rebase` ; utilisé par `inplace`                                  |
+| `update_method`                                                | `merge`                             | `merge` ; utilisé par `inplace` (`rebase` arrive avec un lot ultérieur, `AGENTS.md` D114) |
 | `batching.enabled` / `size` / `max_wait_minutes`               | désactivé / 4 / 5                   | taille maximale 2–20, attente 1–60                                         |
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |
 | `optimistic_merging`                                           | désactivé                           | booléen                                                                    |

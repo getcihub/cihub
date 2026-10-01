@@ -203,10 +203,12 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
 
 /// Replays the whole log of `queue`: deletes its projections and snapshots,
 /// then applies and projects each event again, as when it was written. The
-/// projections are then exactly those that the log describes (principle I).
-/// Once the partitions of its old events are dropped, a log is no longer
-/// whole, and only its snapshot holds its state (`AGENTS.md` D106). The
-/// caller holds the lock of the queue.
+/// projections are then exactly those that the log describes (principle I);
+/// the rows of `check_observations` stay, because the replay writes the same
+/// ones and the late reports are not in the log (`AGENTS.md` D118). Once the
+/// partitions of its old events are dropped, a log is no longer whole, and
+/// only its snapshot holds its state (`AGENTS.md` D106). The caller holds the
+/// lock of the queue.
 ///
 /// # Errors
 ///

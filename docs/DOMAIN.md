@@ -138,7 +138,8 @@ abandonné, validé par optimisation) ; `cancelled` veut dire qu'un membre du gr
 Nature d'un check observé (`CheckKind`) : `check` (un check avec une exécution : check run GitHub, job de
 pipeline GitLab) ou `status` (un statut de commit). Conclusion (`CheckConclusion`) : les valeurs de
 GitHub ; `success`, `neutral` et `skipped` passent, les autres font échouer l'exécution. Coupable d'un conflit à
-l'assemblage (`ConflictCulprit`) : une PR de la file ou la branche de base. Source des statuts requis
+l'assemblage (`ConflictCulprit`) : ce avec quoi le membre du groupe entre en conflit, une PR devant lui dans la
+file (`queue_pr`) ou la branche cible seule (`base_branch`). Source des statuts requis
 (`RequiredStatusesSource`) : `ui_override`, `repo_config`, `branch_protection`. Un job qui échoue rapporte une
 erreur (`JobError`), jamais une raison : `plan` choisit la raison. Classe d'un job (`JobClass`, par priorité sur le
 budget de sa connexion) : `interactive`, `merge`, `speculate`, `repair`. État d'un job (`JobState`) : `queued`,

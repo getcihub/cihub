@@ -24,6 +24,7 @@ macro_rules! closed_enum {
 }
 
 mod api_token;
+mod branch;
 mod event;
 mod id;
 mod item;
@@ -38,6 +39,7 @@ mod tenancy;
 mod transition;
 
 pub use api_token::{API_TOKEN_PREFIX, format_api_token, is_api_token};
+pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
     ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,

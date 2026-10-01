@@ -53,12 +53,14 @@ pub struct TestRun {
     pub conflict_culprit: Option<ConflictCulprit>,
 }
 
-/// What a `start_test_run_merge_conflict` conflicts with, from the merge call
-/// that returned 409.
+/// What the member of a group conflicts with when its merge into the test
+/// branch returns 409 (`start_test_run_merge_conflict`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ConflictCulprit {
+    /// A PR ahead in the queue, merged in the test branch before the member.
     QueuePr { pr_number: u64 },
+    /// The target branch itself: the member conflicts with it alone.
     BaseBranch,
 }
 

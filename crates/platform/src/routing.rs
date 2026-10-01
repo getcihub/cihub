@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use cihub_domain::{ConnectionId, OrgId, QueueId, ScmInstanceId};
+use cihub_domain::{ConnectionId, OrgId, QueueId, RunId, ScmInstanceId, run_of_test_branch};
 use cihub_scm::{ScmDelivery, ScmEvent};
 use cihub_store::{PgPool, begin_system};
 use serde_json::Value;
@@ -85,8 +85,8 @@ pub async fn unrouted_deliveries(
 }
 
 /// Where `delivery` goes: its connection when CIHub knows it, and its queue
-/// when one is sure: a PR by its base branch, a push by its branch. A check
-/// names no queue: its test branch leads to its run (lot 6).
+/// when one is sure: a PR by its base branch, a push by its branch, a check
+/// by the test branch that names its run (`AGENTS.md` D85).
 ///
 /// # Errors
 ///
@@ -116,31 +116,29 @@ pub async fn find_route(
     let Some((org_id, connection_id)) = connection else {
         return Ok(Route::default());
     };
-    let target = match &delivery.event {
+    let queue_id: Option<String> = match &delivery.event {
         ScmEvent::PrChanged {
             repo_external_id,
-            base_branch,
+            base_branch: branch,
             ..
-        } => Some((repo_external_id, base_branch)),
-        ScmEvent::Pushed {
+        }
+        | ScmEvent::Pushed {
             repo_external_id,
             branch,
             ..
-        } => Some((repo_external_id, branch)),
+        } => queue_of_branch(conn, scm_instance_id, repo_external_id, branch).await?,
+        ScmEvent::CheckChanged {
+            repo_external_id,
+            sha,
+            branches,
+            ..
+        } => {
+            let run_id = branches
+                .iter()
+                .find_map(|branch| run_of_test_branch(branch));
+            queue_of_run(conn, scm_instance_id, repo_external_id, run_id, sha).await?
+        }
         _ => None,
-    };
-    let queue_id: Option<String> = match target {
-        Some((repo_external_id, branch)) => sqlx::query_scalar(
-            "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
-             WHERE r.scm_instance_id = $1 AND r.external_id = $2 AND q.target_branch = $3",
-        )
-        .bind(scm_instance_id.to_string())
-        .bind(repo_external_id)
-        .bind(branch)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(PlatformError::Query)?,
-        None => None,
     };
     let read = |id: String| {
         move |source| PlatformError::ReadDelivery {
@@ -156,6 +154,52 @@ pub async fn find_route(
             .transpose()?,
         processed: false,
     })
+}
+
+/// The queue of the branch `branch` of a repository.
+async fn queue_of_branch(
+    conn: &mut PgConnection,
+    scm_instance_id: ScmInstanceId,
+    repo_external_id: &str,
+    branch: &str,
+) -> Result<Option<String>, PlatformError> {
+    sqlx::query_scalar(
+        "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
+         WHERE r.scm_instance_id = $1 AND r.external_id = $2 AND q.target_branch = $3",
+    )
+    .bind(scm_instance_id.to_string())
+    .bind(repo_external_id)
+    .bind(branch)
+    .fetch_optional(conn)
+    .await
+    .map_err(PlatformError::Query)
+}
+
+/// The queue of the run that a check on a repository reports on: the run
+/// named by the test branch, or, once the branch is gone, the last run whose
+/// test SHA is `sha` (a late report, `AGENTS.md` D118).
+async fn queue_of_run(
+    conn: &mut PgConnection,
+    scm_instance_id: ScmInstanceId,
+    repo_external_id: &str,
+    run_id: Option<RunId>,
+    sha: &str,
+) -> Result<Option<String>, PlatformError> {
+    sqlx::query_scalar(
+        "SELECT t.queue_id FROM test_runs t
+         JOIN queues q ON q.id = t.queue_id
+         JOIN repos r ON r.id = q.repo_id
+         WHERE (t.id = $1 OR t.test_sha = $2) AND r.scm_instance_id = $3 AND r.external_id = $4
+         ORDER BY t.id = $1 DESC, t.started_at DESC
+         LIMIT 1",
+    )
+    .bind(run_id.map(|id| id.to_string()))
+    .bind(sha)
+    .bind(scm_instance_id.to_string())
+    .bind(repo_external_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(PlatformError::Query)
 }
 
 /// Writes `route` on a delivery not routed yet, and marks its queue dirty,

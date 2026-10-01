@@ -9,7 +9,7 @@ use cihub_domain::{
     Actor, CheckConclusion, EventKind, ItemState, JobError, Mergeability, PrState, Priority,
     QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
-use cihub_mq_core::{Outcome, Read};
+use cihub_mq_core::{Head, Outcome, Read};
 use common::{World, head, settings, window};
 
 fn world() -> World {
@@ -41,10 +41,18 @@ fn two_prs_merge_in_order() {
     assert_eq!(branches.len(), 2);
     let second = branches
         .iter()
-        .find(|b| b.head_shas.len() == 2)
+        .find(|b| !b.predecessors.is_empty())
         .expect("PR 2 is tested on top of PR 1");
-    assert_eq!(second.head_shas, vec![head(1, 0), head(2, 0)]);
-    assert!(second.name.starts_with("cihub-merge/pr-2/run_"));
+    let heads = |heads: &[Head]| -> Vec<(u64, String)> {
+        heads.iter().map(|h| (h.pr_number, h.sha.clone())).collect()
+    };
+    assert_eq!(heads(&second.predecessors), vec![(1, head(1, 0))]);
+    assert_eq!(heads(&second.members), vec![(2, head(2, 0))]);
+    assert_eq!(second.name, format!("cihub-merge/pr-2/{}", second.run_id));
+    assert_eq!(
+        cihub_domain::run_of_test_branch(&second.name),
+        Some(second.run_id)
+    );
 
     w.assemble_all();
     w.report(2, CheckConclusion::Success);

@@ -762,19 +762,17 @@ impl World {
         let Ok(plan) = plan(&self.snapshot, &self.settings, self.now) else {
             return "(plan error)".into();
         };
-        let pr_of = |sha: &String| {
-            self.snapshot
-                .items
-                .values()
-                .find(|i| i.head_sha == *sha)
-                .map_or_else(|| sha.clone(), |i| i.pr_number.to_string())
-        };
         let mut parts: Vec<String> = plan
             .desired
             .test_branches
             .iter()
             .map(|b| {
-                let prs: Vec<String> = b.head_shas.iter().map(pr_of).collect();
+                let prs: Vec<String> = b
+                    .predecessors
+                    .iter()
+                    .chain(&b.members)
+                    .map(|h| h.pr_number.to_string())
+                    .collect();
                 format!("test {} on {}", prs.join("+"), b.base_sha)
             })
             .collect();
@@ -1015,11 +1013,17 @@ impl World {
         if let Ok(plan) = plan(s, &self.settings, self.now) {
             println!("desired test branches:");
             for branch in &plan.desired.test_branches {
+                let heads: Vec<&str> = branch
+                    .predecessors
+                    .iter()
+                    .chain(&branch.members)
+                    .map(|h| h.sha.as_str())
+                    .collect();
                 println!(
                     "  {}: {} + [{}]",
                     branch.name,
                     branch.base_sha,
-                    branch.head_shas.join(", ")
+                    heads.join(", ")
                 );
             }
             println!("desired merges:");
