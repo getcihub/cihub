@@ -1,0 +1,36 @@
+[package]
+name = "cihub-mergequeue"
+description = "CIHub merge queue module: the log of each queue, its projections and its reconciliation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+cihub-config.workspace = true
+cihub-domain.workspace = true
+cihub-mq-core.workspace = true
+cihub-platform.workspace = true
+cihub-scm.workspace = true
+cihub-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["macros", "time"] }
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum = { workspace = true, features = ["http1", "tokio"] }
+cihub-github.workspace = true
+cihub-scm = { workspace = true, features = ["sim"] }
+secrecy.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt"] }
+ulid.workspace = true
+
+[lints]
+workspace = true

@@ -11,12 +11,14 @@ publish.workspace = true
 [dependencies]
 cihub-config.workspace = true
 cihub-domain.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 time.workspace = true
 ulid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

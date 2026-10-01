@@ -37,7 +37,7 @@ les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 | 2   | Socle de données : serveur, tenancy, journal           | 1     | 0         | —         | terminé                                  |
 | 3   | Transport interne : inbox, jobs, baux                  | 1     | 2         | —         | terminé                                  |
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | terminé                                  |
-| 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | à faire                                  |
+| 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | terminé                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | à faire                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
 | 8   | Politique de file                                      | 1     | 6         | —         | en cours (commencé avant son tour)       |
@@ -602,6 +602,62 @@ Autres valeurs fermées :
 - **Critère de sortie** : sur le simulateur, 20 PR soumises dans des états variés atteignent `pending` ou
   `not_ready` avec la bonne raison ; rejouer le journal reconstruit exactement les mêmes projections ; un scheduler
   tué au milieu d'une réconciliation ne laisse aucune écriture partielle.
+- **Suivi** :
+  - Fait : les décisions du lot (`AGENTS.md` D93 à D99). Migration `20261001090000_merge_queue.sql` : valeur
+    fermée `ModuleName` et table `org_modules` ; `queues.state` et `queues.mode` ; tables `queue_items`,
+    `test_groups`, `test_runs` et `queue_snapshots`, avec la sécurité au niveau ligne ; enums Postgres des états,
+    des raisons et des autres valeurs du journal, comparés à `cihub-domain`. Le `Snapshot` de `cihub-mq-core` se
+    sérialise en JSON (reste du lot 1). `append_events` rend le `seq` de chaque événement et `load_events` lit
+    après un `seq`. Crate `cihub-mergequeue` : `QueueLog` lit le dernier instantané d'une file puis les
+    événements qui suivent, écrit les événements que `apply` accepte avec leurs projections, et garde un
+    instantané tous les 500 événements ; `rebuild` rejoue tout le journal. Chaque transition projetée est gardée
+    par l'état de départ, avec un contrôle du nombre de lignes. Tests : le rejeu d'un journal lu depuis un
+    instantané JSON au milieu donne le même `Snapshot` (test de propriété) ; contre Postgres, 110 PR soumises,
+    testées, mergées, fermées ou en échec (plus de 500 événements) donnent les mêmes projections et les mêmes
+    instantanés après `rebuild`, et un fait qui ne change rien n'est pas écrit.
+  - Fait (réconciliation, D100 à D105) : contrat `Module` de `cihub-platform` (nom, exécuteurs, boucle du
+    scheduler) et `module_enabled` ; une file d'une organisation sans le module ne fait rien. Table `queue_inbox`
+    dans l'ordre des dépôts ; `deposit_fact`, `pending_facts`, `mark_facts_processed` et `ensure_user` dans
+    `cihub-store`. Dans `cihub-mq-core` : `Item::submitted_at`, `Observed::observed_at`, règle
+    `not_ready_timeout_expired`, `Desired::observe` (des `Read` à des points fixes après la soumission) et
+    `Plan::wake_at`. Dans `cihub-mergequeue` : `Reconciler` (une transaction par file : livraisons, faits de
+    `queue_inbox`, `plan`, décisions, jobs, `next_tick_at`), la passe des livraisons d'une connexion sans file
+    (accès perdu ou rendu, commandes), `run_scheduler`, la commande `/cihub merge` (et l'alias `/trunk merge`),
+    les jobs `refresh_prs` et `submit_pr` avec l'exception du statut de la file. `cihub-server` lance la boucle
+    dans le rôle `scheduler` et les exécuteurs dans le rôle `worker`. Une livraison d'une connexion sans file
+    réveille les schedulers. `ScmEvent::PrChanged` porte `label_added`, le label qu'une action a posé. Tests :
+    table des commandes, de l'exception et des clés ; dans le noyau, timeout, points de lecture et réveil ;
+    contre Postgres et le simulateur, avec les vraies boucles du scheduler et du worker : 20 PR soumises par
+    commande ou par label dans des états variés atteignent `pending` ou `not_ready` avec la bonne raison de
+    blocage, une commande sans le droit `write` ne soumet rien, le rejeu redonne les mêmes projections, et un
+    accès perdu met la file en pause ; une réconciliation arrêtée avant son commit n'écrit rien, et la suivante
+    fait tout le travail une fois ; un 429 de GitHub pendant un job met la connexion en pause en base, et aucun
+    job de la connexion ne part avant le reset (test du lot 4).
+  - Fait (partitions et pause, D106, D113) : le job `maintenance` supprime une partition d'`events` 90 jours
+    après la fin de son mois, quand un instantané couvre chacun de ses événements ; une file prend un instantané
+    quand son plus vieil événement après le dernier instantané a plus de 30 jours, et une passe horaire du
+    scheduler la réveille pour cela ; `seq` suit le dernier instantané ; `rebuild` refuse un journal qui n'est plus
+    entier, et le chargement refuse un journal avec un trou. Une soumission attend la fin d'une pause de la file.
+    Tests : dans le noyau, une soumission pendant une pause crée son entrée à la reprise ; contre Postgres, une
+    partition sans instantané reste, puis part après l'instantané, la file se charge depuis lui, son `seq`
+    continue, et `rebuild` refuse ; table des noms de partitions.
+  - Fait (test manuel, 1er octobre 2026, sur `getsyncr/contracts`) : soumission par commande, `not_ready` sur un
+    check requis manquant puis `pending` après le retrait de la règle, points de lecture à 1 et 3 minutes, push
+    sur une PR en file (`pr_pushed_to`), nouvelle soumission puis fermeture (`pr_closed`). Pas faits à la main :
+    label sur une PR hors de la file, accès perdu, arrêt brutal, conflit, permission refusée ; les tests
+    automatiques les couvrent.
+  - Reste, passé au lot 9 : commandes `cancel` et `restart`, cache des permissions, message d'une soumission
+    refusée, raison de blocage qui nomme le check requis (D112). Un check sur la tête d'une PR `not_ready` n'est lu
+    que par le sondage : il arrive par la connexion, sans file.
+  - Écarts avec `docs/DATA_MODEL.md`, mis à jour dans le même changement : les projections gardent seulement ce
+    que le journal contient. `queue_items` n'a ni `pr_title` ni `pr_base_branch`, et garde `pr_author_id` au lieu
+    d'un login (D42) ; `seq` est le rang de l'admission dans le journal, pas une séquence Postgres ; les colonnes
+    de `test_runs` du lot 6 arrivent avec lui. Une file commence en mode `single` : un mode vient seulement du fait
+    `queue.settings_changed`, pour que le rejeu ne dépende pas des réglages du jour.
+  - Écarts validés (Nicolas Lecoy, 1er octobre 2026) : pas de colonne `queues.settings` avant le lot 8 (D110) ;
+    `ScmEvent::PrChanged` gagne `label_added` (D107) ; une commande passe par la connexion et `submit_pr` trouve
+    sa file, et une soumission par label a l'acteur `system` (D108) ; au-delà de 50 PR, une lecture du sondage
+    ajoute son rang à la clé (D109) ; un `Module` a toujours une boucle du scheduler (D111).
 
 ### Lot 6 : cycle de test
 
@@ -664,7 +720,8 @@ Autres valeurs fermées :
   `Dockerfile` de l'image `cihub-server` et workflow de publication de l'image sur GHCR à chaque version
   (`AGENTS.md` D19) ; `docker compose` d'installation avec le service `cihub-migrate` (`AGENTS.md` D14) et README
   d'installation ; vérificateur de configuration en endpoint d'API, avec la lecture des rulesets par le trait
-  `Scm` (`AGENTS.md` D87).
+  `Scm` (`AGENTS.md` D87) ; raison de blocage qui nomme le check requis manquant (`AGENTS.md` D112) ; cache de 5
+  minutes des permissions et message d'une soumission refusée.
 - **Interfaces figées** : API v1 publiée dans `/api/v1/openapi.json` ; commandes de PR ; commandes de la CLI.
 - **Critère de sortie** : un test de bout en bout sur l'instance de staging soumet des PR sur un vrai dépôt et les
   merge ; le dépôt de CIHub passe sur sa propre file ; une personne extérieure suit le README et merge une première

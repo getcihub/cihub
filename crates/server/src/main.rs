@@ -17,6 +17,7 @@ use std::time::Duration;
 use anyhow::{Context, anyhow, bail};
 use cihub_domain::{ConnectionId, ScmInstanceId, ScmKind};
 use cihub_github::{GithubApp, GithubConfig};
+use cihub_mergequeue::Translate;
 use cihub_platform::{
     ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, ROUTE_POLL, SWEEP_DELIVERIES, SWEEP_EVERY,
     execute_maintenance, request_maintenance, request_sweep, run_budget_writer, run_router,
@@ -197,13 +198,17 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
             tokio::try_join!(serve, route)?;
         }
         Role::Scheduler => {
+            let module = merge_queue(&pool, &github, &process)?;
+            let queues = (module.scheduler)(cancel.clone());
             let maintenance = request_maintenance_hourly(&pool, &cancel);
             let sweep = request_sweep_regularly(&pool, github.scm_instance_id, &cancel);
-            tokio::join!(maintenance, sweep);
+            let (queues, (), ()) = tokio::join!(queues, maintenance, sweep);
+            queues.map_err(|err| anyhow!(err).context("the scheduler of the queues stopped"))?;
         }
         Role::Worker => {
             let mut executors = Executors::default();
             executors.register(MAINTENANCE, execute_maintenance);
+            (merge_queue(&pool, &github, &process)?.executors)(&mut executors);
             let scm: Arc<dyn Scm> = github.app.clone();
             executors.register(
                 SWEEP_DELIVERIES,
@@ -227,6 +232,21 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
     }
     info!("role stopped");
     Ok(())
+}
+
+/// The merge queue module, on the GitHub App of the instance.
+fn merge_queue(
+    pool: &PgPool,
+    github: &Github,
+    process: &str,
+) -> anyhow::Result<cihub_platform::Module> {
+    let translate: Translate = Arc::new(|event, payload| {
+        cihub_github::translate(event, payload)
+            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
+    });
+    let scm: Arc<dyn Scm> = github.app.clone();
+    cihub_mergequeue::module(pool.clone(), scm, translate, process.to_owned(), now)
+        .context("the merge queue cannot start")
 }
 
 /// Starts the client of the GitHub App, and creates the row of its SCM

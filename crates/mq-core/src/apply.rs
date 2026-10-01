@@ -222,6 +222,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 Observed {
                     value,
                     fact_id: event.id,
+                    observed_at: event.occurred_at,
                 },
             );
             Outcome::Applied
@@ -260,6 +261,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 Observed {
                     value: observation,
                     fact_id: event.id,
+                    observed_at: event.occurred_at,
                 },
             );
             Outcome::Applied
@@ -284,6 +286,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 Observed {
                     value,
                     fact_id: event.id,
+                    observed_at: event.occurred_at,
                 },
             );
             Outcome::Applied
@@ -412,6 +415,7 @@ fn target_pushed(
     target.head = Some(Observed {
         value: after.to_owned(),
         fact_id: event.id,
+        observed_at: event.occurred_at,
     });
     if !own {
         target.valid_bases.clear();
@@ -477,6 +481,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     group_id: None,
                     verified_by_run_id: None,
                     merged_sha: None,
+                    submitted_at: event.occurred_at,
                 },
             );
             set_cause(snapshot, Subject::Item(*item_id), event);
@@ -712,8 +717,10 @@ pub(crate) fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             .is_some_and(|r| r.status == RunStatus::Assembling)
     };
     match request {
+        // A submission waits for the end of a pause (`AGENTS.md` D113).
         Request::Submit { pr_number, .. } => {
-            snapshot.state == QueueState::Running && snapshot.current_item(*pr_number).is_none()
+            matches!(snapshot.state, QueueState::Running | QueueState::Paused)
+                && snapshot.current_item(*pr_number).is_none()
         }
         Request::Cancel { item_id, .. } => snapshot
             .items

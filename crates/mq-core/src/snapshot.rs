@@ -1,6 +1,10 @@
-//! State of one queue, as `apply` builds it from the log.
+//! State of one queue, as `apply` builds it from the log. It serializes to
+//! JSON for the snapshots of the log.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use cihub_domain::{
     CheckKind, CheckObservation, CheckReport, EventId, GroupId, ImpactedTargets, Item, ItemId,
@@ -10,14 +14,17 @@ use cihub_domain::{
 
 /// An observation with the fact that produced it, so that a decision can
 /// cite its cause.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Observed<T> {
     pub value: T,
     pub fact_id: EventId,
+    /// The time of the fact.
+    #[serde(with = "time::serde::rfc3339")]
+    pub observed_at: OffsetDateTime,
 }
 
 /// The last state of a PR that the SCM gave.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrObservation {
     pub state: PrState,
     pub head_sha: String,
@@ -30,7 +37,7 @@ pub struct PrObservation {
 }
 
 /// The impacted targets uploaded for one head of a PR.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetsUpload {
     pub head_sha: String,
     pub targets: ImpactedTargets,
@@ -40,7 +47,7 @@ pub struct TargetsUpload {
 pub(crate) const RECENT_HEADS: usize = 50;
 
 /// What CIHub knows of the target branch.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetBranch {
     pub head: Option<Observed<String>>,
     /// Heads that a live group may use as `base_sha`: the head after the
@@ -54,7 +61,8 @@ pub struct TargetBranch {
 }
 
 /// A fact that waits for a decision.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
     Submit {
         pr_number: u64,
@@ -94,7 +102,8 @@ pub enum Request {
 }
 
 /// What a decision acts on, to keep its cause.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum Subject {
     Item(ItemId),
     Group(GroupId),
@@ -103,7 +112,7 @@ pub enum Subject {
 
 /// The state of a queue. Concluded entities leave it when no live group
 /// cites them.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub org_id: OrgId,
     pub queue_id: QueueId,
@@ -119,12 +128,74 @@ pub struct Snapshot {
     pub items: BTreeMap<ItemId, Item>,
     pub groups: BTreeMap<GroupId, TestGroup>,
     pub runs: BTreeMap<RunId, TestRun>,
+    #[serde(with = "checks")]
     pub checks: BTreeMap<RunId, BTreeMap<(String, CheckKind), Observed<CheckObservation>>>,
     pub prs: BTreeMap<u64, Observed<PrObservation>>,
     pub targets: BTreeMap<u64, Observed<TargetsUpload>>,
     pub requests: BTreeMap<EventId, Request>,
     /// The fact that caused the last decision on each subject.
+    #[serde(with = "pairs")]
     pub causes: BTreeMap<Subject, EventId>,
+}
+
+/// A map whose key is not a string, as a list of pairs: a JSON object has
+/// only string keys.
+mod pairs {
+    use std::collections::BTreeMap;
+
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(super) fn serialize<K: Serialize, V: Serialize, S: Serializer>(
+        map: &BTreeMap<K, V>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(map)
+    }
+
+    pub(super) fn deserialize<'de, K, V, D>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
+    where
+        K: Deserialize<'de> + Ord,
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        Ok(Vec::<(K, V)>::deserialize(deserializer)?
+            .into_iter()
+            .collect())
+    }
+}
+
+/// The checks of each run; the checks of a run are keyed by name and kind.
+mod checks {
+    use std::collections::BTreeMap;
+
+    use cihub_domain::{CheckKind, CheckObservation, RunId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::Observed;
+
+    type Checks = BTreeMap<RunId, BTreeMap<(String, CheckKind), Observed<CheckObservation>>>;
+    type Pairs = Vec<((String, CheckKind), Observed<CheckObservation>)>;
+
+    pub(super) fn serialize<S: Serializer>(
+        checks: &Checks,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let runs: BTreeMap<&RunId, Vec<_>> = checks
+            .iter()
+            .map(|(run, checks)| (run, checks.iter().collect()))
+            .collect();
+        runs.serialize(serializer)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Checks, D::Error> {
+        let runs = BTreeMap::<RunId, Pairs>::deserialize(deserializer)?;
+        Ok(runs
+            .into_iter()
+            .map(|(run, checks)| (run, checks.into_iter().collect()))
+            .collect())
+    }
 }
 
 impl Snapshot {

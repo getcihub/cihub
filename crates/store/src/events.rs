@@ -8,14 +8,20 @@ use time::{Date, Month, OffsetDateTime};
 use crate::StoreError;
 
 /// Appends `events` to the logs of their queues, each after the last event of
-/// its queue. The caller holds the lock of each queue: two writers on the same
-/// queue would take the same `seq`.
+/// its queue, and returns the `seq` of each. The last snapshot counts too: once
+/// the partitions of the old events are dropped, `seq` goes on from it
+/// (`AGENTS.md` D106). The caller holds the lock of each queue: two writers on
+/// the same queue would take the same `seq`.
 ///
 /// # Errors
 ///
 /// An event cannot be serialized, or Postgres refuses a row (no partition for
 /// its month, another organization than the context).
-pub async fn append_events(conn: &mut PgConnection, events: &[Event]) -> Result<(), StoreError> {
+pub async fn append_events(
+    conn: &mut PgConnection,
+    events: &[Event],
+) -> Result<Vec<i64>, StoreError> {
+    let mut seqs = Vec::with_capacity(events.len());
     for event in events {
         let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
         let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
@@ -24,12 +30,16 @@ pub async fn append_events(conn: &mut PgConnection, events: &[Event]) -> Result<
             Actor::User { user_id } => Some(user_id.to_string()),
             Actor::System | Actor::Bot => None,
         };
-        sqlx::query(
+        let seq: i64 = sqlx::query_scalar(
             "INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, actor_user_id,
                                  cause_id, item_id, group_id, run_id, payload, occurred_at)
-             SELECT $1, $2, $3, coalesce(max(seq), 0) + 1, $4::event_type, $5::actor_kind, $6,
-                    $7, $8, $9, $10, $11, $12
-             FROM events WHERE queue_id = $3",
+             SELECT $1, $2, $3,
+                    greatest(
+                        (SELECT coalesce(max(seq), 0) FROM events WHERE queue_id = $3),
+                        (SELECT coalesce(max(seq), 0) FROM queue_snapshots WHERE queue_id = $3)
+                    ) + 1,
+                    $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10, $11, $12
+             RETURNING seq",
         )
         .bind(event.id.to_string())
         .bind(event.org_id.to_string())
@@ -43,14 +53,16 @@ pub async fn append_events(conn: &mut PgConnection, events: &[Event]) -> Result<
         .bind(subjects.run_id.map(|id| id.to_string()))
         .bind(payload)
         .bind(event.occurred_at)
-        .execute(&mut *conn)
+        .fetch_one(&mut *conn)
         .await
         .map_err(StoreError::Query)?;
+        seqs.push(seq);
     }
-    Ok(())
+    Ok(seqs)
 }
 
 type EventRow = (
+    i64,
     String,
     String,
     String,
@@ -62,7 +74,8 @@ type EventRow = (
     OffsetDateTime,
 );
 
-/// The log of `queue`, in order.
+/// The events of the log of `queue` after the event `after` (0 for the whole
+/// log), in order, each with its `seq`.
 ///
 /// # Errors
 ///
@@ -70,27 +83,29 @@ type EventRow = (
 pub async fn load_events(
     conn: &mut PgConnection,
     queue: QueueId,
-) -> Result<Vec<Event>, StoreError> {
+    after: i64,
+) -> Result<Vec<(i64, Event)>, StoreError> {
     let rows: Vec<EventRow> = sqlx::query_as(
-        "SELECT id, org_id, queue_id, type::text, actor_kind::text, actor_user_id, cause_id,
+        "SELECT seq, id, org_id, queue_id, type::text, actor_kind::text, actor_user_id, cause_id,
                 payload, occurred_at
-         FROM events WHERE queue_id = $1 ORDER BY seq",
+         FROM events WHERE queue_id = $1 AND seq > $2 ORDER BY seq",
     )
     .bind(queue.to_string())
+    .bind(after)
     .fetch_all(conn)
     .await
     .map_err(StoreError::Query)?;
     rows.into_iter()
         .map(|row| {
-            let id = row.0.clone();
+            let id = row.1.clone();
             decode(row).map_err(|source| StoreError::ReadEvent { id, source })
         })
         .collect()
 }
 
 fn decode(
-    (id, org_id, queue_id, kind, actor_kind, actor_user_id, cause_id, payload, occurred_at): EventRow,
-) -> Result<Event, Box<dyn Error + Send + Sync>> {
+    (seq, id, org_id, queue_id, kind, actor_kind, actor_user_id, cause_id, payload, occurred_at): EventRow,
+) -> Result<(i64, Event), Box<dyn Error + Send + Sync>> {
     let actor = match (actor_kind.as_str(), actor_user_id) {
         ("system", None) => Actor::System,
         ("bot", None) => Actor::Bot,
@@ -100,7 +115,7 @@ fn decode(
         (other, _) => return Err(format!("unknown actor `{other}`").into()),
     };
     let kind: EventKind = serde_json::from_value(json!({ "type": kind, "payload": payload }))?;
-    Ok(Event {
+    let event = Event {
         id: id.parse::<EventId>()?,
         org_id: org_id.parse::<OrgId>()?,
         queue_id: queue_id.parse::<QueueId>()?,
@@ -108,7 +123,104 @@ fn decode(
         occurred_at,
         cause_id: cause_id.map(|id| id.parse::<EventId>()).transpose()?,
         kind,
-    })
+    };
+    Ok((seq, event))
+}
+
+/// Deposits the fact `event` in the inbox of its queue (`AGENTS.md` D100), and
+/// returns `false` when the inbox already has it: a job that runs twice
+/// deposits the same fact once. The scheduler applies it later under the lock
+/// of the queue; the caller marks the queue dirty.
+///
+/// # Errors
+///
+/// `event` is a decision, it cannot be serialized, or Postgres refuses the row.
+pub async fn deposit_fact(
+    conn: &mut PgConnection,
+    event: &Event,
+    now: OffsetDateTime,
+) -> Result<bool, StoreError> {
+    if event.kind.event_type().is_decision() {
+        return Err(StoreError::DecisionDeposited(event.id.to_string()));
+    }
+    let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
+    let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
+    let actor_user_id = match &event.actor {
+        Actor::User { user_id } => Some(user_id.to_string()),
+        Actor::System | Actor::Bot => None,
+    };
+    let done = sqlx::query(
+        "INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, actor_user_id, type, payload,
+                                  received_at)
+         VALUES ($1, $2, $3, $4::actor_kind, $5, $6::event_type, $7, $8)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind(event.id.to_string())
+    .bind(event.org_id.to_string())
+    .bind(event.queue_id.to_string())
+    .bind(event.actor.kind().as_str())
+    .bind(actor_user_id)
+    .bind(event.kind.event_type().as_str())
+    .bind(payload)
+    .bind(now)
+    .execute(conn)
+    .await
+    .map_err(StoreError::Query)?;
+    Ok(done.rows_affected() == 1)
+}
+
+/// The facts of the inbox of `queue` not processed yet, at most `limit`, in
+/// the order of their deposits. The time of a fact is the time it came.
+///
+/// # Errors
+///
+/// Postgres fails, or a row does not match the events of `cihub-domain`.
+pub async fn pending_facts(
+    conn: &mut PgConnection,
+    queue: QueueId,
+    limit: i64,
+) -> Result<Vec<Event>, StoreError> {
+    let rows: Vec<EventRow> = sqlx::query_as(
+        "SELECT 0::bigint, id, org_id, queue_id, type::text, actor_kind::text, actor_user_id,
+                NULL::text, payload, received_at
+         FROM queue_inbox
+         WHERE queue_id = $1 AND processed_at IS NULL
+         ORDER BY arrival
+         LIMIT $2",
+    )
+    .bind(queue.to_string())
+    .bind(limit)
+    .fetch_all(conn)
+    .await
+    .map_err(StoreError::Query)?;
+    rows.into_iter()
+        .map(|row| {
+            let id = row.1.clone();
+            let (_, event) = decode(row).map_err(|source| StoreError::ReadEvent { id, source })?;
+            Ok(event)
+        })
+        .collect()
+}
+
+/// Marks the facts `ids` as processed at `now`, in the transaction that
+/// writes them to the log.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn mark_facts_processed(
+    conn: &mut PgConnection,
+    ids: &[EventId],
+    now: OffsetDateTime,
+) -> Result<(), StoreError> {
+    let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
+    sqlx::query("UPDATE queue_inbox SET processed_at = $2 WHERE id = ANY($1)")
+        .bind(ids)
+        .bind(now)
+        .execute(conn)
+        .await
+        .map_err(StoreError::Query)?;
+    Ok(())
 }
 
 /// Creates the partitions of `events` for the month of `today` and the next

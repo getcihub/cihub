@@ -14,6 +14,7 @@ publish = false
 cihub-conditions = { path = "crates/conditions" }
 cihub-config = { path = "crates/config" }
 cihub-domain = { path = "crates/domain" }
+cihub-mergequeue = { path = "crates/mergequeue" }
 cihub-mq-core = { path = "crates/mq-core" }
 cihub-platform = { path = "crates/platform" }
 cihub-scm = { path = "crates/scm" }

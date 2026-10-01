@@ -28,6 +28,9 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
             repo_external_id: read.id("/repository/id")?,
             number: read.number("/pull_request/number")?,
             base_branch: read.text("/pull_request/base/ref")?,
+            label_added: (event == "pull_request" && action == "labeled")
+                .then(|| payload["label"]["name"].as_str().map(str::to_owned))
+                .flatten(),
         },
         "issue_comment" if action == "created" && !payload["issue"]["pull_request"].is_null() => {
             ScmEvent::Commented {
@@ -223,16 +226,19 @@ mod tests {
     fn a_pr_or_its_review_is_a_pr_change() {
         let payload = json!({
             "action": "labeled",
+            "label": { "name": "ready" },
             "repository": { "id": 7 },
             "pull_request": { "number": 12, "base": { "ref": "main" } },
         });
-        let changed = ScmEvent::PrChanged {
+        let changed = |label_added: Option<&str>| ScmEvent::PrChanged {
             repo_external_id: "7".into(),
             number: 12,
             base_branch: "main".into(),
+            label_added: label_added.map(str::to_owned),
         };
-        assert_eq!(event("pull_request", &payload), changed);
-        assert_eq!(event("pull_request_review", &payload), changed);
+        assert_eq!(event("pull_request", &payload), changed(Some("ready")));
+        // A review adds no label, whatever its action.
+        assert_eq!(event("pull_request_review", &payload), changed(None));
     }
 
     #[test]

@@ -21,6 +21,9 @@ pub enum ScmEvent {
         repo_external_id: String,
         number: u64,
         base_branch: String,
+        /// The label that the change added, when it added one: it can submit
+        /// the PR.
+        label_added: Option<String>,
     },
     /// A branch moved.
     Pushed {

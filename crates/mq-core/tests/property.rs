@@ -1,7 +1,8 @@
 //! Random queues: submissions, successes, failures, cancellations, pushes on
 //! the PRs and on the target. After each step, `plan` reaches a fixed point
 //! and `check` finds nothing (the world asserts both); at the end, the replay
-//! of the log gives the same snapshot.
+//! of the log gives the same snapshot, also from a snapshot read back from
+//! JSON in the middle of the log.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
@@ -11,6 +12,7 @@ use cihub_config::Setting;
 use cihub_domain::{
     Actor, CheckConclusion, EventKind, JobError, PrState, Priority, RunId, RunStatus,
 };
+use cihub_mq_core::{Outcome, Snapshot, apply};
 use common::{World, head, settings};
 use proptest::prelude::*;
 
@@ -160,6 +162,7 @@ proptest! {
         actions in prop::collection::vec(action(), 1..60),
         window in 1..4_u32,
         retries in 0..2_u32,
+        split in 0.0..1.0_f64,
     ) {
         let mut w = World::new(settings(|l| {
             l.window_floor = Some(Setting::new(window));
@@ -169,6 +172,24 @@ proptest! {
         for action in &actions {
             step(&mut w, action);
         }
-        prop_assert_eq!(w.replay(), w.snapshot);
+        prop_assert_eq!(w.replay(), w.snapshot.clone());
+
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            clippy::cast_sign_loss,
+            reason = "an index in a short log"
+        )]
+        let middle = (w.log.len() as f64 * split) as usize;
+        let mut snapshot = w.initial.clone();
+        for event in &w.log[..middle] {
+            apply(&mut snapshot, event).unwrap();
+        }
+        let json = serde_json::to_value(&snapshot).unwrap();
+        let mut snapshot: Snapshot = serde_json::from_value(json).unwrap();
+        for event in &w.log[middle..] {
+            prop_assert_eq!(apply(&mut snapshot, event), Ok(Outcome::Applied));
+        }
+        prop_assert_eq!(snapshot, w.snapshot);
     }
 }

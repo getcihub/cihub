@@ -13,6 +13,7 @@ anyhow.workspace = true
 axum = { workspace = true, features = ["http1", "json", "tokio"] }
 cihub-domain.workspace = true
 cihub-github.workspace = true
+cihub-mergequeue.workspace = true
 cihub-web.workspace = true
 cihub-platform.workspace = true
 cihub-scm.workspace = true

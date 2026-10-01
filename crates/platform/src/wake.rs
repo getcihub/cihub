@@ -9,8 +9,26 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{PlatformError, lock_queue};
 
-/// The channel that says a queue has work; the payload is its identifier.
+/// The channel that says a queue has work; the payload is its identifier, or
+/// empty for a delivery of a connection without a queue.
 pub const QUEUE_CHANNEL: &str = "cihub_queue";
+
+/// Notifies the schedulers, when the transaction of `conn` commits, that a
+/// delivery of a connection waits without a queue.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub(crate) async fn notify_connection_delivery(
+    conn: &mut PgConnection,
+) -> Result<(), PlatformError> {
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(QUEUE_CHANNEL)
+        .execute(conn)
+        .await
+        .map_err(PlatformError::Query)?;
+    Ok(())
+}
 
 /// A scheduler looks for work at least this often, even without a
 /// notification: a notification sent while its connection was down is lost.

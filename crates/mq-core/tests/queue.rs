@@ -9,7 +9,7 @@ use cihub_domain::{
     Actor, CheckConclusion, EventKind, ItemState, JobError, Mergeability, PrState, Priority,
     QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
-use cihub_mq_core::Outcome;
+use cihub_mq_core::{Outcome, Read};
 use common::{World, head, settings, window};
 
 fn world() -> World {
@@ -391,13 +391,15 @@ fn a_blocked_pr_stays_not_ready() {
 }
 
 #[test]
-fn pause_stops_decisions_and_submissions() {
+fn pause_stops_decisions_and_keeps_submissions() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let control = |c| EventKind::QueueControlRequested { control: c };
     w.fact(Actor::System, control(QueueControl::Pause));
     assert_eq!(w.snapshot.state, QueueState::Paused);
-    assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Ignored);
+    // A submission waits for the end of the pause.
+    assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
+    assert_eq!(w.state(2), None, "no item in pause");
     w.assemble_all();
     let run = w.run(1).unwrap();
     assert_eq!(
@@ -410,11 +412,16 @@ fn pause_stops_decisions_and_submissions() {
         Outcome::Ignored
     );
     w.fact(Actor::System, control(QueueControl::Resume));
+    assert_eq!(
+        w.state(2),
+        Some(ItemState::Testing),
+        "submitted at the resume"
+    );
     w.report(1, CheckConclusion::Success);
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
     w.fact(Actor::System, control(QueueControl::Drain));
     assert_eq!(w.snapshot.state, QueueState::Draining);
-    assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Ignored);
+    assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Ignored);
     w.fact(Actor::System, EventKind::AccessLost);
     assert_eq!(w.snapshot.state, QueueState::Paused);
     w.fact(Actor::System, EventKind::AccessRestored);
@@ -558,4 +565,105 @@ fn check_finds_a_damaged_snapshot() {
     s.target.valid_bases.clear();
     let item_id = w.item(1).unwrap().id;
     assert!(check(&s, &w.settings).contains(&Violation::PassedOnStaleBase { item_id }));
+}
+
+/// Submits the PR `pr`, seen behind its base: it stays `not_ready`.
+fn submit_behind(w: &mut World, pr: u64) {
+    w.fact(
+        Actor::System,
+        EventKind::ItemSubmitted {
+            pr_number: pr,
+            head_sha: head(pr, 0),
+            priority: Priority::MEDIUM,
+            no_batch: false,
+            direct: false,
+            submitted_via: cihub_domain::SubmittedVia::Api,
+            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+        },
+    );
+    w.observe(pr, |p| p.mergeability = Mergeability::Behind);
+    assert_eq!(w.state(pr), Some(ItemState::NotReady));
+}
+
+#[test]
+fn a_not_ready_item_times_out() {
+    let mut w = world();
+    submit_behind(&mut w, 1);
+    let timeout = i64::from(w.settings.not_ready_timeout_hours.value) * 60;
+    w.advance(timeout - 1);
+    assert_eq!(w.state(1), Some(ItemState::NotReady));
+    w.advance(1);
+    assert_eq!(w.state(1), None, "a cancelled item leaves the snapshot");
+    let timed_out = w.log.last().unwrap();
+    assert!(matches!(
+        timed_out.kind,
+        EventKind::ItemTransitioned {
+            to: ItemState::Cancelled,
+            reason: Reason::NotReadyTimeoutExpired,
+            ..
+        }
+    ));
+    assert_eq!(timed_out.cause_id, None, "the clock decided");
+    assert_replays(&w);
+}
+
+#[test]
+fn a_not_ready_pr_is_read_less_and_less_often() {
+    let mut w = world();
+    submit_behind(&mut w, 1);
+    let submitted = w.item(1).unwrap().submitted_at;
+    let minute = submitted
+        .replace_second(0)
+        .unwrap()
+        .replace_nanosecond(0)
+        .unwrap();
+    let at = |minutes| minute + time::Duration::minutes(minutes);
+    let plan = w.reconcile();
+    assert!(plan.desired.observe.is_empty(), "just read");
+    assert_eq!(plan.wake_at, Some(at(1)));
+
+    w.advance(1);
+    let plan = w.reconcile();
+    let read = Read {
+        pr_number: 1,
+        point: at(1),
+    };
+    assert_eq!(plan.desired.observe, vec![read]);
+    assert_eq!(plan.wake_at, Some(at(3)));
+    // A read that changes nothing is not in the log: the read stays due at
+    // the same point, so that the job of this point is the same.
+    w.observe(1, |p| p.mergeability = Mergeability::Behind);
+    assert_eq!(w.reconcile().desired.observe, vec![read]);
+
+    // An older item is read every 15 minutes.
+    w.advance(60);
+    let plan = w.reconcile();
+    assert_eq!(plan.desired.observe[0].point, at(60));
+    assert_eq!(plan.wake_at, Some(at(75)));
+
+    // A read that changes something comes after the point: nothing is due.
+    // A mergeability that the SCM has not computed is read every minute.
+    w.observe(1, |p| p.mergeability = Mergeability::Unknown);
+    let plan = w.reconcile();
+    assert!(plan.desired.observe.is_empty());
+    assert_eq!(plan.wake_at, Some(at(62)));
+    assert_replays(&w);
+}
+
+#[test]
+fn a_run_in_progress_wakes_the_queue_at_its_timeout() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    let started = w.now;
+    w.assemble_all();
+    let plan = w.reconcile();
+    let timeout = time::Duration::minutes(i64::from(w.settings.testing_timeout_minutes.value));
+    assert_eq!(plan.wake_at, Some(started + timeout));
+    assert!(
+        plan.desired.observe.is_empty(),
+        "only not_ready PRs are read"
+    );
 }

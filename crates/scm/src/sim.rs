@@ -589,6 +589,10 @@ impl Ctx<'_> {
     }
 
     fn pr_changed(&mut self, number: u64) {
+        self.pr_labeled(number, None);
+    }
+
+    fn pr_labeled(&mut self, number: u64, label_added: Option<String>) {
         let Some(pr) = self.repo.prs.get(&number) else {
             return;
         };
@@ -597,6 +601,7 @@ impl Ctx<'_> {
             repo_external_id: self.repo_external_id.clone(),
             number,
             base_branch,
+            label_added,
         });
     }
 
@@ -1140,8 +1145,8 @@ impl Scm for Sim {
     ) -> ScmFuture<'a, ()> {
         let label = label.to_owned();
         self.call("add_label", repo, class, move |ctx| {
-            if ctx.repo.pr_mut(number)?.labels.insert(label) {
-                ctx.pr_changed(number);
+            if ctx.repo.pr_mut(number)?.labels.insert(label.clone()) {
+                ctx.pr_labeled(number, Some(label));
             }
             Ok(())
         })
@@ -1414,6 +1419,7 @@ mod tests {
                     repo_external_id: "200".into(),
                     number,
                     base_branch: "main".into(),
+                    label_added: None,
                 },
                 ScmEvent::CheckChanged {
                     repo_external_id: "200".into(),

@@ -11,6 +11,7 @@ use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
+use crate::wake::notify_connection_delivery;
 use crate::{INBOX_CHANNEL, PlatformError, mark_dirty};
 
 /// Without a notification, the routing loop looks for deliveries this often.
@@ -157,7 +158,8 @@ pub async fn find_route(
     })
 }
 
-/// Writes `route` on a delivery not routed yet, and marks its queue dirty.
+/// Writes `route` on a delivery not routed yet, and marks its queue dirty,
+/// or wakes the schedulers for a delivery of a connection without a queue.
 /// Returns `false` when the delivery was already routed.
 ///
 /// # Errors
@@ -187,8 +189,16 @@ pub async fn route_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let routed = done.rows_affected() == 1;
-    if let (true, Some(queue)) = (routed, route.queue_id) {
-        mark_dirty(conn, queue).await?;
+    match route {
+        _ if !routed || route.processed => {}
+        Route {
+            queue_id: Some(queue),
+            ..
+        } => mark_dirty(conn, queue).await?,
+        Route {
+            org_id: Some(_), ..
+        } => notify_connection_delivery(conn).await?,
+        Route { .. } => {}
     }
     Ok(routed)
 }

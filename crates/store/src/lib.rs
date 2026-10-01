@@ -8,11 +8,15 @@
 mod events;
 mod instances;
 mod tokens;
+mod users;
 
 use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
-pub use events::{append_events, create_event_partitions, load_events};
+pub use events::{
+    append_events, create_event_partitions, deposit_fact, load_events, mark_facts_processed,
+    pending_facts,
+};
 pub use instances::ensure_scm_instance;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
@@ -20,6 +24,7 @@ pub use sqlx::{PgPool, Postgres, Transaction};
 pub use tokens::{
     ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
 };
+pub use users::ensure_user;
 
 /// The migrations of `migrations/`, embedded in the binary.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
@@ -40,6 +45,8 @@ pub enum StoreError {
     Query(#[source] sqlx::Error),
     #[error("cannot serialize an event")]
     WriteEvent(#[source] serde_json::Error),
+    #[error("event {0} is a decision: only the scheduler writes a decision")]
+    DecisionDeposited(String),
     #[error("event {id} does not match the events of cihub-domain")]
     ReadEvent {
         id: String,
@@ -54,6 +61,12 @@ pub enum StoreError {
     },
     #[error("scm instance {id} does not match the identifiers of cihub-domain")]
     ReadInstance {
+        id: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("user {id} does not match the identifiers of cihub-domain")]
+    ReadUser {
         id: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,

@@ -3,6 +3,7 @@ use serde_json::Value;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
 
+use crate::wake::notify_connection_delivery;
 use crate::{PlatformError, mark_dirty};
 
 /// The channel that says a delivery waits for its routing.
@@ -29,7 +30,8 @@ pub struct Delivery {
 /// Stores `delivery` and returns `true`, or returns `false` when the inbox
 /// already has it: a copy of a delivery changes nothing. A delivery with its
 /// organization is routed; a new delivery of a queue marks the queue dirty in
-/// the same transaction. A new delivery without organization waits for the
+/// the same transaction, and a new delivery of a connection without a queue
+/// wakes the schedulers. A new delivery without organization waits for the
 /// routing loop, which [`INBOX_CHANNEL`] wakes.
 ///
 /// # Errors
@@ -61,6 +63,7 @@ pub async fn store_delivery(
     let stored = done.rows_affected() == 1;
     match (stored, delivery.org_id, delivery.queue_id) {
         (true, _, Some(queue)) => mark_dirty(conn, queue).await?,
+        (true, Some(_), None) => notify_connection_delivery(conn).await?,
         (true, None, _) => {
             sqlx::query("SELECT pg_notify($1, '')")
                 .bind(INBOX_CHANNEL)
@@ -68,7 +71,7 @@ pub async fn store_delivery(
                 .await
                 .map_err(PlatformError::Query)?;
         }
-        _ => {}
+        (false, ..) => {}
     }
     Ok(stored)
 }

@@ -260,12 +260,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "cihub-mergequeue"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "cihub-config",
+ "cihub-domain",
+ "cihub-github",
+ "cihub-mq-core",
+ "cihub-platform",
+ "cihub-scm",
+ "cihub-store",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ulid",
+]
+
+[[package]]
 name = "cihub-mq-core"
 version = "0.1.0"
 dependencies = [
  "cihub-config",
  "cihub-domain",
  "proptest",
+ "serde",
+ "serde_json",
  "thiserror",
  "time",
  "ulid",
@@ -307,6 +333,7 @@ dependencies = [
  "axum",
  "cihub-domain",
  "cihub-github",
+ "cihub-mergequeue",
  "cihub-platform",
  "cihub-scm",
  "cihub-store",

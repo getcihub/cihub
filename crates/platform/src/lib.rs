@@ -1,16 +1,17 @@
 //! Internal transport of CIHub on Postgres: the queue leases, the inbox of the
 //! webhook deliveries, the wake-up of the schedulers, the jobs, their worker
-//! loop, the daily maintenance (lot 3), the budgets of the connections, and the
-//! routing and the sweep of the deliveries. The roles talk only through these
-//! tables and their notifications. It holds no queue logic: it decides who
-//! works on a queue and in which order its deliveries come, not what the queue
-//! does.
+//! loop, the daily maintenance (lot 3), the budgets of the connections, the
+//! routing and the sweep of the deliveries, and the contract of a module. The
+//! roles talk only through these tables and their notifications. It holds no
+//! queue logic: it decides who works on a queue and in which order its
+//! deliveries come, not what the queue does.
 
 mod budget;
 mod inbox;
 mod jobs;
 mod lease;
 mod maintenance;
+mod module;
 mod routing;
 mod sweep;
 mod wake;
@@ -24,9 +25,10 @@ pub use jobs::{
 };
 pub use lease::{LEASE_TTL, acquire_leases, lock_queue, release_leases};
 pub use maintenance::{
-    DELIVERY_RETENTION, DONE_JOB_RETENTION, MAINTENANCE, execute_maintenance, maintenance_job,
-    request_maintenance, run_maintenance,
+    DELIVERY_RETENTION, DONE_JOB_RETENTION, EVENT_RETENTION, MAINTENANCE, execute_maintenance,
+    maintenance_job, request_maintenance, run_maintenance,
 };
+pub use module::{LoopError, Module, ModuleLoop, module_enabled};
 pub use routing::{
     ROUTE_POLL, ROUTES_PER_PASS, Route, UnroutedDelivery, find_route, route_delivery, run_router,
     unrouted_deliveries,

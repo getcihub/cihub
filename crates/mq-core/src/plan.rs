@@ -23,6 +23,9 @@ use crate::{ApplyError, Snapshot, apply};
 pub struct Plan {
     pub decisions: Vec<Event>,
     pub desired: Desired,
+    /// When the queue must be reconciled again without a change: a read
+    /// that comes due, a timeout. `None` waits for a change.
+    pub wake_at: Option<OffsetDateTime>,
 }
 
 /// The desired state: the jobs make the SCM converge to it.
@@ -30,6 +33,17 @@ pub struct Plan {
 pub struct Desired {
     pub test_branches: Vec<TestBranch>,
     pub merges: Vec<Merge>,
+    /// The PRs whose state CIHub must read again now: a `not_ready` item
+    /// waits for a change that no webhook may report.
+    pub observe: Vec<Read>,
+}
+
+/// A read of a PR that is due since its read point. The same point gives
+/// the same read, so that a job reads the PR once per point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Read {
+    pub pr_number: u64,
+    pub point: OffsetDateTime,
 }
 
 /// A test branch that must exist: `base_sha`, then the heads merged in
@@ -113,7 +127,8 @@ pub fn plan(
     }
     Ok(Plan {
         decisions,
-        desired: desired(&state),
+        desired: desired(&state, now),
+        wake_at: wake_at(&state, settings, now),
     })
 }
 
@@ -124,6 +139,7 @@ const RULES: &[Rule] = &[
     requests,
     mode_switch,
     pr_changes,
+    not_ready_timeout,
     run_conclusion,
     group_follows_run,
     group_follows_members,
@@ -414,6 +430,21 @@ fn pr_changes(
             };
             Step::one(Some(observed.fact_id), item_to(item, to, reason))
         })
+}
+
+/// An item that stays `not_ready` too long leaves the queue.
+fn not_ready_timeout(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    now: OffsetDateTime,
+    _: &mut IdGen,
+) -> Option<Step> {
+    let timeout = Duration::hours(i64::from(settings.not_ready_timeout_hours.value));
+    let item = not_ready_items(s).find(|i| now >= i.submitted_at + timeout)?;
+    Step::one(
+        None,
+        item_to(item, ItemState::Cancelled, Reason::NotReadyTimeoutExpired),
+    )
 }
 
 /// A run in progress passes when every required status passes, fails at
@@ -887,7 +918,68 @@ pub(crate) fn merge_ready(s: &Snapshot, item: &Item) -> bool {
             })
 }
 
-fn desired(s: &Snapshot) -> Desired {
+/// Read points of a `not_ready` PR after its submission, in minutes: then
+/// every 15 minutes.
+const READ_POINTS: [i64; 4] = [1, 3, 7, 15];
+
+/// The last read point at or before `now`, and the next one after `now`.
+/// The points depend only on the age of the item, not on the last read: a
+/// read that changes nothing is not in the log. They count from the minute of
+/// the submission, so that the reads of one minute go together. While the SCM
+/// has not computed the mergeability, a point comes every minute.
+fn read_points(item: &Item, now: OffsetDateTime) -> (Option<OffsetDateTime>, OffsetDateTime) {
+    let submitted = item.submitted_at;
+    let minute = submitted
+        - Duration::seconds(i64::from(submitted.second()))
+        - Duration::nanoseconds(i64::from(submitted.nanosecond()));
+    let at = |minutes: i64| minute + Duration::minutes(minutes);
+    let age = (now - minute).whole_minutes().max(0);
+    if item.mergeability == Mergeability::Unknown {
+        return ((age >= 1).then(|| at(age)), at(age + 1));
+    }
+    let last = READ_POINTS
+        .iter()
+        .rev()
+        .find(|&&point| point <= age)
+        .map(|&point| point.max(age / 15 * 15));
+    let next = READ_POINTS
+        .iter()
+        .find(|&&point| point > age)
+        .copied()
+        .unwrap_or((age / 15 + 1) * 15);
+    (last.map(at), at(next))
+}
+
+/// The read of the PR of a `not_ready` item, when its last point came after
+/// the last observation.
+fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
+    let (point, _) = read_points(item, now);
+    let point = point?;
+    let observed = s.prs.get(&item.pr_number).map(|o| o.observed_at);
+    (observed.is_none_or(|at| at < point)).then_some(Read {
+        pr_number: item.pr_number,
+        point,
+    })
+}
+
+/// The earliest of the next read points, the not-ready timeouts and the run
+/// timeouts.
+fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Option<OffsetDateTime> {
+    let not_ready = Duration::hours(i64::from(settings.not_ready_timeout_hours.value));
+    let testing = Duration::minutes(i64::from(settings.testing_timeout_minutes.value));
+    let items = not_ready_items(s).flat_map(|item| {
+        let (_, next) = read_points(item, now);
+        [next, item.submitted_at + not_ready]
+    });
+    let runs = s
+        .runs
+        .values()
+        .filter(|r| r.status == RunStatus::InProgress)
+        .map(|r| r.started_at + testing);
+    items.chain(runs).min()
+}
+
+fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
     let head = |id: &ItemId| s.items.get(id).map(|i| i.head_sha.clone());
     let test_branches = s
         .runs
@@ -921,8 +1013,12 @@ fn desired(s: &Snapshot) -> Desired {
             })
             .collect()
     };
+    let observe = not_ready_items(s)
+        .filter_map(|item| read_due(s, item, now))
+        .collect();
     Desired {
         test_branches,
         merges,
+        observe,
     }
 }

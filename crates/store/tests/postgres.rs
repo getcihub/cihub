@@ -7,8 +7,9 @@ use std::path::Path;
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
-    EventType, ItemId, ItemState, JobClass, JobState, MembershipRole, OrgId, Priority, QueueId,
-    Reason, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState, MembershipRole,
+    Mergeability, ModuleName, OrgId, Priority, QueueId, QueueMode, QueueState, Reason,
+    RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -62,8 +63,9 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 12] = [
+const TENANT_TABLES: [&str; 18] = [
     "orgs",
+    "org_modules",
     "scm_accounts",
     "scm_connections",
     "repos",
@@ -75,6 +77,11 @@ const TENANT_TABLES: [&str; 12] = [
     "api_tokens",
     "audit_log",
     "events",
+    "queue_items",
+    "test_groups",
+    "test_runs",
+    "queue_snapshots",
+    "queue_inbox",
 ];
 
 /// The month of the events of the tests.
@@ -115,6 +122,29 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('audit-{n}', '{org}', 'queue.paused', 'queue-{n}');
          INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, payload, occurred_at)
              VALUES ('event-{n}', '{org}', '{queue}', 1, 'access.lost', 'system', 'null',
+                     '2026-09-15T00:00:00Z');
+         INSERT INTO org_modules (org_id, module, enabled_at)
+             VALUES ('{org}', 'mergequeue', '2026-09-15T00:00:00Z');
+         INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id, state,
+                                  state_reason, state_changed_at, priority_value, no_batch,
+                                  force_enqueued, skip_the_line, submitted_via, submitted_at,
+                                  mergeability, block_reasons, is_current)
+             VALUES ('item-{n}', '{org}', '{queue}', 1, 'abc', 'user-1', 'not_ready', 'submitted',
+                     '2026-09-15T00:00:00Z', 100, false, false, false, 'comment',
+                     '2026-09-15T00:00:00Z', 'unknown', '[]', true);
+         INSERT INTO test_groups (id, org_id, queue_id, kind, item_ids, predecessor_ids, base_sha,
+                                  seq, state, state_reason, created_at)
+             VALUES ('group-{n}', '{org}', '{queue}', 'single', '{{item-{n}}}', '{{}}', 'abc', 2,
+                     'testing', 'test_run_started', '2026-09-15T00:00:00Z');
+         INSERT INTO test_runs (id, org_id, queue_id, group_id, attempt, test_branch, status,
+                                status_reason, required_statuses, started_at,
+                                failure_causing_statuses)
+             VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'cihub-merge/pr-1',
+                     'assembling', 'test_run_started', '{{}}', '2026-09-15T00:00:00Z', '{{}}');
+         INSERT INTO queue_snapshots (org_id, queue_id, seq, payload, created_at)
+             VALUES ('{org}', '{queue}', 1, '{{}}', '2026-09-15T00:00:00Z');
+         INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
+             VALUES ('fact-{n}', '{org}', '{queue}', 'system', 'access.lost', 'null',
                      '2026-09-15T00:00:00Z');"
     )
 }
@@ -299,10 +329,24 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("event_type", values::<EventType>()),
+        ("group_kind", values::<GroupKind>()),
+        ("group_state", values::<GroupState>()),
+        ("item_state", values::<ItemState>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
         ("membership_role", values::<MembershipRole>()),
+        ("mergeability", values::<Mergeability>()),
+        ("module_name", values::<ModuleName>()),
+        ("queue_mode", values::<QueueMode>()),
+        ("queue_state", values::<QueueState>()),
+        ("reason", values::<Reason>()),
+        (
+            "required_statuses_source",
+            values::<RequiredStatusesSource>(),
+        ),
+        ("run_status", values::<RunStatus>()),
         ("scm_kind", values::<ScmKind>()),
+        ("submitted_via", values::<SubmittedVia>()),
     ];
     let names: Vec<String> = sqlx::query_scalar(
         "SELECT t.typname::text FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -399,17 +443,20 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let log = vec![submitted, created, lost];
 
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
-    append_events(&mut tx, &log[..2]).await.unwrap();
-    append_events(&mut tx, &log[2..]).await.unwrap();
+    assert_eq!(append_events(&mut tx, &log[..2]).await.unwrap(), [1, 2]);
+    assert_eq!(append_events(&mut tx, &log[2..]).await.unwrap(), [3]);
     tx.commit().await.unwrap();
 
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
+    let queue = QueueId::from_ulid(Ulid(1));
+    let read = load_events(&mut tx, queue, 0).await.unwrap();
     assert_eq!(
-        load_events(&mut tx, QueueId::from_ulid(Ulid(1)))
-            .await
-            .unwrap(),
-        log
+        read,
+        [1, 2, 3].into_iter().zip(log.clone()).collect::<Vec<_>>()
     );
+    // After the event 2, only the last one.
+    let tail = load_events(&mut tx, queue, 2).await.unwrap();
+    assert_eq!(tail, [(3, log[2].clone())]);
     let rows: Vec<(i64, Option<String>)> =
         sqlx::query_as("SELECT seq, item_id FROM events WHERE queue_id = $1 ORDER BY seq")
             .bind(QueueId::from_ulid(Ulid(1)).to_string())
@@ -422,7 +469,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     // Another organization does not see the log.
     let mut tx = begin_org(&pool, org(2)).await.unwrap();
     assert!(
-        load_events(&mut tx, QueueId::from_ulid(Ulid(1)))
+        load_events(&mut tx, QueueId::from_ulid(Ulid(1)), 0)
             .await
             .unwrap()
             .is_empty()

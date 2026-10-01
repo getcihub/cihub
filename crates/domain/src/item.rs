@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::{
     GroupId, ItemId, ItemState, Mergeability, OrgId, QueueId, Reason, RunId, SubmittedVia,
@@ -35,6 +36,9 @@ pub struct Item {
     /// The run that proved the item: its own or a successor's.
     pub verified_by_run_id: Option<RunId>,
     pub merged_sha: Option<String>,
+    /// When the submission came: the time of the creation of the item.
+    #[serde(with = "time::serde::rfc3339")]
+    pub submitted_at: OffsetDateTime,
 }
 
 /// Lower value is served first. Named levels have the same names and values
