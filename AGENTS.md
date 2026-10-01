@@ -217,13 +217,14 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   de Trunk restent dans les webhooks sortants, par une traduction au lot 11.
 - **D24** La crate pure `cihub-mq-core` (`crates/mq-core/`) contient `apply`, le graphe de merge, `plan` et
   `check`. Elle dépend de `cihub-domain` et ne connaît ni `cihub-config` ni `cihub-conditions`.
+  _Complétée par D99 : elle dépend de `cihub-config`._
 - **D25** Les réglages de la file (`QueueSettings`) sont un paramètre de `plan` et de `check`, comme l'heure :
   `plan(snapshot, settings, now)` et `check(snapshot, settings)`. Ils ne sont pas dans le snapshot, car
   `cihub-domain` ne peut pas dépendre de `cihub-config`. Le fait `queue.settings_changed` porte seulement le mode
   avant et après.
 - **D26** `thiserror` pour les erreurs des crates de bibliothèque (§5.1) ; `proptest` pour les tests de
   propriété, en dépendance de développement seulement. `insta` arrive avec le premier lot qui compare des plans
-  par instantanés.
+  par instantanés. _Complétée par D97 : le lot 5._
 - **D27** (Q6) La spéculation probabiliste reste hors v1. Le fait `item.submitted` garde dès maintenant les
   attributs dont elle aura besoin : `author`, `additions`, `deletions` et `changed_files`. Les durées viennent des
   horodatages du journal ; elles ne sont pas un attribut. _Complétée par D42 : `author` devient `author_id`._
@@ -241,7 +242,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   logs (D13), puis les traces OpenTelemetry et les métriques Prometheus quand elles arrivent. Seuls les binaires
   l'utilisent. En `pretty`, un log est une ligne : heure UTC en millisecondes, niveau, message et champs.
 - **D35** Le contrat `Module` et l'activation d'un module par organisation arrivent au lot 5, avec le premier
-  module (`cihub-mergequeue`), et non au lot 2.
+  module (`cihub-mergequeue`), et non au lot 2. _Complétée par D94._
 - **D36** La table `events` est partitionnée par mois. `cihub-server migrate` crée les partitions du mois en cours
   et du mois suivant ; une boucle du rôle `scheduler` crée chaque jour la partition du mois suivant si elle
   manque, jusqu'à ce qu'un job la remplace au lot 3. Pas d'extension (`pg_partman`) ni de partition par défaut.
@@ -433,7 +434,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   nom étroit comme `api`, ou `server`, déjà le nom du binaire, prêterait à confusion. Les routes restent dans une
   bibliothèque, pour que ses tests appellent le routeur et que les modules y déclarent leurs routes (D8).
 
-**1er octobre 2026, validée par Nicolas Lecoy.**
+**1er octobre 2026, validées par Nicolas Lecoy.**
 
 - **D92** Remplace D89, et complète D47, D72, D79 et D82. Pas d'assistant de création de l'App : CIHub ne se
   conçoit pas pour un seul SCM, et une création à la main suffit. L'opérateur crée la GitHub App selon
@@ -441,6 +442,69 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   (`CIHUB_GITHUB_PRIVATE_KEY` ou `CIHUB_GITHUB_PRIVATE_KEY_FILE`) et `CIHUB_GITHUB_WEBHOOK_SECRET`. Sans elles,
   `cihub-server` s'arrête au démarrage avec un message qui les nomme ; `cihub-server migrate` n'en a pas besoin.
   `CIHUB_PUBLIC_URL` disparaît. Plusieurs SCM viendront plus tard, chacun avec ses variables.
+- **D93** Le lot 5 crée la crate `cihub-mergequeue` (`crates/mergequeue/`). Elle dépend de `cihub-domain`,
+  `cihub-mq-core`, `cihub-config`, `cihub-platform`, `cihub-scm` et `cihub-store` ; `cihub-contracts` (lot 14) et
+  `cihub-analytics` (lot 11) arrivent avec leurs lots.
+- **D94** Complète D35 : le contrat `Module` de `cihub-platform` est une struct, pas un trait (D62) : le nom du
+  module, ses exécuteurs pour `Executors::register` et ses boucles par rôle. Les routes arrivent au lot 9, les
+  abonnements au lot 11. Une table `org_modules` (`org_id`, `module`, `enabled_at`), avec la sécurité au niveau
+  ligne, active un module pour une organisation ; sans ligne, l'organisation n'a pas le module.
+- **D95** Migrations du lot 5 : `queues` gagne l'état, le mode et les réglages (D56) ; les tables `queue_items`,
+  `test_groups` et `test_runs` suivent `docs/DATA_MODEL.md`, avec les listes d'identifiants en `text[]` (D37) ;
+  une table `queue_snapshots` (`org_id`, `queue_id`, `seq`, `payload jsonb`, `created_at`) garde un instantané
+  tous les 500 événements.
+- **D96** Le job `refresh_prs` lit l'état d'au plus 50 PR d'une file par la lecture groupée du trait `Scm` ; son
+  résultat revient en faits `pr.observed`. Sa clé est `refresh_prs:<queue_id>-<AAAAMMJJTHHMM>:1` ; sa classe est
+  `interactive` après une commande ou une soumission, `repair` pour le sondage de 1 à 15 minutes.
+  _Complétée par D101._
+- **D97** Complète D26 : `insta` arrive au lot 5, en dépendance de développement seulement, pour les instantanés
+  des plans et des projections.
+- **D98** Le lot 5 ne publie ni le statut de la file ni les commentaires sur la PR (lot 9) ; il exclut seulement le
+  statut de la file des checks requis lus pour la mergeabilité.
+- **D99** Complète D24 : `cihub-mq-core` dépend de `cihub-config` pour `QueueSettings` (D25), pas de
+  `cihub-conditions`.
+- **D100** Une table `queue_inbox` reçoit les faits que les jobs, puis l'API, rendent à une file : l'identifiant
+  du fait, son acteur, son type et son payload. Le déposant marque la file ; le scheduler applique ces faits sous
+  le verrou de la file et les marque traités dans la transaction de la réconciliation. Le scheduler est le seul à
+  écrire le journal.
+- **D101** Complète D96 : la clé de `refresh_prs` nomme sa cause. Après une livraison, elle porte son identifiant
+  (`refresh_prs:<queue_id>-<delivery_id>:1`, classe `interactive`) ; le sondage garde la clé de sa fenêtre
+  (`refresh_prs:<queue_id>-<AAAAMMJJTHHMM>:1`, classe `repair`).
+- **D102** Le job `submit_pr` (classe `interactive`, clé `submit_pr:<delivery_id>:1`) soumet une PR après une
+  commande ou un label : il vérifie la permission de l'auteur d'une commande (`write`, `admin` pour `--direct`),
+  lit la PR et dépose `item.submitted` et `pr.observed` dans `queue_inbox`.
+- **D103** Une passe du scheduler lit les livraisons d'une connexion sans file (accès perdu ou rendu), dépose leur
+  fait dans la `queue_inbox` de chaque file de la connexion, marque ces files et marque la livraison traitée, dans
+  une transaction.
+- **D104** Complète les interfaces du lot 1 : `Item` gagne `submitted_at` et `Observed` gagne `observed_at`,
+  remplis par `apply` avec l'heure de l'événement ; `plan` annule une entrée `not_ready` après
+  `not_ready_timeout_hours` (`not_ready_timeout_expired`, sans cause) ; `Desired` gagne `observe`, les lectures
+  dues (`Read` : la PR et son point de lecture), et `Plan` gagne `wake_at`, le prochain réveil de la file. Les
+  points de lecture dépendent seulement de l'âge de l'entrée : 1, 3, 7 et 15 minutes après la soumission, puis
+  toutes les 15 minutes, et toutes les minutes tant que la mergeabilité est `unknown`. Une lecture qui ne change
+  rien n'est pas dans le journal ; le point donne la fenêtre de la clé du sondage (D101).
+- **D105** L'exception du statut de la file est dans les jobs qui lisent une PR : quand le seul check requis non
+  satisfait est le statut `CIHub Merge Queue (<branche>)`, le job rapporte la PR `mergeable`. `plan` ne change pas.
+- **D106** Complète D57 : le job `maintenance` supprime une partition d'`events` de plus de 90 jours seulement
+  quand chaque file qui y a des événements a un instantané d'un `seq` au moins égal. Une file prend aussi un
+  instantané quand son plus vieil événement après le dernier instantané a plus de 30 jours ; une passe horaire du
+  scheduler réveille les files dans ce cas. `seq` suit le dernier événement ou le dernier instantané, et ne repart
+  jamais à 1. Le rejeu complet (`rebuild`) demande un journal entier ; après une suppression, une file se charge
+  depuis son instantané.
+- **D107** Complète D75 : `ScmEvent::PrChanged` porte `label_added`, le label qu'une action a posé, pour qu'une
+  soumission par label ne demande pas de lire chaque PR qui change.
+- **D108** Complète D102 et D103 : un commentaire ne donne pas la branche de base de la PR ; la commande passe par
+  la passe des livraisons de la connexion, et `submit_pr` trouve la file par la branche de base de la PR qu'il lit.
+  Une soumission par label a l'acteur `system`, car la livraison ne dit pas qui a posé le label.
+- **D109** Complète D101 : au-delà de 50 PR à un même point de lecture, la clé du sondage ajoute le rang de sa
+  part (`refresh_prs:<queue_id>-<AAAAMMJJTHHMM>-2:1`).
+- **D110** Complète D95 : pas de colonne `queues.settings` avant le lot 8 ; au lot 5, chaque file a les réglages par
+  défaut.
+- **D111** Complète D94 : un `Module` a toujours une boucle du scheduler.
+- **D112** La raison `undetermined` d'une PR bloquée ne nomme pas le check requis qui manque ; le lot 9 la précise,
+  avec les surfaces de la PR.
+- **D113** Une soumission reste possible quand la file est en `paused` (`docs/RELIABILITY.md`) : elle attend la
+  reprise de la file pour créer son entrée.
 
 ### 4.1 Questions ouvertes
 
