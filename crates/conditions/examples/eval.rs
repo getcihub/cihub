@@ -15,10 +15,8 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
-use cihub_conditions::{
-    Attribute, Check, Condition, Conditions, Context, Expr, ParseError, Permission,
-};
-use cihub_domain::{CheckConclusion, ReviewDecision};
+use cihub_conditions::{Attribute, Check, Condition, Conditions, Context, Expr, ParseError};
+use cihub_domain::{CheckConclusion, Permission, ReviewDecision};
 
 /// The file named by the first argument, or stdin.
 fn read_input() -> Result<(String, String), String> {

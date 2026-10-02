@@ -802,8 +802,9 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
     })
 }
 
-/// Mergeability and block reasons of a `not_ready` item. Queue conditions
-/// come with lot 5.
+/// Mergeability and block reasons of a `not_ready` item: the mergeability on
+/// the SCM, the impacted targets in parallel mode, and the `queue_conditions`
+/// that the job that read the PR found unmet (`AGENTS.md` D142).
 fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReason> {
     let mut blocks = match pr.mergeability {
         Mergeability::Mergeable => Vec::new(),
@@ -820,6 +821,11 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         .is_some_and(|t| t.value.head_sha == item.head_sha);
     if s.mode == QueueMode::Parallel && !has_targets && blocks.is_empty() {
         blocks.push(BlockReason::Undetermined);
+    }
+    if !pr.unmet_conditions.is_empty() {
+        blocks.push(BlockReason::QueueConditionsUnmet {
+            conditions: pr.unmet_conditions.clone(),
+        });
     }
     blocks
 }

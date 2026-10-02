@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use cihub_domain::{CheckReport, ConnectionId, MergeMethod, Mergeability, PrState, ReviewDecision};
+use time::OffsetDateTime;
 
 /// The connection that a call uses: its quota, its budget and its credentials.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +34,10 @@ pub struct PrSnapshot {
     pub state: PrState,
     pub head_sha: String,
     pub base_branch: String,
+    pub head_branch: String,
+    /// The head branch is in another repository.
+    pub from_fork: bool,
+    pub created_at: OffsetDateTime,
     pub draft: bool,
     /// The title and the description, for the title of the merge commit
     /// (`AGENTS.md` D126).
@@ -41,6 +46,11 @@ pub struct PrSnapshot {
     pub labels: BTreeSet<String>,
     pub mergeability: Mergeability,
     pub review_decision: ReviewDecision,
+    /// The logins whose last review approves the PR, or asks for changes.
+    pub approved_by: BTreeSet<String>,
+    pub changes_requested_by: BTreeSet<String>,
+    /// The users and teams whose review the PR asks for.
+    pub review_requested: BTreeSet<String>,
     /// The checks and statuses of the head.
     pub checks: Vec<CheckReport>,
     pub author: ScmUser,
@@ -55,15 +65,6 @@ pub struct RequiredChecks {
     pub names: BTreeSet<String>,
     /// The rules require the head of a PR to be up to date with its base.
     pub up_to_date: bool,
-}
-
-/// What a user may do on a repository.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RepoPermission {
-    None,
-    Read,
-    Write,
-    Admin,
 }
 
 /// The state of a commit status that CIHub publishes.

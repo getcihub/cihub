@@ -4,7 +4,7 @@ queues:
     branch: main
     strategy: batched
     queue_conditions:
-      - github-review-decision = approved
+      - review-decision = approved
       - -draft
       - -label = do-not-merge
     merge_conditions:

@@ -200,6 +200,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             mergeability,
             review_decision,
             checks,
+            unmet_conditions,
         } => {
             if !tracks_pr(snapshot, *pr_number) {
                 return Outcome::Ignored;
@@ -213,6 +214,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 mergeability: *mergeability,
                 review_decision: *review_decision,
                 checks: checks.clone(),
+                unmet_conditions: unmet_conditions.clone(),
             };
             if observe(snapshot.prs.get_mut(pr_number), &value) {
                 return Outcome::Ignored;

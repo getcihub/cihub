@@ -264,6 +264,7 @@ name = "cihub-mergequeue"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "cihub-conditions",
  "cihub-config",
  "cihub-domain",
  "cihub-github",

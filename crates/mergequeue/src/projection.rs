@@ -339,10 +339,10 @@ async fn create_item(
                                   state, state_reason, state_changed_at, priority_value,
                                   priority_name, no_batch, force_enqueued, skip_the_line,
                                   submitted_by, submitted_via, submitted_at, mergeability,
-                                  block_reasons, is_current)
+                                  block_reasons, is_current, sender_permission)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
                 $10, $11, $12, $13, s.actor_user_id, $14::submitted_via, s.occurred_at,
-                $15::mergeability, $16, true
+                $15::mergeability, $16, true, (s.payload->>'sender_permission')::permission
          FROM events s
          WHERE s.queue_id = $3 AND s.id = $17 AND s.type = 'item.submitted'",
     )

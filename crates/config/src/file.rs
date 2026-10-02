@@ -492,7 +492,7 @@ queues:
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission : la PR elle-meme
-      - github-review-decision = approved
+      - review-decision = approved
       - -draft
       - -label = do-not-merge
       - check-success = lint

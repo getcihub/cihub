@@ -134,6 +134,7 @@ impl World {
                 additions: 1,
                 deletions: 0,
                 changed_files: 1,
+                sender_permission: None,
             },
         );
         self.observe(pr_number, |_| {});
@@ -148,6 +149,7 @@ impl World {
             base_branch: "main".into(),
             draft: false,
             mergeability: Mergeability::Mergeable,
+            unmet_conditions: Vec::new(),
         };
         edit(&mut pr);
         self.fact(
@@ -162,6 +164,7 @@ impl World {
                 mergeability: pr.mergeability,
                 review_decision: ReviewDecision::Approved,
                 checks: Vec::new(),
+                unmet_conditions: pr.unmet_conditions,
             },
         )
     }
@@ -288,6 +291,7 @@ pub struct Pr {
     pub base_branch: String,
     pub draft: bool,
     pub mergeability: Mergeability,
+    pub unmet_conditions: Vec<String>,
 }
 
 pub fn head(pr_number: u64, version: u32) -> String {

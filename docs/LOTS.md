@@ -851,10 +851,26 @@ Autres valeurs fermées :
     rouvrent jusqu'au plafond ; un plafond abaissé ramène la fenêtre dans ses bornes. Le budget d'échec était déjà
     dans `plan` (relances, aucune relance pour un conflit ou une erreur de configuration) ; sa relance de plus quand
     `FlakeOracle` reconnaît les tests en échec arrive au lot 14.
+  - Fait (2 octobre 2026, D142 à D145) : `queue_conditions`. `cihub-conditions` gagne `Conditions::unmet` et le
+    vocabulaire neutre (`review-decision`, permissions `none` à `admin`) ; `Permission` passe dans
+    `cihub-domain` à la place de `RepoPermission` et du `Permission` de `cihub-conditions`. `PrSnapshot` gagne la
+    branche de tête, le fork, la date de création et les revues ; le trait `Scm` gagne `pr_files` et
+    `unresolved_threads` (GitHub et simulateur). `submit_pr` et `refresh_prs` évaluent les conditions de la file
+    pour une entrée pas encore admise ; `pr.observed` porte `unmet_conditions`, `item.submitted` porte
+    `sender_permission` (colonne `queue_items.sender_permission`, enum `permission`), et `plan` bloque l'entrée
+    avec `queue_conditions_unmet`. Tests : `unmet` et le vocabulaire, la suite de contrat sur le simulateur, une
+    entrée bloquée puis admise dans le noyau, et contre Postgres et le simulateur une PR qui attend son label et
+    une autre ses fichiers.
+  - Fait (2 octobre 2026) : les réponses de GitHub sont enregistrées de nouveau (D143, 59 échanges, avec les revues,
+    les fichiers et les fils de revue), avec le ruleset `cihub` remis le temps de l'enregistrement en mode « une
+    approbation et le statut `cihub-contract-ci` », puis rendu à son état de test. #48 et #49 sont rouvertes, #51
+    mergée par la suite.
   - Reste : routage entre files d'une même branche (`submit_pr` prend la première file de la branche) ; réglage
     `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; injection des protections ; états de la file ; attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
+    `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans
+    ses jobs (D142).
 
 ### Lot 9 : surfaces : PR, API, CLI
 

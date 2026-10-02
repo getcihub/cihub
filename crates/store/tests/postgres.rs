@@ -8,8 +8,9 @@ use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
     EventId, EventKind, EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState,
-    MembershipRole, Mergeability, ModuleName, OrgId, Priority, QueueId, QueueMode, QueueState,
-    Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    MembershipRole, Mergeability, ModuleName, OrgId, Permission, Priority, QueueId, QueueMode,
+    QueueState, Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia,
+    UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -344,6 +345,7 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("membership_role", values::<MembershipRole>()),
         ("mergeability", values::<Mergeability>()),
         ("module_name", values::<ModuleName>()),
+        ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),
         ("queue_state", values::<QueueState>()),
         ("reason", values::<Reason>()),
@@ -431,6 +433,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
             additions: 3,
             deletions: 1,
             changed_files: 2,
+            sender_permission: None,
         },
     );
     let created = event(

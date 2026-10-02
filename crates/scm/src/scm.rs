@@ -1,12 +1,12 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use cihub_domain::{CheckReport, JobClass};
+use cihub_domain::{CheckReport, JobClass, Permission};
 use time::OffsetDateTime;
 
 use crate::{
-    MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoPermission, RepoRef, RequiredChecks,
-    ScmError, ScmUser, StatusUpdate,
+    MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks, ScmError, ScmUser,
+    StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -78,7 +78,25 @@ pub trait Scm: Send + Sync {
         repo: &'a RepoRef,
         user: &'a ScmUser,
         class: JobClass,
-    ) -> ScmFuture<'a, RepoPermission>;
+    ) -> ScmFuture<'a, Permission>;
+
+    /// The paths of the files that the PR `number` changes, read only when a
+    /// condition uses them (`AGENTS.md` D143).
+    fn pr_files<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>>;
+
+    /// The path of each unresolved review thread of the PR `number`, read
+    /// only when a condition uses them (`AGENTS.md` D143).
+    fn unresolved_threads<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>>;
 
     /// Creates the branch `branch` at `sha`, or moves it there, forced when
     /// `force`.

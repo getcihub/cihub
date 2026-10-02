@@ -4,14 +4,16 @@
 //! gives its facts back to the queue through `queue_inbox` (D100) and marks
 //! the queue dirty; it never writes the log.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use cihub_domain::{
-    Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, JobClass, Mergeability, OrgId,
-    Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia, UserId,
+    Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, ItemState, JobClass,
+    Mergeability, OrgId, Permission, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId,
+    SubmittedVia, UserId,
 };
 use cihub_platform::{Job, Outcome, error_chain, mark_dirty};
-use cihub_scm::{PrSnapshot, RepoPermission, RequiredChecks, Scm, ScmError, ScmUser};
+use cihub_scm::{PrSnapshot, RequiredChecks, Scm, ScmError, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, ensure_user};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -20,6 +22,7 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::MergeQueueError;
+use crate::admission::{Sender, unmet_conditions};
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
@@ -196,7 +199,7 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
     }
 }
 
-fn observed(pr: &PrSnapshot, mergeability: Mergeability) -> EventKind {
+fn observed(pr: &PrSnapshot, mergeability: Mergeability, unmet: Vec<String>) -> EventKind {
     EventKind::PrObserved {
         pr_number: pr.number,
         state: pr.state,
@@ -207,6 +210,7 @@ fn observed(pr: &PrSnapshot, mergeability: Mergeability) -> EventKind {
         mergeability,
         review_decision: pr.review_decision,
         checks: pr.checks.clone(),
+        unmet_conditions: unmet,
     }
 }
 
@@ -336,15 +340,26 @@ async fn refresh(
         .pull_requests(&target.repo, &request.prs, job.class)
         .await?;
     let own = queue_status_context(&target.target_branch);
-    let facts = prs
-        .iter()
-        .map(|pr| {
-            (
-                Actor::System,
-                observed(pr, mergeability(pr, &required, &own)),
-            )
-        })
-        .collect();
+    let mut tx = begin_system(pool)
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let submissions = submissions(&mut tx, target.queue_id, &request.prs).await?;
+    tx.commit()
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let mut facts = Vec::with_capacity(prs.len());
+    for pr in &prs {
+        // An admitted item no longer depends on its conditions (D142).
+        let unmet = match submissions.get(&pr.number) {
+            Some(Submission { admitted: true, .. }) => Vec::new(),
+            submission => {
+                let sender = submission.map(|s| s.sender.clone()).unwrap_or_default();
+                unmet_conditions(scm, &target, pr, &sender, job.class, now).await?
+            }
+        };
+        let kind = observed(pr, mergeability(pr, &required, &own), unmet);
+        facts.push((Actor::System, kind));
+    }
     let mut tx = begin_system(pool)
         .await
         .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
@@ -353,6 +368,73 @@ async fn refresh(
         .await
         .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
     Ok(())
+}
+
+/// The live item of a PR, as `refresh_prs` needs it.
+struct Submission {
+    /// The item left `not_ready`.
+    admitted: bool,
+    sender: Sender,
+}
+
+/// The live items of `prs` in `queue`, with who submitted them (D144).
+async fn submissions(
+    conn: &mut PgConnection,
+    queue: QueueId,
+    prs: &[u64],
+) -> Result<HashMap<u64, Submission>, MergeQueueError> {
+    type Row = (i64, String, Option<String>, Option<String>);
+    let numbers: Vec<i64> = prs.iter().filter_map(|n| i64::try_from(*n).ok()).collect();
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT i.pr_number, i.state::text, u.login, i.sender_permission::text
+         FROM queue_items i LEFT JOIN users u ON u.id = i.submitted_by
+         WHERE i.queue_id = $1 AND i.is_current AND i.concluded_at IS NULL
+           AND i.pr_number = ANY($2)",
+    )
+    .bind(queue.to_string())
+    .bind(numbers)
+    .fetch_all(conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(number, state, login, permission)| {
+            let submission = Submission {
+                admitted: state != ItemState::NotReady.as_str(),
+                sender: Sender {
+                    login,
+                    permission: permission.and_then(|p| p.parse().ok()),
+                },
+            };
+            Some((u64::try_from(number).ok()?, submission))
+        })
+        .collect())
+}
+
+/// The author of the command of `request` with their permission, or `None`
+/// when the permission is too low (`write`, `admin` for `--direct`). A label
+/// gives no sender.
+async fn sender_of(
+    scm: &dyn Scm,
+    repo: &RepoTarget,
+    request: &SubmitPr,
+    class: JobClass,
+) -> Result<Option<Sender>, Failure> {
+    let Some(author) = &request.requested_by else {
+        return Ok(Some(Sender::default()));
+    };
+    let need = if request.direct {
+        Permission::Admin
+    } else {
+        Permission::Write
+    };
+    let has = scm
+        .permission(&repo.repo, &ScmUser::from(author), class)
+        .await?;
+    Ok((has >= need).then(|| Sender {
+        login: Some(author.login.clone()),
+        permission: Some(has),
+    }))
 }
 
 /// Checks the submission of the job, reads the PR, and gives back its
@@ -382,19 +464,10 @@ async fn submit_pr(
         .await
         .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
     let pr_number = request.pr_number;
-    if let Some(author) = &request.requested_by {
-        let need = if request.direct {
-            RepoPermission::Admin
-        } else {
-            RepoPermission::Write
-        };
-        let user = ScmUser::from(author);
-        let has = scm.permission(&repo.repo, &user, job.class).await?;
-        if has < need {
-            info!(pr_number, "submission refused: permission");
-            return Ok(());
-        }
-    }
+    let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
+        info!(pr_number, "submission refused: permission");
+        return Ok(());
+    };
     let pr = match scm.pull_request(&repo.repo, pr_number, job.class).await {
         Ok(pr) => pr,
         Err(ScmError::NotFound(_)) => return Ok(()),
@@ -458,12 +531,14 @@ async fn submit_pr(
         additions: pr.additions,
         deletions: pr.deletions,
         changed_files: pr.changed_files,
+        sender_permission: sender.permission,
     };
+    let unmet = unmet_conditions(scm, &target, &pr, &sender, job.class, now).await?;
     let facts = vec![
         (actor, submitted),
         (
             Actor::System,
-            observed(&pr, mergeability(&pr, &required, &own)),
+            observed(&pr, mergeability(&pr, &required, &own), unmet),
         ),
     ];
     give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
@@ -491,12 +566,18 @@ mod tests {
             state: PrState::Open,
             head_sha: "a".into(),
             base_branch: "main".into(),
+            head_branch: "feature".into(),
+            from_fork: false,
+            created_at: OffsetDateTime::UNIX_EPOCH,
             draft: false,
             title: "PR 1".into(),
             body: String::new(),
             labels: BTreeSet::new(),
             mergeability,
             review_decision: review,
+            approved_by: BTreeSet::new(),
+            changes_requested_by: BTreeSet::new(),
+            review_requested: BTreeSet::new(),
             checks: checks
                 .iter()
                 .map(|(name, ok)| CheckReport {

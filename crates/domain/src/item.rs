@@ -78,14 +78,29 @@ impl Priority {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BlockReason {
-    ReviewRequired { have: u32, need: u32 },
+    ReviewRequired {
+        have: u32,
+        need: u32,
+    },
     ChangesRequested,
-    FailingRequiredCheck { check: String },
-    AwaitingRequiredCheck { check: String, status: String },
+    FailingRequiredCheck {
+        check: String,
+    },
+    AwaitingRequiredCheck {
+        check: String,
+        status: String,
+    },
     BehindBase,
     MergeConflict,
-    StackNeedsRebase { onto_pr_number: u64 },
+    StackNeedsRebase {
+        onto_pr_number: u64,
+    },
     Undetermined,
+    /// The PR does not meet these `queue_conditions` of the queue, as the
+    /// file writes them (`AGENTS.md` D142).
+    QueueConditionsUnmet {
+        conditions: Vec<String>,
+    },
 }
 
 /// Targets that a PR changes, which place it in the merge graph. `All` in

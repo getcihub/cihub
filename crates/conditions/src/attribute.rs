@@ -1,6 +1,6 @@
 use std::fmt;
 
-use cihub_domain::ReviewDecision;
+use cihub_domain::{Permission, ReviewDecision};
 
 /// Value type of an attribute. It decides which operators are allowed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,7 +58,7 @@ attributes! {
     Number => "number", Kind::Int;
     Title => "title", Kind::Text;
     Body => "body", Kind::Text;
-    GithubReviewDecision => "github-review-decision", Kind::Choice { values: REVIEW_DECISION_NAMES, ordered: false };
+    ReviewDecision => "review-decision", Kind::Choice { values: REVIEW_DECISION_NAMES, ordered: false };
     ApprovedReviewsBy => "approved-reviews-by", Kind::List;
     ChangesRequestedReviewsBy => "changes-requested-reviews-by", Kind::List;
     ReviewRequested => "review-requested", Kind::List;
@@ -71,7 +71,7 @@ attributes! {
     Label => "label", Kind::List;
     Author => "author", Kind::Text;
     Sender => "sender", Kind::Text;
-    SenderPermission => "sender-permission", Kind::Choice { values: Permission::NAMES, ordered: true };
+    SenderPermission => "sender-permission", Kind::Choice { values: PERMISSION_NAMES, ordered: true };
     Files => "files", Kind::List;
     Additions => "additions", Kind::Int;
     Deletions => "deletions", Kind::Int;
@@ -95,7 +95,7 @@ impl fmt::Display for Attribute {
     }
 }
 
-/// Names of the values of `github-review-decision`, in the order of
+/// Names of the values of `review-decision`, in the order of
 /// `review_decision_rank`.
 const REVIEW_DECISION_NAMES: &[&str] =
     &["approved", "changes_requested", "review_required", "none"];
@@ -109,24 +109,16 @@ pub(crate) const fn review_decision_rank(decision: ReviewDecision) -> i64 {
     }
 }
 
-/// Permission of the sender on the repository, from lowest to highest.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Permission {
-    None,
-    Read,
-    Triage,
-    Write,
-    Maintain,
-    Admin,
-}
+/// Names of the values of `sender-permission`, in the order of
+/// `permission_rank` (`AGENTS.md` D145).
+const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
 
-impl Permission {
-    /// Same order as the variants.
-    const NAMES: &'static [&'static str] =
-        &["none", "read", "triage", "write", "maintain", "admin"];
-
-    pub(crate) const fn rank(self) -> i64 {
-        self as i64
+pub(crate) const fn permission_rank(permission: Permission) -> i64 {
+    match permission {
+        Permission::None => 0,
+        Permission::Read => 1,
+        Permission::Write => 2,
+        Permission::Admin => 3,
     }
 }
 
@@ -156,11 +148,15 @@ mod tests {
             let rank = usize::try_from(review_decision_rank(decision)).unwrap();
             assert_eq!(REVIEW_DECISION_NAMES[rank], decision.as_str());
         }
-        assert_eq!(
-            Permission::NAMES[usize::try_from(Permission::Admin.rank()).unwrap()],
-            "admin"
-        );
-        assert_eq!(Permission::NAMES.len(), 6);
+        for permission in [
+            Permission::None,
+            Permission::Read,
+            Permission::Write,
+            Permission::Admin,
+        ] {
+            let rank = usize::try_from(permission_rank(permission)).unwrap();
+            assert_eq!(PERMISSION_NAMES[rank], permission.as_str());
+        }
         assert_eq!(REVIEW_DECISION_NAMES.len(), 4);
     }
 }

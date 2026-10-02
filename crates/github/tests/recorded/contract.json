@@ -1,5 +1,5 @@
 {
-  "recorded_at": 1790927261,
+  "recorded_at": 1790936132,
   "world": {
     "installation": "94530302",
     "namespace": "getsyncr",
@@ -11,7 +11,7 @@
     "up_to_date": false,
     "file_path": "cihub-contract/file.txt",
     "file_content": "contract\n",
-    "mergeable_pr": 47,
+    "mergeable_pr": 51,
     "conflicting_pr": 48,
     "draft_pr": 49,
     "missing_pr": 999999,
@@ -27,7 +27,7 @@
         "content-type": "application/json; charset=utf-8"
       },
       "body": {
-        "expires_at": "2026-10-02T08:47:41Z",
+        "expires_at": "2026-10-02T11:15:32Z",
         "permissions": {
           "actions": "write",
           "administration": "read",
@@ -49,7 +49,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\np1: pullRequest(number: 48) { ...pr }\np2: pullRequest(number: 49) { ...pr }\np3: pullRequest(number: 999999) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\np1: pullRequest(number: 48) { ...pr }\np2: pullRequest(number: 49) { ...pr }\np3: pullRequest(number: 999999) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -59,10 +59,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4997",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4996",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "3"
+        "x-ratelimit-used": "4"
       },
       "body": {
         "data": {
@@ -76,17 +76,33 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": null,
               "mergeStateStatus": "CLEAN",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -94,7 +110,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -125,10 +141,16 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T07:43:07Z",
               "deletions": 0,
+              "headRefName": "cihub-contract/conflicting",
               "headRefOid": "75c7898bdf37a29c9975662b95f24e1bbbc1c31b",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
@@ -136,6 +158,9 @@
               "mergeable": "CONFLICTING",
               "number": 48,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -161,10 +186,16 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T07:43:10Z",
               "deletions": 0,
+              "headRefName": "cihub-contract/draft",
               "headRefOid": "032105a0bf1787a006f4f0e37b53b54bc04beda1",
+              "isCrossRepository": false,
               "isDraft": true,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
@@ -172,6 +203,9 @@
               "mergeable": "MERGEABLE",
               "number": 49,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -180,6 +214,13 @@
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
                       "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980051987/job/110752292610",
+                      "name": "ci",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994173860/job/110796969997",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -220,7 +261,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -230,10 +271,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4996",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4995",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "4"
+        "x-ratelimit-used": "5"
       },
       "body": {
         "data": {
@@ -247,17 +288,33 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": null,
               "mergeStateStatus": "CLEAN",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -265,7 +322,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -292,10 +349,69 @@
       }
     },
     {
+      "method": "GET",
+      "path": "/repos/getsyncr/contracts/pulls/51/files?per_page=100&page=1",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4994",
+        "x-ratelimit-reset": "1790939565",
+        "x-ratelimit-resource": "core",
+        "x-ratelimit-used": "6"
+      },
+      "body": [
+        {
+          "additions": 1,
+          "blob_url": "https://github.com/getsyncr/contracts/blob/fad9d396a847cdf3788f326e97fe5ddaad21bd3a/cihub-contract%2Fpr-1790935965.txt",
+          "changes": 1,
+          "contents_url": "https://api.github.com/repos/getsyncr/contracts/contents/cihub-contract%2Fpr-1790935965.txt?ref=fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+          "deletions": 0,
+          "filename": "cihub-contract/pr-1790935965.txt",
+          "patch": "@@ -0,0 +1 @@\n+pr",
+          "raw_url": "https://github.com/getsyncr/contracts/raw/fad9d396a847cdf3788f326e97fe5ddaad21bd3a/cihub-contract%2Fpr-1790935965.txt",
+          "sha": "1be11a8c542aa6c211e80e0ddddf9ec5c8328138",
+          "status": "added"
+        }
+      ]
+    },
+    {
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 999999) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "\nquery($owner: String!, $name: String!, $number: Int!) {\n  repository(owner: $owner, name: $name) {\n    pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path } } }\n  }\n}",
+        "variables": {
+          "name": "contracts",
+          "number": 51,
+          "owner": "getsyncr"
+        }
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4994",
+        "x-ratelimit-reset": "1790939281",
+        "x-ratelimit-resource": "graphql",
+        "x-ratelimit-used": "6"
+      },
+      "body": {
+        "data": {
+          "repository": {
+            "pullRequest": {
+              "reviewThreads": {
+                "nodes": []
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/graphql",
+      "request": {
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 999999) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -305,10 +421,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4995",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4993",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "5"
+        "x-ratelimit-used": "7"
       },
       "body": {
         "data": {
@@ -342,7 +458,7 @@
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
         "x-ratelimit-remaining": "4993",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
         "x-ratelimit-used": "7"
       },
@@ -388,8 +504,7 @@
             "do_not_enforce_on_create": false,
             "required_status_checks": [
               {
-                "context": "cihub-contract-ci",
-                "integration_id": 91235
+                "context": "cihub-contract-ci"
               }
             ],
             "strict_required_status_checks_policy": false
@@ -408,10 +523,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4992",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4998",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "8"
+        "x-ratelimit-used": "2"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-status-checks-protection",
@@ -426,10 +541,10 @@
       "headers": {
         "content-type": "application/vnd.github.raw+json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4991",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4997",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "9"
+        "x-ratelimit-used": "3"
       },
       "text": "contract\n"
     },
@@ -440,10 +555,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4990",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4996",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "10"
+        "x-ratelimit-used": "4"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/repos/contents#get-repository-content",
@@ -458,10 +573,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4989",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4995",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "11"
+        "x-ratelimit-used": "5"
       },
       "body": {
         "permission": "admin",
@@ -504,17 +619,17 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4997",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4994",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "3"
+        "x-ratelimit-used": "6"
       },
       "body": {
         "node_id": "REF_kwDOU14xqq9yZWZzL2hlYWRzL21haW4",
         "object": {
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
         },
         "ref": "refs/heads/main",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/main"
@@ -527,10 +642,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4996",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4993",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "4"
+        "x-ratelimit-used": "7"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference",
@@ -543,16 +658,16 @@
       "path": "/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract",
       "request": {
         "force": false,
-        "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5"
+        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
       },
       "status": 422,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4988",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4992",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "12"
+        "x-ratelimit-used": "8"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#update-a-reference",
@@ -565,23 +680,23 @@
       "path": "/repos/getsyncr/contracts/git/refs",
       "request": {
         "ref": "refs/heads/cihub-temp/contract",
-        "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5"
+        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
       },
       "status": 201,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4987",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4991",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "13"
+        "x-ratelimit-used": "9"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -592,23 +707,23 @@
       "path": "/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract",
       "request": {
         "force": false,
-        "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5"
+        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
       },
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4986",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4990",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "14"
+        "x-ratelimit-used": "10"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -621,17 +736,17 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4995",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4992",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "5"
+        "x-ratelimit-used": "8"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -641,7 +756,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -651,10 +766,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4994",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4992",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "6"
+        "x-ratelimit-used": "8"
       },
       "body": {
         "data": {
@@ -668,17 +783,33 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": null,
               "mergeStateStatus": "CLEAN",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -686,7 +817,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -718,16 +849,16 @@
       "request": {
         "base": "cihub-temp/contract",
         "commit_message": "contract merge",
-        "head": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "head": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 201,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4985",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4989",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "15"
+        "x-ratelimit-used": "11"
       },
       "body": {
         "author": {
@@ -751,31 +882,31 @@
           "url": "https://api.github.com/users/cihub-test%5Bbot%5D",
           "user_view_type": "public"
         },
-        "comments_url": "https://api.github.com/repos/getsyncr/contracts/commits/614ac4de0de6b05db9284feb339737de76f0628a/comments",
+        "comments_url": "https://api.github.com/repos/getsyncr/contracts/commits/85ae5a6631d00f66504d67432407df7e0b538ba1/comments",
         "commit": {
           "author": {
-            "date": "2026-10-02T07:47:48Z",
+            "date": "2026-10-02T10:15:41Z",
             "email": "75419852+cihub-test[bot]@users.noreply.github.com",
             "name": "cihub-test[bot]"
           },
           "comment_count": 0,
           "committer": {
-            "date": "2026-10-02T07:47:48Z",
+            "date": "2026-10-02T10:15:41Z",
             "email": "noreply@github.com",
             "name": "GitHub"
           },
           "message": "contract merge",
           "tree": {
-            "sha": "2e29fa3615425bd9ccfa18316e6f67cfe090e165",
-            "url": "https://api.github.com/repos/getsyncr/contracts/git/trees/2e29fa3615425bd9ccfa18316e6f67cfe090e165"
+            "sha": "364bb885315a99391c7744c396a4147c7acef6d2",
+            "url": "https://api.github.com/repos/getsyncr/contracts/git/trees/364bb885315a99391c7744c396a4147c7acef6d2"
           },
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/614ac4de0de6b05db9284feb339737de76f0628a",
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/85ae5a6631d00f66504d67432407df7e0b538ba1",
           "verification": {
-            "payload": "tree 2e29fa3615425bd9ccfa18316e6f67cfe090e165\nparent 08240080e9c6b0831ac471f5f49653b8ec1940d5\nparent 351847ac993f3eb3f54c4c2e1726b02d147ecc76\nauthor cihub-test[bot] <75419852+cihub-test[bot]@users.noreply.github.com> 1790927268 +0000\ncommitter GitHub <noreply@github.com> 1790927268 +0000\n\ncontract merge\n",
+            "payload": "tree 364bb885315a99391c7744c396a4147c7acef6d2\nparent f44ba51ded05d306fe49680d03630bb2004fe2e9\nparent fad9d396a847cdf3788f326e97fe5ddaad21bd3a\nauthor cihub-test[bot] <75419852+cihub-test[bot]@users.noreply.github.com> 1790936141 +0000\ncommitter GitHub <noreply@github.com> 1790936141 +0000\n\ncontract merge\n",
             "reason": "valid",
-            "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqv2GkCRC1aQ7uu5UhlAAATLsQAKNM7/Qk8G+GSiQQa/2YbTkf\nP8/eHcj1udHk1cU0LH9NKTlNAEN/cB+7Sj23Ra2rnBeA3rj4taI7zJO9dUR8hxkU\nh3JHhTtdaZ3TIhm1x8qorFuSafjn4AHcU5m9cW4biutMY9ybQaKTzlbNgs3CAzEO\nhy+29xfdRc29MAnmfa3j2J/nU52zKYq24Z2dY7dEiDO6tbQFJrnYLKfMpmEbUbUo\nuK7dQIvRGRs/cXA1zdMNWaNWShoYIvF9DjvZLwlBboksQLL1evbFbrKydqK6VL2q\nLha+Cwg7oAwEyJwhKLCzE7iiV9E1ov5OflwpBvlUZ8Cfb/x3IrgCveQDDTesRD5S\nBgtrZdBoIVNvQfkg2R/s0YyYi8psGwv0CFuHuL5Fn6tH+jx1OI9sl5SffhhyfCSl\nm0hciGVQxLvIQALIDghYFJalxlkLnBaVr/IzblMu44I4DD4SDcn/LzQlgnvukO8o\nlBOIapmZgCR8WuwiQ87YeZIUrRTjqqbmLMuZGDA7FDecyHZuCkrQP5oiW3YNo8lg\n65a7UM/XOHIvDOcUBfHJEZA4EAq8Cpf+6dPvCA2dfQn9WfjHyp6KvUCrLsuwJVMa\nV4l+qnONimBj+4SsuX6LWdgxcv4BlkB2eY4+F23SRMdJzU368Z6BnhDX3TE1HXCC\nn0vqsOk9UL2lSz7P8JTN\n=iVGk\n-----END PGP SIGNATURE-----\n",
+            "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqv4RNCRC1aQ7uu5UhlAAAdwwQAK3iOtUS10hxXMBpnpXxB5Wo\n+xpLeZXkmGzigIGjzw6BZOP68QO2eFP9yVwy8MSJ95LQ7Ti45HmpLY8O86zg9gBi\ndiXuoVv7TUCSYcdXOwcIpFzBSKUhi2KGU9uCgru+aZXiZAp91iKiwrH9AvRbaNNW\nDMKFS6MQnK6pxItWcyva0M2l4l39QhI4SJZImxdduz8sePVb/WY9mFmdSKfBZcy4\nSfsIqgS4BicQQ1HyFREPKkEKZ8KVMKxmhZ2REtK/tQpAsmx3lbWvE17ShcK0/N81\nzDt/kRp9dVMEMNNt65E9Fy7u+zloSjTabgIpMNxauUdt1GF/js8q3JU4JO6UQ5GL\n2T0n9MZ73Q4daGaRq1JhnVq76LTu0iocW0BNRzrTXpgchgJUwWnLdB4vDgnZ5KQ0\ndVX23/bwMHnUvc8kSIPRL5Rk8QA8/VZh2YVStUMAFBq44YzV2ok8dYJB1g96DYIh\n1D8PM2FwwFDT4NzeobCbBDO/hQQZWbkTXCcUpANt6KtXrVCxZ+V9BdSf7nxlnBFO\ngyjdsSDZR5BGprz2mNjVtmaOZT+uv9KnEBQf5jTme/rLIKcNminwqjzSrYpd+BxV\n7qfr9On1UhbBnw4LyIndiqE3YgIWT1Kw7+MUBVx5YOjMV9NZtzyyLmRicfJkrhDM\nuy/qOJCssrVUE7TAlHEG\n=19YO\n-----END PGP SIGNATURE-----\n",
             "verified": true,
-            "verified_at": "2026-10-02T07:47:48Z"
+            "verified_at": "2026-10-02T10:15:42Z"
           }
         },
         "committer": {
@@ -799,22 +930,22 @@
           "url": "https://api.github.com/users/web-flow",
           "user_view_type": "public"
         },
-        "html_url": "https://github.com/getsyncr/contracts/commit/614ac4de0de6b05db9284feb339737de76f0628a",
-        "node_id": "C_kwDOU14xqtoAKDYxNGFjNGRlMGRlNmIwNWRiOTI4NGZlYjMzOTczN2RlNzZmMDYyOGE",
+        "html_url": "https://github.com/getsyncr/contracts/commit/85ae5a6631d00f66504d67432407df7e0b538ba1",
+        "node_id": "C_kwDOU14xqtoAKDg1YWU1YTY2MzFkMDBmNjY1MDRkNjc0MzI0MDdkZjdlMGI1MzhiYTE",
         "parents": [
           {
-            "html_url": "https://github.com/getsyncr/contracts/commit/08240080e9c6b0831ac471f5f49653b8ec1940d5",
-            "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
-            "url": "https://api.github.com/repos/getsyncr/contracts/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+            "html_url": "https://github.com/getsyncr/contracts/commit/f44ba51ded05d306fe49680d03630bb2004fe2e9",
+            "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
+            "url": "https://api.github.com/repos/getsyncr/contracts/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
           },
           {
-            "html_url": "https://github.com/getsyncr/contracts/commit/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
-            "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
-            "url": "https://api.github.com/repos/getsyncr/contracts/commits/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+            "html_url": "https://github.com/getsyncr/contracts/commit/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+            "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+            "url": "https://api.github.com/repos/getsyncr/contracts/commits/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
           }
         ],
-        "sha": "614ac4de0de6b05db9284feb339737de76f0628a",
-        "url": "https://api.github.com/repos/getsyncr/contracts/commits/614ac4de0de6b05db9284feb339737de76f0628a"
+        "sha": "85ae5a6631d00f66504d67432407df7e0b538ba1",
+        "url": "https://api.github.com/repos/getsyncr/contracts/commits/85ae5a6631d00f66504d67432407df7e0b538ba1"
       }
     },
     {
@@ -824,17 +955,17 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4994",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4991",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "6"
+        "x-ratelimit-used": "9"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "614ac4de0de6b05db9284feb339737de76f0628a",
+          "sha": "85ae5a6631d00f66504d67432407df7e0b538ba1",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/614ac4de0de6b05db9284feb339737de76f0628a"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/85ae5a6631d00f66504d67432407df7e0b538ba1"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -846,22 +977,22 @@
       "request": {
         "base": "cihub-temp/contract",
         "commit_message": "contract merge",
-        "head": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "head": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 204,
       "headers": {
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4984",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4988",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "16"
+        "x-ratelimit-used": "12"
       }
     },
     {
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 48) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 48) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -871,10 +1002,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4993",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4991",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "7"
+        "x-ratelimit-used": "9"
       },
       "body": {
         "data": {
@@ -888,10 +1019,16 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T07:43:07Z",
               "deletions": 0,
+              "headRefName": "cihub-contract/conflicting",
               "headRefOid": "75c7898bdf37a29c9975662b95f24e1bbbc1c31b",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
@@ -899,6 +1036,9 @@
               "mergeable": "CONFLICTING",
               "number": 48,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -931,10 +1071,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4983",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4987",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "17"
+        "x-ratelimit-used": "13"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/branches/branches#merge-a-branch",
@@ -947,16 +1087,16 @@
       "path": "/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract",
       "request": {
         "force": false,
-        "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5"
+        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
       },
       "status": 422,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4982",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4986",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "18"
+        "x-ratelimit-used": "14"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#update-a-reference",
@@ -969,23 +1109,23 @@
       "path": "/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract",
       "request": {
         "force": true,
-        "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5"
+        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
       },
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4981",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4985",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "19"
+        "x-ratelimit-used": "15"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/08240080e9c6b0831ac471f5f49653b8ec1940d5"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -997,10 +1137,10 @@
       "status": 204,
       "headers": {
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4993",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4990",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "7"
+        "x-ratelimit-used": "10"
       }
     },
     {
@@ -1010,10 +1150,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4992",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4989",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "8"
+        "x-ratelimit-used": "11"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#delete-a-reference",
@@ -1028,10 +1168,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4991",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4988",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "9"
+        "x-ratelimit-used": "12"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference",
@@ -1043,7 +1183,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -1053,10 +1193,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4992",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4990",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "8"
+        "x-ratelimit-used": "10"
       },
       "body": {
         "data": {
@@ -1070,17 +1210,33 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": null,
               "mergeStateStatus": "CLEAN",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -1088,7 +1244,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -1116,7 +1272,7 @@
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+      "path": "/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
       "request": {
         "context": "cihub-contract",
         "description": "contract",
@@ -1127,15 +1283,15 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4990",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4987",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "10"
+        "x-ratelimit-used": "13"
       },
       "body": {
         "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
         "context": "cihub-contract",
-        "created_at": "2026-10-02T07:47:54Z",
+        "created_at": "2026-10-02T10:15:47Z",
         "creator": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -1158,17 +1314,17 @@
           "user_view_type": "public"
         },
         "description": "contract",
-        "id": 55432356735,
-        "node_id": "SC_kwDOU14xqs8AAAAM6Aajfw",
+        "id": 55440211677,
+        "node_id": "SC_kwDOU14xqs8AAAAM6H5-3Q",
         "state": "pending",
         "target_url": null,
-        "updated_at": "2026-10-02T07:47:54Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "updated_at": "2026-10-02T10:15:47Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       }
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+      "path": "/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
       "request": {
         "context": "cihub-contract",
         "description": "contract",
@@ -1179,15 +1335,15 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4989",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4986",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "11"
+        "x-ratelimit-used": "14"
       },
       "body": {
         "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
         "context": "cihub-contract",
-        "created_at": "2026-10-02T07:47:55Z",
+        "created_at": "2026-10-02T10:15:49Z",
         "creator": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -1210,12 +1366,12 @@
           "user_view_type": "public"
         },
         "description": "contract",
-        "id": 55432357402,
-        "node_id": "SC_kwDOU14xqs8AAAAM6AamGg",
+        "id": 55440212671,
+        "node_id": "SC_kwDOU14xqs8AAAAM6H6Cvw",
         "state": "pending",
         "target_url": null,
-        "updated_at": "2026-10-02T07:47:55Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "updated_at": "2026-10-02T10:15:49Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       }
     },
     {
@@ -1226,17 +1382,17 @@
         "variables": {
           "name": "contracts",
           "owner": "getsyncr",
-          "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+          "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
         }
       },
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4991",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4989",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "9"
+        "x-ratelimit-used": "11"
       },
       "body": {
         "data": {
@@ -1248,7 +1404,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -1281,7 +1437,7 @@
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+      "path": "/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
       "request": {
         "context": "cihub-contract",
         "description": "contract",
@@ -1292,15 +1448,15 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4988",
-        "x-ratelimit-reset": "1790930563",
+        "x-ratelimit-remaining": "4985",
+        "x-ratelimit-reset": "1790939570",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "12"
+        "x-ratelimit-used": "15"
       },
       "body": {
         "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
         "context": "cihub-contract",
-        "created_at": "2026-10-02T07:47:56Z",
+        "created_at": "2026-10-02T10:15:50Z",
         "creator": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -1323,17 +1479,17 @@
           "user_view_type": "public"
         },
         "description": "contract",
-        "id": 55432358333,
-        "node_id": "SC_kwDOU14xqs8AAAAM6AapvQ",
+        "id": 55440213849,
+        "node_id": "SC_kwDOU14xqs8AAAAM6H6HWQ",
         "state": "success",
         "target_url": null,
-        "updated_at": "2026-10-02T07:47:56Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "updated_at": "2026-10-02T10:15:50Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       }
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/issues/47/comments",
+      "path": "/repos/getsyncr/contracts/issues/51/comments",
       "request": {
         "body": "contract comment"
       },
@@ -1341,20 +1497,20 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4980",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4984",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "20"
+        "x-ratelimit-used": "16"
       },
       "body": {
         "author_association": "CONTRIBUTOR",
         "body": "contract comment",
-        "created_at": "2026-10-02T07:47:57Z",
-        "html_url": "https://github.com/getsyncr/contracts/pull/47#issuecomment-5947663769",
-        "id": 5947663769,
-        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/47",
+        "created_at": "2026-10-02T10:15:51Z",
+        "html_url": "https://github.com/getsyncr/contracts/pull/51#issuecomment-5950139081",
+        "id": 5950139081,
+        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/51",
         "minimized": null,
-        "node_id": "IC_kwDOU14xqs8AAAABYoIlmQ",
+        "node_id": "IC_kwDOU14xqs8AAAABYqfqyQ",
         "performed_via_github_app": {
           "created_at": "2020-12-03T09:10:53Z",
           "description": "CIHub is a test tracking and monitoring tool that aggregates test results across your stack in real time.\r\n\r\n#### Flaky test identification\r\n\r\nSee which tests are most disruptive to continuous deployments, with automatic flaky test identification and analysis over time.\r\n\r\n#### Deep performance analysis\r\n\r\nIntegration with your test framework and programming language means you get in-depth performance analysis, such as identifying external dependency bottlenecks.\r\nWe integrate with any CI system so you can track affected builds, historical runs and trend graphs.\r\n\r\n#### Realtime results\r\n\r\nNo waiting 24h for results. Follow the evolution of your test suite run in realtime, get immediate performance insights, set up alerts and take actions quickly.\r\n\r\n##### Installation Notes\r\n\r\nIt's recommended to install CIHub directly through your [CIHub](https://dashboard.cihub.io) workspace. Please note that your GitHub organization and/or GitHub account can only be associated with a single CIHub workspace.",
@@ -1426,10 +1582,10 @@
           "laugh": 0,
           "rocket": 0,
           "total_count": 0,
-          "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5947663769/reactions"
+          "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5950139081/reactions"
         },
-        "updated_at": "2026-10-02T07:47:57Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5947663769",
+        "updated_at": "2026-10-02T10:15:51Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5950139081",
         "user": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -1455,7 +1611,7 @@
     },
     {
       "method": "PATCH",
-      "path": "/repos/getsyncr/contracts/issues/comments/5947663769",
+      "path": "/repos/getsyncr/contracts/issues/comments/5950139081",
       "request": {
         "body": "contract comment, updated"
       },
@@ -1463,20 +1619,20 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4979",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4983",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "21"
+        "x-ratelimit-used": "17"
       },
       "body": {
         "author_association": "CONTRIBUTOR",
         "body": "contract comment, updated",
-        "created_at": "2026-10-02T07:47:57Z",
-        "html_url": "https://github.com/getsyncr/contracts/pull/47#issuecomment-5947663769",
-        "id": 5947663769,
-        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/47",
+        "created_at": "2026-10-02T10:15:51Z",
+        "html_url": "https://github.com/getsyncr/contracts/pull/51#issuecomment-5950139081",
+        "id": 5950139081,
+        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/51",
         "minimized": null,
-        "node_id": "IC_kwDOU14xqs8AAAABYoIlmQ",
+        "node_id": "IC_kwDOU14xqs8AAAABYqfqyQ",
         "performed_via_github_app": {
           "client_id": "Iv1.d1d644fb9921ebb1",
           "created_at": "2020-12-03T09:10:53Z",
@@ -1548,10 +1704,10 @@
           "laugh": 0,
           "rocket": 0,
           "total_count": 0,
-          "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5947663769/reactions"
+          "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5950139081/reactions"
         },
-        "updated_at": "2026-10-02T07:47:58Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5947663769",
+        "updated_at": "2026-10-02T10:15:52Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/issues/comments/5950139081",
         "user": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -1577,7 +1733,7 @@
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/issues/47/labels",
+      "path": "/repos/getsyncr/contracts/issues/51/labels",
       "request": {
         "labels": [
           "cihub-contract"
@@ -1587,10 +1743,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4978",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4982",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "22"
+        "x-ratelimit-used": "18"
       },
       "body": [
         {
@@ -1608,7 +1764,7 @@
     },
     {
       "method": "POST",
-      "path": "/repos/getsyncr/contracts/issues/47/labels",
+      "path": "/repos/getsyncr/contracts/issues/51/labels",
       "request": {
         "labels": [
           "cihub-contract"
@@ -1618,10 +1774,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4977",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4981",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "23"
+        "x-ratelimit-used": "19"
       },
       "body": [
         {
@@ -1641,205 +1797,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
-        "variables": {
-          "name": "contracts",
-          "owner": "getsyncr"
-        }
-      },
-      "status": 200,
-      "headers": {
-        "content-type": "application/json; charset=utf-8",
-        "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4990",
-        "x-ratelimit-reset": "1790930564",
-        "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "10"
-      },
-      "body": {
-        "data": {
-          "repository": {
-            "p0": {
-              "additions": 1,
-              "author": {
-                "databaseId": 75419852,
-                "login": "cihub-test"
-              },
-              "baseRefName": "main",
-              "body": "",
-              "changedFiles": 1,
-              "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
-              "isDraft": false,
-              "labels": {
-                "nodes": [
-                  {
-                    "name": "cihub-contract"
-                  }
-                ]
-              },
-              "mergeCommit": null,
-              "mergeStateStatus": "CLEAN",
-              "mergeable": "MERGEABLE",
-              "number": 47,
-              "reviewDecision": "APPROVED",
-              "state": "OPEN",
-              "statusCheckRollup": {
-                "contexts": {
-                  "nodes": [
-                    {
-                      "__typename": "CheckRun",
-                      "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
-                      "name": "ci",
-                      "status": "COMPLETED"
-                    },
-                    {
-                      "__typename": "CheckRun",
-                      "conclusion": "SUCCESS",
-                      "detailsUrl": "https://dashboard.gitguardian.com",
-                      "name": "GitGuardian Security Checks",
-                      "status": "COMPLETED"
-                    },
-                    {
-                      "__typename": "StatusContext",
-                      "context": "cihub-contract",
-                      "state": "SUCCESS",
-                      "targetUrl": null
-                    },
-                    {
-                      "__typename": "StatusContext",
-                      "context": "cihub-contract-ci",
-                      "state": "SUCCESS",
-                      "targetUrl": null
-                    }
-                  ]
-                }
-              },
-              "title": "cihub contract: mergeable"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "DELETE",
-      "path": "/repos/getsyncr/contracts/issues/47/labels/cihub-contract",
-      "status": 200,
-      "headers": {
-        "content-type": "application/json; charset=utf-8",
-        "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4976",
-        "x-ratelimit-reset": "1790930560",
-        "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "24"
-      },
-      "body": []
-    },
-    {
-      "method": "DELETE",
-      "path": "/repos/getsyncr/contracts/issues/47/labels/cihub-contract",
-      "status": 404,
-      "headers": {
-        "content-type": "application/json; charset=utf-8",
-        "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4975",
-        "x-ratelimit-reset": "1790930560",
-        "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "25"
-      },
-      "body": {
-        "documentation_url": "https://docs.github.com/rest/issues/labels#remove-a-label-from-an-issue",
-        "message": "Label does not exist",
-        "status": "404"
-      }
-    },
-    {
-      "method": "POST",
-      "path": "/graphql",
-      "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
-        "variables": {
-          "name": "contracts",
-          "owner": "getsyncr"
-        }
-      },
-      "status": 200,
-      "headers": {
-        "content-type": "application/json; charset=utf-8",
-        "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4989",
-        "x-ratelimit-reset": "1790930564",
-        "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "11"
-      },
-      "body": {
-        "data": {
-          "repository": {
-            "p0": {
-              "additions": 1,
-              "author": {
-                "databaseId": 75419852,
-                "login": "cihub-test"
-              },
-              "baseRefName": "main",
-              "body": "",
-              "changedFiles": 1,
-              "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
-              "isDraft": false,
-              "labels": {
-                "nodes": []
-              },
-              "mergeCommit": null,
-              "mergeStateStatus": "CLEAN",
-              "mergeable": "MERGEABLE",
-              "number": 47,
-              "reviewDecision": "APPROVED",
-              "state": "OPEN",
-              "statusCheckRollup": {
-                "contexts": {
-                  "nodes": [
-                    {
-                      "__typename": "CheckRun",
-                      "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
-                      "name": "ci",
-                      "status": "COMPLETED"
-                    },
-                    {
-                      "__typename": "CheckRun",
-                      "conclusion": "SUCCESS",
-                      "detailsUrl": "https://dashboard.gitguardian.com",
-                      "name": "GitGuardian Security Checks",
-                      "status": "COMPLETED"
-                    },
-                    {
-                      "__typename": "StatusContext",
-                      "context": "cihub-contract",
-                      "state": "SUCCESS",
-                      "targetUrl": null
-                    },
-                    {
-                      "__typename": "StatusContext",
-                      "context": "cihub-contract-ci",
-                      "state": "SUCCESS",
-                      "targetUrl": null
-                    }
-                  ]
-                }
-              },
-              "title": "cihub contract: mergeable"
-            }
-          }
-        }
-      }
-    },
-    {
-      "method": "POST",
-      "path": "/graphql",
-      "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -1850,7 +1808,7 @@
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
         "x-ratelimit-remaining": "4988",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
         "x-ratelimit-used": "12"
       },
@@ -1866,17 +1824,37 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
-                "nodes": []
+                "nodes": [
+                  {
+                    "name": "cihub-contract"
+                  }
+                ]
+              },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
               },
               "mergeCommit": null,
               "mergeStateStatus": "CLEAN",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -1884,7 +1862,233 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
+                      "name": "ci",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://dashboard.gitguardian.com",
+                      "name": "GitGuardian Security Checks",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract-ci",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    }
+                  ]
+                }
+              },
+              "title": "cihub contract: mergeable"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "DELETE",
+      "path": "/repos/getsyncr/contracts/issues/51/labels/cihub-contract",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4980",
+        "x-ratelimit-reset": "1790939565",
+        "x-ratelimit-resource": "core",
+        "x-ratelimit-used": "20"
+      },
+      "body": []
+    },
+    {
+      "method": "DELETE",
+      "path": "/repos/getsyncr/contracts/issues/51/labels/cihub-contract",
+      "status": 404,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4979",
+        "x-ratelimit-reset": "1790939565",
+        "x-ratelimit-resource": "core",
+        "x-ratelimit-used": "21"
+      },
+      "body": {
+        "documentation_url": "https://docs.github.com/rest/issues/labels#remove-a-label-from-an-issue",
+        "message": "Label does not exist",
+        "status": "404"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/graphql",
+      "request": {
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "variables": {
+          "name": "contracts",
+          "owner": "getsyncr"
+        }
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4987",
+        "x-ratelimit-reset": "1790939281",
+        "x-ratelimit-resource": "graphql",
+        "x-ratelimit-used": "13"
+      },
+      "body": {
+        "data": {
+          "repository": {
+            "p0": {
+              "additions": 1,
+              "author": {
+                "databaseId": 75419852,
+                "login": "cihub-test"
+              },
+              "baseRefName": "main",
+              "body": "",
+              "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
+              "deletions": 0,
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
+              "isDraft": false,
+              "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
+              "mergeCommit": null,
+              "mergeStateStatus": "CLEAN",
+              "mergeable": "MERGEABLE",
+              "number": 51,
+              "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
+              "state": "OPEN",
+              "statusCheckRollup": {
+                "contexts": {
+                  "nodes": [
+                    {
+                      "__typename": "CheckRun",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
+                      "name": "ci",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "CheckRun",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://dashboard.gitguardian.com",
+                      "name": "GitGuardian Security Checks",
+                      "status": "COMPLETED"
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "cihub-contract-ci",
+                      "state": "SUCCESS",
+                      "targetUrl": null
+                    }
+                  ]
+                }
+              },
+              "title": "cihub contract: mergeable"
+            }
+          }
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/graphql",
+      "request": {
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "variables": {
+          "name": "contracts",
+          "owner": "getsyncr"
+        }
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-limit": "5000",
+        "x-ratelimit-remaining": "4986",
+        "x-ratelimit-reset": "1790939281",
+        "x-ratelimit-resource": "graphql",
+        "x-ratelimit-used": "14"
+      },
+      "body": {
+        "data": {
+          "repository": {
+            "p0": {
+              "additions": 1,
+              "author": {
+                "databaseId": 75419852,
+                "login": "cihub-test"
+              },
+              "baseRefName": "main",
+              "body": "",
+              "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
+              "deletions": 0,
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
+              "isDraft": false,
+              "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
+              "mergeCommit": null,
+              "mergeStateStatus": "CLEAN",
+              "mergeable": "MERGEABLE",
+              "number": 51,
+              "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
+              "state": "OPEN",
+              "statusCheckRollup": {
+                "contexts": {
+                  "nodes": [
+                    {
+                      "__typename": "CheckRun",
+                      "conclusion": "SUCCESS",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -1921,16 +2125,16 @@
       "path": "/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract",
       "request": {
         "force": true,
-        "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 422,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4974",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4978",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "26"
+        "x-ratelimit-used": "22"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/git/refs#update-a-reference",
@@ -1943,23 +2147,23 @@
       "path": "/repos/getsyncr/contracts/git/refs",
       "request": {
         "ref": "refs/heads/cihub-temp/contract",
-        "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 201,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4973",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4977",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "27"
+        "x-ratelimit-used": "23"
       },
       "body": {
         "node_id": "REF_kwDOU14xqr5yZWZzL2hlYWRzL2NpaHViLXRlbXAvY29udHJhY3Q",
         "object": {
-          "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+          "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
         },
         "ref": "refs/heads/cihub-temp/contract",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/cihub-temp/contract"
@@ -1972,10 +2176,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4972",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4976",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "28"
+        "x-ratelimit-used": "24"
       },
       "body": []
     },
@@ -1993,36 +2197,36 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4971",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4975",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "29"
+        "x-ratelimit-used": "25"
       },
       "body": {
         "_links": {
           "comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments"
           },
           "commits": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits"
           },
           "html": {
-            "href": "https://github.com/getsyncr/contracts/pull/50"
+            "href": "https://github.com/getsyncr/contracts/pull/52"
           },
           "issue": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52"
           },
           "review_comment": {
             "href": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}"
           },
           "review_comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments"
           },
           "self": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52"
           },
           "statuses": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
           }
         },
         "active_lock_reason": null,
@@ -2090,8 +2294,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 7,
-            "open_issues_count": 7,
+            "open_issues": 4,
+            "open_issues_count": 4,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2116,9 +2320,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -2130,14 +2334,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2164,12 +2368,12 @@
         "changed_files": 1,
         "closed_at": null,
         "comments": 0,
-        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments",
+        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments",
         "commits": 1,
-        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits",
-        "created_at": "2026-10-02T07:48:04Z",
+        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits",
+        "created_at": "2026-10-02T10:15:59Z",
         "deletions": 0,
-        "diff_url": "https://github.com/getsyncr/contracts/pull/50.diff",
+        "diff_url": "https://github.com/getsyncr/contracts/pull/52.diff",
         "draft": true,
         "head": {
           "label": "getsyncr:cihub-temp/contract",
@@ -2230,8 +2434,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 7,
-            "open_issues_count": 7,
+            "open_issues": 4,
+            "open_issues_count": 4,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2256,9 +2460,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -2270,14 +2474,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+          "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2300,9 +2504,9 @@
             "user_view_type": "public"
           }
         },
-        "html_url": "https://github.com/getsyncr/contracts/pull/50",
-        "id": 4714007428,
-        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/50",
+        "html_url": "https://github.com/getsyncr/contracts/pull/52",
+        "id": 4715281408,
+        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/52",
         "labels": [],
         "locked": false,
         "maintainer_can_modify": false,
@@ -2313,20 +2517,20 @@
         "merged_at": null,
         "merged_by": null,
         "milestone": null,
-        "node_id": "PR_kwDOU14xqs8AAAABGPoLhA",
-        "number": 50,
-        "patch_url": "https://github.com/getsyncr/contracts/pull/50.patch",
+        "node_id": "PR_kwDOU14xqs8AAAABGQ18AA",
+        "number": 52,
+        "patch_url": "https://github.com/getsyncr/contracts/pull/52.patch",
         "rebaseable": null,
         "requested_reviewers": [],
         "requested_teams": [],
         "review_comment_url": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}",
         "review_comments": 0,
-        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments",
+        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments",
         "state": "open",
-        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
         "title": "contract draft",
-        "updated_at": "2026-10-02T07:48:04Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/50",
+        "updated_at": "2026-10-02T10:15:59Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/52",
         "user": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -2357,37 +2561,37 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4970",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4974",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "30"
+        "x-ratelimit-used": "26"
       },
       "body": [
         {
           "_links": {
             "comments": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments"
+              "href": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments"
             },
             "commits": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits"
+              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits"
             },
             "html": {
-              "href": "https://github.com/getsyncr/contracts/pull/50"
+              "href": "https://github.com/getsyncr/contracts/pull/52"
             },
             "issue": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/issues/50"
+              "href": "https://api.github.com/repos/getsyncr/contracts/issues/52"
             },
             "review_comment": {
               "href": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}"
             },
             "review_comments": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments"
+              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments"
             },
             "self": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50"
+              "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52"
             },
             "statuses": {
-              "href": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+              "href": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
             }
           },
           "active_lock_reason": null,
@@ -2454,8 +2658,8 @@
               "name": "contracts",
               "node_id": "R_kgDOU14xqg",
               "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-              "open_issues": 7,
-              "open_issues_count": 7,
+              "open_issues": 4,
+              "open_issues_count": 4,
               "owner": {
                 "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
                 "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2480,9 +2684,9 @@
               "private": false,
               "pull_request_creation_policy": "all",
               "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-              "pushed_at": "2026-10-02T07:48:03Z",
+              "pushed_at": "2026-10-02T10:15:58Z",
               "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-              "size": 27,
+              "size": 19,
               "ssh_url": "git@github.com:getsyncr/contracts.git",
               "stargazers_count": 0,
               "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -2494,14 +2698,14 @@
               "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
               "topics": [],
               "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-              "updated_at": "2026-10-02T06:52:40Z",
+              "updated_at": "2026-10-02T07:48:17Z",
               "url": "https://api.github.com/repos/getsyncr/contracts",
               "visibility": "public",
               "watchers": 0,
               "watchers_count": 0,
               "web_commit_signoff_required": false
             },
-            "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+            "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
             "user": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2526,10 +2730,10 @@
           },
           "body": "contract",
           "closed_at": null,
-          "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments",
-          "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits",
-          "created_at": "2026-10-02T07:48:04Z",
-          "diff_url": "https://github.com/getsyncr/contracts/pull/50.diff",
+          "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments",
+          "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits",
+          "created_at": "2026-10-02T10:15:59Z",
+          "diff_url": "https://github.com/getsyncr/contracts/pull/52.diff",
           "draft": true,
           "head": {
             "label": "getsyncr:cihub-temp/contract",
@@ -2590,8 +2794,8 @@
               "name": "contracts",
               "node_id": "R_kgDOU14xqg",
               "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-              "open_issues": 7,
-              "open_issues_count": 7,
+              "open_issues": 4,
+              "open_issues_count": 4,
               "owner": {
                 "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
                 "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2616,9 +2820,9 @@
               "private": false,
               "pull_request_creation_policy": "all",
               "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-              "pushed_at": "2026-10-02T07:48:03Z",
+              "pushed_at": "2026-10-02T10:15:58Z",
               "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-              "size": 27,
+              "size": 19,
               "ssh_url": "git@github.com:getsyncr/contracts.git",
               "stargazers_count": 0,
               "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -2630,14 +2834,14 @@
               "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
               "topics": [],
               "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-              "updated_at": "2026-10-02T06:52:40Z",
+              "updated_at": "2026-10-02T07:48:17Z",
               "url": "https://api.github.com/repos/getsyncr/contracts",
               "visibility": "public",
               "watchers": 0,
               "watchers_count": 0,
               "web_commit_signoff_required": false
             },
-            "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+            "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
             "user": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2660,26 +2864,26 @@
               "user_view_type": "public"
             }
           },
-          "html_url": "https://github.com/getsyncr/contracts/pull/50",
-          "id": 4714007428,
-          "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/50",
+          "html_url": "https://github.com/getsyncr/contracts/pull/52",
+          "id": 4715281408,
+          "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/52",
           "labels": [],
           "locked": false,
           "merge_commit_sha": null,
           "merged_at": null,
           "milestone": null,
-          "node_id": "PR_kwDOU14xqs8AAAABGPoLhA",
-          "number": 50,
-          "patch_url": "https://github.com/getsyncr/contracts/pull/50.patch",
+          "node_id": "PR_kwDOU14xqs8AAAABGQ18AA",
+          "number": 52,
+          "patch_url": "https://github.com/getsyncr/contracts/pull/52.patch",
           "requested_reviewers": [],
           "requested_teams": [],
           "review_comment_url": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}",
-          "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments",
+          "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments",
           "state": "open",
-          "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+          "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
           "title": "contract draft",
-          "updated_at": "2026-10-02T07:48:04Z",
-          "url": "https://api.github.com/repos/getsyncr/contracts/pulls/50",
+          "updated_at": "2026-10-02T10:15:59Z",
+          "url": "https://api.github.com/repos/getsyncr/contracts/pulls/52",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
             "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -2708,7 +2912,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 50) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 52) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -2718,10 +2922,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4987",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4985",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "13"
+        "x-ratelimit-used": "15"
       },
       "body": {
         "data": {
@@ -2735,17 +2939,26 @@
               "baseRefName": "main",
               "body": "contract",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:15:59Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-temp/contract",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": true,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
               "mergeStateStatus": "UNKNOWN",
               "mergeable": "UNKNOWN",
-              "number": 50,
+              "number": 52,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -2753,7 +2966,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -2787,7 +3000,7 @@
     },
     {
       "method": "PATCH",
-      "path": "/repos/getsyncr/contracts/pulls/50",
+      "path": "/repos/getsyncr/contracts/pulls/52",
       "request": {
         "state": "closed"
       },
@@ -2795,36 +3008,36 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4969",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4973",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "31"
+        "x-ratelimit-used": "27"
       },
       "body": {
         "_links": {
           "comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments"
           },
           "commits": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits"
           },
           "html": {
-            "href": "https://github.com/getsyncr/contracts/pull/50"
+            "href": "https://github.com/getsyncr/contracts/pull/52"
           },
           "issue": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52"
           },
           "review_comment": {
             "href": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}"
           },
           "review_comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments"
           },
           "self": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52"
           },
           "statuses": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
           }
         },
         "active_lock_reason": null,
@@ -2892,8 +3105,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 6,
-            "open_issues_count": 6,
+            "open_issues": 3,
+            "open_issues_count": 3,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2918,9 +3131,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -2932,14 +3145,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -2964,14 +3177,14 @@
         },
         "body": "contract",
         "changed_files": 1,
-        "closed_at": "2026-10-02T07:48:06Z",
+        "closed_at": "2026-10-02T10:16:01Z",
         "comments": 0,
-        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments",
+        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments",
         "commits": 1,
-        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits",
-        "created_at": "2026-10-02T07:48:04Z",
+        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits",
+        "created_at": "2026-10-02T10:15:59Z",
         "deletions": 0,
-        "diff_url": "https://github.com/getsyncr/contracts/pull/50.diff",
+        "diff_url": "https://github.com/getsyncr/contracts/pull/52.diff",
         "draft": true,
         "head": {
           "label": "getsyncr:cihub-temp/contract",
@@ -3032,8 +3245,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 6,
-            "open_issues_count": 6,
+            "open_issues": 3,
+            "open_issues_count": 3,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3058,9 +3271,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -3072,14 +3285,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+          "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3102,33 +3315,33 @@
             "user_view_type": "public"
           }
         },
-        "html_url": "https://github.com/getsyncr/contracts/pull/50",
-        "id": 4714007428,
-        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/50",
+        "html_url": "https://github.com/getsyncr/contracts/pull/52",
+        "id": 4715281408,
+        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/52",
         "labels": [],
         "locked": false,
         "maintainer_can_modify": false,
-        "merge_commit_sha": "7c71479b64aa415a9621f4d5ea0db5b7b6821d13",
-        "mergeable": true,
-        "mergeable_state": "blocked",
+        "merge_commit_sha": null,
+        "mergeable": null,
+        "mergeable_state": "unknown",
         "merged": false,
         "merged_at": null,
         "merged_by": null,
         "milestone": null,
-        "node_id": "PR_kwDOU14xqs8AAAABGPoLhA",
-        "number": 50,
-        "patch_url": "https://github.com/getsyncr/contracts/pull/50.patch",
-        "rebaseable": true,
+        "node_id": "PR_kwDOU14xqs8AAAABGQ18AA",
+        "number": 52,
+        "patch_url": "https://github.com/getsyncr/contracts/pull/52.patch",
+        "rebaseable": null,
         "requested_reviewers": [],
         "requested_teams": [],
         "review_comment_url": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}",
         "review_comments": 0,
-        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments",
+        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments",
         "state": "closed",
-        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
         "title": "contract draft",
-        "updated_at": "2026-10-02T07:48:06Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/50",
+        "updated_at": "2026-10-02T10:16:01Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/52",
         "user": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -3154,7 +3367,7 @@
     },
     {
       "method": "PATCH",
-      "path": "/repos/getsyncr/contracts/pulls/50",
+      "path": "/repos/getsyncr/contracts/pulls/52",
       "request": {
         "state": "closed"
       },
@@ -3162,36 +3375,36 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4968",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4972",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "32"
+        "x-ratelimit-used": "28"
       },
       "body": {
         "_links": {
           "comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments"
           },
           "commits": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits"
           },
           "html": {
-            "href": "https://github.com/getsyncr/contracts/pull/50"
+            "href": "https://github.com/getsyncr/contracts/pull/52"
           },
           "issue": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/issues/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/issues/52"
           },
           "review_comment": {
             "href": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}"
           },
           "review_comments": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments"
           },
           "self": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/50"
+            "href": "https://api.github.com/repos/getsyncr/contracts/pulls/52"
           },
           "statuses": {
-            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+            "href": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
           }
         },
         "active_lock_reason": null,
@@ -3259,8 +3472,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 6,
-            "open_issues_count": 6,
+            "open_issues": 3,
+            "open_issues_count": 3,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3285,9 +3498,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -3299,14 +3512,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "08240080e9c6b0831ac471f5f49653b8ec1940d5",
+          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3331,14 +3544,14 @@
         },
         "body": "contract",
         "changed_files": 1,
-        "closed_at": "2026-10-02T07:48:06Z",
+        "closed_at": "2026-10-02T10:16:01Z",
         "comments": 0,
-        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/50/comments",
+        "comments_url": "https://api.github.com/repos/getsyncr/contracts/issues/52/comments",
         "commits": 1,
-        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/commits",
-        "created_at": "2026-10-02T07:48:04Z",
+        "commits_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/commits",
+        "created_at": "2026-10-02T10:15:59Z",
         "deletions": 0,
-        "diff_url": "https://github.com/getsyncr/contracts/pull/50.diff",
+        "diff_url": "https://github.com/getsyncr/contracts/pull/52.diff",
         "draft": true,
         "head": {
           "label": "getsyncr:cihub-temp/contract",
@@ -3399,8 +3612,8 @@
             "name": "contracts",
             "node_id": "R_kgDOU14xqg",
             "notifications_url": "https://api.github.com/repos/getsyncr/contracts/notifications{?since,all,participating}",
-            "open_issues": 6,
-            "open_issues_count": 6,
+            "open_issues": 3,
+            "open_issues_count": 3,
             "owner": {
               "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
               "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3425,9 +3638,9 @@
             "private": false,
             "pull_request_creation_policy": "all",
             "pulls_url": "https://api.github.com/repos/getsyncr/contracts/pulls{/number}",
-            "pushed_at": "2026-10-02T07:48:03Z",
+            "pushed_at": "2026-10-02T10:15:58Z",
             "releases_url": "https://api.github.com/repos/getsyncr/contracts/releases{/id}",
-            "size": 27,
+            "size": 19,
             "ssh_url": "git@github.com:getsyncr/contracts.git",
             "stargazers_count": 0,
             "stargazers_url": "https://api.github.com/repos/getsyncr/contracts/stargazers",
@@ -3439,14 +3652,14 @@
             "teams_url": "https://api.github.com/repos/getsyncr/contracts/teams",
             "topics": [],
             "trees_url": "https://api.github.com/repos/getsyncr/contracts/git/trees{/sha}",
-            "updated_at": "2026-10-02T06:52:40Z",
+            "updated_at": "2026-10-02T07:48:17Z",
             "url": "https://api.github.com/repos/getsyncr/contracts",
             "visibility": "public",
             "watchers": 0,
             "watchers_count": 0,
             "web_commit_signoff_required": false
           },
-          "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+          "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
           "user": {
             "avatar_url": "https://avatars.githubusercontent.com/u/85096985?v=4",
             "events_url": "https://api.github.com/users/getsyncr/events{/privacy}",
@@ -3469,33 +3682,33 @@
             "user_view_type": "public"
           }
         },
-        "html_url": "https://github.com/getsyncr/contracts/pull/50",
-        "id": 4714007428,
-        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/50",
+        "html_url": "https://github.com/getsyncr/contracts/pull/52",
+        "id": 4715281408,
+        "issue_url": "https://api.github.com/repos/getsyncr/contracts/issues/52",
         "labels": [],
         "locked": false,
         "maintainer_can_modify": false,
-        "merge_commit_sha": "7c71479b64aa415a9621f4d5ea0db5b7b6821d13",
+        "merge_commit_sha": "d8011d1d6699951a8448b9c463b7b1167303bf0d",
         "mergeable": true,
         "mergeable_state": "blocked",
         "merged": false,
         "merged_at": null,
         "merged_by": null,
         "milestone": null,
-        "node_id": "PR_kwDOU14xqs8AAAABGPoLhA",
-        "number": 50,
-        "patch_url": "https://github.com/getsyncr/contracts/pull/50.patch",
+        "node_id": "PR_kwDOU14xqs8AAAABGQ18AA",
+        "number": 52,
+        "patch_url": "https://github.com/getsyncr/contracts/pull/52.patch",
         "rebaseable": false,
         "requested_reviewers": [],
         "requested_teams": [],
         "review_comment_url": "https://api.github.com/repos/getsyncr/contracts/pulls/comments{/number}",
         "review_comments": 0,
-        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/50/comments",
+        "review_comments_url": "https://api.github.com/repos/getsyncr/contracts/pulls/52/comments",
         "state": "closed",
-        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+        "statuses_url": "https://api.github.com/repos/getsyncr/contracts/statuses/fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
         "title": "contract draft",
-        "updated_at": "2026-10-02T07:48:06Z",
-        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/50",
+        "updated_at": "2026-10-02T10:16:01Z",
+        "url": "https://api.github.com/repos/getsyncr/contracts/pulls/52",
         "user": {
           "avatar_url": "https://avatars.githubusercontent.com/u/62066447?v=4",
           "events_url": "https://api.github.com/users/cihub-test%5Bbot%5D/events{/privacy}",
@@ -3523,7 +3736,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 50) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 52) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -3533,10 +3746,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4986",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4984",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "14"
+        "x-ratelimit-used": "16"
       },
       "body": {
         "data": {
@@ -3550,17 +3763,26 @@
               "baseRefName": "main",
               "body": "contract",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:15:59Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-temp/contract",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": true,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
               "mergeStateStatus": "BLOCKED",
               "mergeable": "MERGEABLE",
-              "number": 50,
+              "number": 52,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "CLOSED",
               "statusCheckRollup": {
                 "contexts": {
@@ -3568,7 +3790,7 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -3606,17 +3828,17 @@
       "status": 204,
       "headers": {
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4967",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4971",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "33"
+        "x-ratelimit-used": "29"
       }
     },
     {
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -3626,10 +3848,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4985",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4983",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "15"
+        "x-ratelimit-used": "17"
       },
       "body": {
         "data": {
@@ -3643,17 +3865,33 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": null,
               "mergeStateStatus": "UNSTABLE",
               "mergeable": "MERGEABLE",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -3661,14 +3899,14 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": null,
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980491183/job/110753669664",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994519991/job/110798058290",
                       "name": "ci",
                       "status": "QUEUED"
                     },
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },
@@ -3704,7 +3942,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 48) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 48) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -3714,10 +3952,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4984",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4982",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "16"
+        "x-ratelimit-used": "18"
       },
       "body": {
         "data": {
@@ -3731,10 +3969,16 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T07:43:07Z",
               "deletions": 0,
+              "headRefName": "cihub-contract/conflicting",
               "headRefOid": "75c7898bdf37a29c9975662b95f24e1bbbc1c31b",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
+                "nodes": []
+              },
+              "latestOpinionatedReviews": {
                 "nodes": []
               },
               "mergeCommit": null,
@@ -3742,6 +3986,9 @@
               "mergeable": "CONFLICTING",
               "number": 48,
               "reviewDecision": "REVIEW_REQUIRED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "OPEN",
               "statusCheckRollup": {
                 "contexts": {
@@ -3764,7 +4011,7 @@
     },
     {
       "method": "PUT",
-      "path": "/repos/getsyncr/contracts/pulls/47/merge",
+      "path": "/repos/getsyncr/contracts/pulls/51/merge",
       "request": {
         "commit_message": "",
         "commit_title": "contract merge",
@@ -3775,10 +4022,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4966",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4970",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "34"
+        "x-ratelimit-used": "30"
       },
       "body": {
         "documentation_url": "https://docs.github.com/rest/pulls/pulls#merge-a-pull-request",
@@ -3788,50 +4035,50 @@
     },
     {
       "method": "PUT",
-      "path": "/repos/getsyncr/contracts/pulls/47/merge",
+      "path": "/repos/getsyncr/contracts/pulls/51/merge",
       "request": {
         "commit_message": "",
         "commit_title": "contract merge",
         "merge_method": "squash",
-        "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4965",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4969",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "35"
+        "x-ratelimit-used": "31"
       },
       "body": {
         "merged": true,
         "message": "Pull Request successfully merged",
-        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
+        "sha": "766b49843d9a03a3c67d3d94a0fc90a27b90663a"
       }
     },
     {
       "method": "PUT",
-      "path": "/repos/getsyncr/contracts/pulls/47/merge",
+      "path": "/repos/getsyncr/contracts/pulls/51/merge",
       "request": {
         "commit_message": "",
         "commit_title": "contract merge",
         "merge_method": "squash",
-        "sha": "351847ac993f3eb3f54c4c2e1726b02d147ecc76"
+        "sha": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a"
       },
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4964",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4968",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "36"
+        "x-ratelimit-used": "32"
       },
       "body": {
         "merged": true,
         "message": "Pull Request successfully merged",
-        "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
+        "sha": "766b49843d9a03a3c67d3d94a0fc90a27b90663a"
       }
     },
     {
@@ -3841,17 +4088,17 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4963",
-        "x-ratelimit-reset": "1790930560",
+        "x-ratelimit-remaining": "4967",
+        "x-ratelimit-reset": "1790939565",
         "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "37"
+        "x-ratelimit-used": "33"
       },
       "body": {
         "node_id": "REF_kwDOU14xqq9yZWZzL2hlYWRzL21haW4",
         "object": {
-          "sha": "f44ba51ded05d306fe49680d03630bb2004fe2e9",
+          "sha": "766b49843d9a03a3c67d3d94a0fc90a27b90663a",
           "type": "commit",
-          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/f44ba51ded05d306fe49680d03630bb2004fe2e9"
+          "url": "https://api.github.com/repos/getsyncr/contracts/git/commits/766b49843d9a03a3c67d3d94a0fc90a27b90663a"
         },
         "ref": "refs/heads/main",
         "url": "https://api.github.com/repos/getsyncr/contracts/git/refs/heads/main"
@@ -3861,7 +4108,7 @@
       "method": "POST",
       "path": "/graphql",
       "request": {
-        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 47) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
+        "query": "query($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) {\np0: pullRequest(number: 51) { ...pr }\n  }\n}\nfragment checks on StatusCheckRollup {\n  contexts(first: 100) {\n    nodes {\n      __typename\n      ... on CheckRun { name status conclusion detailsUrl }\n      ... on StatusContext { context state targetUrl }\n    }\n  }\n}\nfragment pr on PullRequest {\n  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt\n  mergeable mergeStateStatus reviewDecision\n  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }\n  reviewRequests(first: 100) {\n    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }\n  }\n  additions deletions changedFiles\n  mergeCommit { oid }\n  author { login ... on User { databaseId } ... on Bot { databaseId } }\n  labels(first: 100) { nodes { name } }\n  statusCheckRollup { ...checks }\n}",
         "variables": {
           "name": "contracts",
           "owner": "getsyncr"
@@ -3871,10 +4118,10 @@
       "headers": {
         "content-type": "application/json; charset=utf-8",
         "x-ratelimit-limit": "5000",
-        "x-ratelimit-remaining": "4983",
-        "x-ratelimit-reset": "1790930564",
+        "x-ratelimit-remaining": "4981",
+        "x-ratelimit-reset": "1790939281",
         "x-ratelimit-resource": "graphql",
-        "x-ratelimit-used": "17"
+        "x-ratelimit-used": "19"
       },
       "body": {
         "data": {
@@ -3888,19 +4135,35 @@
               "baseRefName": "main",
               "body": "",
               "changedFiles": 1,
+              "createdAt": "2026-10-02T10:12:48Z",
               "deletions": 0,
-              "headRefOid": "351847ac993f3eb3f54c4c2e1726b02d147ecc76",
+              "headRefName": "cihub-contract/pr-1790935965",
+              "headRefOid": "fad9d396a847cdf3788f326e97fe5ddaad21bd3a",
+              "isCrossRepository": false,
               "isDraft": false,
               "labels": {
                 "nodes": []
               },
+              "latestOpinionatedReviews": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "nlecoy"
+                    },
+                    "state": "APPROVED"
+                  }
+                ]
+              },
               "mergeCommit": {
-                "oid": "f44ba51ded05d306fe49680d03630bb2004fe2e9"
+                "oid": "766b49843d9a03a3c67d3d94a0fc90a27b90663a"
               },
               "mergeStateStatus": "UNKNOWN",
               "mergeable": "UNKNOWN",
-              "number": 47,
+              "number": 51,
               "reviewDecision": "APPROVED",
+              "reviewRequests": {
+                "nodes": []
+              },
               "state": "MERGED",
               "statusCheckRollup": {
                 "contexts": {
@@ -3908,14 +4171,14 @@
                     {
                       "__typename": "CheckRun",
                       "conclusion": null,
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980491183/job/110753669664",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994519991/job/110798058290",
                       "name": "ci",
                       "status": "IN_PROGRESS"
                     },
                     {
                       "__typename": "CheckRun",
                       "conclusion": "SUCCESS",
-                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36980013254/job/110752167487",
+                      "detailsUrl": "https://github.com/getsyncr/contracts/actions/runs/36994217721/job/110797109369",
                       "name": "ci",
                       "status": "COMPLETED"
                     },

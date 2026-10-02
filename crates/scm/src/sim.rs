@@ -7,16 +7,16 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::{Mutex, PoisonError};
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, PrState,
-    ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, Permission,
+    PrState, ReviewDecision,
 };
 
 use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoPermission, RepoRef,
-    RequiredChecks, Scm, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmUser, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks, Scm,
+    ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmUser, StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -126,10 +126,21 @@ struct Pr {
     body: String,
     labels: BTreeSet<String>,
     review_decision: ReviewDecision,
+    reviews: Reviews,
+    /// The path of each unresolved review thread.
+    unresolved_threads: Vec<String>,
     author: ScmUser,
     /// A value that a test forces, in place of the computed one.
     mergeability: Option<Mergeability>,
     merged_sha: Option<String>,
+}
+
+/// Who reviewed a PR, and whose review it asks for.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reviews {
+    pub approved_by: BTreeSet<String>,
+    pub changes_requested_by: BTreeSet<String>,
+    pub requested: BTreeSet<String>,
 }
 
 #[derive(Debug)]
@@ -141,7 +152,7 @@ struct Repo {
     checks: HashMap<String, Vec<CheckReport>>,
     comments: BTreeMap<String, (u64, String)>,
     rules: BTreeMap<String, RequiredChecks>,
-    permissions: BTreeMap<String, RepoPermission>,
+    permissions: BTreeMap<String, Permission>,
 }
 
 #[derive(Debug, Default)]
@@ -375,6 +386,43 @@ impl Sim {
         })
     }
 
+    /// Sets the reviews of the PR `number`, and sends its delivery. The
+    /// review decision does not follow: [`PrChange::Review`] sets it.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for an unknown repository or PR.
+    pub fn set_reviews(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        reviews: Reviews,
+    ) -> Result<(), ScmError> {
+        self.with_repo(&repo.external_id, |ctx| {
+            ctx.repo.pr_mut(number)?.reviews = reviews;
+            ctx.pr_changed(number);
+            Ok(())
+        })
+    }
+
+    /// Sets the paths of the unresolved review threads of the PR `number`.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for an unknown repository or PR.
+    pub fn set_unresolved_threads(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        paths: &[&str],
+    ) -> Result<(), ScmError> {
+        self.with_repo(&repo.external_id, |ctx| {
+            ctx.repo.pr_mut(number)?.unresolved_threads =
+                paths.iter().map(|path| (*path).to_owned()).collect();
+            Ok(())
+        })
+    }
+
     /// Gives `user` the permission `permission` on the repository.
     ///
     /// # Errors
@@ -384,7 +432,7 @@ impl Sim {
         &self,
         repo: &RepoRef,
         user: &ScmUser,
-        permission: RepoPermission,
+        permission: Permission,
     ) -> Result<(), ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
             ctx.repo
@@ -695,6 +743,8 @@ impl Ctx<'_> {
                 body: body.to_owned(),
                 labels: BTreeSet::new(),
                 review_decision: ReviewDecision::None,
+                reviews: Reviews::default(),
+                unresolved_threads: Vec::new(),
                 author: author.clone(),
                 mergeability: None,
                 merged_sha: None,
@@ -791,6 +841,12 @@ impl Repo {
             .get(branch)
             .cloned()
             .ok_or_else(|| ScmError::NotFound(format!("branch {branch}")))
+    }
+
+    fn pr(&self, number: u64) -> Result<&Pr, ScmError> {
+        self.prs
+            .get(&number)
+            .ok_or_else(|| ScmError::NotFound(format!("PR {number}")))
     }
 
     fn pr_mut(&mut self, number: u64) -> Result<&mut Pr, ScmError> {
@@ -900,6 +956,24 @@ impl Repo {
         })
     }
 
+    /// The paths that the PR `number` changes, from the merge base with its
+    /// base branch.
+    fn changed_files(&self, number: u64) -> Result<Vec<String>, ScmError> {
+        let pr = self.pr(number)?;
+        let head = self.head(pr);
+        let base = self.branch_head(&pr.base_branch)?;
+        let (base_tree, head_tree) = match self.merge_base(&base, &head) {
+            Some(fork) => (self.tree(&fork)?, self.tree(&head)?),
+            None => (self.tree(&head)?, self.tree(&head)?),
+        };
+        let changed: BTreeSet<&String> = base_tree
+            .keys()
+            .chain(head_tree.keys())
+            .filter(|path| base_tree.get(*path) != head_tree.get(*path))
+            .collect();
+        Ok(changed.into_iter().cloned().collect())
+    }
+
     fn snapshot(&self, number: u64) -> Result<PrSnapshot, ScmError> {
         let pr = self
             .prs
@@ -930,12 +1004,19 @@ impl Repo {
             state: pr.state,
             head_sha: head.clone(),
             base_branch: pr.base_branch.clone(),
+            head_branch: pr.head_branch.clone(),
+            from_fork: false,
+            // The simulator has no clock: every PR is opened at the epoch.
+            created_at: OffsetDateTime::UNIX_EPOCH,
             draft: pr.draft,
             title: pr.title.clone(),
             body: pr.body.clone(),
             labels: pr.labels.clone(),
             mergeability,
             review_decision: pr.review_decision,
+            approved_by: pr.reviews.approved_by.clone(),
+            changes_requested_by: pr.reviews.changes_requested_by.clone(),
+            review_requested: pr.reviews.requested.clone(),
             checks: self.checks.get(&head).cloned().unwrap_or_default(),
             author: pr.author.clone(),
             additions: (changed.len() - deletions) as u64,
@@ -1032,7 +1113,7 @@ impl Scm for Sim {
         repo: &'a RepoRef,
         user: &'a ScmUser,
         class: JobClass,
-    ) -> ScmFuture<'a, RepoPermission> {
+    ) -> ScmFuture<'a, Permission> {
         let user = user.external_id.clone();
         self.call("permission", repo, class, move |ctx| {
             Ok(ctx
@@ -1040,7 +1121,29 @@ impl Scm for Sim {
                 .permissions
                 .get(&user)
                 .copied()
-                .unwrap_or(RepoPermission::None))
+                .unwrap_or(Permission::None))
+        })
+    }
+
+    fn pr_files<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>> {
+        self.call("pr_files", repo, class, move |ctx| {
+            ctx.repo.changed_files(number)
+        })
+    }
+
+    fn unresolved_threads<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>> {
+        self.call("unresolved_threads", repo, class, move |ctx| {
+            Ok(ctx.repo.pr(number)?.unresolved_threads.clone())
         })
     }
 
@@ -1343,6 +1446,11 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         mergeable_pr,
         PrChange::Review(ReviewDecision::Approved),
     )?;
+    let reviews = Reviews {
+        approved_by: BTreeSet::from(["reviewer".to_owned()]),
+        ..Reviews::default()
+    };
+    sim.set_reviews(repo, mergeable_pr, reviews)?;
     let ci = CheckReport {
         name: "ci".into(),
         kind: CheckKind::Check,
@@ -1371,7 +1479,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         external_id: "3".into(),
         login: "admin".into(),
     };
-    sim.set_permission(repo, &admin, RepoPermission::Admin)?;
+    sim.set_permission(repo, &admin, Permission::Admin)?;
     sim.take_deliveries();
     let fixture = Fixture {
         base_branch: "main".into(),

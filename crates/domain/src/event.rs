@@ -5,9 +5,9 @@ use time::OffsetDateTime;
 
 use crate::{
     BlockReason, CheckReport, ConflictCulprit, EventId, GroupId, GroupKind, GroupState,
-    ImpactedTargets, ItemId, ItemState, JobError, Mergeability, OrgId, PrState, Priority,
-    QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource, ReviewDecision,
-    RunId, RunStatus, SubmittedVia, UserId,
+    ImpactedTargets, ItemId, ItemState, JobError, Mergeability, OrgId, Permission, PrState,
+    Priority, QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
+    ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
 };
 
 /// Immutable, append-only record of a fact or a decision in the log of a
@@ -44,6 +44,9 @@ pub enum EventKind {
         additions: u64,
         deletions: u64,
         changed_files: u64,
+        /// The permission of the author of the command, read at the
+        /// submission; `None` for a label (`AGENTS.md` D144).
+        sender_permission: Option<Permission>,
     },
     #[serde(rename = "item.cancel_requested")]
     ItemCancelRequested { item_id: ItemId, by_admin: bool },
@@ -61,6 +64,9 @@ pub enum EventKind {
         mergeability: Mergeability,
         review_decision: ReviewDecision,
         checks: Vec<CheckReport>,
+        /// The `queue_conditions` of the queue that the PR does not meet, as
+        /// the file writes them (`AGENTS.md` D142).
+        unmet_conditions: Vec<String>,
     },
     #[serde(rename = "target.pushed")]
     TargetPushed {

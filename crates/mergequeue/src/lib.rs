@@ -6,6 +6,7 @@
 //! them. The scheduler does not call the SCM: the jobs do, and give their
 //! facts back through `queue_inbox`.
 
+mod admission;
 mod assembly;
 mod command;
 mod config;

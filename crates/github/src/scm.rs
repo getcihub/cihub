@@ -2,16 +2,16 @@
 //! and writes in REST. Each value of GitHub becomes a neutral value here
 //! (`docs/GITHUB.md`, `AGENTS.md` D23, D78).
 
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, PrState,
-    ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, Permission,
+    PrState, ReviewDecision,
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
-    RecentDelivery, RepoPermission, RepoRef, RequiredChecks, Scm, ScmError, ScmFuture, ScmUser,
-    StatusUpdate,
+    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmError, ScmFuture, ScmUser, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
@@ -34,13 +34,28 @@ fragment checks on StatusCheckRollup {
   }
 }
 fragment pr on PullRequest {
-  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision
+  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt
+  mergeable mergeStateStatus reviewDecision
+  latestOpinionatedReviews(first: 100) { nodes { state author { login } } }
+  reviewRequests(first: 100) {
+    nodes { requestedReviewer { ... on Actor { login } ... on Team { combinedSlug } } }
+  }
   additions deletions changedFiles
   mergeCommit { oid }
   author { login ... on User { databaseId } ... on Bot { databaseId } }
   labels(first: 100) { nodes { name } }
   statusCheckRollup { ...checks }
 }";
+
+const THREADS_QUERY: &str = "
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { reviewThreads(first: 100) { nodes { isResolved path } } }
+  }
+}";
+
+/// GitHub lists 3 000 files of a PR at most, 100 per page.
+const FILE_PAGES: u32 = 30;
 
 const CHECKS_QUERY: &str = "
 query($owner: String!, $name: String!, $sha: GitObjectID!) {
@@ -82,9 +97,15 @@ struct GraphqlPr {
     body: String,
     head_ref_oid: String,
     base_ref_name: String,
+    head_ref_name: String,
+    is_cross_repository: bool,
+    #[serde(with = "time::serde::rfc3339")]
+    created_at: OffsetDateTime,
     mergeable: String,
     merge_state_status: String,
     review_decision: Option<String>,
+    latest_opinionated_reviews: Nodes<Review>,
+    review_requests: Nodes<ReviewRequest>,
     additions: u64,
     deletions: u64,
     changed_files: u64,
@@ -114,6 +135,31 @@ struct Nodes<T> {
 #[derive(Deserialize)]
 struct Label {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct Review {
+    state: String,
+    author: Option<Login>,
+}
+
+#[derive(Deserialize)]
+struct Login {
+    login: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewRequest {
+    requested_reviewer: Option<Reviewer>,
+}
+
+/// A user, a bot or a team: a team is named `<org>/<team>`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Reviewer {
+    login: Option<String>,
+    combined_slug: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -243,11 +289,33 @@ impl GraphqlPr {
                 login: author.login,
             },
         );
+        let reviewers = |state: &str| -> BTreeSet<String> {
+            self.latest_opinionated_reviews
+                .nodes
+                .iter()
+                .flatten()
+                .filter(|review| review.state == state)
+                .filter_map(|review| review.author.as_ref().map(|a| a.login.clone()))
+                .collect()
+        };
+        let approved_by = reviewers("APPROVED");
+        let changes_requested_by = reviewers("CHANGES_REQUESTED");
+        let review_requested = self
+            .review_requests
+            .nodes
+            .into_iter()
+            .flatten()
+            .filter_map(|request| request.requested_reviewer)
+            .filter_map(|reviewer| reviewer.login.or(reviewer.combined_slug))
+            .collect();
         Ok(PrSnapshot {
             number: self.number,
             state: pr_state(&self.state)?,
             head_sha: self.head_ref_oid,
             base_branch: self.base_ref_name,
+            head_branch: self.head_ref_name,
+            from_fork: self.is_cross_repository,
+            created_at: self.created_at,
             draft: self.is_draft,
             title: self.title,
             body: self.body,
@@ -260,6 +328,9 @@ impl GraphqlPr {
                 .collect(),
             mergeability: mergeability(&self.mergeable, &self.merge_state_status),
             review_decision: review_decision(self.review_decision.as_deref()),
+            approved_by,
+            changes_requested_by,
+            review_requested,
             checks: check_reports(self.status_check_rollup),
             author,
             additions: self.additions,
@@ -629,24 +700,85 @@ impl Scm for GithubApp {
         repo: &'a RepoRef,
         user: &'a ScmUser,
         class: JobClass,
-    ) -> ScmFuture<'a, RepoPermission> {
+    ) -> ScmFuture<'a, Permission> {
         Box::pin(async move {
             #[derive(Deserialize)]
-            struct Permission {
+            struct Answer {
                 permission: String,
             }
             let rest = format!("/collaborators/{}/permission", encode(&user.login));
             let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
             if answer.status == StatusCode::NOT_FOUND {
-                return Ok(RepoPermission::None);
+                return Ok(Permission::None);
             }
             let answer = expect(answer, &[StatusCode::OK])?;
-            Ok(match answer.json::<Permission>()?.permission.as_str() {
-                "admin" => RepoPermission::Admin,
-                "write" | "maintain" => RepoPermission::Write,
-                "read" | "triage" => RepoPermission::Read,
-                _ => RepoPermission::None,
+            Ok(match answer.json::<Answer>()?.permission.as_str() {
+                "admin" => Permission::Admin,
+                "write" | "maintain" => Permission::Write,
+                "read" | "triage" => Permission::Read,
+                _ => Permission::None,
             })
+        })
+    }
+
+    fn pr_files<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct File {
+                filename: String,
+            }
+            let mut paths = Vec::new();
+            for page in 1..=FILE_PAGES {
+                let rest = format!("/pulls/{number}/files?per_page=100&page={page}");
+                let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
+                let files: Vec<File> = expect(answer, &[StatusCode::OK])?.json()?;
+                let last = files.len() < 100;
+                paths.extend(files.into_iter().map(|file| file.filename));
+                if last {
+                    break;
+                }
+            }
+            Ok(paths)
+        })
+    }
+
+    /// The first 100 review threads of the PR: a PR with more of them is an
+    /// exception that a condition can still count as unresolved.
+    fn unresolved_threads<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        number: u64,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<String>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Thread {
+                is_resolved: bool,
+                path: String,
+            }
+            let variables = json!({ "owner": repo.namespace, "name": repo.name, "number": number });
+            let data = self
+                .query(&repo.connection, class, THREADS_QUERY, variables)
+                .await?;
+            let threads = data
+                .pointer("/repository/pullRequest/reviewThreads")
+                .filter(|threads| !threads.is_null())
+                .ok_or_else(|| ScmError::NotFound(format!("PR {number}")))?;
+            let threads: Nodes<Thread> = serde_json::from_value(threads.clone())
+                .map_err(|err| ScmError::Protocol(err.to_string()))?;
+            Ok(threads
+                .nodes
+                .into_iter()
+                .flatten()
+                .filter(|thread| !thread.is_resolved)
+                .map(|thread| thread.path)
+                .collect())
         })
     }
 

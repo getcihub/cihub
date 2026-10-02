@@ -6,8 +6,8 @@ mod common;
 
 use cihub_config::Setting;
 use cihub_domain::{
-    Actor, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError, Mergeability,
-    PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
+    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError,
+    Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
 use cihub_mq_core::{CheckRead, Head, Outcome, Read};
 use common::{World, head, settings, window};
@@ -28,6 +28,43 @@ fn failed_with(w: &World, want: Reason) -> bool {
 
 fn assert_replays(w: &World) {
     assert_eq!(w.replay(), w.snapshot);
+}
+
+#[test]
+fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
+    let mut w = world();
+    w.fact(
+        Actor::System,
+        EventKind::ItemSubmitted {
+            pr_number: 1,
+            head_sha: head(1, 0),
+            priority: Priority::MEDIUM,
+            no_batch: false,
+            direct: false,
+            submitted_via: cihub_domain::SubmittedVia::Api,
+            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+            additions: 0,
+            deletions: 0,
+            changed_files: 0,
+            sender_permission: None,
+        },
+    );
+    w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
+    let item = w.item(1).unwrap();
+    assert_eq!(item.state, ItemState::NotReady);
+    assert_eq!(
+        item.block_reasons,
+        [BlockReason::QueueConditionsUnmet {
+            conditions: vec!["label = ready".into()]
+        }]
+    );
+    w.observe(1, |_| {});
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    // An admitted item no longer depends on its conditions (`AGENTS.md`
+    // D142).
+    w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    assert_replays(&w);
 }
 
 #[test]
@@ -419,6 +456,7 @@ fn a_blocked_pr_stays_not_ready() {
             additions: 0,
             deletions: 0,
             changed_files: 0,
+            sender_permission: None,
         },
     );
     w.observe(5, |p| p.mergeability = Mergeability::Behind);
@@ -625,6 +663,7 @@ fn submit_behind(w: &mut World, pr: u64) {
             additions: 0,
             deletions: 0,
             changed_files: 0,
+            sender_permission: None,
         },
     );
     w.observe(pr, |p| p.mergeability = Mergeability::Behind);

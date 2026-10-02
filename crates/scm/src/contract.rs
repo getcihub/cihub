@@ -9,11 +9,13 @@
     reason = "test code: an answer outside the contract fails the test"
 )]
 
-use cihub_domain::{CheckKind, JobClass, MergeMethod, Mergeability, PrState, ReviewDecision};
+use cihub_domain::{
+    CheckKind, JobClass, MergeMethod, Mergeability, Permission, PrState, ReviewDecision,
+};
 
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, RepoPermission, RepoRef, RequiredChecks, Scm, ScmError,
-    ScmUser, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmUser,
+    StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
@@ -79,6 +81,13 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert_eq!(mergeable.review_decision, ReviewDecision::Approved);
     assert!(!mergeable.draft);
     assert!(mergeable.changed_files > 0);
+    assert!(!mergeable.head_branch.is_empty());
+    assert!(!mergeable.from_fork);
+    assert!(
+        !mergeable.approved_by.is_empty(),
+        "an approved PR names who approved it"
+    );
+    assert!(mergeable.changes_requested_by.is_empty());
     assert_eq!(conflicting.mergeability, Mergeability::Conflict);
     assert!(draft.draft);
     assert_eq!(draft.mergeability, Mergeability::Blocked);
@@ -91,6 +100,20 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         &one, mergeable,
         "one read gives the same PR as a read of PRs"
     );
+    let files = scm
+        .pr_files(repo, fixture.mergeable_pr, CLASS)
+        .await
+        .unwrap();
+    assert_eq!(
+        u64::try_from(files.len()).unwrap(),
+        mergeable.changed_files,
+        "the files of a PR are its changed files"
+    );
+    let threads = scm
+        .unresolved_threads(repo, fixture.mergeable_pr, CLASS)
+        .await
+        .unwrap();
+    assert!(threads.is_empty(), "{threads:?}");
     let missing = scm.pull_request(repo, fixture.missing_pr, CLASS).await;
     assert!(matches!(missing, Err(ScmError::NotFound(_))), "{missing:?}");
 
@@ -109,7 +132,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert_eq!(none.unwrap(), None);
 
     let admin = scm.permission(repo, &fixture.admin, CLASS).await.unwrap();
-    assert_eq!(admin, RepoPermission::Admin);
+    assert_eq!(admin, Permission::Admin);
 }
 
 async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {

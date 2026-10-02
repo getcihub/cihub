@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, ConflictCulprit, ConnectionId,
-    Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId, PrState, Priority,
-    QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus,
+    Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId, Permission, PrState,
+    Priority, QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus,
     ScmAccountId, ScmInstanceId, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
@@ -24,9 +24,7 @@ use cihub_platform::{
     find_route, mark_dirty, run_budget_writer, run_maintenance, run_worker, store_delivery,
 };
 use cihub_scm::sim::{Fault, PrChange, Sim};
-use cihub_scm::{
-    ConnectionRef, RepoPermission, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError, ScmUser,
-};
+use cihub_scm::{ConnectionRef, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError, ScmUser};
 use cihub_store::{begin_system, create_event_partitions};
 use secrecy::SecretString;
 use serde_json::Value;
@@ -231,6 +229,7 @@ impl World {
                 additions: 1,
                 deletions: 0,
                 changed_files: 1,
+                sender_permission: None,
             },
         )
         .await;
@@ -250,6 +249,7 @@ impl World {
                 mergeability: Mergeability::Mergeable,
                 review_decision: ReviewDecision::Approved,
                 checks: Vec::new(),
+                unmet_conditions: Vec::new(),
             },
         )
         .await
@@ -665,7 +665,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         up_to_date: false,
     };
     sim.set_rules(&repo(), "main", rules).unwrap();
-    sim.set_permission(&repo(), &alice(), RepoPermission::Write)
+    sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
 
     // What each PR is, and what the queue must say of it.
@@ -1126,7 +1126,7 @@ fn target_repo(sim: &Sim, files: &[(&str, &str)]) -> String {
         up_to_date: false,
     };
     sim.set_rules(&repo(), "main", rules).unwrap();
-    sim.set_permission(&repo(), &alice(), RepoPermission::Write)
+    sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
     main
 }
@@ -1497,6 +1497,98 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     .unwrap();
     assert_eq!(cleaned, 2);
     drop(tx);
+    q.stop().await;
+}
+
+/// The state, the block reasons and the sender permission of the live item
+/// of each PR.
+async fn admissions(pool: &PgPool) -> Vec<(i64, String, serde_json::Value, Option<String>)> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT pr_number, state::text, block_reasons, sender_permission::text
+         FROM queue_items WHERE is_current ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+/// `AGENTS.md` D142 to D144: a PR waits in `not_ready` with the
+/// `queue_conditions` that it does not meet, and enters the queue once it
+/// meets them; the files are read only because a condition uses them.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (small, small_head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let (large, large_head) = open_pr_with(
+        &sim,
+        &main,
+        2,
+        &[("f2.txt", Some("x")), ("g2.txt", Some("x"))],
+    );
+    for (number, head) in [(small, &small_head), (large, &large_head)] {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+    let unmet = |conditions: &[&str]| serde_json::json!([{ "kind": "queue_conditions_unmet", "conditions": conditions }]);
+    let write = Some("write".to_owned());
+    assert_eq!(
+        admissions(&pool).await,
+        [
+            (
+                1,
+                "not_ready".into(),
+                unmet(&["label = ready"]),
+                write.clone()
+            ),
+            (
+                2,
+                "not_ready".into(),
+                unmet(&["label = ready", "#files <= 1"]),
+                write.clone()
+            ),
+        ]
+    );
+
+    // The label comes: the small PR enters the queue, the large one waits for
+    // its files.
+    for number in [small, large] {
+        sim.add_label(&repo(), number, "ready", JobClass::Interactive)
+            .await
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+    let states = admissions(&pool).await;
+    assert_eq!(states[0].0, 1);
+    assert_ne!(states[0].1, "not_ready", "{states:?}");
+    assert_eq!(states[0].2, serde_json::json!([]));
+    assert_eq!(
+        states[1],
+        (2, "not_ready".into(), unmet(&["#files <= 1"]), write)
+    );
+    let reads = sim
+        .calls()
+        .iter()
+        .filter(|call| call.name == "pr_files")
+        .count();
+    assert!(reads >= 2, "{reads}");
+    assert!(
+        !sim.calls()
+            .iter()
+            .any(|call| call.name == "unresolved_threads")
+    );
     q.stop().await;
 }
 
@@ -2282,7 +2374,7 @@ impl Chaos {
             up_to_date: false,
         };
         sim.set_rules(&repo, "main", rules).unwrap();
-        sim.set_permission(&repo, &alice(), RepoPermission::Write)
+        sim.set_permission(&repo, &alice(), Permission::Write)
             .unwrap();
         let mut red = BTreeSet::new();
         for n in 1..=CHAOS_PRS {

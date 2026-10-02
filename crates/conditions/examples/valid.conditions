@@ -1,6 +1,6 @@
 -draft
 -conflict
-github-review-decision = approved
+review-decision = approved
 #approved-reviews-by >= 2
 #review-threads-unresolved = 0
 check-success = lint

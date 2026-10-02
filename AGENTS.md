@@ -619,6 +619,31 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   ces bornes quand les réglages changent ; une fenêtre réduite n'interrompt aucune exécution en cours. Le mode
   `throttled` ne change pas le noyau : les jobs `speculate` attendent déjà le budget. Le critère de sortie est
   testé dans `cihub-mq-core`, sur une CI simulée à graine fixe.
+- **D142** Les jobs qui lisent une PR (`submit_pr`, `refresh_prs`) évaluent les `queue_conditions` de sa file,
+  lues dans `config_text` ; le noyau reste sans `cihub-conditions` (D99). `pr.observed` gagne `unmet_conditions`,
+  le texte des conditions de premier niveau qui ne sont pas satisfaites, tel que le fichier l'écrit, et
+  `BlockReason` gagne `queue_conditions_unmet { conditions }`. Les conditions comptent seulement avant
+  l'admission, pour une entrée `not_ready` : une condition qui devient fausse ne retire pas une entrée admise.
+- **D143** `PrSnapshot` gagne ce que la même lecture donne : `head_branch`, `from_fork`, `created_at`, les
+  logins des revues qui approuvent (`approved_by`) et qui demandent des changements (`changes_requested_by`), et
+  les revues demandées (`review_requested`). Une méthode du trait `Scm` lit les fichiers modifiés et les fils de
+  revue non résolus d'une PR, seulement quand une condition de la file les utilise. Les réponses enregistrées de
+  GitHub (D90) sont enregistrées de nouveau.
+- **D144** `item.submitted` gagne `sender_permission`, la permission de l'auteur de la commande lue à la
+  soumission (`NULL` pour un label) ; une lecture de la PR évalue `sender` et `sender-permission` avec elle.
+- **D145** Vocabulaire neutre des conditions (D78, D139) : `github-review-decision` devient `review-decision`, et
+  `sender-permission` a les niveaux `none` < `read` < `write` < `admin` de `RepoPermission`.
+- **D146** Dans ce lot, `merge_conditions` accepte seulement des conditions `check-success = <nom>` de premier
+  niveau ; leurs noms s'ajoutent aux statuts requis de l'exécution. Une autre forme est une erreur de
+  configuration, avec sa position.
+- **D147** `branch_protection_injection` : `both` (défaut) ajoute les checks requis par les règles de la branche
+  aux `queue_conditions` (en `check-success`, sauf le statut de la file, D105) et aux statuts requis du commit de
+  test ; `merge` les ajoute seulement au commit de test ; `none` ne les ajoute nulle part.
+- **D148** `submit_pr` choisit la file nommée par `/cihub merge --queue <nom>`, sinon la première file de la
+  branche, dans l'ordre du fichier, dont les `queue_conditions` passent, sinon la première file de la branche.
+  Une entrée ne change jamais de file ; une livraison d'une PR va à la file de son entrée vivante. `submit_pr`
+  applique `priority_rules` : la première règle vraie donne la priorité, et `--priority` de la commande
+  l'emporte.
 
 ### 4.1 Questions ouvertes
 

@@ -47,7 +47,7 @@ pub use id::{
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
-pub use pr::{CheckReport, Mergeability, PrState, ReviewDecision};
+pub use pr::{CheckReport, Mergeability, Permission, PrState, ReviewDecision};
 pub use queue::{Queue, QueueControl};
 pub use reason::Reason;
 pub use run::{CheckObservation, ConflictCulprit, RequiredStatusesSource, TestGroup, TestRun};

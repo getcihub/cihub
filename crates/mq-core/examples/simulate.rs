@@ -168,6 +168,7 @@ const fn block_name(block: &BlockReason) -> &'static str {
         BlockReason::MergeConflict => "merge_conflict",
         BlockReason::StackNeedsRebase { .. } => "stack_needs_rebase",
         BlockReason::Undetermined => "undetermined",
+        BlockReason::QueueConditionsUnmet { .. } => "queue_conditions_unmet",
     }
 }
 
@@ -364,6 +365,7 @@ impl World {
                     additions: 10,
                     deletions: 2,
                     changed_files: 1,
+                    sender_permission: None,
                 }
             }
             "observe" => self.observe(arg(0, "a PR number")?, &args[1..])?,
@@ -533,6 +535,7 @@ impl World {
             mergeability,
             review_decision: ReviewDecision::Approved,
             checks: Vec::new(),
+            unmet_conditions: Vec::new(),
         })
     }
 

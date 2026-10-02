@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+cihub-conditions.workspace = true
 cihub-config.workspace = true
 cihub-domain.workspace = true
 cihub-mq-core.workspace = true

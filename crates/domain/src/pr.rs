@@ -44,6 +44,21 @@ closed_enum! {
     }
 }
 
+closed_enum! {
+    /// What a user may do on a repository, from the lowest to the highest
+    /// (`AGENTS.md` D145).
+    pub enum Permission {
+        /// No access to the repository.
+        None,
+        /// Reads the repository.
+        Read,
+        /// Pushes to the repository.
+        Write,
+        /// Administers the repository.
+        Admin,
+    }
+}
+
 /// One check or commit status, as the SCM reports it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CheckReport {

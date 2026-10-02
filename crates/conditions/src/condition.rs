@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn parses_the_spec_examples() {
         for s in [
-            "github-review-decision = approved",
+            "review-decision = approved",
             "-draft",
             "-label = do-not-merge",
             "check-success = lint",
@@ -525,10 +525,10 @@ mod tests {
                 },
             ),
             (
-                "github-review-decision > approved",
-                24,
+                "review-decision > approved",
+                17,
                 K::OperatorNotAllowed {
-                    attribute: Attribute::GithubReviewDecision,
+                    attribute: Attribute::ReviewDecision,
                     operator: Operator::Gt,
                 },
             ),
@@ -568,7 +568,7 @@ mod tests {
         );
         assert_eq!(
             error("sender-permission >= god").to_string(),
-            "column 22: `god` is not valid for `sender-permission`: expected one of none, read, triage, write, maintain, admin"
+            "column 22: `god` is not valid for `sender-permission`: expected one of none, read, write, admin"
         );
         assert_eq!(
             error("title ~= (").to_string(),

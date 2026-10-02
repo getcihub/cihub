@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{Attribute, Condition, Context, EvalError};
 
 /// A list of conditions, as written under `queue_conditions`,
@@ -26,6 +28,42 @@ impl Conditions {
     /// Tells the caller to load an attribute that is loaded on demand.
     pub fn uses(&self, attribute: Attribute) -> bool {
         self.0.iter().any(|expr| expr.uses(attribute))
+    }
+
+    /// The text of each element of the list that does not hold, in order,
+    /// to explain why a PR waits (`AGENTS.md` D142).
+    ///
+    /// # Errors
+    ///
+    /// `NotLoaded` if a condition uses an attribute that `ctx` does not have.
+    pub fn unmet(&self, ctx: &Context) -> Result<Vec<String>, EvalError> {
+        let mut unmet = Vec::new();
+        for expr in &self.0 {
+            if !expr.eval(ctx)? {
+                unmet.push(expr.to_string());
+            }
+        }
+        Ok(unmet)
+    }
+}
+
+/// A condition as the file writes it; a block as its key and its list.
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (key, list) = match self {
+            Self::Condition(condition) => return f.write_str(condition.as_str()),
+            Self::And(list) => ("and", list),
+            Self::Or(list) => ("or", list),
+            Self::Not(list) => ("not", list),
+        };
+        write!(f, "{key}: [")?;
+        for (n, expr) in list.iter().enumerate() {
+            if n > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{expr}")?;
+        }
+        f.write_str("]")
     }
 }
 
@@ -70,10 +108,10 @@ fn has(list: &[Expr], ctx: &Context, value: bool) -> Result<bool, EvalError> {
 mod tests {
     use std::time::Duration;
 
-    use cihub_domain::{CheckConclusion, ReviewDecision};
+    use cihub_domain::{CheckConclusion, Permission, ReviewDecision};
 
     use super::*;
-    use crate::{Check, Permission};
+    use crate::Check;
 
     fn condition(s: &str) -> Expr {
         Expr::Condition(s.parse().unwrap())
@@ -149,15 +187,39 @@ mod tests {
     }
 
     #[test]
+    fn unmet_names_each_element_that_does_not_hold() {
+        let conditions = Conditions(vec![
+            condition("label = ready"),
+            condition("label = blocked"),
+            Expr::Or(vec![condition("author = bob"), condition("number < 10")]),
+            Expr::Not(vec![condition("author = alice")]),
+            Expr::And(vec![condition("number = 42")]),
+        ]);
+        assert_eq!(
+            conditions.unmet(&pr()),
+            Ok(vec![
+                "label = blocked".to_owned(),
+                "or: [author = bob, number < 10]".to_owned(),
+                "not: [author = alice]".to_owned(),
+            ])
+        );
+        let threads = Conditions(vec![condition("#review-threads-unresolved = 0")]);
+        assert_eq!(
+            threads.unmet(&pr()),
+            Err(EvalError::NotLoaded(Attribute::ReviewThreadsUnresolved))
+        );
+    }
+
+    #[test]
     fn compares_numbers_durations_and_choices() {
         let mut ctx = pr();
         assert!(holds("number >= 42", &ctx));
         assert!(holds("pr-age > 2h", &ctx));
-        assert!(holds("github-review-decision = approved", &ctx));
-        assert!(holds("github-review-decision != review_required", &ctx));
+        assert!(holds("review-decision = approved", &ctx));
+        assert!(holds("review-decision != review_required", &ctx));
 
         ctx.sender = Some("bob".into());
-        ctx.sender_permission = Some(Permission::Maintain);
+        ctx.sender_permission = Some(Permission::Write);
         assert!(holds("sender-permission >= write", &ctx));
         assert!(!holds("sender-permission >= admin", &ctx));
     }
