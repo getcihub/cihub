@@ -107,8 +107,8 @@ fn rows(org: OrgId, n: u8) -> String {
                             name, default_branch)
              VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
                      'name', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch)
-             VALUES ('{queue}', '{org}', 'repo-{n}', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main');
          INSERT INTO queue_leases (queue_id, org_id, owner, expires_at)
              VALUES ('{queue}', '{org}', 'scheduler', '2026-09-15T00:00:00Z');
          INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
@@ -406,7 +406,8 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO queues (id, org_id, repo_id, target_branch) VALUES ($1, $2, 'repo-1', 'next')",
+        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+         VALUES ($1, $2, 'repo-1', 'next', 'next')",
     )
     .bind(QueueId::from_ulid(Ulid(1)).to_string())
     .bind(org(1).to_string())

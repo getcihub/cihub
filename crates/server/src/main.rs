@@ -198,7 +198,7 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
             tokio::try_join!(serve, route)?;
         }
         Role::Scheduler => {
-            let module = merge_queue(&pool, &github, &process)?;
+            let module = merge_queue(&pool, &github, &process);
             let queues = (module.scheduler)(cancel.clone());
             let maintenance = request_maintenance_hourly(&pool, &cancel);
             let sweep = request_sweep_regularly(&pool, github.scm_instance_id, &cancel);
@@ -208,7 +208,7 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
         Role::Worker => {
             let mut executors = Executors::default();
             executors.register(MAINTENANCE, execute_maintenance);
-            (merge_queue(&pool, &github, &process)?.executors)(&mut executors);
+            (merge_queue(&pool, &github, &process).executors)(&mut executors);
             let scm: Arc<dyn Scm> = github.app.clone();
             executors.register(
                 SWEEP_DELIVERIES,
@@ -235,11 +235,7 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
 }
 
 /// The merge queue module, on the GitHub App of the instance.
-fn merge_queue(
-    pool: &PgPool,
-    github: &Github,
-    process: &str,
-) -> anyhow::Result<cihub_platform::Module> {
+fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
@@ -252,7 +248,6 @@ fn merge_queue(
         process.to_owned(),
         Arc::new(now),
     )
-    .context("the merge queue cannot start")
 }
 
 /// Starts the client of the GitHub App, and creates the row of its SCM

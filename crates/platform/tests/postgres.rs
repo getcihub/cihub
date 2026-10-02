@@ -59,10 +59,10 @@ async fn seed(pool: &PgPool) {
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('r', '{org}', '{i1}', '{c}', '1', 'acme', 'app', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, dirty, next_tick_at) VALUES
-             ('{q1}', '{org}', 'r', 'main', true, NULL),
-             ('{q2}', '{org}', 'r', 'release', false, '{}'),
-             ('{q3}', '{org}', 'r', 'next', false, NULL);",
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty, next_tick_at) VALUES
+             ('{q1}', '{org}', 'r', 'main', 'main', true, NULL),
+             ('{q2}', '{org}', 'r', 'release', 'release', false, '{}'),
+             ('{q3}', '{org}', 'r', 'next', 'next', false, NULL);",
         at(0)
     )))
     .execute(&mut *tx)
@@ -848,6 +848,20 @@ async fn routes(pool: &PgPool) -> Vec<RouteRow> {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: PgPool) {
     seed(&pool).await;
+    // Two queues on one branch: no queue is sure (`AGENTS.md` D135).
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO queues (id, org_id, repo_id, target_branch, name) VALUES
+             ('{}', '{org}', 'r', 'shared', 'shared'),
+             ('{}', '{org}', 'r', 'shared', 'hotfix');",
+        queue(4),
+        queue(5),
+        org = org(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
     let cancel = CancellationToken::new();
     let router = tokio::spawn(run_router(
         pool.clone(),
@@ -879,6 +893,11 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         ),
         unrouted("f-ignored", "ping", known.clone()),
         unrouted("g-broken", "broken", known),
+        unrouted(
+            "h-shared-branch",
+            "pr",
+            json!({ "installation": "1", "repo": "1", "branch": "shared" }),
+        ),
     ] {
         store(&pool, &delivery).await;
     }
@@ -908,10 +927,11 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
             true,
             false,
         ),
-        ("d-rules".into(), o, c, None, true, false),
+        ("d-rules".into(), o.clone(), c.clone(), None, true, false),
         ("e-unknown".into(), None, None, None, true, false),
         ("f-ignored".into(), None, None, None, true, true),
         ("g-broken".into(), None, None, None, true, true),
+        ("h-shared-branch".into(), o, c, None, true, false),
     ];
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while routes(&pool).await != expected {

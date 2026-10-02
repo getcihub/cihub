@@ -588,6 +588,20 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   file (`pause`, `resume`, `drain`) n'est pas un réglage et reste dans le tableau de bord, l'API et la CLI. Un
   fichier invalide fait échouer l'exécution qui le lit au `base_sha` (`start_test_run_config_*`) ; pour les autres
   réglages, la file garde le dernier fichier valide et affiche l'erreur.
+- **D135** `queues` gagne `name`, unique par dépôt (`repo_id`, `name`), à la place de l'unicité par
+  (`repo_id`, `target_branch`) : plusieurs files peuvent viser la même branche. Le routage d'une livraison donne
+  une file seulement quand la branche n'en a qu'une (D85).
+- **D136** Le job `load_config:<queue_id>-<sha>:1` (classe `repair`) lit le fichier de configuration sur la tête
+  de la cible, que le scheduler demande quand cette tête n'est pas celle de la dernière lecture. Il n'écrit rien si
+  la cible a bougé depuis. `queues` gagne `config_text` (le dernier fichier valide, `NULL` sans fichier),
+  `config_sha` (la tête lue) et `config_error` (pourquoi le fichier lu n'est pas valide). Chaque réconciliation et
+  chaque job résout les réglages de sa file depuis `config_text` ; l'assemblage lit toujours les statuts requis au
+  `base_sha`.
+- **D137** Quand le mode des réglages diffère du mode demandé de la file, la réconciliation écrit le fait
+  `queue.settings_changed` (acteur `system`) avant `plan`.
+- **D138** Le lot 8 ne crée aucune file depuis le fichier : la commande d'admin du lot 9 les crée (Q14). Une
+  entrée du fichier se relie à sa file par sa branche et son nom ; une file sans entrée a les réglages par défaut,
+  sans les `defaults` du fichier.
 
 ### 4.1 Questions ouvertes
 

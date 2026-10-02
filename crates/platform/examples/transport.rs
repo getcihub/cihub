@@ -209,9 +209,9 @@ async fn seed(pool: &PgPool) -> Result<()> {
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('repo', '{org}', '{i}', '{c}', '1', 'acme', 'app', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, dirty, next_tick_at) VALUES
-             ('{main}', '{org}', 'repo', 'main', true, NULL),
-             ('{release}', '{org}', 'repo', 'release', false, '{T0}');"
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty, next_tick_at) VALUES
+             ('{main}', '{org}', 'repo', 'main', 'main', true, NULL),
+             ('{release}', '{org}', 'repo', 'release', 'release', false, '{T0}');"
     )))
     .execute(&mut *tx)
     .await?;

@@ -156,7 +156,8 @@ pub async fn find_route(
     })
 }
 
-/// The queue of the branch `branch` of a repository.
+/// The queue of the branch `branch` of a repository, when the branch has
+/// only one (`AGENTS.md` D135).
 async fn queue_of_branch(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -164,8 +165,9 @@ async fn queue_of_branch(
     branch: &str,
 ) -> Result<Option<String>, PlatformError> {
     sqlx::query_scalar(
-        "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.scm_instance_id = $1 AND r.external_id = $2 AND q.target_branch = $3",
+        "SELECT min(q.id) FROM queues q JOIN repos r ON r.id = q.repo_id
+         WHERE r.scm_instance_id = $1 AND r.external_id = $2 AND q.target_branch = $3
+         HAVING count(*) = 1",
     )
     .bind(scm_instance_id.to_string())
     .bind(repo_external_id)

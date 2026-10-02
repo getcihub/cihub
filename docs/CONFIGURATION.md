@@ -6,7 +6,10 @@ réglages, leurs valeurs par défaut, leurs plages et la table des stratégies d
 Ce fichier les explique.
 
 Le comportement d'une file se configure dans un fichier `.cihub.yaml` ou `.cihub.yml` à la racine du dépôt, lu sur
-la tête de la branche cible (pour qu'une PR ne puisse pas assouplir sa propre barrière). Ce fichier est la seule
+la tête de la branche cible (pour qu'une PR ne puisse pas assouplir sa propre barrière) par le job `load_config`, à
+chaque nouvelle tête (`AGENTS.md` D136) ; les réglages s'appliquent à partir de la réconciliation qui suit la
+lecture. Une entrée de `queues` se relie à sa file par `branch` et `name` ; une file sans entrée a les réglages par
+défaut, sans `defaults` (D138). Ce fichier est la seule
 source des réglages (`AGENTS.md` D134) : le tableau de bord aide à l'écrire par un formulaire qui ouvre une PR sur
 le dépôt, jamais un commit direct sur la cible. Si les deux noms de fichier existent, la configuration est en erreur, car aucun des
 deux ne l'emporte. Plusieurs files peuvent viser la même branche : une PR est routée vers la première file, dans

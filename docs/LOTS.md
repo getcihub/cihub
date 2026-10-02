@@ -818,8 +818,9 @@ Autres valeurs fermées :
 
 - **Objectif** : rendre la file configurable sans toucher au noyau.
 - **Contenu** : fichier `.cihub.yaml` ou `.cihub.yml` lu sur la cible au `base_sha`, seule source des réglages
-  (`AGENTS.md` D134), et source effective de chaque réglage (défaut, stratégie, fichier) ; langage de conditions (`queue_conditions`,
-  `merge_conditions`, injection des protections, routage entre files d'une même branche, `priority_rules`) ;
+  (`AGENTS.md` D134), et source effective de chaque réglage (défaut, stratégie, fichier) ; langage de conditions
+  (`queue_conditions`, `merge_conditions`, injection des protections, routage entre files d'une même branche,
+  `priority_rules`) ;
   stratégies comme tables de valeurs par défaut ; fenêtre de spéculation adaptative ; budget d'échec ; priorités ;
   états `paused`, `draining`, `switching_modes`.
 - **Interfaces figées** : schéma du fichier de configuration (version 1) ; grammaire des conditions ; noms des
@@ -836,11 +837,18 @@ Autres valeurs fermées :
     chaque erreur).
   - Fait (2 octobre 2026, D134) : le fichier est la seule source des réglages ; `cihub-config` perd la source
     `ui`, et `RequiredStatusesSource` perd `ui_override` (code, enum Postgres, documents).
-  - Reste : routage entre files d'une même branche ; réglage `resubmit_on_push` (`AGENTS.md` D121) ; merge
-    direct sur main (D125) ; injection
-    des protections ; fenêtre adaptative et budget d'échec dans `plan` ; lecture du fichier par la file ;
-    états de la file ; attribut `schedule` (reporté : les fuseaux horaires demandent une base embarquée dans le
-    noyau pur).
+  - Fait (2 octobre 2026, D135 à D138) : `queues` gagne `name`, unique par dépôt, et le routage d'une livraison
+    ne donne une file que quand sa branche n'en a qu'une ; le job `load_config` lit le fichier sur chaque nouvelle
+    tête de la cible et garde le dernier fichier valide (`config_text`, `config_sha`, `config_error`) ; chaque
+    réconciliation et chaque job résout les réglages de sa file (fin des réglages globaux du module) ;
+    `commands_enabled` est vérifié par `submit_pr` sur la file trouvée ; un changement de mode du fichier écrit
+    `queue.settings_changed`. Tests : table de `RepoConfig::settings`, statuts requis d'une file sans entrée,
+    routage avec deux files sur une branche, et contre Postgres et le simulateur, une file qui suit son fichier
+    (fichier valide, refusé, puis changement de mode).
+  - Reste : routage entre files d'une même branche (`submit_pr` prend la première file de la branche) ; réglage
+    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; injection des protections ; fenêtre
+    adaptative et budget d'échec dans `plan` ; états de la file ; attribut `schedule` (reporté : les fuseaux
+    horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
 
 ### Lot 9 : surfaces : PR, API, CLI

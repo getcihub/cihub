@@ -102,6 +102,29 @@ impl RepoConfig {
             priority_rules,
         })
     }
+
+    /// The entry of the queue `name` on the branch `branch`, if any
+    /// (`AGENTS.md` D138).
+    pub fn queue(&self, branch: &str, name: &str) -> Option<&QueueConfig> {
+        self.queues
+            .iter()
+            .find(|queue| queue.branch == branch && queue.name == name)
+    }
+
+    /// The settings of the queue `name` on the branch `branch`. A queue
+    /// without an entry has the defaults, without `defaults` of the file
+    /// (`AGENTS.md` D138).
+    ///
+    /// # Errors
+    ///
+    /// The values of the entry do not go together: `parse` already refuses
+    /// such a file.
+    pub fn settings(&self, branch: &str, name: &str) -> Result<QueueSettings, ConfigError> {
+        match self.queue(branch, name) {
+            Some(queue) => QueueSettings::resolve(&queue.settings, &self.defaults),
+            None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
+        }
+    }
 }
 
 fn check_version(text: &str) -> Result<(), ConfigError> {
@@ -546,6 +569,33 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             ..Context::default()
         };
         assert_eq!(main.queue_conditions.eval(&ctx), Ok(false));
+    }
+
+    #[test]
+    fn a_queue_finds_its_entry_by_branch_and_name() {
+        let text = "version: 1
+defaults:
+  testing_timeout_minutes: 60
+queues:
+  - name: main
+    branch: main
+    strategy: sequential
+  - name: hotfix
+    branch: main
+";
+        let config = RepoConfig::parse(text).unwrap();
+        let main = config.settings("main", "main").unwrap();
+        assert_eq!(main.strategy.value, Strategy::Sequential);
+        assert_eq!(main.testing_timeout_minutes.value, 60);
+        let hotfix = config.settings("main", "hotfix").unwrap();
+        assert_eq!(hotfix.strategy.value, Strategy::Pipelined);
+        assert_eq!(hotfix.testing_timeout_minutes.source, Source::File);
+        // Without an entry, neither the queue nor `defaults` applies.
+        for (branch, name) in [("release", "main"), ("main", "other")] {
+            assert!(config.queue(branch, name).is_none());
+            let settings = config.settings(branch, name).unwrap();
+            assert_eq!(settings.testing_timeout_minutes.source, Source::Default);
+        }
     }
 
     #[test]

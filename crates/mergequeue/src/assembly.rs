@@ -8,7 +8,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use cihub_config::{FILE_NAMES, QueueSettings, RepoConfig, find_config_file};
+use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
     Actor, ConflictCulprit, EventKind, JobClass, JobError, RequiredStatusesSource, RunId,
     RunStatus, Trigger, temp_branch,
@@ -23,6 +23,7 @@ use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
+use crate::config::read_config_file;
 use crate::jobs::{
     Failure, give_back, job, outcome, queue_status_context, read_payload, target_of,
 };
@@ -123,9 +124,10 @@ fn numbers(prs: &[u64]) -> String {
         .join(", ")
 }
 
-/// The required statuses that `.cihub.yaml` gives for `branch`, or `None`
-/// when the file leaves them to the branch protection
-/// (`docs/CONFIGURATION.md`: `null` or no key inherits).
+/// The required statuses that `.cihub.yaml` gives for the queue `name` on
+/// `branch`, or `None` when the file leaves them to the branch protection
+/// (`docs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
+/// entry in the file inherits them (`AGENTS.md` D138).
 ///
 /// # Errors
 ///
@@ -133,12 +135,16 @@ fn numbers(prs: &[u64]) -> String {
 pub fn required_statuses_of_file(
     text: &str,
     branch: &str,
+    name: &str,
 ) -> Result<Option<Vec<String>>, JobError> {
     let config = RepoConfig::parse(text).map_err(|err| err.job_error())?;
-    let queue = config.queues.iter().find(|queue| queue.branch == branch);
-    let setting = queue
-        .and_then(|queue| queue.settings.required_statuses.as_ref())
-        .or(config.defaults.required_statuses.as_ref());
+    let setting = config.queue(branch, name).and_then(|queue| {
+        queue
+            .settings
+            .required_statuses
+            .as_ref()
+            .or(config.defaults.required_statuses.as_ref())
+    });
     match setting.map(|setting| &setting.value) {
         Some(Some(names)) if names.is_empty() => Err(JobError::ConfigMissingRequiredStatuses),
         Some(Some(names)) => Ok(Some(names.clone())),
@@ -231,7 +237,7 @@ impl Assembly<'_> {
     async fn required_statuses(&self) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
         let branch = self.target.target_branch.as_str();
         if let Some(text) = self.config_file().await?
-            && let Some(names) = required_statuses_of_file(&text, branch)?
+            && let Some(names) = required_statuses_of_file(&text, branch, &self.target.name)?
         {
             return Ok((names, RequiredStatusesSource::RepoConfig));
         }
@@ -249,20 +255,14 @@ impl Assembly<'_> {
 
     /// The configuration file of the repository at `base_sha`, if any.
     async fn config_file(&self) -> Result<Option<String>, Step> {
-        let mut found = Vec::new();
-        let mut text = None;
-        for name in FILE_NAMES {
-            let read = self
-                .scm
-                .file(&self.target.repo, &self.request.base_sha, name, self.class)
-                .await?;
-            if let Some(read) = read {
-                found.push(name);
-                text = Some(read);
-            }
-        }
-        find_config_file(found).map_err(|err| err.job_error())?;
-        Ok(text)
+        let read = read_config_file(
+            self.scm,
+            &self.target.repo,
+            &self.request.base_sha,
+            self.class,
+        )
+        .await?;
+        Ok(read.map_err(|err| err.job_error())?)
     }
 
     /// Creates the test branch: the temporary branch at `base_sha`, the heads
@@ -440,23 +440,22 @@ pub(crate) async fn run_state(
 pub(crate) async fn execute_assemble(
     pool: PgPool,
     scm: Arc<dyn Scm>,
-    settings: Arc<QueueSettings>,
     job: Job,
     now: OffsetDateTime,
 ) -> Outcome {
-    outcome(assemble_run(&pool, scm.as_ref(), &settings, &job, now).await)
+    outcome(assemble_run(&pool, scm.as_ref(), &job, now).await)
 }
 
 async fn assemble_run(
     pool: &PgPool,
     scm: &dyn Scm,
-    settings: &QueueSettings,
     job: &Job,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: AssembleTestBranch = read_payload(job)?;
     let run_id = request.run_id;
     let target = target_of(pool, job).await?;
+    let settings = &target.settings()?;
     let Some((RunStatus::Assembling, started_at)) = run_state(pool, run_id).await? else {
         info!(%run_id, "run no longer waits for its test branch");
         return Ok(());
@@ -588,6 +587,9 @@ mod tests {
                 name: "app".into(),
             },
             target_branch: "main".into(),
+            name: "main".into(),
+            config_text: None,
+            config_sha: None,
             enabled: true,
             repo_id: RepoId::from_ulid(Ulid(6)),
         }
@@ -690,14 +692,20 @@ mod tests {
             ),
             (queue("    required_statuses: null\n"), "main", Ok(None)),
             (queue(""), "main", Ok(None)),
-            // Another branch: the defaults apply.
+            // The entry without the key: the defaults of the file apply.
+            (
+                format!("{}defaults:\n  required_statuses: [build]\n", queue("")),
+                "main",
+                Ok(Some(vec!["build".into()])),
+            ),
+            // No entry for the queue: neither the file nor its defaults apply.
             (
                 format!(
                     "{}defaults:\n  required_statuses: [build]\n",
                     queue("    required_statuses: [ci]\n")
                 ),
                 "release",
-                Ok(Some(vec!["build".into()])),
+                Ok(None),
             ),
             (
                 queue("    required_statuses: []\n"),
@@ -721,7 +729,11 @@ mod tests {
             ),
         ];
         for (text, branch, want) in cases {
-            assert_eq!(required_statuses_of_file(&text, branch), want, "{text}");
+            assert_eq!(
+                required_statuses_of_file(&text, branch, "main"),
+                want,
+                "{text}"
+            );
         }
     }
 

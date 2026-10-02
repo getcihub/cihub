@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, JobClass, Mergeability, OrgId,
     Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia, UserId,
@@ -362,17 +361,15 @@ async fn refresh(
 pub(crate) async fn execute_submit(
     pool: PgPool,
     scm: Arc<dyn Scm>,
-    settings: Arc<QueueSettings>,
     job: Job,
     now: OffsetDateTime,
 ) -> Outcome {
-    outcome(submit_pr(&pool, scm.as_ref(), &settings, &job, now).await)
+    outcome(submit_pr(&pool, scm.as_ref(), &job, now).await)
 }
 
 async fn submit_pr(
     pool: &PgPool,
     scm: &dyn Scm,
-    settings: &QueueSettings,
     job: &Job,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
@@ -418,6 +415,11 @@ async fn submit_pr(
         );
         return Ok(());
     };
+    let settings = target.settings()?;
+    if request.via == SubmittedVia::Comment && !settings.commands_enabled.value {
+        info!(pr_number, "submission dropped: commands disabled");
+        return Ok(());
+    }
     if request.via == SubmittedVia::Label && !pr.labels.contains(&settings.enqueue_label.value) {
         info!(pr_number, "submission dropped: label removed");
         return Ok(());
@@ -590,6 +592,9 @@ mod tests {
                 name: "app".into(),
             },
             target_branch: "main".into(),
+            name: "main".into(),
+            config_text: None,
+            config_sha: None,
             enabled: true,
             repo_id: RepoId::from_ulid(ulid::Ulid(6)),
         };

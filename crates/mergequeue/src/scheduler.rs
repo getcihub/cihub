@@ -30,6 +30,7 @@ use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
 use crate::command::{Merge, parse_merge};
+use crate::config::load_config;
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
@@ -54,7 +55,6 @@ pub const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
 /// What a reconciliation needs besides the queue.
 #[derive(Clone)]
 pub struct Reconciler {
-    pub settings: Arc<QueueSettings>,
     pub translate: Translate,
 }
 
@@ -102,6 +102,7 @@ impl Reconciler {
                 .await
                 .map_err(MergeQueueError::Platform);
         }
+        let settings = target.settings()?;
         let mut log = QueueLog::load(conn, queue).await?;
         // The facts that the jobs gave back come first: a check reported on
         // a test branch needs the assembly fact of its run.
@@ -124,7 +125,7 @@ impl Reconciler {
                 Ok(read) => {
                     let work = Work {
                         target: &target,
-                        settings: &self.settings,
+                        settings: &settings,
                         log: &log,
                         delivery,
                     };
@@ -147,12 +148,28 @@ impl Reconciler {
             .await
             .map_err(MergeQueueError::Platform)?;
         }
+        let requested_mode = log.snapshot.requested_mode;
+        if settings.mode.value != requested_mode {
+            facts.push(Event {
+                id: new_event_id(),
+                org_id: target.org_id,
+                queue_id: queue,
+                actor: Actor::System,
+                occurred_at: now,
+                cause_id: None,
+                kind: EventKind::QueueSettingsChanged {
+                    before: requested_mode,
+                    after: settings.mode.value,
+                },
+            });
+        }
         written += log.write(conn, facts, now).await?.len();
-        let plan = plan(&log.snapshot, &self.settings, now).map_err(MergeQueueError::Plan)?;
+        let plan = plan(&log.snapshot, &settings, now).map_err(MergeQueueError::Plan)?;
         let ended = ended_runs(&plan.decisions);
         let decisions = log.write(conn, plan.decisions, now).await?.len();
         let converge = Converge {
             target: &target,
+            settings: &settings,
             log: &log,
             desired: &plan.desired,
             ended: &ended,
@@ -176,7 +193,9 @@ impl Reconciler {
     }
 
     /// Requests `jobs`, then the jobs that make the SCM converge to the
-    /// desired state: the reads that are due (PRs, checks, target head), the
+    /// desired state: the read of the configuration file on a new head of the
+    /// target (`AGENTS.md` D136), the reads that are due (PRs, checks, target
+    /// head), the
     /// assembly of each run that waits for its test branch, the merge of each
     /// proved item, and the cleanup of each run that ended, after the
     /// retention (`AGENTS.md` D117). Returns the number of new jobs.
@@ -188,6 +207,11 @@ impl Reconciler {
         now: OffsetDateTime,
     ) -> Result<usize, MergeQueueError> {
         let target = converge.target;
+        if let Some(head) = &converge.log.snapshot.target.head
+            && target.config_sha.as_deref() != Some(head.value.as_str())
+        {
+            jobs.push(load_config(target, &head.value));
+        }
         for (point, prs) in reads_by_point(&converge.desired.observe) {
             for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
                 jobs.push(refresh_at(target, point, chunk, prs.to_vec()));
@@ -213,7 +237,9 @@ impl Reconciler {
                 jobs.push(assemble(target, branch));
             }
         }
-        let keep = Duration::minutes(i64::from(self.settings.keep_test_branches_minutes.value));
+        let keep = Duration::minutes(i64::from(
+            converge.settings.keep_test_branches_minutes.value,
+        ));
         let cleanups = converge
             .ended
             .iter()
@@ -234,6 +260,7 @@ impl Reconciler {
 /// What a reconciliation converges to, once its decisions are written.
 struct Converge<'a> {
     target: &'a QueueTarget,
+    settings: &'a QueueSettings,
     log: &'a QueueLog,
     desired: &'a cihub_mq_core::Desired,
     /// The runs that the decisions ended.
@@ -504,9 +531,9 @@ pub async fn pass_connection_deliveries(
                         author,
                         body,
                     } => {
-                        let merge = parse_merge(&body)
-                            .filter(|_| reconciler.settings.commands_enabled.value);
-                        if let Some(merge) = merge {
+                        // `submit_pr` checks `commands_enabled` on the queue
+                        // that it finds.
+                        if let Some(merge) = parse_merge(&body) {
                             let command = Command {
                                 repo_external_id: &repo_external_id,
                                 number,

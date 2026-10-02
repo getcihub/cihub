@@ -8,6 +8,7 @@
 
 mod assembly;
 mod command;
+mod config;
 mod jobs;
 mod log;
 mod merge;
@@ -18,7 +19,6 @@ mod target;
 
 use std::sync::Arc;
 
-use cihub_config::{Layer, QueueSettings};
 use cihub_domain::ModuleName;
 use cihub_platform::{LoopError, Module};
 use cihub_scm::Scm;
@@ -29,6 +29,7 @@ pub use assembly::{
     ASSEMBLE_TEST_BRANCH, ASSEMBLY_ATTEMPTS, CLEANUP_TEST_BRANCH, draft_pr_body, draft_pr_title,
     required_statuses_of_file,
 };
+pub use config::LOAD_CONFIG;
 pub use jobs::{REFRESH_PRS, SUBMIT_PR, queue_status_context};
 pub use log::{COVER_AFTER, QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use merge::{MERGE_ATTEMPTS, MERGE_PR, MERGE_RATE_LIMIT_WAIT, merge_commit_title};
@@ -47,7 +48,7 @@ pub enum MergeQueueError {
     Store(#[source] cihub_store::StoreError),
     #[error("transport failed")]
     Platform(#[source] cihub_platform::PlatformError),
-    #[error("the default settings are not valid")]
+    #[error("the settings of the queue are not valid")]
     Settings(#[source] cihub_config::ConfigError),
     #[error("queue {0} does not exist")]
     UnknownQueue(cihub_domain::QueueId),
@@ -80,62 +81,48 @@ pub enum MergeQueueError {
     Snapshot(#[source] serde_json::Error),
 }
 
-/// The settings of every queue until lot 8 reads them from the file.
-///
-/// # Errors
-///
-/// The defaults do not pass their own checks: a bug of `cihub-config`.
-pub fn default_settings() -> Result<QueueSettings, MergeQueueError> {
-    QueueSettings::resolve(&Layer::default(), &Layer::default()).map_err(MergeQueueError::Settings)
-}
-
 /// The clock of the process, as the module receives it.
 pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
 /// The merge queue module (`AGENTS.md` D94): the executors of its jobs, which
 /// call `scm`, and its scheduler loop, which runs as `owner`.
-///
-/// # Errors
-///
-/// The default settings are not valid.
 pub fn module(
     pool: PgPool,
     scm: Arc<dyn Scm>,
     translate: Translate,
     owner: String,
     clock: Clock,
-) -> Result<Module, MergeQueueError> {
-    let settings = Arc::new(default_settings()?);
-    let reconciler = Reconciler {
-        settings: settings.clone(),
-        translate,
-    };
-    Ok(Module {
+) -> Module {
+    let reconciler = Reconciler { translate };
+    Module {
         name: ModuleName::Mergequeue,
         executors: Box::new(move |executors| {
             let (refresh_scm, submit_scm, assemble_scm) = (scm.clone(), scm.clone(), scm.clone());
             let (merge_scm, checks_scm, target_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let (submit_settings, merge_settings) = (settings.clone(), settings.clone());
+            let config_scm = scm.clone();
             executors.register(REFRESH_PRS, move |pool, job, now| {
                 jobs::execute_refresh(pool, refresh_scm.clone(), job, now)
             });
             executors.register(SUBMIT_PR, move |pool, job, now| {
-                jobs::execute_submit(pool, submit_scm.clone(), submit_settings.clone(), job, now)
+                jobs::execute_submit(pool, submit_scm.clone(), job, now)
             });
             executors.register(ASSEMBLE_TEST_BRANCH, move |pool, job, now| {
-                assembly::execute_assemble(pool, assemble_scm.clone(), settings.clone(), job, now)
+                assembly::execute_assemble(pool, assemble_scm.clone(), job, now)
             });
             executors.register(CLEANUP_TEST_BRANCH, move |pool, job, _| {
                 assembly::execute_cleanup(pool, scm.clone(), job)
             });
             executors.register(MERGE_PR, move |pool, job, now| {
-                merge::execute_merge(pool, merge_scm.clone(), merge_settings.clone(), job, now)
+                merge::execute_merge(pool, merge_scm.clone(), job, now)
             });
             executors.register(REFRESH_CHECKS, move |pool, job, now| {
                 repair::execute_refresh_checks(pool, checks_scm.clone(), job, now)
             });
             executors.register(REFRESH_TARGET, move |pool, job, now| {
                 repair::execute_refresh_target(pool, target_scm.clone(), job, now)
+            });
+            executors.register(LOAD_CONFIG, move |pool, job, _| {
+                config::execute_load_config(pool, config_scm.clone(), job)
             });
         }),
         scheduler: Box::new(move |cancel| {
@@ -145,5 +132,5 @@ pub fn module(
                     .map_err(|err| Box::new(err) as LoopError)
             })
         }),
-    })
+    }
 }

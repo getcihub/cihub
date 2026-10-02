@@ -1,3 +1,4 @@
+use cihub_config::{Layer, QueueSettings, RepoConfig};
 use cihub_domain::{ModuleName, OrgId, QueueId, RepoId, ScmInstanceId};
 use cihub_scm::{ConnectionRef, RepoRef};
 use sqlx::PgConnection;
@@ -22,6 +23,11 @@ pub(crate) struct QueueTarget {
     pub repo_id: RepoId,
     pub repo: RepoRef,
     pub target_branch: String,
+    pub name: String,
+    /// The last valid configuration file, and the head of the target at the
+    /// last read (`AGENTS.md` D136).
+    pub config_text: Option<String>,
+    pub config_sha: Option<String>,
     /// The organization has the module (`AGENTS.md` D94).
     pub enabled: bool,
 }
@@ -30,6 +36,9 @@ type Row = (
     String,
     String,
     String,
+    String,
+    Option<String>,
+    Option<String>,
     String,
     String,
     String,
@@ -42,7 +51,7 @@ type Row = (
 
 /// The columns of [`Row`]: the queue, its repository, its connection, and
 /// whether its organization has the module (`$1`).
-const COLUMNS: &str = "q.id, q.org_id, q.target_branch, r.id, r.scm_instance_id, r.external_id,
+const COLUMNS: &str = "q.id, q.org_id, q.target_branch, q.name, q.config_text, q.config_sha, r.id, r.scm_instance_id, r.external_id,
     r.namespace, r.name, c.id, c.external_id,
     EXISTS (SELECT 1 FROM org_modules m WHERE m.org_id = q.org_id AND m.module = $1::module_name)
     FROM queues q
@@ -50,8 +59,22 @@ const COLUMNS: &str = "q.id, q.org_id, q.target_branch, r.id, r.scm_instance_id,
     JOIN scm_connections c ON c.id = r.connection_id";
 
 fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
-    let (queue, org, branch, repo, instance, external_id, namespace, name, connection, cext, on) =
-        row;
+    let (
+        queue,
+        org,
+        branch,
+        queue_name,
+        config_text,
+        config_sha,
+        repo,
+        instance,
+        external_id,
+        namespace,
+        name,
+        connection,
+        cext,
+        on,
+    ) = row;
     let read = |source| MergeQueueError::ReadQueue {
         id: queue.clone(),
         source,
@@ -71,6 +94,9 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
             name,
         },
         target_branch: branch,
+        name: queue_name,
+        config_text,
+        config_sha,
         enabled: on,
     })
 }
@@ -95,7 +121,24 @@ impl QueueTarget {
         decode(row.ok_or(MergeQueueError::UnknownQueue(queue))?)
     }
 
-    /// The queue of the branch `branch` of the repository `repo`, if any.
+    /// The settings of the queue, from its last valid file (`AGENTS.md`
+    /// D136).
+    ///
+    /// # Errors
+    ///
+    /// The file is no longer valid: it was valid when the queue read it, so
+    /// only a new version of CIHub can refuse it.
+    pub(crate) fn settings(&self) -> Result<QueueSettings, MergeQueueError> {
+        let settings = match &self.config_text {
+            Some(text) => RepoConfig::parse(text)
+                .and_then(|config| config.settings(&self.target_branch, &self.name)),
+            None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
+        };
+        settings.map_err(MergeQueueError::Settings)
+    }
+
+    /// The first queue of the branch `branch` of the repository `repo`, if
+    /// any. The routing between the queues of a branch comes later in lot 8.
     ///
     /// # Errors
     ///
@@ -107,7 +150,8 @@ impl QueueTarget {
         branch: &str,
     ) -> Result<Option<Self>, MergeQueueError> {
         let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} WHERE r.id = $2 AND q.target_branch = $3"
+            "SELECT {COLUMNS} WHERE r.id = $2 AND q.target_branch = $3
+             ORDER BY q.created_at, q.id LIMIT 1"
         )))
         .bind(ModuleName::Mergequeue.as_str())
         .bind(repo.to_string())
@@ -180,6 +224,9 @@ pub(crate) fn test_target() -> QueueTarget {
             name: "app".into(),
         },
         target_branch: "main".into(),
+        name: "main".into(),
+        config_text: None,
+        config_sha: None,
         enabled: true,
         repo_id: RepoId::from_ulid(Ulid(6)),
     }

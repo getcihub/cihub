@@ -107,8 +107,8 @@ async fn seed(pool: &PgPool) {
                             name, default_branch)
              VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app',
                      'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch)
-             VALUES ('{queue}', '{org}', '{repo}', 'main');",
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+             VALUES ('{queue}', '{org}', '{repo}', 'main', 'main');",
         instance = instance(),
         user = user(),
         org = org(),
@@ -511,8 +511,7 @@ impl SimQueue {
             translate(&deliveries),
             "scheduler".into(),
             clock.shared(),
-        )
-        .unwrap();
+        );
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
         let cancel = CancellationToken::new();
@@ -905,7 +904,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     tx.commit().await.unwrap();
 
     let reconciler = Reconciler {
-        settings: Arc::new(cihub_mergequeue::default_settings().unwrap()),
         translate: translate(&deliveries),
     };
     let counts = |pool: PgPool| async move {
@@ -939,14 +937,21 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
-        (1, 1, 0, 0, false)
+        (1, 2, 0, 0, false)
     );
     let mut tx = begin_system(&pool).await.unwrap();
-    let key: String = sqlx::query_scalar("SELECT idempotency_key FROM jobs")
-        .fetch_one(&mut *tx)
+    let keys: Vec<String> = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
+        .fetch_all(&mut *tx)
         .await
         .unwrap();
-    assert_eq!(key, "submit_pr:delivery-0:1");
+    // The head of the target is known: the queue reads its file there.
+    assert_eq!(
+        keys,
+        [
+            format!("load_config:{}-{root}:1", queue()),
+            "submit_pr:delivery-0:1".to_owned()
+        ]
+    );
 }
 
 /// A GitHub that gives an installation token, then answers every call with
@@ -1035,8 +1040,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         translate(&Arc::default()),
         "scheduler".into(),
         Arc::new(clock),
-    )
-    .unwrap();
+    );
     let mut executors = Executors::default();
     (module.executors)(&mut executors);
 
@@ -1496,6 +1500,98 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     q.stop().await;
 }
 
+/// The last valid file of the queue, the head read, and the error.
+async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as("SELECT config_text, config_sha, config_error FROM queues WHERE id = $1")
+        .bind(queue().to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// `AGENTS.md` D136, D137: the queue reads its file on each new head of its
+/// target, keeps the last valid one, and follows its mode.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let file =
+        |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+    let valid = file("    branch_prefix: ship\n");
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &valid)]);
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(
+        config_of(&pool).await,
+        (Some(valid.clone()), Some(main.clone()), None)
+    );
+
+    // A file that is not valid keeps the last valid one, with the error.
+    let broken_file = file("    window: { floor: 30 }\n");
+    let broken = sim
+        .commit(&repo(), &main, &[(".cihub.yaml", Some(&broken_file))])
+        .unwrap();
+    sim.push(&repo(), "main", &broken, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let (text, sha, error) = config_of(&pool).await;
+    assert_eq!((text, sha), (Some(valid), Some(broken.clone())));
+    let error = error.unwrap();
+    assert!(
+        error.contains("window.floor (30) is greater than window.ceiling (20)"),
+        "{error}"
+    );
+
+    // A new mode: the queue records it, and switches at once without a live
+    // item.
+    let parallel_file = file("    strategy: parallel\n");
+    let parallel = sim
+        .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
+        .unwrap();
+    sim.push(&repo(), "main", &parallel, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(
+        config_of(&pool).await,
+        (Some(parallel_file), Some(parallel), None)
+    );
+    let mut tx = begin_system(&pool).await.unwrap();
+    let events: Vec<(String, serde_json::Value)> = sqlx::query_as(
+        "SELECT type::text, payload FROM events WHERE type::text LIKE 'queue.%' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let events: Vec<(&str, &serde_json::Value)> = events
+        .iter()
+        .map(|(kind, payload)| (kind.as_str(), payload))
+        .collect();
+    assert_eq!(
+        events,
+        [
+            (
+                "queue.settings_changed",
+                &serde_json::json!({ "before": "single", "after": "parallel" })
+            ),
+            (
+                "queue.transitioned",
+                &serde_json::json!({
+                    "from": "running", "to": "switching_modes", "reason": "mode_changed"
+                })
+            ),
+            (
+                "queue.transitioned",
+                &serde_json::json!({
+                    "from": "switching_modes", "to": "running", "reason": "mode_switch_completed"
+                })
+            ),
+        ]
+    );
+    drop(tx);
+    q.stop().await;
+}
+
 async fn partition_exists(pool: &PgPool, name: &str) -> bool {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
@@ -1526,7 +1622,6 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     // snapshot; then the partition goes.
     assert_eq!(wake_uncovered(&pool, today).await.unwrap(), 1);
     let reconciler = Reconciler {
-        settings: Arc::new(cihub_mergequeue::default_settings().unwrap()),
         translate: translate(&Arc::default()),
     };
     reconciler.reconcile(&pool, queue(), today).await.unwrap();
@@ -1942,8 +2037,8 @@ impl Chaos {
                                 namespace, name, default_branch)
                  VALUES ('{repo_id}', '{org}', '{instance}', '{connection}', '{repo_external_id}',
                          'acme', '{name}', 'main');
-             INSERT INTO queues (id, org_id, repo_id, target_branch)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main');",
+             INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');",
             org = chaos.org(),
             account = ScmAccountId::from_ulid(chaos.id(4)),
             instance = instance(),
@@ -1979,8 +2074,7 @@ impl Chaos {
             translate(&self.deliveries),
             format!("scheduler-{}-{}", self.seed, self.generation),
             self.clock.shared(),
-        )
-        .unwrap();
+        );
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
         let cancel = CancellationToken::new();
@@ -2135,7 +2229,6 @@ impl Chaos {
         .unwrap();
         drop(tx);
         let reconciler = Reconciler {
-            settings: Arc::new(cihub_mergequeue::default_settings().unwrap()),
             translate: translate(&self.deliveries),
         };
         let direct = reconciler

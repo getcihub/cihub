@@ -121,22 +121,21 @@ fn after_error(request: &MergePr, err: &ScmError, attempts: i32, now: OffsetDate
 pub(crate) async fn execute_merge(
     pool: PgPool,
     scm: Arc<dyn Scm>,
-    settings: Arc<QueueSettings>,
     job: Job,
     now: OffsetDateTime,
 ) -> Outcome {
-    outcome(merge_pr(&pool, scm.as_ref(), &settings, &job, now).await)
+    outcome(merge_pr(&pool, scm.as_ref(), &job, now).await)
 }
 
 async fn merge_pr(
     pool: &PgPool,
     scm: &dyn Scm,
-    settings: &QueueSettings,
     job: &Job,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: MergePr = read_payload(job)?;
     let target = target_of(pool, job).await?;
+    let settings = &target.settings()?;
     let item_id = request.item_id;
     if !still_to_merge(pool, &request).await? {
         info!(%item_id, "item no longer waits for its merge");
