@@ -1,4 +1,4 @@
--- The log of the queues (AGENTS.md D5): facts and decisions, append-only,
+-- The log of the queues (DECISIONS.md D5): facts and decisions, append-only,
 -- partitioned by month on occurred_at (D36). A user actor points to `users`,
 -- which keeps the login (D42).
 

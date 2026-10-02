@@ -58,7 +58,7 @@ pub async fn run(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 }
 
 /// The account of the connection of `repo`, and its repositories
-/// (`AGENTS.md` D155).
+/// (`DECISIONS.md` D155).
 async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let account = scm
         .installation(&repo.connection.external_id, CLASS)

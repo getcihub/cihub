@@ -13,7 +13,7 @@ use tracing::info;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 /// The type of the job that asks the SCM again for the deliveries missing
-/// from the inbox (`AGENTS.md` D88).
+/// from the inbox (`DECISIONS.md` D88).
 pub const SWEEP_DELIVERIES: &str = "sweep_deliveries";
 
 /// A scheduler requests the sweep this often.
@@ -110,7 +110,7 @@ pub async fn run_sweep(
 }
 
 /// The executor of [`SWEEP_DELIVERIES`] for `instance`, with its SCM
-/// (`AGENTS.md` D71).
+/// (`DECISIONS.md` D71).
 pub fn sweep_executor(
     scm: Arc<dyn Scm>,
     instance: ScmInstanceId,

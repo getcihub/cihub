@@ -1,5 +1,5 @@
 //! The requests, the responses and the errors of the public API v1
-//! (`docs/API.md`, `AGENTS.md` D159, D160), shared by the server and the
+//! (`docs/API.md`, `DECISIONS.md` D159, D160), shared by the server and the
 //! clients. Pure: no I/O and no server code. The feature `openapi` derives
 //! the `OpenAPI` schemas, for the server only.
 
@@ -102,7 +102,7 @@ pub struct Queue {
     /// The head of the target whose configuration file the queue read last.
     pub config_sha: Option<String>,
     /// Why the last file read is not valid; the queue keeps the last valid
-    /// one (`AGENTS.md` D134).
+    /// one (`DECISIONS.md` D134).
     pub config_error: Option<String>,
 }
 
@@ -113,7 +113,7 @@ pub struct QueueList {
 }
 
 /// `POST /repos/{owner}/{name}/queues`: the settings come from the file of
-/// the repository only (`AGENTS.md` D134).
+/// the repository only (`DECISIONS.md` D134).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateQueue {
@@ -307,7 +307,7 @@ pub struct Dependent {
     pub pr_numbers: Vec<u64>,
 }
 
-/// `GET /test-runs/{run_id}`, as `docs/API.md` fixes it (`AGENTS.md` D115).
+/// `GET /test-runs/{run_id}`, as `docs/API.md` fixes it (`DECISIONS.md` D115).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TestRun {
@@ -377,7 +377,7 @@ pub struct AuditPage {
 }
 
 /// A point of the configuration of the SCM that the queue needs
-/// (`AGENTS.md` D162).
+/// (`DECISIONS.md` D162).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Finding {

@@ -1,4 +1,4 @@
-//! The recorded answers of GitHub (`AGENTS.md` D90): the world of the
+//! The recorded answers of GitHub (`DECISIONS.md` D90): the world of the
 //! contract suite, and each exchange in the order of the calls. The example
 //! `github` writes them; the tests replay them.
 #![allow(

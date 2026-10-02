@@ -20,7 +20,7 @@ pub const ROUTE_POLL: Duration = Duration::from_secs(5);
 /// A pass routes at most this many deliveries in one transaction.
 pub const ROUTES_PER_PASS: i64 = 100;
 
-/// Where a delivery goes (`AGENTS.md` D85, D86).
+/// Where a delivery goes (`DECISIONS.md` D85, D86).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Route {
     /// `None` while the connection is unknown: only the system sees the
@@ -86,7 +86,7 @@ pub async fn unrouted_deliveries(
 
 /// Where `delivery` goes: its connection when CIHub knows it, and its queue
 /// when one is sure: a PR by its base branch, a push by its branch, a check
-/// by the test branch that names its run (`AGENTS.md` D85).
+/// by the test branch that names its run (`DECISIONS.md` D85).
 ///
 /// # Errors
 ///
@@ -157,7 +157,7 @@ pub async fn find_route(
 }
 
 /// The queue of the branch `branch` of a repository, when the branch has
-/// only one (`AGENTS.md` D135).
+/// only one (`DECISIONS.md` D135).
 async fn queue_of_branch(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -179,7 +179,7 @@ async fn queue_of_branch(
 
 /// The queue of the run that a check on a repository reports on: the run
 /// named by the test branch, or, once the branch is gone, the last run whose
-/// test SHA is `sha` (a late report, `AGENTS.md` D118).
+/// test SHA is `sha` (a late report, `DECISIONS.md` D118).
 async fn queue_of_run(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -251,7 +251,7 @@ pub async fn route_delivery(
 
 /// Routes the deliveries that wait, [`ROUTES_PER_PASS`] per transaction,
 /// then waits for [`INBOX_CHANNEL`] or `idle_wait`, until cancellation. `translate`
-/// reads a delivery of the SCM (`AGENTS.md` D84); a delivery that it cannot
+/// reads a delivery of the SCM (`DECISIONS.md` D84); a delivery that it cannot
 /// read is routed as processed, with a warning.
 ///
 /// # Errors
@@ -334,7 +334,7 @@ where
         let routed =
             route_delivery(&mut tx, delivery.scm_instance_id, delivery_id, route, now).await?;
         // The repositories of the connection changed: CIHub reads them again
-        // (`AGENTS.md` D155).
+        // (`DECISIONS.md` D155).
         if let (true, true, Some(org_id), Some(connection)) =
             (routed, repos_changed, route.org_id, route.connection_id)
         {

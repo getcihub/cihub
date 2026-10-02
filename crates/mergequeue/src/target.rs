@@ -25,10 +25,10 @@ pub(crate) struct QueueTarget {
     pub target_branch: String,
     pub name: String,
     /// The last valid configuration file, and the head of the target at the
-    /// last read (`AGENTS.md` D136).
+    /// last read (`DECISIONS.md` D136).
     pub config_text: Option<String>,
     pub config_sha: Option<String>,
-    /// The organization has the module (`AGENTS.md` D94).
+    /// The organization has the module (`DECISIONS.md` D94).
     pub enabled: bool,
 }
 
@@ -121,7 +121,7 @@ impl QueueTarget {
         decode(row.ok_or(MergeQueueError::UnknownQueue(queue))?)
     }
 
-    /// The settings of the queue, from its last valid file (`AGENTS.md`
+    /// The settings of the queue, from its last valid file (`DECISIONS.md`
     /// D136).
     ///
     /// # Errors
@@ -139,7 +139,7 @@ impl QueueTarget {
 
     /// The queues of the branch `branch` of the repository `repo`, in the
     /// order of the configuration file, which is the order of the routing
-    /// (`AGENTS.md` D148); the queues that the file does not name come last,
+    /// (`DECISIONS.md` D148); the queues that the file does not name come last,
     /// by age.
     ///
     /// # Errors

@@ -1,4 +1,4 @@
--- Lot 9. What each PR of a queue shows (AGENTS.md D156): the rendering that the
+-- Lot 9. What each PR of a queue shows (DECISIONS.md D156): the rendering that the
 -- reconciliation wants, and what the SCM shows. No event: like
 -- check_observations, the comment of the SCM is not a state of the queue.
 CREATE TABLE pr_surfaces (

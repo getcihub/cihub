@@ -1,178 +1,177 @@
-# Déploiement et infrastructure
+# Deployment and infrastructure
 
-Contexte : qui touche au `compose.yaml`, à l'image, aux migrations ou à la CI du projet. Le code et les fichiers du
-dépôt sont la source de vérité (`AGENTS.md` D1).
+## Installation target
 
-## Cible d'installation
+The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
+`cihub-server` binary, which by default runs the four roles (`web`, `scheduler`, `worker`, `notifier`) in one
+process; `CIHUB_ROLES` selects a subset of them to give each role its own processes
+(`docs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `docs/GITHUB.md`
+(`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
 
-L'installation de référence tient en une image, un Postgres 17 et une GitHub App. L'image contient le binaire
-`cihub-server`, qui exécute par défaut les quatre rôles (`web`, `scheduler`, `worker`, `notifier`) dans un
-processus ; `CIHUB_ROLES` en choisit une partie pour donner à chaque rôle ses propres processus
-(`docs/ARCHITECTURE.md`, « Passer à l'échelle »). La GitHub App se crée à la main, selon `docs/GITHUB.md`
-(`AGENTS.md` D92). Le chart Helm arrive au lot 15.
+## Development
 
-## Développement
-
-`compose.yaml`, à la racine, démarre seulement Postgres (`postgres:17.5-alpine`), publié sur `127.0.0.1:5432`
-(`AGENTS.md` D12). Le superutilisateur est `postgres` (mot de passe `postgres`). Le service ponctuel
-`postgres-setup` amène le rôle `cihub` (mot de passe `cihub`), qui n'est pas superutilisateur et peut créer des
-bases pour les tests, et la base `cihub` qu'il possède, à l'état voulu (D38, D52). Il tourne à chaque démarrage :
-un changement de sa commande s'applique sans effacer les données. Ces valeurs servent au développement seulement.
+`compose.yaml`, at the root, starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`
+(`DECISIONS.md` D12). The superuser is `postgres` (password `postgres`). The one-shot service
+`postgres-setup` brings the `cihub` role (password `cihub`), which is not a superuser and can create
+databases for the tests, and the `cihub` database it owns, to the desired state (D38, D52). It runs at each start:
+a change to its command applies without erasing the data. These values are for development only.
 
 ```sh
-mise run db            # Postgres, puis postgres-setup
-mise run db-reset      # efface les données, puis mise run db (après la réécriture d'une migration)
-mise run migrate       # Postgres, puis cihub-server migrate
-mise run dev           # migrate, puis cihub-server avec les quatre rôles et les logs pretty
-docker compose down    # arrête Postgres et garde le volume
+mise run db            # Postgres, then postgres-setup
+mise run db-reset      # erases the data, then mise run db (after a migration is rewritten)
+mise run migrate       # Postgres, then cihub-server migrate
+mise run dev           # migrate, then cihub-server with the four roles and pretty logs
+docker compose down    # stops Postgres and keeps the volume
 ```
 
-`mise run dev` demande une GitHub App de test, créée selon `docs/GITHUB.md` (D92). Ses variables vont dans
-`mise.local.toml`, à la racine du dépôt : `mise` le charge avec `mise.toml`, et `.gitignore` l'exclut. La clé
-privée reste hors du dépôt, et le fichier ne donne que son chemin.
+`mise run dev` requires a test GitHub App, created according to `docs/GITHUB.md` (D92). Its variables go in
+`mise.local.toml`, at the root of the repository: `mise` loads it with `mise.toml`, and `.gitignore` excludes it.
+The private key stays outside the repository, and the file gives only its path.
 
 ```toml
-# mise.local.toml : jamais commité
+# mise.local.toml: never committed
 [env]
 CIHUB_GITHUB_APP_ID = "123456"
-CIHUB_GITHUB_PRIVATE_KEY_FILE = "/Users/<vous>/.config/cihub/cihub-test.private-key.pem"
-CIHUB_GITHUB_WEBHOOK_SECRET = "<le secret de webhook de l'App>"
+CIHUB_GITHUB_PRIVATE_KEY_FILE = "/Users/<you>/.config/cihub/cihub-test.private-key.pem"
+CIHUB_GITHUB_WEBHOOK_SECRET = "<the webhook secret of the App>"
 ```
 
-La première fois, `mise trust mise.local.toml` autorise le fichier. Pour recevoir les webhooks en local, l'URL
-de webhook de l'App pointe vers un tunnel qui mène au port 8080.
+The first time, `mise trust mise.local.toml` authorizes the file. To receive webhooks locally, the webhook URL
+of the App points to a tunnel that leads to port 8080.
 
-Les tâches `mise` sont listées dans `AGENTS.md` §5.
+`mise tasks` lists the project tasks and their description.
 
-## Variables du serveur
+## Server variables
 
-`cihub-server` lit sa configuration dans des variables `CIHUB_*` (`AGENTS.md` D31). Une valeur invalide arrête le
-processus au démarrage.
+`cihub-server` reads its configuration from `CIHUB_*` variables (`DECISIONS.md` D31). An invalid value stops the
+process at startup.
 
-| Variable              | Défaut                              | Rôle                                                                        |
+| Variable              | Default                             | Role                                                                        |
 | --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `CIHUB_ROLES`         | `web,scheduler,worker,notifier`     | Rôles du processus, séparés par des virgules (`AGENTS.md` D8)               |
-| `CIHUB_DATABASE_URL`  | aucun, obligatoire                  | `postgres://utilisateur:mot-de-passe@hôte/base`, secret ; l'utilisateur n'est ni superutilisateur ni `BYPASSRLS` |
-| `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Adresse de `/healthz` et `/readyz`, à ne pas exposer (`docs/SECURITY.md`)   |
-| `CIHUB_HTTP_ADDR`     | `0.0.0.0:8080`                      | Adresse publique du rôle `web` : webhooks sur `POST /webhooks/github`, puis l'API (`AGENTS.md` D82, D83) |
-| `CIHUB_LOG`           | `info`                              | Filtre des logs (`docs/OBSERVABILITY.md`)                                   |
-| `CIHUB_LOG_FORMAT`    | `json`                              | `json` ou `pretty` (`docs/OBSERVABILITY.md`)                                |
-| `CIHUB_GITHUB_URL`    | `https://github.com`                | github.com ou l'adresse d'un GitHub Enterprise Server (`AGENTS.md` D79)     |
-| `CIHUB_GITHUB_APP_ID` | aucun, obligatoire pour le serveur  | Identifiant de la GitHub App ; `cihub-server migrate` n'en a pas besoin (`AGENTS.md` D92) |
-| `CIHUB_GITHUB_PRIVATE_KEY` | aucun                          | Clé privée PEM de l'App, secret ; exigée avec `CIHUB_GITHUB_APP_ID`, ou `CIHUB_GITHUB_PRIVATE_KEY_FILE` |
-| `CIHUB_GITHUB_PRIVATE_KEY_FILE` | aucun                     | Fichier qui contient la clé privée, à la place de `CIHUB_GITHUB_PRIVATE_KEY` |
-| `CIHUB_GITHUB_WEBHOOK_SECRET` | aucun                       | Secret qui signe les webhooks de l'App ; exigé avec `CIHUB_GITHUB_APP_ID` |
+| `CIHUB_ROLES`         | `web,scheduler,worker,notifier`     | Roles of the process, separated by commas (`DECISIONS.md` D8)                  |
+| `CIHUB_DATABASE_URL`  | none, required                      | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
+| `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Address of `/healthz` and `/readyz`, not to be exposed (`docs/SECURITY.md`) |
+| `CIHUB_HTTP_ADDR`     | `0.0.0.0:8080`                      | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API (`DECISIONS.md` D82, D83) |
+| `CIHUB_LOG`           | `info`                              | Log filter (`docs/OBSERVABILITY.md`)                                        |
+| `CIHUB_LOG_FORMAT`    | `json`                              | `json` or `pretty` (`docs/OBSERVABILITY.md`)                                |
+| `CIHUB_GITHUB_URL`    | `https://github.com`                | github.com or the address of a GitHub Enterprise Server (`DECISIONS.md` D79)   |
+| `CIHUB_GITHUB_APP_ID` | none, required for the server       | Identifier of the GitHub App; `cihub-server migrate` does not need it (`DECISIONS.md` D92) |
+| `CIHUB_GITHUB_PRIVATE_KEY` | none                           | PEM private key of the App, secret; required with `CIHUB_GITHUB_APP_ID`, or `CIHUB_GITHUB_PRIVATE_KEY_FILE` |
+| `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                      | File that contains the private key, instead of `CIHUB_GITHUB_PRIVATE_KEY` |
+| `CIHUB_GITHUB_WEBHOOK_SECRET` | none                        | Secret that signs the webhooks of the App; required with `CIHUB_GITHUB_APP_ID` |
 
-Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent. `/healthz`
-répond `200` tant que le processus tourne ; `/readyz` répond `503` quand Postgres ne répond pas en 2 s.
+In a container, `CIHUB_INTERNAL_ADDR` must listen on `0.0.0.0` so that the probes reach it. `/healthz`
+answers `200` as long as the process runs; `/readyz` answers `503` when Postgres does not answer within 2 s.
 
 ## Image
 
-`Dockerfile`, à la racine, construit l'image de `cihub-server` en deux étapes : la compilation sur
-`rust:1.98.1-slim-bookworm` (le Rust de `mise.toml`, avec la glibc de Debian 12), puis l'exécution sur
-`gcr.io/distroless/cc-debian12:nonroot`. Les deux images sont épinglées par leur digest, avec le tag en
-commentaire. Le binaire est `/usr/local/bin/cihub-server`, la licence du projet est dans `/usr/share/doc/cihub/`.
-L'image écoute sur `0.0.0.0:8080` (adresse publique) et met `CIHUB_INTERNAL_ADDR` à `0.0.0.0:8081`, pour que les
-sondes atteignent `/healthz` et `/readyz`. Sous Linux, le client TLS lit les certificats racines du système, que
-l'image d'exécution fournit : le binaire n'embarque pas de liste de certificats (`AGENTS.md` D81). Le profil
-`release` de `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) sert à cette image.
+`Dockerfile`, at the root, builds the `cihub-server` image in two stages: compilation on
+`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
+`gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
+comment. The binary is `/usr/local/bin/cihub-server`, the project license is in `/usr/share/doc/cihub/`.
+The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
+probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root certificates of the system, which
+the runtime image provides: the binary does not embed a list of certificates (`DECISIONS.md` D81). The
+`release` profile of `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) is used for this image.
 
-`.github/workflows/image.yaml` publie l'image sur `ghcr.io/getcihub/cihub-server` à chaque release
-(`AGENTS.md` D19), avec les tags `X.Y.Z`, `X.Y` et `latest`, et à la demande, avec le tag `sha-<commit>`. Un job
-par architecture (`linux/amd64` sur `ubuntu-26.04`, `linux/arm64` sur `ubuntu-26.04-arm`) construit l'image sur un
-runner natif et la pousse par son digest ; un dernier job réunit les deux digests dans un manifeste.
+`.github/workflows/image.yaml` publishes the image to `ghcr.io/getcihub/cihub-server` at each release
+(`DECISIONS.md` D19), with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. One job
+per architecture (`linux/amd64` on `ubuntu-26.04`, `linux/arm64` on `ubuntu-26.04-arm`) builds the image on a
+native runner and pushes it by its digest; a last job joins the two digests in a manifest.
 
-## Installation par Docker Compose
+## Installation with Docker Compose
 
-`deploy/compose.yaml` est le `docker compose` d'installation. Il démarre quatre services :
+`deploy/compose.yaml` is the installation `docker compose`. It starts four services:
 
-| Service          | Rôle                                                                                       |
+| Service          | Role                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------ |
-| `postgres`       | Postgres 17, avec un volume de données ; aucun port publié sur l'hôte                      |
-| `postgres-setup` | Ponctuel : amène le rôle `cihub` (ni superutilisateur ni `BYPASSRLS`) et la base `cihub` à l'état voulu, à chaque démarrage (D38, D52) |
-| `cihub-migrate`  | Ponctuel : `cihub-server migrate` (D14)                                                    |
-| `cihub-server`   | Les quatre rôles ; démarre après la fin sans erreur de `cihub-migrate` ; publie le port 8080 |
+| `postgres`       | Postgres 17, with a data volume; no port published on the host                             |
+| `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start (D38, D52) |
+| `cihub-migrate`  | One-shot: `cihub-server migrate` (D14)                                                     |
+| `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
 
-Les valeurs viennent de `deploy/.env`, à créer depuis `deploy/.env.example` : les mots de passe de Postgres,
-`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` et le chemin de la clé privée de l'App. La clé est montée en
-lecture seule et donnée par `CIHUB_GITHUB_PRIVATE_KEY_FILE` ; l'utilisateur de l'image (uid 65532) doit pouvoir la
-lire. `deploy/.env` ne doit jamais être commité (`.gitignore` l'exclut). Le port interne 8081 n'est pas publié sur
-l'hôte (`docs/SECURITY.md`). La procédure complète est dans `README.md`.
+The values come from `deploy/.env`, to be created from `deploy/.env.example`: the Postgres passwords,
+`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` and the path of the private key of the App. The key is mounted
+read-only and given by `CIHUB_GITHUB_PRIVATE_KEY_FILE`; the user of the image (uid 65532) must be able to
+read it. `deploy/.env` must never be committed (`.gitignore` excludes it). The internal port 8081 is not published on
+the host (`docs/SECURITY.md`). The complete procedure is in `README.md`.
 
 ```sh
 docker compose -f deploy/compose.yaml up -d
 docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
 ```
 
-## Amorcer une organisation
+## Bootstrap an organization
 
-Après l'installation de l'App sur un compte, une commande relie l'installation à une nouvelle organisation, sans
-le tableau de bord (`AGENTS.md` D154, D155) :
+After the App is installed on an account, a command links the installation to a new organization, without
+the dashboard (`DECISIONS.md` D154, D155):
 
 ```sh
-cihub-server admin bootstrap --installation <identifiant de l'installation>
+cihub-server admin bootstrap --installation <identifier of the installation>
 ```
 
-Elle demande les variables du serveur et de la GitHub App, et une base à jour. Elle crée l'organisation (son nom
-est le login du compte), active la merge queue, demande la lecture des dépôts de l'installation et affiche une
-seule fois un jeton d'API de l'organisation avec tous les scopes. L'identifiant de l'installation est à la fin de
-l'URL de la page de l'installation (*Settings → GitHub Apps → Configure*). Relancée sur une installation déjà
-amorcée, la commande ne crée qu'un nouveau jeton : elle sert aussi à reprendre une organisation sans jeton.
+It requires the variables of the server and of the GitHub App, and an up-to-date database. It creates the
+organization (its name is the login of the account), enables the merge queue, requests the read of the
+repositories of the installation and shows once an API token of the organization with all the scopes. The
+identifier of the installation is at the end of the URL of the installation page (*Settings → GitHub Apps →
+Configure*). Run again on an installation already bootstrapped, the command creates only a new token: it also
+serves to recover an organization without a token.
 
 ## Migrations
 
-Les migrations sont explicites (`AGENTS.md` D14) :
+Migrations are explicit (`DECISIONS.md` D14):
 
-- `cihub-server migrate` applique les migrations embarquées qui manquent, puis s'arrête.
-- Au démarrage, `cihub-server` n'applique rien : il s'arrête si une migration embarquée manque en base. Une
-  migration en base que le binaire ne connaît pas vient d'une version plus récente et n'empêche pas le démarrage.
-- Une migration publiée reste rétrocompatible sur une version, pour que les anciens et les nouveaux processus
-  coexistent pendant un déploiement.
+- `cihub-server migrate` applies the embedded migrations that are missing, then stops.
+- At startup, `cihub-server` applies nothing: it stops if an embedded migration is missing in the database. A
+  migration in the database that the binary does not know comes from a newer version and does not prevent startup.
+- A published migration stays backward compatible for one version, so that old and new processes
+  coexist during a deployment.
 
-| Environnement                   | Ce qui lance `cihub-server migrate`                    | Quand                                    |
+| Environment                     | What runs `cihub-server migrate`                       | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
-| Développement                   | `mise run migrate`                                     | À la main                                |
-| `docker compose` d'installation | service `cihub-migrate`, dont dépend `cihub-server`    | Avant `cihub-server`                     |
-| Kubernetes                      | `Job` en hook Helm `pre-install` et `pre-upgrade`      | Avant le déploiement des nouveaux pods   |
+| Development                     | `mise run migrate`                                     | By hand                                  |
+| Installation `docker compose`   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |
+| Kubernetes                      | `Job` as a Helm `pre-install` and `pre-upgrade` hook   | Before the deployment of the new pods    |
 
-## Outils
+## Tools
 
-`mise install` installe toute la suite (`AGENTS.md` D17) : Rust (version fixée dans `mise.toml`, avec `clippy`,
-`rustfmt` et `llvm-tools`, par `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint` et
-`zizmor`. `mise.lock` fixe les versions et les sommes de contrôle pour Linux et macOS, en x64 et arm64 ; après un
-changement de version, `mise lock` le met à jour.
+`mise install` installs the whole suite (`DECISIONS.md` D17): Rust (version pinned in `mise.toml`, with `clippy`,
+`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`
+and `lefthook`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
+commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
+checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
-## CI du projet
+## Project CI
 
-`.github/workflows/ci.yml` suit l'organisation de `home-operations/external-dns-unifi-webhook` (`AGENTS.md` D18) :
+`.github/workflows/ci.yml` follows the organization of `home-operations/external-dns-unifi-webhook` (`DECISIONS.md` D18):
 
-| Job             | Tâche                     |
+| Job             | Task                      |
 | --------------- | ------------------------- |
 | `Rust Lint`     | `mise run lint`           |
 | `Rust Test`     | `mise run test`           |
 | `Rust Coverage` | `mise run cover`          |
 | `Workflow Lint` | `mise run lint-workflows` |
-| `Build Success` | réunit les jobs ci-dessus |
+| `Build Success` | joins the jobs above      |
 
-`Build Success` est le statut requis de la branche `main` : il échoue si un job a échoué ou a été annulé. La CI
-tourne sur les pushes sur `main` (sauf un changement de Markdown seul), les PR vers `main`, `merge_group` et à la
-demande. Chaque job installe les outils avec `mise install --locked`. Chaque action est épinglée par le SHA de son
-commit, avec la version en commentaire. `.github/actionlint.yaml` fait ignorer à `actionlint` le label
-`ubuntu-26.04`, qu'il ne connaît pas encore. Un service Postgres s'ajoute au lot 2, pour
+`Build Success` is the required status of the `main` branch: it fails if a job failed or was cancelled. The CI
+runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on
+demand. Each job installs the tools with `mise install --locked`. Each action is pinned by the SHA of its
+commit, with the version as a comment. `.github/actionlint.yaml` makes `actionlint` ignore the label
+`ubuntu-26.04`, which it does not know yet. A Postgres service is added in Lot 2, for
 `mise run test-integration`.
 
 ## Versions
 
-release-please (`.github/workflows/release-please.yaml`, `AGENTS.md` D19) tient une PR de version à partir des
-titres de commits au format Conventional Commits. Quand cette PR est mergée, il crée le tag `vX.Y.Z` et la release,
-et met à jour `CHANGELOG.md`, `[workspace.package].version` dans `Cargo.toml` et les versions des crates `cihub-*`
-dans `Cargo.lock`. La CI ne tourne pas sur les PR de release-please, qui ne changent que ces fichiers. Le workflow
-prend un jeton de la GitHub App de bot du projet (secrets `BOT_CLIENT_ID` et `BOT_APP_PRIVATE_KEY`). La release
-déclenche la publication de l'image (« Image »).
+release-please (`.github/workflows/release-please.yaml`, `DECISIONS.md` D19) maintains a release PR from the
+commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
+and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
+in `Cargo.lock`. The CI does not run on the release-please PRs, which change only these files. The workflow
+takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
+triggers the publication of the image ("Image").
 
-## Mises à jour des dépendances
+## Dependency updates
 
-Renovate (`.github/workflows/renovate.yaml`, `AGENTS.md` D21) tourne toutes les heures, à un push qui modifie
-`.renovaterc.json5`, et à la demande (avec une option de test à blanc). Il ouvre des PR pour les actions GitHub,
-les outils de `mise.toml` (avec `mise.lock`) et les crates de `Cargo.toml`, et tient un tableau de bord dans une
-issue. Aucune PR n'est mergée automatiquement. Il utilise la même GitHub App de bot que release-please.
+Renovate (`.github/workflows/renovate.yaml`, `DECISIONS.md` D21) runs every hour, on a push that modifies
+`.renovaterc.json5`, and on demand (with a dry-run option). It opens PRs for the GitHub actions,
+the tools of `mise.toml` (with `mise.lock`) and the crates of `Cargo.toml`, and maintains a dashboard in an
+issue. No PR is merged automatically. It uses the same bot GitHub App as release-please.

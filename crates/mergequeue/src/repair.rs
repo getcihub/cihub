@@ -1,4 +1,4 @@
-//! The repair jobs (`AGENTS.md` D127): `refresh_checks` reads again the checks
+//! The repair jobs (`DECISIONS.md` D127): `refresh_checks` reads again the checks
 //! of a run in progress that no report reached, and creates again its test
 //! branch when it is gone; `refresh_target` reads again the head of the
 //! target branch. Each one gives its facts back through `queue_inbox`, so that
@@ -64,7 +64,7 @@ pub(crate) fn refresh_target(target: &QueueTarget, point: OffsetDateTime) -> Job
 
 /// The read of the head of the target branch after the delivery
 /// `delivery_id` of a push, when the branch has several queues and the
-/// routing gave the push to none (`AGENTS.md` D135).
+/// routing gave the push to none (`DECISIONS.md` D135).
 pub(crate) fn refresh_target_after(target: &QueueTarget, delivery_id: &str) -> Job {
     refresh_target_job(target, &subject(delivery_id), JobClass::Interactive)
 }
@@ -212,7 +212,7 @@ async fn read_target(
 
 /// Asks, in the class `interactive`, for a read of each live PR of `queue`,
 /// of the checks of each run in progress and of the head of its target
-/// (`AGENTS.md` D128), and returns the number of new jobs. A second resync in
+/// (`DECISIONS.md` D128), and returns the number of new jobs. A second resync in
 /// the same minute asks for nothing.
 ///
 /// # Errors

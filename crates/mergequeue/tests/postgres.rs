@@ -727,7 +727,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             sim.change_pr(&repo(), n, change).unwrap();
         }
     };
-    // The rules name the check that blocks the PR (`AGENTS.md` D158).
+    // The rules name the check that blocks the PR (`DECISIONS.md` D158).
     let failing_ci = vec![
         BlockReason::FailingRequiredCheck {
             check: REQUIRED.into(),
@@ -744,7 +744,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
         // The required check failed: with `branch_protection_injection:
-        // both`, the queue names it (`AGENTS.md` D147).
+        // both`, the queue names it (`DECISIONS.md` D147).
         (Box::new(failing), ItemState::NotReady, failing_ci.clone()),
         (Box::new(failing), ItemState::NotReady, failing_ci),
         (
@@ -841,7 +841,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     .await
     .unwrap();
     // An admitted item may be in test already: the queue reads the head of
-    // its target (`AGENTS.md` D127) and fills its window.
+    // its target (`DECISIONS.md` D127) and fills its window.
     let testing = rows.iter().filter(|r| r.1 == "testing").count();
     assert!(testing <= 2, "{testing} items in test");
     let got: BTreeMap<u64, (ItemState, Vec<BlockReason>)> = rows
@@ -878,7 +878,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
 
-    // The connection loses its access: the queue pauses (AGENTS.md D103).
+    // The connection loses its access: the queue pauses (DECISIONS.md D103).
     sim.set_access("1", false);
     q.deliver().await;
     q.settle().await;
@@ -1063,7 +1063,7 @@ fn read_job(n: u64) -> Job {
     }
 }
 
-/// The lot 4 chain, end to end (`AGENTS.md` D70, D77): an executor calls
+/// The lot 4 chain, end to end (`DECISIONS.md` D70, D77): an executor calls
 /// GitHub through the connection, GitHub answers 429, the pause reaches
 /// `scm_connections`, and no job of the connection goes out before the reset.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1557,7 +1557,7 @@ async fn admissions(pool: &PgPool) -> Vec<(i64, String, serde_json::Value, Optio
     .unwrap()
 }
 
-/// `AGENTS.md` D142 to D144: a PR waits in `not_ready` with the
+/// `DECISIONS.md` D142 to D144: a PR waits in `not_ready` with the
 /// `queue_conditions` that it does not meet, and enters the queue once it
 /// meets them; the files are read only because a condition uses them.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1636,7 +1636,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
-/// `AGENTS.md` D148: with two queues on `main`, a PR enters the first queue
+/// `DECISIONS.md` D148: with two queues on `main`, a PR enters the first queue
 /// whose conditions it meets, or the one that its command names, with the
 /// priority of the first rule that it meets unless the command gives one.
 /// A push on `main` reaches both queues (D135).
@@ -1735,7 +1735,7 @@ priority_rules:
     q.stop().await;
 }
 
-/// `AGENTS.md` D150: a push on a branch with two queues waits while a merge
+/// `DECISIONS.md` D150: a push on a branch with two queues waits while a merge
 /// of one of them is in flight, then asks each queue to read its head.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
@@ -1824,7 +1824,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     assert_eq!(state(pool.clone()).await, (0, 2));
 }
 
-/// `AGENTS.md` D152: with `resubmit_on_push`, a push on a PR in the queue
+/// `DECISIONS.md` D152: with `resubmit_on_push`, a push on a PR in the queue
 /// cancels its item and submits the new head, with the same priority.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_push_submits_the_pr_again(pool: PgPool) {
@@ -1876,7 +1876,7 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     q.stop().await;
 }
 
-/// `AGENTS.md` D151: a submission while the queue drains gives an item that
+/// `DECISIONS.md` D151: a submission while the queue drains gives an item that
 /// is cancelled at once, concluded, and not the live item of its PR.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
@@ -1926,7 +1926,7 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.stop().await;
 }
 
-/// `AGENTS.md` D153: with `direct_merge_mode: always`, a green PR that
+/// `DECISIONS.md` D153: with `direct_merge_mode: always`, a green PR that
 /// contains the head of the target merges without a test branch; a PR that
 /// does not contain it goes through the tests.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1977,7 +1977,7 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     q.stop().await;
 }
 
-/// Each PR shows its item (`AGENTS.md` D156): one comment of the queue,
+/// Each PR shows its item (`DECISIONS.md` D156): one comment of the queue,
 /// edited in place, the status of the queue on its head, and the state
 /// labels; a merged PR keeps its last state.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2061,7 +2061,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     q.stop().await;
 }
 
-/// `/cihub restart` and `/cihub cancel` (`AGENTS.md` D157): an account with
+/// `/cihub restart` and `/cihub cancel` (`DECISIONS.md` D157): an account with
 /// `write` restarts the tests of an item in test, then cancels it; an
 /// account without it gets a comment that says why.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2168,7 +2168,7 @@ async fn call(
     )
 }
 
-/// The API v1 reads and changes a queue (`AGENTS.md` D160): a submission,
+/// The API v1 reads and changes a queue (`DECISIONS.md` D160): a submission,
 /// its item, its timeline and its run, the graph, a restart and a cancel,
 /// a pause, a new queue, a resync and the audit log.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2298,7 +2298,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         ["queue.resync", "queue.created", "queue.state_requested"]
     );
 
-    // The typed client reads the same API (`AGENTS.md` D161).
+    // The typed client reads the same API (`DECISIONS.md` D161).
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
@@ -2316,7 +2316,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 }
 
 /// A new PR gets the welcome comment of the queue, whose box submits it
-/// (`AGENTS.md` D163): an account with `write` checks it, the comment shows
+/// (`DECISIONS.md` D163): an account with `write` checks it, the comment shows
 /// the item, and the box comes back once the item is cancelled. A box in a
 /// comment of someone else, or checked by an account without `write`,
 /// submits nothing.
@@ -2497,7 +2497,7 @@ async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<Str
         .unwrap()
 }
 
-/// `AGENTS.md` D136, D137: the queue reads its file on each new head of its
+/// `DECISIONS.md` D136, D137: the queue reads its file on each new head of its
 /// target, keeps the last valid one, and follows its mode.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
@@ -2588,7 +2588,7 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
         .unwrap()
 }
 
-/// `AGENTS.md` D106: an old partition goes only once a snapshot covers its
+/// `DECISIONS.md` D106: an old partition goes only once a snapshot covers its
 /// events, and the log of the queue goes on from the snapshot.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
@@ -2647,7 +2647,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
 }
 
 /// A live queue without a wake-up is woken when a scheduler starts
-/// (`AGENTS.md` D131); a queue whose items all concluded is not.
+/// (`DECISIONS.md` D131); a queue whose items all concluded is not.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_live_queues_are_woken_at_start(pool: PgPool) {
     async fn asleep(pool: &PgPool) {
@@ -2702,7 +2702,7 @@ fn submit_new_pr(sim: &Sim, main: &str, n: u64) -> u64 {
     number
 }
 
-/// The merge job (`AGENTS.md` D123): a server error is retried, a head that
+/// The merge job (`DECISIONS.md` D123): a server error is retried, a head that
 /// changed fails the item with `pr_updated_at_merge_time`.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
@@ -2768,7 +2768,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     q.stop().await;
 }
 
-/// A PR merged outside the queue while in test (`AGENTS.md` D132): the merge
+/// A PR merged outside the queue while in test (`DECISIONS.md` D132): the merge
 /// job does not claim it, the item is `manual_merge`, and the PR behind it is
 /// tested again on what landed, then merged.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2841,7 +2841,7 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     q.stop().await;
 }
 
-/// The repair reads (`AGENTS.md` D127): a lost report, a deleted test branch
+/// The repair reads (`DECISIONS.md` D127): a lost report, a deleted test branch
 /// and a lost push on the target are found again; `resync` asks for every
 /// read at once (D128).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2931,7 +2931,7 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
 }
 
 /// A generator of the fault injection test: splitmix64, so that a seed gives
-/// the same faults (`AGENTS.md` D16).
+/// the same faults (`DECISIONS.md` D16).
 struct Rng(u64);
 
 impl Rng {
@@ -2951,7 +2951,7 @@ impl Rng {
 /// The PRs of one seed.
 const CHAOS_PRS: u64 = 5;
 
-/// One seed of the fault injection test (`AGENTS.md` D129): its own
+/// One seed of the fault injection test (`DECISIONS.md` D129): its own
 /// organization, connection, repository and queue in the shared database,
 /// the scheduler and the worker of the server against a simulator that fails
 /// calls at random, and webhooks lost, sent twice and reordered.
@@ -3398,7 +3398,7 @@ impl Chaos {
     }
 }
 
-/// The exit criterion of lot 7 (`docs/RELIABILITY.md`, `AGENTS.md` D129): on
+/// The exit criterion of lot 7 (`docs/RELIABILITY.md`, `DECISIONS.md` D129): on
 /// each seed, server errors and rate limits at random, webhooks lost, sent
 /// twice and reordered, and processes killed at random, each green PR is
 /// merged exactly once, in the order of the queue, and each red PR fails with

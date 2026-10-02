@@ -1,4 +1,4 @@
-//! The jobs of the test cycle (lot 6, `AGENTS.md` D117). `assemble_test_branch`
+//! The jobs of the test cycle (lot 6, `DECISIONS.md` D117). `assemble_test_branch`
 //! resolves the required statuses of a run, builds its test branch and gives
 //! back `test_branch.assembled` or `test_branch.assembly_failed`;
 //! `cleanup_test_branch` closes the draft PR and deletes the branches of a run
@@ -33,12 +33,12 @@ pub const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
 pub const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
 
 /// After this many attempts, an assembly that the SCM still refuses as not
-/// valid (422) gives up with `start_test_run_retry_exhausted` (`AGENTS.md`
+/// valid (422) gives up with `start_test_run_retry_exhausted` (`DECISIONS.md`
 /// D133).
 pub const ASSEMBLY_ATTEMPTS: i32 = 5;
 
 /// An assembly that meets another passing error (5xx, 429, a stop) tries
-/// again until this long after the start of its run (`AGENTS.md` D133).
+/// again until this long after the start of its run (`DECISIONS.md` D133).
 pub const ASSEMBLY_WAIT: Duration = Duration::minutes(15);
 
 /// The test branch that a run needs, as the plan describes it.
@@ -127,7 +127,7 @@ fn numbers(prs: &[u64]) -> String {
 /// The required statuses that `.cihub.yaml` gives for the queue `name` on
 /// `branch`, or `None` when the file leaves them to the branch protection
 /// (`docs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
-/// entry in the file inherits them (`AGENTS.md` D138).
+/// entry in the file inherits them (`DECISIONS.md` D138).
 ///
 /// # Errors
 ///
@@ -155,7 +155,7 @@ pub fn required_statuses_of_file(
 /// The names of the required statuses at `base_sha` (`docs/ALGORITHMS.md`):
 /// the list of the file of the repository on the target branch at
 /// `base_sha`, or else the rules of the target branch when
-/// `branch_protection_injection` lets them in (`AGENTS.md` D147), without the
+/// `branch_protection_injection` lets them in (`DECISIONS.md` D147), without the
 /// status of the queue itself (D98); then the checks of the
 /// `merge_conditions` (D146). `settings` gives the injection without a file.
 pub(crate) async fn required_statuses(
@@ -326,7 +326,7 @@ impl Assembly<'_> {
             match self.merge(&temp, head).await? {
                 MergeIntoRef::Merged { sha } => current = sha,
                 // The head is already in the target: nothing to test
-                // (`AGENTS.md` D130).
+                // (`DECISIONS.md` D130).
                 MergeIntoRef::AlreadyContained => {
                     return Err(Step::GiveUp(
                         JobError::MergeConflict,
@@ -411,7 +411,7 @@ impl Assembly<'_> {
                 Err(JobError::DraftPrsNotAllowed.into())
             }
             // The test branch holds nothing more than the target: its heads
-            // are already in it (`AGENTS.md` D130).
+            // are already in it (`DECISIONS.md` D130).
             Err(ScmError::Validation(message))
                 if message.to_lowercase().contains("no commits between") =>
             {
@@ -929,7 +929,7 @@ mod tests {
             "{waits:?}"
         );
         // A member whose head is already in the target has nothing to test
-        // (`AGENTS.md` D130).
+        // (`DECISIONS.md` D130).
         let merged = head(&sim, &target, &main, 7, &[("h.txt", Some("h"))]);
         sim.push(&target.repo, "main", &merged.sha, &bot()).unwrap();
         let contained = build(

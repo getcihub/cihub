@@ -101,7 +101,7 @@ impl Condition {
     }
 
     /// The name of the check when the condition is `check-success = <name>`,
-    /// the only form of `merge_conditions` for now (`AGENTS.md` D146).
+    /// the only form of `merge_conditions` for now (`DECISIONS.md` D146).
     pub fn required_check(&self) -> Option<&str> {
         match &self.test {
             Test::Text {

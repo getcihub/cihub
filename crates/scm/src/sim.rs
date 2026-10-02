@@ -1,4 +1,4 @@
-//! An SCM in memory, for the tests of CIHub (`AGENTS.md` D73). It keeps
+//! An SCM in memory, for the tests of CIHub (`DECISIONS.md` D73). It keeps
 //! repositories with commits, branches, PRs, checks, comments and rules; it
 //! records each call; it can fail calls and lose, duplicate or reorder its
 //! webhook deliveries. It has no clock: a test gives every time.
@@ -58,7 +58,7 @@ pub struct WebhookFaults {
 }
 
 /// A step of splitmix64: deterministic, without the randomness of the
-/// system (`AGENTS.md` D16).
+/// system (`DECISIONS.md` D16).
 fn splitmix(seed: &mut u64) -> u64 {
     *seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *seed;
@@ -77,7 +77,7 @@ impl WebhookFaults {
     }
 }
 
-/// Makes calls fail at random (`AGENTS.md` D129), after the faults of
+/// Makes calls fail at random (`DECISIONS.md` D129), after the faults of
 /// [`Sim::fail`]. The same seed gives the same failures for the same
 /// sequence of calls.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -365,7 +365,7 @@ impl Sim {
     }
 
     /// Checks, as `user`, the submission box of the comment of CIHub on the
-    /// PR `number`, and sends its delivery (`AGENTS.md` D163).
+    /// PR `number`, and sends its delivery (`DECISIONS.md` D163).
     ///
     /// # Errors
     ///
@@ -767,7 +767,7 @@ impl Ctx<'_> {
         self.pr_event(number, label_added, false);
     }
 
-    /// The PR became ready for review (`AGENTS.md` D163).
+    /// The PR became ready for review (`DECISIONS.md` D163).
     fn pr_opened(&mut self, number: u64) {
         self.pr_event(number, None, true);
     }

@@ -1,4 +1,4 @@
-//! What each PR shows of its item (`AGENTS.md` D156).
+//! What each PR shows of its item (`DECISIONS.md` D156).
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
@@ -84,7 +84,7 @@ fn a_not_ready_item_shows_why() {
     assert_eq!(last[0].block_reasons, [BlockReason::MergeConflict]);
 }
 
-/// A blocked PR names the required check that blocks it (`AGENTS.md` D158).
+/// A blocked PR names the required check that blocks it (`DECISIONS.md` D158).
 #[test]
 fn a_blocked_pr_names_its_required_checks() {
     let mut w = World::new(settings(window(2)));

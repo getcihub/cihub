@@ -15,7 +15,7 @@ time.workspace = true
 
 [features]
 # The simulator and the contract suite, for the tests of other crates
-# (`AGENTS.md` D73).
+# (`DECISIONS.md` D73).
 sim = []
 
 [dev-dependencies]

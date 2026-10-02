@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionRef {
     pub id: ConnectionId,
-    /// The identifier of the connection on the SCM (`AGENTS.md` D49).
+    /// The identifier of the connection on the SCM (`DECISIONS.md` D49).
     pub external_id: String,
 }
 
@@ -20,7 +20,7 @@ pub struct RepoRef {
     pub name: String,
 }
 
-/// A user account on the SCM (`AGENTS.md` D51).
+/// A user account on the SCM (`DECISIONS.md` D51).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmUser {
     pub external_id: String,
@@ -40,7 +40,7 @@ pub struct PrSnapshot {
     pub created_at: OffsetDateTime,
     pub draft: bool,
     /// The title and the description, for the title of the merge commit
-    /// (`AGENTS.md` D126).
+    /// (`DECISIONS.md` D126).
     pub title: String,
     pub body: String,
     pub labels: BTreeSet<String>,
@@ -93,7 +93,7 @@ pub struct PrMerge {
     pub number: u64,
     pub head_sha: String,
     /// The test commit that proved the PR: `fast_forward` moves the base
-    /// there (`AGENTS.md` D124).
+    /// there (`DECISIONS.md` D124).
     pub tested_sha: String,
     pub method: MergeMethod,
     pub title: String,
@@ -112,7 +112,7 @@ pub enum MergeIntoRef {
 }
 
 /// An attempt of the SCM to send a webhook delivery to CIHub
-/// (`AGENTS.md` D88).
+/// (`DECISIONS.md` D88).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecentDelivery {
     /// The identifier that the delivery carries; its new attempts share it.
@@ -122,7 +122,7 @@ pub struct RecentDelivery {
 }
 
 /// The account of the SCM that a connection serves: an organization or a
-/// user (`AGENTS.md` D48).
+/// user (`DECISIONS.md` D48).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmAccount {
     pub external_id: String,
@@ -140,7 +140,7 @@ pub struct ScmRepo {
 }
 
 /// A point of the configuration of the SCM that the queue needs, and that a
-/// repository misses (`AGENTS.md` D162, `docs/GITHUB.md`).
+/// repository misses (`DECISIONS.md` D162, `docs/GITHUB.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SetupFinding {
     /// No rule restricts the updates of the target branch: a merge can skip

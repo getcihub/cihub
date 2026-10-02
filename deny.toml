@@ -9,7 +9,7 @@ allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.
 confidence-threshold = 0.8
 
 # The root certificates of Mozilla, which rustls-platform-verifier embeds
-# (AGENTS.md D81): a license for data, not for code.
+# (DECISIONS.md D81): a license for data, not for code.
 [[licenses.exceptions]]
 crate = "webpki-root-certs"
 allow = ["CDLA-Permissive-2.0"]
@@ -62,7 +62,7 @@ deny = [
         "cihub-client",
     ] },
     { crate = "axum", wrappers = [
-        # A dev-dependency only: the replay of recorded answers (AGENTS.md D74).
+        # A dev-dependency only: the replay of recorded answers (DECISIONS.md D74).
         "cihub-github",
         "cihub-platform",
         "cihub-web",

@@ -1,194 +1,192 @@
-# Architecture du système
+# System architecture
 
-Contexte : tout le monde, avant le premier changement de code : parcours d'un événement, règles de conception, rôles, workspace et crates. Le code est la source de vérité (`AGENTS.md` D1) ; ce fichier dit l'intention et les règles de structure.
-
-CIHub est un monolithe modulaire déployé en processus sans état au-dessus de Postgres. Ce qui le rend résilient tient en trois décisions : l'état d'une file est un **journal d'événements** en ajout seul dont tout le reste se déduit ; le réconciliateur ne pilote pas GitHub pas à pas mais calcule un **état git voulu** et fait converger l'état observé vers lui, de façon idempotente, autant de fois qu'il le faut ; et chaque appel sortant est un **job budgété, priorisé et rejouable**. Ce qui le rend scalable tient en une seule : l'unité de travail est la file, et une file est louée à une instance à la fois, ce qui permet de répartir des milliers de files sur des instances interchangeables sans coordination autre que la base.
+CIHub is a modular monolith deployed as stateless processes on top of Postgres. What makes it resilient comes down to three decisions: the state of a queue is an append-only **event log** from which everything else is derived; the reconciler does not drive GitHub step by step but computes a **desired git state** and converges the observed state toward it, idempotently, as many times as needed; and every outgoing call is a **budgeted, prioritized and replayable job**. What makes it scalable comes down to one: the unit of work is the queue, and a queue is leased to one instance at a time, which lets thousands of queues be spread over interchangeable instances with no coordination other than the database.
 
 ```mermaid
 flowchart LR
-  GH[GitHub] -->|webhooks, ack < 2 s| IN[Ingestion<br/>inbox partitionnee par file]
-  IN --> LEASE{Bail de file}
-  LEASE --> CELL[Cellule scheduler<br/>journal + projection + plan]
-  CELL -->|etat git voulu| DIFF[Convergence<br/>voulu vs observe]
-  DIFF --> JOBS[Jobs par classe<br/>interactive > merge > speculate > repair]
-  JOBS -->|budget par connexion| GH
-  REP[Boucle de reparation<br/>relectures periodiques] --> IN
-  CELL -->|evenements| OUT[Outbox]
-  OUT --> RM[Modele de lecture<br/>API, UI, analytique, webhooks]
+  GH[GitHub] -->|webhooks, ack < 2 s| IN[Ingestion<br/>inbox partitioned by queue]
+  IN --> LEASE{Queue lease}
+  LEASE --> CELL[Scheduler cell<br/>log + projection + plan]
+  CELL -->|desired git state| DIFF[Convergence<br/>desired vs observed]
+  DIFF --> JOBS[Jobs by class<br/>interactive > merge > speculate > repair]
+  JOBS -->|budget per connection| GH
+  REP[Repair loop<br/>periodic re-reads] --> IN
+  CELL -->|events| OUT[Outbox]
+  OUT --> RM[Read model<br/>API, UI, analytics, webhooks]
 ```
 
-Le parcours d'un événement : GitHub livre un webhook, l'ingestion vérifie la signature, l'écrit tel quel dans l'inbox de la file concernée et acquitte, sans rien décider. L'instance qui détient le bail de cette file lit son inbox dans l'ordre, ajoute au journal les faits que l'événement établit (PR observée, check terminé, push reçu), rejoue la projection, puis exécute le réconciliateur : une fonction pure qui, de l'état projeté et de l'heure, produit les décisions de la file, ajoutées au journal, et un **plan** — l'ensemble des références git qui devraient exister avec leur composition, les PR qui devraient être mergées, les statuts et commentaires qui devraient être affichés. La convergence compare ce plan à l'état observé (le dernier connu de GitHub, consigné dans le journal) et n'émet que les jobs qui comblent l'écart. Les jobs s'exécutent contre GitHub et déposent leur résultat comme des faits dans `queue_inbox`, que la file applique sous son verrou (`AGENTS.md` D100) : le scheduler est le seul à écrire le journal. Une réconciliation est donc rejouable à l'identique, un job perdu est simplement réémis au tour suivant, et un état GitHub dérivé (branche supprimée à la main, PR mergée hors de la file) est corrigé sans code spécifique.
+The path of an event: GitHub delivers a webhook, the ingestion verifies the signature, writes it as is into the inbox of the queue concerned and acknowledges, without deciding anything. The instance that holds the lease of that queue reads its inbox in order, appends to the log the facts that the event establishes (PR observed, check completed, push received), replays the projection, then runs the reconciler: a pure function which, from the projected state and the time, produces the decisions of the queue, appended to the log, and a **plan**: the set of git refs that should exist with their composition, the PRs that should be merged, the statuses and comments that should be displayed. The convergence compares this plan to the observed state (the last known from GitHub, recorded in the log) and emits only the jobs that close the gap. The jobs run against GitHub and deposit their result as facts in `queue_inbox`, which the queue applies under its lock (`DECISIONS.md` D100): the scheduler is the only writer of the log. A reconciliation is therefore replayable identically, a lost job is simply re-emitted on the next turn, and a drifted GitHub state (branch deleted by hand, PR merged outside the queue) is corrected without specific code.
 
-Règles de conception sur lesquelles repose le reste de la spécification :
+Design rules on which the rest of the specification rests:
 
-- **Journal d'événements par file, source de vérité.** Le journal contient des faits (ce qui a été observé) et des décisions (ce que la file a choisi) ; les tables d'état (`queue_items`, `test_groups`, `test_runs`) sont des projections, reconstructibles par rejeu avec la fonction pure `apply`, qui n'appelle jamais `plan` (`AGENTS.md` D5) ; un instantané est pris tous les 500 événements pour borner le temps de chargement. On peut rejouer une file jusqu'à un instant donné pour comprendre une décision, ou la rejouer entièrement après un bug de projection.
-- **Réconciliateur déterministe.** `plan(état, now) → plan` n'a aucune E/S, ne connaît ni Postgres ni GitHub, et se teste par tables et par propriétés. La même entrée donne toujours le même plan.
-- **Convergence, pas pilotage.** Le plan décrit un état voulu (« la référence `cihub-merge/pr-12/…` doit exister au commit composé de A, B, C »), jamais une séquence d'appels. Chaque job vérifie l'état réel avant d'agir et est sans effet s'il est déjà atteint.
-- **Bail par file.** Une table `queue_leases` (propriétaire, battement, expiration à 15 s) désigne l'instance qui traite une file ; toute instance peut reprendre un bail expiré. Les files d'une même organisation sont préférentiellement groupées sur une instance pour partager le cache GitHub, sans que ce soit une contrainte.
-- **Inbox partitionnée, acquittement inconditionnel.** L'ingestion n'échoue jamais faute de traitement : elle stocke et acquitte en moins de 2 s, même si Postgres est lent (file locale bornée en mémoire avec rejeu). L'ordre est garanti par file, pas globalement.
-- **Budget du SCM ordonnancé.** Chaque connexion a un seau de jetons alimenté par les en-têtes de rate limit, et chaque job une classe : `interactive` (commandes, statuts, commentaires), `merge`, `speculate` (branches de test), `repair` (relectures). Quand le budget baisse, la spéculation est réduite en premier, le merge en dernier ; rien n'est perdu, tout est différé.
-- **Boucle de réparation.** Indépendamment des webhooks, chaque file relit périodiquement ce qui compte (PR vivantes, checks des exécutions en cours, tête de la branche cible, existence des références de test) à un intervalle adaptatif de 30 s à 10 min selon l'activité, et injecte ce qu'elle observe dans l'inbox. Un webhook perdu coûte au plus un intervalle.
-- **Modes dégradés explicites.** Par connexion : `normal`, `throttled` (budget bas : plus de spéculation nouvelle), `scm_unavailable` (rien ne part, tout s'accumule, la boucle de réparation teste la reprise), `paused` (décision humaine). Le mode est visible dans l'interface et l'API, avec sa cause.
-- **Transport sur Postgres.** Inbox, jobs et outbox sont des tables Postgres, lues et écrites par les fonctions de `cihub-platform` dans la transaction de l'appelant (`AGENTS.md` D62) : une livraison est marquée traitée avec les faits qu'elle établit, un événement est écrit avec son entrée d'outbox (lot 11, D65). Pas de broker en v1 (D63).
-- **Isolation entre organisations.** Sécurité au niveau ligne, quotas par organisation sur l'inbox et les jobs, et ordonnancement équitable des workers : une organisation bruyante ralentit ses propres files, pas celles des autres.
+- **Event log per queue, source of truth.** The log contains facts (what was observed) and decisions (what the queue chose); the state tables (`queue_items`, `test_groups`, `test_runs`) are projections, rebuildable by replay with the pure function `apply`, which never calls `plan` (`DECISIONS.md` D5); a snapshot is taken every 500 events to bound the loading time. A queue can be replayed up to a given instant to understand a decision, or replayed entirely after a projection bug.
+- **Deterministic reconciler.** `plan(state, now) → plan` has no I/O, knows neither Postgres nor GitHub, and is tested by tables and by properties. The same input always gives the same plan.
+- **Convergence, not driving.** The plan describes a desired state ("the ref `cihub-merge/pr-12/…` must exist at the commit composed of A, B, C"), never a sequence of calls. Each job checks the real state before acting and has no effect if the state is already reached.
+- **Lease per queue.** A table `queue_leases` (owner, heartbeat, expiry at 15 s) designates the instance that processes a queue; any instance can take over an expired lease. The queues of one organization are preferably grouped on one instance to share the GitHub cache, without this being a constraint.
+- **Partitioned inbox, unconditional acknowledgment.** The ingestion never fails for lack of processing: it stores and acknowledges in under 2 s, even if Postgres is slow (bounded local in-memory queue with replay). Order is guaranteed per queue, not globally.
+- **Scheduled SCM budget.** Each connection has a token bucket fed by the rate limit headers, and each job a class: `interactive` (commands, statuses, comments), `merge`, `speculate` (test branches), `repair` (re-reads). When the budget drops, speculation is reduced first, merge last; nothing is lost, everything is deferred.
+- **Repair loop.** Independently of webhooks, each queue periodically re-reads what matters (live PRs, checks of the runs in progress, head of the target branch, existence of the test refs) at an adaptive interval of 30 s to 10 min depending on activity, and injects what it observes into the inbox. A lost webhook costs at most one interval.
+- **Explicit degraded modes.** Per connection: `normal`, `throttled` (low budget: no new speculation), `scm_unavailable` (nothing goes out, everything accumulates, the repair loop tests the recovery), `paused` (human decision). The mode is visible in the interface and the API, with its cause.
+- **Transport on Postgres.** Inbox, jobs and outbox are Postgres tables, read and written by the functions of `cihub-platform` in the caller's transaction (`DECISIONS.md` D62): a delivery is marked processed together with the facts it establishes, an event is written together with its outbox entry (Lot 11, D65). No broker in v1 (D63).
+- **Isolation between organizations.** Row level security, quotas per organization on the inbox and the jobs, and fair scheduling of the workers: a noisy organization slows down its own queues, not those of others.
 
-Ce qui passe à l'échelle, et comment :
+What scales, and how:
 
-| Dimension                | Limite naturelle                                                         | Réponse                                                                                                                                                                       |
+| Dimension                | Natural limit                                                            | Answer                                                                                                                                                                        |
 | ------------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Nombre de files          | Aucune, chaque file est indépendante                                     | Baux répartis sur N instances de scheduler ; une instance tient quelques centaines de files actives                                                                           |
-| Profondeur d'une file    | Le réconciliateur est en O(n) sur les entrées vivantes                   | Plafond de 500 entrées vivantes par file, fenêtre de spéculation bornée                                                                                                       |
-| Webhooks                 | Débit d'écriture Postgres                                                | Inbox indexée par file et purgée 7 jours après traitement ; pas de broker en v1 (`AGENTS.md` D63)                                                                                |
-| Appels GitHub            | 5 000 points par heure et par installation, plus les limites secondaires | Budget par connexion, classes de priorité, lectures conditionnelles par ETag, requêtes GraphQL groupées ; plusieurs GitHub Apps par instance pour GitHub Enterprise Server |
-| Historique et analytique | Volume de lignes                                                         | Partitions mensuelles, tables de faits, puis ClickHouse derrière le trait `AnalyticsStore`                                                                                        |
-| Organisations            | Isolation et équité                                                      | RLS, quotas, ordonnancement équitable ; une instance sert des centaines d'organisations                                                                                       |
+| Number of queues         | None, each queue is independent                                          | Leases spread over N scheduler instances; one instance holds a few hundred active queues                                                                                     |
+| Depth of a queue         | The reconciler is O(n) on the live items                                 | Cap of 500 live items per queue, bounded speculation window                                                                                                                  |
+| Webhooks                 | Postgres write throughput                                                | Inbox indexed by queue and purged 7 days after processing; no broker in v1 (`DECISIONS.md` D63)                                                                                     |
+| GitHub calls             | 5,000 points per hour per installation, plus the secondary limits        | Budget per connection, priority classes, conditional reads by ETag, grouped GraphQL queries; several GitHub Apps per instance for GitHub Enterprise Server                  |
+| History and analytics    | Row volume                                                               | Monthly partitions, fact tables, then ClickHouse behind the `AnalyticsStore` trait                                                                                               |
+| Organizations            | Isolation and fairness                                                   | RLS, quotas, fair scheduling; one instance serves hundreds of organizations                                                                                                  |
 
-Ordre de grandeur visé pour une instance standard : 1 000 organisations, 20 000 dépôts, 5 000 files, 50 000 soumissions par jour, un à deux milliers de webhooks par minute en pointe, sur un primaire Postgres avec répliques de lecture. Le découpage en lots est décrit dans [LOTS.md](LOTS.md).
+Target order of magnitude for a standard instance: 1,000 organizations, 20,000 repositories, 5,000 queues, 50,000 submissions per day, one to two thousand webhooks per minute at peak, on one Postgres primary with read replicas. The split into lots is described in [LOTS.md](LOTS.md).
 
-## Workspace Rust et crates
+## Rust workspace and crates
 
-Un seul dépôt contient tout le projet : le workspace Cargo, puis, avec leurs lots, le tableau de bord, l'action
-GitHub, le chart Helm et les migrations. Le workspace (édition 2024, Rust fixé par `mise.toml`)
-produit deux binaires (`AGENTS.md` D8) : `cihub-server`, le serveur, et `cihub`, la CLI, distribuée seule et sans
-code serveur. Les crates s'appellent `cihub-*`, ne sont pas publiées sur crates.io (`publish = false`) et partagent
-une seule version, celle de la release. Une crate se crée quand un lot en a besoin, après validation
-(`AGENTS.md` D9) ; la liste ci-dessous est la cible, et la colonne « Lot » dit quand chaque crate arrive.
+A single repository contains the whole project: the Cargo workspace, then, with their lots, the dashboard, the
+GitHub action, the Helm chart and the migrations. The workspace (edition 2024, Rust pinned by `mise.toml`)
+produces two binaries (`DECISIONS.md` D8): `cihub-server`, the server, and `cihub`, the CLI, distributed alone and without
+server code. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
+a single version, that of the release. A crate is created when a lot needs it, after validation
+(`DECISIONS.md` D9); the list below is the target, and the "Lot" column says when each crate arrives.
 
 ```
-Cargo.toml               workspace : membres, [workspace.package], [workspace.dependencies], [workspace.lints]
+Cargo.toml               workspace: members, [workspace.package], [workspace.dependencies], [workspace.lints]
 Cargo.lock
-clippy.toml              reglages des lints, dont l'interdiction de l'horloge et du hasard
-deny.toml                licences, avis de securite, regles de dependances entre crates
-mise.toml                Rust, outils et taches (AGENTS.md §5)
-mise.lock                versions et sommes de controle des outils, par plateforme
-compose.yaml             Postgres de developpement
-release-please-config.json, .release-please-manifest.json   versions et CHANGELOG.md (AGENTS.md D19)
-.renovaterc.json5        mises a jour des dependances (AGENTS.md D21)
-.github/workflows/       CI (un job par tache mise, Build Success)
+clippy.toml              lint settings, including the ban on the clock and randomness
+deny.toml                licenses, security advisories, dependency rules between crates
+mise.toml                Rust, tools and tasks (mise tasks)
+mise.lock                versions and checksums of the tools, per platform
+compose.yaml             development Postgres
+release-please-config.json, .release-please-manifest.json   versions and CHANGELOG.md (DECISIONS.md D19)
+.renovaterc.json5        dependency updates (DECISIONS.md D21)
+.github/workflows/       CI (one job per mise task, Build Success)
 crates/
-  domain/                cihub-domain         (existe)
-  conditions/            cihub-conditions     (existe)
-  config/                cihub-config         (existe)
-  mq-core/               cihub-mq-core        (existe)
-  scm/                   cihub-scm            (existe)
-  github/                cihub-github         (existe)
-  server/                cihub-server         (existe)
-  store/                 cihub-store          (existe)
-  telemetry/             cihub-telemetry      (existe)
-  web/                   cihub-web            (existe)
-  api-types/             cihub-api-types      (existe)
-  client/                cihub-client         (existe)
-  cli/                   cihub-cli            (existe)
-  ...                    les autres crates du tableau, avec leur lot
-migrations/              migrations Postgres embarquees dans cihub-server (lot 2)
-web/                     tableau de bord, embarque par le role web (lot 10)
+  domain/                cihub-domain         (exists)
+  conditions/            cihub-conditions     (exists)
+  config/                cihub-config         (exists)
+  mq-core/               cihub-mq-core        (exists)
+  scm/                   cihub-scm            (exists)
+  github/                cihub-github         (exists)
+  server/                cihub-server         (exists)
+  store/                 cihub-store          (exists)
+  telemetry/             cihub-telemetry      (exists)
+  web/                   cihub-web            (exists)
+  api-types/             cihub-api-types      (exists)
+  client/                cihub-client         (exists)
+  cli/                   cihub-cli            (exists)
+  ...                    the other crates of the table, with their lot
+migrations/              Postgres migrations embedded in cihub-server (Lot 2)
+web/                     dashboard, embedded by the web role (Lot 10)
 ```
 
-| Crate              | Responsabilité                                                                                                                                                         | Dépend de (workspace)                                            | Lot | État   |
+| Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | --- | ------ |
-| `cihub-domain`     | Identifiants ULID typés, entités, vocabulaire fermé, enveloppe `Event`, tables des transitions (pur)                                                                   | —                                                                | 1   | existe |
-| `cihub-conditions` | Langage de conditions : analyse, évaluation sur un contexte de PR, erreurs avec position (pur)                                                                         | `domain`                                                         | 8   | existe |
-| `cihub-config`     | Modèle de `.cihub.yaml`, table des stratégies, fusion des sources avec la source de chaque réglage, plages (pur)                                                       | `domain`, `conditions`                                           | 8   | existe |
-| `cihub-mq-core`    | `apply`, graphe de merge, prédécesseurs, validité des exécutions, fenêtre adaptative, lots, bissection, budget d'échec, `plan`, `check` (pur)                          | `domain`, `config`                                               | 1   | existe |
-| `cihub-contracts`  | Trait `FlakeOracle` et l'oracle neutre qui répond « inconnu » (pur)                                                                                                    | `domain`                                                         | 14  | cible  |
-| `cihub-flaky-core` | Signaux de détection, classification `stable` / `suspect` / `flaky` / `broken`, `case_key` (pur)                                                                       | `domain`                                                         | 14  | cible  |
-| `cihub-store`      | Pool Postgres, transactions d'une organisation ou du système (RLS), tenancy, journal et partitions, jetons d'API, verrous, baux, migrations embarquées, test des enums Postgres | `domain`                                                         | 2   | existe |
-| `cihub-telemetry`  | Logs (`AGENTS.md` D13), puis traces OpenTelemetry et registre Prometheus                                                                                               | —                                                                | 2   | existe |
-| `cihub-platform`   | Baux des files, réveil, inbox, routage et balayage des livraisons, budgets des connexions, jobs, boucle du worker et registre des exécuteurs, maintenance (`AGENTS.md` D62, D66, D67, D84 à D88) ; amorçage d'une organisation et lecture des dépôts de ses connexions (D154, D155) ; contrat `Module` (lot 5) et ses routes, erreur `problem+json` et autorisation des routes (lot 9), outbox (lot 11)  | `domain`, `store`, `scm` (`AGENTS.md` D53)                       | 3–5 | existe |
-| `cihub-scm`        | Trait `Scm`, types SCM normalisés, classes de priorité d'appel ; simulateur GitHub avec injection de pannes, feature `sim` (`AGENTS.md` D73) | `domain`                                                         | 4   | existe |
-| `cihub-github`     | Auth App, jetons d'installation, client REST et GraphQL, budget par connexion, modes dégradés, vérification HMAC et traduction des webhooks en faits                | `scm`, `domain`                                                  | 4   | existe |
-| `cihub-web`        | Serveur HTTP de l'adresse publique du rôle `web` : webhooks du SCM (signature par l'adaptateur, stockage non routé, `AGENTS.md` D82 à D84, D91) ; authentification par jeton, limite de débit, routes `/repos` et `/orgs/{org}/audit`, routes des modules sous `/api/v1`, `/api/v1/openapi.json` (lot 9, D159) ; puis sessions, CSRF et tableau de bord (lot 10) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | existe |
-| `cihub-mergequeue` | Module merge queue : journal de chaque file, projections, instantanés et rejeu ; boucle de réconciliation et exécuteurs de jobs (lots 5 et 6) ; routes `/api/v1` des files, surfaces de la PR (statut, commentaire, labels) et commandes (lot 9) | `domain`, `mq-core`, `store`, puis `config`, `platform`, `scm` (`AGENTS.md` D93), `conditions` (D142) ; `contracts` au lot 14, `analytics` au lot 11 | 5   | existe |
-| `cihub-api-types`  | Requêtes et réponses de l'API publique, codes d'erreur, corps `problem+json` ; schémas OpenAPI derrière la feature `openapi` (`AGENTS.md` D159)                                                                                                                 | `domain`                                                         | 9   | existe |
-| `cihub-client`     | Client typé de l'API publique, pour la CLI et les tests de bout en bout                                                                                                | `api-types`                                                      | 9   | existe |
-| `cihub-cli`        | Binaire `cihub`                                                                                                                                                        | `client`, `api-types` ; `otlp` au lot 14                                    | 9   | existe |
-| `cihub-analytics`  | Trait `AnalyticsStore`, implémentation Postgres, puis ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | cible  |
-| `cihub-otlp`       | Spans de test OTLP, convertisseur JUnit XML ; utilisé par le serveur et par la CLI                                                                                     | `domain`                                                         | 14  | cible  |
-| `cihub-flakytests` | Module tests instables : réception OTLP, tables `ft_*`, classification, quarantaine, implémentation de `FlakeOracle`, routes `/api/v1/flaky`                             | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | cible  |
-| `cihub-server`     | Binaire `cihub-server` : configuration, rôles, sous-commande `migrate`, enregistrement des modules                                                                     | les crates serveur                                               | 2   | existe |
+| `cihub-domain`     | Typed ULID identifiers, entities, closed vocabulary, `Event` envelope, transition tables (pure)                                                                        | —                                                                | 1   | exists |
+| `cihub-conditions` | Conditions language: parsing, evaluation on a PR context, errors with position (pure)                                                                                  | `domain`                                                         | 8   | exists |
+| `cihub-config`     | Model of `.cihub.yaml`, strategy table, merge of the sources with the source of each setting, ranges (pure)                                                            | `domain`, `conditions`                                           | 8   | exists |
+| `cihub-mq-core`    | `apply`, merge graph, predecessors, validity of the runs, adaptive window, batches, bisection, failure budget, `plan`, `check` (pure)                                  | `domain`, `config`                                               | 1   | exists |
+| `cihub-contracts`  | `FlakeOracle` trait and the neutral oracle that answers "unknown" (pure)                                                                                               | `domain`                                                         | 14  | target |
+| `cihub-flaky-core` | Detection signals, `stable` / `suspect` / `flaky` / `broken` classification, `case_key` (pure)                                                                         | `domain`                                                         | 14  | target |
+| `cihub-store`      | Postgres pool, transactions of an organization or of the system (RLS), tenancy, log and partitions, API tokens, locks, leases, embedded migrations, test of the Postgres enums | `domain`                                                         | 2   | exists |
+| `cihub-telemetry`  | Logs (`DECISIONS.md` D13), then OpenTelemetry traces and Prometheus registry                                                                                              | —                                                                | 2   | exists |
+| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance (`DECISIONS.md` D62, D66, D67, D84 to D88); bootstrap of an organization and reading of the repositories of its connections (D154, D155); `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), outbox (Lot 11)  | `domain`, `store`, `scm` (`DECISIONS.md` D53)                       | 3–5 | exists |
+| `cihub-scm`        | `Scm` trait, normalized SCM types, call priority classes; GitHub simulator with fault injection, `sim` feature (`DECISIONS.md` D73) | `domain`                                                         | 4   | exists |
+| `cihub-github`     | App auth, installation tokens, REST and GraphQL client, budget per connection, degraded modes, HMAC verification and translation of webhooks into facts             | `scm`, `domain`                                                  | 4   | exists |
+| `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage, `DECISIONS.md` D82 to D84, D91); token authentication, rate limit, `/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9, D159); then sessions, CSRF and dashboard (Lot 10) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
+| `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors (Lots 5 and 6); `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands (Lot 9) | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm` (`DECISIONS.md` D93), `conditions` (D142); `contracts` at Lot 14, `analytics` at Lot 11 | 5   | exists |
+| `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature (`DECISIONS.md` D159)                                                                                                            | `domain`                                                         | 9   | exists |
+| `cihub-client`     | Typed client of the public API, for the CLI and the end-to-end tests                                                                                                   | `api-types`                                                      | 9   | exists |
+| `cihub-cli`        | `cihub` binary                                                                                                                                                         | `client`, `api-types`; `otlp` at Lot 14                                     | 9   | exists |
+| `cihub-analytics`  | `AnalyticsStore` trait, Postgres implementation, then ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | target |
+| `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by the CLI                                                                                                | `domain`                                                         | 14  | target |
+| `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | target |
+| `cihub-server`     | `cihub-server` binary: configuration, roles, `migrate` subcommand, module registration                                                                                 | the server crates                                                | 2   | exists |
 
-Quatre règles structurent le découpage, et chacune est vérifiée en CI plutôt que laissée à la discipline :
+Four rules structure the split, and each one is checked in CI rather than left to discipline:
 
-- **Le noyau est pur par construction.** Les crates pures ne dépendent ni de `tokio`, ni de `sqlx`, ni de
-  `reqwest`, ni d'`axum` : les règles `bans` de `deny.toml` listent, pour chaque dépendance lourde, les seules
-  crates qui peuvent la déclarer. Le noyau change souvent ; comme il ne dépend de rien de lourd, il se recompile et
-  se teste en quelques secondes.
-- **La CLI ne tire aucun code serveur.** `cihub-cli` ne dépend que de `cihub-client`, `cihub-api-types` et
-  `cihub-otlp` ; les mêmes règles `bans` le contrôlent.
-- **Les modules ne se connaissent pas.** `cihub-mergequeue` et `cihub-flakytests` ne dépendent pas l'un de
-  l'autre ; ils communiquent par les traits de `cihub-contracts` et par les événements. Seul `cihub-server` les
-  connaît tous les deux. Le contrat `Module` de `cihub-platform` expose le nom du module, ses routes, ses
-  exécuteurs de jobs et ses abonnements aux événements ; il n'y a pas de chargement dynamique.
-- **Une seule version par dépendance externe.** Toutes les versions sont dans `[workspace.dependencies]`
-  (`AGENTS.md` D2) ; édition, licence et `rust-version` viennent de `[workspace.package]`, les lints de
+- **The core is pure by construction.** The pure crates depend neither on `tokio`, nor on `sqlx`, nor on
+  `reqwest`, nor on `axum`: the `bans` rules of `deny.toml` list, for each heavy dependency, the only
+  crates that may declare it. The core changes often; since it depends on nothing heavy, it recompiles and
+  tests in a few seconds.
+- **The CLI pulls no server code.** `cihub-cli` depends only on `cihub-client`, `cihub-api-types` and
+  `cihub-otlp`; the same `bans` rules check it.
+- **The modules do not know each other.** `cihub-mergequeue` and `cihub-flakytests` do not depend on each
+  other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-server` knows
+  them both. The `Module` contract of `cihub-platform` exposes the module name, its routes, its job
+  executors and its event subscriptions; there is no dynamic loading.
+- **A single version per external dependency.** All versions are in `[workspace.dependencies]`
+  (`DECISIONS.md` D2); edition, license and `rust-version` come from `[workspace.package]`, the lints from
   `[workspace.lints]`.
 
-Les requêtes Postgres sont écrites en SQL avec les macros `sqlx::query!` et `query_as!`, vérifiées à la
-compilation contre le schéma ; les métadonnées sont versionnées dans `.sqlx/` pour que la compilation et la CI
-tournent sans base. Les migrations sont dans `migrations/`, embarquées dans `cihub-server` et appliquées par
-`cihub-server migrate` (`AGENTS.md` D14). Les enums Postgres ne sont pas dérivés dans `cihub-domain`, pour qu'il
-reste sans `sqlx` : `cihub-store` les convertit par `as_str` et `FromStr`, et un test compare `pg_enum` aux
-variantes de chaque énumération.
+Postgres queries are written in SQL with the `sqlx::query!` and `query_as!` macros, checked at
+compile time against the schema; the metadata is versioned in `.sqlx/` so that compilation and CI
+run without a database. The migrations are in `migrations/`, embedded in `cihub-server` and applied by
+`cihub-server migrate` (`DECISIONS.md` D14). The Postgres enums are not derived in `cihub-domain`, so that it
+stays free of `sqlx`: `cihub-store` converts them with `as_str` and `FromStr`, and a test compares `pg_enum` to the
+variants of each enumeration.
 
-## Le binaire `cihub-server` et ses rôles
+## The `cihub-server` binary and its roles
 
-`cihub-server` exécute les quatre rôles dans un processus par défaut ; `CIHUB_ROLES` en choisit une partie
-(`AGENTS.md` D8). Un rôle n'a pas de crate : il lance des boucles dont le code est dans les crates de bibliothèque.
+`cihub-server` runs the four roles in one process by default; `CIHUB_ROLES` selects a subset of them
+(`DECISIONS.md` D8). A role has no crate: it starts loops whose code is in the library crates.
 
-| Rôle        | Ce que le rôle lance                            | Crate qui porte le code |
+| Role        | What the role starts                            | Crate that holds the code |
 | ----------- | ----------------------------------------------- | ----------------------- |
-| `web`       | serveur HTTP : API, webhooks, OTLP, tableau de bord | `cihub-web`         |
-| `scheduler` | boucle de réconciliation des files              | `cihub-mergequeue`      |
-| `worker`    | exécution des jobs des modules                  | `cihub-platform`        |
-| `notifier`  | diffusion de l'outbox (lot 11, D65)             | `cihub-platform`        |
+| `web`       | HTTP server: API, webhooks, OTLP, dashboard     | `cihub-web`         |
+| `scheduler` | reconciliation loop of the queues               | `cihub-mergequeue`      |
+| `worker`    | execution of the modules' jobs                  | `cihub-platform`        |
+| `notifier`  | dispatch of the outbox (Lot 11, D65)            | `cihub-platform`        |
 
-`main` lit la configuration, démarre les logs et le pool Postgres, vérifie que le schéma est à jour, puis lance une
-tâche `tokio` par rôle dans un `JoinSet`, avec un seul `CancellationToken`. Sur `SIGTERM`, il annule le jeton :
-chaque boucle cesse de prendre du travail, termine sa transaction en cours, libère ses baux et sort. Si une boucle
-sort en erreur, `main` annule les autres et le processus s'arrête. Une tâche peut être interrompue à n'importe quel
-point d'attente, ce qui est sans danger parce que les exécuteurs de jobs sont idempotents et que les
-réconciliations sont transactionnelles. La réconciliation elle-même est synchrone : la tâche de la file charge
-l'état, appelle `plan`, puis écrit le résultat.
+`main` reads the configuration, starts the logs and the Postgres pool, checks that the schema is up to date, then starts one
+`tokio` task per role in a `JoinSet`, with a single `CancellationToken`. On `SIGTERM`, it cancels the token:
+each loop stops taking work, finishes its current transaction, releases its leases and exits. If a loop
+exits with an error, `main` cancels the others and the process stops. A task can be interrupted at any
+await point, which is safe because the job executors are idempotent and the
+reconciliations are transactional. The reconciliation itself is synchronous: the queue's task loads
+the state, calls `plan`, then writes the result.
 
-Les rôles d'un même processus ne partagent que le pool Postgres et se réveillent par `LISTEN/NOTIFY`, comme entre
-processus. Le mode tout-en-un et le mode avec un processus par rôle se comportent donc de la même façon.
+The roles of one process share only the Postgres pool and wake each other up with `LISTEN/NOTIFY`, as between
+processes. The all-in-one mode and the one-process-per-role mode therefore behave the same way.
 
-### Passer à l'échelle
+### Scaling
 
-Chaque rôle peut avoir ses propres processus, avec la même image et une valeur de `CIHUB_ROLES` différente, par
-exemple un déploiement Kubernetes par rôle :
+Each role can have its own processes, with the same image and a different value of `CIHUB_ROLES`, for
+example one Kubernetes deployment per role:
 
-| Déploiement       | `CIHUB_ROLES` | Répliques                            | Comment les répliques se partagent le travail                                                                                   |
+| Deployment        | `CIHUB_ROLES` | Replicas                             | How the replicas share the work                                                                                                 |
 | ----------------- | ------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `cihub-api`       | `api`         | N, derrière un répartiteur de charge | Aucun état ; chaque webhook va dans l'inbox, et le dédoublonnage par `delivery_id` écarte un double reçu par une autre réplique |
-| `cihub-scheduler` | `scheduler`   | N                                    | Une file est traitée par une seule réplique à la fois (bail et verrou) ; les files se répartissent entre les répliques          |
-| `cihub-worker`    | `worker`      | N                                    | Chaque réplique prend et verrouille des jobs ; un job d'une réplique arrêtée est repris quand `locked_until` expire            |
-| `cihub-notifier`  | `notifier`    | 1 ou plus                            | Même principe sur l'outbox                                                                                                      |
+| `cihub-web`       | `web`         | N, behind a load balancer            | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received by another replica |
+| `cihub-scheduler` | `scheduler`   | N                                    | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
+| `cihub-worker`    | `worker`      | N                                    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
+| `cihub-notifier`  | `notifier`    | 1 or more                            | Same principle on the outbox                                                                                                    |
 
-Les limites : une file n'est traitée que par une réplique à la fois, pour garder l'ordre, donc ajouter des
-schedulers augmente le nombre de files traitées en parallèle, pas la vitesse d'une file ; au-delà d'un certain
-nombre de workers, c'est le budget du SCM de la connexion qui limite ; Postgres est la ressource commune
-(connexions, avec PgBouncer devant `api`, et débit d'écriture). La v1 n'ajoute pas de broker (`AGENTS.md` D63).
+The limits: a queue is processed by only one replica at a time, to keep the order, so adding
+schedulers increases the number of queues processed in parallel, not the speed of one queue; beyond a certain
+number of workers, the SCM budget of the connection is what limits; Postgres is the shared resource
+(connections, with PgBouncer in front of `web`, and write throughput). v1 adds no broker (`DECISIONS.md` D63).
 
-## Le scheduler
+## The scheduler
 
-Le processus scheduler est celui qu'il faut comprendre pour raisonner sur la correction. Chaque réplique exécute
-une boucle : prendre ou renouveler les baux de `queue_leases` sur les files ayant du travail en attente
-(`queues.dirty = true` ou un tic dû), puis, pour chaque file détenue, ouvrir une transaction, prendre
-`pg_try_advisory_xact_lock`, exécuter la réconciliation et remettre `dirty` à faux. Le bail attribue une file à une
-réplique ; le verrou consultatif de transaction garantit qu'une seule réconciliation s'applique à la fois, y
-compris pendant la reprise d'un bail expiré. Toute écriture sur les entrées d'une file (par l'ingestion, par un
-résultat de job, par l'API) positionne `dirty` et émet `NOTIFY cihub_queue, '<queue_id>'`. La réconciliation d'une
-file ne s'exécute jamais en parallèle d'elle-même et n'attend aucune E/S autre que Postgres : une réplique gère
-donc des centaines de files.
+The scheduler process is the one to understand in order to reason about correctness. Each replica runs
+a loop: take or renew the `queue_leases` leases on the queues that have pending work
+(`queues.dirty = true` or a due tick), then, for each held queue, open a transaction, take
+`pg_try_advisory_xact_lock`, run the reconciliation and reset `dirty` to false. The lease assigns a queue to a
+replica; the transaction-level advisory lock guarantees that only one reconciliation applies at a time, including
+during the takeover of an expired lease. Any write on the items of a queue (by the ingestion, by a
+job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. The reconciliation of a
+queue never runs in parallel with itself and waits on no I/O other than Postgres: one replica therefore
+handles hundreds of queues.
 
-Une réconciliation (`cihub-mergequeue`, lots 5 et 6) se fait dans une seule transaction : charger le dernier
-instantané et les événements qui le suivent, écrire les faits de `queue_inbox` qui changent l'état avec leurs
-projections, puis ceux des livraisons de la file (une livraison de check arrivée avant le fait d'assemblage de
-son exécution attend la réconciliation suivante), exécuter `plan`, écrire ses décisions, demander les jobs de
-l'état voulu (lectures de PR, soumissions, assemblage des branches de test) et le nettoyage des exécutions que les
-décisions terminent (`AGENTS.md` D117), et fixer `next_tick_at` à `wake_at`. Un arrêt à n'importe quel moment ne
-laisse rien : la transaction est annulée et la réconciliation suivante refait le même travail. Une passe de
-chaque réplique lit aussi les livraisons d'une connexion sans file (`AGENTS.md` D103) : un accès perdu ou rendu
-va dans `queue_inbox` de chaque file de la connexion, et une commande `/cihub merge` demande un job
-`submit_pr`, qui trouve la file par la branche de base de la PR qu'il lit, car un commentaire ne la donne pas.
+A reconciliation (`cihub-mergequeue`, Lots 5 and 6) happens in a single transaction: load the last
+snapshot and the events that follow it, write the facts of `queue_inbox` that change the state with their
+projections, then those of the queue's deliveries (a check delivery that arrives before the assembly fact of
+its run waits for the next reconciliation), run `plan`, write its decisions, request the jobs of the
+desired state (PR reads, submissions, assembly of the test branches) and the cleanup of the runs that the
+decisions terminate (`DECISIONS.md` D117), and set `next_tick_at` to `wake_at`. A stop at any moment
+leaves nothing behind: the transaction is rolled back and the next reconciliation redoes the same work. A pass of
+each replica also reads the deliveries of a connection without a queue (`DECISIONS.md` D103): a lost or restored access
+goes into the `queue_inbox` of each queue of the connection, and a `/cihub merge` command requests a
+`submit_pr` job, which finds the queue by the base branch of the PR it reads, because a comment does not give it.

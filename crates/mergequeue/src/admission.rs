@@ -1,4 +1,4 @@
-//! The `queue_conditions` of a queue (`AGENTS.md` D142): the jobs that read
+//! The `queue_conditions` of a queue (`DECISIONS.md` D142): the jobs that read
 //! a PR evaluate them, and give the conditions that the PR does not meet in
 //! its `pr.observed`. The core sees the result, not the conditions: they
 //! need the logins, which the log does not keep (D42).

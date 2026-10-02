@@ -1,5 +1,5 @@
 //! The address of the instance and the API token of `cihub login`
-//! (`AGENTS.md` D161). `CIHUB_URL` and `CIHUB_TOKEN` pass before the file.
+//! (`DECISIONS.md` D161). `CIHUB_URL` and `CIHUB_TOKEN` pass before the file.
 
 use std::path::PathBuf;
 

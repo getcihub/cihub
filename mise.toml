@@ -3,11 +3,15 @@
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
 "actionlint" = "1.7.12"
+"lefthook" = "2.1.16"
 "rust" = { version = "1.98.1", profile = "minimal", components = "clippy,rustfmt,llvm-tools" }
 "zizmor" = "1.30.1"
 
-# The development Postgres of compose.yaml (AGENTS.md D12): the tests use
+# The development Postgres of compose.yaml (DECISIONS.md D12): the tests use
 # DATABASE_URL, cihub-server uses CIHUB_DATABASE_URL.
+[hooks]
+postinstall = "lefthook install"
+
 [env]
 DATABASE_URL = "postgres://cihub:cihub@127.0.0.1:5432/cihub"
 CIHUB_DATABASE_URL = "postgres://cihub:cihub@127.0.0.1:5432/cihub"
@@ -34,7 +38,7 @@ depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
 [tasks.sim]
-description = "Run the fault injection test on 1 000 seeds (AGENTS.md D129)"
+description = "Run the fault injection test on 1 000 seeds (DECISIONS.md D129)"
 depends = ["db"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"

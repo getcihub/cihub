@@ -1,4 +1,4 @@
-//! The HTTP server of the public address of the `web` role (`AGENTS.md`
+//! The HTTP server of the public address of the `web` role (`DECISIONS.md`
 //! D82, D91). It serves the webhooks of the SCM: it checks the signature,
 //! stores the delivery without routing it, and answers within 2 s (D83, D84);
 //! and the API v1 under `/api/v1`, with the routes of the modules (D159). The
@@ -33,7 +33,7 @@ use tracing::{Instrument, info, info_span, warn};
 const MAX_DELIVERY_BYTES: usize = 25 * 1024 * 1024;
 
 /// A delivery not stored within this time is refused: the SCM sees a failure,
-/// and the sweep asks for it again (`AGENTS.md` D88).
+/// and the sweep asks for it again (`DECISIONS.md` D88).
 pub const ACK_WITHIN: Duration = Duration::from_secs(2);
 
 /// The webhooks of the GitHub App of the instance.
@@ -128,7 +128,7 @@ async fn github_webhook(
     .await
 }
 
-/// Stores `received` without routing it (`AGENTS.md` D84): only the system
+/// Stores `received` without routing it (`DECISIONS.md` D84): only the system
 /// context sees it until the routing loop routes it.
 async fn store(webhooks: &Webhooks, received: ReceivedDelivery) -> Result<bool, PlatformError> {
     let delivery = Delivery {

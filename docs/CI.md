@@ -1,36 +1,34 @@
-# Intégration CI
+# CI integration
 
-Contexte : qui touche au contrat entre la file et la CI : branches de test, modes de déclenchement, statuts requis, endpoints appelés par les jobs de CI. Le code est la source de vérité (`AGENTS.md` D1) ; ce fichier dit l'intention.
-
-CIHub ne lance jamais la CI. Il produit un commit sur une branche (et, par défaut, une PR brouillon pour cette branche), et tout système de CI qui rapporte des check runs ou des statuts de commit GitHub sur ce commit fonctionne sans modification : GitHub Actions, Buildkite, CircleCI, Jenkins, miroirs GitLab CI, exécution distante Bazel. Le seul contrat entre la file et la CI, ce sont les noms des statuts requis et le SHA de test.
+CIHub never starts the CI. It produces a commit on a branch (and, by default, a draft PR for that branch), and any CI system that reports GitHub check runs or commit statuses on that commit works without modification: GitHub Actions, Buildkite, CircleCI, Jenkins, GitLab CI mirrors, Bazel remote execution. The only contract between the queue and the CI is the names of the required statuses and the test SHA.
 
 ```mermaid
 sequenceDiagram
   participant S as Scheduler
   participant W as Worker
   participant G as GitHub
-  participant C as CI (quelconque)
+  participant C as CI (any)
   S->>W: job assemble_test_branch(run)
-  W->>G: creer la ref cihub-temp au HEAD de la cible
-  W->>G: merger P1..Pk, puis les membres du groupe
-  W->>G: creer cihub-merge/pr-N/uuid au resultat, supprimer temp
-  W->>G: ouvrir la PR brouillon (mode brouillon)
-  G-->>C: evenement pull_request / push
-  C->>G: check_run / status sur le SHA de test
+  W->>G: create the cihub-temp ref at the HEAD of the target
+  W->>G: merge P1..Pk, then the group members
+  W->>G: create cihub-merge/pr-N/uuid at the result, delete temp
+  W->>G: open the draft PR (draft mode)
+  G-->>C: pull_request / push event
+  C->>G: check_run / status on the test SHA
   G-->>S: webhook check_run.completed
-  S->>S: tous les checks requis verts ? succes : echec
-  S->>W: job merge_pr(PR d'origine)
-  W->>G: fermer la PR brouillon, supprimer la branche de test
+  S->>S: all required checks green ? success : failure
+  S->>W: job merge_pr(original PR)
+  W->>G: close the draft PR, delete the test branch
 ```
 
-Deux modes de déclenchement sont proposés par file. En **mode PR brouillon** (par défaut), une PR brouillon de la branche de test vers la branche cible est ouverte, donc les workflows sur `pull_request` tournent sans modification ; la CI distingue les exécutions de file par la ref de tête `cihub-merge/`, et le corps de la PR brouillon porte l'identifiant d'exécution et les numéros des PR testées. En **mode push**, aucune PR n'est créée et la CI doit écouter `push` sur `cihub-merge/**` ; cela évite les déploiements de prévisualisation et les bots déclenchés par PR à chaque exécution. Dans les deux modes, la branche de test est supprimée à la fin de l'exécution, après une rétention configurable (`keep_test_branches_minutes`, 0 par défaut) pour le débogage.
+Two trigger modes are offered per queue. In **draft PR mode** (the default), a draft PR from the test branch to the target branch is opened, so the workflows on `pull_request` run without modification; the CI tells queue runs apart by the `cihub-merge/` head ref, and the body of the draft PR carries the run identifier and the numbers of the tested PRs. In **push mode**, no PR is created and the CI must listen to `push` on `cihub-merge/**`; this avoids preview deployments and PR-triggered bots at each run. In both modes, the test branch is deleted at the end of the run, after a configurable retention (`keep_test_branches_minutes`, 0 by default) for debugging.
 
-Les noms des branches sont figés (lot 6, `cihub-domain`) : `<prefix>-temp/pr-<N>/<run_id>` pour la branche
-temporaire où les têtes sont mergées, `<prefix>-merge/pr-<N>/<run_id>` pour la branche de test, où `N` est le
-numéro de la première PR du groupe et `run_id` l'identifiant de l'exécution (`run_…`), avec `branch_prefix`
-(`cihub` par défaut). Le nom de la branche de test mène à son exécution : un check rapporté sur elle est routé
-vers sa file par ce nom, ou par son SHA de test une fois la branche supprimée (`AGENTS.md` D118). Le titre de la
-PR brouillon est `CIHub: test #12 on main` et son corps est figé aussi :
+The branch names are frozen (Lot 6, `cihub-domain`): `<prefix>-temp/pr-<N>/<run_id>` for the temporary
+branch where the heads are merged, `<prefix>-merge/pr-<N>/<run_id>` for the test branch, where `N` is the
+number of the first PR of the group and `run_id` the identifier of the run (`run_…`), with `branch_prefix`
+(`cihub` by default). The name of the test branch leads to its run: a check reported on it is routed to its
+queue by this name, or by its test SHA once the branch is deleted (`DECISIONS.md` D118). The title of the draft
+PR is `CIHub: test #12 on main` and its body is frozen too:
 
 ```markdown
 **CIHub merge queue** test run `run_…`.
@@ -42,9 +40,9 @@ PR brouillon est `CIHub: test #12 on main` et son corps est figé aussi :
 CIHub opened this pull request for the CI and closes it when the run ends. Do not merge, review or edit it.
 ```
 
-À la fin de l'exécution, quel qu'en soit le résultat, le job `cleanup_test_branch` ferme la PR brouillon et
-supprime la branche de test et la branche temporaire, après `keep_test_branches_minutes` (`AGENTS.md` D117).
+At the end of the run, whatever its result, the `cleanup_test_branch` job closes the draft PR and deletes the
+test branch and the temporary branch, after `keep_test_branches_minutes` (`DECISIONS.md` D117).
 
-Les jobs de CI peuvent enrichir la file par deux endpoints. `POST /api/v1/repos/{owner}/{name}/prs/{pr}/impacted-targets` envoie les cibles qu'une PR touche (Bazel, Nx ou n'importe quel script) pour le mode parallèle ; `GET /api/v1/test-runs/{run_id}` permet à un job de découvrir quelles PR il teste et l'union de leurs cibles impactées, pour qu'un build de monodépôt se limite aux projets concernés. L'identifiant d'exécution est le dernier segment du nom de branche, disponible dans GitHub Actions via `${GITHUB_REF##*/}`.
+CI jobs can enrich the queue through two endpoints. `POST /api/v1/repos/{owner}/{name}/prs/{pr}/impacted-targets` sends the targets that a PR touches (Bazel, Nx or any script) for the parallel mode; `GET /api/v1/test-runs/{run_id}` lets a job discover which PRs it tests and the union of their impacted targets, so that a monorepo build limits itself to the affected projects. The run identifier is the last segment of the branch name, available in GitHub Actions through `${GITHUB_REF##*/}`.
 
-Les noms des statuts requis sont résolus une fois par exécution et enregistrés sur elle avec leur source (`repo_config`, `branch_protection`). Un check qui rapporte sous un nom différent de celui exigé (un job de workflow renommé) est l'erreur de configuration la plus courante ; le tableau de bord affiche les noms requis à côté des noms observés pour chaque exécution afin de la rendre visible.
+The names of the required statuses are resolved once per run and recorded on it with their source (`repo_config`, `branch_protection`). A check that reports under a name different from the required one (a renamed workflow job) is the most common configuration error; the dashboard displays the required names next to the observed names for each run to make it visible.

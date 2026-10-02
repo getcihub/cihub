@@ -1,4 +1,4 @@
--- Queues and their leases (AGENTS.md D54, D56). A queue is one target branch of
+-- Queues and their leases (DECISIONS.md D54, D56). A queue is one target branch of
 -- a repository; lot 5 adds its state, mode and settings. A lease gives a queue
 -- to one scheduler replica until it expires.
 

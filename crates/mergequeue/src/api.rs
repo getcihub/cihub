@@ -1,5 +1,5 @@
 //! The routes of the merge queue under `/api/v1` (`docs/API.md`,
-//! `AGENTS.md` D159, D160). They read the projections in a transaction of the
+//! `DECISIONS.md` D159, D160). They read the projections in a transaction of the
 //! organization of the token, and change a queue only through its inbox
 //! (`queue_inbox`) or a job: the scheduler stays the only writer of the log.
 
@@ -235,7 +235,7 @@ async fn list_queues(
 }
 
 /// Creates a queue on a branch of a repository. Its settings come from the
-/// file of the repository (`AGENTS.md` D134).
+/// file of the repository (`DECISIONS.md` D134).
 #[utoipa::path(
     post,
     path = "/repos/{owner}/{name}/queues",
@@ -347,7 +347,7 @@ async fn update_queue(
 }
 
 /// `POST /queues/{queue_id}:resync`: reads again from the SCM each live PR,
-/// the checks of each live run and the head of the target (`AGENTS.md`
+/// the checks of each live run and the head of the target (`DECISIONS.md`
 /// D128).
 #[utoipa::path(
     post,
@@ -500,7 +500,7 @@ async fn list_items(
 }
 
 /// Submits a PR to the queue. The job `submit_pr` reads the PR first, then
-/// gives the submission to the queue (`AGENTS.md` D160).
+/// gives the submission to the queue (`DECISIONS.md` D160).
 #[utoipa::path(
     post,
     path = "/queues/{queue_id}/items",
@@ -862,7 +862,7 @@ struct RunRow {
     conflict_culprit: Option<Value>,
 }
 
-/// The detail of a run (`AGENTS.md` D115).
+/// The detail of a run (`DECISIONS.md` D115).
 #[utoipa::path(
     get,
     path = "/test-runs/{run_id}",
@@ -1021,7 +1021,7 @@ async fn dependents(
         .collect()
 }
 
-/// What the configuration of the SCM misses for the queue (`AGENTS.md`
+/// What the configuration of the SCM misses for the queue (`DECISIONS.md`
 /// D162): no finding means a sound configuration.
 #[utoipa::path(
     get,

@@ -1,5 +1,5 @@
 //! `apply`: the pure function that applies one event to the snapshot. Replay
-//! uses it alone and never calls `plan` (`AGENTS.md` D5).
+//! uses it alone and never calls `plan` (`DECISIONS.md` D5).
 
 use cihub_domain::{
     Actor, CheckObservation, Event, EventId, EventKind, GroupId, GroupState, Item, ItemId,
@@ -367,7 +367,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             outcome
         }
         // A direct merge that cannot happen marks the item, which follows the
-        // path of the tests; no decision follows (`AGENTS.md` D153).
+        // path of the tests; no decision follows (`DECISIONS.md` D153).
         EventKind::MergeFailed {
             item_id,
             direct: true,
@@ -489,7 +489,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 return Err(ApplyError::NoSubmission { event_id: event.id });
             };
             // A refused submission never becomes the live item of its PR
-            // (`AGENTS.md` D151).
+            // (`DECISIONS.md` D151).
             let is_current = !to.is_terminal();
             if is_current {
                 for item in snapshot.items.values_mut() {
@@ -756,7 +756,7 @@ pub(crate) fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             .is_some_and(|r| r.status == RunStatus::Assembling)
     };
     match request {
-        // A submission waits for the end of a pause (`AGENTS.md` D113); one
+        // A submission waits for the end of a pause (`DECISIONS.md` D113); one
         // that comes while the queue drains or switches its mode gets a
         // refused item (D151). A new head of a PR in the queue is submitted
         // again (D152).

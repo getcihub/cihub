@@ -1,4 +1,4 @@
--- The merge queue module (AGENTS.md D94, D95, D100): the modules of an
+-- The merge queue module (DECISIONS.md D94, D95, D100): the modules of an
 -- organization, the state and the mode of a queue, the projections of the log
 -- (`queue_items`, `test_groups`, `test_runs`, D28), the snapshots of the log,
 -- and the inbox of the facts that the jobs give back to a queue.

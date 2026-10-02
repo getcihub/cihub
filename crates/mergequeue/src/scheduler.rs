@@ -1,4 +1,4 @@
-//! The scheduler of the merge queue (`AGENTS.md` D64): it takes the leases of
+//! The scheduler of the merge queue (`DECISIONS.md` D64): it takes the leases of
 //! the queues that have work, and reconciles each one in one transaction
 //! under its lock. A reconciliation writes the facts of `queue_inbox` to the
 //! log, then those of the deliveries of the queue, runs `plan`, writes its
@@ -41,7 +41,7 @@ use crate::surfaces::{WelcomePr, converge_surfaces, welcome_job};
 use crate::target::QueueTarget;
 use crate::{COVER_AFTER, MergeQueueError, QueueLog};
 
-/// The translation of a delivery of the SCM by its adapter (`AGENTS.md` D84).
+/// The translation of a delivery of the SCM by its adapter (`DECISIONS.md` D84).
 pub type Translate =
     Arc<dyn Fn(&str, &Value) -> Result<ScmDelivery, Box<dyn Error + Send + Sync>> + Send + Sync>;
 
@@ -197,11 +197,11 @@ impl Reconciler {
 
     /// Requests `jobs`, then the jobs that make the SCM converge to the
     /// desired state: the read of the configuration file on a new head of the
-    /// target (`AGENTS.md` D136), the reads that are due (PRs, checks, target
+    /// target (`DECISIONS.md` D136), the reads that are due (PRs, checks, target
     /// head), the
     /// assembly of each run that waits for its test branch, the merge of each
     /// proved item, and the cleanup of each run that ended, after the
-    /// retention (`AGENTS.md` D117). Returns the number of new jobs.
+    /// retention (`DECISIONS.md` D117). Returns the number of new jobs.
     async fn request_jobs(
         &self,
         conn: &mut PgConnection,
@@ -424,7 +424,7 @@ impl Work<'_> {
     /// A report on the test SHA of a live run is a fact; one that comes
     /// before the assembly fact of its run waits for it (`false`); one that
     /// comes after the end of the run is stored without a fact
-    /// (`AGENTS.md` D118).
+    /// (`DECISIONS.md` D118).
     async fn check_changed(
         &self,
         conn: &mut PgConnection,
@@ -494,7 +494,7 @@ struct ConnectionDelivery {
     received_at: OffsetDateTime,
 }
 
-/// Reads the deliveries of a connection without a queue (`AGENTS.md` D103),
+/// Reads the deliveries of a connection without a queue (`DECISIONS.md` D103),
 /// and returns their number. A lost or restored access goes to each queue of
 /// the connection; a `merge` command requests its submission, whose job finds
 /// the queue by the base branch of the PR. A delivery that no queue uses is
@@ -604,7 +604,7 @@ async fn pass_delivery(
             comment_external_id,
             sender,
         } => {
-            // Only the box of the comment of CIHub submits (`AGENTS.md`
+            // Only the box of the comment of CIHub submits (`DECISIONS.md`
             // D163): anyone can write a box in a comment of their own.
             let ours = match repo_of(conn, delivery, &repo_external_id).await? {
                 Some(repo) => is_our_comment(conn, repo, number, &comment_external_id).await?,
@@ -716,7 +716,7 @@ async fn give_to_queues(
 }
 
 /// A change of a PR whose base branch has several queues, so that the
-/// routing gave it no queue (`AGENTS.md` D135).
+/// routing gave it no queue (`DECISIONS.md` D135).
 struct PrChange<'a> {
     repo_external_id: &'a str,
     number: u64,
@@ -778,7 +778,7 @@ async fn route_pr_change(
         return Ok(());
     };
     // The welcome job checks the settings of the first active queue of the
-    // branch (`AGENTS.md` D163).
+    // branch (`DECISIONS.md` D163).
     if change.opened
         && QueueTarget::queues_of_branch(conn, repo, change.base_branch)
             .await?
@@ -915,7 +915,7 @@ async fn request_submission(
     Ok(())
 }
 
-/// The scheduler looks for the queues to cover this often (`AGENTS.md` D106).
+/// The scheduler looks for the queues to cover this often (`DECISIONS.md` D106).
 pub const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
 /// Marks dirty the queues of the organizations with the module whose oldest
@@ -954,7 +954,7 @@ pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize,
 }
 
 /// Marks dirty the queues that have a live item, in the organizations with
-/// the module (`AGENTS.md` D131): a plan of an older version may have asked
+/// the module (`DECISIONS.md` D131): a plan of an older version may have asked
 /// for no wake-up. Returns their number.
 ///
 /// # Errors

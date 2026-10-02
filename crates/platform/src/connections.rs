@@ -18,7 +18,7 @@ use tracing::info;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 /// The type of the job that reads the repositories of a connection
-/// (`AGENTS.md` D155).
+/// (`DECISIONS.md` D155).
 pub const SYNC_REPOS: &str = "sync_repos";
 
 /// The name of the API token that [`bootstrap`] creates.
@@ -35,7 +35,7 @@ pub struct Bootstrapped {
 }
 
 /// Starts an organization from the connection `external_id` of the SCM
-/// `instance` (`AGENTS.md` D154, D155): the organization, named by the
+/// `instance` (`DECISIONS.md` D154, D155): the organization, named by the
 /// account of the connection, its account, the connection and the merge
 /// queue module, then a request to read its repositories and a new API token
 /// with every scope. On a connection already known, creates only the token,
@@ -216,7 +216,7 @@ fn hour_window(now: OffsetDateTime) -> String {
 }
 
 /// The read of the repositories of `connection` for `cause`: the hour of the
-/// hourly read, or the delivery that reported a change (`AGENTS.md` D155).
+/// hourly read, or the delivery that reported a change (`DECISIONS.md` D155).
 pub fn sync_repos_job(
     org_id: OrgId,
     instance: ScmInstanceId,
@@ -293,7 +293,7 @@ pub async fn request_repo_syncs(
 
 /// Reads the repositories of the connection of `job`, creates those that
 /// CIHub does not know and updates the others, and returns their number. A
-/// repository that the connection no longer reaches stays (`AGENTS.md`
+/// repository that the connection no longer reaches stays (`DECISIONS.md`
 /// D155); one that another organization has is left to it.
 ///
 /// # Errors
@@ -371,7 +371,7 @@ pub async fn run_sync_repos(
     Ok(written)
 }
 
-/// The executor of [`SYNC_REPOS`], with its SCM (`AGENTS.md` D71). A
+/// The executor of [`SYNC_REPOS`], with its SCM (`DECISIONS.md` D71). A
 /// connection that the SCM no longer serves fails the job: the next hour
 /// tries again.
 pub fn sync_repos_executor(

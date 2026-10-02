@@ -29,7 +29,7 @@ pub const JOBS_PER_CLAIM: i64 = 16;
 /// time. An executor must accept to stop at any `.await`.
 pub const JOB_TIMEOUT: Duration = Duration::from_secs(50);
 
-/// What an executor answers for a job (`AGENTS.md` D66).
+/// What an executor answers for a job (`DECISIONS.md` D66).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Done,

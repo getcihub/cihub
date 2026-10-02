@@ -40,7 +40,7 @@ pub(crate) async fn project(
             let item = match after.items.get(item_id) {
                 Some(item) => item.clone(),
                 // A refused submission is concluded at once, so `apply`
-                // already evicted it (`AGENTS.md` D151).
+                // already evicted it (`DECISIONS.md` D151).
                 None => refused_item(conn, event, *item_id, *to, *reason)
                     .await?
                     .ok_or_else(mismatch)?,
@@ -484,7 +484,7 @@ pub(crate) async fn upsert_check(
 }
 
 /// Stores a report on the test SHA of a run of `queue` that is no longer
-/// live, without a fact in the log (`AGENTS.md` D118). Returns `false` when
+/// live, without a fact in the log (`DECISIONS.md` D118). Returns `false` when
 /// no run of the queue has this test SHA.
 pub(crate) async fn record_late_check(
     conn: &mut PgConnection,

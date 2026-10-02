@@ -1,10 +1,10 @@
 -- Tenancy: SCM instances, organizations, their SCM accounts and connections,
 -- repositories, users, memberships, API tokens and the audit log.
 --
--- No column depends on one SCM (AGENTS.md D46): an identifier of the SCM is
+-- No column depends on one SCM (DECISIONS.md D46): an identifier of the SCM is
 -- an `external_id` in text, unique within its SCM instance only.
 --
--- Isolation (AGENTS.md D38): every table that carries org_id has row level
+-- Isolation (DECISIONS.md D38): every table that carries org_id has row level
 -- security, forced on the owner too. A transaction sees the rows of the
 -- organization in `cihub.org_id`, or every row when `cihub.system` is `on`;
 -- without either setting it sees nothing. `scm_instances` and `users` are
@@ -113,7 +113,7 @@ CREATE TABLE api_tokens (
     id           text        PRIMARY KEY,
     org_id       text        NOT NULL REFERENCES orgs (id),
     name         text        NOT NULL,
-    -- SHA-256 of the whole token `cht_…` (AGENTS.md D32).
+    -- SHA-256 of the whole token `cht_…` (DECISIONS.md D32).
     token_hash   bytea       NOT NULL UNIQUE CHECK (length(token_hash) = 32),
     scopes       api_scope[] NOT NULL,
     created_by   text        REFERENCES users (id),

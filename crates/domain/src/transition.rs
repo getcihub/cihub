@@ -1,4 +1,4 @@
-//! Tables of the permitted transitions (`AGENTS.md` D6): for each (state
+//! Tables of the permitted transitions (`DECISIONS.md` D6): for each (state
 //! before, state after), the reasons that may explain it. `None` before is a
 //! creation.
 
@@ -109,7 +109,7 @@ const MERGE_FAILED: [Reason; 6] = [
     R::MergeRepeatedServerErrors,
     R::PrUpdatedAtMergeTime,
 ];
-/// Failure of a direct merge (`AGENTS.md` D122): a refusal of the SCM is
+/// Failure of a direct merge (`DECISIONS.md` D122): a refusal of the SCM is
 /// `direct_merge_rejected`, the other errors keep their reason.
 const DIRECT_MERGE_FAILED: [Reason; 6] = [
     R::DirectMergeRejected,
@@ -150,7 +150,7 @@ impl Lifecycle for ItemState {
         use ItemState as S;
         match (from, to) {
             (None, S::NotReady) => &[R::Submitted],
-            // A submission that the queue refuses (`AGENTS.md` D151).
+            // A submission that the queue refuses (`DECISIONS.md` D151).
             (None, S::Cancelled) => &[R::QueueDraining, R::QueueSwitchingModes],
             (Some(S::NotReady), S::Pending) => &[R::MergeItemNowReady],
             (Some(S::Pending), S::Testing) => &[R::TestRunStarted],

@@ -1,4 +1,4 @@
-//! What a PR shows of its item (`AGENTS.md` D156): the desired state of its
+//! What a PR shows of its item (`DECISIONS.md` D156): the desired state of its
 //! status, its comment and its labels, in the terms of the queue. The text
 //! comes from the caller.
 

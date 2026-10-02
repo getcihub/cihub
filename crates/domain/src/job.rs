@@ -37,18 +37,18 @@ closed_enum! {
         /// Merge: the head of the PR changed since the test (the `sha` guard).
         HeadChanged,
         /// Merge: the PR was already merged when the job read it; the queue
-        /// did not merge it (`AGENTS.md` D132).
+        /// did not merge it (`DECISIONS.md` D132).
         PrAlreadyMerged,
         /// The direct merge cannot happen now: a required status is not green
         /// on the head of the PR, the PR does not contain the head of the
-        /// target, or it is not mergeable (`AGENTS.md` D153).
+        /// target, or it is not mergeable (`DECISIONS.md` D153).
         DirectMergeUnavailable,
     }
 }
 
 closed_enum! {
     /// The priority of a job on the budget of its connection, highest first
-    /// (`AGENTS.md` D59). When the budget runs low, `speculate` waits first and
+    /// (`DECISIONS.md` D59). When the budget runs low, `speculate` waits first and
     /// `merge` last.
     pub enum JobClass {
         /// A reply that a person waits for: a command, a status, a comment.

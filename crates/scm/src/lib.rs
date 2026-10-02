@@ -1,4 +1,4 @@
-//! The contract between CIHub and an SCM (`AGENTS.md` D73, D76): the `Scm`
+//! The contract between CIHub and an SCM (`DECISIONS.md` D73, D76): the `Scm`
 //! trait, the neutral values it reads and writes, its errors, and the neutral
 //! events that an adapter reads in a webhook delivery (D75).
 //!

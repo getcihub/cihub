@@ -17,7 +17,7 @@ pub const JOBS_PER_CONNECTION: i64 = 100;
 
 /// After this many attempts, a job that fails goes to `dead`. The backoff of
 /// these attempts covers the 15 minutes that an assembly waits
-/// (`AGENTS.md` D133).
+/// (`DECISIONS.md` D133).
 pub const MAX_ATTEMPTS: i32 = 11;
 
 /// The wait before the next attempt: 2, 4, 8… seconds, at most 5 minutes.
@@ -29,7 +29,7 @@ pub fn backoff(attempts: i32) -> Duration {
 /// A job as the roles request it, and as a worker receives it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Job {
-    /// `<type>:<subject>:<version>` (`AGENTS.md` D60).
+    /// `<type>:<subject>:<version>` (`DECISIONS.md` D60).
     pub idempotency_key: String,
     /// The executor that runs the job.
     pub job_type: String,

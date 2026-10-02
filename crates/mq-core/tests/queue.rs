@@ -51,7 +51,7 @@ fn a_direct_merge_lands_without_a_test_branch() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     // The first item waits for its direct merge; no group forms meanwhile
-    // (`AGENTS.md` D153).
+    // (`DECISIONS.md` D153).
     assert_eq!(w.state(1), Some(ItemState::Pending));
     assert!(w.snapshot.groups.is_empty());
     let merges = w.reconcile().desired.merges;
@@ -108,7 +108,7 @@ fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
     w.submit(2, Priority::MEDIUM);
     let old = w.item(1).unwrap().id;
     // The job that reads the PR sees the push: it submits the new head, then
-    // gives the observation (`AGENTS.md` D152).
+    // gives the observation (`DECISIONS.md` D152).
     w.fact(
         Actor::System,
         EventKind::ItemSubmitted {
@@ -212,7 +212,7 @@ fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
     );
     w.observe(1, |_| {});
     assert_eq!(w.state(1), Some(ItemState::Testing));
-    // An admitted item no longer depends on its conditions (`AGENTS.md`
+    // An admitted item no longer depends on its conditions (`DECISIONS.md`
     // D142).
     w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
     assert_eq!(w.state(1), Some(ItemState::Testing));
@@ -654,7 +654,7 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
     w.fact(Actor::System, control(QueueControl::Drain));
     assert_eq!(w.snapshot.state, QueueState::Draining);
-    // A submission in drain gets a refused item (`AGENTS.md` D151).
+    // A submission in drain gets a refused item (`DECISIONS.md` D151).
     assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
     assert!(decided_with(&w, Reason::QueueDraining));
     w.fact(Actor::System, EventKind::AccessLost);

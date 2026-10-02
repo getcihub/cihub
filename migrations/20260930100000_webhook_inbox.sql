@@ -1,4 +1,4 @@
--- The inbox of the webhook deliveries (AGENTS.md D58). The ingestion stores a
+-- The inbox of the webhook deliveries (DECISIONS.md D58). The ingestion stores a
 -- delivery before any decision; a copy of a delivery changes nothing. A
 -- delivery identifier comes from the SCM, so it is unique within its instance
 -- only (D46).

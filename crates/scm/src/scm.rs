@@ -10,14 +10,14 @@ use crate::{
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
-/// `Arc<dyn Scm>` (`AGENTS.md` D71), and a trait with `async fn` cannot be
+/// `Arc<dyn Scm>` (`DECISIONS.md` D71), and a trait with `async fn` cannot be
 /// used as `dyn`.
 pub type ScmFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ScmError>> + Send + 'a>>;
 
 /// A read of PRs asks for this many PRs at most.
 pub const MAX_PRS_PER_READ: usize = 50;
 
-/// The calls of CIHub to an SCM instance (`AGENTS.md` D76). Each call names
+/// The calls of CIHub to an SCM instance (`DECISIONS.md` D76). Each call names
 /// its repository, and so its connection, and its class, which decides what
 /// the budget of the connection lets through. A write whose result already
 /// exists succeeds without a change, so that a job can run twice (principle
@@ -82,7 +82,7 @@ pub trait Scm: Send + Sync {
 
     /// Whether the commit `ancestor` is in the history of the commit
     /// `descendant`, or is it: a PR whose head descends from the head of its
-    /// target is up to date (`AGENTS.md` D153).
+    /// target is up to date (`DECISIONS.md` D153).
     fn is_ancestor<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -92,7 +92,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, bool>;
 
     /// The paths of the files that the PR `number` changes, read only when a
-    /// condition uses them (`AGENTS.md` D143).
+    /// condition uses them (`DECISIONS.md` D143).
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -101,7 +101,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, Vec<String>>;
 
     /// The path of each unresolved review thread of the PR `number`, read
-    /// only when a condition uses them (`AGENTS.md` D143).
+    /// only when a condition uses them (`DECISIONS.md` D143).
     fn unresolved_threads<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -206,7 +206,7 @@ pub trait Scm: Send + Sync {
     -> ScmFuture<'a, ()>;
 
     /// The webhook deliveries that the instance sent to CIHub since `since`,
-    /// each attempt once, for every connection (`AGENTS.md` D88). No
+    /// each attempt once, for every connection (`DECISIONS.md` D88). No
     /// connection makes the call, so no budget of a connection applies.
     fn recent_deliveries(
         &self,
@@ -218,7 +218,7 @@ pub trait Scm: Send + Sync {
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
 
     /// The account that the connection `external_id` serves
-    /// (`AGENTS.md` D155). No connection of CIHub exists yet, so no budget of
+    /// (`DECISIONS.md` D155). No connection of CIHub exists yet, so no budget of
     /// a connection applies.
     fn installation<'a>(
         &'a self,
@@ -227,7 +227,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, ScmAccount>;
 
     /// What the configuration of `branch` misses for the queue, in the order
-    /// of [`SetupFinding`] (`AGENTS.md` D162).
+    /// of [`SetupFinding`] (`DECISIONS.md` D162).
     fn check_setup<'a>(
         &'a self,
         repo: &'a RepoRef,

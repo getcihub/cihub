@@ -1,5 +1,5 @@
 -- Lot 8. A queue has a name, unique in its repository, so that several queues can
--- target one branch (AGENTS.md D135). It keeps the last valid configuration file
+-- target one branch (DECISIONS.md D135). It keeps the last valid configuration file
 -- read on the head of its target (D136).
 ALTER TABLE queues
     DROP CONSTRAINT queues_repo_id_target_branch_key,

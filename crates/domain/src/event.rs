@@ -38,14 +38,14 @@ pub enum EventKind {
         no_batch: bool,
         direct: bool,
         submitted_via: SubmittedVia,
-        /// Attributes kept for a probabilistic speculation (`AGENTS.md` D27,
+        /// Attributes kept for a probabilistic speculation (`DECISIONS.md` D27,
         /// D42).
         author_id: UserId,
         additions: u64,
         deletions: u64,
         changed_files: u64,
         /// The permission of the author of the command, read at the
-        /// submission; `None` for a label (`AGENTS.md` D144).
+        /// submission; `None` for a label (`DECISIONS.md` D144).
         sender_permission: Option<Permission>,
     },
     #[serde(rename = "item.cancel_requested")]
@@ -65,10 +65,10 @@ pub enum EventKind {
         review_decision: ReviewDecision,
         checks: Vec<CheckReport>,
         /// The `queue_conditions` of the queue that the PR does not meet, as
-        /// the file writes them (`AGENTS.md` D142).
+        /// the file writes them (`DECISIONS.md` D142).
         unmet_conditions: Vec<String>,
         /// The checks that the rules of the base branch require, without the
-        /// status of the queue (`AGENTS.md` D158).
+        /// status of the queue (`DECISIONS.md` D158).
         required_checks: Vec<String>,
     },
     #[serde(rename = "target.pushed")]
@@ -386,7 +386,7 @@ pub enum Actor {
     /// The account that CIHub acts with on the SCM: the GitHub App, a
     /// GitLab service account.
     Bot,
-    /// A user of the SCM; the `users` table keeps the login (`AGENTS.md` D42).
+    /// A user of the SCM; the `users` table keeps the login (`DECISIONS.md` D42).
     User { user_id: UserId },
 }
 

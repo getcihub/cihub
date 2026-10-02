@@ -1,4 +1,4 @@
-//! The merge queue module (`AGENTS.md` D93): the log of each queue in
+//! The merge queue module (`DECISIONS.md` D93): the log of each queue in
 //! Postgres, its projections (`queue_items`, `test_groups`, `test_runs`,
 //! `check_observations`), its snapshots and their replay; the scheduler that
 //! reconciles each queue; and the jobs that read the SCM for it, build its
@@ -90,7 +90,7 @@ pub enum MergeQueueError {
 /// The clock of the process, as the module receives it.
 pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
-/// The merge queue module (`AGENTS.md` D94): the executors of its jobs, which
+/// The merge queue module (`DECISIONS.md` D94): the executors of its jobs, which
 /// call `scm`, and its scheduler loop, which runs as `owner`.
 pub fn module(
     pool: PgPool,

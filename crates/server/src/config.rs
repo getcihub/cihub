@@ -6,7 +6,7 @@ use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde::Serialize;
 
-/// A role of the process (`AGENTS.md` D8, D91).
+/// A role of the process (`DECISIONS.md` D8, D91).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -43,17 +43,17 @@ pub struct Config {
     pub roles: BTreeSet<Role>,
     /// Address of `/healthz` and `/readyz`, separate from the public routes.
     pub internal_addr: SocketAddr,
-    /// Public address of the `web` role: webhooks, then API (`AGENTS.md` D82).
+    /// Public address of the `web` role: webhooks, then API (`DECISIONS.md` D82).
     pub http_addr: SocketAddr,
     /// `postgres://user:password@host/database`.
     pub database_url: SecretString,
     pub logs: Logs,
     /// `None` when its variables are missing: `migrate` does not need it, the
-    /// server stops without it (`AGENTS.md` D92).
+    /// server stops without it (`DECISIONS.md` D92).
     pub github: Option<GithubApp>,
 }
 
-/// The GitHub App of the instance, created by hand (`AGENTS.md` D79, D92).
+/// The GitHub App of the instance, created by hand (`DECISIONS.md` D79, D92).
 #[derive(Debug)]
 pub struct GithubApp {
     /// github.com or a GitHub Enterprise Server, without a final `/`.

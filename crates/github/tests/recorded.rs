@@ -1,4 +1,4 @@
-//! `cihub-github` against recorded answers of GitHub (`AGENTS.md` D74, D90):
+//! `cihub-github` against recorded answers of GitHub (`DECISIONS.md` D74, D90):
 //! the contract suite of the `Scm` trait, and the pause after a rate limit.
 //! `test-only-key.pem` was made for these tests and opens nothing: the
 //! replay does not check the JWT.

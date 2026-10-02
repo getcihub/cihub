@@ -1,4 +1,4 @@
-//! `cihub`: the command line of CIHub (`docs/API.md`, `AGENTS.md` D161). A
+//! `cihub`: the command line of CIHub (`docs/API.md`, `DECISIONS.md` D161). A
 //! thin client of the public API, distributed alone and without server code:
 //! it finds the repository from the remote `origin` of git, and the queue
 //! from `--queue` or from the only queue of the repository.

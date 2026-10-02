@@ -43,12 +43,12 @@ pub struct Desired {
     /// and a `not_ready` item waits for a change that no webhook may report.
     pub observe: Vec<Read>,
     /// The checks that CIHub must read again now on the test SHA of a run in
-    /// progress that no report reached for a while (`AGENTS.md` D127).
+    /// progress that no report reached for a while (`DECISIONS.md` D127).
     pub check_reads: Vec<CheckRead>,
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
     /// What each PR must show: its live item, or the item that this
-    /// reconciliation concluded (`AGENTS.md` D156), by PR number.
+    /// reconciliation concluded (`DECISIONS.md` D156), by PR number.
     pub surfaces: Vec<Surface>,
 }
 
@@ -94,7 +94,7 @@ pub struct Merge {
     pub item_id: ItemId,
     pub pr_number: u64,
     pub head_sha: String,
-    /// The run that proved the item, and its test SHA (`AGENTS.md` D124);
+    /// The run that proved the item, and its test SHA (`DECISIONS.md` D124);
     /// `None` for a direct merge, whose tested SHA is the head (D153).
     pub run_id: Option<RunId>,
     pub tested_sha: String,
@@ -313,7 +313,7 @@ const fn assembly_reason(error: JobError) -> Reason {
 }
 
 /// The reason of a failed merge. A refusal of a direct merge is
-/// `direct_merge_rejected` (`AGENTS.md` D122).
+/// `direct_merge_rejected` (`DECISIONS.md` D122).
 const fn merge_reason(error: JobError, direct: bool) -> Reason {
     match error {
         JobError::RateLimitExceeded => Reason::MergeRateLimitExceeded,
@@ -327,7 +327,7 @@ const fn merge_reason(error: JobError, direct: bool) -> Reason {
 }
 
 /// The new item of a submission: `not_ready`, or `cancelled` at once while
-/// the queue drains or switches its mode (`AGENTS.md` D151).
+/// the queue drains or switches its mode (`DECISIONS.md` D151).
 fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
     let (to, reason) = match s.state {
         QueueState::Draining => (ItemState::Cancelled, Reason::QueueDraining),
@@ -350,7 +350,7 @@ fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
 fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen) -> Option<Step> {
     let (id, request) = s.requests.iter().find(|(_, r)| match r {
         // A submission of a new head waits for the cancel of the live item
-        // of its PR (`AGENTS.md` D152).
+        // of its PR (`DECISIONS.md` D152).
         Request::Submit { pr_number, .. } => {
             s.state != QueueState::Paused && s.current_item(*pr_number).is_none()
         }
@@ -414,7 +414,7 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
                 },
             )
         }
-        // Someone merged the PR outside the queue (`AGENTS.md` D132).
+        // Someone merged the PR outside the queue (`DECISIONS.md` D132).
         Request::MergeFailed {
             item_id,
             error: JobError::PrAlreadyMerged,
@@ -845,7 +845,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
 
 /// Mergeability and block reasons of a `not_ready` item: the mergeability on
 /// the SCM, the impacted targets in parallel mode, and the `queue_conditions`
-/// that the job that read the PR found unmet (`AGENTS.md` D142).
+/// that the job that read the PR found unmet (`DECISIONS.md` D142).
 fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReason> {
     let mut blocks = match pr.mergeability {
         Mergeability::Mergeable => Vec::new(),
@@ -873,7 +873,7 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
 }
 
 /// The required checks that block a PR: failed, or not concluded yet; else
-/// the SCM does not say why the PR is blocked (`AGENTS.md` D158).
+/// the SCM does not say why the PR is blocked (`DECISIONS.md` D158).
 fn blocking_checks(pr: &PrObservation) -> Vec<BlockReason> {
     let blocks: Vec<BlockReason> = pr
         .required_checks
@@ -968,7 +968,7 @@ fn formation(
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
     // The item that the queue merges directly waits for the answer of the
-    // merge job (`AGENTS.md` D153).
+    // merge job (`DECISIONS.md` D153).
     if !window_has_room(s, settings) || direct_merge(s, settings).is_some() {
         return None;
     }
@@ -1041,7 +1041,7 @@ fn window_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
 }
 
 /// The item that the queue merges directly, without a test branch
-/// (`AGENTS.md` D153): with `direct_merge_mode: always`, the first item of a
+/// (`DECISIONS.md` D153): with `direct_merge_mode: always`, the first item of a
 /// running queue without a live group, when it is `pending` and no direct
 /// merge of it was tried.
 fn direct_merge<'a>(s: &'a Snapshot, settings: &QueueSettings) -> Option<&'a Item> {
@@ -1128,7 +1128,7 @@ fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
     })
 }
 
-/// The live items whose PR CIHub reads (`AGENTS.md` D127).
+/// The live items whose PR CIHub reads (`DECISIONS.md` D127).
 fn live_items(s: &Snapshot) -> impl Iterator<Item = &Item> {
     s.items
         .values()

@@ -1,6 +1,6 @@
 # The installation of CIHub with Docker Compose (README.md, docs/DEPLOYMENT.md):
 # Postgres 17, the role and the database of CIHub, the migrations, then the
-# server with its four roles (AGENTS.md D8, D14).
+# server with its four roles (DECISIONS.md D8, D14).
 #
 # Usage, from the root of the repository:
 #   cp deploy/.env.example deploy/.env   # then fill it in
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   # One-shot: bring the cihub role and database to the wanted state on each
-  # start. The role is neither superuser nor BYPASSRLS (AGENTS.md D38).
+  # start. The role is neither superuser nor BYPASSRLS (DECISIONS.md D38).
   postgres-setup:
     image: postgres:17.5-alpine
     depends_on:

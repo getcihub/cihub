@@ -8,18 +8,18 @@ use tracing::info;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 /// The type of the daily job that keeps the shared tables in shape
-/// (`AGENTS.md` D67).
+/// (`DECISIONS.md` D67).
 pub const MAINTENANCE: &str = "maintenance";
 
 /// A processed delivery, or a delivery that no connection claimed, is
-/// deleted after this time (`AGENTS.md` D130).
+/// deleted after this time (`DECISIONS.md` D130).
 pub const DELIVERY_RETENTION: Duration = Duration::days(7);
 
 /// A done job is deleted after this time.
 pub const DONE_JOB_RETENTION: Duration = Duration::days(3);
 
 /// A partition of `events` is dropped once its month ended this long ago, and
-/// a snapshot covers each of its events (`AGENTS.md` D57, D106).
+/// a snapshot covers each of its events (`DECISIONS.md` D57, D106).
 pub const EVENT_RETENTION: Duration = Duration::days(90);
 
 /// The maintenance job of `day`: its key admits one job per day, whatever the

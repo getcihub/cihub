@@ -1,83 +1,80 @@
-# Modèle de domaine : le contrat de vocabulaire
+# Domain model: the vocabulary contract
 
-Contexte : qui touche aux états, aux transitions, aux raisons ou aux types d'événements d'une entrée, d'un groupe,
-d'une exécution ou d'une file. Ce fichier définit les termes que nous utilisons tous, humains et agents. Le code
-est la source de vérité (`AGENTS.md` D1) : la liste des valeurs de chaque vocabulaire fermé est dans
-`cihub-domain`, avec un commentaire `///` qui donne le sens de chaque valeur. Ce qui n'est pas encore codé est
-décrit dans le lot qui le construit (`docs/LOTS.md`).
+This file defines the terms that we all use, humans and agents. The list of values of each closed
+vocabulary is in `cihub-domain`, with a `///` comment that gives the meaning of each value.
 
-## Entités
+## Entities
 
-Le vocabulaire du domaine est celui de CIHub, pas celui d'un SCM (`AGENTS.md` D23) : chaque adaptateur
-(`cihub-github`) traduit les valeurs de son SCM, et le noyau n'en voit aucune. Une **PR** désigne toute demande de
-changement : une pull request GitHub, une merge request GitLab.
+The vocabulary of the domain is that of CIHub, not that of an SCM (`DECISIONS.md` D23): each adapter
+(`cihub-github`) translates the values of its SCM, and the core sees none of them. A **PR** designates any change
+request: a GitHub pull request, a GitLab merge request.
 
-Six entités portent tout le produit : une organisation installe la GitHub App sur des dépôts, chaque dépôt a une
-file par branche cible, une file contient des entrées (une par soumission de PR), les entrées sont regroupées en
-groupes de test (une PR seule ou un lot) qui possèdent des exécutions de test, et chaque fait observé et chaque
-décision de la file est enregistré comme un événement immuable. Tout le reste (voies, bissections, piles) en
-découle.
+Six entities carry the whole product: an organization installs the GitHub App on repositories, each repository has one
+queue per target branch, a queue contains items (one per PR submission), the items are grouped into
+test groups (a single PR or a batch) which own test runs, and each observed fact and each
+decision of the queue is recorded as an immutable event. Everything else (lanes, bisections, stacks) follows
+from it.
 
-| Entité               | Identité                     | Sens                                                                                                                                          | Code (`cihub-domain`)  |
+| Entity               | Identity                     | Meaning                                                                                                                                       | Code (`cihub-domain`)  |
 | -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Organisation         | `org_id`                     | Frontière de tenancy : toutes les autres tables portent `org_id`, sauf `scm_instances` et `users`                                             | `OrgId`                |
-| Instance de SCM      | `scm_instance_id`            | Une instance d'un SCM (github.com, un GitHub Enterprise Server) ; un identifiant du SCM est unique dans son instance seulement                | `ScmInstanceId`        |
-| Compte du SCM        | `scm_account_id`             | Un compte du SCM (une organisation GitHub) rattaché à une organisation ; une organisation peut en avoir plusieurs                             | `ScmAccountId`         |
-| Connexion            | `connection_id`              | Le moyen par lequel CIHub atteint les dépôts d'un compte (`ConnectionKind`) ; porte le budget, les quotas et les modes dégradés               | `ConnectionId`         |
-| Dépôt                | `repo_id`                    | Un dépôt rattaché à une connexion ; une connexion peut couvrir plusieurs dépôts                                                               | `RepoId`               |
-| File                 | `queue_id`                   | Une branche cible d'un dépôt, avec un nom unique dans le dépôt, son état, son mode et ses réglages                                            | `Queue`                |
-| Entrée de file       | `item_id`                    | Une soumission d'une PR ; une resoumission après annulation crée une nouvelle entrée, et `is_current` désigne l'entrée vivante de cette PR   | `Item`                 |
-| Groupe de test       | `group_id`                   | L'unité testée et retenue en échec en attente : une PR seule, un lot, ou une moitié de bissection                                            | `TestGroup`            |
-| Exécution de test    | `run_id`                     | Une tentative de test d'un groupe sur une branche de test ; un groupe peut avoir plusieurs exécutions (relances)                              | `TestRun`              |
-| Observation de check | (`run_id`, nom)              | La dernière observation d'un check run ou d'un statut de commit sur le SHA de test                                                            | `CheckObservation`     |
-| Cibles impactées     | (`repo_id`, PR, SHA de tête) | Ce qu'une PR modifie, qui la place dans le graphe de merge ; `ALL` en mode simple                                                             | `ImpactedTargets`      |
-| Événement            | `event_id`                   | Un fait ou une décision, en ajout seul dans le journal de la file                                                                             | `Event`                |
+| Organization         | `org_id`                     | Tenancy boundary: all the other tables carry `org_id`, except `scm_instances` and `users`                                                     | `OrgId`                |
+| SCM instance         | `scm_instance_id`            | An instance of an SCM (github.com, a GitHub Enterprise Server); an SCM identifier is unique within its instance only                          | `ScmInstanceId`        |
+| SCM account          | `scm_account_id`             | An SCM account (a GitHub organization) attached to an organization; an organization can have several                                          | `ScmAccountId`         |
+| Connection           | `connection_id`              | The means by which CIHub reaches the repositories of an account (`ConnectionKind`); carries the budget, the quotas and the degraded modes     | `ConnectionId`         |
+| Repository           | `repo_id`                    | A repository attached to a connection; a connection can cover several repositories                                                            | `RepoId`               |
+| Queue                | `queue_id`                   | A target branch of a repository, with a name unique within the repository, its state, its mode and its settings                               | `Queue`                |
+| Queue item           | `item_id`                    | A submission of a PR; a resubmission after cancellation creates a new item, and `is_current` designates the live item of that PR              | `Item`                 |
+| Test group           | `group_id`                   | The unit that is tested and held in pending failure: a single PR, a batch, or one half of a bisection                                         | `TestGroup`            |
+| Test run             | `run_id`                     | One attempt to test a group on a test branch; a group can have several runs (restarts)                                                        | `TestRun`              |
+| Check observation    | (`run_id`, name)             | The last observation of a check run or of a commit status on the test SHA                                                                     | `CheckObservation`     |
+| Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
+| Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
 
-Les identifiants sont des ULID typés au format texte `typedid` (`AGENTS.md` D4). Chaque vocabulaire fermé est une
-énumération dont la valeur texte (`snake_case`) est la même dans l'API, les webhooks, l'analytique et Postgres.
+Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). Each closed vocabulary is an
+enumeration whose text value (`snake_case`) is the same in the API, the webhooks, the analytics and Postgres.
 
-## Journal
+## Log
 
-- **Journal** : la suite en ajout seul des événements d'une file ; c'est la source de vérité de la file. Les
-  tables d'état sont des projections du journal.
-- **Fait** : ce que GitHub, la CI ou un utilisateur a établi (« la PR 12 a un nouveau SHA de tête »). Un fait
-  change seulement l'état observé.
-- **Décision** : ce que la file a choisi (« l'entrée de la PR 12 passe en `cancelled`, raison `pr_pushed_to` »).
-  Une décision change seulement l'état de la file et porte l'identifiant du fait qui l'a causée (`cause_id`).
-- **Demande** : un fait qui attend une décision (soumission, annulation, relance, résultat de job).
-- **`apply`** : la fonction pure qui applique un événement à l'état ; le rejeu n'utilise qu'elle.
-- **`plan`** : la fonction pure qui lit l'état et l'heure, et produit des décisions et l'état voulu.
-- **Raison** : la cause lisible d'une transition, issue d'un vocabulaire fermé. Chaque transition en porte une.
-- **Acteur** : qui est à l'origine d'un événement : un compte d'utilisateur du SCM (son identifiant ; la table `users` garde le login, `AGENTS.md` D42 et D51), le compte de l'App, ou CIHub.
+- **Log**: the append-only sequence of the events of a queue; it is the source of truth of the queue. The
+  state tables are projections of the log.
+- **Fact**: what GitHub, the CI or a user has established ("PR 12 has a new head SHA"). A fact
+  changes only the observed state.
+- **Decision**: what the queue chose ("the item of PR 12 moves to `cancelled`, reason `pr_pushed_to`").
+  A decision changes only the state of the queue and carries the identifier of the fact that caused it (`cause_id`).
+- **Request**: a fact that awaits a decision (submission, cancellation, restart, job result).
+- **`apply`**: the pure function that applies an event to the state; the replay uses only it.
+- **`plan`**: the pure function that reads the state and the time, and produces decisions and the desired state.
+- **Reason**: the readable cause of a transition, from a closed vocabulary. Each transition carries one.
+- **Actor**: who originated an event: an SCM user account (its identifier; the `users` table keeps the login, `DECISIONS.md` D42 and D51), the App account, or CIHub.
 
-Code : `Event`, `EventKind` (un payload par type), `EventType` (les noms `<sujet>.<verbe>`, avec
-`is_decision`), `Actor` et `ActorKind` dans `cihub-domain` ; `apply` dans `cihub-mq-core`. Une demande en attente
-est un `Request` du snapshot.
+Code: `Event`, `EventKind` (one payload per type), `EventType` (the `<subject>.<verb>` names, with
+`is_decision`), `Actor` and `ActorKind` in `cihub-domain`; `apply` in `cihub-mq-core`. A pending request
+is a `Request` of the snapshot.
 
-## Entrée de file
+## Queue item
 
-États (`ItemState`) : `not_ready`, `pending`, `testing`, `pending_failure`, `tests_passed`, `merged`, `failed`,
-`cancelled`. Les trois derniers sont terminaux. Ils servent tels quels dans l'API, les webhooks et l'analytique.
+States (`ItemState`): `not_ready`, `pending`, `testing`, `pending_failure`, `tests_passed`, `merged`, `failed`,
+`cancelled`. The last three are terminal. They are used as is in the API, the webhooks and the analytics.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> not_ready: soumise
-  [*] --> cancelled: soumise pendant draining ou switching_modes
-  not_ready --> pending: mergeable, base correcte, cibles envoyees
-  pending --> testing: slot libre, groupe forme
-  pending --> merged: merge direct sur main
-  pending --> failed: echec du merge direct
-  testing --> tests_passed: checks requis verts, ou valide par optimisation
-  testing --> pending_failure: un check requis rouge ou timeout
-  testing --> failed: conflit ou erreur de config a l'assemblage
-  testing --> pending: relancee (changement amont, preemption urgent)
-  pending_failure --> pending: le predecesseur etait coupable
-  pending_failure --> testing: relance du budget d'echec
-  pending_failure --> tests_passed: liberee par un successeur qui passe
-  pending_failure --> failed: culpabilite confirmee
-  tests_passed --> merged: predecesseurs merges, PR mergee
-  tests_passed --> pending: le groupe amont a change de forme
-  tests_passed --> failed: echec API de merge, PR modifiee
+  [*] --> not_ready: submitted
+  [*] --> cancelled: submitted during draining or switching_modes
+  not_ready --> pending: mergeable, correct base, targets sent
+  pending --> testing: free slot, group formed
+  pending --> merged: direct merge on main
+  pending --> failed: direct merge failed
+  testing --> tests_passed: required checks green, or validated by optimization
+  testing --> pending_failure: one required check red or timeout
+  testing --> failed: conflict or config error at assembly
+  testing --> pending: restarted (upstream change, urgent preemption)
+  pending_failure --> pending: the predecessor was the culprit
+  pending_failure --> testing: failure budget restart
+  pending_failure --> tests_passed: released by a successor that passes
+  pending_failure --> failed: culpability confirmed
+  tests_passed --> merged: predecessors merged, PR merged
+  tests_passed --> pending: the upstream group changed shape
+  tests_passed --> failed: merge API failure, PR modified
   not_ready --> cancelled
   pending --> cancelled
   testing --> cancelled
@@ -88,71 +85,71 @@ stateDiagram-v2
   cancelled --> [*]
 ```
 
-| État              | Sens                                                                                          |
+| State             | Meaning                                                                                       |
 | ----------------- | --------------------------------------------------------------------------------------------- |
-| `not_ready`       | Soumise, mais pas encore admissible (revue, checks de la PR, mergeabilité, cibles manquantes) |
-| `pending`         | Admise, en attente d'une place dans la fenêtre de spéculation                                 |
-| `testing`         | Membre d'un groupe dont une exécution est en cours                                            |
-| `pending_failure` | Son exécution a échoué ; la file attend de savoir si la faute vient d'elle ou d'un prédécesseur |
-| `tests_passed`    | Validée par une exécution ; attend que ses prédécesseurs mergent                              |
-| `merged`          | Mergée par la file, par merge direct, ou hors de la file                                      |
-| `failed`          | Retirée de la file avec une raison ; la PR doit être resoumise                                |
-| `cancelled`       | Annulée par un utilisateur ou par un changement de la PR                                      |
+| `not_ready`       | Submitted, but not yet admissible (review, PR checks, mergeability, missing targets)          |
+| `pending`         | Admitted, waiting for a place in the speculation window                                       |
+| `testing`         | Member of a group with a run in progress                                                      |
+| `pending_failure` | Its run failed; the queue waits to know whether the fault is its own or a predecessor's       |
+| `tests_passed`    | Validated by a run; waits for its predecessors to merge                                       |
+| `merged`          | Merged by the queue, by direct merge, or outside the queue                                    |
+| `failed`          | Removed from the queue with a reason; the PR must be resubmitted                              |
+| `cancelled`       | Cancelled by a user or by a change of the PR                                                  |
 
-Les transitions permises et leurs raisons sont dans le code : une seule énumération `Reason` et, pour chaque
-machine à états, une table (état de départ, état d'arrivée) → raisons permises (`AGENTS.md` D6), le trait
-`Lifecycle` et la fonction `check_transition`.
+The allowed transitions and their reasons are in the code: a single `Reason` enumeration and, for each
+state machine, a table (start state, end state) → allowed reasons (`DECISIONS.md` D6), the
+`Lifecycle` trait and the `check_transition` function.
 
-Familles de raisons, pour s'y retrouver : admission et test ; retour en `pending` (changement en amont, relance,
-préemption `urgent`, bissection) ; `tests_passed` ; `merged` ; `cancelled` ; `start_test_run_*` (échec à
-l'assemblage de la branche de test) ; `test_run_*` (échec ou timeout de l'exécution) ; échec de l'appel de merge
+Families of reasons, to find one's way: admission and test; return to `pending` (upstream change, restart,
+`urgent` preemption, bisection); `tests_passed`; `merged`; `cancelled`; `start_test_run_*` (failure at
+the assembly of the test branch); `test_run_*` (failure or timeout of the run); failure of the merge call
 (`merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`,
-`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`) ; raisons de la file,
-dont `access_lost` et `access_restored` quand CIHub perd ou retrouve son accès au dépôt.
+`merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons,
+including `access_lost` and `access_restored` when CIHub loses or regains its access to the repository.
 
-Une entrée `not_ready` porte en outre des raisons de blocage (`BlockReason`) : ce qui l'empêche d'être admise,
-affiché dans le commentaire de la PR. La mergeabilité (`Mergeability`) dit si le SCM accepte le merge : `mergeable`, `behind`,
-`conflict`, `blocked` ou `unknown` ; la traduction depuis GitHub et la règle d'admission sont dans
-`docs/GITHUB.md`. Ce que CIHub lit d'une PR : son état
-(`PrState` : `open`, `closed`, `merged`), sa décision de revue (`ReviewDecision`) et ses checks (`CheckReport`).
+A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
+displayed in the PR comment. The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
+`conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
+`docs/GITHUB.md`. What CIHub reads from a PR: its state
+(`PrState`: `open`, `closed`, `merged`), its review decision (`ReviewDecision`) and its checks (`CheckReport`).
 
-Priorité (`Priority`) : une valeur de 0 à 255 ; la plus petite passe en premier. Les noms `urgent` (0), `high`
-(10), `medium` (100) et `low` (200) sont des raccourcis. Seule la valeur décide de l'ordre
-(`docs/ALGORITHMS.md`). Source d'une soumission : `SubmittedVia`.
+Priority (`Priority`): a value from 0 to 255; the smallest goes first. The names `urgent` (0), `high`
+(10), `medium` (100) and `low` (200) are shortcuts. Only the value decides the order
+(`docs/ALGORITHMS.md`). Source of a submission: `SubmittedVia`.
 
-## Groupe de test
+## Test group
 
-Nature d'un groupe (`GroupKind`) : `single` (une PR), `batch` (un lot), `bisection` (une moitié d'un lot en
-échec). Un groupe a son propre état, parce qu'un groupe coupé ou abandonné n'a plus d'entrées, et que les membres
-d'un lot passent un par un à `merged`. États (`GroupState`) : `testing`, `pending_failure`, `tests_passed`,
-`merged`, `failed`, `bisected`, `dissolved` ; les quatre derniers sont terminaux. Un groupe `dissolved` est
-abandonné par la file (un membre est sorti, un prédécesseur ou la base a changé) ; ses membres encore vivants
-retournent en `pending`. La règle de cohérence entre l'état d'un groupe et celui de ses entrées est dans
+Nature of a group (`GroupKind`): `single` (one PR), `batch` (a batch), `bisection` (one half of a failed
+batch). A group has its own state, because a split or abandoned group has no items anymore, and the members
+of a batch move one by one to `merged`. States (`GroupState`): `testing`, `pending_failure`, `tests_passed`,
+`merged`, `failed`, `bisected`, `dissolved`; the last four are terminal. A `dissolved` group is
+abandoned by the queue (a member left, a predecessor or the base changed); its members that are still live
+return to `pending`. The consistency rule between the state of a group and that of its items is in
 `docs/RELIABILITY.md`.
 
-## Exécution de test
+## Test run
 
-Statuts (`RunStatus`) : `assembling`, `in_progress`, `succeeded`, `failed`, `interrupted`, `cancelled`,
-`timed_out`. Les cinq derniers sont terminaux. `interrupted` veut dire que la file a remplacé l'exécution (groupe
-abandonné, validé par optimisation) ; `cancelled` veut dire qu'un membre du groupe a été annulé.
+Statuses (`RunStatus`): `assembling`, `in_progress`, `succeeded`, `failed`, `interrupted`, `cancelled`,
+`timed_out`. The last five are terminal. `interrupted` means that the queue replaced the run (group
+abandoned, validated by optimization); `cancelled` means that a member of the group was cancelled.
 
-Nature d'un check observé (`CheckKind`) : `check` (un check avec une exécution : check run GitHub, job de
-pipeline GitLab) ou `status` (un statut de commit). Conclusion (`CheckConclusion`) : les valeurs de
-GitHub ; `success`, `neutral` et `skipped` passent, les autres font échouer l'exécution. Coupable d'un conflit à
-l'assemblage (`ConflictCulprit`) : ce avec quoi le membre du groupe entre en conflit, une PR devant lui dans la
-file (`queue_pr`) ou la branche cible seule (`base_branch`). Source des statuts requis
-(`RequiredStatusesSource`) : `repo_config`, `branch_protection`. Un job qui échoue rapporte une
-erreur (`JobError`), jamais une raison : `plan` choisit la raison. Classe d'un job (`JobClass`, par priorité sur le
-budget de sa connexion) : `interactive`, `merge`, `speculate`, `repair`. État d'un job (`JobState`) : `queued`,
-`running`, `done`, `failed` (une nouvelle tentative ne corrigerait pas l'erreur), `dead` (toutes les tentatives ont
-échoué ; il attend un opérateur).
+Nature of an observed check (`CheckKind`): `check` (a check with a run: GitHub check run, GitLab
+pipeline job) or `status` (a commit status). Conclusion (`CheckConclusion`): the values of
+GitHub; `success`, `neutral` and `skipped` pass, the others fail the run. Culprit of a conflict at
+assembly (`ConflictCulprit`): what the group member conflicts with, a PR ahead of it in the
+queue (`queue_pr`) or the target branch alone (`base_branch`). Source of the required statuses
+(`RequiredStatusesSource`): `repo_config`, `branch_protection`. A job that fails reports an
+error (`JobError`), never a reason: `plan` chooses the reason. Class of a job (`JobClass`, by priority on the
+budget of its connection): `interactive`, `merge`, `speculate`, `repair`. State of a job (`JobState`): `queued`,
+`running`, `done`, `failed` (a new attempt would not fix the error), `dead` (all attempts
+failed; it waits for an operator).
 
-## File
+## Queue
 
-États (`QueueState`) : `running` accepte et merge ; `paused` ne décide rien et ne merge rien mais conserve
-l'ordre, et une soumission y attend la reprise (`AGENTS.md` D113) ; `draining` laisse merger ce qui est en vol et
-refuse une nouvelle soumission, dont l'entrée est créée `cancelled` avec la raison `queue_draining` (D151) ;
-`switching_modes` est atteint automatiquement quand le mode change avec des entrées en vol et se comporte comme
-`draining` (raison `queue_switching_modes`) jusqu'à ce que la file soit vide. Mode (`QueueMode`) : `single` ou `parallel`. Demande d'un opérateur (`QueueControl`) : `pause`,
-`resume`, `drain`. Les réglages de la file sont dans `cihub-config`
+States (`QueueState`): `running` accepts and merges; `paused` decides nothing and merges nothing but keeps
+the order, and a submission there waits for the resume (`DECISIONS.md` D113); `draining` lets what is in flight merge and
+refuses a new submission, whose item is created `cancelled` with the reason `queue_draining` (D151);
+`switching_modes` is reached automatically when the mode changes with items in flight and behaves like
+`draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
+`resume`, `drain`. The settings of the queue are in `cihub-config`
 (`docs/CONFIGURATION.md`).

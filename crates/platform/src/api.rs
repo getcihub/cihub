@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 use tracing::error;
 
 /// What the API token of a request lets its caller do, as the web role
-/// authenticates it (`AGENTS.md` D159). A route reads it to know the
+/// authenticates it (`DECISIONS.md` D159). A route reads it to know the
 /// organization and to check its scope.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiGrant {

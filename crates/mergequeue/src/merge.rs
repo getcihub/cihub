@@ -1,4 +1,4 @@
-//! The merge job (`AGENTS.md` D123): `merge_pr` merges a PR of the desired
+//! The merge job (`DECISIONS.md` D123): `merge_pr` merges a PR of the desired
 //! state, guarded by its head, and gives back `merge.succeeded` or
 //! `merge.failed`. It reads the projection first, so that a decision that
 //! changed since the request merges nothing (principle III).
@@ -30,7 +30,7 @@ use crate::target::QueueTarget;
 pub const MERGE_PR: &str = "merge_pr";
 
 /// After this many attempts, a merge that still fails on a passing error
-/// gives up (`AGENTS.md` D123): with the backoff of the jobs, about a minute.
+/// gives up (`DECISIONS.md` D123): with the backoff of the jobs, about a minute.
 pub const MERGE_ATTEMPTS: i32 = 6;
 
 // A retry must end in a fact before the job goes `dead`.
@@ -44,7 +44,7 @@ pub const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
 pub(crate) struct MergePr {
     pub item_id: ItemId,
     /// The run that proved the item: an item proved again by another run
-    /// has another job. `None` for a direct merge (`AGENTS.md` D153).
+    /// has another job. `None` for a direct merge (`DECISIONS.md` D153).
     pub run_id: Option<RunId>,
     pub pr_number: u64,
     pub head_sha: String,
@@ -199,9 +199,9 @@ async fn merge_pr(
 enum Landed {
     /// The commit that landed on the target.
     Merged(String),
-    /// The PR was merged before: not by this job (`AGENTS.md` D132).
+    /// The PR was merged before: not by this job (`DECISIONS.md` D132).
     AlreadyMerged,
-    /// The direct merge cannot happen now (`AGENTS.md` D153).
+    /// The direct merge cannot happen now (`DECISIONS.md` D153).
     Unavailable,
 }
 
@@ -249,7 +249,7 @@ async fn land(
         scm.set_status(&target.repo, &status, class).await?;
     }
     match scm.merge_pr(&target.repo, &merge, class).await {
-        // The target moved: the push restarts the group (`AGENTS.md` D124).
+        // The target moved: the push restarts the group (`DECISIONS.md` D124).
         Err(ScmError::NotFastForward) => Err(ScmError::Unavailable(
             "the target moved: not a fast forward".into(),
         )),
@@ -257,7 +257,7 @@ async fn land(
     }
 }
 
-/// A direct merge lands exactly what the CI of the PR tested (`AGENTS.md`
+/// A direct merge lands exactly what the CI of the PR tested (`DECISIONS.md`
 /// D153): the required statuses of a test SHA on the current head of the
 /// target are green on the head of the PR, the PR contains that head, and
 /// the PR is mergeable. An error of the configuration leaves the item to the
@@ -423,7 +423,7 @@ mod tests {
             format!("merge_pr:{}-{run_id}:1", merge.item_id)
         );
         assert_eq!(job.class, JobClass::Merge);
-        // A direct merge has its own key (`AGENTS.md` D153).
+        // A direct merge has its own key (`DECISIONS.md` D153).
         let direct = Merge {
             run_id: None,
             ..merge

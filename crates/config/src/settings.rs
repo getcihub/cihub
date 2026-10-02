@@ -85,7 +85,7 @@ settings! {
     failure_budget_retries: u32 = 1;
     optimistic_merging: bool = false;
     pending_failure_depth: u32 = 0;
-    /// `off` by default, in every strategy (`AGENTS.md` D153).
+    /// `off` by default, in every strategy (`DECISIONS.md` D153).
     direct_merge_mode: DirectMergeMode = DirectMergeMode::Off;
     optimization_mode: OptimizationMode = OptimizationMode::BisectionSkipRedundantTests;
     comments_enabled: bool = true;
@@ -95,7 +95,7 @@ settings! {
     enqueue_label: String = "cihub-merge-queue-submit".to_owned();
     state_labels_enabled: bool = false;
     /// A push on a PR in the queue submits it again at the end of the queue
-    /// (`AGENTS.md` D152).
+    /// (`DECISIONS.md` D152).
     resubmit_on_push: bool = false;
     keep_test_branches_minutes: u32 = 0;
     /// Test branches are `<prefix>-merge/` and `<prefix>-temp/`.
@@ -150,7 +150,7 @@ fn strategy_layer(strategy: Strategy) -> Layer {
 
 impl QueueSettings {
     /// Merges the sources of one queue, from the strongest: the queue in the
-    /// file, then `defaults` in the file (`AGENTS.md` D134).
+    /// file, then `defaults` in the file (`DECISIONS.md` D134).
     ///
     /// # Errors
     ///
@@ -182,14 +182,14 @@ impl QueueSettings {
                 ),
             ));
         }
-        // `AGENTS.md` D119: the mode comes with a later lot.
+        // `DECISIONS.md` D119: the mode comes with a later lot.
         if self.trigger.value == Trigger::Inplace {
             return Err(ConfigError::parsing(
                 self.trigger.at,
                 "trigger `inplace` is not available yet".to_owned(),
             ));
         }
-        // `AGENTS.md` D120: the test commit of a PR descends from the target
+        // `DECISIONS.md` D120: the test commit of a PR descends from the target
         // only when no predecessor is merged into it.
         if self.merge_method.value == MergeMethod::FastForward
             && self.strategy.value != Strategy::Sequential

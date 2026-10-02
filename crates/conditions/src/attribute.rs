@@ -110,7 +110,7 @@ pub(crate) const fn review_decision_rank(decision: ReviewDecision) -> i64 {
 }
 
 /// Names of the values of `sender-permission`, in the order of
-/// `permission_rank` (`AGENTS.md` D145).
+/// `permission_rank` (`DECISIONS.md` D145).
 const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
 
 pub(crate) const fn permission_rank(permission: Permission) -> i64 {

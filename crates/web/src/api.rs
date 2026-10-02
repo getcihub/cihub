@@ -1,4 +1,4 @@
-//! `/api/v1` (`docs/API.md`, `AGENTS.md` D159): the authentication of each
+//! `/api/v1` (`docs/API.md`, `DECISIONS.md` D159): the authentication of each
 //! request by its API token, the rate limit of each token, the routes of the
 //! platform (`/repos`, `/orgs/{org}/audit`), the routes of the modules, and
 //! the `OpenAPI` document of all of them.
@@ -36,7 +36,7 @@ struct ApiState {
     pool: PgPool,
     now: fn() -> OffsetDateTime,
     /// The requests of each token in its current minute, in this replica
-    /// only (`AGENTS.md` D159).
+    /// only (`DECISIONS.md` D159).
     windows: Arc<Mutex<HashMap<ApiTokenId, (i64, u32)>>>,
 }
 

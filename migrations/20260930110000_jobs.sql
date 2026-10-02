@@ -1,4 +1,4 @@
--- The jobs: the side effects that the roles ask the workers to do (AGENTS.md
+-- The jobs: the side effects that the roles ask the workers to do (DECISIONS.md
 -- D55, D58 to D60). Workers share them with FOR UPDATE SKIP LOCKED; the job of
 -- a stopped worker goes back to the others when its lock expires.
 --

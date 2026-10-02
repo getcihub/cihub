@@ -1,5 +1,5 @@
 //! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
-//! again (`AGENTS.md` D96, D101), `submit_pr` submits a PR after a command
+//! again (`DECISIONS.md` D96, D101), `submit_pr` submits a PR after a command
 //! or a label (D102); the jobs of the test cycle are in `assembly`. Each one
 //! gives its facts back to the queue through `queue_inbox` (D100) and marks
 //! the queue dirty; it never writes the log.
@@ -73,7 +73,7 @@ pub(crate) struct SubmitPr {
     /// The author of the command; `None` for a label, whose sender the
     /// delivery does not give.
     pub requested_by: Option<Account>,
-    /// `None` leaves the priority to the `priority_rules` (`AGENTS.md` D148).
+    /// `None` leaves the priority to the `priority_rules` (`DECISIONS.md` D148).
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
@@ -83,7 +83,7 @@ pub(crate) struct SubmitPr {
     pub label: Option<String>,
 }
 
-/// A subject of a key has no `:` (`AGENTS.md` D68).
+/// A subject of a key has no `:` (`DECISIONS.md` D68).
 pub(crate) fn subject(text: &str) -> String {
     text.replace(':', "-")
 }
@@ -107,7 +107,7 @@ pub(crate) fn job(
     }
 }
 
-/// A read of `prs` after the delivery `delivery_id` (`AGENTS.md` D101).
+/// A read of `prs` after the delivery `delivery_id` (`DECISIONS.md` D101).
 pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u64>) -> Job {
     let key = format!(
         "{REFRESH_PRS}:{}-{}:1",
@@ -118,7 +118,7 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
     job(target, key, REFRESH_PRS, JobClass::Interactive, payload)
 }
 
-/// The reads of `prs`, due at the read point `point` (`AGENTS.md` D101); the
+/// The reads of `prs`, due at the read point `point` (`DECISIONS.md` D101); the
 /// chunks after the first one of a point add their rank to the key.
 pub(crate) fn refresh_at(
     target: &QueueTarget,
@@ -138,7 +138,7 @@ pub(crate) fn refresh_at(
 }
 
 /// The window of a key of a read: the minute of its read point,
-/// `AAAAMMJJTHHMM` (`AGENTS.md` D101).
+/// `AAAAMMJJTHHMM` (`DECISIONS.md` D101).
 pub(crate) fn window(point: OffsetDateTime) -> String {
     format!(
         "{:04}{:02}{:02}T{:02}{:02}",
@@ -151,7 +151,7 @@ pub(crate) fn window(point: OffsetDateTime) -> String {
 }
 
 /// The submission of `request` after the delivery `delivery_id`, on the
-/// connection `connection` (`AGENTS.md` D102). It has no queue yet.
+/// connection `connection` (`DECISIONS.md` D102). It has no queue yet.
 pub(crate) fn submit(
     org_id: OrgId,
     connection: (ScmInstanceId, ConnectionId),
@@ -171,7 +171,7 @@ pub(crate) fn submit(
 }
 
 /// Answers a command on its PR, to say why the queue refused it
-/// (`AGENTS.md` D157).
+/// (`DECISIONS.md` D157).
 pub(crate) async fn reply(
     scm: &dyn Scm,
     repo: &RepoRef,
@@ -189,7 +189,7 @@ pub fn queue_status_context(target_branch: &str) -> String {
     format!("CIHub Merge Queue ({target_branch})")
 }
 
-/// The mergeability that the queue sees (`AGENTS.md` D105): a PR blocked only
+/// The mergeability that the queue sees (`DECISIONS.md` D105): a PR blocked only
 /// by the status of the queue itself is mergeable, otherwise a repository that
 /// requires this status could never enter the queue.
 pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str) -> Mergeability {
@@ -571,7 +571,7 @@ async fn enabled_queues(
 }
 
 /// The queue that `pr` enters, with the conditions that it does not meet
-/// (`AGENTS.md` D148): the queue that the command names, or else the first
+/// (`DECISIONS.md` D148): the queue that the command names, or else the first
 /// queue of the branch whose conditions it meets, or else the first one.
 /// `None` when the command names a queue that the branch does not have.
 async fn route<'a>(
@@ -620,7 +620,7 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
 
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused command gets a comment
-/// that says why (`AGENTS.md` D157); a refused label gets none.
+/// that says why (`DECISIONS.md` D157); a refused label gets none.
 pub(crate) async fn execute_submit(
     pool: PgPool,
     scm: Arc<dyn Scm>,

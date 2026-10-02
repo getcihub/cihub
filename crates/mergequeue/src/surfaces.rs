@@ -1,4 +1,4 @@
-//! What each PR shows of its item (`AGENTS.md` D156): the status of the
+//! What each PR shows of its item (`DECISIONS.md` D156): the status of the
 //! queue on its head, the comment of the queue and the state labels. The
 //! reconciliation renders the surfaces of `plan` into `pr_surfaces`; the job
 //! `publish_surfaces` makes the SCM show the last rendering.
@@ -217,7 +217,7 @@ fn comment(surface: &Surface, target_branch: &str, commands: bool) -> String {
             .collect();
         lines.push(format!("Failing required checks: {}.", checks.join(", ")));
     }
-    // Only an item in test can restart (`AGENTS.md` D157).
+    // Only an item in test can restart (`DECISIONS.md` D157).
     match surface.state {
         ItemState::Failed | ItemState::Cancelled if commands => {
             lines.push(format!(
@@ -445,7 +445,7 @@ async fn publish(
 
 /// Takes the lock of the comment of the PR `pr_number` of `repo` for the
 /// transaction: one job at a time writes the comment of a PR, whatever its
-/// queue (`AGENTS.md` D163).
+/// queue (`DECISIONS.md` D163).
 async fn lock_comment(
     conn: &mut PgConnection,
     repo: RepoId,
@@ -512,7 +512,7 @@ async fn publish_comment(
     Ok(scm.create_comment(repo, number, body, class).await?)
 }
 
-/// The status `success` before the merge of the PR (`AGENTS.md` D156): a
+/// The status `success` before the merge of the PR (`DECISIONS.md` D156): a
 /// rule that requires the status of the queue lets the merge through.
 pub(crate) fn merging_status(target_branch: &str, sha: &str) -> StatusUpdate {
     queue_status(
@@ -638,7 +638,7 @@ mod tests {
 }
 
 /// The type of the job that posts the welcome comment of a PR
-/// (`AGENTS.md` D163).
+/// (`DECISIONS.md` D163).
 pub const WELCOME_PR: &str = "welcome_pr";
 
 /// The payload of `welcome_pr`.

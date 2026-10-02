@@ -1,60 +1,58 @@
-# GOAL — à quoi sert CIHub
+# GOAL: what CIHub is for
 
-Contexte : pour tout le monde (humains et agents) qui travaille sur ce dépôt. À lire avant `AGENTS.md`. Cette
-page dit **ce qu'on veut** ; `AGENTS.md` dit **comment on le construit**. Quand un choix n'est pas évident,
-revenir ici et se demander : quelle option sert le mieux cet objectif ?
+Context: for everyone (humans and agents) who works on this repository. Read before `AGENTS.md`. This page says
+**what we want**; `AGENTS.md` says **how we build it**. When a choice is not obvious, come back here and ask:
+which option serves this goal best?
 
-## La phrase
+## The sentence
 
-**Une file de merge pour GitHub, open source et auto-hébergée, qui garde la branche cible toujours verte avec
-n'importe quelle CI, s'installe en moins de trente minutes avec une image et un Postgres, et explique chacune de
-ses décisions.**
+**An open-source, self-hosted merge queue for GitHub, which keeps the target branch always green with any CI,
+installs in under thirty minutes with one image and one Postgres, and explains each of its decisions.**
 
-## Ce que cela veut dire
+## What this means
 
-1. **La branche cible reste verte.** Une PR ne merge qu'après que ses tests sont passés sur un commit qui contient
-   toutes les PR devant elle. Les statuts requis sont lus sur la branche cible, jamais depuis la PR, pour qu'une PR
-   ne puisse pas affaiblir sa propre barrière.
-2. **Une file efficace, pas une file unique.** Plusieurs stratégies choisies par file (séquentielle, prédictive,
-   par lots, parallèle par cibles impactées), une fenêtre de spéculation adaptative, un budget d'échec qui ne
-   retire jamais une PR sur un seul échec, et quatre méthodes de merge. Les stratégies sont des tables de valeurs
-   par défaut, pas du code dans le noyau.
-3. **Agnostique de la CI.** CIHub ne lance jamais la CI : il pousse une branche de test et attend les statuts et
-   check runs requis. GitHub Actions, Buildkite, CircleCI, Jenkins fonctionnent sans modification.
-4. **Simple à installer et à exploiter.** Une image, un Postgres 17, une GitHub App créée selon `docs/GITHUB.md` ;
-   `docker compose up` suffit pour une organisation. Moins de trente minutes de la première commande à la
-   première PR mergée.
-5. **Chaque décision s'explique.** Chaque transition porte une raison d'un vocabulaire fermé ; un journal
-   d'événements par PR répond à « pourquoi ma PR attend-elle encore » et alimente les tableaux de bord.
-6. **Aucune intention n'est perdue.** Une soumission, une commande ou un résultat de check survit aux crashes,
-   aux webhooks perdus, aux pannes et au rate limit de GitHub : au pire il est retardé, jamais oublié.
-7. **Les tests instables ne rejettent pas les PR.** Le module `flakytests` garde l'historique des résultats (OTLP
-   natif, JUnit converti) et la file ne désigne pas un coupable sur un test connu comme instable.
-8. **Multi-tenant par construction.** Une instance sert plusieurs organisations GitHub, ou un hébergeur tiers ;
-   une organisation bruyante ralentit ses propres files, pas celles des autres.
-9. **Rester petit.** Postgres est la seule dépendance en v1 : pas de broker, pas de cache externe. ClickHouse
-    arrive derrière une interface quand une mesure le justifie.
+1. **The target branch stays green.** A PR merges only after its tests have passed on a commit that contains all
+   the PRs ahead of it. The required statuses are read on the target branch, never from the PR, so that a PR
+   cannot weaken its own gate.
+2. **An efficient queue, not a single queue.** Several strategies chosen per queue (sequential, predictive,
+   batched, parallel by impacted targets), an adaptive speculation window, a failure budget that never removes a
+   PR on a single failure, and four merge methods. The strategies are tables of default values, not code in the
+   core.
+3. **CI agnostic.** CIHub never runs the CI: it pushes a test branch and waits for the required statuses and check
+   runs. GitHub Actions, Buildkite, CircleCI, Jenkins work without modification.
+4. **Simple to install and operate.** One image, one Postgres 17, one GitHub App created according to
+   `docs/GITHUB.md`; `docker compose up` is enough for one organization. Under thirty minutes from the first
+   command to the first merged PR.
+5. **Every decision is explained.** Every transition carries a reason from a closed vocabulary; an event log per
+   PR answers "why is my PR still waiting" and feeds the dashboards.
+6. **No intent is lost.** A submission, a command or a check result survives crashes, lost webhooks, outages and
+   GitHub's rate limit: at worst it is delayed, never forgotten.
+7. **Flaky tests do not reject PRs.** The `flakytests` module keeps the history of the results (native OTLP,
+   converted JUnit) and the queue does not name a culprit on a test known to be flaky.
+8. **Multi-tenant by construction.** One instance serves several GitHub organizations, or a third-party host; a
+   noisy organization slows down its own queues, not those of others.
+9. **Stay small.** Postgres is the only dependency in v1: no broker, no external cache. ClickHouse arrives behind
+    an interface when a measurement justifies it.
 
-## Comment on sait qu'on y est (acceptation)
+## How we know we are there (acceptance)
 
-| Affirmation       | Barre                                                                                                                                                                                                      |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation      | Une personne extérieure installe CIHub et merge une première PR en moins de 30 minutes en suivant le README                                                                                                |
-| Branche verte     | Le dépôt de CIHub merge par CIHub pendant 2 semaines sans merge rouge                                                                                                                                      |
-| Résilience        | Sous le simulateur GitHub (5xx, 429, webhooks perdus, dupliqués, désordonnés, processus tués), chaque PR verte est mergée exactement une fois, dans l'ordre du graphe, et chaque PR rouge porte une raison |
-| Webhook perdu     | Coûte au plus un intervalle de la boucle de réparation, jamais un blocage                                                                                                                                  |
-| Explicabilité     | Chaque sortie de file a une raison du vocabulaire fermé et une page                                                                                                                                        |
-| Budget GitHub     | Un dépôt de 50 PR en attente reste sous 300 points GraphQL par heure                                                                                                                                       |
-| Débit (`batched`) | Temps en file p50 réduit de 40 % sur une charge synthétique de 20 PR par heure ; la bissection isole un échec en ≤ log2(taille du lot) exécutions                                                          |
-| Tests instables   | Sur un dépôt avec un test instable connu, zéro PR évincée à tort                                                                                                                                           |
-| Parallèle         | Un monodépôt pilote merge des PR disjointes en parallèle                                                                                                                                                   |
-| Échelle           | Une instance tient 1 000 PR par jour avec ClickHouse activé                                                                                                                                                |
+| Claim                  | Bar                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Installation           | An outside person installs CIHub and merges a first PR in under 30 minutes by following the README                                                                                         |
+| Green branch           | The CIHub repository merges through CIHub for 2 weeks without a red merge                                                                                                                  |
+| Resilience             | Under the GitHub simulator (5xx, 429, lost, duplicated, out-of-order webhooks, killed processes), every green PR is merged exactly once, in graph order, and every red PR carries a reason |
+| Lost webhook           | Costs at most one interval of the repair loop, never a blockage                                                                                                                            |
+| Explainability         | Every queue exit has a reason from the closed vocabulary and a page                                                                                                                        |
+| GitHub budget          | A repository with 50 waiting PRs stays under 300 GraphQL points per hour                                                                                                                   |
+| Throughput (`batched`) | Time in queue p50 reduced by 40% on a synthetic load of 20 PRs per hour; bisection isolates a failure in ≤ log2(batch size) runs                                                           |
+| Flaky tests            | On a repository with a known flaky test, zero PR wrongly evicted                                                                                                                           |
+| Parallel               | A pilot monorepo merges disjoint PRs in parallel                                                                                                                                           |
+| Scale                  | One instance holds 1,000 PRs per day with ClickHouse enabled                                                                                                                               |
 
-## Ce qu'on n'optimise **pas** (hors périmètre de la v1)
+## What we do **not** optimize (out of scope for v1)
 
-- Héberger ou lancer la CI.
-- La revue de code, une extension de navigateur, une app Slack au-delà des webhooks sortants, un provider
-  Terraform.
-- GitLab et Bitbucket : le trait `Scm` les prévoit, la v1 ne les implémente pas.
-- ClickHouse lui-même : il arrive quand le volume le justifie, derrière le trait `AnalyticsStore`.
-- La spéculation probabiliste à la Uber : hors v1, mais le journal garde dès maintenant les attributs utiles (`AGENTS.md` D27).
+- Hosting or running the CI.
+- Code review, a browser extension, a Slack app beyond the outgoing webhooks, a Terraform provider.
+- GitLab and Bitbucket: the `Scm` trait allows for them, v1 does not implement them.
+- ClickHouse itself: it arrives when the volume justifies it, behind the `AnalyticsStore` trait.
+- Uber-style probabilistic speculation: outside v1, but the log already keeps the useful attributes (`DECISIONS.md` D27).

@@ -12,7 +12,7 @@ pub const SNAPSHOT_EVERY: i64 = 500;
 
 /// The log also keeps a snapshot when its oldest event after the last
 /// snapshot is this old, so that a snapshot covers every event before the
-/// partitions of `events` are dropped (`AGENTS.md` D106).
+/// partitions of `events` are dropped (`DECISIONS.md` D106).
 pub const COVER_AFTER: Duration = Duration::days(30);
 
 /// The state of a queue after the last event of its log.
@@ -205,9 +205,9 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
 /// then applies and projects each event again, as when it was written. The
 /// projections are then exactly those that the log describes (principle I);
 /// the rows of `check_observations` stay, because the replay writes the same
-/// ones and the late reports are not in the log (`AGENTS.md` D118). Once the
+/// ones and the late reports are not in the log (`DECISIONS.md` D118). Once the
 /// partitions of its old events are dropped, a log is no longer whole, and
-/// only its snapshot holds its state (`AGENTS.md` D106). The caller holds the
+/// only its snapshot holds its state (`DECISIONS.md` D106). The caller holds the
 /// lock of the queue.
 ///
 /// # Errors

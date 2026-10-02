@@ -1,4 +1,4 @@
-//! The HMAC-SHA256 signature of a webhook delivery (`AGENTS.md` D80).
+//! The HMAC-SHA256 signature of a webhook delivery (`DECISIONS.md` D80).
 
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};

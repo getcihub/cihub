@@ -104,7 +104,7 @@ impl RepoConfig {
     }
 
     /// The entry of the queue `name` on the branch `branch`, if any
-    /// (`AGENTS.md` D138).
+    /// (`DECISIONS.md` D138).
     pub fn queue(&self, branch: &str, name: &str) -> Option<&QueueConfig> {
         self.queues
             .iter()
@@ -112,7 +112,7 @@ impl RepoConfig {
     }
 
     /// The checks that the `merge_conditions` of the queue `name` on the
-    /// branch `branch` require on the test SHA (`AGENTS.md` D146).
+    /// branch `branch` require on the test SHA (`DECISIONS.md` D146).
     pub fn merge_checks(&self, branch: &str, name: &str) -> Vec<String> {
         self.queue(branch, name)
             .into_iter()
@@ -126,7 +126,7 @@ impl RepoConfig {
 
     /// The settings of the queue `name` on the branch `branch`. A queue
     /// without an entry has the defaults, without `defaults` of the file
-    /// (`AGENTS.md` D138).
+    /// (`DECISIONS.md` D138).
     ///
     /// # Errors
     ///
@@ -420,7 +420,7 @@ fn conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, Confi
 }
 
 /// `merge_conditions` accept only `check-success = <name>` at the first
-/// level for now (`AGENTS.md` D146).
+/// level for now (`DECISIONS.md` D146).
 fn merge_conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
     let conditions = conditions(list, text)?;
     for (node, expr) in list.iter().zip(&conditions.0) {

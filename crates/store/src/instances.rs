@@ -4,7 +4,7 @@ use sqlx::PgConnection;
 use crate::StoreError;
 
 /// The SCM instance at `base_url`, created with `id` when it is missing
-/// (`AGENTS.md` D47, D79). Two processes that start together get the same
+/// (`DECISIONS.md` D47, D79). Two processes that start together get the same
 /// instance.
 ///
 /// # Errors

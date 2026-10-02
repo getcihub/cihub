@@ -1,7 +1,7 @@
 # The image of cihub-server (docs/DEPLOYMENT.md). The build stage uses the
 # Rust of mise.toml on Debian 12, the glibc of the runtime stage. On Linux,
 # the TLS client reads the root certificates of the system, which the runtime
-# image provides: the binary embeds no list of its own (AGENTS.md D81).
+# image provides: the binary embeds no list of its own (DECISIONS.md D81).
 
 # rust:1.98.1-slim-bookworm
 FROM docker.io/library/rust@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730 AS build

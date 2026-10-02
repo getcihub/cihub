@@ -1,5 +1,5 @@
 //! A webhook delivery of GitHub as the ingestion receives it: its route, its
-//! signature and its headers (`AGENTS.md` D83, D84). No decision here: the
+//! signature and its headers (`DECISIONS.md` D83, D84). No decision here: the
 //! routing loop reads the payload later.
 
 use reqwest::header::HeaderMap;
@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::signature::verify_signature;
 
-/// The route of the webhooks of the App (`AGENTS.md` D83).
+/// The route of the webhooks of the App (`DECISIONS.md` D83).
 pub const WEBHOOK_PATH: &str = "/webhooks/github";
 
 /// A delivery whose signature is valid.

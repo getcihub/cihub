@@ -44,7 +44,7 @@ pub struct Item {
     #[serde(with = "time::serde::rfc3339")]
     pub submitted_at: OffsetDateTime,
     /// A direct merge was tried and could not happen: the item follows the
-    /// path of the tests (`AGENTS.md` D153).
+    /// path of the tests (`DECISIONS.md` D153).
     pub direct_merge_tried: bool,
 }
 
@@ -104,7 +104,7 @@ pub enum BlockReason {
     },
     Undetermined,
     /// The PR does not meet these `queue_conditions` of the queue, as the
-    /// file writes them (`AGENTS.md` D142).
+    /// file writes them (`DECISIONS.md` D142).
     QueueConditionsUnmet {
         conditions: Vec<String>,
     },

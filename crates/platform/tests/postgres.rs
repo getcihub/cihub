@@ -856,7 +856,7 @@ async fn routes(pool: &PgPool) -> Vec<RouteRow> {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: PgPool) {
     seed(&pool).await;
-    // Two queues on one branch: no queue is sure (`AGENTS.md` D135).
+    // Two queues on one branch: no queue is sure (`DECISIONS.md` D135).
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name) VALUES
@@ -967,7 +967,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     assert!(queue_state(&pool, queue(2)).await.0);
     assert!(queue_state(&pool, queue(3)).await.0);
     // A change of the repositories of a known connection asks to read them
-    // again (`AGENTS.md` D155).
+    // again (`DECISIONS.md` D155).
     assert_eq!(
         sync_jobs(&pool).await,
         [format!("sync_repos:{}-i-repos:1", connection())]

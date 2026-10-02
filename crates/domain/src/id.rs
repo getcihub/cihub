@@ -102,7 +102,7 @@ id_type!(
     /// A user account of an SCM instance, global: memberships link it to
     /// organizations.
     UserId => "user",
-    /// The row of an API token; the secret itself is `cht_…` (`AGENTS.md` D32).
+    /// The row of an API token; the secret itself is `cht_…` (`DECISIONS.md` D32).
     ApiTokenId => "apitoken",
     AuditEntryId => "audit",
 );

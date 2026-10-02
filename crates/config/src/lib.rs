@@ -1,5 +1,5 @@
 //! Queue configuration: the `.cihub.yaml` model, the only source of the
-//! settings of a queue (`AGENTS.md` D134), the strategy table, and the merge
+//! settings of a queue (`DECISIONS.md` D134), the strategy table, and the merge
 //! of the sources, with the source of each setting. Pure: the caller reads
 //! the file.
 

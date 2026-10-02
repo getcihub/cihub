@@ -1,4 +1,4 @@
--- The routing of the deliveries (AGENTS.md D84 to D86). The web role stores a
+-- The routing of the deliveries (DECISIONS.md D84 to D86). The web role stores a
 -- delivery without routing it; a loop translates it, finds its connection and
 -- its queue, then sets `routed_at`. A delivery whose connection is unknown is
 -- routed without an organization: only the system context sees it.

@@ -1,6 +1,6 @@
 //! The `Scm` trait on GitHub: reads in GraphQL, where one query reads 50 PRs,
 //! and writes in REST. Each value of GitHub becomes a neutral value here
-//! (`docs/GITHUB.md`, `AGENTS.md` D23, D78).
+//! (`docs/GITHUB.md`, `DECISIONS.md` D23, D78).
 
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -721,7 +721,7 @@ impl Scm for GithubApp {
     }
 
     /// The permission of `user`, kept 5 minutes per connection
-    /// (`AGENTS.md` D157).
+    /// (`DECISIONS.md` D157).
     fn permission<'a>(
         &'a self,
         repo: &'a RepoRef,

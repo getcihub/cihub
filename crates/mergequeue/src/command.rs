@@ -1,6 +1,6 @@
 //! The commands that a comment on a PR holds (`docs/GITHUB.md`):
 //! `/cihub merge`, which `submit_pr` runs, and `/cihub cancel` and
-//! `/cihub restart`, which the job `pr_command` runs (`AGENTS.md` D157).
+//! `/cihub restart`, which the job `pr_command` runs (`DECISIONS.md` D157).
 
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ pub(crate) enum PrCommand {
 /// [--direct] [--queue=<name>]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Merge {
-    /// `None` leaves the priority to the `priority_rules` (`AGENTS.md` D148).
+    /// `None` leaves the priority to the `priority_rules` (`DECISIONS.md` D148).
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
@@ -115,7 +115,7 @@ pub(crate) struct PrCommandRequest {
     pub command: ItemCommand,
 }
 
-/// The job of `request` after the delivery `delivery_id` (`AGENTS.md`
+/// The job of `request` after the delivery `delivery_id` (`DECISIONS.md`
 /// D157).
 pub(crate) fn pr_command_job(
     org_id: OrgId,

@@ -1,10 +1,10 @@
 //! `cihub-server`: reads the `CIHUB_*` configuration, starts the logs, checks
 //! that the database has every embedded migration, serves `/healthz` and
 //! `/readyz` on the internal address, and runs the roles of the process until
-//! `SIGTERM` or `SIGINT` (`AGENTS.md` D8). `cihub-server migrate` applies the
-//! missing migrations and stops (`AGENTS.md` D14). `cihub-server admin
+//! `SIGTERM` or `SIGINT` (`DECISIONS.md` D8). `cihub-server migrate` applies the
+//! missing migrations and stops (`DECISIONS.md` D14). `cihub-server admin
 //! bootstrap --installation <id>` starts an organization from an installation
-//! of the GitHub App, shows its API token once, and stops (`AGENTS.md` D154).
+//! of the GitHub App, shows its API token once, and stops (`DECISIONS.md` D154).
 //! It holds no queue logic: a role runs loops whose code lives in the library
 //! crates.
 
@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Starts the organization of `installation`, and shows its API token once
-/// (`AGENTS.md` D154, D155).
+/// (`DECISIONS.md` D154, D155).
 async fn bootstrap(pool: &PgPool, github: &Github, installation: &str) -> anyhow::Result<()> {
     let Bootstrapped {
         org_id,
@@ -317,7 +317,7 @@ fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform:
 }
 
 /// Starts the client of the GitHub App, and creates the row of its SCM
-/// instance when it is missing (`AGENTS.md` D79).
+/// instance when it is missing (`DECISIONS.md` D79).
 async fn start_github(pool: &PgPool, app: &config::GithubApp) -> anyhow::Result<Github> {
     let url = app.url.as_str();
     let config = GithubConfig {
@@ -343,7 +343,7 @@ async fn start_github(pool: &PgPool, app: &config::GithubApp) -> anyhow::Result<
 }
 
 /// The budgets that changed in the GitHub App, as `scm_connections` keeps
-/// them: the rate limit with the smallest share left (`AGENTS.md` D77).
+/// them: the rate limit with the smallest share left (`DECISIONS.md` D77).
 fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> {
     app.take_changed_budgets()
         .into_iter()
@@ -363,7 +363,7 @@ fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> 
         .collect()
 }
 
-/// Requests the maintenance job of the day (`AGENTS.md` D67) and the read of
+/// Requests the maintenance job of the day (`DECISIONS.md` D67) and the read of
 /// the repositories of each connection (D155) at the start, then every hour.
 /// Each replica does it; the key of the day, or of the hour, admits one job.
 async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
@@ -394,7 +394,7 @@ async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
 }
 
 /// Requests the sweep of the deliveries of `instance` at the start, then
-/// every [`SWEEP_EVERY`] (`AGENTS.md` D88). Each replica does it; the key of
+/// every [`SWEEP_EVERY`] (`DECISIONS.md` D88). Each replica does it; the key of
 /// the window admits one job.
 async fn request_sweep_regularly(
     pool: &PgPool,

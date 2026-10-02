@@ -31,7 +31,7 @@ closed_enum! {
 
 closed_enum! {
     /// How much a connection may call its SCM (`docs/RELIABILITY.md`,
-    /// `AGENTS.md` D77).
+    /// `DECISIONS.md` D77).
     pub enum ConnectionMode {
         /// Every call goes out.
         Normal,
@@ -45,7 +45,7 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// A module of CIHub, that an organization enables (`AGENTS.md` D94).
+    /// A module of CIHub, that an organization enables (`DECISIONS.md` D94).
     pub enum ModuleName {
         /// The merge queue (`cihub-mergequeue`).
         Mergequeue,

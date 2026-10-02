@@ -1,5 +1,5 @@
 -- Lot 9. The comment of CIHub on a PR belongs to the PR, not to a queue
--- (AGENTS.md D163): the welcome comment of a PR becomes the comment of the state
+-- (DECISIONS.md D163): the welcome comment of a PR becomes the comment of the state
 -- of its item.
 CREATE TABLE pr_comments (
     org_id              text   NOT NULL REFERENCES orgs (id),

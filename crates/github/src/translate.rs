@@ -1,5 +1,5 @@
 //! A GitHub webhook delivery in the neutral terms of `cihub-scm`
-//! (`AGENTS.md` D75, D84): what changed, not the new state.
+//! (`DECISIONS.md` D75, D84): what changed, not the new state.
 
 use cihub_domain::{CheckConclusion, CheckKind, CheckReport};
 use cihub_scm::{SUBMIT_BOX, ScmDelivery, ScmEvent, ScmUser};
@@ -123,7 +123,7 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
 }
 
 /// A change of a PR or of its reviews: the label that it added, and whether
-/// it made the PR ready for review (`AGENTS.md` D163).
+/// it made the PR ready for review (`DECISIONS.md` D163).
 fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateError> {
     let on_pr = read.event == "pull_request";
     Ok(ScmEvent::PrChanged {
@@ -151,7 +151,7 @@ fn submit_box(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
     })
 }
 
-/// An edit of a comment that checked its submission box (`AGENTS.md`
+/// An edit of a comment that checked its submission box (`DECISIONS.md`
 /// D163): the box was empty before, it is checked now, and the App did not
 /// make the edit itself.
 fn submit_box_checked(payload: &Value) -> bool {
@@ -165,7 +165,7 @@ fn submit_box_checked(payload: &Value) -> bool {
     !by_bot && has("/comment/body", "x") && has("/changes/body/from", " ")
 }
 
-/// A numeric or text identifier of GitHub, as text (`AGENTS.md` D46).
+/// A numeric or text identifier of GitHub, as text (`DECISIONS.md` D46).
 fn id(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::Number(n) => Some(n.to_string()),
@@ -286,7 +286,7 @@ mod tests {
         );
         // A review adds no label, whatever its action.
         assert_eq!(event("pull_request_review", &payload), changed(None, false));
-        // A PR ready for review opens (`AGENTS.md` D163); a draft does not.
+        // A PR ready for review opens (`DECISIONS.md` D163); a draft does not.
         let action = |action: &str, draft: bool| {
             json!({
                 "action": action,

@@ -113,7 +113,7 @@ closed_enum! {
         /// The queue is empty after a mode change.
         ModeSwitchCompleted,
         /// A submission came while the queue drains: it accepts nothing new
-        /// (`AGENTS.md` D151).
+        /// (`DECISIONS.md` D151).
         QueueDraining,
         /// A submission came while the queue switches its mode (D151).
         QueueSwitchingModes,

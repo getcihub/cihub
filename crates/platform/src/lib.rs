@@ -3,7 +3,7 @@
 //! loop, the daily maintenance (lot 3), the budgets of the connections, the
 //! routing and the sweep of the deliveries, the bootstrap of an organization
 //! and the read of the repositories of its connections, the contract of a
-//! module, and what the routes of the modules share (`AGENTS.md` D159). The roles talk only through these tables and their notifications.
+//! module, and what the routes of the modules share (`DECISIONS.md` D159). The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
 

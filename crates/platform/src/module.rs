@@ -17,7 +17,7 @@ pub type ModuleLoop = Box<
         + Send,
 >;
 
-/// What a module gives to the roles of the server (`AGENTS.md` D94): its
+/// What a module gives to the roles of the server (`DECISIONS.md` D94): its
 /// executors for the worker, its loop for the scheduler, and its routes for
 /// the web role (D159). The subscriptions come with lot 11.
 pub struct Module {

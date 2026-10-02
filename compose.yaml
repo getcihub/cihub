@@ -1,4 +1,4 @@
-# Development only (AGENTS.md D12, D52): Postgres 17 for local work and the
+# Development only (DECISIONS.md D12, D52): Postgres 17 for local work and the
 # integration tests. The credentials are fixed for local use: never use them
 # elsewhere.
 #

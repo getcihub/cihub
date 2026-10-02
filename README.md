@@ -5,7 +5,7 @@ per target branch, tests each one on top of everything ahead of it, and merges o
 the target branch green with any CI (it never runs your CI: it pushes a test branch and waits for the required
 checks), installs with one image and one Postgres, and explains each of its decisions on the pull request.
 
-The design and the rules of the project are in [`GOAL.md`](GOAL.md) and [`AGENTS.md`](AGENTS.md) (in French).
+The design and the rules of the project are in [`GOAL.md`](GOAL.md) and [`AGENTS.md`](AGENTS.md).
 
 ## Install in 30 minutes
 
