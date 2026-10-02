@@ -41,8 +41,7 @@ pub struct Item {
     pub submitted_at: OffsetDateTime,
 }
 
-/// Lower value is served first. Named levels have the same names and values
-/// as Trunk, so that the same PR comments work after a migration.
+/// Lower value is served first; the named levels are shortcuts for values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Priority(pub u8);

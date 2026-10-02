@@ -116,7 +116,7 @@ affiché dans le commentaire de la PR. La mergeabilité (`Mergeability`) dit si 
 (`PrState` : `open`, `closed`, `merged`), sa décision de revue (`ReviewDecision`) et ses checks (`CheckReport`).
 
 Priorité (`Priority`) : une valeur de 0 à 255 ; la plus petite passe en premier. Les noms `urgent` (0), `high`
-(10), `medium` (100) et `low` (200) sont ceux de Trunk. Seule la valeur décide de l'ordre
+(10), `medium` (100) et `low` (200) sont des raccourcis. Seule la valeur décide de l'ordre
 (`docs/ALGORITHMS.md`). Source d'une soumission : `SubmittedVia`.
 
 ## Groupe de test

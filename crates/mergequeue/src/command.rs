@@ -4,7 +4,7 @@
 use cihub_domain::Priority;
 
 /// `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
-/// [--direct]`; `/trunk merge` is an alias, for the migrations.
+/// [--direct]`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Merge {
     pub priority: Priority,
@@ -17,7 +17,7 @@ pub(crate) struct Merge {
 pub(crate) fn parse_merge(body: &str) -> Option<Merge> {
     body.lines().find_map(|line| {
         let mut words = line.split_whitespace();
-        if !matches!(words.next(), Some("/cihub" | "/trunk")) || words.next() != Some("merge") {
+        if !matches!(words.next(), Some("/cihub")) || words.next() != Some("merge") {
             return None;
         }
         let mut merge = Merge {
@@ -60,7 +60,6 @@ mod tests {
     fn merge_commands_and_their_options() {
         let cases = [
             ("/cihub merge", merge(Priority::MEDIUM, false, false)),
-            ("/trunk merge", merge(Priority::MEDIUM, false, false)),
             (
                 "LGTM\n  /cihub merge --no-batch",
                 merge(Priority::MEDIUM, true, false),

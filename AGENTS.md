@@ -214,7 +214,8 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   du merge sont `merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`,
   `merge_branch_protection_unmet`, `merge_already_in_progress` et `merge_repeated_server_errors` ; la perte de
   l'accès au dépôt est un fait `access.lost` ou `access.restored` ; `CheckKind` vaut `check` ou `status`. Les noms
-  de Trunk restent dans les webhooks sortants, par une traduction au lot 11.
+  de Trunk restent dans les webhooks sortants, par une traduction au lot 11. _Remplacée en partie par D139 : pas de
+  noms de Trunk dans les webhooks sortants._
 - **D24** La crate pure `cihub-mq-core` (`crates/mq-core/`) contient `apply`, le graphe de merge, `plan` et
   `check`. Elle dépend de `cihub-domain` et ne connaît ni `cihub-config` ni `cihub-conditions`.
   _Complétée par D99 : elle dépend de `cihub-config`._
@@ -602,6 +603,14 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D138** Le lot 8 ne crée aucune file depuis le fichier : la commande d'admin du lot 9 les crée (Q14). Une
   entrée du fichier se relie à sa file par sa branche et son nom ; une file sans entrée a les réglages par défaut,
   sans les `defaults` du fichier.
+- **D139** CIHub ne s'intègre à aucun autre produit : il étudie la concurrence mais ne reprend aucune de ses
+  interfaces pour la compatibilité. Pas d'alias de commande (`/trunk`), pas de noms ni de format d'un autre produit
+  dans les webhooks sortants, l'API ou les branches de test, pas de traduction des raisons vers un autre
+  vocabulaire. Les documents de spécification décrivent CIHub seul ; les comparaisons sont dans
+  `docs/COMPETITION.md`. Remplace la dernière phrase de D23.
+- **D140** Complète D139 : CIHub ne fournit aucun convertisseur depuis la configuration d'un autre produit, et
+  `GOAL.md` perd son objectif « une migration facile ». Les attributs des conditions ont leurs propres noms, sans
+  équivalence documentée avec un autre produit. Le prompt d'aide (D134) aide à écrire `.cihub.yaml`.
 
 ### 4.1 Questions ouvertes
 

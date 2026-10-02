@@ -43,11 +43,11 @@ mod tests {
             temp_branch(&branch).as_deref(),
             Some(format!("cihub-temp/pr-12/{run_id}").as_str())
         );
-        let migrated = test_branch("trunk-merge", 3, run_id);
-        assert_eq!(run_of_test_branch(&migrated), Some(run_id));
+        let custom = test_branch("ship", 3, run_id);
+        assert_eq!(run_of_test_branch(&custom), Some(run_id));
         assert_eq!(
-            temp_branch(&migrated).as_deref(),
-            Some(format!("trunk-merge-temp/pr-3/{run_id}").as_str())
+            temp_branch(&custom).as_deref(),
+            Some(format!("ship-temp/pr-3/{run_id}").as_str())
         );
     }
 

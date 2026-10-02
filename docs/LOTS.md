@@ -623,7 +623,7 @@ Autres valeurs fermées :
     `not_ready_timeout_expired`, `Desired::observe` (des `Read` à des points fixes après la soumission) et
     `Plan::wake_at`. Dans `cihub-mergequeue` : `Reconciler` (une transaction par file : livraisons, faits de
     `queue_inbox`, `plan`, décisions, jobs, `next_tick_at`), la passe des livraisons d'une connexion sans file
-    (accès perdu ou rendu, commandes), `run_scheduler`, la commande `/cihub merge` (et l'alias `/trunk merge`),
+    (accès perdu ou rendu, commandes), `run_scheduler`, la commande `/cihub merge`,
     les jobs `refresh_prs` et `submit_pr` avec l'exception du statut de la file. `cihub-server` lance la boucle
     dans le rôle `scheduler` et les exécuteurs dans le rôle `worker`. Une livraison d'une connexion sans file
     réveille les schedulers. `ScmEvent::PrChanged` porte `label_added`, le label qu'une action a posé. Tests :
@@ -830,8 +830,8 @@ Autres valeurs fermées :
   rouvre ; une PR ne peut pas modifier ses propres conditions (test dédié) ; chaque stratégie est une table sans
   code dans `cihub-mq-core`.
 - **Suivi** :
-  - Fait : `cihub-conditions` (grammaire `[-] attribut [op valeur]` avec blocs `and`, `or`, `not`, attributs aux
-    noms de Mergify quand le sens est le même, évaluation sur un contexte de PR, erreurs avec position) ;
+  - Fait : `cihub-conditions` (grammaire `[-] attribut [op valeur]` avec blocs `and`, `or`, `not`, attributs de
+    `docs/ALGORITHMS.md`, évaluation sur un contexte de PR, erreurs avec position) ;
     `cihub-config` (modèle du fichier version 1, choix entre `.cihub.yaml` et `.cihub.yml`, table des stratégies,
     fusion des sources avec la source de chaque réglage, plages, erreurs avec ligne et colonne, raison d'échec de
     chaque erreur).
@@ -855,7 +855,7 @@ Autres valeurs fermées :
 
 - **Objectif** : que les humains et la CI puissent utiliser la file ; fin de la phase 1.
 - **Contenu** : statut `CIHub Merge Queue (<branche>)`, commentaire du bot modifié sur place, labels d'état ;
-  commandes `/cihub merge|cancel|restart` et les alias `/trunk`, avec vérification des permissions ; API REST v1
+  commandes `/cihub merge|cancel|restart`, avec vérification des permissions ; API REST v1
   de `docs/API.md` (hors métriques et webhooks sortants), erreurs `problem+json`, limite de débit, OpenAPI 3.1
   généré depuis le code (`cihub-web`, `cihub-api-types`) ; client Rust `cihub-client` ; CLI `cihub` ;
   `Dockerfile` de l'image `cihub-server` et workflow de publication de l'image sur GHCR à chaque version
@@ -887,7 +887,7 @@ Autres valeurs fermées :
 - **Contenu** : trait `AnalyticsStore` et son implémentation Postgres (`cihub-analytics`, tables `an_*`) ; le rôle
   `notifier` ; l'outbox et ses abonnements, écrits avec leur événement dans la même transaction (`AGENTS.md` D65) ;
   `/metrics` sur l'adresse interne ; vue Santé ; `GET /api/v1/metrics` ; webhooks sortants Standard
-  Webhooks avec les noms de Trunk ; endpoints `/orgs/{org}/webhooks`.
+  Webhooks avec le vocabulaire de CIHub (`AGENTS.md` D139) ; endpoints `/orgs/{org}/webhooks`.
 - **Critère de sortie** : un événement et son entrée d'outbox sont écrits dans la même transaction ; les tables de
   faits reconstruites depuis `events` égalent celles écrites en continu ;
   chaque type de webhook est émis une seule fois par transition, signé, et retenté après un échec ; `rate()`

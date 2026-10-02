@@ -119,8 +119,8 @@ Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et
 ## Options par PR et files multiples
 
 Les options par PR sont posées à la soumission et stockées sur l'entrée : priorité, `no_batch`, `direct` (admins,
-nécessite l'App sudo). Les priorités ont les mêmes noms et valeurs que chez Trunk (`urgent` 0, `high` 10, `medium`
-100, `low` 200), pour que les mêmes commentaires fonctionnent. Un dépôt peut avoir plusieurs files (`main`,
+nécessite l'App sudo). Les priorités nommées sont des raccourcis pour des valeurs (`urgent` 0, `high` 10,
+`medium` 100, `low` 200). Un dépôt peut avoir plusieurs files (`main`,
 branches `release/*`), chacune avec ses propres réglages ; une PR est routée par sa branche de base, et un
 changement de branche de base annule l'entrée avec `pr_base_branch_changed`.
 

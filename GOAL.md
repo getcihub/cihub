@@ -30,11 +30,9 @@ ses décisions.**
    aux webhooks perdus, aux pannes et au rate limit de GitHub : au pire il est retardé, jamais oublié.
 7. **Les tests instables ne rejettent pas les PR.** Le module `flakytests` garde l'historique des résultats (OTLP
    natif, JUnit converti) et la file ne désigne pas un coupable sur un test connu comme instable.
-8. **Une migration facile.** Labels, commandes (`/trunk merge`), priorités, webhooks et fichier de configuration
-   de Trunk, Mergify ou de la file native GitHub sont convertibles, sans imposer leur vocabulaire.
-9. **Multi-tenant par construction.** Une instance sert plusieurs organisations GitHub, ou un hébergeur tiers ;
+8. **Multi-tenant par construction.** Une instance sert plusieurs organisations GitHub, ou un hébergeur tiers ;
    une organisation bruyante ralentit ses propres files, pas celles des autres.
-10. **Rester petit.** Postgres est la seule dépendance en v1 : pas de broker, pas de cache externe. ClickHouse
+9. **Rester petit.** Postgres est la seule dépendance en v1 : pas de broker, pas de cache externe. ClickHouse
     arrive derrière une interface quand une mesure le justifie.
 
 ## Comment on sait qu'on y est (acceptation)
