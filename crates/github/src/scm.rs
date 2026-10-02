@@ -11,7 +11,8 @@ use cihub_domain::{
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
-    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmError, ScmFuture, ScmUser, StatusUpdate,
+    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmRepo,
+    ScmUser, SetupFinding, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
@@ -391,7 +392,31 @@ fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
     }
 }
 
+/// A rule of a ruleset that applies to a branch.
+#[derive(Deserialize)]
+struct BranchRule {
+    #[serde(rename = "type")]
+    kind: String,
+    ruleset_id: Option<u64>,
+}
+
 impl GithubApp {
+    /// The rules that apply to `branch`: none on a private repository of
+    /// GitHub Free, which has no rules.
+    async fn branch_rules(
+        &self,
+        repo: &RepoRef,
+        branch: &str,
+        class: JobClass,
+    ) -> Result<Vec<BranchRule>, ScmError> {
+        let rest = format!("/rules/branches/{}?per_page=100", encode(branch));
+        let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
+        if needs_paid_plan(&answer) {
+            return Ok(Vec::new());
+        }
+        expect(answer, &[StatusCode::OK])?.json()
+    }
+
     fn repo_path(repo: &RepoRef, rest: &str) -> String {
         format!(
             "/repos/{}/{}{rest}",
@@ -695,6 +720,8 @@ impl Scm for GithubApp {
         })
     }
 
+    /// The permission of `user`, kept 5 minutes per connection
+    /// (`AGENTS.md` D157).
     fn permission<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -706,18 +733,29 @@ impl Scm for GithubApp {
             struct Answer {
                 permission: String,
             }
+            let key = (
+                repo.connection.id,
+                format!("{}/{}", repo.namespace, repo.name),
+                user.login.clone(),
+            );
+            if let Some(permission) = self.kept_permission(&key) {
+                return Ok(permission);
+            }
             let rest = format!("/collaborators/{}/permission", encode(&user.login));
             let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
-            if answer.status == StatusCode::NOT_FOUND {
-                return Ok(Permission::None);
-            }
-            let answer = expect(answer, &[StatusCode::OK])?;
-            Ok(match answer.json::<Answer>()?.permission.as_str() {
-                "admin" => Permission::Admin,
-                "write" | "maintain" => Permission::Write,
-                "read" | "triage" => Permission::Read,
-                _ => Permission::None,
-            })
+            let permission = if answer.status == StatusCode::NOT_FOUND {
+                Permission::None
+            } else {
+                let answer = expect(answer, &[StatusCode::OK])?;
+                match answer.json::<Answer>()?.permission.as_str() {
+                    "admin" => Permission::Admin,
+                    "write" | "maintain" => Permission::Write,
+                    "read" | "triage" => Permission::Read,
+                    _ => Permission::None,
+                }
+            };
+            self.keep_permission(key, permission);
+            Ok(permission)
         })
     }
 
@@ -1151,6 +1189,153 @@ impl Scm for GithubApp {
             let path = format!("/app/hook/deliveries/{}/attempts", encode(attempt_id));
             let (answer, _) = self.send_as_app(Method::POST, &path).await?;
             expect(answer, &[StatusCode::ACCEPTED]).map(drop)
+        })
+    }
+
+    /// `GET /app/installations/{id}`: the organization or the user that the
+    /// installation serves.
+    fn installation<'a>(
+        &'a self,
+        external_id: &'a str,
+        _class: JobClass,
+    ) -> ScmFuture<'a, ScmAccount> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Installation {
+                account: Account,
+            }
+            #[derive(Deserialize)]
+            struct Account {
+                id: u64,
+                login: String,
+            }
+            let path = format!("/app/installations/{}", encode(external_id));
+            let (answer, _) = self.send_as_app(Method::GET, &path).await?;
+            if answer.status == StatusCode::NOT_FOUND {
+                return Err(ScmError::NotFound(format!("installation {external_id}")));
+            }
+            let Installation { account } = expect(answer, &[StatusCode::OK])?.json()?;
+            Ok(ScmAccount {
+                external_id: account.id.to_string(),
+                path: account.login,
+            })
+        })
+    }
+
+    /// The rulesets of `branch` and of the test branches (`docs/GITHUB.md`):
+    /// an `update` rule must restrict the branch, and each ruleset with one
+    /// must exempt the App; no rule may cover the test branches; and no rule
+    /// may ask for branches up to date.
+    fn check_setup<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<SetupFinding>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Ruleset {
+                #[serde(default)]
+                bypass_actors: Vec<Exemption>,
+            }
+            #[derive(Deserialize)]
+            struct Exemption {
+                actor_id: Option<u64>,
+                actor_type: String,
+                bypass_mode: String,
+            }
+            let mut findings = Vec::new();
+            let rules = self.branch_rules(repo, branch, class).await?;
+            let updates: BTreeSet<u64> = rules
+                .iter()
+                .filter(|rule| rule.kind == "update")
+                .filter_map(|rule| rule.ruleset_id)
+                .collect();
+            if updates.is_empty() {
+                findings.push(SetupFinding::UpdateRestrictionMissing);
+            }
+            for id in updates {
+                let rest = format!("/rulesets/{id}");
+                let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
+                let ruleset: Ruleset = expect(answer, &[StatusCode::OK])?.json()?;
+                let exempt = ruleset.bypass_actors.iter().any(|actor| {
+                    actor.actor_type == "Integration"
+                        && actor.actor_id.map(|id| id.to_string()).as_deref() == Some(self.app_id())
+                        && actor.bypass_mode == "exempt"
+                });
+                if !exempt {
+                    findings.push(SetupFinding::AppNotExempt);
+                    break;
+                }
+            }
+            for test_branch in ["cihub-temp/check/1", "cihub-merge/check/1"] {
+                if !self
+                    .branch_rules(repo, test_branch, class)
+                    .await?
+                    .is_empty()
+                {
+                    findings.push(SetupFinding::TestBranchesNotExcluded);
+                    break;
+                }
+            }
+            if self.required_checks(repo, branch, class).await?.up_to_date {
+                findings.push(SetupFinding::UpToDateRequired);
+            }
+            Ok(findings)
+        })
+    }
+
+    /// The pages of `GET /installation/repositories`, until `total_count`.
+    fn list_repos<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmRepo>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Page {
+                total_count: usize,
+                repositories: Vec<Repository>,
+            }
+            #[derive(Deserialize)]
+            struct Repository {
+                id: u64,
+                name: String,
+                owner: Owner,
+                default_branch: String,
+            }
+            #[derive(Deserialize)]
+            struct Owner {
+                login: String,
+            }
+            let mut repos = Vec::new();
+            for page in 1.. {
+                let answer = self
+                    .send(Request {
+                        connection,
+                        class,
+                        method: Method::GET,
+                        path: format!("/installation/repositories?per_page=100&page={page}"),
+                        body: None,
+                        accept: JSON,
+                    })
+                    .await?;
+                let Page {
+                    total_count,
+                    repositories,
+                } = expect(answer, &[StatusCode::OK])?.json()?;
+                let last = repositories.is_empty();
+                repos.extend(repositories.into_iter().map(|repo| ScmRepo {
+                    external_id: repo.id.to_string(),
+                    namespace: repo.owner.login,
+                    name: repo.name,
+                    default_branch: repo.default_branch,
+                }));
+                if last || repos.len() >= total_count {
+                    break;
+                }
+            }
+            Ok(repos)
         })
     }
 }

@@ -1,0 +1,173 @@
+# CIHub
+
+CIHub is an open-source, self-hosted merge queue for GitHub. It takes approved, green pull requests, orders them
+per target branch, tests each one on top of everything ahead of it, and merges only what still passes. It keeps
+the target branch green with any CI (it never runs your CI: it pushes a test branch and waits for the required
+checks), installs with one image and one Postgres, and explains each of its decisions on the pull request.
+
+The design and the rules of the project are in [`GOAL.md`](GOAL.md) and [`AGENTS.md`](AGENTS.md) (in French).
+
+## Install in 30 minutes
+
+You need Docker with Compose, a host that GitHub can reach over HTTPS, and admin rights on a GitHub organization.
+
+### 1. Create the GitHub App
+
+In the settings of your organization: *Settings → Developer settings → GitHub Apps → New GitHub App*. The full
+procedure is in [`docs/GITHUB.md`](docs/GITHUB.md); in short:
+
+- **Webhook**: active, URL `https://<your CIHub host>/webhooks/github`, and a random secret
+  (`openssl rand -hex 32`).
+- **Repository permissions**: Contents *write*, Pull requests *write*, Commit statuses *write*, Checks *read*,
+  Metadata *read*, Administration *read*, Issues *write*; Organization: Members *read*. Actions *write* is
+  optional.
+- **Events**: Pull request, Pull request review, Issue comment, Push, Check run, Check suite, Status, Branch
+  protection rule, Repository.
+- After the creation, note the **App ID** and generate a **private key** (`.pem` file).
+
+### 2. Configure and start
+
+From a clone of this repository:
+
+```sh
+cp deploy/.env.example deploy/.env
+# Fill in deploy/.env: two Postgres passwords, the App ID, the webhook secret,
+# and the path of the private key.
+docker compose -f deploy/compose.yaml up -d
+```
+
+Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
+starts `cihub-server` on port 8080. Put your HTTPS reverse proxy in front of this port.
+
+### 3. Install the App and start your organization
+
+Install the App on the repositories to serve (*Install App* on the page of the App). The identifier of the
+installation is the last part of the URL of its settings page (`.../installations/<id>`). Then:
+
+```sh
+docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+```
+
+The command creates the organization in CIHub, reads its repositories, and prints an API token **once**: keep it
+in a secret store.
+
+### 4. Create a queue
+
+With the CLI, in a clone of the repository:
+
+```sh
+cargo install --locked --git https://github.com/getcihub/cihub cihub-cli
+cihub login --url https://<your CIHub host>   # asks for the token
+cihub queue create main
+```
+
+Or with the API:
+
+```sh
+curl -X POST https://<your CIHub host>/api/v1/repos/<owner>/<repo>/queues \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"target_branch": "main"}'
+```
+
+### 5. Protect the target branch
+
+Two rulesets on the target branch ([`docs/GITHUB.md`](docs/GITHUB.md)):
+
+- one that restricts updates, with the App in its bypass list in mode **exempt**;
+- one that holds the rules a PR must meet (reviews, required checks), without any bypass.
+
+Any other ruleset must exclude the branches `cihub-temp/**/*` and `cihub-merge/**/*`. Turn off "Require branches
+to be up to date before merging". CIHub checks these points for you:
+
+```sh
+curl https://<your CIHub host>/api/v1/queues/<queue id>/config-check -H "Authorization: Bearer <token>"
+```
+
+An empty list of `findings` means a sound configuration.
+
+### 6. Merge a pull request
+
+Comment on an approved, green pull request:
+
+```
+/cihub merge
+```
+
+CIHub answers with a comment that it keeps up to date, and a commit status `CIHub Merge Queue (<branch>)`. Other
+commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high|medium|low|0-255`,
+`--no-batch`, `--queue=<name>`.
+
+## Write your `.cihub.yaml` with an assistant
+
+A queue works without a file. To change its behavior, add `.cihub.yaml` at the root of the repository; CIHub reads
+it on the head of the target branch, never from a pull request. Copy this prompt into an LLM assistant:
+
+```text
+Help me write the .cihub.yaml file of CIHub, a merge queue for GitHub. Ask me
+questions first, one at a time: which branches need a queue, how long my CI
+takes and how often it fails, which checks are required, which labels or
+reviews must block a merge, and which pull requests must go first.
+
+Then write the file, with only the keys below, and explain each choice.
+
+Rules of the file (version 1):
+- It starts with `version: 1`. Top-level keys: `queues` (a list),
+  `priority_rules` (a list) and `defaults` (any queue setting, without `name`,
+  `branch` or conditions). An unknown key is an error.
+- Each queue has `name` and `branch`. Several queues can target the same
+  branch: a pull request goes to the first one, in file order, whose
+  `queue_conditions` pass.
+- `strategy`: `sequential` (one test at a time) or `pipelined` (default: tests
+  in parallel, each on top of the ones ahead). `batched` and `parallel` are not
+  ready yet: do not use them.
+- `merge_method`: `squash` (default), `merge_commit`, `rebase`, or
+  `fast_forward` (only with `strategy: sequential`).
+- `trigger`: `draft_pr` (default) or `push`.
+- `window: { floor: 1-100, ceiling: 1-100 }` (default 2 / 20), or
+  `testing_concurrency: 1-100` instead of `window`.
+- `failure_budget: { retries: 0-10 }` (default 1): retries before a pull
+  request fails.
+- `testing_timeout_minutes` (10-1440, default 300), `not_ready_timeout_hours`
+  (1-720, default 168), `keep_test_branches_minutes` (0-1440, default 0).
+- `merge_commit_title`: `pr_title` (default) or `pr_title_and_number`.
+- Booleans: `comments_enabled`, `commands_enabled`, `status_check_enabled`
+  (default true), `state_labels_enabled`, `resubmit_on_push` (default false).
+- `label_commands: { enabled: true, enqueue_label: <label> }`: a label that
+  submits the pull request (default `cihub-merge-queue-submit`).
+- `direct_merge_mode`: `off` (default) or `always` (merge an up-to-date pull
+  request without a test branch).
+- `branch_protection_injection`: `both` (default), `merge` or `none`: whether
+  the checks required by the branch rules also count before admission and on
+  the test commit.
+- `required_statuses`: a list of check names for the test commit; an empty
+  list means none; without the key, they come from the branch rules.
+- `queue_conditions`: a list of conditions that a pull request must meet to
+  enter the queue. `merge_conditions`: only `check-success = <name>` items,
+  which add required checks on the test commit.
+- `priority_rules`: a list of `{ name, conditions, priority }`, where priority
+  is `urgent`, `high`, `medium`, `low` or 0-255; the first rule that matches
+  wins.
+
+Conditions: `[-]attribute [operator value]`, where `-` negates; nested
+`and:`, `or:` and `not:` blocks take a list. Operators: `=`, `!=`, `<`, `<=`,
+`>`, `>=`, `~=` (regular expression), `*=` (glob). Attributes: draft, conflict, from-fork,
+behind-base, number, title, body, review-decision (approved,
+changes_requested, review_required, none), approved-reviews-by,
+changes-requested-reviews-by, review-requested, review-threads-unresolved,
+check-success, check-neutral, check-skipped, check-failure, check-pending,
+label, author, sender, sender-permission (none < read < write < admin), files,
+additions, deletions, base, head, queue-name, queue-position, queue-age,
+pr-age. Durations are `<n>m`, `<n>h` or `<n>d`. A boolean attribute alone is true (`-draft` means "not a draft"). In
+YAML, quote a value that holds `[` or `]`.
+```
+
+The reference of every key is [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+
+## Development
+
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) describes the development setup (`mise install`, `mise run db`,
+`mise run dev`) and the tasks of the project.
+
+## License
+
+Apache-2.0, see [`LICENSE`](LICENSE).

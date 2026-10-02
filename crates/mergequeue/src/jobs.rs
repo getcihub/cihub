@@ -14,7 +14,7 @@ use cihub_domain::{
     ScmInstanceId, SubmittedVia, UserId,
 };
 use cihub_platform::{Job, Outcome, error_chain, mark_dirty};
-use cihub_scm::{PrSnapshot, RequiredChecks, Scm, ScmError, ScmUser};
+use cihub_scm::{PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, ensure_user};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -170,6 +170,20 @@ pub(crate) fn submit(
     }
 }
 
+/// Answers a command on its PR, to say why the queue refused it
+/// (`AGENTS.md` D157).
+pub(crate) async fn reply(
+    scm: &dyn Scm,
+    repo: &RepoRef,
+    number: u64,
+    text: String,
+    class: JobClass,
+) -> Result<(), Failure> {
+    let body = format!("### CIHub Merge Queue\n\n{text}\n");
+    scm.create_comment(repo, number, &body, class).await?;
+    Ok(())
+}
+
 /// The commit status of the queue on the head of a PR (`docs/GITHUB.md`).
 pub fn queue_status_context(target_branch: &str) -> String {
     format!("CIHub Merge Queue ({target_branch})")
@@ -205,7 +219,12 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
     }
 }
 
-fn observed(pr: &PrSnapshot, mergeability: Mergeability, unmet: Vec<String>) -> EventKind {
+fn observed(
+    pr: &PrSnapshot,
+    required: &RequiredChecks,
+    own: &str,
+    unmet: Vec<String>,
+) -> EventKind {
     EventKind::PrObserved {
         pr_number: pr.number,
         state: pr.state,
@@ -213,10 +232,16 @@ fn observed(pr: &PrSnapshot, mergeability: Mergeability, unmet: Vec<String>) -> 
         base_branch: pr.base_branch.clone(),
         draft: pr.draft,
         labels: pr.labels.clone(),
-        mergeability,
+        mergeability: mergeability(pr, required, own),
         review_decision: pr.review_decision,
         checks: pr.checks.clone(),
         unmet_conditions: unmet,
+        required_checks: required
+            .names
+            .iter()
+            .filter(|name| *name != own)
+            .cloned()
+            .collect(),
     }
 }
 
@@ -377,7 +402,7 @@ async fn refresh(
                 unmet_conditions(scm, &target, pr, &reading).await?
             }
         };
-        let kind = observed(pr, mergeability(pr, &required, &own), unmet);
+        let kind = observed(pr, &required, &own, unmet);
         facts.push((Actor::System, kind));
     }
     let mut tx = begin_system(pool)
@@ -594,8 +619,8 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
 }
 
 /// Checks the submission of the job, reads the PR, and gives back its
-/// `item.submitted` and its `pr.observed`. A refused submission gives
-/// nothing: the message on the PR comes with lot 9.
+/// `item.submitted` and its `pr.observed`. A refused command gets a comment
+/// that says why (`AGENTS.md` D157); a refused label gets none.
 pub(crate) async fn execute_submit(
     pool: PgPool,
     scm: Arc<dyn Scm>,
@@ -605,6 +630,10 @@ pub(crate) async fn execute_submit(
     outcome(submit_pr(&pool, scm.as_ref(), &job, now).await)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the checks of a submission read in their order, each refusal with its answer"
+)]
 async fn submit_pr(
     pool: &PgPool,
     scm: &dyn Scm,
@@ -620,9 +649,21 @@ async fn submit_pr(
         .await
         .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
     let pr_number = request.pr_number;
+    let (repo_ref, by_command) = (&repo.repo, request.requested_by.is_some());
+    let refuse = |text: String| async move {
+        if by_command {
+            reply(scm, repo_ref, pr_number, text, job.class).await
+        } else {
+            Ok(())
+        }
+    };
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
         info!(pr_number, "submission refused: permission");
-        return Ok(());
+        return refuse(
+            "`/cihub merge` needs the write permission on the repository (admin with `--direct`)."
+                .to_owned(),
+        )
+        .await;
     };
     let pr = match scm.pull_request(&repo.repo, pr_number, job.class).await {
         Ok(pr) => pr,
@@ -636,7 +677,11 @@ async fn submit_pr(
             base_branch = pr.base_branch,
             "submission dropped: no queue"
         );
-        return Ok(());
+        return refuse(format!(
+            "`/cihub merge`: no queue serves the branch `{}`.",
+            pr.base_branch
+        ))
+        .await;
     };
     let required = scm
         .required_checks(&first.repo, &first.target_branch, job.class)
@@ -651,11 +696,20 @@ async fn submit_pr(
     };
     let Some((target, unmet)) = route(scm, &queues, &pr, &request, &reading).await? else {
         info!(pr_number, "submission dropped: no queue of that name");
-        return Ok(());
+        return refuse(format!(
+            "`/cihub merge`: the branch `{}` has no queue named `{}`.",
+            pr.base_branch,
+            request.queue.as_deref().unwrap_or_default()
+        ))
+        .await;
     };
     if let Some(reason) = refusal(&target.settings()?, &request, &pr) {
         info!(pr_number, reason, "submission dropped");
-        return Ok(());
+        return refuse(format!(
+            "`/cihub merge`: the commands are off for the queue `{}`.",
+            target.name
+        ))
+        .await;
     }
     let priority = match request.priority {
         Some(priority) => priority,
@@ -697,10 +751,7 @@ async fn submit_pr(
     };
     let facts = vec![
         (actor, submitted),
-        (
-            Actor::System,
-            observed(&pr, mergeability(&pr, &required, &own), unmet),
-        ),
+        (Actor::System, observed(&pr, &required, &own, unmet)),
     ];
     give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
     tx.commit()

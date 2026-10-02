@@ -64,7 +64,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 19] = [
+const TENANT_TABLES: [&str; 21] = [
     "orgs",
     "org_modules",
     "scm_accounts",
@@ -84,6 +84,8 @@ const TENANT_TABLES: [&str; 19] = [
     "queue_snapshots",
     "queue_inbox",
     "check_observations",
+    "pr_surfaces",
+    "pr_comments",
 ];
 
 /// The month of the events of the tests.
@@ -151,7 +153,11 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{org}', '{queue}', 1, '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
              VALUES ('fact-{n}', '{org}', '{queue}', 'system', 'access.lost', 'null',
-                     '2026-09-15T00:00:00Z');"
+                     '2026-09-15T00:00:00Z');
+         INSERT INTO pr_surfaces (org_id, queue_id, pr_number, item_id, desired, desired_hash)
+             VALUES ('{org}', '{queue}', 1, 'item-{n}', '{{}}', 'h');
+         INSERT INTO pr_comments (org_id, repo_id, pr_number, comment_external_id)
+             VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');"
     )
 }
 

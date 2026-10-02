@@ -41,7 +41,7 @@ les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 | 6   | Cycle de test                                          | 1     | 5         | —         | terminé                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | —         | terminé                                  |
 | 8   | Politique de file                                      | 1     | 6         | —         | terminé                                  |
-| 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | à faire                                  |
+| 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | en cours                                 |
 | 10  | Tableau de bord                                        | 2     | 9         | Q9        | à faire                                  |
 | 11  | Analytique, métriques et webhooks sortants             | 2     | 9         | —         | à faire                                  |
 | 12  | Stratégie `batched`                                    | 2     | 9         | Q3        | à faire                                  |
@@ -930,6 +930,64 @@ Autres valeurs fermées :
 - **Critère de sortie** : un test de bout en bout sur l'instance de staging soumet des PR sur un vrai dépôt et les
   merge ; le dépôt de CIHub passe sur sa propre file ; une personne extérieure suit le README et merge une première
   PR en moins de 30 minutes (critère de la phase 1, mesuré à la main).
+- **Suivi** :
+  - Étapes : 1. amorçage d'une organisation (Q14) ; 2. surfaces de la PR ; 3. API v1 ; 4. client et CLI ;
+    5. vérificateur de configuration ; 6. image, `docker compose` d'installation et README ; 7. critères de sortie.
+  - Fait (2 octobre 2026, D154, D155) : étape 1. `cihub-server admin bootstrap --installation <id>` lit le compte
+    de l'installation, crée l'organisation (slug : le login du compte), son compte, sa connexion et la ligne
+    `org_modules` du module `mergequeue`, demande `sync_repos` et affiche une seule fois un jeton `bootstrap` avec
+    les cinq scopes ; sur une installation déjà amorcée, il ne crée qu'un nouveau jeton. Le
+    trait `Scm` gagne `installation` et `list_repos` (GitHub et simulateur, suite de contrat). Le job `sync_repos`
+    crée et met à jour `repos` sans en supprimer et sans prendre le dépôt d'une autre organisation ; il est demandé
+    par le routage de chaque livraison `installation_repositories` (clé de la livraison), et par l'amorçage et
+    chaque réplique du scheduler (clé de l'heure). Tests : contre Postgres, l'amorçage et sa relance, la lecture des dépôts, la demande
+    horaire et le routage ; les deux routes de GitHub sur des réponses écrites à la main.
+  - Fait (2 octobre 2026) : les réponses de GitHub sont enregistrées de nouveau (D155, 64 échanges, avec
+    l'installation et ses dépôts), avec le ruleset `cihub` remis en mode enregistrement le temps de
+    l'enregistrement ; #55 mergée par la suite. L'enregistreur garde seulement le dépôt de la suite dans la liste
+    des dépôts de l'installation, car les autres peuvent être privés et la cassette est publique.
+  - Fait (2 octobre 2026, D156 à D158) : étape 2. `plan` donne `Desired.surfaces` (chaque entrée vivante, et chaque
+    entrée que la réconciliation termine, vue avant son éviction) ; `cihub-mergequeue` en fait le statut de la file,
+    le commentaire et les labels d'état, écrit le rendu voulu dans `pr_surfaces` et demande `publish_surfaces`, qui
+    publie sous un verrou consultatif de la PR ; `merge_pr` publie `success` avant le merge. `/cihub cancel` et
+    `/cihub restart` passent par le job `pr_command` ; une commande refusée reçoit un commentaire. `cihub-github`
+    garde une permission 5 minutes. `pr.observed` porte `required_checks`, et une PR `blocked` nomme ses checks
+    requis en échec ou en attente. Tests : rendu (statut, commentaire, labels, coupe à 140 caractères), surfaces dans
+    le noyau (place, fin d'une entrée évincée, raisons nommées), et contre Postgres et le simulateur un commentaire
+    unique, le statut et les labels, puis relance, annulation et refus d'une commande.
+  - Fait (2 octobre 2026, D159, D160) : étape 3. Crate `cihub-api-types` (requêtes, réponses, `ErrorCode`,
+    `Problem`, schémas OpenAPI derrière la feature `openapi`, dépendance `utoipa`). `cihub-platform` porte l'erreur
+    `problem+json`, `ApiGrant` et les extracteurs ; le contrat `Module` gagne `ModuleApi` (routes et document).
+    `cihub-web` authentifie `/api/v1` par jeton, limite chaque jeton à 600 requêtes par minute et par réplique,
+    sert `/repos`, `/orgs/{org}/audit` et `/api/v1/openapi.json` (sans jeton). `cihub-mergequeue` sert les routes
+    des files de D160 ; `audit_log` gagne `actor_token_id`, et `bootstrap` audite son jeton. Tests : contre
+    Postgres, l'authentification, les scopes, la limite et le document ; et de bout en bout sur le simulateur, une
+    soumission par l'API, l'entrée, sa chronologie, son exécution, le graphe, relance, annulation, pause, nouvelle
+    file, relecture et journal d'audit.
+  - Fait (2 octobre 2026, D161) : étape 4. `cihub-client` (une méthode par route) et `cihub-cli` (binaire `cihub`,
+    dépendance `clap`). Tests : remote git, choix de la file, et le client contre le vrai serveur dans le test de
+    bout en bout de l'API.
+  - Fait (2 octobre 2026, D162) : étape 5. Le trait `Scm` gagne `check_setup` (constats neutres) ; GitHub lit les
+    rulesets de la branche cible et des branches de test, et le simulateur ne restreint aucune mise à jour ;
+    `GET /queues/{id}/config-check`. Tests : la suite de contrat, une réponse écrite à la main, et la route.
+  - Fait (2 octobre 2026) : étape 6. `Dockerfile` (distroless, épinglé par digest), `.github/workflows/image.yaml`
+    (GHCR, un runner natif par architecture, puis un manifeste), `deploy/compose.yaml` et `deploy/.env.example`,
+    `README.md` avec la procédure d'installation et le prompt d'aide à `.cihub.yaml`, profil `release`. Vérifié
+    par l'agent : image construite (69,6 Mo), `migrate` dans l'image contre Postgres, `docker compose config`,
+    `actionlint` et `zizmor`.
+  - Fait (2 octobre 2026, D163) : commentaire d'accueil. `PrChanged` gagne `opened` ; le job `welcome_pr` poste
+    une fois le commentaire d'accueil, avec sa case de soumission ; `pr_comments` garde le commentaire de la PR,
+    partagé par ses files, et `publish_surfaces` le reprend. L'adaptateur traduit la case cochée en
+    `SubmitBoxChecked`, que la passe de la connexion soumet si le commentaire est celui de CIHub. La case revient
+    pour une entrée `failed` ou `cancelled`. Tests : traduction de l'ouverture et de la case, et contre Postgres et
+    le simulateur l'accueil, la soumission par la case, son retour après une annulation, le refus d'un compte sans
+    `write` et une case dans le commentaire d'un autre.
+  - Reste : enregistrer de nouveau les réponses de GitHub pour `check_setup` (D90, D162) ; d'ici là,
+    `the_contract_passes_on_recorded_answers` échoue. Étape 7, les critères de sortie : le test de bout en bout sur
+    staging, CIHub sur sa propre file, et une installation par une personne extérieure, qui demandent une instance,
+    une App et une personne.
+  - Écarts (D160, D162) : reportés, `DELETE /queues/{id}`, `GET /queues/{id}/test-results`, la recherche
+    `?branch=` et la mise à jour de ref sans effet du vérificateur.
 
 ---
 

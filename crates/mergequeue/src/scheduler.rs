@@ -29,12 +29,15 @@ use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
-use crate::command::{Merge, parse_merge};
+use crate::command::{
+    ItemCommand, Merge, PrCommand, PrCommandRequest, parse_command, pr_command_job,
+};
 use crate::config::load_config;
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
+use crate::surfaces::{WelcomePr, converge_surfaces, welcome_job};
 use crate::target::QueueTarget;
 use crate::{COVER_AFTER, MergeQueueError, QueueLog};
 
@@ -226,6 +229,9 @@ impl Reconciler {
         for merge in &converge.desired.merges {
             jobs.push(merge_job(target, merge));
         }
+        jobs.extend(
+            converge_surfaces(conn, target, converge.settings, &converge.desired.surfaces).await?,
+        );
         for branch in &converge.desired.test_branches {
             let assembling = converge
                 .log
@@ -318,8 +324,27 @@ impl Work<'_> {
             ScmEvent::PrChanged {
                 number,
                 label_added,
+                opened,
+                base_branch,
                 ..
             } => {
+                if opened
+                    && self.settings.comments_enabled.value
+                    && self.settings.commands_enabled.value
+                {
+                    let request = WelcomePr {
+                        repo_id: self.target.repo_id,
+                        pr_number: number,
+                        base_branch,
+                    };
+                    let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
+                    jobs.push(welcome_job(
+                        self.target.org_id,
+                        connection,
+                        delivery_id,
+                        &request,
+                    ));
+                }
                 let tracked = snapshot.current_item(number).is_some()
                     || snapshot.requests.values().any(|r| {
                         matches!(r, cihub_mq_core::Request::Submit { pr_number, .. } if *pr_number == number)
@@ -386,6 +411,7 @@ impl Work<'_> {
             // the connection.
             ScmEvent::Pushed { .. }
             | ScmEvent::Commented { .. }
+            | ScmEvent::SubmitBoxChecked { .. }
             | ScmEvent::RulesChanged { .. }
             | ScmEvent::RepoChanged { .. }
             | ScmEvent::ConnectionCreated { .. }
@@ -561,14 +587,43 @@ async fn pass_delivery(
             number,
             base_branch,
             label_added,
+            opened,
         } => {
             let change = PrChange {
                 repo_external_id: &repo_external_id,
                 number,
                 base_branch: &base_branch,
                 label_added,
+                opened,
             };
             route_pr_change(conn, delivery, change, now).await?;
+        }
+        ScmEvent::SubmitBoxChecked {
+            repo_external_id,
+            number,
+            comment_external_id,
+            sender,
+        } => {
+            // Only the box of the comment of CIHub submits (`AGENTS.md`
+            // D163): anyone can write a box in a comment of their own.
+            let ours = match repo_of(conn, delivery, &repo_external_id).await? {
+                Some(repo) => is_our_comment(conn, repo, number, &comment_external_id).await?,
+                None => false,
+            };
+            if ours {
+                let command = Command {
+                    repo_external_id: &repo_external_id,
+                    number,
+                    author: &sender,
+                    merge: Merge {
+                        priority: None,
+                        no_batch: false,
+                        direct: false,
+                        queue: None,
+                    },
+                };
+                request_submission(conn, delivery, &command, now).await?;
+            }
         }
         ScmEvent::Pushed {
             repo_external_id,
@@ -583,16 +638,37 @@ async fn pass_delivery(
             author,
             body,
         } => {
-            // `submit_pr` checks `commands_enabled` on the queue that it
-            // finds.
-            if let Some(merge) = parse_merge(&body) {
-                let command = Command {
-                    repo_external_id: &repo_external_id,
-                    number,
-                    author: &author,
-                    merge,
+            // The jobs check `commands_enabled` on the queue that they find.
+            let item_command = match parse_command(&body) {
+                Some(PrCommand::Merge(merge)) => {
+                    let command = Command {
+                        repo_external_id: &repo_external_id,
+                        number,
+                        author: &author,
+                        merge,
+                    };
+                    request_submission(conn, delivery, &command, now).await?;
+                    None
+                }
+                Some(PrCommand::Cancel) => Some(ItemCommand::Cancel),
+                Some(PrCommand::Restart) => Some(ItemCommand::Restart),
+                None => None,
+            };
+            if let Some(command) = item_command
+                && let Some(repo_id) = repo_of(conn, delivery, &repo_external_id).await?
+            {
+                let request = PrCommandRequest {
+                    repo_id,
+                    pr_number: number,
+                    requested_by: (&author).into(),
+                    command,
                 };
-                request_submission(conn, delivery, &command, now).await?;
+                let connection = (delivery.instance, delivery.connection);
+                let job =
+                    pr_command_job(delivery.org_id, connection, &delivery.delivery_id, &request);
+                enqueue_job(conn, &job, now, now)
+                    .await
+                    .map_err(MergeQueueError::Platform)?;
             }
         }
         _ => {}
@@ -646,6 +722,26 @@ struct PrChange<'a> {
     number: u64,
     base_branch: &'a str,
     label_added: Option<String>,
+    opened: bool,
+}
+
+/// Whether `comment` is the comment of CIHub on the PR `number` of `repo`.
+async fn is_our_comment(
+    conn: &mut PgConnection,
+    repo: RepoId,
+    number: u64,
+    comment: &str,
+) -> Result<bool, MergeQueueError> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pr_comments
+                        WHERE repo_id = $1 AND pr_number = $2 AND comment_external_id = $3)",
+    )
+    .bind(repo.to_string())
+    .bind(i64::try_from(number).unwrap_or(i64::MAX))
+    .bind(comment)
+    .fetch_one(conn)
+    .await
+    .map_err(MergeQueueError::Query)
 }
 
 /// The repository of the connection of `delivery` whose identifier on the
@@ -681,6 +777,25 @@ async fn route_pr_change(
     let Some(repo) = repo_of(conn, delivery, change.repo_external_id).await? else {
         return Ok(());
     };
+    // The welcome job checks the settings of the first active queue of the
+    // branch (`AGENTS.md` D163).
+    if change.opened
+        && QueueTarget::queues_of_branch(conn, repo, change.base_branch)
+            .await?
+            .iter()
+            .any(|queue| queue.enabled)
+    {
+        let request = WelcomePr {
+            repo_id: repo,
+            pr_number: change.number,
+            base_branch: change.base_branch.to_owned(),
+        };
+        let connection = (delivery.instance, delivery.connection);
+        let job = welcome_job(delivery.org_id, connection, &delivery.delivery_id, &request);
+        enqueue_job(conn, &job, now, now)
+            .await
+            .map_err(MergeQueueError::Platform)?;
+    }
     let live: Option<String> = sqlx::query_scalar(
         "SELECT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current AND i.concluded_at IS NULL",

@@ -18,14 +18,23 @@ pub type ModuleLoop = Box<
 >;
 
 /// What a module gives to the roles of the server (`AGENTS.md` D94): its
-/// executors for the worker, and its loop for the scheduler. The routes come
-/// with lot 9, the subscriptions with lot 11.
+/// executors for the worker, its loop for the scheduler, and its routes for
+/// the web role (D159). The subscriptions come with lot 11.
 pub struct Module {
     pub name: ModuleName,
     /// Registers the executors of the module in the registry of the worker.
     pub executors: Box<dyn FnOnce(&mut Executors) + Send>,
     /// The loop of the module in the scheduler role.
     pub scheduler: ModuleLoop,
+    pub api: ModuleApi,
+}
+
+/// The routes of a module under `/api/v1`, and their `OpenAPI` document. The
+/// web role authenticates each request before them: a route reads the
+/// [`ApiGrant`](crate::ApiGrant) of its request.
+pub struct ModuleApi {
+    pub routes: axum::Router,
+    pub openapi: utoipa::openapi::OpenApi,
 }
 
 /// Whether `org` has the module `module` at the moment of the transaction of

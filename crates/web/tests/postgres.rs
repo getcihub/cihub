@@ -4,11 +4,13 @@
 
 use std::fmt::Write;
 
-use cihub_domain::{ScmInstanceId, ScmKind};
-use cihub_store::{begin_system, ensure_scm_instance};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId, ScmInstanceId, ScmKind};
+use cihub_store::{
+    NewApiToken, begin_system, create_api_token, ensure_scm_instance, new_api_token_secret,
+};
 use cihub_web::GithubWebhooks;
 use ring::hmac;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -38,7 +40,7 @@ async fn start(pool: &PgPool) -> String {
         scm_instance_id: instance(),
         secret: SecretString::from(SECRET),
     };
-    let router = cihub_web::router(pool.clone(), now, github);
+    let router = cihub_web::router(pool.clone(), now, github, Vec::new());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     tokio::spawn(cihub_web::serve(listener, router, CancellationToken::new()));
@@ -138,4 +140,125 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
     ];
     assert_eq!(post(&addr, &no_event, BODY).await, 400);
     assert_eq!(inbox(&pool).await, []);
+}
+
+/// An answer of the server: its status, its head and its body.
+struct Answer {
+    status: u16,
+    head: String,
+    body: String,
+}
+
+/// Sends `method path` with `token` and returns the answer.
+async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answer {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    if let Some(token) = token {
+        let _ = write!(request, "Authorization: Bearer {token}\r\n");
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    Answer {
+        status: head.split(' ').nth(1).unwrap().parse().unwrap(),
+        head: head.to_lowercase(),
+        body: body.to_owned(),
+    }
+}
+
+/// An organization with one repository and one token of `scopes`.
+async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
+    let org = OrgId::from_ulid(Ulid(7));
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme') ON CONFLICT DO NOTHING;
+         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
+             VALUES ('a', '{org}', '{i}', '1', 'acme') ON CONFLICT DO NOTHING;
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
+             VALUES ('c', '{org}', '{i}', 'a', 'github_app', '1') ON CONFLICT DO NOTHING;
+         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
+                            default_branch)
+             VALUES ('r', '{org}', '{i}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;",
+        i = instance(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let secret = new_api_token_secret().unwrap();
+    let id = ApiTokenId::from_ulid(Ulid(u128::try_from(scopes.len()).unwrap() + 10));
+    let new = NewApiToken {
+        id,
+        org_id: org,
+        name: "test",
+        scopes,
+        created_by: None,
+        expires_at: None,
+    };
+    create_api_token(&mut tx, &new, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+    secret.expose_secret().to_owned()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
+    let addr = start(&pool).await;
+    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
+    let writer = token(&pool, &[ApiScope::PrsWrite, ApiScope::TargetsWrite]).await;
+
+    let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
+    assert_eq!(anonymous.status, 401);
+    assert!(
+        anonymous
+            .head
+            .contains("content-type: application/problem+json")
+    );
+    let problem: serde_json::Value = serde_json::from_str(&anonymous.body).unwrap();
+    assert_eq!(problem["code"], "unauthorized");
+    assert_eq!(problem["status"], 401);
+    assert_eq!(
+        call(&addr, "GET", "/api/v1/repos", Some("cht_unknown"))
+            .await
+            .status,
+        401
+    );
+
+    let forbidden = call(&addr, "GET", "/api/v1/repos", Some(&writer)).await;
+    assert_eq!(forbidden.status, 403, "{}", forbidden.body);
+    let repos = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    assert_eq!(repos.status, 200, "{}", repos.body);
+    let repos: serde_json::Value = serde_json::from_str(&repos.body).unwrap();
+    assert_eq!(repos["repos"][0]["name"], "app");
+
+    let unknown = call(&addr, "GET", "/api/v1/nothing", Some(&reader)).await;
+    assert_eq!(unknown.status, 404);
+    assert!(unknown.head.contains("application/problem+json"));
+
+    // The document needs no token.
+    let document = call(&addr, "GET", "/api/v1/openapi.json", None).await;
+    assert_eq!(document.status, 200);
+    let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
+    assert!(document["openapi"].as_str().unwrap().starts_with("3.1"));
+    assert!(document["paths"]["/repos"]["get"].is_object());
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
+    let addr = start(&pool).await;
+    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
+    for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
+        assert_eq!(
+            call(&addr, "GET", "/api/v1/repos", Some(&reader))
+                .await
+                .status,
+            200
+        );
+    }
+    let limited = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    assert_eq!(limited.status, 429);
+    // `now()` is 40 seconds into its minute.
+    assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
+    let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();
+    assert_eq!(problem["code"], "rate_limited");
 }

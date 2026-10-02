@@ -1,10 +1,13 @@
 //! The HTTP server of the public address of the `web` role (`AGENTS.md`
-//! D82, D91). Today it serves the webhooks of the SCM: it checks the
-//! signature, stores the delivery without routing it, and answers within 2 s
-//! (D83, D84). The API and the dashboard arrive with their lots.
+//! D82, D91). It serves the webhooks of the SCM: it checks the signature,
+//! stores the delivery without routing it, and answers within 2 s (D83, D84);
+//! and the API v1 under `/api/v1`, with the routes of the modules (D159). The
+//! dashboard arrives with lot 10.
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.
+
+mod api;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -15,9 +18,10 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
+use cihub_api_types::API_PREFIX;
 use cihub_domain::ScmInstanceId;
 use cihub_github::{ReceivedDelivery, WEBHOOK_PATH, WebhookError};
-use cihub_platform::{Delivery, PlatformError, store_delivery};
+use cihub_platform::{Delivery, ModuleApi, PlatformError, store_delivery};
 use cihub_store::{PgPool, begin_system};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -45,10 +49,18 @@ struct Webhooks {
     github: Arc<GithubWebhooks>,
 }
 
-/// The routes of the public address: the webhooks of the GitHub App.
-pub fn router(pool: PgPool, now: fn() -> OffsetDateTime, github: GithubWebhooks) -> Router {
+pub use api::{REQUESTS_PER_MINUTE, openapi};
+
+/// The routes of the public address: the webhooks of the GitHub App, and the
+/// API with the routes of `modules`.
+pub fn router(
+    pool: PgPool,
+    now: fn() -> OffsetDateTime,
+    github: GithubWebhooks,
+    modules: Vec<ModuleApi>,
+) -> Router {
     let webhooks = Webhooks {
-        pool,
+        pool: pool.clone(),
         now,
         github: Arc::new(github),
     };
@@ -56,6 +68,7 @@ pub fn router(pool: PgPool, now: fn() -> OffsetDateTime, github: GithubWebhooks)
         .route(WEBHOOK_PATH, post(github_webhook))
         .layer(DefaultBodyLimit::max(MAX_DELIVERY_BYTES))
         .with_state(webhooks)
+        .nest(API_PREFIX, api::router(pool, now, modules))
 }
 
 /// Serves `router` on `listener` until `cancel`.

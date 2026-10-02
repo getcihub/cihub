@@ -79,6 +79,16 @@ pub enum ApplyError {
 /// unknown entity, state before that differs, or a transition that the
 /// tables refuse. The snapshot is unchanged on error.
 pub fn apply(snapshot: &mut Snapshot, event: &Event) -> Result<Outcome, ApplyError> {
+    apply_seen(snapshot, event, &mut |_| {})
+}
+
+/// [`apply`], which shows to `decided` the snapshot after a decision and
+/// before the eviction of the entities that it concluded.
+pub(crate) fn apply_seen(
+    snapshot: &mut Snapshot,
+    event: &Event,
+    decided: &mut dyn FnMut(&Snapshot),
+) -> Result<Outcome, ApplyError> {
     if event.queue_id != snapshot.queue_id {
         return Err(ApplyError::WrongQueue {
             event_id: event.id,
@@ -91,6 +101,7 @@ pub fn apply(snapshot: &mut Snapshot, event: &Event) -> Result<Outcome, ApplyErr
         if let Some(cause) = event.cause_id {
             next.requests.remove(&cause);
         }
+        decided(&next);
         evict(&mut next);
         prune_requests(&mut next);
         Outcome::Applied
@@ -201,6 +212,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             review_decision,
             checks,
             unmet_conditions,
+            required_checks,
         } => {
             if !tracks_pr(snapshot, *pr_number) {
                 return Outcome::Ignored;
@@ -215,6 +227,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 review_decision: *review_decision,
                 checks: checks.clone(),
                 unmet_conditions: unmet_conditions.clone(),
+                required_checks: required_checks.clone(),
             };
             if observe(snapshot.prs.get_mut(pr_number), &value) {
                 return Outcome::Ignored;

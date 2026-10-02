@@ -24,8 +24,7 @@ fn invalid_configuration_stops_the_start() {
 
 #[test]
 fn unknown_command_stops_the_start() {
-    refuses(
-        &["serve"],
-        &[("CIHUB_DATABASE_URL", "postgres://127.0.0.1/cihub")],
-    );
+    let database = [("CIHUB_DATABASE_URL", "postgres://127.0.0.1/cihub")];
+    refuses(&["serve"], &database);
+    refuses(&["admin", "bootstrap"], &database);
 }

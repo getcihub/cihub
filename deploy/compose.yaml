@@ -1,0 +1,85 @@
+# The installation of CIHub with Docker Compose (README.md, docs/DEPLOYMENT.md):
+# Postgres 17, the role and the database of CIHub, the migrations, then the
+# server with its four roles (AGENTS.md D8, D14).
+#
+# Usage, from the root of the repository:
+#   cp deploy/.env.example deploy/.env   # then fill it in
+#   docker compose -f deploy/compose.yaml up -d
+#   docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+
+name: cihub
+
+x-cihub: &cihub
+  image: ${CIHUB_IMAGE:-ghcr.io/getcihub/cihub-server:latest}
+  environment:
+    CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DB_PASSWORD:?set CIHUB_DB_PASSWORD in deploy/.env}@postgres:5432/cihub
+    CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
+    CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:?set CIHUB_GITHUB_APP_ID in deploy/.env}
+    CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
+    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:?set CIHUB_GITHUB_WEBHOOK_SECRET in deploy/.env}
+    CIHUB_LOG: ${CIHUB_LOG:-info}
+  volumes:
+    # The user of the image (65532) must be able to read this file.
+    - ${CIHUB_GITHUB_PRIVATE_KEY_PATH:?set CIHUB_GITHUB_PRIVATE_KEY_PATH in deploy/.env}:/run/secrets/github-app.pem:ro
+
+services:
+  postgres:
+    image: postgres:17.5-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  # One-shot: bring the cihub role and database to the wanted state on each
+  # start. The role is neither superuser nor BYPASSRLS (AGENTS.md D38).
+  postgres-setup:
+    image: postgres:17.5-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      CIHUB_DB_PASSWORD: ${CIHUB_DB_PASSWORD}
+    command:
+      - sh
+      - -c
+      - |
+        psql --quiet --set ON_ERROR_STOP=1 --set password="$$CIHUB_DB_PASSWORD" <<'SQL'
+        SELECT 'CREATE ROLE cihub'
+        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cihub') \gexec
+        ALTER ROLE cihub LOGIN PASSWORD :'password' NOSUPERUSER NOBYPASSRLS NOCREATEDB;
+        SELECT 'CREATE DATABASE cihub OWNER cihub'
+        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'cihub') \gexec
+        ALTER DATABASE cihub OWNER TO cihub;
+        SQL
+    restart: "no"
+
+  cihub-migrate:
+    <<: *cihub
+    command: ["migrate"]
+    depends_on:
+      postgres-setup:
+        condition: service_completed_successfully
+    restart: "no"
+
+  cihub-server:
+    <<: *cihub
+    depends_on:
+      cihub-migrate:
+        condition: service_completed_successfully
+    ports:
+      # The public address: webhooks and API. The internal address (8081)
+      # stays inside the network of the compose (docs/SECURITY.md).
+      - "${CIHUB_HTTP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres:

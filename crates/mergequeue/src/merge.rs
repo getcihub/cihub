@@ -24,6 +24,7 @@ use crate::assembly::{Step, required_statuses};
 use crate::jobs::{
     Failure, give_back, job, mergeability, outcome, queue_status_context, read_payload, target_of,
 };
+use crate::surfaces::merging_status;
 use crate::target::QueueTarget;
 
 pub const MERGE_PR: &str = "merge_pr";
@@ -243,6 +244,10 @@ async fn land(
         title,
         message: String::new(),
     };
+    if settings.status_check_enabled.value {
+        let status = merging_status(&target.target_branch, &request.head_sha);
+        scm.set_status(&target.repo, &status, class).await?;
+    }
     match scm.merge_pr(&target.repo, &merge, class).await {
         // The target moved: the push restarts the group (`AGENTS.md` D124).
         Err(ScmError::NotFastForward) => Err(ScmError::Unavailable(

@@ -15,9 +15,9 @@ pub mod sim;
 mod types;
 
 pub use error::ScmError;
-pub use event::{ScmDelivery, ScmEvent};
+pub use event::{SUBMIT_BOX, ScmDelivery, ScmEvent};
 pub use scm::{MAX_PRS_PER_READ, Scm, ScmFuture};
 pub use types::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
-    RequiredChecks, ScmUser, StatusUpdate,
+    RequiredChecks, ScmAccount, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };

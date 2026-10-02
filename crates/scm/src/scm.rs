@@ -5,8 +5,8 @@ use cihub_domain::{CheckReport, JobClass, Permission};
 use time::OffsetDateTime;
 
 use crate::{
-    MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks, ScmError, ScmUser,
-    StatusUpdate,
+    ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
+    ScmAccount, ScmError, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -216,4 +216,29 @@ pub trait Scm: Send + Sync {
 
     /// Asks the instance to send the attempt `attempt_id` of a delivery again.
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
+
+    /// The account that the connection `external_id` serves
+    /// (`AGENTS.md` D155). No connection of CIHub exists yet, so no budget of
+    /// a connection applies.
+    fn installation<'a>(
+        &'a self,
+        external_id: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmAccount>;
+
+    /// What the configuration of `branch` misses for the queue, in the order
+    /// of [`SetupFinding`] (`AGENTS.md` D162).
+    fn check_setup<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<SetupFinding>>;
+
+    /// Every repository that `connection` reaches.
+    fn list_repos<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmRepo>>;
 }

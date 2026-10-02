@@ -221,12 +221,15 @@ pub async fn record(
         work_branch: world.work_branch.clone(),
     };
     contract::run(&recording_app, repo, &fixture).await;
-    let exchanges = std::mem::take(
+    let mut exchanges = std::mem::take(
         &mut *proxy
             .exchanges
             .lock()
             .unwrap_or_else(PoisonError::into_inner),
     );
+    for exchange in &mut exchanges {
+        keep_only_repo(exchange, repo);
+    }
     let cassette = Cassette {
         recorded_at: recorded_at.unix_timestamp(),
         world,
@@ -238,6 +241,23 @@ pub async fn record(
         cassette.exchanges.len()
     );
     Ok(())
+}
+
+/// Keeps only the repository of the suite in a list of the repositories of
+/// the installation: the others can be private, and the cassette is public.
+fn keep_only_repo(exchange: &mut Exchange, repo: &RepoRef) {
+    if !exchange.path.starts_with("/installation/repositories") {
+        return;
+    }
+    let Some(Value::Object(page)) = exchange.body.as_mut() else {
+        return;
+    };
+    let full_name = format!("{}/{}", repo.namespace, repo.name);
+    if let Some(Value::Array(repositories)) = page.get_mut("repositories") {
+        repositories.retain(|listed| listed["full_name"] == full_name.as_str());
+        let kept = repositories.len();
+        page.insert("total_count".to_owned(), Value::from(kept));
+    }
 }
 
 /// GitHub computes the mergeability of a PR later: reads the PRs until it is

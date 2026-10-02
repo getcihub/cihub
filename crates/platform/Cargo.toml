@@ -9,16 +9,22 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+axum = { workspace = true, features = ["json", "query"] }
+cihub-api-types.workspace = true
 cihub-domain.workspace = true
 cihub-scm.workspace = true
 cihub-store.workspace = true
+secrecy.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+strum.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tokio-util.workspace = true
 tracing.workspace = true
+utoipa.workspace = true
 
 [dev-dependencies]
 cihub-scm = { workspace = true, features = ["sim"] }

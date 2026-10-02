@@ -2,8 +2,11 @@
 //! that the database has every embedded migration, serves `/healthz` and
 //! `/readyz` on the internal address, and runs the roles of the process until
 //! `SIGTERM` or `SIGINT` (`AGENTS.md` D8). `cihub-server migrate` applies the
-//! missing migrations and stops (`AGENTS.md` D14). It holds no queue logic: a
-//! role runs loops whose code lives in the library crates.
+//! missing migrations and stops (`AGENTS.md` D14). `cihub-server admin
+//! bootstrap --installation <id>` starts an organization from an installation
+//! of the GitHub App, shows its API token once, and stops (`AGENTS.md` D154).
+//! It holds no queue logic: a role runs loops whose code lives in the library
+//! crates.
 
 mod config;
 mod health;
@@ -15,18 +18,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
-use cihub_domain::{ConnectionId, ScmInstanceId, ScmKind};
+use cihub_domain::{ConnectionId, ConnectionKind, ScmInstanceId, ScmKind};
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::Translate;
 use cihub_platform::{
-    ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, ROUTE_POLL, SWEEP_DELIVERIES, SWEEP_EVERY,
-    execute_maintenance, request_maintenance, request_sweep, run_budget_writer, run_router,
-    sweep_executor,
+    Bootstrapped, ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, ROUTE_POLL, SWEEP_DELIVERIES,
+    SWEEP_EVERY, SYNC_REPOS, execute_maintenance, request_maintenance, request_repo_syncs,
+    request_sweep, run_budget_writer, run_router, sweep_executor, sync_repos_executor,
 };
 use cihub_scm::Scm;
 use cihub_store::{MIGRATOR, PgPool, begin_system, ensure_scm_instance};
 use cihub_web::GithubWebhooks;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -36,13 +39,38 @@ use tracing::{Instrument, info, info_span, warn};
 
 use crate::config::{Config, Role};
 
+/// What the process does, from its arguments.
+enum Command {
+    Serve,
+    Migrate,
+    /// Starts an organization from the installation of the GitHub App.
+    Bootstrap {
+        installation: String,
+    },
+}
+
+impl Command {
+    fn parse(args: &[String]) -> anyhow::Result<Self> {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        match args.as_slice() {
+            [] => Ok(Self::Serve),
+            ["migrate"] => Ok(Self::Migrate),
+            ["admin", "bootstrap", "--installation", installation] => Ok(Self::Bootstrap {
+                installation: (*installation).to_owned(),
+            }),
+            _ => bail!(
+                "unknown command `{}`: expected no command, `migrate`, or \
+                 `admin bootstrap --installation <id>`",
+                args.join(" ")
+            ),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let migrate_only = match std::env::args().nth(1).as_deref() {
-        None => false,
-        Some("migrate") => true,
-        Some(other) => bail!("unknown command `{other}`: expected no command or `migrate`"),
-    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = Command::parse(&args)?;
     let Config {
         roles,
         internal_addr,
@@ -54,18 +82,59 @@ async fn main() -> anyhow::Result<()> {
     logs.init()?;
     let pool = cihub_store::connect(&database_url).await?;
     cihub_store::check_role(&pool).await?;
-    if migrate_only {
-        migrate(&pool).await
-    } else {
-        // `migrate` does not talk to GitHub; the server cannot run without it.
-        let Some(github) = github else {
-            bail!(
-                "GitHub is not configured: set CIHUB_GITHUB_APP_ID, CIHUB_GITHUB_PRIVATE_KEY or \
-                 CIHUB_GITHUB_PRIVATE_KEY_FILE, and CIHUB_GITHUB_WEBHOOK_SECRET (docs/GITHUB.md)"
-            );
-        };
-        serve(roles, internal_addr, http_addr, pool, github).await
+    if let Command::Migrate = command {
+        return migrate(&pool).await;
     }
+    // `migrate` does not talk to GitHub; the other commands cannot run
+    // without it.
+    let Some(github) = github else {
+        bail!(
+            "GitHub is not configured: set CIHUB_GITHUB_APP_ID, CIHUB_GITHUB_PRIVATE_KEY or \
+             CIHUB_GITHUB_PRIVATE_KEY_FILE, and CIHUB_GITHUB_WEBHOOK_SECRET (docs/GITHUB.md)"
+        );
+    };
+    let missing = cihub_store::missing_migrations(&MIGRATOR, &pool).await?;
+    if !missing.is_empty() {
+        bail!("the database misses the migrations {missing:?}: run `cihub-server migrate`");
+    }
+    let github = start_github(&pool, &github).await?;
+    match command {
+        Command::Bootstrap { installation } => bootstrap(&pool, &github, &installation).await,
+        Command::Serve | Command::Migrate => {
+            serve(roles, internal_addr, http_addr, pool, github).await
+        }
+    }
+}
+
+/// Starts the organization of `installation`, and shows its API token once
+/// (`AGENTS.md` D154, D155).
+async fn bootstrap(pool: &PgPool, github: &Github, installation: &str) -> anyhow::Result<()> {
+    let Bootstrapped {
+        org_id,
+        connection_id,
+        created,
+        token,
+    } = cihub_platform::bootstrap(
+        pool,
+        github.app.as_ref(),
+        github.scm_instance_id,
+        ConnectionKind::GithubApp,
+        installation,
+        now(),
+    )
+    .await
+    .with_context(|| format!("the installation {installation} cannot start an organization"))?;
+    info!(%org_id, %connection_id, created, "organization bootstrapped");
+    #[expect(
+        clippy::print_stdout,
+        reason = "the one place that shows the secret of the token, once"
+    )]
+    {
+        println!("organization: {org_id}");
+        println!("API token (shown once, keep it in a secret store):");
+        println!("{}", token.expose_secret());
+    }
+    Ok(())
 }
 
 async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
@@ -121,13 +190,8 @@ async fn serve(
     internal_addr: SocketAddr,
     http_addr: SocketAddr,
     pool: PgPool,
-    github: config::GithubApp,
+    github: Github,
 ) -> anyhow::Result<()> {
-    let missing = cihub_store::missing_migrations(&MIGRATOR, &pool).await?;
-    if !missing.is_empty() {
-        bail!("the database misses the migrations {missing:?}: run `cihub-server migrate`");
-    }
-    let github = start_github(&pool, &github).await?;
     let listener = TcpListener::bind(internal_addr)
         .await
         .with_context(|| format!("cannot listen on {internal_addr}"))?;
@@ -174,11 +238,12 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
                 .await
                 .with_context(|| format!("cannot listen on {http_addr}"))?;
             info!(http_addr = %listener.local_addr()?, "public address served");
+            let modules = vec![merge_queue(&pool, &github, &process).api];
             let webhooks = GithubWebhooks {
                 scm_instance_id: github.scm_instance_id,
                 secret: github.webhook_secret,
             };
-            let router = cihub_web::router(pool.clone(), now, webhooks);
+            let router = cihub_web::router(pool.clone(), now, webhooks, modules);
             let serve = async {
                 cihub_web::serve(listener, router, cancel.clone())
                     .await
@@ -200,7 +265,7 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
         Role::Scheduler => {
             let module = merge_queue(&pool, &github, &process);
             let queues = (module.scheduler)(cancel.clone());
-            let maintenance = request_maintenance_hourly(&pool, &cancel);
+            let maintenance = request_hourly(&pool, &cancel);
             let sweep = request_sweep_regularly(&pool, github.scm_instance_id, &cancel);
             let (queues, (), ()) = tokio::join!(queues, maintenance, sweep);
             queues.map_err(|err| anyhow!(err).context("the scheduler of the queues stopped"))?;
@@ -212,8 +277,9 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
             let scm: Arc<dyn Scm> = github.app.clone();
             executors.register(
                 SWEEP_DELIVERIES,
-                sweep_executor(scm, github.scm_instance_id),
+                sweep_executor(Arc::clone(&scm), github.scm_instance_id),
             );
+            executors.register(SYNC_REPOS, sync_repos_executor(scm));
             let worker = cihub_platform::run_worker(
                 pool.clone(),
                 process,
@@ -297,9 +363,10 @@ fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> 
         .collect()
 }
 
-/// Requests the maintenance job of the day at the start, then every hour
-/// (`AGENTS.md` D67). Each replica does it; the key of the day admits one job.
-async fn request_maintenance_hourly(pool: &PgPool, cancel: &CancellationToken) {
+/// Requests the maintenance job of the day (`AGENTS.md` D67) and the read of
+/// the repositories of each connection (D155) at the start, then every hour.
+/// Each replica does it; the key of the day, or of the hour, admits one job.
+async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
     let mut every_hour = tokio::time::interval(Duration::from_hours(1));
     loop {
         tokio::select! {
@@ -308,9 +375,22 @@ async fn request_maintenance_hourly(pool: &PgPool, cancel: &CancellationToken) {
                 if let Err(err) = request_maintenance_now(pool).await {
                     warn!(error = &*err as &dyn Error, "maintenance not requested");
                 }
+                if let Err(err) = request_repo_syncs_now(pool).await {
+                    warn!(error = &*err as &dyn Error, "reads of the repositories not requested");
+                }
             }
         }
     }
+}
+
+async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
+    let mut tx = begin_system(pool).await?;
+    let requested = request_repo_syncs(&mut tx, now()).await?;
+    tx.commit().await?;
+    if requested > 0 {
+        info!(requested, "reads of the repositories requested");
+    }
+    Ok(())
 }
 
 /// Requests the sweep of the deliveries of `instance` at the start, then

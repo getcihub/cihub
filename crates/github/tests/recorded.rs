@@ -15,10 +15,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use cihub_domain::{ConnectionId, JobClass};
+use cihub_domain::{ConnectionId, JobClass, Permission};
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_scm::contract::{self, Fixture};
-use cihub_scm::{ConnectionRef, RecentDelivery, RepoRef, RequiredChecks, Scm, ScmError, ScmUser};
+use cihub_scm::{
+    ConnectionRef, RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmRepo,
+    ScmUser, SetupFinding,
+};
 use secrecy::SecretString;
 use serde_json::json;
 use time::format_description::well_known::Rfc3339;
@@ -198,5 +201,181 @@ async fn the_recent_deliveries_stop_at_the_first_older_attempt() {
     };
     assert_eq!(recent, [attempt("g2", "3"), attempt("g1", "2")]);
     app.redeliver("2", JobClass::Repair).await.unwrap();
+    replay.finish();
+}
+
+fn answer(method: &str, path: &str, status: u16, body: serde_json::Value) -> Exchange {
+    Exchange {
+        method: method.into(),
+        path: path.into(),
+        request: None,
+        status,
+        headers: BTreeMap::new(),
+        body: Some(body),
+        text: None,
+    }
+}
+
+#[tokio::test]
+async fn an_installation_gives_its_account_and_every_page_of_its_repositories() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let repository = |id: u64, name: &str, branch: &str| json!({ "id": id, "name": name, "owner": { "login": "acme" }, "default_branch": branch });
+    let exchanges = vec![
+        answer(
+            "GET",
+            "/app/installations/7",
+            200,
+            json!({ "id": 7, "account": { "id": 70, "login": "acme" } }),
+        ),
+        answer(
+            "GET",
+            "/app/installations/8",
+            404,
+            json!({ "message": "Not Found" }),
+        ),
+        token("7", now),
+        answer(
+            "GET",
+            "/installation/repositories?per_page=100&page=1",
+            200,
+            json!({ "total_count": 3, "repositories": [
+                repository(1, "app", "main"),
+                repository(2, "lib", "trunk"),
+            ]}),
+        ),
+        answer(
+            "GET",
+            "/installation/repositories?per_page=100&page=2",
+            200,
+            json!({ "total_count": 3, "repositories": [repository(3, "docs", "main")] }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let account = app.installation("7", JobClass::Interactive).await.unwrap();
+    assert_eq!(
+        account,
+        ScmAccount {
+            external_id: "70".into(),
+            path: "acme".into(),
+        }
+    );
+    let unknown = app.installation("8", JobClass::Interactive).await;
+    assert!(matches!(unknown, Err(ScmError::NotFound(_))), "{unknown:?}");
+
+    let connection = repo("7", "acme", "app").connection;
+    let repos = app.list_repos(&connection, JobClass::Repair).await.unwrap();
+    let listed = |id: &str, name: &str, branch: &str| ScmRepo {
+        external_id: id.into(),
+        namespace: "acme".into(),
+        name: name.into(),
+        default_branch: branch.into(),
+    };
+    assert_eq!(
+        repos,
+        [
+            listed("1", "app", "main"),
+            listed("2", "lib", "trunk"),
+            listed("3", "docs", "main"),
+        ]
+    );
+    replay.finish();
+}
+
+#[tokio::test]
+async fn a_permission_is_kept_five_minutes() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let path = "/repos/acme/app/collaborators/alice/permission";
+    let exchanges = vec![
+        token("7", now),
+        answer("GET", path, 200, json!({ "permission": "write" })),
+        answer("GET", path, 200, json!({ "permission": "read" })),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let clock = Arc::new(std::sync::Mutex::new(now));
+    let at = Arc::clone(&clock);
+    let config = GithubConfig {
+        url: replay.url.clone(),
+        app_id: "1".to_owned(),
+        private_key: SecretString::from(TEST_KEY),
+    };
+    let app = GithubApp::new(&config, Arc::new(move || *at.lock().unwrap())).unwrap();
+    let repo = repo("7", "acme", "app");
+    let alice = ScmUser {
+        external_id: "21".into(),
+        login: "alice".into(),
+    };
+    let read = || app.permission(&repo, &alice, JobClass::Interactive);
+    assert_eq!(read().await.unwrap(), Permission::Write);
+    *clock.lock().unwrap() = now + Duration::minutes(4);
+    assert_eq!(read().await.unwrap(), Permission::Write, "kept");
+    *clock.lock().unwrap() = now + Duration::minutes(5);
+    assert_eq!(read().await.unwrap(), Permission::Read, "read again");
+    replay.finish();
+}
+
+#[tokio::test]
+async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branches() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let rules = "/repos/acme/app/rules/branches";
+    let exchanges = vec![
+        token("7", now),
+        answer(
+            "GET",
+            &format!("{rules}/main?per_page=100"),
+            200,
+            json!([{ "type": "update", "ruleset_id": 5 }, { "type": "pull_request", "ruleset_id": 6 }]),
+        ),
+        // The App of the tests has the identifier 1: the ruleset exempts it.
+        answer(
+            "GET",
+            "/repos/acme/app/rulesets/5",
+            200,
+            json!({ "bypass_actors": [
+                { "actor_id": 1, "actor_type": "Integration", "bypass_mode": "exempt" }
+            ]}),
+        ),
+        answer(
+            "GET",
+            &format!("{rules}/cihub-temp/check/1?per_page=100"),
+            200,
+            json!([]),
+        ),
+        answer(
+            "GET",
+            &format!("{rules}/cihub-merge/check/1?per_page=100"),
+            200,
+            json!([{ "type": "pull_request", "ruleset_id": 6 }]),
+        ),
+        answer(
+            "GET",
+            &format!("{rules}/main"),
+            200,
+            json!([{ "type": "required_status_checks", "ruleset_id": 6, "parameters": {
+                "strict_required_status_checks_policy": true,
+                "required_status_checks": [{ "context": "ci" }]
+            }}]),
+        ),
+        answer(
+            "GET",
+            "/repos/acme/app/branches/main/protection/required_status_checks",
+            404,
+            json!({ "message": "Not Found" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let findings = app
+        .check_setup(&repo("7", "acme", "app"), "main", JobClass::Interactive)
+        .await
+        .unwrap();
+    assert_eq!(
+        findings,
+        [
+            SetupFinding::TestBranchesNotExcluded,
+            SetupFinding::UpToDateRequired
+        ]
+    );
     replay.finish();
 }

@@ -5,6 +5,8 @@
 //! with `apply`, and stops when no rule gives a step. A replay of the
 //! decisions with `apply` thus gives the same state.
 
+use std::collections::BTreeMap;
+
 use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
@@ -15,10 +17,12 @@ use cihub_domain::{
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
+use crate::apply::apply_seen;
 use crate::graph::{insertion_index, position_at, predecessors, renumber};
 use crate::ids::IdGen;
 use crate::snapshot::{PrObservation, Request, Subject};
-use crate::{ApplyError, Snapshot, apply};
+use crate::surface::{Surface, surface};
+use crate::{ApplyError, Snapshot};
 
 /// The decisions of one reconciliation and the state that the SCM must reach.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,6 +47,9 @@ pub struct Desired {
     pub check_reads: Vec<CheckRead>,
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
+    /// What each PR must show: its live item, or the item that this
+    /// reconciliation concluded (`AGENTS.md` D156), by PR number.
+    pub surfaces: Vec<Surface>,
 }
 
 /// A read of a PR that is due since its read point. The same point gives
@@ -135,6 +142,7 @@ pub fn plan(
     let mut state = snapshot.clone();
     let mut ids = IdGen::new(snapshot, now);
     let mut decisions = Vec::new();
+    let mut concluded = Vec::new();
     let limit = 64 * (snapshot.items.len() + snapshot.requests.len() + snapshot.groups.len() + 1);
     while let Some(step) = next_step(&state, settings, now, &mut ids) {
         for kind in step.kinds {
@@ -150,13 +158,28 @@ pub fn plan(
                 cause_id: step.cause,
                 kind,
             };
-            apply(&mut state, &event)?;
+            // A concluded item leaves the snapshot with its decision: its PR
+            // shows it from here.
+            if let EventKind::ItemTransitioned { item_id, to, .. } = &event.kind
+                && to.is_terminal()
+            {
+                let item_id = *item_id;
+                apply_seen(&mut state, &event, &mut |next| {
+                    if let Some(item) = next.items.get(&item_id) {
+                        concluded.push(surface(next, item));
+                    }
+                })?;
+            } else {
+                apply_seen(&mut state, &event, &mut |_| {})?;
+            }
             decisions.push(event);
         }
     }
+    let mut desired = desired(&state, settings, now);
+    desired.surfaces = surfaces(&state, concluded);
     Ok(Plan {
         decisions,
-        desired: desired(&state, settings, now),
+        desired,
         wake_at: wake_at(&state, settings, now),
     })
 }
@@ -831,7 +854,8 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         Mergeability::Blocked if pr.review_decision == ReviewDecision::ChangesRequested => {
             vec![BlockReason::ChangesRequested]
         }
-        Mergeability::Blocked | Mergeability::Unknown => vec![BlockReason::Undetermined],
+        Mergeability::Blocked => blocking_checks(pr),
+        Mergeability::Unknown => vec![BlockReason::Undetermined],
     };
     let has_targets = s
         .targets
@@ -846,6 +870,37 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         });
     }
     blocks
+}
+
+/// The required checks that block a PR: failed, or not concluded yet; else
+/// the SCM does not say why the PR is blocked (`AGENTS.md` D158).
+fn blocking_checks(pr: &PrObservation) -> Vec<BlockReason> {
+    let blocks: Vec<BlockReason> = pr
+        .required_checks
+        .iter()
+        .filter_map(|name| {
+            let report = pr.checks.iter().find(|c| c.name == *name);
+            match report.map(|c| c.conclusion) {
+                Some(Some(conclusion)) if conclusion.is_passing() => None,
+                Some(Some(_)) => Some(BlockReason::FailingRequiredCheck {
+                    check: name.clone(),
+                }),
+                Some(None) => Some(BlockReason::AwaitingRequiredCheck {
+                    check: name.clone(),
+                    status: "pending".into(),
+                }),
+                None => Some(BlockReason::AwaitingRequiredCheck {
+                    check: name.clone(),
+                    status: "missing".into(),
+                }),
+            }
+        })
+        .collect();
+    if blocks.is_empty() {
+        vec![BlockReason::Undetermined]
+    } else {
+        blocks
+    }
 }
 
 fn not_ready_items(s: &Snapshot) -> impl Iterator<Item = &Item> {
@@ -1217,5 +1272,19 @@ fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desir
         observe,
         check_reads,
         target_read,
+        surfaces: Vec::new(),
     }
+}
+
+/// The surface of each PR: its live item, else the last item that this
+/// reconciliation concluded.
+fn surfaces(s: &Snapshot, concluded: Vec<Surface>) -> Vec<Surface> {
+    let mut by_pr: BTreeMap<u64, Surface> = concluded
+        .into_iter()
+        .map(|surface| (surface.pr_number, surface))
+        .collect();
+    for item in live_items(s) {
+        by_pr.insert(item.pr_number, surface(s, item));
+    }
+    by_pr.into_values().collect()
 }

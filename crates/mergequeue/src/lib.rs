@@ -2,11 +2,13 @@
 //! Postgres, its projections (`queue_items`, `test_groups`, `test_runs`,
 //! `check_observations`), its snapshots and their replay; the scheduler that
 //! reconciles each queue; and the jobs that read the SCM for it, build its
-//! test branches, merge its PRs and repair what a lost webhook leaves. The decisions come from `cihub-mq-core`; this crate writes
+//! test branches, merge its PRs, show their state on each PR and repair what a
+//! lost webhook leaves. The decisions come from `cihub-mq-core`; this crate writes
 //! them. The scheduler does not call the SCM: the jobs do, and give their
 //! facts back through `queue_inbox`.
 
 mod admission;
+mod api;
 mod assembly;
 mod command;
 mod config;
@@ -16,6 +18,7 @@ mod merge;
 mod projection;
 mod repair;
 mod scheduler;
+mod surfaces;
 mod target;
 
 use std::sync::Arc;
@@ -30,6 +33,7 @@ pub use assembly::{
     ASSEMBLE_TEST_BRANCH, ASSEMBLY_ATTEMPTS, CLEANUP_TEST_BRANCH, draft_pr_body, draft_pr_title,
     required_statuses_of_file,
 };
+pub use command::PR_COMMAND;
 pub use config::LOAD_CONFIG;
 pub use jobs::{REFRESH_PRS, SUBMIT_PR, queue_status_context};
 pub use log::{COVER_AFTER, QueueLog, SNAPSHOT_EVERY, rebuild};
@@ -40,6 +44,7 @@ pub use scheduler::{
     Reconciler, Translate, pass_connection_deliveries, run_scheduler, wake_live_queues,
     wake_uncovered,
 };
+pub use surfaces::{PUBLISH_SURFACES, STATE_LABELS, WELCOME_PR};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MergeQueueError {
@@ -97,10 +102,12 @@ pub fn module(
     let reconciler = Reconciler { translate };
     Module {
         name: ModuleName::Mergequeue,
+        api: api::api(pool.clone(), clock.clone(), scm.clone()),
         executors: Box::new(move |executors| {
             let (refresh_scm, submit_scm, assemble_scm) = (scm.clone(), scm.clone(), scm.clone());
             let (merge_scm, checks_scm, target_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let config_scm = scm.clone();
+            let (config_scm, publish_scm, command_scm) = (scm.clone(), scm.clone(), scm.clone());
+            let welcome_scm = scm.clone();
             executors.register(REFRESH_PRS, move |pool, job, now| {
                 jobs::execute_refresh(pool, refresh_scm.clone(), job, now)
             });
@@ -124,6 +131,15 @@ pub fn module(
             });
             executors.register(LOAD_CONFIG, move |pool, job, _| {
                 config::execute_load_config(pool, config_scm.clone(), job)
+            });
+            executors.register(PR_COMMAND, move |pool, job, now| {
+                command::execute_pr_command(pool, command_scm.clone(), job, now)
+            });
+            executors.register(WELCOME_PR, move |pool, job, _| {
+                surfaces::execute_welcome(pool, welcome_scm.clone(), job)
+            });
+            executors.register(PUBLISH_SURFACES, move |pool, job, now| {
+                surfaces::execute_publish(pool, publish_scm.clone(), job, now)
             });
         }),
         scheduler: Box::new(move |cancel| {

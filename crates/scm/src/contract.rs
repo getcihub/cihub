@@ -15,7 +15,7 @@ use cihub_domain::{
 
 use crate::{
     CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmUser,
-    StatusUpdate,
+    SetupFinding, StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
@@ -49,11 +49,42 @@ const CLASS: JobClass = JobClass::Interactive;
 ///
 /// When an answer is not the one of the contract.
 pub async fn run(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
+    connection(scm, repo, fixture).await;
     reads(scm, repo, fixture).await;
     branches(scm, repo, fixture).await;
     statuses_comments_and_labels(scm, repo, fixture).await;
     draft_prs(scm, repo, fixture).await;
     merge(scm, repo, fixture).await;
+}
+
+/// The account of the connection of `repo`, and its repositories
+/// (`AGENTS.md` D155).
+async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
+    let account = scm
+        .installation(&repo.connection.external_id, CLASS)
+        .await
+        .unwrap();
+    assert_eq!(
+        account.path, repo.namespace,
+        "the connection serves the account of the repository"
+    );
+    assert!(!account.external_id.is_empty());
+    let findings = scm
+        .check_setup(repo, &fixture.base_branch, CLASS)
+        .await
+        .unwrap();
+    assert_eq!(
+        findings,
+        [SetupFinding::UpdateRestrictionMissing],
+        "the rules of the base branch do not restrict its updates"
+    );
+    let repos = scm.list_repos(&repo.connection, CLASS).await.unwrap();
+    let listed = repos
+        .iter()
+        .find(|listed| listed.namespace == repo.namespace && listed.name == repo.name)
+        .expect("the connection lists the repository");
+    assert!(!listed.external_id.is_empty());
+    assert_eq!(listed.default_branch, fixture.base_branch);
 }
 
 async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {

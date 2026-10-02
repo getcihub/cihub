@@ -120,3 +120,49 @@ pub struct RecentDelivery {
     /// The identifier of this attempt, to ask for the delivery again.
     pub attempt_id: String,
 }
+
+/// The account of the SCM that a connection serves: an organization or a
+/// user (`AGENTS.md` D48).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmAccount {
+    pub external_id: String,
+    /// The name of the account in the paths of the SCM.
+    pub path: String,
+}
+
+/// A repository that a connection reaches, as the SCM lists it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmRepo {
+    pub external_id: String,
+    pub namespace: String,
+    pub name: String,
+    pub default_branch: String,
+}
+
+/// A point of the configuration of the SCM that the queue needs, and that a
+/// repository misses (`AGENTS.md` D162, `docs/GITHUB.md`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SetupFinding {
+    /// No rule restricts the updates of the target branch: a merge can skip
+    /// the queue.
+    UpdateRestrictionMissing,
+    /// A rule restricts the updates of the target branch, but does not let
+    /// CIHub through: the queue cannot merge.
+    AppNotExempt,
+    /// A rule covers the test branches too: the queue cannot write them.
+    TestBranchesNotExcluded,
+    /// The rules ask that a PR be up to date with its base: each merge makes
+    /// the next PRs wait.
+    UpToDateRequired,
+}
+
+impl SetupFinding {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::UpdateRestrictionMissing => "update_restriction_missing",
+            Self::AppNotExempt => "app_not_exempt",
+            Self::TestBranchesNotExcluded => "test_branches_not_excluded",
+            Self::UpToDateRequired => "up_to_date_required",
+        }
+    }
+}

@@ -35,6 +35,7 @@ pub struct PrObservation {
     pub review_decision: ReviewDecision,
     pub checks: Vec<CheckReport>,
     pub unmet_conditions: Vec<String>,
+    pub required_checks: Vec<String>,
 }
 
 /// The impacted targets uploaded for one head of a PR.

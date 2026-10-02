@@ -9,8 +9,7 @@ L'installation de référence tient en une image, un Postgres 17 et une GitHub A
 `cihub-server`, qui exécute par défaut les quatre rôles (`web`, `scheduler`, `worker`, `notifier`) dans un
 processus ; `CIHUB_ROLES` en choisit une partie pour donner à chaque rôle ses propres processus
 (`docs/ARCHITECTURE.md`, « Passer à l'échelle »). La GitHub App se crée à la main, selon `docs/GITHUB.md`
-(`AGENTS.md` D92). Le `docker compose` d'installation arrive au lot 9, le chart Helm au
-lot 15.
+(`AGENTS.md` D92). Le chart Helm arrive au lot 15.
 
 ## Développement
 
@@ -67,6 +66,59 @@ processus au démarrage.
 Dans un conteneur, `CIHUB_INTERNAL_ADDR` doit écouter sur `0.0.0.0` pour que les sondes le joignent. `/healthz`
 répond `200` tant que le processus tourne ; `/readyz` répond `503` quand Postgres ne répond pas en 2 s.
 
+## Image
+
+`Dockerfile`, à la racine, construit l'image de `cihub-server` en deux étapes : la compilation sur
+`rust:1.98.1-slim-bookworm` (le Rust de `mise.toml`, avec la glibc de Debian 12), puis l'exécution sur
+`gcr.io/distroless/cc-debian12:nonroot`. Les deux images sont épinglées par leur digest, avec le tag en
+commentaire. Le binaire est `/usr/local/bin/cihub-server`, la licence du projet est dans `/usr/share/doc/cihub/`.
+L'image écoute sur `0.0.0.0:8080` (adresse publique) et met `CIHUB_INTERNAL_ADDR` à `0.0.0.0:8081`, pour que les
+sondes atteignent `/healthz` et `/readyz`. Sous Linux, le client TLS lit les certificats racines du système, que
+l'image d'exécution fournit : le binaire n'embarque pas de liste de certificats (`AGENTS.md` D81). Le profil
+`release` de `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) sert à cette image.
+
+`.github/workflows/image.yaml` publie l'image sur `ghcr.io/getcihub/cihub-server` à chaque release
+(`AGENTS.md` D19), avec les tags `X.Y.Z`, `X.Y` et `latest`, et à la demande, avec le tag `sha-<commit>`. Un job
+par architecture (`linux/amd64` sur `ubuntu-26.04`, `linux/arm64` sur `ubuntu-26.04-arm`) construit l'image sur un
+runner natif et la pousse par son digest ; un dernier job réunit les deux digests dans un manifeste.
+
+## Installation par Docker Compose
+
+`deploy/compose.yaml` est le `docker compose` d'installation. Il démarre quatre services :
+
+| Service          | Rôle                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `postgres`       | Postgres 17, avec un volume de données ; aucun port publié sur l'hôte                      |
+| `postgres-setup` | Ponctuel : amène le rôle `cihub` (ni superutilisateur ni `BYPASSRLS`) et la base `cihub` à l'état voulu, à chaque démarrage (D38, D52) |
+| `cihub-migrate`  | Ponctuel : `cihub-server migrate` (D14)                                                    |
+| `cihub-server`   | Les quatre rôles ; démarre après la fin sans erreur de `cihub-migrate` ; publie le port 8080 |
+
+Les valeurs viennent de `deploy/.env`, à créer depuis `deploy/.env.example` : les mots de passe de Postgres,
+`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` et le chemin de la clé privée de l'App. La clé est montée en
+lecture seule et donnée par `CIHUB_GITHUB_PRIVATE_KEY_FILE` ; l'utilisateur de l'image (uid 65532) doit pouvoir la
+lire. `deploy/.env` ne doit jamais être commité (`.gitignore` l'exclut). Le port interne 8081 n'est pas publié sur
+l'hôte (`docs/SECURITY.md`). La procédure complète est dans `README.md`.
+
+```sh
+docker compose -f deploy/compose.yaml up -d
+docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+```
+
+## Amorcer une organisation
+
+Après l'installation de l'App sur un compte, une commande relie l'installation à une nouvelle organisation, sans
+le tableau de bord (`AGENTS.md` D154, D155) :
+
+```sh
+cihub-server admin bootstrap --installation <identifiant de l'installation>
+```
+
+Elle demande les variables du serveur et de la GitHub App, et une base à jour. Elle crée l'organisation (son nom
+est le login du compte), active la merge queue, demande la lecture des dépôts de l'installation et affiche une
+seule fois un jeton d'API de l'organisation avec tous les scopes. L'identifiant de l'installation est à la fin de
+l'URL de la page de l'installation (*Settings → GitHub Apps → Configure*). Relancée sur une installation déjà
+amorcée, la commande ne crée qu'un nouveau jeton : elle sert aussi à reprendre une organisation sans jeton.
+
 ## Migrations
 
 Les migrations sont explicites (`AGENTS.md` D14) :
@@ -115,8 +167,8 @@ release-please (`.github/workflows/release-please.yaml`, `AGENTS.md` D19) tient 
 titres de commits au format Conventional Commits. Quand cette PR est mergée, il crée le tag `vX.Y.Z` et la release,
 et met à jour `CHANGELOG.md`, `[workspace.package].version` dans `Cargo.toml` et les versions des crates `cihub-*`
 dans `Cargo.lock`. La CI ne tourne pas sur les PR de release-please, qui ne changent que ces fichiers. Le workflow
-prend un jeton de la GitHub App de bot du projet (secrets `BOT_CLIENT_ID` et `BOT_APP_PRIVATE_KEY`). L'image et
-sa publication arrivent au lot 9.
+prend un jeton de la GitHub App de bot du projet (secrets `BOT_CLIENT_ID` et `BOT_APP_PRIVATE_KEY`). La release
+déclenche la publication de l'image (« Image »).
 
 ## Mises à jour des dépendances
 

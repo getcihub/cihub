@@ -45,6 +45,8 @@ pub struct World {
     pub log: Vec<Event>,
     pub settings: QueueSettings,
     pub now: OffsetDateTime,
+    /// The surfaces of every reconciliation, in order.
+    pub surfaces: Vec<Vec<cihub_mq_core::Surface>>,
     facts: u128,
     target: u32,
 }
@@ -58,6 +60,7 @@ impl World {
             log: Vec::new(),
             settings,
             now: OffsetDateTime::UNIX_EPOCH + Duration::days(20_000),
+            surfaces: Vec::new(),
             facts: 0,
             target: 0,
         };
@@ -94,6 +97,7 @@ impl World {
             assert_eq!(apply(&mut self.snapshot, event), Ok(Outcome::Applied));
             self.log.push(event.clone());
         }
+        self.surfaces.push(plan.desired.surfaces.clone());
         let again = cihub_mq_core::plan(&self.snapshot, &self.settings, self.now).unwrap();
         assert!(again.decisions.is_empty(), "no fixed point: {again:#?}");
         assert_eq!(check(&self.snapshot, &self.settings), vec![]);
@@ -150,6 +154,8 @@ impl World {
             draft: false,
             mergeability: Mergeability::Mergeable,
             unmet_conditions: Vec::new(),
+            required_checks: Vec::new(),
+            checks: Vec::new(),
         };
         edit(&mut pr);
         self.fact(
@@ -163,8 +169,9 @@ impl World {
                 labels: BTreeSet::new(),
                 mergeability: pr.mergeability,
                 review_decision: ReviewDecision::Approved,
-                checks: Vec::new(),
+                checks: pr.checks,
                 unmet_conditions: pr.unmet_conditions,
+                required_checks: pr.required_checks,
             },
         )
     }
@@ -292,6 +299,8 @@ pub struct Pr {
     pub draft: bool,
     pub mergeability: Mergeability,
     pub unmet_conditions: Vec<String>,
+    pub required_checks: Vec<String>,
+    pub checks: Vec<CheckReport>,
 }
 
 pub fn head(pr_number: u64, version: u32) -> String {

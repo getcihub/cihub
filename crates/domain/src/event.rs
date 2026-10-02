@@ -67,6 +67,9 @@ pub enum EventKind {
         /// The `queue_conditions` of the queue that the PR does not meet, as
         /// the file writes them (`AGENTS.md` D142).
         unmet_conditions: Vec<String>,
+        /// The checks that the rules of the base branch require, without the
+        /// status of the queue (`AGENTS.md` D158).
+        required_checks: Vec<String>,
     },
     #[serde(rename = "target.pushed")]
     TargetPushed {

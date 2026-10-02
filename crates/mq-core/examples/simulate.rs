@@ -536,6 +536,7 @@ impl World {
             review_decision: ReviewDecision::Approved,
             checks: Vec::new(),
             unmet_conditions: Vec::new(),
+            required_checks: Vec::new(),
         })
     }
 

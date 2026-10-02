@@ -2,7 +2,7 @@
 //! (`AGENTS.md` D75, D84): what changed, not the new state.
 
 use cihub_domain::{CheckConclusion, CheckKind, CheckReport};
-use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
+use cihub_scm::{SUBMIT_BOX, ScmDelivery, ScmEvent, ScmUser};
 use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
@@ -24,14 +24,14 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
     let read = Reader { event, payload };
     let action = payload["action"].as_str().unwrap_or_default();
     let scm_event = match event {
-        "pull_request" | "pull_request_review" => ScmEvent::PrChanged {
-            repo_external_id: read.id("/repository/id")?,
-            number: read.number("/pull_request/number")?,
-            base_branch: read.text("/pull_request/base/ref")?,
-            label_added: (event == "pull_request" && action == "labeled")
-                .then(|| payload["label"]["name"].as_str().map(str::to_owned))
-                .flatten(),
-        },
+        "pull_request" | "pull_request_review" => pr_changed(&read, action)?,
+        "issue_comment"
+            if action == "edited"
+                && !payload["issue"]["pull_request"].is_null()
+                && submit_box_checked(payload) =>
+        {
+            submit_box(&read)?
+        }
         "issue_comment" if action == "created" && !payload["issue"]["pull_request"].is_null() => {
             ScmEvent::Commented {
                 repo_external_id: read.id("/repository/id")?,
@@ -120,6 +120,49 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
         connection_external_id: id(payload.pointer("/installation/id")),
         event: scm_event,
     })
+}
+
+/// A change of a PR or of its reviews: the label that it added, and whether
+/// it made the PR ready for review (`AGENTS.md` D163).
+fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateError> {
+    let on_pr = read.event == "pull_request";
+    Ok(ScmEvent::PrChanged {
+        repo_external_id: read.id("/repository/id")?,
+        number: read.number("/pull_request/number")?,
+        base_branch: read.text("/pull_request/base/ref")?,
+        label_added: (on_pr && action == "labeled")
+            .then(|| read.payload["label"]["name"].as_str().map(str::to_owned))
+            .flatten(),
+        opened: on_pr
+            && match action {
+                "opened" | "reopened" => !read.flag("/pull_request/draft"),
+                "ready_for_review" => true,
+                _ => false,
+            },
+    })
+}
+
+fn submit_box(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
+    Ok(ScmEvent::SubmitBoxChecked {
+        repo_external_id: read.id("/repository/id")?,
+        number: read.number("/issue/number")?,
+        comment_external_id: read.id("/comment/id")?,
+        sender: read.user("/sender")?,
+    })
+}
+
+/// An edit of a comment that checked its submission box (`AGENTS.md`
+/// D163): the box was empty before, it is checked now, and the App did not
+/// make the edit itself.
+fn submit_box_checked(payload: &Value) -> bool {
+    let has = |pointer: &str, check: &str| {
+        payload
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .is_some_and(|body| body.contains(&format!("- [{check}] {SUBMIT_BOX}")))
+    };
+    let by_bot = payload["sender"]["type"].as_str() == Some("Bot");
+    !by_bot && has("/comment/body", "x") && has("/changes/body/from", " ")
 }
 
 /// A numeric or text identifier of GitHub, as text (`AGENTS.md` D46).
@@ -230,15 +273,78 @@ mod tests {
             "repository": { "id": 7 },
             "pull_request": { "number": 12, "base": { "ref": "main" } },
         });
-        let changed = |label_added: Option<&str>| ScmEvent::PrChanged {
+        let changed = |label_added: Option<&str>, opened| ScmEvent::PrChanged {
             repo_external_id: "7".into(),
             number: 12,
             base_branch: "main".into(),
             label_added: label_added.map(str::to_owned),
+            opened,
         };
-        assert_eq!(event("pull_request", &payload), changed(Some("ready")));
+        assert_eq!(
+            event("pull_request", &payload),
+            changed(Some("ready"), false)
+        );
         // A review adds no label, whatever its action.
-        assert_eq!(event("pull_request_review", &payload), changed(None));
+        assert_eq!(event("pull_request_review", &payload), changed(None, false));
+        // A PR ready for review opens (`AGENTS.md` D163); a draft does not.
+        let action = |action: &str, draft: bool| {
+            json!({
+                "action": action,
+                "repository": { "id": 7 },
+                "pull_request": { "number": 12, "base": { "ref": "main" }, "draft": draft },
+            })
+        };
+        for (name, draft, opened) in [
+            ("opened", false, true),
+            ("opened", true, false),
+            ("reopened", false, true),
+            ("ready_for_review", false, true),
+            ("synchronize", false, false),
+        ] {
+            assert_eq!(
+                event("pull_request", &action(name, draft)),
+                changed(None, opened),
+                "{name} {draft}"
+            );
+        }
+    }
+
+    #[test]
+    fn checking_the_submission_box_of_a_comment_is_a_submission() {
+        let box_of = |check: &str| format!("Merging...\n\n- [{check}] {SUBMIT_BOX} To merge...");
+        let edit = |before: &str, after: &str, sender: &str| {
+            json!({
+                "action": "edited",
+                "repository": { "id": 7 },
+                "issue": { "number": 12, "pull_request": { "url": "u" } },
+                "comment": { "id": 99, "user": user(1, "cihub[bot]"), "body": after },
+                "changes": { "body": { "from": before } },
+                "sender": { "id": 3, "login": "alice", "type": sender },
+            })
+        };
+        assert_eq!(
+            event("issue_comment", &edit(&box_of(" "), &box_of("x"), "User")),
+            ScmEvent::SubmitBoxChecked {
+                repo_external_id: "7".into(),
+                number: 12,
+                comment_external_id: "99".into(),
+                sender: ScmUser {
+                    external_id: "3".into(),
+                    login: "alice".into()
+                },
+            }
+        );
+        // The App edits its own comment; an unchecked box; no box before.
+        for (before, after, sender) in [
+            (box_of(" "), box_of("x"), "Bot"),
+            (box_of("x"), box_of(" "), "User"),
+            ("no box".to_owned(), box_of("x"), "User"),
+        ] {
+            assert_eq!(
+                event("issue_comment", &edit(&before, &after, sender)),
+                ScmEvent::Ignored
+            );
+        }
     }
 
     #[test]

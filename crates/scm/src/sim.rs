@@ -15,8 +15,9 @@ use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks, Scm,
-    ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmUser, StatusUpdate,
+    CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
+    RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmRepo, ScmUser,
+    SetupFinding, StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -146,6 +147,9 @@ pub struct Reviews {
 #[derive(Debug)]
 struct Repo {
     connection: String,
+    namespace: String,
+    name: String,
+    default_branch: String,
     commits: HashMap<String, Commit>,
     branches: BTreeMap<String, String>,
     prs: BTreeMap<u64, Pr>,
@@ -160,6 +164,8 @@ struct State {
     next_sha: u64,
     next_comment: u64,
     repos: BTreeMap<String, Repo>,
+    /// The account of each connection, by the identifier of the connection.
+    accounts: BTreeMap<String, ScmAccount>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -216,6 +222,9 @@ impl Sim {
                 repo.external_id.clone(),
                 Repo {
                     connection: repo.connection.external_id.clone(),
+                    namespace: repo.namespace.clone(),
+                    name: repo.name.clone(),
+                    default_branch: default_branch.to_owned(),
                     commits: HashMap::from([(sha.clone(), commit)]),
                     branches: BTreeMap::from([(default_branch.to_owned(), sha.clone())]),
                     prs: BTreeMap::new(),
@@ -299,13 +308,18 @@ impl Sim {
     pub fn change_pr(&self, repo: &RepoRef, number: u64, change: PrChange) -> Result<(), ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
             let pr = ctx.repo.pr_mut(number)?;
+            let ready = matches!(change, PrChange::Draft(false)) && pr.draft;
             match change {
                 PrChange::Draft(draft) => pr.draft = draft,
                 PrChange::Review(decision) => pr.review_decision = decision,
                 PrChange::Mergeability(mergeability) => pr.mergeability = mergeability,
                 PrChange::Close => pr.state = PrState::Closed,
             }
-            ctx.pr_changed(number);
+            if ready {
+                ctx.pr_opened(number);
+            } else {
+                ctx.pr_changed(number);
+            }
             Ok(())
         })
     }
@@ -346,6 +360,39 @@ impl Sim {
     ) -> Result<(), ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
             ctx.report(sha, check);
+            Ok(())
+        })
+    }
+
+    /// Checks, as `user`, the submission box of the comment of CIHub on the
+    /// PR `number`, and sends its delivery (`AGENTS.md` D163).
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for an unknown repository, or when no comment of the PR
+    /// has an empty box.
+    pub fn check_submit_box(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        user: &ScmUser,
+    ) -> Result<(), ScmError> {
+        let empty = format!("- [ ] {}", crate::SUBMIT_BOX);
+        self.with_repo(&repo.external_id, |ctx| {
+            let (id, (_, body)) = ctx
+                .repo
+                .comments
+                .iter_mut()
+                .find(|(_, (pr, body))| *pr == number && body.contains(&empty))
+                .ok_or_else(|| ScmError::NotFound(format!("a box on PR {number}")))?;
+            *body = body.replace(&empty, &format!("- [x] {}", crate::SUBMIT_BOX));
+            let comment_external_id = id.clone();
+            ctx.emit(ScmEvent::SubmitBoxChecked {
+                repo_external_id: ctx.repo_external_id.clone(),
+                number,
+                comment_external_id,
+                sender: user.clone(),
+            });
             Ok(())
         })
     }
@@ -440,6 +487,15 @@ impl Sim {
                 .insert(user.external_id.clone(), permission);
             Ok(())
         })
+    }
+
+    /// Makes `account` the account of the connection `connection_external_id`.
+    pub fn add_account(&self, connection_external_id: &str, account: ScmAccount) {
+        self.with(|state| {
+            state
+                .accounts
+                .insert(connection_external_id.to_owned(), account);
+        });
     }
 
     /// Suspends the connection `connection_external_id`, or makes it active
@@ -704,10 +760,19 @@ impl Ctx<'_> {
     }
 
     fn pr_changed(&mut self, number: u64) {
-        self.pr_labeled(number, None);
+        self.pr_event(number, None, false);
     }
 
     fn pr_labeled(&mut self, number: u64, label_added: Option<String>) {
+        self.pr_event(number, label_added, false);
+    }
+
+    /// The PR became ready for review (`AGENTS.md` D163).
+    fn pr_opened(&mut self, number: u64) {
+        self.pr_event(number, None, true);
+    }
+
+    fn pr_event(&mut self, number: u64, label_added: Option<String>, opened: bool) {
         let Some(pr) = self.repo.prs.get(&number) else {
             return;
         };
@@ -717,6 +782,7 @@ impl Ctx<'_> {
             number,
             base_branch,
             label_added,
+            opened,
         });
     }
 
@@ -750,7 +816,11 @@ impl Ctx<'_> {
                 merged_sha: None,
             },
         );
-        self.pr_changed(number);
+        if draft {
+            self.pr_changed(number);
+        } else {
+            self.pr_opened(number);
+        }
         Ok(number)
     }
 
@@ -1435,6 +1505,66 @@ impl Scm for Sim {
             Ok(())
         })
     }
+
+    fn installation<'a>(
+        &'a self,
+        external_id: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmAccount> {
+        self.instance_call("installation", class, move |state| {
+            state
+                .accounts
+                .get(external_id)
+                .cloned()
+                .ok_or_else(|| ScmError::NotFound(format!("installation {external_id}")))
+        })
+    }
+
+    /// The simulator has no rule that restricts the updates of a branch.
+    fn check_setup<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<SetupFinding>> {
+        let branch = branch.to_owned();
+        self.call("check_setup", repo, class, move |ctx| {
+            ctx.repo.branch_head(&branch)?;
+            let mut findings = vec![SetupFinding::UpdateRestrictionMissing];
+            if ctx
+                .repo
+                .rules
+                .get(&branch)
+                .is_some_and(|rules| rules.up_to_date)
+            {
+                findings.push(SetupFinding::UpToDateRequired);
+            }
+            Ok(findings)
+        })
+    }
+
+    fn list_repos<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmRepo>> {
+        self.instance_call("list_repos", class, move |state| {
+            if state.lost.contains(&connection.external_id) {
+                return Err(ScmError::AccessLost("connection suspended".into()));
+            }
+            Ok(state
+                .repos
+                .iter()
+                .filter(|(_, repo)| repo.connection == connection.external_id)
+                .map(|(external_id, repo)| ScmRepo {
+                    external_id: external_id.clone(),
+                    namespace: repo.namespace.clone(),
+                    name: repo.name.clone(),
+                    default_branch: repo.default_branch.clone(),
+                })
+                .collect())
+        })
+    }
 }
 
 /// Builds in a new simulator the world of the contract suite, on the
@@ -1499,6 +1629,11 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         login: "admin".into(),
     };
     sim.set_permission(repo, &admin, Permission::Admin)?;
+    let account = ScmAccount {
+        external_id: "10".into(),
+        path: repo.namespace.clone(),
+    };
+    sim.add_account(&repo.connection.external_id, account);
     sim.take_deliveries();
     let fixture = Fixture {
         base_branch: "main".into(),
@@ -1626,6 +1761,7 @@ mod tests {
                     number,
                     base_branch: "main".into(),
                     label_added: None,
+                    opened: true,
                 },
                 ScmEvent::CheckChanged {
                     repo_external_id: "200".into(),

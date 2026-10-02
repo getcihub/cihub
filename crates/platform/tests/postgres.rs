@@ -4,17 +4,20 @@
 
 use std::sync::Arc;
 
-use cihub_domain::{ConnectionId, ConnectionMode, JobClass, OrgId, QueueId, ScmInstanceId};
+use cihub_domain::{
+    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, OrgId, QueueId, ScmInstanceId,
+};
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
-    MAX_ATTEMPTS, Outcome, QueueWakeup, Retry, Wake, acquire_leases, backoff, begin_reconciliation,
-    claim_jobs, complete_job, enqueue_job, fail_job, lock_queue, maintenance_job, mark_processed,
-    pending_deliveries, record_budgets, release_leases, request_maintenance, run_budget_writer,
-    run_maintenance, run_router, run_sweep, run_worker, schedule_tick, store_delivery,
+    MAX_ATTEMPTS, Outcome, PlatformError, QueueWakeup, Retry, Wake, acquire_leases, backoff,
+    begin_reconciliation, bootstrap, claim_jobs, complete_job, enqueue_job, fail_job, lock_queue,
+    maintenance_job, mark_processed, pending_deliveries, record_budgets, release_leases,
+    request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
+    run_sweep, run_sync_repos, run_worker, schedule_tick, store_delivery, sync_repos_job,
 };
 use cihub_scm::sim::Sim;
-use cihub_scm::{ConnectionRef, RepoRef, ScmDelivery, ScmEvent, ScmUser};
-use cihub_store::{begin_org, begin_system};
+use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
+use cihub_store::{authenticate, begin_org, begin_system};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
 use time::{Duration, OffsetDateTime};
@@ -789,6 +792,7 @@ fn fake_translate(
             number: 1,
             base_branch: text("branch"),
             label_added: None,
+            opened: false,
         },
         "push" => ScmEvent::Pushed {
             repo_external_id: text("repo"),
@@ -802,6 +806,10 @@ fn fake_translate(
         },
         "rules" => ScmEvent::RulesChanged {
             repo_external_id: text("repo"),
+        },
+        "repos" => ScmEvent::ReposChanged {
+            added: vec![text("repo")],
+            removed: Vec::new(),
         },
         "broken" => return Err(std::fmt::Error),
         _ => ScmEvent::Ignored,
@@ -898,6 +906,12 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
             "pr",
             json!({ "installation": "1", "repo": "1", "branch": "shared" }),
         ),
+        unrouted(
+            "i-repos",
+            "repos",
+            json!({ "installation": "1", "repo": "2" }),
+        ),
+        unrouted("j-repos-unknown", "repos", json!({ "installation": "99" })),
     ] {
         store(&pool, &delivery).await;
     }
@@ -931,7 +945,16 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         ("e-unknown".into(), None, None, None, true, false),
         ("f-ignored".into(), None, None, None, true, true),
         ("g-broken".into(), None, None, None, true, true),
-        ("h-shared-branch".into(), o, c, None, true, false),
+        (
+            "h-shared-branch".into(),
+            o.clone(),
+            c.clone(),
+            None,
+            true,
+            false,
+        ),
+        ("i-repos".into(), o, c, None, true, false),
+        ("j-repos-unknown".into(), None, None, None, true, false),
     ];
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while routes(&pool).await != expected {
@@ -943,6 +966,12 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     // The queues of a routed delivery are dirty.
     assert!(queue_state(&pool, queue(2)).await.0);
     assert!(queue_state(&pool, queue(3)).await.0);
+    // A change of the repositories of a known connection asks to read them
+    // again (`AGENTS.md` D155).
+    assert_eq!(
+        sync_jobs(&pool).await,
+        [format!("sync_repos:{}-i-repos:1", connection())]
+    );
     cancel.cancel();
     router.await.unwrap().unwrap();
 }
@@ -975,4 +1004,226 @@ async fn the_sweep_asks_again_only_for_the_deliveries_missing_from_the_inbox(poo
     }
     assert_eq!(run_sweep(&pool, &sim, instance(1), at(0)).await.unwrap(), 1);
     assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
+}
+
+async fn sync_jobs(pool: &PgPool) -> Vec<String> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar(
+        "SELECT idempotency_key FROM jobs WHERE type = 'sync_repos' ORDER BY idempotency_key",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+type OrgRow = (String, String, String, String, bool, bool);
+
+/// The organizations with their account, connection and module.
+async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT o.slug, a.external_id, a.path, c.external_id, c.claimed_at IS NOT NULL,
+                EXISTS (SELECT 1 FROM org_modules m WHERE m.org_id = o.id AND m.module = 'mergequeue')
+         FROM orgs o
+         JOIN scm_accounts a ON a.org_id = o.id
+         JOIN scm_connections c ON c.scm_account_id = a.id
+         ORDER BY o.slug",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let account = ScmAccount {
+        external_id: "70".into(),
+        path: "globex".into(),
+    };
+    sim.add_account("7", account);
+    let kind = ConnectionKind::GithubApp;
+
+    let first = bootstrap(&pool, &sim, instance(1), kind, "7", at(0))
+        .await
+        .unwrap();
+    assert!(first.created);
+    let globex = (
+        "globex".to_owned(),
+        "70".to_owned(),
+        "globex".to_owned(),
+        "7".to_owned(),
+        true,
+        true,
+    );
+    let acme = (
+        "org".to_owned(),
+        "1".to_owned(),
+        "acme".to_owned(),
+        "1".to_owned(),
+        false,
+        false,
+    );
+    assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);
+    let grant = authenticate(&pool, &first.token, at(0))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(grant.org_id, first.org_id);
+    assert_eq!(grant.scopes.len(), 5, "{:?}", grant.scopes);
+    assert!(grant.scopes.contains(&ApiScope::QueuesWrite));
+    let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
+    assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
+
+    // Again, in the same hour: the same organization and a new token; the
+    // read of the hour is already requested.
+    let second = bootstrap(&pool, &sim, instance(1), kind, "7", at(60))
+        .await
+        .unwrap();
+    assert!(!second.created);
+    assert_eq!(
+        (second.org_id, second.connection_id),
+        (first.org_id, first.connection_id)
+    );
+    assert_eq!(orgs(&pool).await, [globex, acme]);
+    for token in [&first.token, &second.token] {
+        let grant = authenticate(&pool, token, at(60)).await.unwrap().unwrap();
+        assert_eq!(grant.org_id, first.org_id);
+    }
+    assert_eq!(sync_jobs(&pool).await, [read]);
+    let mut tx = begin_system(&pool).await.unwrap();
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'token.created'")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+    assert_eq!(audited, 2, "each token is in the audit log");
+
+    // An installation that the SCM does not know starts nothing.
+    let unknown = bootstrap(&pool, &sim, instance(1), kind, "8", at(0)).await;
+    assert!(
+        matches!(unknown, Err(PlatformError::Scm(ScmError::NotFound(_)))),
+        "{:?}",
+        unknown.err()
+    );
+    assert_eq!(orgs(&pool).await.len(), 2);
+}
+
+type RepoRow = (String, String, String, String, String, String);
+
+async fn repos(pool: &PgPool) -> Vec<RepoRow> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT external_id, org_id, connection_id, namespace, name, default_branch
+         FROM repos ORDER BY external_id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+fn sim_repo(connection: &str, external_id: &str, name: &str) -> RepoRef {
+    RepoRef {
+        connection: ConnectionRef {
+            id: ConnectionId::from_ulid(Ulid(9)),
+            external_id: connection.into(),
+        },
+        external_id: external_id.into(),
+        namespace: "acme".into(),
+        name: name.into(),
+    }
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
+    seed(&pool).await;
+    // Another organization has the repository 4.
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('other', 'other');
+         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
+             VALUES ('b', 'other', '{i1}', '2', 'other');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
+             VALUES ('c2', 'other', '{i1}', 'b', 'github_app', '2');
+         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
+                            default_branch)
+             VALUES ('r4', 'other', '{i1}', 'c2', '4', 'other', 'kept', 'main');",
+        i1 = instance(1),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let sim = Sim::new();
+    sim.add_repo(&sim_repo("1", "1", "renamed"), "trunk", &[]);
+    sim.add_repo(&sim_repo("1", "2", "lib"), "main", &[]);
+    sim.add_repo(&sim_repo("1", "4", "taken"), "main", &[]);
+    sim.add_repo(&sim_repo("9", "3", "elsewhere"), "main", &[]);
+
+    let job = sync_repos_job(org(), instance(1), connection(), "w");
+    assert_eq!(run_sync_repos(&pool, &sim, &job).await.unwrap(), 2);
+    let row = |id: &str, org: &str, connection: &str, namespace: &str, name: &str, branch: &str| {
+        (
+            id.to_owned(),
+            org.to_owned(),
+            connection.to_owned(),
+            namespace.to_owned(),
+            name.to_owned(),
+            branch.to_owned(),
+        )
+    };
+    let (o, c) = (org().to_string(), connection().to_string());
+    let expected = [
+        row("1", &o, &c, "acme", "renamed", "trunk"),
+        row("2", &o, &c, "acme", "lib", "main"),
+        row("4", "other", "c2", "other", "kept", "main"),
+    ];
+    assert_eq!(repos(&pool).await, expected);
+    // The repository 1 keeps its identifier, and its queues with it.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let id: String = sqlx::query_scalar("SELECT id FROM repos WHERE external_id = '1'")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(id, "r");
+
+    // A suspended connection is not read.
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE scm_connections SET suspended_at = now() WHERE id = $1")
+        .bind(connection().to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let calls = sim.calls().len();
+    assert_eq!(run_sync_repos(&pool, &sim, &job).await.unwrap(), 0);
+    assert_eq!(sim.calls().len(), calls);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn each_active_connection_is_read_once_an_hour(pool: PgPool) {
+    seed(&pool).await;
+    let request = |now| {
+        let pool = pool.clone();
+        async move {
+            let mut tx = begin_system(&pool).await.unwrap();
+            let requested = request_repo_syncs(&mut tx, now).await.unwrap();
+            tx.commit().await.unwrap();
+            requested
+        }
+    };
+    assert_eq!(request(at(0)).await, 1);
+    // Another scheduler in the same hour asks for nothing more.
+    assert_eq!(request(at(60)).await, 0);
+    assert_eq!(request(at(3600)).await, 1);
+    assert_eq!(
+        sync_jobs(&pool).await,
+        [
+            format!("sync_repos:{}-20260910T00:1", connection()),
+            format!("sync_repos:{}-20260910T01:1", connection()),
+        ]
+    );
 }

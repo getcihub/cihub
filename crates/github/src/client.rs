@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use cihub_domain::{ConnectionId, JobClass};
+use cihub_domain::{ConnectionId, JobClass, Permission};
 use cihub_scm::{ConnectionRef, ScmError};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, Method, StatusCode};
@@ -23,6 +23,11 @@ use crate::budget::{Budget, Observation, Rate, SECONDARY_WAIT};
 const API_VERSION: &str = "2022-11-28";
 /// A token of an installation is renewed this long before its end.
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
+/// A permission of a user on a repository is kept this long
+/// (`AGENTS.md` D157).
+const PERMISSION_TTL: Duration = Duration::minutes(5);
+/// Past this many kept permissions, the expired ones go.
+const PERMISSIONS_KEPT: usize = 10_000;
 /// A call gives up after this long, below the timeout of a job
 /// (`AGENTS.md` D69).
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -94,6 +99,7 @@ pub struct GithubApp {
     http: Client,
     clock: Clock,
     tokens: Mutex<HashMap<String, (SecretString, OffsetDateTime)>>,
+    permissions: Mutex<HashMap<PermissionKey, (Permission, OffsetDateTime)>>,
     budgets: Mutex<Budgets>,
     urgent: Arc<Notify>,
 }
@@ -131,7 +137,41 @@ impl Budgets {
     }
 }
 
+/// A user on a repository of a connection: a permission is not shared
+/// between connections.
+pub(crate) type PermissionKey = (ConnectionId, String, String);
+
 impl GithubApp {
+    /// The identifier of the App on GitHub.
+    pub(crate) fn app_id(&self) -> &str {
+        &self.app_id
+    }
+
+    /// The permission kept for `key`, when it has not expired.
+    pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
+        let now = (self.clock)();
+        let kept = self
+            .permissions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        kept.get(key)
+            .filter(|(_, until)| *until > now)
+            .map(|(permission, _)| *permission)
+    }
+
+    /// Keeps `permission` for `key` during [`PERMISSION_TTL`].
+    pub(crate) fn keep_permission(&self, key: PermissionKey, permission: Permission) {
+        let now = (self.clock)();
+        let mut kept = self
+            .permissions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if kept.len() >= PERMISSIONS_KEPT {
+            kept.retain(|_, (_, until)| *until > now);
+        }
+        kept.insert(key, (permission, now + PERMISSION_TTL));
+    }
+
     /// # Errors
     ///
     /// The key is not valid, or the HTTP client cannot start.
@@ -161,6 +201,7 @@ impl GithubApp {
             http,
             clock,
             tokens: Mutex::new(HashMap::new()),
+            permissions: Mutex::new(HashMap::new()),
             budgets: Mutex::new(Budgets::default()),
             urgent: Arc::new(Notify::new()),
         })

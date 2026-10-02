@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::wake::notify_connection_delivery;
-use crate::{INBOX_CHANNEL, PlatformError, mark_dirty};
+use crate::{INBOX_CHANNEL, PlatformError, mark_dirty, request_repo_sync};
 
 /// Without a notification, the routing loop looks for deliveries this often.
 pub const ROUTE_POLL: Duration = Duration::from_secs(5);
@@ -313,21 +313,34 @@ where
     let count = i64::try_from(deliveries.len()).unwrap_or(i64::MAX);
     for delivery in deliveries {
         let delivery_id = delivery.delivery_id.as_str();
-        let route = match translate(&delivery.event, &delivery.payload) {
-            Ok(read) => find_route(&mut tx, delivery.scm_instance_id, &read).await?,
+        let (route, repos_changed) = match translate(&delivery.event, &delivery.payload) {
+            Ok(read) => {
+                let route = find_route(&mut tx, delivery.scm_instance_id, &read).await?;
+                (route, matches!(read.event, ScmEvent::ReposChanged { .. }))
+            }
             Err(err) => {
                 warn!(
                     delivery_id,
                     error = &err as &dyn Error,
                     "delivery not translated"
                 );
-                Route {
+                let route = Route {
                     processed: true,
                     ..Route::default()
-                }
+                };
+                (route, false)
             }
         };
-        route_delivery(&mut tx, delivery.scm_instance_id, delivery_id, route, now).await?;
+        let routed =
+            route_delivery(&mut tx, delivery.scm_instance_id, delivery_id, route, now).await?;
+        // The repositories of the connection changed: CIHub reads them again
+        // (`AGENTS.md` D155).
+        if let (true, true, Some(org_id), Some(connection)) =
+            (routed, repos_changed, route.org_id, route.connection_id)
+        {
+            let instance = delivery.scm_instance_id;
+            request_repo_sync(&mut tx, org_id, instance, connection, delivery_id, now).await?;
+        }
         info!(
             delivery_id,
             org_id = route.org_id.map(tracing::field::display),

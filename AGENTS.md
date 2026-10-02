@@ -602,7 +602,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   `queue.settings_changed` (acteur `system`) avant `plan`.
 - **D138** Le lot 8 ne crée aucune file depuis le fichier : la commande d'admin du lot 9 les crée (Q14). Une
   entrée du fichier se relie à sa file par sa branche et son nom ; une file sans entrée a les réglages par défaut,
-  sans les `defaults` du fichier.
+  sans les `defaults` du fichier. _Complétée par D154 : l'API et la CLI créent les files._
 - **D139** CIHub ne s'intègre à aucun autre produit : il étudie la concurrence mais ne reprend aucune de ses
   interfaces pour la compatibilité. Pas d'alias de commande (`/trunk`), pas de noms ni de format d'un autre produit
   dans les webhooks sortants, l'API ou les branches de test, pas de traduction des raisons vers un autre
@@ -670,6 +670,95 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   décision. Les autres erreurs du merge direct gardent les raisons de D122. Les réponses enregistrées de GitHub
   (D90) sont enregistrées de nouveau. Avec `squash`, `merge_commit` et `rebase`, un push sur la cible entre la
   vérification et le merge n'est pas détecté ; `fast_forward` n'a pas cette fenêtre.
+- **D154** (Q14) `cihub-server admin bootstrap --installation <id>` amorce une organisation sans le tableau de
+  bord. La commande reste après le lot 10 : elle sert aux installations sans tableau de bord, à la reprise d'une
+  organisation sans admin ni jeton, et aux tests de bout en bout. Elle crée l'organisation, son compte du SCM et sa
+  connexion depuis l'installation, demande la synchronisation des dépôts, et affiche une seule fois un jeton d'API
+  de l'organisation. Aucune commande d'admin ne crée de file : les files se créent par
+  `POST /api/v1/repos/{owner}/{name}/queues` ou par `cihub queue create`, qui s'ajoute aux commandes de la CLI.
+  Pas de serveur MCP au lot 9. Complète D138.
+- **D155** Complète D154 et D86. Le trait `Scm` gagne deux méthodes : `installation`, au niveau de l'instance, qui
+  rend le compte d'une installation (identifiant et login), et `list_repos`, qui rend les dépôts d'une connexion.
+  `bootstrap` donne à l'organisation le login du compte comme slug, active le module `mergequeue` (`org_modules`)
+  et crée un jeton nommé `bootstrap` avec les cinq scopes, sans `created_by` ; sur une installation déjà amorcée,
+  il ne crée rien de plus et affiche un nouveau jeton. Le job `sync_repos` (classe `repair`) crée et met à jour
+  `repos` ; il ne supprime aucun dépôt. Comme pour `refresh_prs` (D101), sa clé nomme sa cause : une livraison
+  `installation_repositories` demande `sync_repos:<connection_id>-<delivery_id>:1`, et `bootstrap` et la demande
+  horaire de chaque réplique du scheduler demandent `sync_repos:<connection_id>-<AAAAMMJJTHH>:1`. Les réponses
+  enregistrées de GitHub (D90) sont enregistrées de nouveau.
+- **D156** Les surfaces de la PR (lot 9). `Desired` gagne `surfaces` : pour chaque entrée vivante et chaque entrée
+  que la réconciliation termine (`plan` la garde avant que `apply` ne l'évince), son état, sa raison, sa position,
+  les numéros de ses prédécesseurs, sa branche de test, ses checks en échec, ses raisons de blocage et les labels de
+  la PR. `cihub-mergequeue` en fait le statut `CIHub Merge Queue (<branche>)`, le commentaire (en anglais) et les
+  labels `cihub:queued`, `cihub:testing` et `cihub:failed`. Une table `pr_surfaces` garde, sans fait dans le journal
+  (comme D118), le rendu voulu et son empreinte, écrits par la réconciliation, et ce qui est publié sur le SCM
+  (empreinte publiée ; le commentaire est dans `pr_comments`, D163). Le job `publish_surfaces:<queue_id>-<pr_number>-<empreinte>:1`
+  (classe `interactive`) publie le rendu voulu le plus récent ; un job plus ancien ne remplace jamais le résultat
+  d'un plus récent ; chaque réconciliation redemande le job des lignes de sa file dont l'empreinte publiée diffère
+  de l'empreinte voulue. Un job mort garde sa clé : le dernier état d'une entrée terminée peut alors ne jamais être
+  publié. Un arrêt entre la création du commentaire et l'écriture de son identifiant peut donner un second
+  commentaire. `merge_pr` publie le statut `success` avant l'appel de merge. `comments_enabled` et
+  `status_check_enabled` arrêtent le commentaire et le statut ; sans `state_labels_enabled`, la file ne pose aucun
+  label et met à jour seulement les labels d'état que la PR porte déjà. Le statut n'a pas d'URL de détails avant le
+  lot 10 (pas d'adresse publique depuis D92) ; le commentaire n'a pas de case de relance : il dit d'écrire
+  `/cihub restart` pour une entrée en test, et nomme la branche de test sans lien ; pour une entrée terminée, il
+  montre la case de soumission de D163. Un seul job à la fois écrit le commentaire d'une PR (verrou consultatif).
+- **D157** Les commandes `/cihub cancel` et `/cihub restart` exigent `write` et passent par la passe des livraisons
+  de la connexion, comme `merge` (D108). Le job `pr_command:<delivery_id>:1` (classe `interactive`) vérifie la
+  permission, trouve l'entrée vivante de la PR et dépose `item.cancel_requested` ou `item.restart_requested` dans
+  `queue_inbox` (raisons `user_requested`, `tests_restarted_by_user`). `cihub-github` garde la permission d'un
+  utilisateur sur un dépôt 5 minutes en mémoire, par connexion. Une commande refusée reçoit un commentaire du job qui
+  dit pourquoi : permission trop basse, commandes désactivées, aucune file pour la branche, ou aucune entrée vivante.
+- **D158** (D112) `pr.observed` gagne `required_checks`, les checks que les règles de la branche exigent, sans le
+  statut de la file (D105). Pour une PR `blocked`, `plan` donne `failing_required_check { check }` pour un check
+  requis en échec, `awaiting_required_check { check, status }` pour un check requis qui n'a pas fini, et
+  `undetermined` seulement quand aucun check requis ne l'explique. Pas de nouvelle raison.
+- **D159** La couche de l'API v1 (lot 9). La crate `cihub-api-types` (`crates/api-types/`) porte les requêtes,
+  les réponses, les codes d'erreur et le corps `problem+json` ; sa feature `openapi`, que seul le serveur active,
+  dérive les schémas avec `utoipa` (nouvelle dépendance, OpenAPI 3.1). Le contrat `Module` gagne ses routes (un
+  `Router` d'`axum`) et leur document OpenAPI (D94) ; `cihub-platform` porte ce que les routes des modules
+  partagent : l'erreur qui se rend en `problem+json`, l'organisation et les scopes du jeton de la requête, et la
+  vérification d'un scope. `cihub-web` authentifie chaque requête de `/api/v1` par `Authorization: Bearer`, limite
+  chaque jeton à 600 requêtes par minute (fenêtre d'une minute, en mémoire et par réplique du rôle `web`, sans
+  dépendance), plafonne les corps à 25 Mo, et sert `/api/v1/openapi.json`, réuni depuis les modules.
+- **D160** Les routes du lot 9. Lecture (`queues:read`) : `GET /repos`, `GET /repos/{owner}/{name}/queues`,
+  `GET /queues/{id}`, `GET /queues/{id}/items`, `GET /queues/{id}/prs/{pr_number}` (`?include=timeline`),
+  `POST /queues/{id}/prs:batchGet`, `GET /queues/{id}/graph`, `GET /test-runs/{run_id}` (format de D115).
+  Écriture des PR (`prs:write`) : `POST /queues/{id}/items` (une soumission, rendue par le job `submit_pr` avec la
+  source `api` : réponse `202`), `POST /items/{id}/cancel` (`admin_requested`) et `POST /items/{id}/restart`
+  (`tests_restarted_by_api_request`). Écriture des files (`queues:write`) : `POST /repos/{owner}/{name}/queues`
+  (`target_branch` et `name` seulement, D134), `PATCH /queues/{id}` (`state` seulement : `running`, `paused`,
+  `draining`), `POST /queues/{id}:resync` (D128) et `GET /orgs/{org}/audit`. Une action d'un jeton a l'acteur
+  `system` dans le journal ; `audit_log` gagne `actor_token_id`, le jeton qui a agi. Reportés : `DELETE
+  /queues/{id}` (le journal d'une file est en ajout seul : sa suppression demande une décision sur sa rétention),
+  `GET /queues/{id}/test-results` (lot 11, avec les tables de faits), la recherche `?branch=` (la projection ne
+  garde pas la branche de tête), `impacted-targets` (lot 13), `/metrics` et `/orgs/{org}/webhooks` (lot 11).
+- **D161** La CLI (lot 9). `cihub-client` (`crates/client/`) est le client typé de l'API, sur `reqwest` et
+  `rustls` ; `cihub-cli` (`crates/cli/`) donne le binaire `cihub`, avec `clap` (nouvelle dépendance). `cihub login`
+  garde l'adresse et le jeton dans `$XDG_CONFIG_HOME/cihub/credentials.json` (ou `~/.config/cihub/`), en mode 0600 ;
+  `CIHUB_URL` et `CIHUB_TOKEN` passent avant. Le dépôt vient du remote `origin` de git ; la file vient de
+  `--queue <nom>`, ou de la seule file du dépôt. Commandes : `login`, `merge <pr> [-p <priorité>] [--no-batch]`,
+  `cancel <pr>`, `restart <pr>`, `status [<pr>]`, `queue create <branche> [--name <nom>]`,
+  `queue pause|resume|drain`, `queue graph`. `targets upload` arrive au lot 13.
+- **D162** Le vérificateur de configuration (D87). Le trait `Scm` gagne `check_setup(repo, branche)`, qui rend des
+  constats neutres d'un vocabulaire fermé : `update_restriction_missing` (aucune règle ne restreint les mises à
+  jour de la branche), `app_not_exempt` (l'App n'est pas exemptée de cette restriction), `test_branches_not_excluded`
+  (une règle couvre aussi `cihub-temp/**` ou `cihub-merge/**`) et `up_to_date_required` (« branches à jour »
+  exigé). L'adaptateur GitHub lit les rulesets de la branche ; la mise à jour de ref sans effet de
+  `docs/GITHUB.md` attend une décision. `GET /queues/{id}/config-check` (`queues:read`) rend les constats. Les
+  réponses enregistrées de GitHub (D90) sont enregistrées de nouveau.
+- **D163** Le commentaire d'accueil et sa case de soumission. Quand une PR est ouverte, rouverte ou passe de
+  brouillon à prête (`ScmEvent::PrChanged` gagne `opened`) sur une branche qui a une file active, avec
+  `comments_enabled` et `commands_enabled`, le job `welcome_pr:<delivery_id>:1` (classe `interactive`) poste une
+  fois par PR un commentaire qui dit que la file gère la branche, avec une case de soumission (marqueur
+  `<!-- cihub:submit -->`) et la commande `/cihub merge`. Le commentaire appartient à la PR : une table
+  `pr_comments` (`org_id`, `repo_id`, `pr_number`, `comment_external_id`) remplace
+  `pr_surfaces.comment_external_id`, et ce même commentaire devient le commentaire d'état de la file. L'adaptateur
+  traduit une modification d'un commentaire où la case passe de vide à cochée, faite par un autre auteur que le
+  bot, en `ScmEvent::SubmitBoxChecked` ; la passe des livraisons de la connexion vérifie que le commentaire est
+  celui de `pr_comments`, puis demande `submit_pr` comme pour `/cihub merge` (permission `write` de l'auteur,
+  source `comment`). La case revient pour une entrée `failed` ou `cancelled`, et n'apparaît pas tant que la PR est
+  en file. Pas de case pour `restart` ni `cancel`. Ne reprend aucun nom ni marqueur d'un autre produit (D139).
 
 ### 4.1 Questions ouvertes
 
@@ -687,9 +776,6 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   _(lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` abonne le module à `mergequeue.run.completed`, qui n'est pas un type d'événement
   de `docs/DOMAIN.md` (`run.transitioned` ?). _(lot 14)_
-- **Q14** Utiliser CIHub sans le tableau de bord : une commande d'admin de `cihub-server` crée la première
-  organisation, la relie à une connexion et affiche un jeton admin ; un serveur MCP (`cihub mcp`) comme client de
-  l'API. _(lot 9)_
 
 ---
 

@@ -1,0 +1,8 @@
+target/
+.git
+.claude/
+mise.local.toml
+*.pem
+.env
+.env.*
+deploy/

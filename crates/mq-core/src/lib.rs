@@ -10,6 +10,7 @@ pub mod graph;
 mod ids;
 mod plan;
 mod snapshot;
+mod surface;
 
 pub use apply::{ApplyError, Outcome, apply};
 pub use check::{Violation, check};
@@ -17,3 +18,4 @@ pub use plan::{CheckRead, Desired, Head, Merge, Plan, PlanError, Read, TestBranc
 pub use snapshot::{
     Observed, PrObservation, Request, Snapshot, Subject, TargetBranch, TargetsUpload,
 };
+pub use surface::Surface;
