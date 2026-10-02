@@ -3,8 +3,8 @@
 
 use cihub_domain::{
     Actor, CheckObservation, Event, EventId, EventKind, GroupId, GroupState, Item, ItemId,
-    ItemState, Mergeability, QueueControl, QueueState, Reason, RunId, RunStatus, TestGroup,
-    TestRun, TransitionError, check_transition,
+    ItemState, JobError, Mergeability, QueueControl, QueueState, Reason, RunId, RunStatus,
+    TestGroup, TestRun, TransitionError, check_transition,
 };
 
 use crate::Snapshot;
@@ -353,6 +353,19 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             }
             outcome
         }
+        // A direct merge that cannot happen marks the item, which follows the
+        // path of the tests; no decision follows (`AGENTS.md` D153).
+        EventKind::MergeFailed {
+            item_id,
+            direct: true,
+            error: JobError::DirectMergeUnavailable,
+        } => match snapshot.items.get_mut(item_id) {
+            Some(item) if item.state == ItemState::Pending && !item.direct_merge_tried => {
+                item.direct_merge_tried = true;
+                Outcome::Applied
+            }
+            _ => Outcome::Ignored,
+        },
         EventKind::MergeFailed {
             item_id,
             direct,
@@ -494,6 +507,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     verified_by_run_id: None,
                     merged_sha: None,
                     submitted_at: event.occurred_at,
+                    direct_merge_tried: false,
                 },
             );
             set_cause(snapshot, Subject::Item(*item_id), event);

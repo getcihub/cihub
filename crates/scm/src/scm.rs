@@ -80,6 +80,17 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, Permission>;
 
+    /// Whether the commit `ancestor` is in the history of the commit
+    /// `descendant`, or is it: a PR whose head descends from the head of its
+    /// target is up to date (`AGENTS.md` D153).
+    fn is_ancestor<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        ancestor: &'a str,
+        descendant: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, bool>;
+
     /// The paths of the files that the PR `number` changes, read only when a
     /// condition uses them (`AGENTS.md` D143).
     fn pr_files<'a>(

@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, EventKind, ItemId, ItemState, JobClass, JobError, MergeCommitTitle, MergeMethod,
-    PrState, RunId,
+    Actor, CheckConclusion, EventKind, ItemId, ItemState, JobClass, JobError, MergeCommitTitle,
+    MergeMethod, Mergeability, PrState, RunId,
 };
 use cihub_mq_core::Merge;
 use cihub_platform::{Job, MAX_ATTEMPTS, Outcome, error_chain};
-use cihub_scm::{PrMerge, Scm, ScmError};
+use cihub_scm::{PrMerge, PrSnapshot, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -20,7 +20,10 @@ use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
-use crate::jobs::{Failure, give_back, job, outcome, read_payload, target_of};
+use crate::assembly::{Step, required_statuses};
+use crate::jobs::{
+    Failure, give_back, job, mergeability, outcome, queue_status_context, read_payload, target_of,
+};
 use crate::target::QueueTarget;
 
 pub const MERGE_PR: &str = "merge_pr";
@@ -40,8 +43,8 @@ pub const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
 pub(crate) struct MergePr {
     pub item_id: ItemId,
     /// The run that proved the item: an item proved again by another run
-    /// has another job.
-    pub run_id: RunId,
+    /// has another job. `None` for a direct merge (`AGENTS.md` D153).
+    pub run_id: Option<RunId>,
     pub pr_number: u64,
     pub head_sha: String,
     pub tested_sha: String,
@@ -57,7 +60,8 @@ pub(crate) fn merge_job(target: &QueueTarget, merge: &Merge) -> Job {
         head_sha: merge.head_sha.clone(),
         tested_sha: merge.tested_sha.clone(),
     };
-    let key = format!("{MERGE_PR}:{}-{run_id}:1", merge.item_id);
+    let subject = run_id.map_or_else(|| "direct".to_owned(), |run_id| run_id.to_string());
+    let key = format!("{MERGE_PR}:{}-{subject}:1", merge.item_id);
     job(target, key, MERGE_PR, JobClass::Merge, json!(request))
 }
 
@@ -94,7 +98,7 @@ fn after_error(request: &MergePr, err: &ScmError, attempts: i32, now: OffsetDate
     let failed = |error| {
         Merged::Fact(EventKind::MergeFailed {
             item_id: request.item_id,
-            direct: false,
+            direct: request.run_id.is_none(),
             error,
         })
     };
@@ -151,16 +155,26 @@ async fn merge_pr(
         }
         Ok(Landed::AlreadyMerged) => Merged::Fact(EventKind::MergeFailed {
             item_id,
-            direct: false,
+            direct: request.run_id.is_none(),
             error: JobError::PrAlreadyMerged,
         }),
+        Ok(Landed::Unavailable) => {
+            info!(%item_id, "direct merge not possible: the item goes through the tests");
+            Merged::Fact(EventKind::MergeFailed {
+                item_id,
+                direct: true,
+                error: JobError::DirectMergeUnavailable,
+            })
+        }
         Err(err) => after_error(&request, &err, job.attempts, now),
     };
     let fact = match merged {
         Merged::Fact(fact) => fact,
         Merged::Retry(text) => return Err(Failure::Retry(text)),
     };
-    if let EventKind::MergeFailed { error, .. } = &fact {
+    if let EventKind::MergeFailed { error, .. } = &fact
+        && *error != JobError::DirectMergeUnavailable
+    {
         warn!(%item_id, error = error.as_str(), "PR not merged");
     }
     let mut tx = begin_system(pool)
@@ -186,6 +200,8 @@ enum Landed {
     Merged(String),
     /// The PR was merged before: not by this job (`AGENTS.md` D132).
     AlreadyMerged,
+    /// The direct merge cannot happen now (`AGENTS.md` D153).
+    Unavailable,
 }
 
 /// Reads the PR, then merges it with the method of the settings. A PR
@@ -203,6 +219,10 @@ async fn land(
         .await?;
     if pr.state == PrState::Merged {
         return Ok(Landed::AlreadyMerged);
+    }
+    if request.run_id.is_none() && !direct_merge_possible(scm, settings, target, &pr, class).await?
+    {
+        return Ok(Landed::Unavailable);
     }
     let method = settings.merge_method.value;
     let title = if method == MergeMethod::FastForward {
@@ -232,18 +252,66 @@ async fn land(
     }
 }
 
-/// The item is still `tests_passed`, proved by the run of the request.
+/// A direct merge lands exactly what the CI of the PR tested (`AGENTS.md`
+/// D153): the required statuses of a test SHA on the current head of the
+/// target are green on the head of the PR, the PR contains that head, and
+/// the PR is mergeable. An error of the configuration leaves the item to the
+/// tests, whose assembly reports it.
+async fn direct_merge_possible(
+    scm: &dyn Scm,
+    settings: &QueueSettings,
+    target: &QueueTarget,
+    pr: &PrSnapshot,
+    class: JobClass,
+) -> Result<bool, ScmError> {
+    let repo = &target.repo;
+    let Some(base) = scm.branch_head(repo, &target.target_branch, class).await? else {
+        return Ok(false);
+    };
+    let names = match required_statuses(scm, target, settings, &base, class).await {
+        Ok((names, _)) => names,
+        Err(Step::Transient(text) | Step::Passing(text)) => {
+            return Err(ScmError::Unavailable(text));
+        }
+        Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
+    };
+    let passed = |name: &String| {
+        pr.checks.iter().any(|check| {
+            check.name == *name && check.conclusion.is_some_and(CheckConclusion::is_passing)
+        })
+    };
+    if !names.iter().all(passed) {
+        return Ok(false);
+    }
+    let rules = scm
+        .required_checks(repo, &target.target_branch, class)
+        .await?;
+    let own = queue_status_context(&target.target_branch);
+    if mergeability(pr, &rules, &own) != Mergeability::Mergeable {
+        return Ok(false);
+    }
+    scm.is_ancestor(repo, &base, &pr.head_sha, class).await
+}
+
+/// The item is still `tests_passed`, proved by the run of the request, or
+/// still `pending` for a direct merge.
 async fn still_to_merge(pool: &PgPool, request: &MergePr) -> Result<bool, Failure> {
     let mut tx = begin_system(pool)
         .await
         .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let state = if request.run_id.is_some() {
+        ItemState::TestsPassed
+    } else {
+        ItemState::Pending
+    };
     let to_merge: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM queue_items
-                        WHERE id = $1 AND state = $2::item_state AND verified_by_run_id = $3)",
+                        WHERE id = $1 AND state = $2::item_state
+                          AND verified_by_run_id IS NOT DISTINCT FROM $3)",
     )
     .bind(request.item_id.to_string())
-    .bind(ItemState::TestsPassed.as_str())
-    .bind(request.run_id.to_string())
+    .bind(state.as_str())
+    .bind(request.run_id.map(|run_id| run_id.to_string()))
     .fetch_one(&mut *tx)
     .await
     .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
@@ -290,7 +358,7 @@ mod tests {
     fn errors_give_their_fact_or_a_new_attempt() {
         let request = MergePr {
             item_id: ItemId::from_ulid(Ulid(1)),
-            run_id: RunId::from_ulid(Ulid(2)),
+            run_id: Some(RunId::from_ulid(Ulid(2))),
             pr_number: 1,
             head_sha: "head".into(),
             tested_sha: "test".into(),
@@ -341,7 +409,7 @@ mod tests {
             item_id: ItemId::from_ulid(Ulid(1)),
             pr_number: 3,
             head_sha: "head".into(),
-            run_id,
+            run_id: Some(run_id),
             tested_sha: "test".into(),
         };
         let job = merge_job(&target, &merge);
@@ -350,5 +418,14 @@ mod tests {
             format!("merge_pr:{}-{run_id}:1", merge.item_id)
         );
         assert_eq!(job.class, JobClass::Merge);
+        // A direct merge has its own key (`AGENTS.md` D153).
+        let direct = Merge {
+            run_id: None,
+            ..merge
+        };
+        assert_eq!(
+            merge_job(&target, &direct).idempotency_key,
+            format!("merge_pr:{}-direct:1", direct.item_id)
+        );
     }
 }

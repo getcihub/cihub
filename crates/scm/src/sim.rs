@@ -1125,6 +1125,23 @@ impl Scm for Sim {
         })
     }
 
+    fn is_ancestor<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        ancestor: &'a str,
+        descendant: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, bool> {
+        self.call("is_ancestor", repo, class, move |ctx| {
+            for sha in [ancestor, descendant] {
+                if !ctx.repo.commits.contains_key(sha) {
+                    return Err(ScmError::NotFound(format!("commit {sha}")));
+                }
+            }
+            Ok(ctx.repo.ancestors(descendant).contains(ancestor))
+        })
+    }
+
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -1438,7 +1455,15 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         &[(".cihub.yaml", "version: 1\n"), ("a.txt", "a\n")],
     );
 
-    let feature = sim.commit(repo, &root, &[("b.txt", Some("b\n"))])?;
+    let conflicting = sim.commit(repo, &root, &[("a.txt", Some("x\n"))])?;
+    sim.push(repo, "conflicting", &conflicting, &author)?;
+    let conflicting_pr = sim.open_pr(repo, "conflicting", "main", &author)?;
+    let main = sim.commit(repo, &root, &[("a.txt", Some("y\n"))])?;
+    sim.push(repo, "main", &main, &author)?;
+
+    // As `prepare-pr` on GitHub, the mergeable PR starts from the head of
+    // `main`.
+    let feature = sim.commit(repo, &main, &[("b.txt", Some("b\n"))])?;
     sim.push(repo, "feature", &feature, &author)?;
     let mergeable_pr = sim.open_pr(repo, "feature", "main", &author)?;
     sim.change_pr(
@@ -1458,12 +1483,6 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         details_url: None,
     };
     sim.report_check(repo, &feature, ci)?;
-
-    let conflicting = sim.commit(repo, &root, &[("a.txt", Some("x\n"))])?;
-    sim.push(repo, "conflicting", &conflicting, &author)?;
-    let conflicting_pr = sim.open_pr(repo, "conflicting", "main", &author)?;
-    let main = sim.commit(repo, &root, &[("a.txt", Some("y\n"))])?;
-    sim.push(repo, "main", &main, &author)?;
 
     let draft = sim.commit(repo, &main, &[("c.txt", Some("c\n"))])?;
     sim.push(repo, "draft", &draft, &author)?;

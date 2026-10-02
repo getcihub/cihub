@@ -85,7 +85,8 @@ settings! {
     failure_budget_retries: u32 = 1;
     optimistic_merging: bool = false;
     pending_failure_depth: u32 = 0;
-    direct_merge_mode: DirectMergeMode = DirectMergeMode::Always;
+    /// `off` by default, in every strategy (`AGENTS.md` D153).
+    direct_merge_mode: DirectMergeMode = DirectMergeMode::Off;
     optimization_mode: OptimizationMode = OptimizationMode::BisectionSkipRedundantTests;
     comments_enabled: bool = true;
     commands_enabled: bool = true;
@@ -142,7 +143,6 @@ fn strategy_layer(strategy: Strategy) -> Layer {
         batching_size: batch_size.map(Setting::new),
         pending_failure_depth: Some(Setting::new(depth)),
         optimistic_merging: Some(Setting::new(optimistic)),
-        direct_merge_mode: Some(Setting::new(DirectMergeMode::Always)),
         failure_budget_retries: Some(Setting::new(1)),
         ..Layer::default()
     }

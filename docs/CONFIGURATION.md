@@ -89,7 +89,8 @@ suivent. Une stratégie est une table de valeurs par défaut, sans code dans le 
 | `batched`    | `single`   | 2 / 20                       | oui, 8 au plus     | 1                       | oui                  |
 | `parallel`   | `parallel` | 2 / 20                       | oui, 4 au plus     | 1                       | oui                  |
 
-Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et une relance du budget d'échec.
+Toutes les stratégies gardent le merge direct désactivé (`direct_merge_mode: off`, `AGENTS.md` D153) et donnent une
+relance du budget d'échec.
 
 ## Réglages
 
@@ -109,7 +110,7 @@ Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |
 | `optimistic_merging`                                           | désactivé                           | booléen                                                                    |
 | `pending_failure_depth`                                        | 0                                   | 0–10                                                                       |
-| `direct_merge_mode`                                            | `always`                            | `off`, `always`                                                            |
+| `direct_merge_mode`                                            | `off`                               | `off`, `always`                                                            |
 | `optimization_mode`                                            | `bisection_skip_redundant_tests`    | `off`, `bisection_skip_redundant_tests`                                    |
 | `comments_enabled`, `commands_enabled`, `status_check_enabled` | activés                             | booléen                                                                    |
 | `label_commands.enabled` / `enqueue_label`                     | activé / `cihub-merge-queue-submit` | chaîne non vide                                                            |

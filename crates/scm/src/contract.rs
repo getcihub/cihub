@@ -109,6 +109,23 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         mergeable.changed_files,
         "the files of a PR are its changed files"
     );
+    let base = scm
+        .branch_head(repo, &fixture.base_branch, CLASS)
+        .await
+        .unwrap()
+        .expect("the base branch exists");
+    assert!(
+        scm.is_ancestor(repo, &base, &mergeable.head_sha, CLASS)
+            .await
+            .unwrap(),
+        "the mergeable PR contains the head of its base"
+    );
+    assert!(
+        !scm.is_ancestor(repo, &mergeable.head_sha, &base, CLASS)
+            .await
+            .unwrap(),
+        "the base does not contain the PR"
+    );
     let threads = scm
         .unresolved_threads(repo, fixture.mergeable_pr, CLASS)
         .await

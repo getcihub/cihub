@@ -1882,6 +1882,57 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.stop().await;
 }
 
+/// `AGENTS.md` D153: with `direct_merge_mode: always`, a green PR that
+/// contains the head of the target merges without a test branch; a PR that
+/// does not contain it goes through the tests.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (up_to_date, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), up_to_date, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    // A second PR opened on the old head of `main`, which moved since.
+    let (behind, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), behind, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT pr_number, state::text, state_reason::text FROM queue_items
+         WHERE is_current ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let runs: Vec<Vec<i64>> = sqlx::query_scalar("SELECT tested_pr_numbers FROM test_runs")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    drop(tx);
+    assert_eq!(
+        items[0],
+        (1, "merged".into(), "merge_graph_direct_merge".into())
+    );
+    assert_eq!(items[1].0, 2);
+    assert_ne!(items[1].1, "merged", "{items:?}");
+    assert_eq!(runs, [vec![2]], "only the PR behind its target is tested");
+    q.stop().await;
+}
+
 /// The last valid file of the queue, the head read, and the error.
 async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
     let mut tx = begin_system(pool).await.unwrap();

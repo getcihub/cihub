@@ -659,6 +659,17 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   même source et les mêmes options ; `plan` annule l'ancienne entrée (`pr_pushed_to`) et crée la nouvelle, qui
   repart en `not_ready` à la fin de la file. Une soumission par label est refaite seulement si la PR a encore le
   label. Complète D121.
+- **D153** Le merge direct sur la cible (D125) arrive au lot 8, désactivé par défaut : `direct_merge_mode` vaut `off`
+  par défaut et dans la table des stratégies, et `always` est un choix explicite du fichier. Avec `always`, `plan`
+  propose un merge direct une seule fois par entrée, quand l'entrée est `pending`, en tête, dans une file
+  `running` sans groupe vivant ; il ne forme pas de groupe pour elle tant que la tentative n'a pas répondu. Le job
+  `merge_pr` vérifie avant d'agir que les statuts requis (les mêmes que pour un commit de test, D146, D147) sont
+  verts sur la tête de la PR, que la tête de la cible est un ancêtre de la tête de la PR (nouvelle méthode
+  `is_ancestor` du trait `Scm`) et que la PR est mergeable ; sinon il rend `merge.failed` avec le nouveau
+  `JobError::DirectMergeUnavailable`, un fait qui marque l'entrée et la laisse suivre le chemin normal, sans
+  décision. Les autres erreurs du merge direct gardent les raisons de D122. Les réponses enregistrées de GitHub
+  (D90) sont enregistrées de nouveau. Avec `squash`, `merge_commit` et `rebase`, un push sur la cible entre la
+  vérification et le merge n'est pas détecté ; `fast_forward` n'a pas cette fenêtre.
 
 ### 4.1 Questions ouvertes
 

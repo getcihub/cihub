@@ -152,9 +152,67 @@ pub fn required_statuses_of_file(
     }
 }
 
+/// The names of the required statuses at `base_sha` (`docs/ALGORITHMS.md`):
+/// the list of the file of the repository on the target branch at
+/// `base_sha`, or else the rules of the target branch when
+/// `branch_protection_injection` lets them in (`AGENTS.md` D147), without the
+/// status of the queue itself (D98); then the checks of the
+/// `merge_conditions` (D146). `settings` gives the injection without a file.
+pub(crate) async fn required_statuses(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    settings: &QueueSettings,
+    base_sha: &str,
+    class: JobClass,
+) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
+    let branch = target.target_branch.as_str();
+    let name = target.name.as_str();
+    let file = read_config_file(scm, &target.repo, base_sha, class)
+        .await?
+        .map_err(|err| err.job_error())?;
+    let (listed, merge_checks, injection) = match file {
+        Some(text) => {
+            let listed = required_statuses_of_file(&text, branch, name)?;
+            let config = RepoConfig::parse(&text).map_err(|err| err.job_error())?;
+            let settings = config
+                .settings(branch, name)
+                .map_err(|err| err.job_error())?;
+            let injection = settings.branch_protection_injection.value;
+            (listed, config.merge_checks(branch, name), injection)
+        }
+        None => (None, Vec::new(), settings.branch_protection_injection.value),
+    };
+    let (mut names, source) = match listed {
+        Some(names) => (names, RequiredStatusesSource::RepoConfig),
+        None if injection == BranchProtectionInjection::None => {
+            (Vec::new(), RequiredStatusesSource::RepoConfig)
+        }
+        None => {
+            let rules = scm.required_checks(&target.repo, branch, class).await?;
+            let own = queue_status_context(branch);
+            let names: Vec<String> = rules.names.into_iter().filter(|n| *n != own).collect();
+            let source = if names.is_empty() {
+                RequiredStatusesSource::RepoConfig
+            } else {
+                RequiredStatusesSource::BranchProtection
+            };
+            (names, source)
+        }
+    };
+    for check in merge_checks {
+        if !names.contains(&check) {
+            names.push(check);
+        }
+    }
+    if names.is_empty() {
+        return Err(JobError::NoRequiredStatuses.into());
+    }
+    Ok((names, source))
+}
+
 /// Why a step of the assembly did not give a test branch.
 #[derive(Debug, PartialEq, Eq)]
-enum Step {
+pub(crate) enum Step {
     /// The run fails with this error: a retry would not change it.
     GiveUp(JobError, Option<ConflictCulprit>),
     /// The SCM refused a call as not valid: the job tries again, at most
@@ -230,71 +288,15 @@ impl Assembly<'_> {
         })
     }
 
-    /// The names of the required statuses (`docs/ALGORITHMS.md`): the list
-    /// of the file of the repository on the target branch at `base_sha`, or
-    /// else the rules of the target branch when `branch_protection_injection`
-    /// lets them in (`AGENTS.md` D147), without the status of the queue
-    /// itself (D98); then the checks of the `merge_conditions` (D146).
     async fn required_statuses(&self) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
-        let branch = self.target.target_branch.as_str();
-        let name = self.target.name.as_str();
-        let (listed, merge_checks, injection) = match self.config_file().await? {
-            Some(text) => {
-                let listed = required_statuses_of_file(&text, branch, name)?;
-                let config = RepoConfig::parse(&text).map_err(|err| err.job_error())?;
-                let settings = config
-                    .settings(branch, name)
-                    .map_err(|err| err.job_error())?;
-                let injection = settings.branch_protection_injection.value;
-                (listed, config.merge_checks(branch, name), injection)
-            }
-            None => (
-                None,
-                Vec::new(),
-                self.settings.branch_protection_injection.value,
-            ),
-        };
-        let (mut names, source) = match listed {
-            Some(names) => (names, RequiredStatusesSource::RepoConfig),
-            None if injection == BranchProtectionInjection::None => {
-                (Vec::new(), RequiredStatusesSource::RepoConfig)
-            }
-            None => {
-                let rules = self
-                    .scm
-                    .required_checks(&self.target.repo, branch, self.class)
-                    .await?;
-                let own = queue_status_context(branch);
-                let names: Vec<String> = rules.names.into_iter().filter(|n| *n != own).collect();
-                let source = if names.is_empty() {
-                    RequiredStatusesSource::RepoConfig
-                } else {
-                    RequiredStatusesSource::BranchProtection
-                };
-                (names, source)
-            }
-        };
-        for check in merge_checks {
-            if !names.contains(&check) {
-                names.push(check);
-            }
-        }
-        if names.is_empty() {
-            return Err(JobError::NoRequiredStatuses.into());
-        }
-        Ok((names, source))
-    }
-
-    /// The configuration file of the repository at `base_sha`, if any.
-    async fn config_file(&self) -> Result<Option<String>, Step> {
-        let read = read_config_file(
+        required_statuses(
             self.scm,
-            &self.target.repo,
+            self.target,
+            self.settings,
             &self.request.base_sha,
             self.class,
         )
-        .await?;
-        Ok(read.map_err(|err| err.job_error())?)
+        .await
     }
 
     /// Creates the test branch: the temporary branch at `base_sha`, the heads

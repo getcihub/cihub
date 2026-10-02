@@ -39,6 +39,10 @@ closed_enum! {
         /// Merge: the PR was already merged when the job read it; the queue
         /// did not merge it (`AGENTS.md` D132).
         PrAlreadyMerged,
+        /// The direct merge cannot happen now: a required status is not green
+        /// on the head of the PR, the PR does not contain the head of the
+        /// target, or it is not mergeable (`AGENTS.md` D153).
+        DirectMergeUnavailable,
     }
 }
 

@@ -37,6 +37,70 @@ fn assert_replays(w: &World) {
     assert_eq!(w.replay(), w.snapshot);
 }
 
+fn direct() -> World {
+    World::new(settings(|l| {
+        l.window_floor = Some(Setting::new(2));
+        l.window_ceiling = Some(Setting::new(2));
+        l.direct_merge_mode = Some(Setting::new(cihub_domain::DirectMergeMode::Always));
+    }))
+}
+
+#[test]
+fn a_direct_merge_lands_without_a_test_branch() {
+    let mut w = direct();
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    // The first item waits for its direct merge; no group forms meanwhile
+    // (`AGENTS.md` D153).
+    assert_eq!(w.state(1), Some(ItemState::Pending));
+    assert!(w.snapshot.groups.is_empty());
+    let merges = w.reconcile().desired.merges;
+    assert_eq!(merges.len(), 1);
+    assert_eq!((merges[0].pr_number, merges[0].run_id), (1, None));
+    assert_eq!(merges[0].tested_sha, head(1, 0));
+    assert_eq!(w.merge_all(), 1);
+    assert!(decided_with(&w, Reason::MergeGraphDirectMerge));
+    // The next item is first now: its direct merge cannot happen, so it goes
+    // through the tests.
+    let item = w.item(2).unwrap().id;
+    w.fact(
+        Actor::Bot,
+        EventKind::MergeFailed {
+            item_id: item,
+            direct: true,
+            error: JobError::DirectMergeUnavailable,
+        },
+    );
+    assert_eq!(w.state(2), Some(ItemState::Testing));
+    assert!(w.reconcile().desired.merges.is_empty());
+    assert_replays(&w);
+}
+
+#[test]
+fn no_direct_merge_by_default_or_with_a_live_group() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    assert_eq!(w.state(1), Some(ItemState::Testing), "off by default");
+    let mut w = direct();
+    w.submit(1, Priority::MEDIUM);
+    let item = w.item(1).unwrap().id;
+    w.fact(
+        Actor::Bot,
+        EventKind::MergeFailed {
+            item_id: item,
+            direct: true,
+            error: JobError::DirectMergeUnavailable,
+        },
+    );
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    w.submit(2, Priority::MEDIUM);
+    assert!(
+        w.reconcile().desired.merges.is_empty(),
+        "a live group: no direct merge"
+    );
+    assert_eq!(w.state(2), Some(ItemState::Testing));
+}
+
 #[test]
 fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
     let mut w = world();

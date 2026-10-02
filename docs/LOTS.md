@@ -880,7 +880,7 @@ Autres valeurs fermées :
     (D150).
     Tests : la commande, et contre Postgres et le simulateur deux files sur `main` (routage par condition, par
     `--queue`, priorité d'une règle et de la commande, push lu par les deux files).
-  - Reste : merge direct sur main (`AGENTS.md` D125) ; attribut `schedule` (reporté : les fuseaux
+  - Reste : attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
     `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans
@@ -895,6 +895,15 @@ Autres valeurs fermées :
     avec la même priorité, la même source et les mêmes options, et `plan` crée la nouvelle entrée après
     l'annulation de l'ancienne (`pr_pushed_to`). Tests : dans le noyau, le refus en vidange et une resoumission en
     fin de file ; contre Postgres, les deux.
+  - Fait (2 octobre 2026, D153) : merge direct, désactivé par défaut et dans la table des stratégies. `plan` propose
+    un merge direct (`Merge` sans exécution) pour la première entrée `pending` d'une file sans groupe vivant, une fois,
+    et ne forme pas de groupe pour elle d'ici là ; le job `merge_pr` vérifie les statuts requis sur la tête de la
+    PR (calcul partagé avec l'assemblage), la mergeabilité et que la PR contient la tête de la cible (nouvelle
+    méthode `is_ancestor` du trait `Scm`, GitHub et simulateur) ; sinon il rend `direct_merge_unavailable`, un fait
+    qui marque l'entrée. Tests : dans le noyau, un merge direct puis une entrée qui passe par les tests, et le défaut
+    `off` ; contre Postgres et le simulateur, une PR à jour mergée sans branche de test et une PR en retard testée.
+    Les réponses de GitHub sont enregistrées de nouveau (62 échanges, avec `compare`) ; le ruleset `cihub` est remis
+    en mode enregistrement le temps de l'enregistrement, puis rendu à son état de test ; #53 mergée par la suite.
   - Observé : avant D151, `apply` ignorait une soumission en `draining` ou en `switching_modes`, sans trace dans le
     journal.
 

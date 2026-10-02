@@ -721,6 +721,38 @@ impl Scm for GithubApp {
         })
     }
 
+    /// The comparison of the two commits: `ahead` or `identical` when
+    /// `ancestor` is in the history of `descendant`.
+    fn is_ancestor<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        ancestor: &'a str,
+        descendant: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, bool> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Comparison {
+                status: String,
+            }
+            let rest = format!(
+                "/compare/{}...{}?per_page=1",
+                encode(ancestor),
+                encode(descendant)
+            );
+            let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
+            if answer.status == StatusCode::NOT_FOUND {
+                return Err(ScmError::NotFound(format!(
+                    "commit {ancestor} or {descendant}"
+                )));
+            }
+            let status = expect(answer, &[StatusCode::OK])?
+                .json::<Comparison>()?
+                .status;
+            Ok(matches!(status.as_str(), "ahead" | "identical"))
+        })
+    }
+
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,

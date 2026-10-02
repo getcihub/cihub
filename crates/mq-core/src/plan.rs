@@ -7,9 +7,10 @@
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, Event, EventId, EventKind, GroupId, GroupKind, GroupState,
-    Item, ItemId, ItemState, JobError, Lifecycle, Mergeability, PrState, QueueControl, QueueMode,
-    QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup, TestRun, test_branch,
+    Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
+    GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability, PrState,
+    QueueControl, QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup,
+    TestRun, test_branch,
 };
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -86,8 +87,9 @@ pub struct Merge {
     pub item_id: ItemId,
     pub pr_number: u64,
     pub head_sha: String,
-    /// The run that proved the item, and its test SHA (`AGENTS.md` D124).
-    pub run_id: RunId,
+    /// The run that proved the item, and its test SHA (`AGENTS.md` D124);
+    /// `None` for a direct merge, whose tested SHA is the head (D153).
+    pub run_id: Option<RunId>,
     pub tested_sha: String,
 }
 
@@ -154,7 +156,7 @@ pub fn plan(
     }
     Ok(Plan {
         decisions,
-        desired: desired(&state, now),
+        desired: desired(&state, settings, now),
         wake_at: wake_at(&state, settings, now),
     })
 }
@@ -282,7 +284,8 @@ const fn assembly_reason(error: JobError) -> Reason {
         | JobError::MergeAlreadyInProgress
         | JobError::RepeatedServerErrors
         | JobError::HeadChanged
-        | JobError::PrAlreadyMerged => Reason::StartTestRunInvalidEvent,
+        | JobError::PrAlreadyMerged
+        | JobError::DirectMergeUnavailable => Reason::StartTestRunInvalidEvent,
     }
 }
 
@@ -464,7 +467,9 @@ fn pr_changes(
             let pr = &observed.value;
             let (to, reason) = if pr.state == PrState::Merged {
                 // The merge job reports the merge that the queue asked for.
-                if merge_ready(s, item) {
+                if merge_ready(s, item)
+                    || direct_merge(s, settings).is_some_and(|d| d.id == item.id)
+                {
                     return None;
                 }
                 (ItemState::Merged, Reason::ManualMerge)
@@ -907,7 +912,9 @@ fn formation(
     ids: &mut IdGen,
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
-    if !window_has_room(s, settings) {
+    // The item that the queue merges directly waits for the answer of the
+    // merge job (`AGENTS.md` D153).
+    if !window_has_room(s, settings) || direct_merge(s, settings).is_some() {
         return None;
     }
     let order = s.queue_order();
@@ -976,6 +983,21 @@ fn window_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
         .filter(|g| g.kind != GroupKind::Bisection && s.live_run(g.id).is_some())
         .count();
     running < usize::try_from(window).unwrap_or(usize::MAX)
+}
+
+/// The item that the queue merges directly, without a test branch
+/// (`AGENTS.md` D153): with `direct_merge_mode: always`, the first item of a
+/// running queue without a live group, when it is `pending` and no direct
+/// merge of it was tried.
+fn direct_merge<'a>(s: &'a Snapshot, settings: &QueueSettings) -> Option<&'a Item> {
+    if settings.direct_merge_mode.value != DirectMergeMode::Always
+        || s.state != QueueState::Running
+        || s.live_groups().next().is_some()
+    {
+        return None;
+    }
+    let first = *s.queue_order().first()?;
+    (first.state == ItemState::Pending && !first.direct_merge_tried).then_some(first)
 }
 
 /// A tested item merges once its predecessors, and the members ahead of it
@@ -1124,7 +1146,7 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
     reads.chain(timeouts).chain(runs).chain(target).min()
 }
 
-fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
+fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desired {
     let heads = |ids: &[ItemId]| -> Vec<Head> {
         ids.iter()
             .filter_map(|id| s.items.get(id))
@@ -1161,10 +1183,17 @@ fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
                     item_id: i.id,
                     pr_number: i.pr_number,
                     head_sha: i.head_sha.clone(),
-                    run_id: run.id,
+                    run_id: Some(run.id),
                     tested_sha: run.test_sha.clone()?,
                 })
             })
+            .chain(direct_merge(s, settings).map(|i| Merge {
+                item_id: i.id,
+                pr_number: i.pr_number,
+                head_sha: i.head_sha.clone(),
+                run_id: None,
+                tested_sha: i.head_sha.clone(),
+            }))
             .collect()
     };
     let observe = live_items(s)

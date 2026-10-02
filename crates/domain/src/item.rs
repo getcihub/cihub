@@ -9,6 +9,10 @@ use crate::{
 
 /// One submission of a PR to a queue.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of a submission, not the states of a machine"
+)]
 pub struct Item {
     pub id: ItemId,
     pub org_id: OrgId,
@@ -39,6 +43,9 @@ pub struct Item {
     /// When the submission came: the time of the creation of the item.
     #[serde(with = "time::serde::rfc3339")]
     pub submitted_at: OffsetDateTime,
+    /// A direct merge was tried and could not happen: the item follows the
+    /// path of the tests (`AGENTS.md` D153).
+    pub direct_merge_tried: bool,
 }
 
 /// Lower value is served first; the named levels are shortcuts for values.
