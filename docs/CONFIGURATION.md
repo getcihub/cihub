@@ -14,7 +14,9 @@ source des réglages (`AGENTS.md` D134) : le tableau de bord aide à l'écrire p
 le dépôt, jamais un commit direct sur la cible. Si les deux noms de fichier existent, la configuration est en erreur, car aucun des
 deux ne l'emporte. Plusieurs files peuvent viser la même branche : une PR est routée vers la première file, dans
 l'ordre du fichier, dont les `queue_conditions` sont satisfaites, ou vers celle nommée dans la commande
-(`/cihub merge --queue hotfix`).
+(`/cihub merge --queue=hotfix`), sinon vers la première file de la branche ; une entrée ne change jamais de file
+(`AGENTS.md` D148). La première règle de `priority_rules` que la PR satisfait donne sa priorité, sauf si la
+commande en donne une (`--priority`).
 
 ```yaml
 version: 1

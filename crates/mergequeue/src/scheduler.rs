@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RunId, RunStatus, ScmInstanceId,
+    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RepoId, RunId, RunStatus, ScmInstanceId,
     SubmittedVia, run_of_test_branch,
 };
 use cihub_mq_core::plan;
@@ -34,7 +34,7 @@ use crate::config::load_config;
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
-use crate::repair::{merge_in_flight, refresh_checks, refresh_target};
+use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
 use crate::target::QueueTarget;
 use crate::{COVER_AFTER, MergeQueueError, QueueLog};
 
@@ -334,9 +334,11 @@ impl Work<'_> {
                         pr_number: number,
                         via: SubmittedVia::Label,
                         requested_by: None,
-                        priority: cihub_domain::Priority::MEDIUM,
+                        priority: None,
                         no_batch: false,
                         direct: false,
+                        queue: None,
+                        label: label_added,
                     };
                     let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
                     jobs.push(submit(
@@ -518,33 +520,7 @@ pub async fn pass_connection_deliveries(
         };
         let error = match (reconciler.translate)(&event, &payload) {
             Ok(read) => {
-                match read.event {
-                    ScmEvent::AccessLost => {
-                        give_to_queues(&mut tx, &delivery, EventKind::AccessLost, now).await?;
-                    }
-                    ScmEvent::AccessRestored => {
-                        give_to_queues(&mut tx, &delivery, EventKind::AccessRestored, now).await?;
-                    }
-                    ScmEvent::Commented {
-                        repo_external_id,
-                        number,
-                        author,
-                        body,
-                    } => {
-                        // `submit_pr` checks `commands_enabled` on the queue
-                        // that it finds.
-                        if let Some(merge) = parse_merge(&body) {
-                            let command = Command {
-                                repo_external_id: &repo_external_id,
-                                number,
-                                author: &author,
-                                merge,
-                            };
-                            request_submission(&mut tx, &delivery, &command, now).await?;
-                        }
-                    }
-                    _ => {}
-                }
+                pass_delivery(&mut tx, &delivery, read.event, now).await?;
                 None
             }
             Err(err) => Some(err.to_string()),
@@ -561,6 +537,64 @@ pub async fn pass_connection_deliveries(
     }
     tx.commit().await.map_err(MergeQueueError::Query)?;
     Ok(count)
+}
+
+/// What a delivery of a connection without a queue asks (D103).
+async fn pass_delivery(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    event: ScmEvent,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    match event {
+        ScmEvent::AccessLost => {
+            give_to_queues(conn, delivery, EventKind::AccessLost, now).await?;
+        }
+        ScmEvent::AccessRestored => {
+            give_to_queues(conn, delivery, EventKind::AccessRestored, now).await?;
+        }
+        ScmEvent::PrChanged {
+            repo_external_id,
+            number,
+            base_branch,
+            label_added,
+        } => {
+            let change = PrChange {
+                repo_external_id: &repo_external_id,
+                number,
+                base_branch: &base_branch,
+                label_added,
+            };
+            route_pr_change(conn, delivery, change, now).await?;
+        }
+        ScmEvent::Pushed {
+            repo_external_id,
+            branch,
+            ..
+        } => {
+            read_heads(conn, delivery, &repo_external_id, &branch, now).await?;
+        }
+        ScmEvent::Commented {
+            repo_external_id,
+            number,
+            author,
+            body,
+        } => {
+            // `submit_pr` checks `commands_enabled` on the queue that it
+            // finds.
+            if let Some(merge) = parse_merge(&body) {
+                let command = Command {
+                    repo_external_id: &repo_external_id,
+                    number,
+                    author: &author,
+                    merge,
+                };
+                request_submission(conn, delivery, &command, now).await?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Deposits the fact `kind` of `delivery` in the inbox of each queue of its
@@ -602,6 +636,120 @@ async fn give_to_queues(
     Ok(())
 }
 
+/// A change of a PR whose base branch has several queues, so that the
+/// routing gave it no queue (`AGENTS.md` D135).
+struct PrChange<'a> {
+    repo_external_id: &'a str,
+    number: u64,
+    base_branch: &'a str,
+    label_added: Option<String>,
+}
+
+/// The repository of the connection of `delivery` whose identifier on the
+/// SCM is `external_id`, when CIHub knows it.
+async fn repo_of(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    external_id: &str,
+) -> Result<Option<RepoId>, MergeQueueError> {
+    let repo: Option<String> =
+        sqlx::query_scalar("SELECT id FROM repos WHERE connection_id = $1 AND external_id = $2")
+            .bind(delivery.connection.to_string())
+            .bind(external_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(MergeQueueError::Query)?;
+    repo.map(|id| {
+        id.parse()
+            .map_err(|source| MergeQueueError::ReadQueue { id, source })
+    })
+    .transpose()
+}
+
+/// Gives `change` to the queue of the live item of its PR, which reads the
+/// PR again; without a live item, the label of a queue of the branch
+/// requests a submission, which chooses the queue (D148).
+async fn route_pr_change(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    change: PrChange<'_>,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let Some(repo) = repo_of(conn, delivery, change.repo_external_id).await? else {
+        return Ok(());
+    };
+    let live: Option<String> = sqlx::query_scalar(
+        "SELECT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
+         WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current AND i.concluded_at IS NULL",
+    )
+    .bind(repo.to_string())
+    .bind(i64::try_from(change.number).unwrap_or(i64::MAX))
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    let job = if let Some(queue) = live {
+        let queue: QueueId = queue
+            .parse()
+            .map_err(|source| MergeQueueError::ReadQueue { id: queue, source })?;
+        let target = QueueTarget::load(conn, queue).await?;
+        refresh_after(&target, &delivery.delivery_id, vec![change.number])
+    } else {
+        let Some(label) = change.label_added else {
+            return Ok(());
+        };
+        let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
+        let wanted = queues.iter().filter(|queue| queue.enabled).any(|queue| {
+            queue.settings().is_ok_and(|settings| {
+                settings.label_commands_enabled.value && settings.enqueue_label.value == label
+            })
+        });
+        if !wanted {
+            return Ok(());
+        }
+        let request = SubmitPr {
+            repo_id: repo,
+            pr_number: change.number,
+            via: SubmittedVia::Label,
+            requested_by: None,
+            priority: None,
+            no_batch: false,
+            direct: false,
+            queue: None,
+            label: Some(label),
+        };
+        let connection = (delivery.instance, delivery.connection);
+        submit(delivery.org_id, connection, &delivery.delivery_id, &request)
+    };
+    enqueue_job(conn, &job, now, now)
+        .await
+        .map_err(MergeQueueError::Platform)?;
+    Ok(())
+}
+
+/// Asks each queue of `branch` to read its head again, after a push that
+/// the routing gave to no queue because the branch has several (D135).
+async fn read_heads(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    repo_external_id: &str,
+    branch: &str,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
+        return Ok(());
+    };
+    for queue in QueueTarget::queues_of_branch(conn, repo, branch).await? {
+        if !queue.enabled {
+            continue;
+        }
+        let job = refresh_target_after(&queue, &delivery.delivery_id);
+        enqueue_job(conn, &job, now, now)
+            .await
+            .map_err(MergeQueueError::Platform)?;
+    }
+    Ok(())
+}
+
 /// A `merge` command in a comment on the PR `number`.
 struct Command<'a> {
     repo_external_id: &'a str,
@@ -618,26 +766,19 @@ async fn request_submission(
     command: &Command<'_>,
     now: OffsetDateTime,
 ) -> Result<(), MergeQueueError> {
-    let repo: Option<String> =
-        sqlx::query_scalar("SELECT id FROM repos WHERE connection_id = $1 AND external_id = $2")
-            .bind(delivery.connection.to_string())
-            .bind(command.repo_external_id)
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
-    let Some(repo) = repo else {
+    let Some(repo) = repo_of(conn, delivery, command.repo_external_id).await? else {
         return Ok(());
     };
     let request = SubmitPr {
-        repo_id: repo
-            .parse()
-            .map_err(|source| MergeQueueError::ReadQueue { id: repo, source })?,
+        repo_id: repo,
         pr_number: command.number,
         via: SubmittedVia::Comment,
         requested_by: Some(command.author.into()),
         priority: command.merge.priority,
         no_batch: command.merge.no_batch,
         direct: command.merge.direct,
+        queue: command.merge.queue.clone(),
+        label: None,
     };
     let connection = (delivery.instance, delivery.connection);
     let job = submit(delivery.org_id, connection, &delivery.delivery_id, &request);

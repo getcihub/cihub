@@ -8,7 +8,7 @@ use std::time::Duration;
 use cihub_conditions::{Attribute, Check, Conditions, Context};
 use cihub_config::RepoConfig;
 use cihub_domain::{
-    BranchProtectionInjection, CheckConclusion, JobClass, Mergeability, Permission,
+    BranchProtectionInjection, CheckConclusion, JobClass, Mergeability, Permission, Priority,
 };
 use cihub_scm::{PrSnapshot, RequiredChecks, Scm};
 use time::OffsetDateTime;
@@ -129,20 +129,63 @@ async fn file_conditions(
     if conditions.0.is_empty() {
         return Ok(Vec::new());
     }
-    let (sender, class, now) = (reading.sender, reading.class, reading.now);
-    let mut ctx = context(target, pr, sender, now);
-    if conditions.uses(Attribute::Files) {
+    let ctx = loaded_context(scm, target, pr, reading, |a| conditions.uses(a)).await?;
+    conditions
+        .unmet(&ctx)
+        .map_err(|err| Failure::Never(err.to_string()))
+}
+
+/// The context of `pr`, with the attributes loaded on demand that `uses`
+/// asks for (D143).
+async fn loaded_context(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    pr: &PrSnapshot,
+    reading: &Reading<'_>,
+    uses: impl Fn(Attribute) -> bool,
+) -> Result<Context, Failure> {
+    let class = reading.class;
+    let mut ctx = context(target, pr, reading.sender, reading.now);
+    if uses(Attribute::Files) {
         ctx.files = Some(scm.pr_files(&target.repo, pr.number, class).await?);
     }
-    if conditions.uses(Attribute::ReviewThreadsUnresolved) {
+    if uses(Attribute::ReviewThreadsUnresolved) {
         ctx.review_threads_unresolved = Some(
             scm.unresolved_threads(&target.repo, pr.number, class)
                 .await?,
         );
     }
-    conditions
-        .unmet(&ctx)
-        .map_err(|err| Failure::Never(err.to_string()))
+    Ok(ctx)
+}
+
+/// The priority of the first rule of `priority_rules` that `pr` meets, in
+/// the last valid file of the queue that it enters (D148).
+pub(crate) async fn rule_priority(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    pr: &PrSnapshot,
+    reading: &Reading<'_>,
+) -> Result<Option<Priority>, Failure> {
+    let Some(text) = &target.config_text else {
+        return Ok(None);
+    };
+    let config = RepoConfig::parse(text).map_err(MergeQueueError::Settings)?;
+    let rules = &config.priority_rules;
+    if rules.is_empty() {
+        return Ok(None);
+    }
+    let uses = |a| rules.iter().any(|rule| rule.conditions.uses(a));
+    let ctx = loaded_context(scm, target, pr, reading, uses).await?;
+    for rule in rules {
+        if rule
+            .conditions
+            .eval(&ctx)
+            .map_err(|err| Failure::Never(err.to_string()))?
+        {
+            return Ok(Some(rule.priority));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]

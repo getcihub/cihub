@@ -1592,6 +1592,105 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
+/// `AGENTS.md` D148: with two queues on `main`, a PR enters the first queue
+/// whose conditions it meets, or the one that its command names, with the
+/// priority of the first rule that it meets unless the command gives one.
+/// A push on `main` reaches both queues (D135).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let hotfix = QueueId::from_ulid(Ulid(30));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+         SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
+    )
+    .bind(hotfix.to_string())
+    .bind(queue().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let config = "version: 1
+queues:
+  - name: hotfix
+    branch: main
+    queue_conditions:
+      - label = hotfix
+  - name: main
+    branch: main
+priority_rules:
+  - name: urgent
+    conditions:
+      - label = urgent
+    priority: urgent
+";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let read: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT config_sha FROM queues ORDER BY name")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+    assert_eq!(
+        read,
+        [Some(main.clone()), Some(main.clone())],
+        "both queues read the push"
+    );
+
+    let cases: [(&[&str], &str); 5] = [
+        (&["hotfix"], "/cihub merge"),
+        (&[], "/cihub merge"),
+        (&["urgent"], "/cihub merge"),
+        (&[], "/cihub merge --queue=hotfix"),
+        (&["urgent"], "/cihub merge --priority=low"),
+    ];
+    for (n, (labels, command)) in (1..).zip(cases) {
+        let path = format!("f{n}.txt");
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        for label in labels {
+            sim.add_label(&repo(), number, label, JobClass::Interactive)
+                .await
+                .unwrap();
+        }
+        sim.comment(&repo(), number, &alice(), command).unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(i64, String, i16, String)> = sqlx::query_as(
+        "SELECT i.pr_number, q.name, i.priority_value, i.state::text
+         FROM queue_items i JOIN queues q ON q.id = i.queue_id
+         WHERE i.is_current ORDER BY i.pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    drop(tx);
+    let admitted = |state: &str| state != "not_ready";
+    let got: Vec<(i64, &str, i16, bool)> = items
+        .iter()
+        .map(|(n, queue, priority, state)| (*n, queue.as_str(), *priority, admitted(state)))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (1, "hotfix", 100, true),
+            (2, "main", 100, true),
+            (3, "main", 0, true),
+            (4, "hotfix", 100, false),
+            (5, "main", 200, true),
+        ]
+    );
+    q.stop().await;
+}
+
 /// The last valid file of the queue, the head read, and the error.
 async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
     let mut tx = begin_system(pool).await.unwrap();

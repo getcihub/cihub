@@ -21,7 +21,8 @@ use tracing::info;
 use crate::MergeQueueError;
 use crate::QueueLog;
 use crate::jobs::{
-    Failure, REFRESH_PRS, RefreshPrs, give_back, job, outcome, read_payload, target_of, window,
+    Failure, REFRESH_PRS, RefreshPrs, give_back, job, outcome, read_payload, subject, target_of,
+    window,
 };
 use crate::merge::MERGE_PR;
 use crate::target::QueueTarget;
@@ -59,6 +60,13 @@ fn refresh_checks_job(
 /// The read of the head of the target branch, at the read point `point`.
 pub(crate) fn refresh_target(target: &QueueTarget, point: OffsetDateTime) -> Job {
     refresh_target_job(target, &window(point), JobClass::Repair)
+}
+
+/// The read of the head of the target branch after the delivery
+/// `delivery_id` of a push, when the branch has several queues and the
+/// routing gave the push to none (`AGENTS.md` D135).
+pub(crate) fn refresh_target_after(target: &QueueTarget, delivery_id: &str) -> Job {
+    refresh_target_job(target, &subject(delivery_id), JobClass::Interactive)
 }
 
 fn refresh_target_job(target: &QueueTarget, subject: &str, class: JobClass) -> Job {

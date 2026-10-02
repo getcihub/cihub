@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, ItemState, JobClass,
     Mergeability, OrgId, Permission, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId,
@@ -22,7 +23,7 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::admission::{Reading, Sender, unmet_conditions};
+use crate::admission::{Reading, Sender, rule_priority, unmet_conditions};
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
@@ -72,13 +73,18 @@ pub(crate) struct SubmitPr {
     /// The author of the command; `None` for a label, whose sender the
     /// delivery does not give.
     pub requested_by: Option<Account>,
-    pub priority: Priority,
+    /// `None` leaves the priority to the `priority_rules` (`AGENTS.md` D148).
+    pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
+    /// The queue that the command names (D148).
+    pub queue: Option<String>,
+    /// The label that the action put, for a submission by label.
+    pub label: Option<String>,
 }
 
 /// A subject of a key has no `:` (`AGENTS.md` D68).
-fn subject(text: &str) -> String {
+pub(crate) fn subject(text: &str) -> String {
     text.replace(':', "-")
 }
 
@@ -444,6 +450,71 @@ async fn sender_of(
     }))
 }
 
+/// The queues of `branch` in the organizations with the module, in the
+/// order of the routing.
+async fn enabled_queues(
+    pool: &PgPool,
+    repo: RepoId,
+    branch: &str,
+) -> Result<Vec<QueueTarget>, Failure> {
+    let mut tx = begin_system(pool)
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let queues = QueueTarget::queues_of_branch(&mut tx, repo, branch).await?;
+    tx.commit()
+        .await
+        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    Ok(queues.into_iter().filter(|queue| queue.enabled).collect())
+}
+
+/// The queue that `pr` enters, with the conditions that it does not meet
+/// (`AGENTS.md` D148): the queue that the command names, or else the first
+/// queue of the branch whose conditions it meets, or else the first one.
+/// `None` when the command names a queue that the branch does not have.
+async fn route<'a>(
+    scm: &dyn Scm,
+    queues: &'a [QueueTarget],
+    pr: &PrSnapshot,
+    request: &SubmitPr,
+    reading: &Reading<'_>,
+) -> Result<Option<(&'a QueueTarget, Vec<String>)>, Failure> {
+    if let Some(name) = &request.queue {
+        let Some(queue) = queues.iter().find(|queue| queue.name == *name) else {
+            return Ok(None);
+        };
+        return Ok(Some((
+            queue,
+            unmet_conditions(scm, queue, pr, reading).await?,
+        )));
+    }
+    let mut first = None;
+    for queue in queues {
+        let unmet = unmet_conditions(scm, queue, pr, reading).await?;
+        if unmet.is_empty() {
+            return Ok(Some((queue, unmet)));
+        }
+        first.get_or_insert((queue, unmet));
+    }
+    Ok(first)
+}
+
+/// Why the queue refuses the submission, if it does: a command while the
+/// commands are off, a label that is not the label of the queue, or that the
+/// PR no longer has.
+fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Option<&'static str> {
+    let label = &settings.enqueue_label.value;
+    match request.via {
+        SubmittedVia::Comment if !settings.commands_enabled.value => Some("commands disabled"),
+        SubmittedVia::Label
+            if !settings.label_commands_enabled.value || request.label.as_ref() != Some(label) =>
+        {
+            Some("not the label of the queue")
+        }
+        SubmittedVia::Label if !pr.labels.contains(label) => Some("label removed"),
+        _ => None,
+    }
+}
+
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused submission gives
 /// nothing: the message on the PR comes with lot 9.
@@ -480,14 +551,8 @@ async fn submit_pr(
         Err(ScmError::NotFound(_)) => return Ok(()),
         Err(err) => return Err(err.into()),
     };
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    let target = QueueTarget::of_branch(&mut tx, repo.repo_id, &pr.base_branch).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    let Some(target) = target.filter(|t| t.enabled) else {
+    let queues = enabled_queues(pool, repo.repo_id, &pr.base_branch).await?;
+    let Some(first) = queues.first() else {
         info!(
             pr_number,
             base_branch = pr.base_branch,
@@ -495,19 +560,31 @@ async fn submit_pr(
         );
         return Ok(());
     };
-    let settings = target.settings()?;
-    if request.via == SubmittedVia::Comment && !settings.commands_enabled.value {
-        info!(pr_number, "submission dropped: commands disabled");
-        return Ok(());
-    }
-    if request.via == SubmittedVia::Label && !pr.labels.contains(&settings.enqueue_label.value) {
-        info!(pr_number, "submission dropped: label removed");
-        return Ok(());
-    }
     let required = scm
-        .required_checks(&target.repo, &target.target_branch, job.class)
+        .required_checks(&first.repo, &first.target_branch, job.class)
         .await?;
-    let own = queue_status_context(&target.target_branch);
+    let own = queue_status_context(&first.target_branch);
+    let reading = Reading {
+        sender: &sender,
+        rules: &required,
+        own_status: &own,
+        class: job.class,
+        now,
+    };
+    let Some((target, unmet)) = route(scm, &queues, &pr, &request, &reading).await? else {
+        info!(pr_number, "submission dropped: no queue of that name");
+        return Ok(());
+    };
+    if let Some(reason) = refusal(&target.settings()?, &request, &pr) {
+        info!(pr_number, reason, "submission dropped");
+        return Ok(());
+    }
+    let priority = match request.priority {
+        Some(priority) => priority,
+        None => rule_priority(scm, target, &pr, &reading)
+            .await?
+            .unwrap_or(Priority::MEDIUM),
+    };
     // The accounts come in their own transaction: the one that gives the
     // facts back waits for the reconciliation of the queue, which may need
     // the same rows of `users`.
@@ -530,7 +607,7 @@ async fn submit_pr(
     let submitted = EventKind::ItemSubmitted {
         pr_number,
         head_sha: pr.head_sha.clone(),
-        priority: request.priority,
+        priority,
         no_batch: request.no_batch,
         direct: request.direct,
         submitted_via: request.via,
@@ -540,14 +617,6 @@ async fn submit_pr(
         changed_files: pr.changed_files,
         sender_permission: sender.permission,
     };
-    let reading = Reading {
-        sender: &sender,
-        rules: &required,
-        own_status: &own,
-        class: job.class,
-        now,
-    };
-    let unmet = unmet_conditions(scm, &target, &pr, &reading).await?;
     let facts = vec![
         (actor, submitted),
         (
@@ -714,9 +783,11 @@ mod tests {
             pr_number: 1,
             via: SubmittedVia::Comment,
             requested_by: None,
-            priority: Priority::MEDIUM,
+            priority: None,
             no_batch: false,
             direct: false,
+            queue: None,
+            label: None,
         };
         let connection = (target.scm_instance_id, target.repo.connection.id);
         assert_eq!(

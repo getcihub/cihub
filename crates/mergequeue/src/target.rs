@@ -137,29 +137,53 @@ impl QueueTarget {
         settings.map_err(MergeQueueError::Settings)
     }
 
-    /// The first queue of the branch `branch` of the repository `repo`, if
-    /// any. The routing between the queues of a branch comes later in lot 8.
+    /// The queues of the branch `branch` of the repository `repo`, in the
+    /// order of the configuration file, which is the order of the routing
+    /// (`AGENTS.md` D148); the queues that the file does not name come last,
+    /// by age.
     ///
     /// # Errors
     ///
     /// Postgres fails, or a row does not match the identifiers of
     /// `cihub-domain`.
-    pub(crate) async fn of_branch(
+    pub(crate) async fn queues_of_branch(
         conn: &mut PgConnection,
         repo: RepoId,
         branch: &str,
-    ) -> Result<Option<Self>, MergeQueueError> {
-        let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} WHERE r.id = $2 AND q.target_branch = $3
-             ORDER BY q.created_at, q.id LIMIT 1"
+    ) -> Result<Vec<Self>, MergeQueueError> {
+        let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {COLUMNS} WHERE r.id = $2 AND q.target_branch = $3 ORDER BY q.created_at, q.id"
         )))
         .bind(ModuleName::Mergequeue.as_str())
         .bind(repo.to_string())
         .bind(branch)
-        .fetch_optional(conn)
+        .fetch_all(conn)
         .await
         .map_err(MergeQueueError::Query)?;
-        row.map(decode).transpose()
+        let mut queues = rows
+            .into_iter()
+            .map(decode)
+            .collect::<Result<Vec<_>, _>>()?;
+        let order: Vec<String> = queues
+            .iter()
+            .find_map(|queue| queue.config_text.as_deref())
+            .and_then(|text| RepoConfig::parse(text).ok())
+            .map(|config| {
+                config
+                    .queues
+                    .into_iter()
+                    .filter(|queue| queue.branch == branch)
+                    .map(|queue| queue.name)
+                    .collect()
+            })
+            .unwrap_or_default();
+        queues.sort_by_key(|queue| {
+            order
+                .iter()
+                .position(|name| *name == queue.name)
+                .unwrap_or(usize::MAX)
+        });
+        Ok(queues)
     }
 }
 
