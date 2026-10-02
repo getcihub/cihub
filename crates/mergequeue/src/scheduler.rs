@@ -62,9 +62,9 @@ pub struct Reconciler {
 }
 
 impl Reconciler {
-    /// Reconciles `queue` at `now`, in its own transaction. Does nothing when
-    /// another transaction reconciles it; an organization without the module
-    /// only loses the work of the queue.
+    /// Reconciles `queue` at the time of `clock`, in its own transaction. Does
+    /// nothing when another transaction reconciles it; an organization without
+    /// the module only loses the work of the queue.
     ///
     /// # Errors
     ///
@@ -74,7 +74,7 @@ impl Reconciler {
         &self,
         pool: &PgPool,
         queue: QueueId,
-        now: OffsetDateTime,
+        clock: &(dyn Fn() -> OffsetDateTime + Sync),
     ) -> Result<(), MergeQueueError> {
         let Some(mut tx) = begin_reconciliation(pool, queue)
             .await
@@ -82,6 +82,9 @@ impl Reconciler {
         else {
             return Ok(());
         };
+        // Read once the queue is taken: a change that marked it dirty before
+        // is seen at a time no earlier than the change.
+        let now = clock();
         self.reconcile_in(&mut tx, queue, now).await?;
         tx.commit().await.map_err(MergeQueueError::Query)
     }
@@ -1035,7 +1038,7 @@ pub async fn run_scheduler(
         for queue in &queues {
             let span = info_span!("reconcile", org_id = tracing::field::Empty, queue_id = %queue);
             let done = reconciler
-                .reconcile(&pool, *queue, now)
+                .reconcile(&pool, *queue, &clock)
                 .instrument(span.clone());
             if let Err(err) = done.await {
                 span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));

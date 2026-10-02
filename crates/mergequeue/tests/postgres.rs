@@ -977,7 +977,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     assert_eq!(counts(pool.clone()).await, before);
 
     // The next reconciliation does the whole work once.
-    reconciler.reconcile(&pool, queue(), clock()).await.unwrap();
+    reconciler.reconcile(&pool, queue(), &clock).await.unwrap();
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
@@ -2611,7 +2611,10 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
     };
-    reconciler.reconcile(&pool, queue(), today).await.unwrap();
+    reconciler
+        .reconcile(&pool, queue(), &|| today)
+        .await
+        .unwrap();
     assert_eq!(wake_uncovered(&pool, today).await.unwrap(), 0);
     run_maintenance(&pool, today).await.unwrap();
     assert!(!partition_exists(&pool, "events_2026_05").await);
@@ -3219,7 +3222,7 @@ impl Chaos {
             translate: translate(&self.deliveries),
         };
         let direct = reconciler
-            .reconcile(&self.pool, self.queue(), self.clock.now())
+            .reconcile(&self.pool, self.queue(), &|| self.clock.now())
             .await
             .map_err(|err| cihub_platform::error_chain(&err));
         panic!(
