@@ -611,6 +611,14 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D140** Complète D139 : CIHub ne fournit aucun convertisseur depuis la configuration d'un autre produit, et
   `GOAL.md` perd son objectif « une migration facile ». Les attributs des conditions ont leurs propres noms, sans
   équivalence documentée avec un autre produit. Le prompt d'aide (D134) aide à écrire `.cihub.yaml`.
+- **D141** La fenêtre de spéculation part du plancher. Elle gagne 1 quand un groupe hors bissection passe ses
+  tests, et se divise par 2 (arrondi en bas) quand l'échec des tests d'un groupe est confirmé (`failed` après le
+  budget d'échec, ou bissection). Une relance du budget, un redémarrage, un conflit, une erreur de configuration ou
+  un échec du merge ne la changent pas. Le `queue.window_changed` est écrit dans la même étape que la décision du
+  groupe, et garde sa forme `{before, after}`. La fenêtre reste entre le plancher et le plafond, et revient dans
+  ces bornes quand les réglages changent ; une fenêtre réduite n'interrompt aucune exécution en cours. Le mode
+  `throttled` ne change pas le noyau : les jobs `speculate` attendent déjà le budget. Le critère de sortie est
+  testé dans `cihub-mq-core`, sur une CI simulée à graine fixe.
 
 ### 4.1 Questions ouvertes
 

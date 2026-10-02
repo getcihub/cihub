@@ -845,9 +845,14 @@ Autres valeurs fermées :
     `queue.settings_changed`. Tests : table de `RepoConfig::settings`, statuts requis d'une file sans entrée,
     routage avec deux files sur une branche, et contre Postgres et le simulateur, une file qui suit son fichier
     (fichier valide, refusé, puis changement de mode).
+  - Fait (2 octobre 2026, D141) : fenêtre adaptative dans `plan` (+1 par groupe qui passe, ÷2 par échec des
+    tests confirmé, bornes des réglages). Critère de sortie : `crates/mq-core/tests/window.rs`, une file
+    `pipelined` avec 21 PR rouges sur 100 (graine fixe) descend plusieurs fois au plancher, puis 40 PR vertes la
+    rouvrent jusqu'au plafond ; un plafond abaissé ramène la fenêtre dans ses bornes. Le budget d'échec était déjà
+    dans `plan` (relances, aucune relance pour un conflit ou une erreur de configuration) ; sa relance de plus quand
+    `FlakeOracle` reconnaît les tests en échec arrive au lot 14.
   - Reste : routage entre files d'une même branche (`submit_pr` prend la première file de la branche) ; réglage
-    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; injection des protections ; fenêtre
-    adaptative et budget d'échec dans `plan` ; états de la file ; attribut `schedule` (reporté : les fuseaux
+    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; injection des protections ; états de la file ; attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
 

@@ -165,6 +165,7 @@ type Rule = fn(&Snapshot, &QueueSettings, OffsetDateTime, &mut IdGen) -> Option<
 const RULES: &[Rule] = &[
     requests,
     mode_switch,
+    window_bounds,
     pr_changes,
     not_ready_timeout,
     run_conclusion,
@@ -423,6 +424,18 @@ fn mode_switch(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen
     }
 }
 
+/// The window comes back within the bounds of the settings when they
+/// change.
+fn window_bounds(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    _: OffsetDateTime,
+    _: &mut IdGen,
+) -> Option<Step> {
+    let window = s.window?;
+    Step::one(None, window_to(s, settings, window)?)
+}
+
 /// The item leaves the queue when its PR changes on the SCM.
 fn pr_changes(
     s: &Snapshot,
@@ -539,10 +552,11 @@ fn run_conclusion(
         })
 }
 
-/// A group in `testing` follows the end of its latest run.
+/// A group in `testing` follows the end of its latest run. A run that
+/// passes outside a bisection opens the window by one.
 fn group_follows_run(
     s: &Snapshot,
-    _: &QueueSettings,
+    settings: &QueueSettings,
     _: OffsetDateTime,
     _: &mut IdGen,
 ) -> Option<Step> {
@@ -567,7 +581,15 @@ fn group_follows_run(
                 }
                 _ => return None,
             };
-            Step::one(s.cause(Subject::Run(run.id)), group_to(group, to, reason))
+            let mut kinds = vec![group_to(group, to, reason)];
+            if to == GroupState::TestsPassed && group.kind != GroupKind::Bisection {
+                let wider = current_window(s, settings).saturating_add(1);
+                kinds.extend(window_to(s, settings, wider));
+            }
+            Some(Step {
+                cause: s.cause(Subject::Run(run.id)),
+                kinds,
+            })
         })
 }
 
@@ -681,7 +703,7 @@ fn runs_follow_group(
 
 /// At depth 0, a group in failure whose predecessors all merged is the
 /// culprit: the failure budget restarts it when the window has room, then
-/// it fails.
+/// it fails, and the window closes by half.
 fn pending_failure(
     s: &Snapshot,
     settings: &QueueSettings,
@@ -721,10 +743,9 @@ fn pending_failure(
                     ],
                 });
             }
-            Step::one(
-                cause,
-                group_to(group, GroupState::Failed, run.failure_reason?),
-            )
+            let mut kinds = vec![group_to(group, GroupState::Failed, run.failure_reason?)];
+            kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+            Some(Step { cause, kinds })
         })
 }
 
@@ -915,9 +936,22 @@ fn formation(
     })
 }
 
+/// The speculation window: the floor until its first change.
+fn current_window(s: &Snapshot, settings: &QueueSettings) -> u32 {
+    s.window.unwrap_or(settings.window_floor.value)
+}
+
+/// The decision that moves the window to `after`, within the bounds of the
+/// settings, or `None` when the window does not change.
+fn window_to(s: &Snapshot, settings: &QueueSettings, after: u32) -> Option<EventKind> {
+    let before = current_window(s, settings);
+    let after = after.clamp(settings.window_floor.value, settings.window_ceiling.value);
+    (after != before).then_some(EventKind::QueueWindowChanged { before, after })
+}
+
 /// The window is the number of runs in progress outside bisections.
 fn window_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
-    let window = s.window.unwrap_or(settings.window_floor.value);
+    let window = current_window(s, settings);
     let running = s
         .live_groups()
         .filter(|g| g.kind != GroupKind::Bisection && s.live_run(g.id).is_some())
