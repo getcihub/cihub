@@ -1933,6 +1933,66 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     q.stop().await;
 }
 
+/// Exit criterion of lot 8: a PR cannot change its own conditions. A PR
+/// that removes the `queue_conditions` and changes the required statuses in
+/// its own `.cihub.yaml` still waits for the conditions of the file of its
+/// target, and its run requires the statuses of that file.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let file =
+        |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+    let strict = file(&format!(
+        "    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n"
+    ));
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &strict)]);
+    q.deliver().await;
+    q.settle().await;
+    let loose = file("    required_statuses: [lint]\n");
+    let (number, head) = open_pr_with(
+        &sim,
+        &main,
+        1,
+        &[("f1.txt", Some("x")), (".cihub.yaml", Some(&loose))],
+    );
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.report_check(&repo(), &head, check("lint", true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let unmet = serde_json::json!([{
+        "kind": "queue_conditions_unmet", "conditions": ["label = ready"]
+    }]);
+    let states = admissions(&pool).await;
+    assert_eq!(
+        (states[0].1.as_str(), &states[0].2),
+        ("not_ready", &unmet),
+        "the conditions of the target apply"
+    );
+
+    sim.add_label(&repo(), number, "ready", JobClass::Interactive)
+        .await
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let runs = test_runs(&mut tx).await;
+    drop(tx);
+    assert_eq!(runs.len(), 1);
+    let (_, _, _, _, _, _, required, source, ..) = &runs[0];
+    assert_eq!(
+        required,
+        &[REQUIRED.to_owned()],
+        "the statuses of the target"
+    );
+    assert_eq!(source.as_deref(), Some("repo_config"));
+    q.stop().await;
+}
+
 /// The last valid file of the queue, the head read, and the error.
 async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
     let mut tx = begin_system(pool).await.unwrap();

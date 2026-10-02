@@ -40,7 +40,7 @@ les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | terminé                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | terminé                                  |
 | 7   | Merge et changements extérieurs                        | 1     | 6         | —         | terminé                                  |
-| 8   | Politique de file                                      | 1     | 6         | —         | en cours (commencé avant son tour)       |
+| 8   | Politique de file                                      | 1     | 6         | —         | terminé                                  |
 | 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | à faire                                  |
 | 10  | Tableau de bord                                        | 2     | 9         | Q9        | à faire                                  |
 | 11  | Analytique, métriques et webhooks sortants             | 2     | 9         | —         | à faire                                  |
@@ -880,7 +880,14 @@ Autres valeurs fermées :
     (D150).
     Tests : la commande, et contre Postgres et le simulateur deux files sur `main` (routage par condition, par
     `--queue`, priorité d'une règle et de la commande, push lu par les deux files).
-  - Reste : attribut `schedule` (reporté : les fuseaux
+  - Critère de sortie (2 octobre 2026) : les tests de table de `cihub-conditions` (analyse et évaluation) ; la
+    fenêtre d'une file `pipelined` sous 20 % d'échecs descend au plancher puis remonte au plafond
+    (`crates/mq-core/tests/window.rs`, D141) ; une PR ne peut pas modifier ses propres conditions
+    (`a_pr_cannot_change_its_own_conditions` : une PR qui retire les `queue_conditions` et change les statuts
+    requis dans son propre fichier attend les conditions de la cible, et son exécution exige les statuts de la
+    cible) ; chaque stratégie est une table de `cihub-config`, sans code dans `cihub-mq-core`. `mise run sim`
+    passe sur 1 000 graines à chaque étape (1, 2, 3a, 3c, 4 et 5).
+  - Reste, passé à plus tard : attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
     `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans
