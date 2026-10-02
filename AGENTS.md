@@ -506,7 +506,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D113** Une soumission reste possible quand la file est en `paused` (`docs/RELIABILITY.md`) : elle attend la
   reprise de la file pour créer son entrée.
 - **D114** Le mode `inplace` met à jour la branche de la PR par un merge de la cible (`update_method: merge`) ;
-  `rebase` arrive avec un lot ultérieur, et `UpdateMethod` n'a que `merge` d'ici là.
+  `rebase` arrive avec un lot ultérieur, et `UpdateMethod` n'a que `merge` d'ici là. _Complétée par D119._
 - **D115** Complète D33 et D94 : le format de `GET /api/v1/test-runs/{run_id}` est figé dans `docs/API.md` au
   lot 6 ; la route est servie au lot 9, avec les autres.
 - **D116** Complète D72 : le lot 6 n'annule aucun workflow d'une exécution remplacée ; ses rapports sont stockés
@@ -519,6 +519,68 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D118** Un rapport de check pour le SHA de test d'une exécution qui n'est plus vivante est stocké dans
   `check_observations` sans fait dans le journal ; le rejeu (`rebuild`) conserve ces lignes, et la table n'a pas
   de clé étrangère vers `test_runs`.
+- **D119** Complète D114 : le mode `inplace` sort du lot 7 et arrive avec un lot ultérieur, avec sa propre
+  décision (exemption dans `pr_changes` quand la tête observée est le SHA de test de l'exécution vivante, garde
+  `sha` du merge sur ce SHA, formation seulement sans prédécesseur vivant, `head_branch` dans `PrSnapshot`, routage
+  des checks par SHA). D'ici là, `cihub-config` refuse `trigger: inplace`.
+- **D120** (Q2) `merge_method` vaut `squash` par défaut pour chaque stratégie ; `fast_forward` est une option.
+  `cihub-config` l'accepte seulement avec la stratégie `sequential`, tant que l'assemblage refait les merges des
+  prédécesseurs sur `base_sha` : le commit de test d'une PR ne descend alors pas du commit de test de son
+  prédécesseur. `fast_forward` avance la cible, sans forcer, sur le SHA de test de l'exécution réussie, et non sur la
+  tête de la PR ; un refus parce que la cible a bougé est un échec du merge. _Complétée par D124._
+- **D121** (Q4) Un push sur la tête d'une PR en file annule son entrée (`pr_pushed_to`) ; la PR doit être
+  resoumise. Le réglage `resubmit_on_push`, qui resoumet l'entrée en fin de file, arrive au lot 8 avec
+  `queues.settings`.
+- **D122** (Q13) Un échec de merge direct donne la même raison qu'un échec de merge d'une exécution, depuis
+  `pending` : `head_changed` donne `pr_updated_at_merge_time`, `rate_limit_exceeded`, `branch_protection_unmet`,
+  `merge_already_in_progress` et `repeated_server_errors` donnent `merge_<erreur>`, et `merge_rejected` donne
+  `direct_merge_rejected`. La table des transitions gagne ces raisons pour `pending` → `failed`.
+- **D123** Le job `merge_pr:<item_id>:1` (classe `merge`) merge chaque PR de `Desired.merges`. Avant d'agir, il
+  relit `queue_items` : une entrée qui n'est plus `tests_passed` termine le job sans fait. Il rend
+  `merge.succeeded` ou `merge.failed` dans `queue_inbox`. `HeadChanged` donne `head_changed`, `Forbidden` donne
+  `branch_protection_unmet`, `MergeRejected` et `Validation` donnent `merge_rejected`, tout de suite ;
+  `Unavailable` et `MergeInProgress` refont le job avec le backoff, puis donnent `repeated_server_errors` ou
+  `merge_already_in_progress` après 6 tentatives ; `RateLimited` et `Throttled` refont le job tant que la fin de
+  la pause est à moins de 15 minutes, sinon donnent `rate_limit_exceeded`.
+- **D124** Complète D120 : `Merge` (`Desired`) et `PrMerge` (trait `Scm`) portent `tested_sha`, le SHA de test de
+  l'exécution qui a prouvé l'entrée. `fast_forward` avance la cible sur ce SHA. Un refus parce que ce n'est pas
+  un fast-forward est une erreur transitoire, comme `Unavailable` (D123) : le fait du push extérieur redémarre le
+  groupe ; après 6 tentatives, il donne `merge_rejected`.
+- **D125** Le merge direct sur main (`direct_merge_mode`) passe au lot 8, avec les statuts requis dans les
+  réglages et l'injection des protections.
+- **D126** `PrSnapshot` gagne `title` et `body`, lus dans la même lecture, pour `merge_commit_title` et la ligne
+  `merge-commit-title:` du corps de la PR. Les réponses enregistrées de GitHub (D90) sont enregistrées de nouveau.
+- **D127** La boucle de réparation : `Desired.observe` relit chaque PR vivante toutes les 15 minutes (pas
+  seulement les entrées `not_ready`) ; le job `refresh_checks:<run_id>-<AAAAMMJJTHHMM>:1` (classe `repair`) relit
+  les checks du SHA de test d'une exécution `in_progress` sans rapport depuis 10 minutes, puis toutes les 10
+  minutes, rend des `check.observed`, et recrée au SHA de test une branche de test absente ; le job
+  `refresh_target:<queue_id>-<AAAAMMJJTHHMM>:1` (classe `repair`) relit la tête de la cible toutes les 5 minutes
+  et rend `target.pushed` sans `before`.
+- **D128** Le lot 7 livre la fonction `resync` de `cihub-mergequeue` : elle demande, en classe `interactive`, la
+  relecture de chaque PR vivante, des checks de chaque exécution vivante et de la tête de la cible. La route
+  `POST /api/v1/queues/{id}:resync` arrive au lot 9.
+- **D129** Le test `fault_injection` (`crates/mergequeue/tests/postgres.rs`) joue une graine par organisation et
+  par file, dans une seule base ; `CIHUB_SIM_SEEDS` donne le nombre de graines. Le simulateur gagne des pannes
+  aléatoires tirées d'une graine (5xx, 429) ; le test arrête et relance le worker et le scheduler à des instants
+  aléatoires. `mise run sim` joue 1 000 graines, `mise run test-integration` en joue 10 ; la CI lance `sim` une
+  fois par nuit, dans un job séparé.
+- **D130** Un 422 de l'assemblage parce qu'une tête est déjà dans la cible fait échouer l'exécution tout de suite
+  (`start_test_run_merge_conflict`). Le job `maintenance` supprime aussi les livraisons non routées de plus de 7
+  jours.
+
+**2 octobre 2026, validées par Nicolas Lecoy.**
+
+- **D131** Au démarrage, chaque réplique du scheduler marque les files qui ont une entrée vivante, dans les
+  organisations qui ont le module : un plan écrit par une version plus ancienne peut n'avoir programmé aucun
+  réveil.
+- **D132** Le job `merge_pr` lit la PR avant de la merger ; une PR déjà mergée donne `merge.failed` avec l'erreur
+  `pr_already_merged`, sans appel de merge, et `plan` en fait `merged` avec la raison `manual_merge` : l'aval
+  redémarre et se teste sur la vraie cible. Un merge de la file suivi d'un arrêt avant son fait donne aussi
+  `manual_merge`, ce qui coûte un test de plus mais reste sûr.
+- **D133** Seules les erreurs de validation (422) comptent dans les
+  5 tentatives de l'assemblage ; une autre erreur passagère (5xx, 429, arrêt) refait le job jusqu'à 15 minutes
+  après le début de l'exécution, puis donne `retry_exhausted`. `MAX_ATTEMPTS` passe de 8 à 11, pour que le
+  backoff couvre ces 15 minutes.
 
 ### 4.1 Questions ouvertes
 
@@ -527,12 +589,8 @@ tranchée devient une décision ci-dessus et sort de cette liste.
 
 - **Q1** La raison `tests_restarted_flake_suspected` (`docs/FLAKY_TESTS.md`) n'est pas dans le vocabulaire fermé.
   _(lot 14)_
-- **Q2** `fast_forward` : méthode par défaut de la stratégie `sequential` (le commit testé atterrit) ou option,
-  car elle exige un contournement de protection de branche. _(lot 7)_
 - **Q3** Merge optimiste après l'éviction d'un prédécesseur : règle stricte (redémarrer l'aval) par défaut, la
   souple restant une option. _(lot 12)_
-- **Q4** Push sur une PR en file : annuler (sûr, mais boucles avec Dependabot) ou resoumettre automatiquement.
-  Proposition : annuler par défaut, `resubmit_on_push` comme réglage. _(lot 7)_
 - **Q7** Conventions sémantiques OpenTelemetry pour les tests : suivre la proposition du groupe CI/CD, ou figer
   des attributs `cihub.*` tant qu'elle n'est pas stable. _(lot 14)_
 - **Q8** Seuil de bascule vers ClickHouse : volume à partir duquel la documentation le recommande. _(lot 15)_
@@ -540,9 +598,6 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   _(lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` abonne le module à `mergequeue.run.completed`, qui n'est pas un type d'événement
   de `docs/DOMAIN.md` (`run.transitioned` ?). _(lot 14)_
-- **Q13** Un échec de merge direct donne toujours `direct_merge_rejected`, quelle que soit l'erreur du job
-  (limite d'API, protection de branche…) : garder une seule raison, ou permettre les raisons précises d'échec du
-  merge depuis `pending`. _(lot 7)_
 - **Q14** Utiliser CIHub sans le tableau de bord : une commande d'admin de `cihub-server` crée la première
   organisation, la relie à une connexion et affiche un jeton admin ; un serveur MCP (`cihub mcp`) comme client de
   l'API. _(lot 9)_
