@@ -140,7 +140,7 @@ pipeline GitLab) ou `status` (un statut de commit). Conclusion (`CheckConclusion
 GitHub ; `success`, `neutral` et `skipped` passent, les autres font échouer l'exécution. Coupable d'un conflit à
 l'assemblage (`ConflictCulprit`) : ce avec quoi le membre du groupe entre en conflit, une PR devant lui dans la
 file (`queue_pr`) ou la branche cible seule (`base_branch`). Source des statuts requis
-(`RequiredStatusesSource`) : `ui_override`, `repo_config`, `branch_protection`. Un job qui échoue rapporte une
+(`RequiredStatusesSource`) : `repo_config`, `branch_protection`. Un job qui échoue rapporte une
 erreur (`JobError`), jamais une raison : `plan` choisit la raison. Classe d'un job (`JobClass`, par priorité sur le
 budget de sa connexion) : `interactive`, `merge`, `speculate`, `repair`. État d'un job (`JobState`) : `queued`,
 `running`, `done`, `failed` (une nouvelle tentative ne corrigerait pas l'erreur), `dead` (toutes les tentatives ont

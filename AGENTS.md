@@ -499,7 +499,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
 - **D109** Complète D101 : au-delà de 50 PR à un même point de lecture, la clé du sondage ajoute le rang de sa
   part (`refresh_prs:<queue_id>-<AAAAMMJJTHHMM>-2:1`).
 - **D110** Complète D95 : pas de colonne `queues.settings` avant le lot 8 ; au lot 5, chaque file a les réglages par
-  défaut.
+  défaut. _Complétée par D134 : pas de colonne `queues.settings`, les réglages viennent du fichier._
 - **D111** Complète D94 : un `Module` a toujours une boucle du scheduler.
 - **D112** La raison `undetermined` d'une PR bloquée ne nomme pas le check requis qui manque ; le lot 9 la précise,
   avec les surfaces de la PR.
@@ -530,7 +530,7 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   tête de la PR ; un refus parce que la cible a bougé est un échec du merge. _Complétée par D124._
 - **D121** (Q4) Un push sur la tête d'une PR en file annule son entrée (`pr_pushed_to`) ; la PR doit être
   resoumise. Le réglage `resubmit_on_push`, qui resoumet l'entrée en fin de file, arrive au lot 8 avec
-  `queues.settings`.
+  `queues.settings`. _Complétée par D134 : le réglage vient du fichier._
 - **D122** (Q13) Un échec de merge direct donne la même raison qu'un échec de merge d'une exécution, depuis
   `pending` : `head_changed` donne `pr_updated_at_merge_time`, `rate_limit_exceeded`, `branch_protection_unmet`,
   `merge_already_in_progress` et `repeated_server_errors` donnent `merge_<erreur>`, et `merge_rejected` donne
@@ -581,6 +581,13 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   5 tentatives de l'assemblage ; une autre erreur passagère (5xx, 429, arrêt) refait le job jusqu'à 15 minutes
   après le début de l'exécution, puis donne `retry_exhausted`. `MAX_ATTEMPTS` passe de 8 à 11, pour que le
   backoff couvre ces 15 minutes.
+- **D134** Le fichier `.cihub.yaml` (ou `.cihub.yml`) est la seule source des réglages d'une file : le tableau de
+  bord n'écrit aucun réglage, et il n'y a ni source `ui` dans `cihub-config` ni valeur `ui_override` des statuts
+  requis. Le tableau de bord aide à écrire le fichier par un formulaire qui l'ouvre en PR sur le dépôt, jamais en
+  commit direct sur la cible (lot 10) ; un prompt d'aide arrive avec le README d'installation (lot 9). L'état de la
+  file (`pause`, `resume`, `drain`) n'est pas un réglage et reste dans le tableau de bord, l'API et la CLI. Un
+  fichier invalide fait échouer l'exécution qui le lit au `base_sha` (`start_test_run_config_*`) ; pour les autres
+  réglages, la file garde le dernier fichier valide et affiche l'erreur.
 
 ### 4.1 Questions ouvertes
 

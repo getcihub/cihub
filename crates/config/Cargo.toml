@@ -1,6 +1,6 @@
 [package]
 name = "cihub-config"
-description = "CIHub configuration: .cihub.yaml, strategies, merge with the dashboard"
+description = "CIHub configuration: .cihub.yaml, strategies and the sources of each setting"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

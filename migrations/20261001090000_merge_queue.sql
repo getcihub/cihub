@@ -22,7 +22,7 @@ CREATE TYPE run_status AS ENUM (
 );
 CREATE TYPE submitted_via AS ENUM ('comment', 'label', 'api', 'ui', 'cli');
 CREATE TYPE mergeability AS ENUM ('mergeable', 'behind', 'conflict', 'blocked', 'unknown');
-CREATE TYPE required_statuses_source AS ENUM ('ui_override', 'repo_config', 'branch_protection');
+CREATE TYPE required_statuses_source AS ENUM ('repo_config', 'branch_protection');
 CREATE TYPE reason AS ENUM (
     'submitted', 'merge_item_now_ready', 'test_run_started', 'failure_budget_retry',
     'manual_push_to_target_branch', 'prerequisite_merge_item_failed',

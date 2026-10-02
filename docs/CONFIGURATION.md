@@ -6,8 +6,9 @@ réglages, leurs valeurs par défaut, leurs plages et la table des stratégies d
 Ce fichier les explique.
 
 Le comportement d'une file se configure dans un fichier `.cihub.yaml` ou `.cihub.yml` à la racine du dépôt, lu sur
-la tête de la branche cible (pour qu'une PR ne puisse pas assouplir sa propre barrière), ou dans le tableau de
-bord, qui écrit le même modèle. Si les deux noms de fichier existent, la configuration est en erreur, car aucun des
+la tête de la branche cible (pour qu'une PR ne puisse pas assouplir sa propre barrière). Ce fichier est la seule
+source des réglages (`AGENTS.md` D134) : le tableau de bord aide à l'écrire par un formulaire qui ouvre une PR sur
+le dépôt, jamais un commit direct sur la cible. Si les deux noms de fichier existent, la configuration est en erreur, car aucun des
 deux ne l'emporte. Plusieurs files peuvent viser la même branche : une PR est routée vers la première file, dans
 l'ordre du fichier, dont les `queue_conditions` sont satisfaites, ou vers celle nommée dans la commande
 (`/cihub merge --queue hotfix`).
@@ -66,10 +67,11 @@ peuvent pas avoir le même `name`.
 ## Sources et stratégies
 
 Chaque réglage prend la valeur de la source la plus forte, dans l'ordre `default` < `strategy` < `file`
-(`defaults`, puis la file) < `ui`. `cihub-config` rend chaque valeur avec sa source, que l'interface affiche pour
-signaler un écart avec la stratégie. Les réglages individuels sont modifiables par les admins de l'organisation
-(avec journal d'audit) et lisibles par les membres. L'état de la file (`running`, `paused`, `draining`) n'est pas un
-réglage du fichier : seuls le tableau de bord, l'API et la CLI le changent.
+(`defaults`, puis la file). `cihub-config` rend chaque valeur avec sa source, que l'interface affiche pour
+signaler un écart avec la stratégie. L'historique des réglages est celui du fichier dans le dépôt. Un fichier
+invalide fait échouer l'exécution qui le lit au `base_sha` (erreurs ci-dessus) ; pour les autres réglages, la file
+garde le dernier fichier valide et affiche l'erreur. L'état de la file (`running`, `paused`, `draining`) n'est pas
+un réglage : seuls le tableau de bord, l'API et la CLI le changent.
 
 Le premier réglage d'une file est `strategy` (`pipelined` par défaut), qui positionne les valeurs de ceux qui
 suivent. Une stratégie est une table de valeurs par défaut, sans code dans le noyau :

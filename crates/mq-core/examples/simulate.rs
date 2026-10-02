@@ -285,7 +285,7 @@ impl Default for World {
 }
 
 fn resolve(layer: &Layer) -> Result<QueueSettings, cihub_config::ConfigError> {
-    QueueSettings::resolve(layer, &Layer::default(), &Layer::default())
+    QueueSettings::resolve(layer, &Layer::default())
 }
 
 fn new_snapshot(mode: QueueMode) -> Snapshot {

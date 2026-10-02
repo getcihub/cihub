@@ -143,7 +143,7 @@ impl World {
     async fn at(pool: PgPool, start: OffsetDateTime) -> Self {
         seed(&pool).await;
         create_event_partitions(&pool, start.date()).await.unwrap();
-        let ui = Layer {
+        let layer = Layer {
             failure_budget_retries: Some(Setting::new(0)),
             ..Layer::default()
         };
@@ -153,7 +153,7 @@ impl World {
         let mut world = Self {
             pool,
             log,
-            settings: QueueSettings::resolve(&ui, &Layer::default(), &Layer::default()).unwrap(),
+            settings: QueueSettings::resolve(&layer, &Layer::default()).unwrap(),
             now: start,
             facts: 0,
             target: 0,

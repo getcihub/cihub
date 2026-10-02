@@ -64,9 +64,8 @@ pub struct PriorityRule {
 }
 
 impl RepoConfig {
-    /// Parses `.cihub.yaml`. Each queue is also resolved without dashboard
-    /// settings, so that values that do not go together fail here, with
-    /// their position.
+    /// Parses `.cihub.yaml`. Each queue is also resolved, so that values
+    /// that do not go together fail here, with their position.
     ///
     /// # Errors
     ///
@@ -89,7 +88,7 @@ impl RepoConfig {
                     format!("queue `{}` is defined twice", queue.name),
                 ));
             }
-            QueueSettings::resolve(&Layer::default(), &queue.settings, &defaults)?;
+            QueueSettings::resolve(&queue.settings, &defaults)?;
             queues.push(queue);
         }
         let priority_rules = file
@@ -534,8 +533,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             [Priority::URGENT, Priority::LOW]
         );
 
-        let settings =
-            QueueSettings::resolve(&Layer::default(), &main.settings, &config.defaults).unwrap();
+        let settings = QueueSettings::resolve(&main.settings, &config.defaults).unwrap();
         assert_eq!(settings.batching_size.value, 8);
         assert_eq!(settings.batching_size.source, Source::File);
         assert_eq!(settings.batching_size.at, Some(at(17, 23)));
@@ -553,12 +551,8 @@ defaults:                                 # tout reglage d'une file ; chaque fil
     #[test]
     fn testing_concurrency_sets_the_whole_window() {
         let config = RepoConfig::parse(&queue("    testing_concurrency: 3\n")).unwrap();
-        let settings = QueueSettings::resolve(
-            &Layer::default(),
-            &config.queues[0].settings,
-            &config.defaults,
-        )
-        .unwrap();
+        let settings =
+            QueueSettings::resolve(&config.queues[0].settings, &config.defaults).unwrap();
         assert_eq!(
             (settings.window_floor.value, settings.window_ceiling.value),
             (3, 3)

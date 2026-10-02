@@ -67,8 +67,6 @@ pub enum ConflictCulprit {
 closed_enum! {
     /// Where the required statuses of a run come from, from the strongest.
     pub enum RequiredStatusesSource {
-        /// The override in the dashboard.
-        UiOverride,
         /// `.cihub.yaml` on the target branch at `base_sha`.
         RepoConfig,
         /// The rules of the SCM on the target branch: GitHub protections and

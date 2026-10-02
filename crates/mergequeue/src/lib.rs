@@ -80,15 +80,13 @@ pub enum MergeQueueError {
     Snapshot(#[source] serde_json::Error),
 }
 
-/// The settings of every queue until lot 8 reads them from the file and the
-/// dashboard.
+/// The settings of every queue until lot 8 reads them from the file.
 ///
 /// # Errors
 ///
 /// The defaults do not pass their own checks: a bug of `cihub-config`.
 pub fn default_settings() -> Result<QueueSettings, MergeQueueError> {
-    QueueSettings::resolve(&Layer::default(), &Layer::default(), &Layer::default())
-        .map_err(MergeQueueError::Settings)
+    QueueSettings::resolve(&Layer::default(), &Layer::default()).map_err(MergeQueueError::Settings)
 }
 
 /// The clock of the process, as the module receives it.

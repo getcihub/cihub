@@ -16,7 +16,6 @@ pub enum Source {
     Default,
     Strategy,
     File,
-    Ui,
 }
 
 /// A value set by one source. `at` is its position when it comes from the
@@ -147,22 +146,18 @@ fn strategy_layer(strategy: Strategy) -> Layer {
 }
 
 impl QueueSettings {
-    /// Merges the sources of one queue, from the strongest: the dashboard,
-    /// the queue in the file, then `defaults` in the file.
+    /// Merges the sources of one queue, from the strongest: the queue in the
+    /// file, then `defaults` in the file (`AGENTS.md` D134).
     ///
     /// # Errors
     ///
     /// A value out of range in any source, or effective values that do not
     /// go together.
-    pub fn resolve(ui: &Layer, queue: &Layer, defaults: &Layer) -> Result<Self, ConfigError> {
-        for layer in [ui, queue, defaults] {
+    pub fn resolve(queue: &Layer, defaults: &Layer) -> Result<Self, ConfigError> {
+        for layer in [queue, defaults] {
             layer.validate()?;
         }
-        let mut sources = vec![
-            (Source::Ui, ui),
-            (Source::File, queue),
-            (Source::File, defaults),
-        ];
+        let mut sources = vec![(Source::File, queue), (Source::File, defaults)];
         let strategy_layer = strategy_layer(Self::merge(&sources).strategy.value);
         sources.push((Source::Strategy, &strategy_layer));
         let mut settings = Self::merge(&sources);
@@ -329,7 +324,7 @@ mod tests {
             strategy: Some(Setting::new(Strategy::Batched)),
             ..Layer::default()
         };
-        let settings = QueueSettings::resolve(&Layer::default(), &queue, &defaults).unwrap();
+        let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
         assert_eq!(settings.strategy.source, Source::File);
         assert_eq!(
             (
@@ -354,13 +349,9 @@ mod tests {
             testing_timeout_minutes: Some(Setting::new(90)),
             ..Layer::default()
         };
-        let ui = Layer {
-            testing_timeout_minutes: Some(Setting::new(120)),
-            ..Layer::default()
-        };
-        let settings = QueueSettings::resolve(&ui, &queue, &defaults).unwrap();
-        assert_eq!(settings.testing_timeout_minutes.value, 120);
-        assert_eq!(settings.testing_timeout_minutes.source, Source::Ui);
+        let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
+        assert_eq!(settings.testing_timeout_minutes.value, 90);
+        assert_eq!(settings.testing_timeout_minutes.source, Source::File);
         assert_eq!(settings.window_ceiling.source, Source::File);
         assert_eq!(settings.bisection_concurrency.value, 10);
     }
@@ -374,8 +365,7 @@ mod tests {
             }),
             ..Layer::default()
         };
-        let error =
-            QueueSettings::resolve(&Layer::default(), &queue, &Layer::default()).unwrap_err();
+        let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
         assert_eq!(error.position, Some(at(4)));
         assert_eq!(
             error.message,
@@ -389,8 +379,7 @@ mod tests {
             }),
             ..Layer::default()
         };
-        let error =
-            QueueSettings::resolve(&Layer::default(), &queue, &Layer::default()).unwrap_err();
+        let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
         assert_eq!(error.position, Some(at(7)));
         assert_eq!(error.message, "trigger `inplace` is not available yet");
 
@@ -402,41 +391,33 @@ mod tests {
             }),
             ..Layer::default()
         };
-        let error = QueueSettings::resolve(
-            &Layer::default(),
-            &fast_forward(Strategy::Pipelined),
-            &Layer::default(),
-        )
-        .unwrap_err();
+        let error = QueueSettings::resolve(&fast_forward(Strategy::Pipelined), &Layer::default())
+            .unwrap_err();
         assert_eq!(error.position, Some(at(8)));
         assert_eq!(
             error.message,
             "merge_method `fast_forward` needs strategy `sequential`, not `pipelined`"
         );
-        let settings = QueueSettings::resolve(
-            &Layer::default(),
-            &fast_forward(Strategy::Sequential),
-            &Layer::default(),
-        )
-        .unwrap();
+        let settings =
+            QueueSettings::resolve(&fast_forward(Strategy::Sequential), &Layer::default()).unwrap();
         assert_eq!(settings.merge_method.value, MergeMethod::FastForward);
     }
 
     #[test]
     fn validates_every_source() {
-        let ui = Layer {
+        let queue = Layer {
             batching_size: Some(Setting::new(50)),
             ..Layer::default()
         };
-        let error = QueueSettings::resolve(&ui, &Layer::default(), &Layer::default()).unwrap_err();
+        let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
         assert_eq!(error.message, "batching.size is 50, out of range 2–20");
         assert_eq!(error.position, None);
 
-        let ui = Layer {
+        let queue = Layer {
             required_statuses: Some(Setting::new(Some(vec!["ci".into(), "ci".into()]))),
             ..Layer::default()
         };
-        let error = QueueSettings::resolve(&ui, &Layer::default(), &Layer::default()).unwrap_err();
+        let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
         assert_eq!(error.kind, ConfigErrorKind::BadRequiredStatuses);
     }
 }

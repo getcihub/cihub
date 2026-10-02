@@ -8,7 +8,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use cihub_config::{FILE_NAMES, QueueSettings, RepoConfig, Source, find_config_file};
+use cihub_config::{FILE_NAMES, QueueSettings, RepoConfig, find_config_file};
 use cihub_domain::{
     Actor, ConflictCulprit, EventKind, JobClass, JobError, RequiredStatusesSource, RunId,
     RunStatus, Trigger, temp_branch,
@@ -225,21 +225,10 @@ impl Assembly<'_> {
     }
 
     /// The names of the required statuses, from the strongest source
-    /// (`docs/ALGORITHMS.md`): the override of the dashboard, the file of the
-    /// repository on the target branch at `base_sha`, then the rules of the
-    /// target branch, without the status of the queue itself (`AGENTS.md`
-    /// D98).
+    /// (`docs/ALGORITHMS.md`): the file of the repository on the target
+    /// branch at `base_sha`, then the rules of the target branch, without the
+    /// status of the queue itself (`AGENTS.md` D98).
     async fn required_statuses(&self) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
-        let ui = &self.settings.required_statuses;
-        if ui.source == Source::Ui
-            && let Some(names) = &ui.value
-        {
-            return if names.is_empty() {
-                Err(JobError::NoRequiredStatuses.into())
-            } else {
-                Ok((names.clone(), RequiredStatusesSource::UiOverride))
-            };
-        }
         let branch = self.target.target_branch.as_str();
         if let Some(text) = self.config_file().await?
             && let Some(names) = required_statuses_of_file(&text, branch)?
@@ -776,9 +765,9 @@ mod tests {
     }
 
     fn settings(edit: impl FnOnce(&mut Layer)) -> QueueSettings {
-        let mut ui = Layer::default();
-        edit(&mut ui);
-        QueueSettings::resolve(&ui, &Layer::default(), &Layer::default()).unwrap()
+        let mut queue = Layer::default();
+        edit(&mut queue);
+        QueueSettings::resolve(&queue, &Layer::default()).unwrap()
     }
 
     async fn build(
@@ -979,34 +968,6 @@ mod tests {
             let path = format!("f{n}.txt");
             vec![head(&sim, &target, parent, n, &[(&path, Some("x"))])]
         };
-        // The dashboard comes before the file and the rules.
-        let ui = settings(|l| {
-            l.required_statuses = Some(Setting::new(Some(vec!["lint".into()])));
-        });
-        let built = build(
-            &sim,
-            &ui,
-            &target,
-            &request(&main, vec![], member(1, &main)),
-        )
-        .await
-        .unwrap();
-        assert_eq!(built.required_statuses, vec!["lint".to_owned()]);
-        assert_eq!(
-            built.required_statuses_source,
-            RequiredStatusesSource::UiOverride
-        );
-        let none = settings(|l| l.required_statuses = Some(Setting::new(Some(vec![]))));
-        assert_eq!(
-            build(
-                &sim,
-                &none,
-                &target,
-                &request(&main, vec![], member(2, &main))
-            )
-            .await,
-            Err(Step::GiveUp(JobError::NoRequiredStatuses, None))
-        );
         // The file of the repository, read on the target branch at the base.
         let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [build]\n";
         let with_file = sim

@@ -18,9 +18,9 @@ use ulid::Ulid;
 pub const REQUIRED: &str = "ci";
 
 pub fn settings(edit: impl FnOnce(&mut Layer)) -> QueueSettings {
-    let mut ui = Layer::default();
-    edit(&mut ui);
-    QueueSettings::resolve(&ui, &Layer::default(), &Layer::default()).unwrap()
+    let mut queue = Layer::default();
+    edit(&mut queue);
+    QueueSettings::resolve(&queue, &Layer::default()).unwrap()
 }
 
 pub fn window(n: u32) -> impl FnOnce(&mut Layer) {

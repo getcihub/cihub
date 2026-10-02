@@ -15,7 +15,7 @@
 use std::fmt::Debug;
 use std::process::ExitCode;
 
-use cihub_config::{ConfigError, Layer, QueueSettings, RepoConfig, Sourced};
+use cihub_config::{ConfigError, QueueSettings, RepoConfig, Sourced};
 
 /// The file named by the first argument, or stdin.
 fn read_input() -> Result<(String, String), String> {
@@ -56,11 +56,7 @@ fn check(text: &str) -> Result<(), ConfigError> {
             queue.queue_conditions.0.len(),
             queue.merge_conditions.0.len()
         );
-        print_settings(&QueueSettings::resolve(
-            &Layer::default(),
-            &queue.settings,
-            &config.defaults,
-        )?);
+        print_settings(&QueueSettings::resolve(&queue.settings, &config.defaults)?);
         println!();
     }
     for rule in &config.priority_rules {

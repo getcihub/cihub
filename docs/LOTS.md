@@ -327,8 +327,8 @@ Autres valeurs fermées :
 
 - Mergeabilité d'une entrée (`Mergeability`), traduite par l'adaptateur du SCM (`AGENTS.md` D23) : `mergeable`,
   `behind`, `conflict`, `blocked`, `unknown`.
-- Source des statuts requis (`RequiredStatusesSource`), par ordre de précédence : `ui_override`, `repo_config`,
-  `branch_protection`.
+- Source des statuts requis (`RequiredStatusesSource`), par ordre de précédence : `repo_config`,
+  `branch_protection` (`AGENTS.md` D134).
 - Erreurs de job (`JobError`) : un job rapporte une erreur, jamais une raison ; c'est `plan` qui choisit la raison.
   Erreurs d'assemblage : `invalid_event`, `merge_conflict`, `config_not_found`, `config_parsing_failure`,
   `config_bad_version`, `config_missing_required_statuses`, `config_bad_required_statuses`,
@@ -817,11 +817,11 @@ Autres valeurs fermées :
 ### Lot 8 : politique de file
 
 - **Objectif** : rendre la file configurable sans toucher au noyau.
-- **Contenu** : fichier `.cihub.yaml` ou `.cihub.yml` lu sur la cible au `base_sha`, fusion avec les réglages de
-  l'interface et source effective de chaque réglage ; langage de conditions (`queue_conditions`,
+- **Contenu** : fichier `.cihub.yaml` ou `.cihub.yml` lu sur la cible au `base_sha`, seule source des réglages
+  (`AGENTS.md` D134), et source effective de chaque réglage (défaut, stratégie, fichier) ; langage de conditions (`queue_conditions`,
   `merge_conditions`, injection des protections, routage entre files d'une même branche, `priority_rules`) ;
   stratégies comme tables de valeurs par défaut ; fenêtre de spéculation adaptative ; budget d'échec ; priorités ;
-  `queues.settings` versionné ; états `paused`, `draining`, `switching_modes`.
+  états `paused`, `draining`, `switching_modes`.
 - **Interfaces figées** : schéma du fichier de configuration (version 1) ; grammaire des conditions ; noms des
   réglages (`docs/CONFIGURATION.md`).
 - **Critère de sortie** : tests de table de la grammaire des conditions (analyse et évaluation) ; sur
@@ -834,9 +834,11 @@ Autres valeurs fermées :
     `cihub-config` (modèle du fichier version 1, choix entre `.cihub.yaml` et `.cihub.yml`, table des stratégies,
     fusion des sources avec la source de chaque réglage, plages, erreurs avec ligne et colonne, raison d'échec de
     chaque erreur).
+  - Fait (2 octobre 2026, D134) : le fichier est la seule source des réglages ; `cihub-config` perd la source
+    `ui`, et `RequiredStatusesSource` perd `ui_override` (code, enum Postgres, documents).
   - Reste : routage entre files d'une même branche ; réglage `resubmit_on_push` (`AGENTS.md` D121) ; merge
     direct sur main (D125) ; injection
-    des protections ; fenêtre adaptative et budget d'échec dans `plan` ; `queues.settings` versionné en base ;
+    des protections ; fenêtre adaptative et budget d'échec dans `plan` ; lecture du fichier par la file ;
     états de la file ; attribut `schedule` (reporté : les fuseaux horaires demandent une base embarquée dans le
     noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
@@ -850,7 +852,7 @@ Autres valeurs fermées :
   généré depuis le code (`cihub-web`, `cihub-api-types`) ; client Rust `cihub-client` ; CLI `cihub` ;
   `Dockerfile` de l'image `cihub-server` et workflow de publication de l'image sur GHCR à chaque version
   (`AGENTS.md` D19) ; `docker compose` d'installation avec le service `cihub-migrate` (`AGENTS.md` D14) et README
-  d'installation ; vérificateur de configuration en endpoint d'API, avec la lecture des rulesets par le trait
+  d'installation, avec un prompt qui aide à écrire `.cihub.yaml` (`AGENTS.md` D134) ; vérificateur de configuration en endpoint d'API, avec la lecture des rulesets par le trait
   `Scm` (`AGENTS.md` D87) ; raison de blocage qui nomme le check requis manquant (`AGENTS.md` D112) ; cache de 5
   minutes des permissions et message d'une soumission refusée.
 - **Interfaces figées** : API v1 publiée dans `/api/v1/openapi.json` ; commandes de PR ; commandes de la CLI.
@@ -866,7 +868,8 @@ Autres valeurs fermées :
 
 - **Contenu** : `web/` (Q9), servi et embarqué par le rôle `web` ; connexion OAuth GitHub, sessions, CSRF ; pages
   file, PR et chronologie, exécution (statuts requis contre statuts observés), graphe en direct ; vérificateur de
-  configuration et assistant ; réglages avec journal d'audit.
+  configuration et assistant ; formulaire qui écrit `.cihub.yaml` et l'ouvre en PR sur le dépôt, jamais en commit
+  direct (`AGENTS.md` D134).
 - **Critère de sortie** : tests de composants et un test de navigateur de bout en bout sur `docker compose` :
   connexion, création d'une file, soumission, suivi jusqu'au merge ; l'assistant signale chaque point de
   configuration de `docs/GITHUB.md` sur un dépôt mal configuré.
