@@ -686,6 +686,12 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             sim.change_pr(&repo(), n, change).unwrap();
         }
     };
+    let failing_ci = vec![
+        BlockReason::Undetermined,
+        BlockReason::QueueConditionsUnmet {
+            conditions: vec![format!("check-success = {REQUIRED}")],
+        },
+    ];
     let cases: Vec<(Setup, ItemState, Vec<BlockReason>)> = vec![
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
@@ -693,16 +699,10 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
-        (
-            Box::new(failing),
-            ItemState::NotReady,
-            vec![BlockReason::Undetermined],
-        ),
-        (
-            Box::new(failing),
-            ItemState::NotReady,
-            vec![BlockReason::Undetermined],
-        ),
+        // The required check failed: with `branch_protection_injection:
+        // both`, the queue names it (`AGENTS.md` D147).
+        (Box::new(failing), ItemState::NotReady, failing_ci.clone()),
+        (Box::new(failing), ItemState::NotReady, failing_ci),
         (
             Box::new(review(ReviewDecision::ChangesRequested)),
             ItemState::NotReady,

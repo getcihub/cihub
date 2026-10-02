@@ -111,6 +111,19 @@ impl RepoConfig {
             .find(|queue| queue.branch == branch && queue.name == name)
     }
 
+    /// The checks that the `merge_conditions` of the queue `name` on the
+    /// branch `branch` require on the test SHA (`AGENTS.md` D146).
+    pub fn merge_checks(&self, branch: &str, name: &str) -> Vec<String> {
+        self.queue(branch, name)
+            .into_iter()
+            .flat_map(|queue| &queue.merge_conditions.0)
+            .filter_map(|expr| match expr {
+                Expr::Condition(condition) => condition.required_check().map(str::to_owned),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The settings of the queue `name` on the branch `branch`. A queue
     /// without an entry has the defaults, without `defaults` of the file
     /// (`AGENTS.md` D138).
@@ -283,7 +296,7 @@ fn queue(
         name,
         branch,
         queue_conditions: conditions(&list(raw.queue_conditions.take()), text)?,
-        merge_conditions: conditions(&list(raw.merge_conditions.take()), text)?,
+        merge_conditions: merge_conditions(&list(raw.merge_conditions.take()), text)?,
         settings: layer(raw)?,
     };
     Ok((queue, name_at))
@@ -402,6 +415,22 @@ enum RawExpr {
 
 fn conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
     exprs(list, text).map(Conditions)
+}
+
+/// `merge_conditions` accept only `check-success = <name>` at the first
+/// level for now (`AGENTS.md` D146).
+fn merge_conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
+    let conditions = conditions(list, text)?;
+    for (node, expr) in list.iter().zip(&conditions.0) {
+        let checked = matches!(expr, Expr::Condition(c) if c.required_check().is_some());
+        if !checked {
+            return Err(ConfigError::parsing(
+                position(node),
+                format!("merge_conditions accept only `check-success = <name>`, not `{expr}`"),
+            ));
+        }
+    }
+    Ok(conditions)
 }
 
 fn exprs(list: &[Spanned<RawExpr>], text: &str) -> Result<Vec<Expr>, ConfigError> {
@@ -569,6 +598,35 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             ..Context::default()
         };
         assert_eq!(main.queue_conditions.eval(&ctx), Ok(false));
+    }
+
+    #[test]
+    fn merge_conditions_accept_only_required_checks() {
+        let config = RepoConfig::parse(&queue(
+            "    merge_conditions:\n      - check-success = build\n      - check-success = \"e2e tests\"\n",
+        ))
+        .unwrap();
+        assert_eq!(config.merge_checks("main", "main"), ["build", "e2e tests"]);
+        assert!(config.merge_checks("main", "other").is_empty());
+        for (body, shown) in [
+            ("      - label = ready\n", "label = ready"),
+            ("      - -check-success = build\n", "-check-success = build"),
+            (
+                "      - check-success ~= ^build\n",
+                "check-success ~= ^build",
+            ),
+            (
+                "      - or:\n          - check-success = a\n",
+                "or: [check-success = a]",
+            ),
+        ] {
+            let error = error(&queue(&format!("    merge_conditions:\n{body}")));
+            assert_eq!(error.position, Some(at(6, 9)), "{body}");
+            assert_eq!(
+                error.message,
+                format!("merge_conditions accept only `check-success = <name>`, not `{shown}`")
+            );
+        }
     }
 
     #[test]

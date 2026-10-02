@@ -22,7 +22,7 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::admission::{Sender, unmet_conditions};
+use crate::admission::{Reading, Sender, unmet_conditions};
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
@@ -354,7 +354,14 @@ async fn refresh(
             Some(Submission { admitted: true, .. }) => Vec::new(),
             submission => {
                 let sender = submission.map(|s| s.sender.clone()).unwrap_or_default();
-                unmet_conditions(scm, &target, pr, &sender, job.class, now).await?
+                let reading = Reading {
+                    sender: &sender,
+                    rules: &required,
+                    own_status: &own,
+                    class: job.class,
+                    now,
+                };
+                unmet_conditions(scm, &target, pr, &reading).await?
             }
         };
         let kind = observed(pr, mergeability(pr, &required, &own), unmet);
@@ -533,7 +540,14 @@ async fn submit_pr(
         changed_files: pr.changed_files,
         sender_permission: sender.permission,
     };
-    let unmet = unmet_conditions(scm, &target, &pr, &sender, job.class, now).await?;
+    let reading = Reading {
+        sender: &sender,
+        rules: &required,
+        own_status: &own,
+        class: job.class,
+        now,
+    };
+    let unmet = unmet_conditions(scm, &target, &pr, &reading).await?;
     let facts = vec![
         (actor, submitted),
         (

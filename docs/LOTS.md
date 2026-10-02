@@ -865,8 +865,14 @@ Autres valeurs fermées :
     les fichiers et les fils de revue), avec le ruleset `cihub` remis le temps de l'enregistrement en mode « une
     approbation et le statut `cihub-contract-ci` », puis rendu à son état de test. #48 et #49 sont rouvertes, #51
     mergée par la suite.
+  - Fait (2 octobre 2026, D146, D147) : `merge_conditions` n'accepte que `check-success = <nom>` de premier niveau
+    (erreur de configuration sinon), et leurs noms s'ajoutent aux statuts requis de l'exécution ;
+    `branch_protection_injection` décide si les checks requis par les règles entrent dans les statuts requis du SHA
+    de test (`both`, `merge`) et dans les `queue_conditions` de la PR (`both`). Tests : validation du fichier,
+    statuts requis selon le fichier, les `merge_conditions` et l'injection, conditions injectées à l'admission, et
+    contre Postgres les raisons de blocage d'un check requis en échec.
   - Reste : routage entre files d'une même branche (`submit_pr` prend la première file de la branche) ; réglage
-    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; injection des protections ; états de la file ; attribut `schedule` (reporté : les fuseaux
+    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; états de la file ; attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
     `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans

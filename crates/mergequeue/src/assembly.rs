@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
-    Actor, ConflictCulprit, EventKind, JobClass, JobError, RequiredStatusesSource, RunId,
-    RunStatus, Trigger, temp_branch,
+    Actor, BranchProtectionInjection, ConflictCulprit, EventKind, JobClass, JobError,
+    RequiredStatusesSource, RunId, RunStatus, Trigger, temp_branch,
 };
 use cihub_mq_core::{Head, TestBranch};
 use cihub_platform::{Job, MAX_ATTEMPTS, Outcome, error_chain};
@@ -230,27 +230,59 @@ impl Assembly<'_> {
         })
     }
 
-    /// The names of the required statuses, from the strongest source
-    /// (`docs/ALGORITHMS.md`): the file of the repository on the target
-    /// branch at `base_sha`, then the rules of the target branch, without the
-    /// status of the queue itself (`AGENTS.md` D98).
+    /// The names of the required statuses (`docs/ALGORITHMS.md`): the list
+    /// of the file of the repository on the target branch at `base_sha`, or
+    /// else the rules of the target branch when `branch_protection_injection`
+    /// lets them in (`AGENTS.md` D147), without the status of the queue
+    /// itself (D98); then the checks of the `merge_conditions` (D146).
     async fn required_statuses(&self) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
         let branch = self.target.target_branch.as_str();
-        if let Some(text) = self.config_file().await?
-            && let Some(names) = required_statuses_of_file(&text, branch, &self.target.name)?
-        {
-            return Ok((names, RequiredStatusesSource::RepoConfig));
+        let name = self.target.name.as_str();
+        let (listed, merge_checks, injection) = match self.config_file().await? {
+            Some(text) => {
+                let listed = required_statuses_of_file(&text, branch, name)?;
+                let config = RepoConfig::parse(&text).map_err(|err| err.job_error())?;
+                let settings = config
+                    .settings(branch, name)
+                    .map_err(|err| err.job_error())?;
+                let injection = settings.branch_protection_injection.value;
+                (listed, config.merge_checks(branch, name), injection)
+            }
+            None => (
+                None,
+                Vec::new(),
+                self.settings.branch_protection_injection.value,
+            ),
+        };
+        let (mut names, source) = match listed {
+            Some(names) => (names, RequiredStatusesSource::RepoConfig),
+            None if injection == BranchProtectionInjection::None => {
+                (Vec::new(), RequiredStatusesSource::RepoConfig)
+            }
+            None => {
+                let rules = self
+                    .scm
+                    .required_checks(&self.target.repo, branch, self.class)
+                    .await?;
+                let own = queue_status_context(branch);
+                let names: Vec<String> = rules.names.into_iter().filter(|n| *n != own).collect();
+                let source = if names.is_empty() {
+                    RequiredStatusesSource::RepoConfig
+                } else {
+                    RequiredStatusesSource::BranchProtection
+                };
+                (names, source)
+            }
+        };
+        for check in merge_checks {
+            if !names.contains(&check) {
+                names.push(check);
+            }
         }
-        let rules = self
-            .scm
-            .required_checks(&self.target.repo, branch, self.class)
-            .await?;
-        let own = queue_status_context(branch);
-        let names: Vec<String> = rules.names.into_iter().filter(|n| *n != own).collect();
         if names.is_empty() {
             return Err(JobError::NoRequiredStatuses.into());
         }
-        Ok((names, RequiredStatusesSource::BranchProtection))
+        Ok((names, source))
     }
 
     /// The configuration file of the repository at `base_sha`, if any.
@@ -1026,5 +1058,69 @@ mod tests {
             .await,
             Err(Step::GiveUp(JobError::NoRequiredStatuses, None))
         );
+    }
+
+    /// The required statuses of a run and their source.
+    type Statuses = (Vec<String>, RequiredStatusesSource);
+
+    #[tokio::test]
+    async fn merge_conditions_and_the_injection_shape_the_required_statuses() {
+        let (sim, target, main) = world();
+        let defaults = settings(|_| {});
+        let mut n = 0;
+        let mut built = |body: &str| {
+            n += 1;
+            let config = format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+            let base = sim
+                .commit(
+                    &target.repo,
+                    &main,
+                    &[(".cihub.yaml", Some(config.as_str()))],
+                )
+                .unwrap();
+            let path = format!("f{n}.txt");
+            let member = vec![head(&sim, &target, &base, n, &[(&path, Some("x"))])];
+            (base, member)
+        };
+        let statuses = |result: Result<Assembled, Step>| {
+            result.map(|a| (a.required_statuses, a.required_statuses_source))
+        };
+        let cases: Vec<(&str, Result<Statuses, Step>)> = vec![
+            // The rules, then the checks of the merge conditions.
+            (
+                "    merge_conditions:\n      - check-success = e2e\n      - check-success = ci\n",
+                Ok((
+                    vec!["ci".into(), "e2e".into()],
+                    RequiredStatusesSource::BranchProtection,
+                )),
+            ),
+            // A list of the file replaces the rules.
+            (
+                "    required_statuses: [lint]\n    merge_conditions:\n      - check-success = e2e\n",
+                Ok((
+                    vec!["lint".into(), "e2e".into()],
+                    RequiredStatusesSource::RepoConfig,
+                )),
+            ),
+            // `merge` keeps the rules on the test SHA.
+            (
+                "    branch_protection_injection: merge\n",
+                Ok((vec!["ci".into()], RequiredStatusesSource::BranchProtection)),
+            ),
+            // `none` leaves them out: only the merge conditions are left.
+            (
+                "    branch_protection_injection: none\n    merge_conditions:\n      - check-success = e2e\n",
+                Ok((vec!["e2e".into()], RequiredStatusesSource::RepoConfig)),
+            ),
+            (
+                "    branch_protection_injection: none\n",
+                Err(Step::GiveUp(JobError::NoRequiredStatuses, None)),
+            ),
+        ];
+        for (body, want) in cases {
+            let (base, member) = built(body);
+            let got = build(&sim, &defaults, &target, &request(&base, vec![], member)).await;
+            assert_eq!(statuses(got), want, "{body}");
+        }
     }
 }

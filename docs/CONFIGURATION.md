@@ -64,8 +64,9 @@ Le fichier doit commencer par `version: 1` : une autre valeur, ou son absence, d
 `start_test_run_config_bad_version`. Une clé inconnue, une valeur hors plage ou deux réglages qui ne vont pas
 ensemble donnent `start_test_run_config_parsing_failure`, avec la ligne et la colonne de la valeur fautive. Une
 liste `required_statuses` avec un nom vide ou en double donne `start_test_run_config_bad_required_statuses`.
-`defaults` accepte tous les réglages d'une file, mais pas `name`, `branch` ni les conditions ; deux files ne
-peuvent pas avoir le même `name`.
+Pour l'instant, `merge_conditions` accepte seulement `check-success = <nom>` au premier niveau (`AGENTS.md` D146) :
+une autre forme donne `start_test_run_config_parsing_failure`, avec sa position. `defaults` accepte tous les
+réglages d'une file, mais pas `name`, `branch` ni les conditions ; deux files ne peuvent pas avoir le même `name`.
 
 ## Sources et stratégies
 

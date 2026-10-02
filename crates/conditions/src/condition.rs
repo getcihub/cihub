@@ -100,6 +100,19 @@ impl Condition {
         &self.source
     }
 
+    /// The name of the check when the condition is `check-success = <name>`,
+    /// the only form of `merge_conditions` for now (`AGENTS.md` D146).
+    pub fn required_check(&self) -> Option<&str> {
+        match &self.test {
+            Test::Text {
+                attribute: Attribute::CheckSuccess,
+                op: Operator::Eq,
+                pattern: Pattern::Exact(name),
+            } if !self.negated => Some(name),
+            _ => None,
+        }
+    }
+
     /// # Errors
     ///
     /// `NotLoaded` if the attribute is loaded on demand and `ctx` does not
