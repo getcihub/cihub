@@ -520,7 +520,9 @@ pub async fn pass_connection_deliveries(
         };
         let error = match (reconciler.translate)(&event, &payload) {
             Ok(read) => {
-                pass_delivery(&mut tx, &delivery, read.event, now).await?;
+                if !pass_delivery(&mut tx, &delivery, read.event, now).await? {
+                    continue;
+                }
                 None
             }
             Err(err) => Some(err.to_string()),
@@ -539,13 +541,14 @@ pub async fn pass_connection_deliveries(
     Ok(count)
 }
 
-/// What a delivery of a connection without a queue asks (D103).
+/// What a delivery of a connection without a queue asks (D103). Returns
+/// `false` for a delivery that waits for the next pass (D150).
 async fn pass_delivery(
     conn: &mut PgConnection,
     delivery: &ConnectionDelivery,
     event: ScmEvent,
     now: OffsetDateTime,
-) -> Result<(), MergeQueueError> {
+) -> Result<bool, MergeQueueError> {
     match event {
         ScmEvent::AccessLost => {
             give_to_queues(conn, delivery, EventKind::AccessLost, now).await?;
@@ -572,7 +575,7 @@ async fn pass_delivery(
             branch,
             ..
         } => {
-            read_heads(conn, delivery, &repo_external_id, &branch, now).await?;
+            return read_heads(conn, delivery, &repo_external_id, &branch, now).await;
         }
         ScmEvent::Commented {
             repo_external_id,
@@ -594,7 +597,7 @@ async fn pass_delivery(
         }
         _ => {}
     }
-    Ok(())
+    Ok(true)
 }
 
 /// Deposits the fact `kind` of `delivery` in the inbox of each queue of its
@@ -727,27 +730,36 @@ async fn route_pr_change(
 }
 
 /// Asks each queue of `branch` to read its head again, after a push that
-/// the routing gave to no queue because the branch has several (D135).
+/// the routing gave to no queue because the branch has several (D150).
+/// Returns `false` while a merge of one of them is in flight: the push of
+/// the merge may come before its fact, so the push waits for the next pass.
 async fn read_heads(
     conn: &mut PgConnection,
     delivery: &ConnectionDelivery,
     repo_external_id: &str,
     branch: &str,
     now: OffsetDateTime,
-) -> Result<(), MergeQueueError> {
+) -> Result<bool, MergeQueueError> {
     let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
-        return Ok(());
+        return Ok(true);
     };
-    for queue in QueueTarget::queues_of_branch(conn, repo, branch).await? {
-        if !queue.enabled {
-            continue;
+    let queues: Vec<QueueTarget> = QueueTarget::queues_of_branch(conn, repo, branch)
+        .await?
+        .into_iter()
+        .filter(|queue| queue.enabled)
+        .collect();
+    for queue in &queues {
+        if merge_in_flight(conn, queue.queue_id).await? {
+            return Ok(false);
         }
-        let job = refresh_target_after(&queue, &delivery.delivery_id);
+    }
+    for queue in &queues {
+        let job = refresh_target_after(queue, &delivery.delivery_id);
         enqueue_job(conn, &job, now, now)
             .await
             .map_err(MergeQueueError::Platform)?;
     }
-    Ok(())
+    Ok(true)
 }
 
 /// A `merge` command in a comment on the PR `number`.

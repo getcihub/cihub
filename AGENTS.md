@@ -644,6 +644,12 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   Une entrée ne change jamais de file ; une livraison d'une PR va à la file de son entrée vivante. `submit_pr`
   applique `priority_rules` : la première règle vraie donne la priorité, et `--priority` de la commande
   l'emporte.
+- **D149** Complète D148 : l'option s'écrit `/cihub merge --queue=<nom>`, comme `--priority=<valeur>` ; une option
+  avec une valeur s'écrit toujours `--option=<valeur>`.
+- **D150** Complète D135 : un push sur une branche qui a plusieurs files n'est routé vers aucune file ; la passe des
+  livraisons de la connexion demande alors à chaque file de la branche de relire sa tête (`refresh_target`, classe
+  `interactive`). Tant qu'un job `merge_pr` d'une de ces files attend ou tourne, la livraison attend la passe
+  suivante, comme une livraison routée vers une seule file (écart 4 du lot 7).
 
 ### 4.1 Questions ouvertes
 

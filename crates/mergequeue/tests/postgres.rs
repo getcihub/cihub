@@ -1691,6 +1691,95 @@ priority_rules:
     q.stop().await;
 }
 
+/// `AGENTS.md` D150: a push on a branch with two queues waits while a merge
+/// of one of them is in flight, then asks each queue to read its head.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
+    seed(&pool).await;
+    let hotfix = QueueId::from_ulid(Ulid(30));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+         SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
+    )
+    .bind(hotfix.to_string())
+    .bind(queue().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let sim = Sim::new();
+    let root = sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
+    let head = sim.commit(&repo(), &root, &[("b.txt", Some("b"))]).unwrap();
+    sim.take_deliveries();
+    sim.push(&repo(), "main", &head, &alice()).unwrap();
+    let deliveries = Arc::new(Mutex::new(HashMap::new()));
+    for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
+        let id = format!("push-{n}");
+        let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+        assert_eq!(route.queue_id, None, "two queues: no sure queue");
+        deliveries.lock().unwrap().insert(id.clone(), delivery);
+        let stored = Delivery {
+            scm_instance_id: instance(),
+            delivery_id: id.clone(),
+            org_id: route.org_id,
+            connection_id: route.connection_id,
+            queue_id: None,
+            event: "sim".into(),
+            action: None,
+            payload: serde_json::json!({ "id": id }),
+            received_at: clock(),
+        };
+        store_delivery(&mut tx, &stored).await.unwrap();
+    }
+    // A merge of the queue `main` waits for its worker.
+    let merge = Job {
+        idempotency_key: "merge_pr:in-flight:1".into(),
+        job_type: "merge_pr".into(),
+        class: JobClass::Merge,
+        org_id: Some(org()),
+        connection: Some((instance(), connection())),
+        queue_id: Some(queue()),
+        payload: serde_json::json!({}),
+        attempts: 0,
+    };
+    enqueue_job(&mut tx, &merge, clock() + Duration::hours(1), clock())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let reconciler = Reconciler {
+        translate: translate(&deliveries),
+    };
+    let state = |pool: PgPool| async move {
+        let mut tx = begin_system(&pool).await.unwrap();
+        sqlx::query_as::<_, (i64, i64)>(
+            "SELECT (SELECT count(*) FROM webhook_inbox WHERE processed_at IS NULL),
+                    (SELECT count(*) FROM jobs WHERE type = 'refresh_target')",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+    };
+    cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
+        .await
+        .unwrap();
+    assert_eq!(state(pool.clone()).await, (1, 0), "the push waits");
+
+    // The merge ends: the next pass gives the push to both queues.
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE jobs SET state = 'done', finished_at = now()
+         WHERE idempotency_key = 'merge_pr:in-flight:1'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
+        .await
+        .unwrap();
+    assert_eq!(state(pool.clone()).await, (0, 2));
+}
+
 /// The last valid file of the queue, the head read, and the error.
 async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
     let mut tx = begin_system(pool).await.unwrap();

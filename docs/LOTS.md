@@ -876,7 +876,8 @@ Autres valeurs fermées :
     file de la branche, dans l'ordre du fichier, dont les conditions passent, sinon la première, puis applique la
     première règle de priorité vraie quand la commande n'en donne pas. Quand une branche a plusieurs files, la passe
     des livraisons de la connexion envoie un changement de PR à la file de son entrée vivante, ou une soumission
-    par label, et un push sur la branche demande `refresh_target` (classe `interactive`) à chacune de ses files.
+    par label, et un push sur la branche demande `refresh_target` (classe `interactive`) à chacune de ses files
+    (D150).
     Tests : la commande, et contre Postgres et le simulateur deux files sur `main` (routage par condition, par
     `--queue`, priorité d'une règle et de la commande, push lu par les deux files).
   - Reste : réglage
@@ -885,9 +886,9 @@ Autres valeurs fermées :
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
     `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans
     ses jobs (D142).
-  - Écarts à valider : (1) l'option s'écrit `--queue=<nom>`, comme `--priority=`, et non `--queue <nom>` (D148) ;
-    (2) un push sur une branche à plusieurs files demande `refresh_target` à chaque file, qui ne lit pas la tête
-    tant qu'un merge de la file est en vol : la file voit alors la tête au sondage suivant (5 minutes).
+  - Fait (2 octobre 2026, D149, D150) : l'option s'écrit `--queue=<nom>` ; un push sur une branche à plusieurs
+    files attend la passe suivante tant qu'un merge d'une de ses files est en vol, puis demande `refresh_target` à
+    chacune. Test : contre Postgres, un push qui attend la fin d'un merge, puis atteint les deux files.
 
 ### Lot 9 : surfaces : PR, API, CLI
 
