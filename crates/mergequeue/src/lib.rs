@@ -1,8 +1,8 @@
 //! The merge queue module (`AGENTS.md` D93): the log of each queue in
 //! Postgres, its projections (`queue_items`, `test_groups`, `test_runs`,
 //! `check_observations`), its snapshots and their replay; the scheduler that
-//! reconciles each queue; and the jobs that read the SCM for it and build its
-//! test branches. The decisions come from `cihub-mq-core`; this crate writes
+//! reconciles each queue; and the jobs that read the SCM for it, build its
+//! test branches, merge its PRs and repair what a lost webhook leaves. The decisions come from `cihub-mq-core`; this crate writes
 //! them. The scheduler does not call the SCM: the jobs do, and give their
 //! facts back through `queue_inbox`.
 
@@ -10,7 +10,9 @@ mod assembly;
 mod command;
 mod jobs;
 mod log;
+mod merge;
 mod projection;
+mod repair;
 mod scheduler;
 mod target;
 
@@ -29,9 +31,12 @@ pub use assembly::{
 };
 pub use jobs::{REFRESH_PRS, SUBMIT_PR, queue_status_context};
 pub use log::{COVER_AFTER, QueueLog, SNAPSHOT_EVERY, rebuild};
+pub use merge::{MERGE_ATTEMPTS, MERGE_PR, MERGE_RATE_LIMIT_WAIT, merge_commit_title};
+pub use repair::{REFRESH_CHECKS, REFRESH_TARGET, resync};
 pub use scheduler::{
     CONNECTION_DELIVERIES_PER_PASS, COVER_EVERY, INBOX_PER_RECONCILIATION, LEASES_PER_PASS,
-    Reconciler, Translate, pass_connection_deliveries, run_scheduler, wake_uncovered,
+    Reconciler, Translate, pass_connection_deliveries, run_scheduler, wake_live_queues,
+    wake_uncovered,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -111,7 +116,8 @@ pub fn module(
         name: ModuleName::Mergequeue,
         executors: Box::new(move |executors| {
             let (refresh_scm, submit_scm, assemble_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let submit_settings = settings.clone();
+            let (merge_scm, checks_scm, target_scm) = (scm.clone(), scm.clone(), scm.clone());
+            let (submit_settings, merge_settings) = (settings.clone(), settings.clone());
             executors.register(REFRESH_PRS, move |pool, job, now| {
                 jobs::execute_refresh(pool, refresh_scm.clone(), job, now)
             });
@@ -123,6 +129,15 @@ pub fn module(
             });
             executors.register(CLEANUP_TEST_BRANCH, move |pool, job, _| {
                 assembly::execute_cleanup(pool, scm.clone(), job)
+            });
+            executors.register(MERGE_PR, move |pool, job, now| {
+                merge::execute_merge(pool, merge_scm.clone(), merge_settings.clone(), job, now)
+            });
+            executors.register(REFRESH_CHECKS, move |pool, job, now| {
+                repair::execute_refresh_checks(pool, checks_scm.clone(), job, now)
+            });
+            executors.register(REFRESH_TARGET, move |pool, job, now| {
+                repair::execute_refresh_target(pool, target_scm.clone(), job, now)
             });
         }),
         scheduler: Box::new(move |cancel| {

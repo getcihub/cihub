@@ -39,7 +39,7 @@ les utilisateurs (atténués par le vérificateur de configuration, en phase 1).
 | 4   | Adaptateur GitHub, simulateur et installation de l'App | 1     | 3         | —         | terminé                                  |
 | 5   | Réconciliateur et admission                            | 1     | 1, 4      | —         | terminé                                  |
 | 6   | Cycle de test                                          | 1     | 5         | —         | terminé                                  |
-| 7   | Merge et changements extérieurs                        | 1     | 6         | Q2, Q4, Q13 | à faire                                  |
+| 7   | Merge et changements extérieurs                        | 1     | 6         | —         | terminé                                  |
 | 8   | Politique de file                                      | 1     | 6         | —         | en cours (commencé avant son tour)       |
 | 9   | Surfaces : PR, API, CLI                                | 1     | 7, 8      | —         | à faire                                  |
 | 10  | Tableau de bord                                        | 2     | 9         | Q9        | à faire                                  |
@@ -148,9 +148,9 @@ Les lots 1 et 2 peuvent avancer en parallèle après le lot 0, ainsi que les lot
     ci-dessous : un groupe `dissolved` accepte les raisons de retour en `pending` sans `merge_item_now_ready`, les
     raisons `cancelled` sans `not_ready_timeout_expired`, et les raisons d'échec du merge sans
     `direct_merge_rejected`. Un échec de merge direct donne toujours `direct_merge_rejected`, seule raison permise
-    depuis `pending` (`AGENTS.md` Q13). Une décision causée par l'horloge (timeout) ou par un changement de mode
-    n'a pas de `cause_id`. Une PR vue mergée alors que la file demande son merge attend le résultat du job de
-    merge.
+    depuis `pending` (`AGENTS.md` Q13, tranchée par D122 au lot 7). Une décision causée par l'horloge (timeout) ou
+    par un changement de mode n'a pas de `cause_id`. Une PR vue mergée alors que la file demande son merge attend
+    le résultat du job de merge.
   - Reste pour les lots suivants : conditions d'entrée et exception du statut de la file (lot 5), fenêtre
     adaptative (lot 8), profondeur d'échec en attente au-delà de 0 et merge optimiste (lot 12), lots et bissection
     (lot 12), merge direct (lot 7), `not_ready_timeout_hours` (lot 5), sérialisation du `Snapshot` pour
@@ -184,7 +184,7 @@ Faits :
 | `item.cancel_requested`                              | `/cihub cancel`, API, CLI                                    | `by_admin` ; donne `admin_requested` ou `user_requested`                                                                                             |
 | `item.restart_requested`                             | `/cihub restart`, API, CLI                                   | `by_api` ; donne `tests_restarted_by_user` ou `tests_restarted_by_api_request`                                                                       |
 | `pr.observed`                                        | webhook `pull_request` ou `pull_request_review`, tic, resync | état complet lu : ouverte, fermée ou mergée, SHA de tête, branche de base, brouillon, labels, mergeabilité, décision de revue, checks de la PR        |
-| `target.pushed`                                      | webhook `push` sur la branche cible, tic                     | SHA `before` (vide pour une lecture du tic), SHA `after`, `sender_id`                                                                                |
+| `target.pushed`                                      | webhook `push` sur la branche cible, tic                     | SHA `before` et `sender_id` (vides pour une lecture du tic), SHA `after`                                                                              |
 | `check.observed`                                     | check ou statut de commit, tic                               | SHA de test, nom, nature, état, conclusion, URL ; seulement pour un SHA qu'une exécution vivante attend                                              |
 | `targets.received`                                   | `POST …/impacted-targets`                                    | SHA de tête, cibles ou `ALL`                                                                                                                         |
 | `test_branch.assembled`                              | job d'assemblage                                             | `run_id`, SHA de test, numéro de PR brouillon, statuts requis et leur source                                                                         |
@@ -264,7 +264,7 @@ Transitions d'une entrée :
 | `not_ready`            | `pending`         | `merge_item_now_ready`                                                                                                                                                                                                                                                                        |
 | `pending`              | `testing`         | `test_run_started`                                                                                                                                                                                                                                                                            |
 | `pending`              | `merged`          | `merge_graph_direct_merge`                                                                                                                                                                                                                                                                    |
-| `pending`              | `failed`          | `direct_merge_rejected`                                                                                                                                                                                                                                                           |
+| `pending`              | `failed`          | `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`, `merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time` (`AGENTS.md` D122)                                                                                       |
 | `testing`              | `tests_passed`    | `test_run_passed`, `passed_by_optimization`                                                                                                                                                                                                                                                   |
 | `testing`              | `pending_failure` | `test_run_required_status_failed`, `test_run_timeout`                                                                                                                                                                                                                                         |
 | `testing`              | `failed`          | toutes les raisons `start_test_run_*`, `test_run_failed_by_optimization`                                                                                                                                                                                                                      |
@@ -335,8 +335,9 @@ Autres valeurs fermées :
   `no_required_statuses`, `retry_exhausted`, `draft_prs_not_allowed`, `permissions_block_test_branch` ; chacune
   donne `start_test_run_<erreur>`. Erreurs de merge : `merge_rejected`, `rate_limit_exceeded`,
   `branch_protection_unmet`, `merge_already_in_progress`, `repeated_server_errors`, `head_changed` ;
-  `head_changed` (409 sur le garde-fou `sha`) donne `pr_updated_at_merge_time`, un merge direct donne toujours
-  `direct_merge_rejected`, et les autres donnent `merge_rejected` ou `merge_<erreur>`.
+  `head_changed` (409 sur le garde-fou `sha`) donne `pr_updated_at_merge_time`, `merge_rejected` donne
+  `direct_merge_rejected` pour un merge direct (`AGENTS.md` D122), `pr_already_merged` donne `merged` avec
+  `manual_merge` (D132), et les autres donnent `merge_rejected` ou `merge_<erreur>`.
 
 ### Lot 2 : socle de données : serveur, tenancy, journal
 
@@ -707,14 +708,14 @@ Autres valeurs fermées :
     réassemble les groupes derrière elle avant que leurs propres fermetures n'arrivent : deux assemblages
     pour rien, à mesurer au lot 7 ; (c) les livraisons d'une installation sans connexion (D86) ne sont jamais
     supprimées par la maintenance, qui ne supprime que les livraisons traitées.
-  - Reste, passé aux lots suivants : le mode `inplace`, qui demande une décision (écart 8) ; l'annulation des
-    workflows (D116) ; la relecture de la tête de la cible et des checks d'une exécution silencieuse, l'existence
+  - Reste, passé aux lots suivants : le mode `inplace`, avec un lot ultérieur (`AGENTS.md` D119) ; l'annulation
+    des workflows (D116) ; la relecture de la tête de la cible et des checks d'une exécution silencieuse, l'existence
     des refs et le 422 ci-dessus (lot 7) ; la route `GET /api/v1/test-runs/{run_id}` (lot 9, D115) ; la colonne
     `deadline_at` avec `queues.settings` (lot 8) ; la rétention des livraisons sans connexion (lot 7 ou 15) ;
     un test automatique de `start_test_run_retry_exhausted` (le backoff des jobs le rend lent).
-  - Écarts validés (Nicolas Lecoy, 1er octobre 2026) : D114 à D118. Le simulateur n'a pas gagné de panne ciblée
-    sur un SHA : son merge à trois voies donne un conflit à partir du contenu des fichiers.
-  - Écarts à valider : (1) `TestBranch` de l'état voulu porte `predecessors` et `members` (des `Head` avec le
+  - Écarts validés (Nicolas Lecoy, 1er octobre 2026) : D114 à D119. Le simulateur n'a pas gagné de panne ciblée
+    sur un SHA : son merge à trois voies donne un conflit à partir du contenu des fichiers. Et les écarts
+    suivants : (1) `TestBranch` de l'état voulu porte `predecessors` et `members` (des `Head` avec le
     numéro de PR et le SHA) à la place de `head_shas`, pour que le job nomme la PR coupable et les PR testées ;
     (2) le nettoyage n'est pas dans l'état voulu, car une exécution terminée sort de l'instantané : le scheduler
     le demande quand il écrit la décision qui la termine (D117) ; (3) la réconciliation écrit les faits de
@@ -732,20 +733,86 @@ Autres valeurs fermées :
     branche de test ; sa conception demande une décision : exemption dans `pr_changes` quand la tête observée est
     le SHA de test de l'exécution vivante, garde `sha` du merge sur ce SHA, formation seulement sans prédécesseur
     vivant, `head_branch` dans `PrSnapshot` (contrat du trait `Scm` et cassette enregistrée), routage des checks
-    par SHA ; d'ici là, un `trigger: inplace` fait échouer l'exécution avec `start_test_run_invalid_event`.
+    par SHA ; il sort du lot 7 et `cihub-config` refuse `trigger: inplace` d'ici là (D119).
 
 ### Lot 7 : merge et changements extérieurs
 
 - **Objectif** : merger dans l'ordre et rester correct quand le monde change autour de la file.
 - **Contenu** : étape de merge (`squash`, `merge_commit`, `rebase`, `fast_forward`, garde-fou `sha`,
-  `merge-commit-title`, reprises 5xx, 405, 409) ; `merged_sha` ; merge direct sur main ; push extérieur sur la
+  `merge-commit-title`, reprises 5xx, 405, 409) ; `merged_sha` ; push extérieur sur la
   cible ; merge manuel ; push, changement de base, brouillon, fermeture, retrait du label ; boucle de réparation
   (PR vivantes, checks silencieux, tête de la cible, existence des refs) ; `POST /queues/{id}:resync` ; tâche
-  `sim`.
+  `sim`. Décisions du lot : `cihub-config` refuse `trigger: inplace` (`AGENTS.md` D119) et `fast_forward` hors
+  de `sequential`, et `fast_forward` avance la cible sur le SHA de test, dans `cihub-github` et le simulateur
+  (D120, D124) ; un push sur une PR en file l'annule (D121) ; raisons précises d'un échec de merge direct depuis
+  `pending` (D122) ; job `merge_pr` (D123) ; titre et corps dans `PrSnapshot` (D126) ; jobs de réparation (D127) ;
+  `resync` sans sa route (D128) ; test d'injection de pannes (D129). Le merge direct sur main passe au lot 8
+  (D125). Repris du lot 6 (D130) : abandon immédiat quand l'assemblage reçoit un 422 parce qu'une tête est déjà
+  dans la cible ; mesure des assemblages inutiles après la fermeture de la PR en tête ; rétention des livraisons
+  sans connexion.
 - **Interfaces figées** : raisons `merged`, `cancelled` et d'échec du merge (`merge_rejected`…).
 - **Critère de sortie** : le test d'injection de pannes de `docs/RELIABILITY.md` (5xx, 429, webhooks perdus,
   dupliqués, désordonnés, processus tués à des instants aléatoires) passe sur 1 000 graines : chaque PR verte est
   mergée exactement une fois, dans l'ordre du graphe, et chaque PR rouge porte une raison.
+- **Suivi** :
+  - Fait : les décisions du lot (`AGENTS.md` D119 à D130). `cihub-config` refuse `trigger: inplace` et
+    `fast_forward` hors de `sequential` ; la table des transitions accepte les raisons précises d'un échec de merge
+    direct depuis `pending`. Dans `cihub-scm`, `PrSnapshot` gagne `title` et `body`, `PrMerge` gagne `tested_sha`,
+    `ScmError` gagne `NotFastForward` ; `cihub-github` et le simulateur avancent la cible sur le SHA de test en
+    `fast_forward` ; le simulateur gagne `edit_pr` et des pannes aléatoires tirées d'une graine (`RandomFaults`).
+    Dans `cihub-mq-core`, `Merge` porte le run et le SHA de test, `Desired` gagne `check_reads` et `target_read`,
+    `observe` relit chaque PR vivante, et `wake_at` suit ces lectures. Dans `cihub-mergequeue` : job `merge_pr`
+    (titre du commit, tentatives, correspondance des erreurs), jobs `refresh_checks` (recrée la branche de test)
+    et `refresh_target`, fonction `resync`, abandon de l'assemblage quand une tête est déjà dans la cible.
+    `maintenance` supprime les livraisons non routées de plus de 7 jours. Tâche `mise run sim` et workflow de nuit
+    `.github/workflows/sim.yaml`. Tests : tables du titre, des erreurs et des clés ; noyau (lectures des PR, des
+    checks et de la tête) ; contre Postgres et le simulateur, le merge (reprise après 5xx, `head_changed`), les
+    webhooks perdus réparés (rapport, branche de test supprimée, push extérieur), `resync`, et `fault_injection`.
+  - Critère de sortie : `mise run sim` passe sur 1 000 graines le 2 octobre 2026, avec D131 à D133 (1 530 s).
+    Le 1er octobre, avant D133, il échouait à la graine 412.
+  - Fait (2 octobre 2026, D131 à D133) : réveil des files vivantes au démarrage du scheduler ; le job `merge_pr`
+    lit la PR avant de la merger, et une PR déjà mergée donne `pr_already_merged`, que `plan` traduit en
+    `manual_merge` ; l'assemblage compte seulement les 422 dans ses 5 tentatives et attend les autres erreurs
+    passagères jusqu'à 15 minutes après le début de l'exécution ; `MAX_ATTEMPTS` passe à 11. Tests : noyau
+    (`pr_already_merged` redémarre l'aval), table de `give_up`, et contre Postgres le réveil au démarrage et une
+    PR mergée à la main pendant son test.
+  - Fait (test manuel, 1er et 2 octobre 2026, sur `getsyncr/contracts`) : merge au démarrage d'une entrée
+    `tests_passed` du lot 6 (#16, squash par l'App, titre de la PR) ; trois PR en pipeline mergées dans l'ordre,
+    avec le titre de la ligne `merge-commit-title:` ; CI rouge après la relance du budget (#17) ; PR en conflit
+    avec la cible gardée en `not_ready` (`merge_conflict`, #15) ; push sur une PR en test (`pr_pushed_to`) ;
+    arrêt du serveur pendant les tests, merge à la main pendant l'arrêt, puis reprise sans perte. Ce test a
+    trouvé les défauts corrigés par D131 (une file sans réveil après le démarrage) et D132 (le job de merge
+    s'attribuait un merge fait à la main).
+  - Fait (test manuel, 2 octobre 2026, PR #45) : branche de test supprimée 1 s après le passage en
+    `in_progress` ; 10 minutes après le dernier rapport, `refresh_checks` l'a recréée au SHA de test exact.
+    Limite observée : GitHub ferme la PR brouillon quand sa branche disparaît, et la recréation ne la rouvre
+    pas ; en mode `draft_pr`, la CI ne tourne donc pas de nouveau et l'exécution reste muette jusqu'à son timeout.
+    Ouvrir de nouveau la PR brouillon après la recréation demande une décision, reportée à plus tard (validé le
+    2 octobre 2026).
+  - Fait (2 octobre 2026) : les réponses de GitHub sont enregistrées de nouveau (D126, 57 échanges, avec `title`
+    et `body`), avec le ruleset `cihub` remis le temps de l'enregistrement en mode « une approbation et le statut
+    `cihub-contract-ci` », puis rendu à son état de test. Les PR de la suite sont recréées (#47 mergée, #48 et #49
+    fermées, leurs branches gardées pour un prochain enregistrement).
+  - Reste, passé aux lots suivants : les assemblages inutiles après la fermeture de la PR en tête (lot 12) ;
+    ouvrir de nouveau la PR brouillon après la recréation d'une branche de test (décision reportée) ; le merge
+    direct sur main (lot 8, D125) ; la route de `resync` (lot 9, D128).
+  - Écarts validés (Nicolas Lecoy, 2 octobre 2026) : (1) la clé du merge est `merge_pr:<item_id>-<run_id>:1`, pas `merge_pr:<item_id>:1` : une
+    entrée prouvée de nouveau par une autre exécution (après un redémarrage) demande un nouveau job, et le job
+    vérifie que `queue_items.verified_by_run_id` est encore ce run ; (2) `Merge` porte aussi `run_id` ;
+    (3) `target.pushed.sender_id` est optionnel, vide pour une lecture du tic ; (4) tant qu'un job `merge_pr` de
+    la file attend ou tourne, une livraison de push sur la cible dont le SHA n'est pas un merge connu attend, et
+    `refresh_target` ne lit pas la tête : sinon le push du merge de la file, arrivé avant son fait, redémarre
+    toute la file ; (5) nouvelle variante `ScmError::NotFastForward` ; (6) la tête de la cible est lue seulement
+    quand la file a du travail, et chaque minute quand elle ne la connaît pas : avant ce lot, une file sans push
+    sur sa cible ne formait aucun groupe ; (7) pour D130, l'abandon vient d'une tête « déjà contenue » au merge
+    d'un membre, ou d'un 422 « No commits between » à l'ouverture de la PR brouillon ; (8) taux du test
+    d'injection de pannes : 1 % de 5xx et 1 % de 429 par appel, 10 % de livraisons perdues, 10 % envoyées deux
+    fois, ordre changé, un arrêt des processus dans 15 % des tours, 5 PR dont 25 % rouges ; les soumissions
+    arrivent sans perte (le balayage du lot 4 les couvre) ; un arrêt annule les tâches et ferme le pool du
+    processus, pour que Postgres annule ses transactions comme à la fin d'un vrai processus.
+  - Observé avant D133 : une PR verte pouvait échouer avec `start_test_run_retry_exhausted`, car l'assemblage
+    comptait chaque 5xx, 429 et arrêt dans ses 5 tentatives ; avec 2 % de pannes par appel, environ une graine
+    sur 400.
 
 ### Lot 8 : politique de file
 
@@ -767,9 +834,11 @@ Autres valeurs fermées :
     `cihub-config` (modèle du fichier version 1, choix entre `.cihub.yaml` et `.cihub.yml`, table des stratégies,
     fusion des sources avec la source de chaque réglage, plages, erreurs avec ligne et colonne, raison d'échec de
     chaque erreur).
-  - Reste : routage entre files d'une même branche ; injection des protections ; fenêtre adaptative et budget
-    d'échec dans `plan` ; `queues.settings` versionné en base ; états de la file ; attribut `schedule` (reporté :
-    les fuseaux horaires demandent une base embarquée dans le noyau pur).
+  - Reste : routage entre files d'une même branche ; réglage `resubmit_on_push` (`AGENTS.md` D121) ; merge
+    direct sur main (D125) ; injection
+    des protections ; fenêtre adaptative et budget d'échec dans `plan` ; `queues.settings` versionné en base ;
+    états de la file ; attribut `schedule` (reporté : les fuseaux horaires demandent une base embarquée dans le
+    noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
 
 ### Lot 9 : surfaces : PR, API, CLI
@@ -816,7 +885,8 @@ Autres valeurs fermées :
 ### Lot 12 : stratégie `batched`
 
 - **Contenu** : formation des lots, `no_batch`, attente maximale ; bissection avec cache des résultats et pool
-  `bisection_concurrency` ; `pending_failure_depth > 0` ; merge optimiste (Q3) ; stratégie `batched`.
+  `bisection_concurrency` ; `pending_failure_depth > 0` ; merge optimiste (Q3) ; stratégie `batched`. Repris du
+  lot 7 : mesurer les assemblages inutiles après la fermeture de la PR en tête.
 - **Critère de sortie** : critère de la phase 2 sur une charge synthétique du simulateur : p50 réduit de
   40 % à 20 PR par heure contre `pipelined`, et un échec planté isolé en ≤ log2(taille du lot) exécutions.
 

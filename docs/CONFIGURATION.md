@@ -19,7 +19,7 @@ queues:
     branch: main
     strategy: batched                     # sequential | pipelined | batched | parallel
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
-    trigger: draft_pr                     # draft_pr | push | inplace
+    trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission : la PR elle-meme
       - github-review-decision = approved
       - -draft
@@ -37,7 +37,6 @@ queues:
     branch: main
     strategy: sequential
     merge_method: fast_forward
-    trigger: inplace
     queue_conditions:
       - label = hotfix
       - sender-permission >= write
@@ -94,9 +93,9 @@ Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et
 | `bisection_concurrency`                                        | le plafond de la fenêtre            | 1–200                                                                      |
 | `testing_timeout_minutes`                                      | 300                                 | 10–1440                                                                    |
 | `not_ready_timeout_hours`                                      | 168                                 | 1–720                                                                      |
-| `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward`                         |
+| `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward` (stratégie `sequential` seulement, `AGENTS.md` D120) |
 | `merge_commit_title`                                           | `pr_title`                          | `pr_title`, `pr_title_and_number`                                          |
-| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`, `inplace` (stratégie `sequential` seulement)           |
+| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push` ; `inplace` arrive avec un lot ultérieur et est refusé d'ici là (`AGENTS.md` D119) |
 | `update_method`                                                | `merge`                             | `merge` ; utilisé par `inplace` (`rebase` arrive avec un lot ultérieur, `AGENTS.md` D114) |
 | `batching.enabled` / `size` / `max_wait_minutes`               | désactivé / 4 / 5                   | taille maximale 2–20, attente 1–60                                         |
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |

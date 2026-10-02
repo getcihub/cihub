@@ -56,19 +56,53 @@ pub struct WebhookFaults {
     pub reorder: bool,
 }
 
+/// A step of splitmix64: deterministic, without the randomness of the
+/// system (`AGENTS.md` D16).
+fn splitmix(seed: &mut u64) -> u64 {
+    *seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *seed;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
 impl WebhookFaults {
-    /// A step of splitmix64: deterministic, without the randomness of the
-    /// system (`AGENTS.md` D16).
     fn next(&mut self) -> u64 {
-        self.seed = self.seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.seed;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
+        splitmix(&mut self.seed)
     }
 
     fn chance(&mut self, percent: u8) -> bool {
         self.next() % 100 < u64::from(percent)
+    }
+}
+
+/// Makes calls fail at random (`AGENTS.md` D129), after the faults of
+/// [`Sim::fail`]. The same seed gives the same failures for the same
+/// sequence of calls.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RandomFaults {
+    pub seed: u64,
+    /// The share of calls that fail with a server error, in percent.
+    pub unavailable_percent: u8,
+    /// The share of calls that fail with a spent rate limit, in percent.
+    pub rate_limited_percent: u8,
+    /// The end of the rate limit that such a failure reports.
+    pub rate_limited_until: OffsetDateTime,
+}
+
+impl RandomFaults {
+    fn draw(&mut self) -> Option<ScmError> {
+        let roll = splitmix(&mut self.seed) % 100;
+        let unavailable = u64::from(self.unavailable_percent);
+        if roll < unavailable {
+            Some(ScmError::Unavailable("random server error".into()))
+        } else if roll < unavailable + u64::from(self.rate_limited_percent) {
+            Some(ScmError::RateLimited {
+                until: self.rate_limited_until,
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -88,6 +122,8 @@ struct Pr {
     base_branch: String,
     state: PrState,
     draft: bool,
+    title: String,
+    body: String,
     labels: BTreeSet<String>,
     review_decision: ReviewDecision,
     author: ScmUser,
@@ -115,6 +151,7 @@ struct State {
     repos: BTreeMap<String, Repo>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
+    random: Option<RandomFaults>,
     calls: Vec<SimCall>,
     deliveries: Vec<ScmDelivery>,
     /// Each attempt taken, with the identifier of its delivery: the attempt
@@ -239,7 +276,7 @@ impl Sim {
         author: &ScmUser,
     ) -> Result<u64, ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
-            ctx.new_pr(head_branch, base_branch, author, false)
+            ctx.new_pr(head_branch, base_branch, author, (head_branch, ""), false)
         })
     }
 
@@ -257,6 +294,28 @@ impl Sim {
                 PrChange::Mergeability(mergeability) => pr.mergeability = mergeability,
                 PrChange::Close => pr.state = PrState::Closed,
             }
+            ctx.pr_changed(number);
+            Ok(())
+        })
+    }
+
+    /// Sets the title and the description of the PR `number`, and sends its
+    /// delivery. A PR opened by [`Sim::open_pr`] has its head branch as title.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for an unknown repository or PR.
+    pub fn edit_pr(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ScmError> {
+        self.with_repo(&repo.external_id, |ctx| {
+            let pr = ctx.repo.pr_mut(number)?;
+            title.clone_into(&mut pr.title);
+            body.clone_into(&mut pr.body);
             ctx.pr_changed(number);
             Ok(())
         })
@@ -362,6 +421,11 @@ impl Sim {
     /// Makes the next calls fail, after the faults already waiting.
     pub fn fail(&self, fault: Fault) {
         self.with(|state| state.faults.push_back(fault));
+    }
+
+    /// Makes calls fail at random as `faults` says, or stops it with `None`.
+    pub fn fail_at_random(&self, faults: Option<RandomFaults>) {
+        self.with(|state| state.random = faults);
     }
 
     /// The calls received since the start.
@@ -499,10 +563,13 @@ impl State {
     }
 
     fn take_fault(&mut self, name: &str) -> Option<ScmError> {
-        let index = self
+        let Some(index) = self
             .faults
             .iter()
-            .position(|fault| fault.call.is_none_or(|call| call == name))?;
+            .position(|fault| fault.call.is_none_or(|call| call == name))
+        else {
+            return self.random.as_mut().and_then(RandomFaults::draw);
+        };
         let fault = &mut self.faults[index];
         let error = fault.error.clone();
         fault.times = fault.times.saturating_sub(1);
@@ -610,6 +677,7 @@ impl Ctx<'_> {
         head_branch: &str,
         base_branch: &str,
         author: &ScmUser,
+        (title, body): (&str, &str),
         draft: bool,
     ) -> Result<u64, ScmError> {
         let head = self.repo.branch_head(head_branch)?;
@@ -623,6 +691,8 @@ impl Ctx<'_> {
                 base_branch: base_branch.to_owned(),
                 state: PrState::Open,
                 draft,
+                title: title.to_owned(),
+                body: body.to_owned(),
                 labels: BTreeSet::new(),
                 review_decision: ReviewDecision::None,
                 author: author.clone(),
@@ -686,7 +756,7 @@ impl Ctx<'_> {
         let sha = match method {
             MergeMethod::FastForward => {
                 if !self.repo.is_ancestor(&ours, theirs) {
-                    return Err(ScmError::MergeRejected("not a fast forward".into()));
+                    return Err(ScmError::NotFastForward);
                 }
                 theirs.to_owned()
             }
@@ -861,6 +931,8 @@ impl Repo {
             head_sha: head.clone(),
             base_branch: pr.base_branch.clone(),
             draft: pr.draft,
+            title: pr.title.clone(),
+            body: pr.body.clone(),
             labels: pr.labels.clone(),
             mergeability,
             review_decision: pr.review_decision,
@@ -1040,6 +1112,7 @@ impl Scm for Sim {
         class: JobClass,
     ) -> ScmFuture<'a, String> {
         let (number, expected, method) = (merge.number, merge.head_sha.clone(), merge.method);
+        let tested = merge.tested_sha.clone();
         self.call("merge_pr", repo, class, move |ctx| {
             let pr = ctx.repo.pr_mut(number)?;
             if let Some(merged) = &pr.merged_sha {
@@ -1061,7 +1134,12 @@ impl Scm for Sim {
                 other => return Err(ScmError::MergeRejected(format!("PR {other}"))),
             }
             let base = pr.base_branch.clone();
-            let merged = ctx.land(&base, &head, method)?;
+            let theirs = if method == MergeMethod::FastForward {
+                &tested
+            } else {
+                &head
+            };
+            let merged = ctx.land(&base, theirs, method)?;
             let pr = ctx.repo.pr_mut(number)?;
             pr.state = PrState::Merged;
             pr.last_head = head;
@@ -1173,18 +1251,19 @@ impl Scm for Sim {
         repo: &'a RepoRef,
         head: &'a str,
         base: &'a str,
-        _title: &'a str,
-        _body: &'a str,
+        title: &'a str,
+        body: &'a str,
         class: JobClass,
     ) -> ScmFuture<'a, u64> {
         let (head, base) = (head.to_owned(), base.to_owned());
+        let (title, body) = (title.to_owned(), body.to_owned());
         self.call("open_draft_pr", repo, class, move |ctx| {
             let open = ctx.repo.prs.iter().find(|(_, pr)| {
                 pr.state == PrState::Open && pr.head_branch == head && pr.base_branch == base
             });
             match open {
                 Some((number, _)) => Ok(*number),
-                None => ctx.new_pr(&head, &base, &bot(), true),
+                None => ctx.new_pr(&head, &base, &bot(), (&title, &body), true),
             }
         })
     }
@@ -1540,5 +1619,69 @@ mod tests {
 
         let some = deliveries(100).take_deliveries_with(&mut faults(30, 0, false));
         assert!((40..100).contains(&some.len()), "{}", some.len());
+    }
+
+    /// The answers of 200 reads of a simulator that fails as `faults` says.
+    async fn outcomes(
+        repo: &RepoRef,
+        faults: RandomFaults,
+    ) -> Vec<Result<Option<String>, ScmError>> {
+        let sim = Sim::new();
+        sim.add_repo(repo, "main", &[("a.txt", "a")]);
+        sim.fail_at_random(Some(faults));
+        let mut outcomes = Vec::new();
+        for _ in 0..200 {
+            outcomes.push(sim.branch_head(repo, "main", JobClass::Repair).await);
+        }
+        outcomes
+    }
+
+    #[tokio::test]
+    async fn random_faults_fail_a_share_of_the_calls_after_the_given_ones() {
+        let repo = repo();
+        let sim = Sim::new();
+        sim.add_repo(&repo, "main", &[("a.txt", "a")]);
+        let until = OffsetDateTime::UNIX_EPOCH;
+        let random = |seed| RandomFaults {
+            seed,
+            unavailable_percent: 20,
+            rate_limited_percent: 10,
+            rate_limited_until: until,
+        };
+        let first = outcomes(&repo, random(3)).await;
+        assert_eq!(
+            first,
+            outcomes(&repo, random(3)).await,
+            "the same seed fails the same calls"
+        );
+        let unavailable = first
+            .iter()
+            .filter(|o| matches!(o, Err(ScmError::Unavailable(_))))
+            .count();
+        let limited = first
+            .iter()
+            .filter(|o| *o == &Err(ScmError::RateLimited { until }))
+            .count();
+        assert!((20..60).contains(&unavailable), "{unavailable}");
+        assert!((5..40).contains(&limited), "{limited}");
+
+        sim.fail_at_random(Some(RandomFaults {
+            unavailable_percent: 0,
+            rate_limited_percent: 0,
+            ..random(1)
+        }));
+        sim.fail(Fault {
+            call: None,
+            error: ScmError::HeadChanged,
+            times: 1,
+        });
+        let given = sim.branch_head(&repo, "main", JobClass::Repair).await;
+        assert_eq!(given, Err(ScmError::HeadChanged));
+        assert!(
+            sim.branch_head(&repo, "main", JobClass::Repair)
+                .await
+                .is_ok()
+        );
+        sim.fail_at_random(None);
     }
 }

@@ -184,11 +184,22 @@ impl QueueSettings {
                 ),
             ));
         }
-        if self.trigger.value == Trigger::Inplace && self.strategy.value != Strategy::Sequential {
+        // `AGENTS.md` D119: the mode comes with a later lot.
+        if self.trigger.value == Trigger::Inplace {
             return Err(ConfigError::parsing(
-                self.trigger.at.or(self.strategy.at),
+                self.trigger.at,
+                "trigger `inplace` is not available yet".to_owned(),
+            ));
+        }
+        // `AGENTS.md` D120: the test commit of a PR descends from the target
+        // only when no predecessor is merged into it.
+        if self.merge_method.value == MergeMethod::FastForward
+            && self.strategy.value != Strategy::Sequential
+        {
+            return Err(ConfigError::parsing(
+                self.merge_method.at.or(self.strategy.at),
                 format!(
-                    "trigger `inplace` needs strategy `sequential`, not `{}`",
+                    "merge_method `fast_forward` needs strategy `sequential`, not `{}`",
                     self.strategy.value
                 ),
             ));
@@ -381,7 +392,34 @@ mod tests {
         let error =
             QueueSettings::resolve(&Layer::default(), &queue, &Layer::default()).unwrap_err();
         assert_eq!(error.position, Some(at(7)));
-        assert!(error.message.contains("needs strategy `sequential`"));
+        assert_eq!(error.message, "trigger `inplace` is not available yet");
+
+        let fast_forward = |strategy| Layer {
+            strategy: Some(Setting::new(strategy)),
+            merge_method: Some(Setting {
+                value: MergeMethod::FastForward,
+                at: Some(at(8)),
+            }),
+            ..Layer::default()
+        };
+        let error = QueueSettings::resolve(
+            &Layer::default(),
+            &fast_forward(Strategy::Pipelined),
+            &Layer::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.position, Some(at(8)));
+        assert_eq!(
+            error.message,
+            "merge_method `fast_forward` needs strategy `sequential`, not `pipelined`"
+        );
+        let settings = QueueSettings::resolve(
+            &Layer::default(),
+            &fast_forward(Strategy::Sequential),
+            &Layer::default(),
+        )
+        .unwrap();
+        assert_eq!(settings.merge_method.value, MergeMethod::FastForward);
     }
 
     #[test]

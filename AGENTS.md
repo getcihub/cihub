@@ -645,10 +645,10 @@ tranchée devient une décision ci-dessus et sort de cette liste.
   | `migrate`          | `cihub-server migrate` sur le Postgres de développement (D14)                         | oui        |
   | `test-integration` | Postgres, puis les fichiers `tests/postgres.rs` (`#[sqlx::test]`)                     | oui        |
   | `dev`              | `migrate`, puis `cihub-server` en local avec les quatre rôles, logs `pretty`          | oui        |
-  | `sim`              | tests d'injection de pannes                                                           | lot 7      |
+  | `sim`              | Postgres, puis le test `fault_injection` sur 1 000 graines (D129)                     | oui        |
 
-  La CI exécute `lint`, `test`, `test-integration`, `cover` et `lint-workflows`, un job par tâche (D18). Une nouvelle tâche est ajoutée
-  au tableau dans le même changement.
+  La CI exécute `lint`, `test`, `test-integration`, `cover` et `lint-workflows`, un job par tâche (D18), et `sim` une fois par
+  nuit (`.github/workflows/sim.yaml`, D129). Une nouvelle tâche est ajoutée au tableau dans le même changement.
 - **Logs** : suivre les règles d'écriture de `docs/OBSERVABILITY.md`. Les lints clippy en contrôlent une partie.
 - **Secrets** : jamais dans le dépôt, ni dans les tests, ni dans les journaux. La clé privée de l'App et le secret
   de webhook viennent de l'environnement ou d'un gestionnaire de secrets.

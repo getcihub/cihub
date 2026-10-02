@@ -118,14 +118,7 @@ pub(crate) fn refresh_at(
     chunk: usize,
     prs: Vec<u64>,
 ) -> Job {
-    let window = format!(
-        "{:04}{:02}{:02}T{:02}{:02}",
-        point.year(),
-        u8::from(point.month()),
-        point.day(),
-        point.hour(),
-        point.minute()
-    );
+    let window = window(point);
     let rank = if chunk == 0 {
         String::new()
     } else {
@@ -134,6 +127,19 @@ pub(crate) fn refresh_at(
     let key = format!("{REFRESH_PRS}:{}-{window}{rank}:1", target.queue_id);
     let payload = json!(RefreshPrs { prs });
     job(target, key, REFRESH_PRS, JobClass::Repair, payload)
+}
+
+/// The window of a key of a read: the minute of its read point,
+/// `AAAAMMJJTHHMM` (`AGENTS.md` D101).
+pub(crate) fn window(point: OffsetDateTime) -> String {
+    format!(
+        "{:04}{:02}{:02}T{:02}{:02}",
+        point.year(),
+        u8::from(point.month()),
+        point.day(),
+        point.hour(),
+        point.minute()
+    )
 }
 
 /// The submission of `request` after the delivery `delivery_id`, on the
@@ -484,6 +490,8 @@ mod tests {
             head_sha: "a".into(),
             base_branch: "main".into(),
             draft: false,
+            title: "PR 1".into(),
+            body: String::new(),
             labels: BTreeSet::new(),
             mergeability,
             review_decision: review,

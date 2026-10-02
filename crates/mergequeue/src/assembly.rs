@@ -14,12 +14,12 @@ use cihub_domain::{
     RunStatus, Trigger, temp_branch,
 };
 use cihub_mq_core::{Head, TestBranch};
-use cihub_platform::{Job, Outcome, error_chain};
+use cihub_platform::{Job, MAX_ATTEMPTS, Outcome, error_chain};
 use cihub_scm::{MergeIntoRef, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
@@ -31,9 +31,14 @@ use crate::target::QueueTarget;
 pub const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
 pub const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
 
-/// After this many attempts, an assembly that still fails on a passing error
-/// gives up with `start_test_run_retry_exhausted`.
+/// After this many attempts, an assembly that the SCM still refuses as not
+/// valid (422) gives up with `start_test_run_retry_exhausted` (`AGENTS.md`
+/// D133).
 pub const ASSEMBLY_ATTEMPTS: i32 = 5;
+
+/// An assembly that meets another passing error (5xx, 429, a stop) tries
+/// again until this long after the start of its run (`AGENTS.md` D133).
+pub const ASSEMBLY_WAIT: Duration = Duration::minutes(15);
 
 /// The test branch that a run needs, as the plan describes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,8 +151,12 @@ pub fn required_statuses_of_file(
 enum Step {
     /// The run fails with this error: a retry would not change it.
     GiveUp(JobError, Option<ConflictCulprit>),
-    /// A call failed for now: the job tries again later.
+    /// The SCM refused a call as not valid: the job tries again, at most
+    /// [`ASSEMBLY_ATTEMPTS`] times.
     Transient(String),
+    /// A call failed for now (server error, rate limit): the job tries again
+    /// until [`ASSEMBLY_WAIT`] after the start of the run.
+    Passing(String),
     /// A predecessor conflicts: its own run decides, this one waits for the
     /// queue to restart it without that predecessor.
     Wait(String),
@@ -157,7 +166,8 @@ impl From<ScmError> for Step {
     fn from(err: ScmError) -> Self {
         match err {
             ScmError::Forbidden(_) => Self::GiveUp(JobError::PermissionsBlockTestBranch, None),
-            other => Self::Transient(error_chain(&other)),
+            ScmError::Validation(_) => Self::Transient(error_chain(&err)),
+            other => Self::Passing(error_chain(&other)),
         }
     }
 }
@@ -292,7 +302,14 @@ impl Assembly<'_> {
         for head in &request.members {
             match self.merge(&temp, head).await? {
                 MergeIntoRef::Merged { sha } => current = sha,
-                MergeIntoRef::AlreadyContained => {}
+                // The head is already in the target: nothing to test
+                // (`AGENTS.md` D130).
+                MergeIntoRef::AlreadyContained => {
+                    return Err(Step::GiveUp(
+                        JobError::MergeConflict,
+                        Some(ConflictCulprit::BaseBranch),
+                    ));
+                }
                 MergeIntoRef::Conflict => {
                     let culprit = self.culprit(&temp, head).await?;
                     return Err(Step::GiveUp(JobError::MergeConflict, Some(culprit)));
@@ -370,29 +387,63 @@ impl Assembly<'_> {
             Err(ScmError::Validation(message)) if message.to_lowercase().contains("draft") => {
                 Err(JobError::DraftPrsNotAllowed.into())
             }
+            // The test branch holds nothing more than the target: its heads
+            // are already in it (`AGENTS.md` D130).
+            Err(ScmError::Validation(message))
+                if message.to_lowercase().contains("no commits between") =>
+            {
+                Err(Step::GiveUp(
+                    JobError::MergeConflict,
+                    Some(ConflictCulprit::BaseBranch),
+                ))
+            }
             Err(err) => Err(err.into()),
         }
     }
 }
 
-/// The status of the run `run_id` in `test_runs`, or `None` for an unknown run.
-async fn run_status(pool: &PgPool, run_id: RunId) -> Result<Option<RunStatus>, Failure> {
+/// What a step that failed after `attempts` attempts gives, `elapsed` after
+/// the start of the run: a new attempt later (`Ok`, with the error for the
+/// operator), or the end of the run. A new attempt must end in a fact
+/// before the job goes `dead`.
+fn give_up(
+    step: Step,
+    attempts: i32,
+    elapsed: Duration,
+) -> Result<String, (JobError, Option<ConflictCulprit>)> {
+    // A retry of the attempt `MAX_ATTEMPTS` would make the job `dead`.
+    let last = attempts >= MAX_ATTEMPTS;
+    match step {
+        Step::GiveUp(error, culprit) => Err((error, culprit)),
+        Step::Wait(text) => Ok(text),
+        Step::Transient(text) if attempts < ASSEMBLY_ATTEMPTS && !last => Ok(text),
+        Step::Passing(text) if elapsed < ASSEMBLY_WAIT && !last => Ok(text),
+        Step::Transient(_) | Step::Passing(_) => Err((JobError::RetryExhausted, None)),
+    }
+}
+
+/// The status and the start of the run `run_id` in `test_runs`, or `None`
+/// for an unknown run.
+pub(crate) async fn run_state(
+    pool: &PgPool,
+    run_id: RunId,
+) -> Result<Option<(RunStatus, OffsetDateTime)>, Failure> {
     let mut tx = begin_system(pool)
         .await
         .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status::text FROM test_runs WHERE id = $1")
+    let row: Option<(String, OffsetDateTime)> =
+        sqlx::query_as("SELECT status::text, started_at FROM test_runs WHERE id = $1")
             .bind(run_id.to_string())
             .fetch_optional(&mut *tx)
             .await
             .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    status
-        .map(|status| {
-            status
-                .parse::<RunStatus>()
-                .map_err(|err| Failure::Never(error_chain(&err)))
-        })
-        .transpose()
+    row.map(|(status, started_at)| {
+        status
+            .parse::<RunStatus>()
+            .map(|status| (status, started_at))
+            .map_err(|err| Failure::Never(error_chain(&err)))
+    })
+    .transpose()
 }
 
 /// Builds the test branch of the run of the job and gives back the result.
@@ -417,10 +468,10 @@ async fn assemble_run(
     let request: AssembleTestBranch = read_payload(job)?;
     let run_id = request.run_id;
     let target = target_of(pool, job).await?;
-    if run_status(pool, run_id).await? != Some(RunStatus::Assembling) {
+    let Some((RunStatus::Assembling, started_at)) = run_state(pool, run_id).await? else {
         info!(%run_id, "run no longer waits for its test branch");
         return Ok(());
-    }
+    };
     let assembly = Assembly {
         scm,
         settings,
@@ -430,15 +481,15 @@ async fn assemble_run(
     };
     let result = match assembly.build().await {
         Ok(assembled) => Ok(assembled),
-        Err(Step::GiveUp(error, culprit)) => Err((error, culprit)),
-        Err(Step::Wait(text)) => return Err(Failure::Retry(text)),
-        Err(Step::Transient(text)) if job.attempts < ASSEMBLY_ATTEMPTS => {
-            return Err(Failure::Retry(text));
-        }
-        Err(Step::Transient(text)) => {
-            warn!(%run_id, error = text, "assembly gave up after its attempts");
-            Err((JobError::RetryExhausted, None))
-        }
+        Err(step) => match give_up(step, job.attempts, now - started_at) {
+            Ok(text) => return Err(Failure::Retry(text)),
+            Err((error, culprit)) => {
+                if error == JobError::RetryExhausted {
+                    warn!(%run_id, "assembly gave up after its attempts");
+                }
+                Err((error, culprit))
+            }
+        },
     };
     let fact = match result {
         Ok(assembled) => {
@@ -551,6 +602,35 @@ mod tests {
             enabled: true,
             repo_id: RepoId::from_ulid(Ulid(6)),
         }
+    }
+
+    #[test]
+    fn only_refusals_count_and_passing_errors_wait_15_minutes() {
+        let minutes = Duration::minutes;
+        let retry = |step, attempts, elapsed| give_up(step, attempts, elapsed).is_ok();
+        let transient = || Step::Transient("422".into());
+        let passing = || Step::Passing("502".into());
+        assert!(retry(transient(), ASSEMBLY_ATTEMPTS - 1, minutes(1)));
+        assert!(!retry(transient(), ASSEMBLY_ATTEMPTS, minutes(1)));
+        // Server errors and stops do not count, until the wait ends.
+        assert!(retry(passing(), ASSEMBLY_ATTEMPTS + 3, minutes(14)));
+        assert_eq!(
+            give_up(passing(), 2, ASSEMBLY_WAIT),
+            Err((JobError::RetryExhausted, None))
+        );
+        // The last attempt before `dead` gives up in any case.
+        assert!(retry(passing(), MAX_ATTEMPTS - 1, minutes(1)));
+        assert!(!retry(passing(), MAX_ATTEMPTS, minutes(1)));
+        assert!(retry(Step::Wait("predecessor".into()), 1, minutes(1)));
+        assert_eq!(
+            give_up(Step::GiveUp(JobError::MergeConflict, None), 1, minutes(0)),
+            Err((JobError::MergeConflict, None))
+        );
+        // The backoff of the jobs covers the wait before `dead`.
+        let covered: i64 = (1..MAX_ATTEMPTS)
+            .map(|n| cihub_platform::backoff(n).whole_seconds())
+            .sum();
+        assert!(covered >= ASSEMBLY_WAIT.whole_seconds(), "{covered} s");
     }
 
     #[test]
@@ -813,6 +893,24 @@ mod tests {
             matches!(waits, Err(Step::Wait(ref text)) if text.contains("#5")),
             "{waits:?}"
         );
+        // A member whose head is already in the target has nothing to test
+        // (`AGENTS.md` D130).
+        let merged = head(&sim, &target, &main, 7, &[("h.txt", Some("h"))]);
+        sim.push(&target.repo, "main", &merged.sha, &bot()).unwrap();
+        let contained = build(
+            &sim,
+            &settings,
+            &target,
+            &request(&merged.sha, vec![], vec![merged.clone()]),
+        )
+        .await;
+        assert_eq!(
+            contained,
+            Err(Step::GiveUp(
+                JobError::MergeConflict,
+                Some(ConflictCulprit::BaseBranch)
+            ))
+        );
     }
 
     #[tokio::test]
@@ -841,6 +939,15 @@ mod tests {
         sim.fail(Fault {
             call: Some("merge_into_branch"),
             error: ScmError::Unavailable("502".into()),
+            times: 1,
+        });
+        assert!(matches!(
+            build(&sim, &settings, &target, &down).await,
+            Err(Step::Passing(_))
+        ));
+        sim.fail(Fault {
+            call: Some("merge_into_branch"),
+            error: ScmError::Validation("422".into()),
             times: 1,
         });
         assert!(matches!(

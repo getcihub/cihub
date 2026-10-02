@@ -67,7 +67,8 @@ pub enum EventKind {
         /// `None` for a read of the tick.
         before: Option<String>,
         after: String,
-        sender_id: UserId,
+        /// `None` for a read of the tick, which does not know who pushed.
+        sender_id: Option<UserId>,
     },
     /// Only for the test SHA of a live run.
     #[serde(rename = "check.observed")]

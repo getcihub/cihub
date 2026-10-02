@@ -34,7 +34,7 @@ fragment checks on StatusCheckRollup {
   }
 }
 fragment pr on PullRequest {
-  number state isDraft headRefOid baseRefName mergeable mergeStateStatus reviewDecision
+  number state isDraft title body headRefOid baseRefName mergeable mergeStateStatus reviewDecision
   additions deletions changedFiles
   mergeCommit { oid }
   author { login ... on User { databaseId } ... on Bot { databaseId } }
@@ -78,6 +78,8 @@ struct GraphqlPr {
     number: u64,
     state: String,
     is_draft: bool,
+    title: String,
+    body: String,
     head_ref_oid: String,
     base_ref_name: String,
     mergeable: String,
@@ -247,6 +249,8 @@ impl GraphqlPr {
             head_sha: self.head_ref_oid,
             base_branch: self.base_ref_name,
             draft: self.is_draft,
+            title: self.title,
+            body: self.body,
             labels: self
                 .labels
                 .nodes
@@ -727,11 +731,17 @@ impl Scm for GithubApp {
                     if pr.head_ref_oid != merge.head_sha {
                         return Err(ScmError::HeadChanged);
                     }
+                    // GitHub marks the PR merged once its head is in the base.
                     return match self
-                        .move_branch(repo, &pr.base_ref_name, &merge.head_sha, false, class)
+                        .move_branch(repo, &pr.base_ref_name, &merge.tested_sha, false, class)
                         .await
                     {
-                        Ok(()) => Ok(merge.head_sha.clone()),
+                        Ok(()) => Ok(merge.tested_sha.clone()),
+                        Err(ScmError::Validation(message))
+                            if message.contains("not a fast forward") =>
+                        {
+                            Err(ScmError::NotFastForward)
+                        }
                         Err(ScmError::Validation(message)) => Err(ScmError::MergeRejected(message)),
                         Err(err) => Err(err),
                     };

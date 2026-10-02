@@ -11,7 +11,8 @@ use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 /// (`AGENTS.md` D67).
 pub const MAINTENANCE: &str = "maintenance";
 
-/// A processed delivery is deleted after this time.
+/// A processed delivery, or a delivery that no connection claimed, is
+/// deleted after this time (`AGENTS.md` D130).
 pub const DELIVERY_RETENTION: Duration = Duration::days(7);
 
 /// A done job is deleted after this time.
@@ -50,8 +51,8 @@ pub async fn request_maintenance(
 }
 
 /// Creates the partitions of `events` for the month of `now` and the next,
-/// then deletes the processed deliveries and the done jobs past their
-/// retention, and drops the old partitions of `events` that snapshots cover.
+/// then deletes the processed deliveries, the deliveries that stayed
+/// unrouted and the done jobs past their retention, and drops the old partitions of `events` that snapshots cover.
 /// Each step can run twice without harm.
 ///
 /// # Errors
@@ -62,12 +63,15 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         .await
         .map_err(PlatformError::Store)?;
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-    let deliveries = sqlx::query("DELETE FROM webhook_inbox WHERE processed_at < $1")
-        .bind(now - DELIVERY_RETENTION)
-        .execute(&mut *tx)
-        .await
-        .map_err(PlatformError::Query)?
-        .rows_affected();
+    let deliveries = sqlx::query(
+        "DELETE FROM webhook_inbox
+         WHERE processed_at < $1 OR (routed_at IS NULL AND received_at < $1)",
+    )
+    .bind(now - DELIVERY_RETENTION)
+    .execute(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?
+    .rows_affected();
     let jobs = sqlx::query("DELETE FROM jobs WHERE state = 'done' AND finished_at < $1")
         .bind(now - DONE_JOB_RETENTION)
         .execute(&mut *tx)

@@ -161,3 +161,26 @@ impl RepoTarget {
         })
     }
 }
+
+/// The queue of the unit tests of the jobs.
+#[cfg(test)]
+pub(crate) fn test_target() -> QueueTarget {
+    use ulid::Ulid;
+    QueueTarget {
+        queue_id: QueueId::from_ulid(Ulid(2)),
+        org_id: OrgId::from_ulid(Ulid(1)),
+        scm_instance_id: ScmInstanceId::from_ulid(Ulid(3)),
+        repo: RepoRef {
+            connection: ConnectionRef {
+                id: cihub_domain::ConnectionId::from_ulid(Ulid(4)),
+                external_id: "4".into(),
+            },
+            external_id: "5".into(),
+            namespace: "acme".into(),
+            name: "app".into(),
+        },
+        target_branch: "main".into(),
+        enabled: true,
+        repo_id: RepoId::from_ulid(Ulid(6)),
+    }
+}

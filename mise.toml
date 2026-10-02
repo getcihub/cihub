@@ -33,6 +33,12 @@ description = "Run the tests against Postgres (the tests/postgres.rs files)"
 depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
+[tasks.sim]
+description = "Run the fault injection test on 1 000 seeds (AGENTS.md D129)"
+depends = ["db"]
+env = { CIHUB_SIM_SEEDS = "1000" }
+run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
+
 [tasks.lint-workflows]
 description = "Lint the GitHub workflows with actionlint and zizmor"
 run = ["actionlint", "zizmor .github/workflows"]

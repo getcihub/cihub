@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, ConflictCulprit, ConnectionId,
-    Event, EventId, EventKind, ItemState, JobClass, MergeMethod, Mergeability, OrgId, PrState,
-    Priority, QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus,
+    Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId, PrState, Priority,
+    QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus,
     ScmAccountId, ScmInstanceId, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
@@ -25,10 +25,9 @@ use cihub_platform::{
 };
 use cihub_scm::sim::{Fault, PrChange, Sim};
 use cihub_scm::{
-    ConnectionRef, PrMerge, RepoPermission, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError,
-    ScmUser,
+    ConnectionRef, RepoPermission, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError, ScmUser,
 };
-use cihub_store::{begin_system, create_event_partitions, deposit_fact};
+use cihub_store::{begin_system, create_event_partitions};
 use secrecy::SecretString;
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
@@ -212,7 +211,7 @@ impl World {
             EventKind::TargetPushed {
                 before,
                 after,
-                sender_id: user(),
+                sender_id: Some(user()),
             },
         )
         .await;
@@ -573,55 +572,6 @@ impl SimQueue {
         tx.commit().await.unwrap();
     }
 
-    /// Merges the PRs of the desired state, as the merge job of lot 7 will:
-    /// the merge on the simulator, then its fact. Returns their number.
-    async fn merge_desired(&self) -> usize {
-        let mut tx = begin_system(&self.pool).await.unwrap();
-        let log = QueueLog::load(&mut tx, queue()).await.unwrap();
-        tx.commit().await.unwrap();
-        let settings = cihub_mergequeue::default_settings().unwrap();
-        let merges = plan(&log.snapshot, &settings, self.clock.now())
-            .unwrap()
-            .desired
-            .merges;
-        for merge in &merges {
-            let request = PrMerge {
-                number: merge.pr_number,
-                head_sha: merge.head_sha.clone(),
-                method: MergeMethod::Squash,
-                title: format!("PR {}", merge.pr_number),
-                message: String::new(),
-            };
-            let merged_sha = self
-                .sim
-                .merge_pr(&repo(), &request, JobClass::Merge)
-                .await
-                .unwrap();
-            let fact = Event {
-                id: EventId::from_ulid(Ulid::from_parts(
-                    u64::try_from(self.clock.now().unix_timestamp()).unwrap(),
-                    u128::from(merge.pr_number) + 1_000_000,
-                )),
-                org_id: org(),
-                queue_id: queue(),
-                actor: Actor::Bot,
-                occurred_at: self.clock.now(),
-                cause_id: None,
-                kind: EventKind::MergeSucceeded {
-                    item_id: merge.item_id,
-                    merged_sha,
-                },
-            };
-            let mut tx = begin_system(&self.pool).await.unwrap();
-            deposit_fact(&mut tx, &fact, self.clock.now())
-                .await
-                .unwrap();
-            mark_dirty(&mut tx, queue()).await.unwrap();
-            tx.commit().await.unwrap();
-        }
-        merges.len()
-    }
-
     /// The runs in progress: identifier, test SHA and PRs tested.
     async fn runs_in_progress(&self) -> Vec<(RunId, String, Vec<u64>)> {
         let mut tx = begin_system(&self.pool).await.unwrap();
@@ -847,10 +797,17 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+    // An admitted item may be in test already: the queue reads the head of
+    // its target (`AGENTS.md` D127) and fills its window.
+    let testing = rows.iter().filter(|r| r.1 == "testing").count();
+    assert!(testing <= 2, "{testing} items in test");
     let got: BTreeMap<u64, (ItemState, Vec<BlockReason>)> = rows
         .iter()
         .map(|(n, state, blocks, _)| {
-            let state = state.parse().unwrap();
+            let state = match state.parse().unwrap() {
+                ItemState::Testing => ItemState::Pending,
+                state => state,
+            };
             let blocks = serde_json::from_value(blocks.clone()).unwrap();
             (u64::try_from(*n).unwrap(), (state, blocks))
         })
@@ -863,7 +820,12 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
-    assert_eq!(reasons, ["merge_item_now_ready", "submitted"]);
+    let expected: &[&str] = if testing == 0 {
+        &["merge_item_now_ready", "submitted"]
+    } else {
+        &["merge_item_now_ready", "submitted", "test_run_started"]
+    };
+    assert_eq!(reasons, expected);
     drop(tx);
 
     // The replay of the log gives the same items.
@@ -933,7 +895,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         kind: EventKind::TargetPushed {
             before: None,
             after: root.clone(),
-            sender_id: user(),
+            sender_id: Some(user()),
         },
     };
     cihub_store::deposit_fact(&mut tx, &fact, clock())
@@ -1195,8 +1157,8 @@ async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
 /// The exit criterion of lot 6 (`docs/LOTS.md`): ten PRs, two with a red CI,
 /// one in conflict with a PR ahead of it, one whose CI never reports. Each
 /// PR is tested on top of its predecessors, each run ends with its reason,
-/// the PRs behind a failed one restart without it, and the merge job of lot 7
-/// is played by the test.
+/// the PRs behind a failed one restart without it, and the merge job merges
+/// the proved PRs.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     const FAILING: [u64; 2] = [3, 8];
@@ -1233,14 +1195,13 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         q.settle().await;
     }
 
-    // The CI of the simulator: each round, the merge job plays, then the CI
-    // reports on the runs in progress; the silent PR never reports, and its
-    // runs time out when the clock moves.
+    // The CI of the simulator: each round, the CI reports on the runs in
+    // progress, and the merge job merges what they prove; the silent PR never
+    // reports, and its runs time out when the clock moves.
     let mut rounds = 0;
     loop {
         q.deliver().await;
         q.settle().await;
-        let merged = q.merge_desired().await;
         let runs = q.runs_in_progress().await;
         let mut reported = 0;
         for (_, test_sha, prs) in &runs {
@@ -1252,7 +1213,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
                 .unwrap();
             reported += 1;
         }
-        if merged + reported == 0 {
+        if reported == 0 {
             if runs.is_empty() {
                 break;
             }
@@ -1417,6 +1378,9 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     }
 
     // A report that comes after the end of a run is stored without a fact.
+    // The push of the last merge comes first.
+    q.deliver().await;
+    q.settle().await;
     let mut tx = begin_system(&pool).await.unwrap();
     let events_before: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
         .fetch_one(&mut *tx)
@@ -1505,7 +1469,7 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
                 "failed".into(),
                 "start_test_run_permissions_block_test_branch".into()
             ),
-            (2, "tests_passed".into(), "test_run_passed".into()),
+            (2, "merged".into(), "merge_graph_merge".into()),
         ]
     );
     let runs = test_runs(&mut tx).await;
@@ -1589,7 +1553,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
         kind: EventKind::TargetPushed {
             before: None,
             after: "target-new".into(),
-            sender_id: user(),
+            sender_id: Some(user()),
         },
     };
     log.write(&mut tx, vec![pushed], today).await.unwrap();
@@ -1598,4 +1562,792 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     // The whole log is gone: a replay refuses to start from nothing.
     let err = rebuild(&mut tx, queue(), today).await.unwrap_err();
     assert!(matches!(err, MergeQueueError::LogGap { .. }), "{err:?}");
+}
+
+/// A live queue without a wake-up is woken when a scheduler starts
+/// (`AGENTS.md` D131); a queue whose items all concluded is not.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_live_queues_are_woken_at_start(pool: PgPool) {
+    async fn asleep(pool: &PgPool) {
+        let mut tx = begin_system(pool).await.unwrap();
+        sqlx::query("UPDATE queues SET dirty = false, next_tick_at = NULL")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+    let mut w = World::new(pool.clone()).await;
+    asleep(&pool).await;
+    assert_eq!(cihub_mergequeue::wake_live_queues(&pool).await.unwrap(), 0);
+    w.submit(1).await;
+    asleep(&pool).await;
+    assert_eq!(cihub_mergequeue::wake_live_queues(&pool).await.unwrap(), 1);
+    let mut tx = begin_system(&pool).await.unwrap();
+    let dirty: bool = sqlx::query_scalar("SELECT dirty FROM queues WHERE id = $1")
+        .bind(queue().to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert!(dirty);
+}
+
+/// The current items: PR number, state and reason.
+async fn current_items(pool: &PgPool) -> Vec<(i64, String, String)> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT pr_number, state::text, state_reason::text FROM queue_items WHERE is_current
+         ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+/// Opens the PR of the branch `pr-<n>` with a file of its own, reports its
+/// CI, and returns its number: the draft PRs of the queue take numbers too.
+fn open_green_pr(sim: &Sim, main: &str, n: u64) -> u64 {
+    let path = format!("f{n}.txt");
+    let (number, head) = open_pr_with(sim, main, n, &[(&path, Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    number
+}
+
+fn submit_new_pr(sim: &Sim, main: &str, n: u64) -> u64 {
+    let number = open_green_pr(sim, main, n);
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    number
+}
+
+/// The merge job (`AGENTS.md` D123): a server error is retried, a head that
+/// changed fails the item with `pr_updated_at_merge_time`.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    // The PRs are opened first, so that their numbers are 1 and 2; then one
+    // submission at a time, so that the queue order is their order.
+    for n in 1..=2 {
+        assert_eq!(open_green_pr(&sim, &main, n), n);
+    }
+    for n in 1..=2 {
+        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let runs = q.runs_in_progress().await;
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    let test_sha = |pr: u64| {
+        runs.iter()
+            .find(|(_, _, prs)| prs.last() == Some(&pr))
+            .map(|(_, sha, _)| sha.clone())
+            .unwrap()
+    };
+
+    sim.fail(Fault {
+        call: Some("merge_pr"),
+        error: ScmError::Unavailable("502".into()),
+        times: 2,
+    });
+    sim.report_check(&repo(), &test_sha(1), check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(current_items(&pool).await[0].1, "merged");
+
+    sim.fail(Fault {
+        call: Some("merge_pr"),
+        error: ScmError::HeadChanged,
+        times: 1,
+    });
+    sim.report_check(&repo(), &test_sha(2), check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(
+        current_items(&pool).await,
+        [
+            (1, "merged".into(), "merge_graph_merge".into()),
+            (2, "failed".into(), "pr_updated_at_merge_time".into()),
+        ]
+    );
+    let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
+    assert_eq!(merges, 4, "two errors and a merge, then a changed head");
+    assert!(
+        sim.calls()
+            .iter()
+            .filter(|c| c.name == "merge_pr")
+            .all(|c| c.class == JobClass::Merge)
+    );
+    q.stop().await;
+}
+
+/// A PR merged outside the queue while in test (`AGENTS.md` D132): the merge
+/// job does not claim it, the item is `manual_merge`, and the PR behind it is
+/// tested again on what landed, then merged.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    for n in 1..=2 {
+        assert_eq!(open_green_pr(&sim, &main, n), n);
+    }
+    for n in 1..=2 {
+        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let runs = q.runs_in_progress().await;
+    let first = runs.iter().find(|r| r.2 == [1]).unwrap().1.clone();
+    // Someone merges PR 1 by hand; the queue does not hear of it yet.
+    let by_hand = cihub_scm::PrMerge {
+        number: 1,
+        head_sha: sim
+            .pull_request(&repo(), 1, JobClass::Repair)
+            .await
+            .unwrap()
+            .head_sha,
+        tested_sha: String::new(),
+        method: cihub_domain::MergeMethod::Squash,
+        title: "merged by hand".into(),
+        message: String::new(),
+    };
+    sim.merge_pr(&repo(), &by_hand, JobClass::Interactive)
+        .await
+        .unwrap();
+    sim.take_deliveries();
+    sim.report_check(&repo(), &first, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(
+        current_items(&pool).await[0],
+        (1, "merged".into(), "manual_merge".into())
+    );
+    // PR 2 restarts on top of the new target, then merges.
+    for _ in 0..3 {
+        for (_, test_sha, prs) in q.runs_in_progress().await {
+            if prs == [2] {
+                sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+                    .unwrap();
+            }
+        }
+        q.deliver().await;
+        q.settle().await;
+    }
+    assert_eq!(
+        current_items(&pool).await[1],
+        (2, "merged".into(), "merge_graph_merge".into())
+    );
+    let mut tx = begin_system(&pool).await.unwrap();
+    let restarted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE type = 'item.transitioned'
+         AND payload->>'reason' = 'prerequisite_merge_item_manually_merged'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(restarted, 1);
+    drop(tx);
+    let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
+    assert_eq!(merges, 2, "the merge by hand and the merge of PR 2");
+    q.stop().await;
+}
+
+/// The repair reads (`AGENTS.md` D127): a lost report, a deleted test branch
+/// and a lost push on the target are found again; `resync` asks for every
+/// read at once (D128).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    submit_new_pr(&sim, &main, 1);
+    q.deliver().await;
+    q.settle().await;
+    let (run_id, test_sha, _) = q.runs_in_progress().await.remove(0);
+    let mut tx = begin_system(&pool).await.unwrap();
+    let test_branch: String = sqlx::query_scalar("SELECT test_branch FROM test_runs WHERE id = $1")
+        .bind(run_id.to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    drop(tx);
+
+    // The test branch disappears: the read of the checks creates it again.
+    sim.delete_branch(&repo(), &test_branch, JobClass::Repair)
+        .await
+        .unwrap();
+    sim.take_deliveries();
+    q.clock.advance(10);
+    q.wake().await;
+    q.settle().await;
+    assert_eq!(sim.branch(&repo(), &test_branch), Some(test_sha.clone()));
+
+    // The report of the CI is lost: the next read of the checks finds it.
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+        .unwrap();
+    sim.take_deliveries();
+    q.settle().await;
+    assert_eq!(current_items(&pool).await[0].1, "testing");
+    q.clock.advance(10);
+    q.wake().await;
+    q.settle().await;
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(current_items(&pool).await[0].1, "merged");
+
+    // A push from outside is lost: the read of the target head restarts the
+    // group in test.
+    let head = sim.branch(&repo(), "main").unwrap();
+    submit_new_pr(&sim, &head, 2);
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(current_items(&pool).await[1].1, "testing");
+    let pushed = sim
+        .commit(&repo(), &head, &[("other.txt", Some("o"))])
+        .unwrap();
+    sim.push(&repo(), "main", &pushed, &bob()).unwrap();
+    sim.take_deliveries();
+    q.clock.advance(5);
+    q.wake().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let read: (String, Option<String>) = sqlx::query_as(
+        "SELECT payload->>'after', payload->>'sender_id' FROM events
+         WHERE type = 'target.pushed' ORDER BY seq DESC LIMIT 1",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(read, (pushed, None));
+    let restarted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events
+         WHERE type = 'item.transitioned' AND payload->>'reason' = 'manual_push_to_target_branch'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(restarted, 1);
+    drop(tx);
+
+    // A resync asks for every read once per minute.
+    let now = q.clock.now();
+    let requested = cihub_mergequeue::resync(&pool, queue(), now).await.unwrap();
+    assert!(requested >= 2, "{requested} jobs");
+    assert_eq!(
+        cihub_mergequeue::resync(&pool, queue(), now).await.unwrap(),
+        0
+    );
+    q.settle().await;
+    q.stop().await;
+}
+
+/// A generator of the fault injection test: splitmix64, so that a seed gives
+/// the same faults (`AGENTS.md` D16).
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    fn chance(&mut self, percent: u64) -> bool {
+        self.next() % 100 < percent
+    }
+}
+
+/// The PRs of one seed.
+const CHAOS_PRS: u64 = 5;
+
+/// One seed of the fault injection test (`AGENTS.md` D129): its own
+/// organization, connection, repository and queue in the shared database,
+/// the scheduler and the worker of the server against a simulator that fails
+/// calls at random, and webhooks lost, sent twice and reordered.
+struct Chaos {
+    seed: u64,
+    pool: PgPool,
+    sim: Arc<Sim>,
+    clock: TestClock,
+    rng: Rng,
+    deliveries: Arc<Mutex<HashMap<String, ScmDelivery>>>,
+    sent: usize,
+    generation: u32,
+    /// The pool of the running process: a kill closes it, as the end of a
+    /// process closes its connections and rolls back its transactions.
+    process: Option<PgPool>,
+    loops: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl Chaos {
+    fn id(&self, kind: u128) -> Ulid {
+        Ulid((u128::from(self.seed) + 1) << 16 | kind)
+    }
+
+    fn org(&self) -> OrgId {
+        OrgId::from_ulid(self.id(1))
+    }
+
+    fn queue(&self) -> QueueId {
+        QueueId::from_ulid(self.id(2))
+    }
+
+    fn repo(&self) -> RepoRef {
+        RepoRef {
+            connection: ConnectionRef {
+                id: ConnectionId::from_ulid(self.id(3)),
+                external_id: format!("conn-{}", self.seed),
+            },
+            external_id: format!("repo-{}", self.seed),
+            namespace: "acme".into(),
+            name: format!("app-{}", self.seed),
+        }
+    }
+
+    async fn new(pool: PgPool, seed: u64, clock: TestClock) -> Self {
+        let mut chaos = Self {
+            seed,
+            pool,
+            sim: Arc::new(Sim::new()),
+            clock,
+            rng: Rng(seed),
+            deliveries: Arc::new(Mutex::new(HashMap::new())),
+            sent: 0,
+            generation: 0,
+            process: None,
+            loops: Vec::new(),
+        };
+        let repo = chaos.repo();
+        let mut tx = begin_system(&chaos.pool).await.unwrap();
+        sqlx::raw_sql(AssertSqlSafe(format!(
+            "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
+             INSERT INTO org_modules (org_id, module, enabled_at)
+                 VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
+             INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
+                 VALUES ('{account}', '{org}', '{instance}', 'account-{seed}', 'acme-{seed}');
+             INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,
+                                          external_id)
+                 VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app',
+                         '{connection_external_id}');
+             INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id,
+                                namespace, name, default_branch)
+                 VALUES ('{repo_id}', '{org}', '{instance}', '{connection}', '{repo_external_id}',
+                         'acme', '{name}', 'main');
+             INSERT INTO queues (id, org_id, repo_id, target_branch)
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main');",
+            org = chaos.org(),
+            account = ScmAccountId::from_ulid(chaos.id(4)),
+            instance = instance(),
+            connection = repo.connection.id,
+            connection_external_id = repo.connection.external_id,
+            repo_id = RepoId::from_ulid(chaos.id(5)),
+            repo_external_id = repo.external_id,
+            name = repo.name,
+            queue = chaos.queue(),
+        )))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        chaos.start().await;
+        chaos
+    }
+
+    /// Starts a worker and a scheduler with new names and their own pool, as
+    /// a new process.
+    async fn start(&mut self) {
+        self.generation += 1;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(8)
+            .connect_with(self.pool.connect_options().as_ref().clone())
+            .await
+            .unwrap();
+        self.process = Some(pool.clone());
+        let scm: Arc<dyn Scm> = self.sim.clone();
+        let module = cihub_mergequeue::module(
+            pool.clone(),
+            scm,
+            translate(&self.deliveries),
+            format!("scheduler-{}-{}", self.seed, self.generation),
+            self.clock.shared(),
+        )
+        .unwrap();
+        let mut executors = Executors::default();
+        (module.executors)(&mut executors);
+        let cancel = CancellationToken::new();
+        let clock = self.clock.clone();
+        let worker = run_worker(
+            pool,
+            format!("worker-{}-{}", self.seed, self.generation),
+            Arc::new(executors),
+            move || clock.now(),
+            std::time::Duration::from_millis(50),
+            cancel.clone(),
+        );
+        let scheduler = (module.scheduler)(cancel);
+        self.loops = vec![
+            tokio::spawn(async move { worker.await.unwrap() }),
+            tokio::spawn(async move { scheduler.await.unwrap() }),
+        ];
+    }
+
+    /// Kills the worker and the scheduler wherever they are, then starts new
+    /// ones once the locks of the jobs and the leases of the queues expire.
+    async fn kill(&mut self) {
+        self.stop().await;
+        self.clock.advance(2);
+        self.start().await;
+        self.wake().await;
+    }
+
+    async fn stop(&mut self) {
+        for running in self.loops.drain(..) {
+            running.abort();
+            let _ = running.await;
+        }
+        if let Some(pool) = self.process.take() {
+            pool.close().await;
+        }
+    }
+
+    async fn wake(&self) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        mark_dirty(&mut tx, self.queue()).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    /// Stores the deliveries of the simulator; with `faults`, some are lost,
+    /// some sent twice with the same identifier, and their order changes.
+    async fn deliver(&mut self, faults: bool) {
+        let mut taken: Vec<(String, ScmDelivery)> = Vec::new();
+        for delivery in self.sim.take_deliveries() {
+            self.sent += 1;
+            let id = format!("delivery-{}-{}", self.seed, self.sent);
+            if faults && self.rng.chance(10) {
+                continue;
+            }
+            if faults && self.rng.chance(10) {
+                taken.push((id.clone(), delivery.clone()));
+            }
+            taken.push((id, delivery));
+        }
+        if faults {
+            for i in (1..taken.len()).rev() {
+                let j = usize::try_from(self.rng.next() % (i as u64 + 1)).unwrap();
+                taken.swap(i, j);
+            }
+        }
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        for (id, delivery) in taken {
+            let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+            self.deliveries.lock().unwrap().insert(id.clone(), delivery);
+            let stored = Delivery {
+                scm_instance_id: instance(),
+                delivery_id: id.clone(),
+                org_id: route.org_id,
+                connection_id: route.connection_id,
+                queue_id: route.queue_id,
+                event: "sim".into(),
+                action: None,
+                payload: serde_json::json!({ "id": id }),
+                received_at: self.clock.now(),
+            };
+            store_delivery(&mut tx, &stored).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+
+    /// Waits until no job of the seed runs or is due, no fact waits and the
+    /// queue is clean; moves the clock to the next job that waits for its
+    /// backoff.
+    async fn settle(&self) {
+        let mut idle = 0;
+        for _ in 0..4000 {
+            let now = self.clock.now();
+            let mut tx = begin_system(&self.pool).await.unwrap();
+            let (busy, next_job, deliveries): (bool, Option<OffsetDateTime>, bool) =
+                sqlx::query_as(
+                    "SELECT EXISTS (SELECT 1 FROM queue_inbox
+                                    WHERE queue_id = $3 AND processed_at IS NULL)
+                         OR EXISTS (SELECT 1 FROM jobs WHERE org_id = $2 AND state = 'running')
+                         OR EXISTS (SELECT 1 FROM jobs
+                                    WHERE org_id = $2 AND state = 'queued' AND run_after <= $1)
+                         OR EXISTS (SELECT 1 FROM queues WHERE id = $3 AND dirty),
+                     (SELECT min(run_after) FROM jobs WHERE org_id = $2 AND state = 'queued'),
+                     EXISTS (SELECT 1 FROM webhook_inbox
+                             WHERE org_id = $2 AND processed_at IS NULL)",
+                )
+                .bind(now)
+                .bind(self.org().to_string())
+                .bind(self.queue().to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+            drop(tx);
+            if busy {
+                idle = 0;
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                continue;
+            }
+            if let Some(at) = next_job {
+                let wait = (at - now).whole_seconds() + 1;
+                self.clock.advance(((wait + 59) / 60).max(1));
+                self.wake().await;
+                continue;
+            }
+            if deliveries && idle < 20 {
+                idle += 1;
+                self.wake().await;
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                continue;
+            }
+            return;
+        }
+        self.not_settled().await;
+    }
+
+    /// Fails with what the seed waits for, and what a reconciliation of its
+    /// queue gives.
+    async fn not_settled(&self) -> ! {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let left: Vec<(String, String)> = sqlx::query_as(
+            "SELECT 'fact', type::text FROM queue_inbox WHERE queue_id = $2 AND processed_at IS NULL
+             UNION ALL SELECT 'job', idempotency_key || ' ' || state::text || ' ' || run_after::text
+                          || ' ' || coalesce(last_error, '')
+                 FROM jobs WHERE org_id = $1 AND state IN ('queued', 'running')
+             UNION ALL SELECT 'dirty', id FROM queues WHERE id = $2 AND dirty
+             UNION ALL SELECT 'delivery', delivery_id FROM webhook_inbox
+                 WHERE org_id = $1 AND processed_at IS NULL",
+        )
+        .bind(self.org().to_string())
+        .bind(self.queue().to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        drop(tx);
+        let reconciler = Reconciler {
+            settings: Arc::new(cihub_mergequeue::default_settings().unwrap()),
+            translate: translate(&self.deliveries),
+        };
+        let direct = reconciler
+            .reconcile(&self.pool, self.queue(), self.clock.now())
+            .await
+            .map_err(|err| cihub_platform::error_chain(&err));
+        panic!(
+            "seed {}: the queue did not settle at {}: {left:?}; a reconciliation gives {direct:?}",
+            self.seed,
+            self.clock.now()
+        );
+    }
+
+    /// PR number, state, reason, position and the rank of its merge in the
+    /// log, for the current items.
+    async fn items(&self) -> Vec<(i64, String, String, Option<i64>, Option<i64>)> {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        sqlx::query_as(
+            "SELECT i.pr_number, i.state::text, i.state_reason::text, i.position,
+                    (SELECT min(e.seq) FROM events e
+                     WHERE e.queue_id = i.queue_id AND e.type = 'item.transitioned'
+                       AND e.item_id = i.id AND e.payload->>'to' = 'merged')
+             FROM queue_items i WHERE i.queue_id = $1 AND i.is_current ORDER BY i.pr_number",
+        )
+        .bind(self.queue().to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+    }
+
+    async fn runs_in_progress(&self) -> Vec<(String, Vec<i64>)> {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        sqlx::query_as(
+            "SELECT test_sha, tested_pr_numbers FROM test_runs
+             WHERE queue_id = $1 AND status = 'in_progress'",
+        )
+        .bind(self.queue().to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+    }
+
+    /// Plays the seed: `CHAOS_PRS` PRs, some with a red CI; the CI reports
+    /// on each run once; faults and kills all along. Then checks the oracle.
+    async fn play(&mut self) {
+        let repo = self.repo();
+        let sim = self.sim.clone();
+        let root = sim.add_repo(&repo, "main", &[("a.txt", "a")]);
+        let rules = RequiredChecks {
+            names: BTreeSet::from([REQUIRED.to_owned()]),
+            up_to_date: false,
+        };
+        sim.set_rules(&repo, "main", rules).unwrap();
+        sim.set_permission(&repo, &alice(), RepoPermission::Write)
+            .unwrap();
+        let mut red = BTreeSet::new();
+        for n in 1..=CHAOS_PRS {
+            let branch = format!("pr-{n}");
+            let path = format!("f{n}.txt");
+            let head = sim.commit(&repo, &root, &[(&path, Some("x"))]).unwrap();
+            sim.push(&repo, &branch, &head, &bob()).unwrap();
+            let number = sim.open_pr(&repo, &branch, "main", &bob()).unwrap();
+            sim.report_check(&repo, &head, check(REQUIRED, true))
+                .unwrap();
+            if self.rng.chance(25) {
+                red.insert(i64::try_from(number).unwrap());
+            }
+            sim.comment(&repo, number, &alice(), "/cihub merge")
+                .unwrap();
+        }
+        // The submissions arrive whole: a lost comment is the sweep of lot 4.
+        self.deliver(false).await;
+        self.settle().await;
+        sim.fail_at_random(Some(cihub_scm::sim::RandomFaults {
+            seed: self.seed,
+            unavailable_percent: 1,
+            rate_limited_percent: 1,
+            rate_limited_until: self.clock.now() + Duration::minutes(1),
+        }));
+        let mut reported: BTreeSet<String> = BTreeSet::new();
+        for round in 0.. {
+            assert!(
+                round < 200,
+                "seed {}: the queue does not conclude",
+                self.seed
+            );
+            self.deliver(true).await;
+            self.settle().await;
+            if self.rng.chance(15) {
+                self.kill().await;
+                self.settle().await;
+            }
+            let items = self.items().await;
+            let done = items.len() == usize::try_from(CHAOS_PRS).unwrap()
+                && items
+                    .iter()
+                    .all(|i| matches!(i.1.as_str(), "merged" | "failed" | "cancelled"));
+            if done {
+                break;
+            }
+            let mut new = 0;
+            for (test_sha, prs) in self.runs_in_progress().await {
+                if !reported.insert(test_sha.clone()) {
+                    continue;
+                }
+                let passed = !prs.iter().any(|pr| red.contains(pr));
+                sim.report_check(&repo, &test_sha, check(REQUIRED, passed))
+                    .unwrap();
+                new += 1;
+            }
+            if new == 0 {
+                // Lost reports and pushes come back with the repair reads.
+                self.clock.advance(11);
+                self.wake().await;
+            }
+        }
+        sim.fail_at_random(None);
+        self.deliver(false).await;
+        self.settle().await;
+        self.check_oracle(&red).await;
+        self.stop().await;
+    }
+
+    /// Each green PR merged exactly once, in the order of the queue; each red
+    /// PR failed with a reason; the replay of the log gives the same
+    /// projections.
+    async fn check_oracle(&self, red: &BTreeSet<i64>) {
+        let seed = self.seed;
+        let items = self.items().await;
+        let mut merged: Vec<(i64, i64, i64)> = Vec::new();
+        for (pr, state, reason, position, merged_at) in &items {
+            if red.contains(pr) {
+                assert_eq!(
+                    state, "failed",
+                    "seed {seed}: red PR {pr} is {state} ({reason})"
+                );
+                assert!(!reason.is_empty(), "seed {seed}: red PR {pr} has no reason");
+            } else {
+                assert_eq!(
+                    (state.as_str(), reason.as_str()),
+                    ("merged", "merge_graph_merge"),
+                    "seed {seed}: green PR {pr}"
+                );
+                merged.push((merged_at.unwrap(), position.unwrap(), *pr));
+            }
+        }
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let decisions: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT i.pr_number, count(*) FROM events e JOIN queue_items i ON i.id = e.item_id
+             WHERE e.queue_id = $1 AND e.type = 'item.transitioned' AND e.payload->>'to' = 'merged'
+             GROUP BY i.pr_number ORDER BY 1",
+        )
+        .bind(self.queue().to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        assert!(
+            decisions.iter().all(|(_, count)| *count == 1),
+            "seed {seed}: {decisions:?}"
+        );
+        for (_, _, pr) in &merged {
+            let pr = self
+                .sim
+                .pull_request(&self.repo(), u64::try_from(*pr).unwrap(), JobClass::Repair)
+                .await
+                .unwrap();
+            assert_eq!(pr.state, PrState::Merged, "seed {seed}: PR {}", pr.number);
+        }
+        merged.sort_unstable();
+        let positions: Vec<i64> = merged.iter().map(|m| m.1).collect();
+        assert!(
+            positions.is_sorted(),
+            "seed {seed}: merged out of order {merged:?}"
+        );
+        let before = projections(&mut tx).await;
+        rebuild(&mut tx, self.queue(), self.clock.now())
+            .await
+            .unwrap();
+        assert_eq!(projections(&mut tx).await, before, "seed {seed}");
+    }
+}
+
+/// The exit criterion of lot 7 (`docs/RELIABILITY.md`, `AGENTS.md` D129): on
+/// each seed, server errors and rate limits at random, webhooks lost, sent
+/// twice and reordered, and processes killed at random, each green PR is
+/// merged exactly once, in the order of the queue, and each red PR fails with
+/// a reason. `CIHUB_SIM_SEEDS` gives the number of seeds (10 by default;
+/// `mise run sim` plays 1 000).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn fault_injection(pool: PgPool) {
+    let seeds: u64 = std::env::var("CIHUB_SIM_SEEDS")
+        .ok()
+        .and_then(|seeds| seeds.parse().ok())
+        .unwrap_or(10);
+    create_event_partitions(
+        &pool,
+        Date::from_calendar_date(2026, Month::October, 1).unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO scm_instances (id, kind, base_url) VALUES ($1, 'github', 'https://github.com')",
+    )
+    .bind(instance().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let clock = TestClock::new();
+    for seed in 0..seeds {
+        let mut chaos = Chaos::new(pool.clone(), seed, clock.clone()).await;
+        chaos.play().await;
+    }
 }

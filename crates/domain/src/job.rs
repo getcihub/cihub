@@ -36,6 +36,9 @@ closed_enum! {
         RepeatedServerErrors,
         /// Merge: the head of the PR changed since the test (the `sha` guard).
         HeadChanged,
+        /// Merge: the PR was already merged when the job read it; the queue
+        /// did not merge it (`AGENTS.md` D132).
+        PrAlreadyMerged,
     }
 }
 

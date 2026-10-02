@@ -34,6 +34,10 @@ pub struct PrSnapshot {
     pub head_sha: String,
     pub base_branch: String,
     pub draft: bool,
+    /// The title and the description, for the title of the merge commit
+    /// (`AGENTS.md` D126).
+    pub title: String,
+    pub body: String,
     pub labels: BTreeSet<String>,
     pub mergeability: Mergeability,
     pub review_decision: ReviewDecision,
@@ -87,6 +91,9 @@ pub struct StatusUpdate {
 pub struct PrMerge {
     pub number: u64,
     pub head_sha: String,
+    /// The test commit that proved the PR: `fast_forward` moves the base
+    /// there (`AGENTS.md` D124).
+    pub tested_sha: String,
     pub method: MergeMethod,
     pub title: String,
     pub message: String,

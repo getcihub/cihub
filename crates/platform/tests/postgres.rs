@@ -732,6 +732,16 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .unwrap();
         tx.commit().await.unwrap();
     }
+    // A delivery that no connection claimed goes after the same time.
+    for (id, received) in [("unrouted-old", 22), ("unrouted-recent", 29)] {
+        let unrouted = Delivery {
+            org_id: None,
+            connection_id: None,
+            queue_id: None,
+            ..delivery(id, received * 86_400)
+        };
+        store(&pool, &unrouted).await;
+    }
     for (key, finished) in [
         ("old", now - Duration::days(4)),
         ("recent", now - Duration::days(1)),
@@ -750,7 +760,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
-    assert_eq!(deliveries, ["recent"]);
+    assert_eq!(deliveries, ["recent", "unrouted-recent"]);
     let jobs: Vec<String> = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
         .fetch_all(&mut *tx)
         .await

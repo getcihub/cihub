@@ -109,6 +109,16 @@ const MERGE_FAILED: [Reason; 6] = [
     R::MergeRepeatedServerErrors,
     R::PrUpdatedAtMergeTime,
 ];
+/// Failure of a direct merge (`AGENTS.md` D122): a refusal of the SCM is
+/// `direct_merge_rejected`, the other errors keep their reason.
+const DIRECT_MERGE_FAILED: [Reason; 6] = [
+    R::DirectMergeRejected,
+    R::MergeRateLimitExceeded,
+    R::MergeBranchProtectionUnmet,
+    R::MergeAlreadyInProgress,
+    R::MergeRepeatedServerErrors,
+    R::PrUpdatedAtMergeTime,
+];
 /// Something ahead of the item changed.
 const UPSTREAM_CHANGED: [Reason; 4] = [
     R::ManualPushToTargetBranch,
@@ -143,7 +153,7 @@ impl Lifecycle for ItemState {
             (Some(S::NotReady), S::Pending) => &[R::MergeItemNowReady],
             (Some(S::Pending), S::Testing) => &[R::TestRunStarted],
             (Some(S::Pending), S::Merged) => &[R::MergeGraphDirectMerge, R::ManualMerge],
-            (Some(S::Pending), S::Failed) => &[R::DirectMergeRejected],
+            (Some(S::Pending), S::Failed) => &DIRECT_MERGE_FAILED,
             (Some(S::Testing), S::TestsPassed) => &[R::TestRunPassed, R::PassedByOptimization],
             (Some(S::Testing), S::PendingFailure) => {
                 &[R::TestRunRequiredStatusFailed, R::TestRunTimeout]
@@ -320,7 +330,18 @@ mod tests {
                 S::Merged,
                 &["merge_graph_direct_merge"],
             ),
-            (&[Some(S::Pending)], S::Failed, &["direct_merge_rejected"]),
+            (
+                &[Some(S::Pending)],
+                S::Failed,
+                &[
+                    "direct_merge_rejected",
+                    "merge_rate_limit_exceeded",
+                    "merge_branch_protection_unmet",
+                    "merge_already_in_progress",
+                    "merge_repeated_server_errors",
+                    "pr_updated_at_merge_time",
+                ],
+            ),
             (
                 &[Some(S::Testing)],
                 S::TestsPassed,

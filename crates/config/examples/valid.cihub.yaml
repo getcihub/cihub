@@ -14,7 +14,6 @@ queues:
     branch: main
     strategy: sequential
     merge_method: fast_forward
-    trigger: inplace
     queue_conditions:
       - label = hotfix
 priority_rules:

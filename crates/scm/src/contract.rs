@@ -233,6 +233,10 @@ async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert_eq!(again, number, "an open draft PR is not opened twice");
     let draft = scm.pull_request(repo, number, CLASS).await.unwrap();
     assert!(draft.draft);
+    assert_eq!(
+        (draft.title.as_str(), draft.body.as_str()),
+        ("contract draft", "contract")
+    );
     for _ in 0..2 {
         scm.close_pr(repo, number, CLASS).await.unwrap();
     }
@@ -246,6 +250,7 @@ async fn merge(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let mut merge = PrMerge {
         number: fixture.mergeable_pr,
         head_sha: pr_head(scm, repo, fixture.conflicting_pr).await,
+        tested_sha: String::new(),
         method: MergeMethod::Squash,
         title: "contract merge".into(),
         message: String::new(),

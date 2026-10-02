@@ -15,8 +15,10 @@ pub const JOB_LOCK: Duration = Duration::seconds(60);
 /// (`docs/RELIABILITY.md`).
 pub const JOBS_PER_CONNECTION: i64 = 100;
 
-/// After this many attempts, a job that fails goes to `dead`.
-pub const MAX_ATTEMPTS: i32 = 8;
+/// After this many attempts, a job that fails goes to `dead`. The backoff of
+/// these attempts covers the 15 minutes that an assembly waits
+/// (`AGENTS.md` D133).
+pub const MAX_ATTEMPTS: i32 = 11;
 
 /// The wait before the next attempt: 2, 4, 8… seconds, at most 5 minutes.
 pub fn backoff(attempts: i32) -> Duration {

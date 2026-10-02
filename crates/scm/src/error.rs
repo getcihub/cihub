@@ -34,6 +34,9 @@ pub enum ScmError {
     /// The SCM keeps a merge of the PR in progress.
     #[error("merge already in progress")]
     MergeInProgress,
+    /// The base moved: the commit to land does not descend from it.
+    #[error("not a fast forward of the base")]
+    NotFastForward,
     /// The SCM refuses the merge for another reason.
     #[error("merge refused: {0}")]
     MergeRejected(String),

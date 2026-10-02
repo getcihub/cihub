@@ -468,7 +468,7 @@ queues:
     branch: main
     strategy: batched                     # sequential | pipelined | batched | parallel
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
-    trigger: draft_pr                     # draft_pr | push | inplace
+    trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission : la PR elle-meme
       - github-review-decision = approved
       - -draft
@@ -486,7 +486,6 @@ queues:
     branch: main
     strategy: sequential
     merge_method: fast_forward
-    trigger: inplace
     queue_conditions:
       - label = hotfix
       - sender-permission >= write

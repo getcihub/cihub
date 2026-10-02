@@ -34,9 +34,14 @@ pub struct Plan {
 pub struct Desired {
     pub test_branches: Vec<TestBranch>,
     pub merges: Vec<Merge>,
-    /// The PRs whose state CIHub must read again now: a `not_ready` item
-    /// waits for a change that no webhook may report.
+    /// The PRs whose state CIHub must read again now: a webhook may be lost,
+    /// and a `not_ready` item waits for a change that no webhook may report.
     pub observe: Vec<Read>,
+    /// The checks that CIHub must read again now on the test SHA of a run in
+    /// progress that no report reached for a while (`AGENTS.md` D127).
+    pub check_reads: Vec<CheckRead>,
+    /// The read point of the head of the target branch, when a read is due.
+    pub target_read: Option<OffsetDateTime>,
 }
 
 /// A read of a PR that is due since its read point. The same point gives
@@ -44,6 +49,16 @@ pub struct Desired {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Read {
     pub pr_number: u64,
+    pub point: OffsetDateTime,
+}
+
+/// A read of the checks of the test SHA of a run in progress, due since its
+/// read point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckRead {
+    pub run_id: RunId,
+    pub test_sha: String,
+    pub test_branch: String,
     pub point: OffsetDateTime,
 }
 
@@ -71,6 +86,9 @@ pub struct Merge {
     pub item_id: ItemId,
     pub pr_number: u64,
     pub head_sha: String,
+    /// The run that proved the item, and its test SHA (`AGENTS.md` D124).
+    pub run_id: RunId,
+    pub tested_sha: String,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -262,22 +280,21 @@ const fn assembly_reason(error: JobError) -> Reason {
         | JobError::BranchProtectionUnmet
         | JobError::MergeAlreadyInProgress
         | JobError::RepeatedServerErrors
-        | JobError::HeadChanged => Reason::StartTestRunInvalidEvent,
+        | JobError::HeadChanged
+        | JobError::PrAlreadyMerged => Reason::StartTestRunInvalidEvent,
     }
 }
 
-/// The reason of a failed merge. A direct merge leaves `pending`, where the
-/// table permits only `direct_merge_rejected`.
+/// The reason of a failed merge. A refusal of a direct merge is
+/// `direct_merge_rejected` (`AGENTS.md` D122).
 const fn merge_reason(error: JobError, direct: bool) -> Reason {
-    if direct {
-        return Reason::DirectMergeRejected;
-    }
     match error {
         JobError::RateLimitExceeded => Reason::MergeRateLimitExceeded,
         JobError::BranchProtectionUnmet => Reason::MergeBranchProtectionUnmet,
         JobError::MergeAlreadyInProgress => Reason::MergeAlreadyInProgress,
         JobError::RepeatedServerErrors => Reason::MergeRepeatedServerErrors,
         JobError::HeadChanged => Reason::PrUpdatedAtMergeTime,
+        _ if direct => Reason::DirectMergeRejected,
         _ => Reason::MergeRejected,
     }
 }
@@ -357,6 +374,12 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
                 },
             )
         }
+        // Someone merged the PR outside the queue (`AGENTS.md` D132).
+        Request::MergeFailed {
+            item_id,
+            error: JobError::PrAlreadyMerged,
+            ..
+        } => item_to(item(item_id)?, ItemState::Merged, Reason::ManualMerge),
         Request::MergeFailed {
             item_id,
             direct,
@@ -924,9 +947,16 @@ pub(crate) fn merge_ready(s: &Snapshot, item: &Item) -> bool {
             })
 }
 
-/// Read points of a `not_ready` PR after its submission, in minutes: then
-/// every 15 minutes.
+/// Read points of a PR after its submission, in minutes: then every 15
+/// minutes.
 const READ_POINTS: [i64; 4] = [1, 3, 7, 15];
+
+/// A run in progress without a report has its checks read this often.
+const CHECK_READ_EVERY: i64 = 10;
+
+/// The head of the target branch is read this often while the queue has
+/// work.
+const TARGET_READ_EVERY: i64 = 5;
 
 /// The last read point at or before `now`, and the next one after `now`.
 /// The points depend only on the age of the item, not on the last read: a
@@ -956,8 +986,8 @@ fn read_points(item: &Item, now: OffsetDateTime) -> (Option<OffsetDateTime>, Off
     (last.map(at), at(next))
 }
 
-/// The read of the PR of a `not_ready` item, when its last point came after
-/// the last observation.
+/// The read of the PR of a live item, when its last point came after the
+/// last observation.
 fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
     let (point, _) = read_points(item, now);
     let point = point?;
@@ -968,21 +998,77 @@ fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
     })
 }
 
+/// The live items whose PR CIHub reads (`AGENTS.md` D127).
+fn live_items(s: &Snapshot) -> impl Iterator<Item = &Item> {
+    s.items
+        .values()
+        .filter(|i| i.is_current && !i.state.is_terminal())
+}
+
+/// The last point of a grid of `every` minutes from `base` at or before
+/// `now`, without `base` itself, and the next point after `now`.
+fn grid(
+    base: OffsetDateTime,
+    every: i64,
+    now: OffsetDateTime,
+) -> (Option<OffsetDateTime>, OffsetDateTime) {
+    let step = Duration::minutes(every);
+    let steps = ((now - base).whole_minutes() / every).max(0);
+    let at = |n: i64| base + step * i32::try_from(n).unwrap_or(i32::MAX);
+    ((steps >= 1).then(|| at(steps)), at(steps + 1))
+}
+
+/// The last report on the test SHA of a run in progress, or its start.
+fn last_report(s: &Snapshot, run: &TestRun) -> OffsetDateTime {
+    s.checks
+        .get(&run.id)
+        .into_iter()
+        .flat_map(|checks| checks.values())
+        .map(|o| o.observed_at)
+        .fold(run.started_at, OffsetDateTime::max)
+}
+
+fn runs_in_progress(s: &Snapshot) -> impl Iterator<Item = &TestRun> {
+    s.runs
+        .values()
+        .filter(|r| r.status == RunStatus::InProgress)
+}
+
+/// The queue reads the head of its target while it has work: from the last
+/// observation, or every minute while it does not know the head.
+fn target_points(
+    s: &Snapshot,
+    now: OffsetDateTime,
+) -> Option<(Option<OffsetDateTime>, OffsetDateTime)> {
+    let busy = s.items.values().any(|i| !i.state.is_terminal())
+        || s.requests
+            .values()
+            .any(|r| matches!(r, Request::Submit { .. }));
+    if !busy {
+        return None;
+    }
+    if let Some(head) = &s.target.head {
+        return Some(grid(head.observed_at, TARGET_READ_EVERY, now));
+    }
+    let minute = now
+        - Duration::seconds(i64::from(now.second()))
+        - Duration::nanoseconds(i64::from(now.nanosecond()));
+    Some((Some(minute), minute + Duration::minutes(1)))
+}
+
 /// The earliest of the next read points, the not-ready timeouts and the run
 /// timeouts.
 fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Option<OffsetDateTime> {
     let not_ready = Duration::hours(i64::from(settings.not_ready_timeout_hours.value));
     let testing = Duration::minutes(i64::from(settings.testing_timeout_minutes.value));
-    let items = not_ready_items(s).flat_map(|item| {
-        let (_, next) = read_points(item, now);
-        [next, item.submitted_at + not_ready]
+    let reads = live_items(s).map(|item| read_points(item, now).1);
+    let timeouts = not_ready_items(s).map(|item| item.submitted_at + not_ready);
+    let runs = runs_in_progress(s).flat_map(|r| {
+        let (_, next_read) = grid(last_report(s, r), CHECK_READ_EVERY, now);
+        [r.started_at + testing, next_read]
     });
-    let runs = s
-        .runs
-        .values()
-        .filter(|r| r.status == RunStatus::InProgress)
-        .map(|r| r.started_at + testing);
-    items.chain(runs).min()
+    let target = target_points(s, now).map(|(_, next)| next);
+    reads.chain(timeouts).chain(runs).chain(target).min()
 }
 
 fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
@@ -1016,19 +1102,38 @@ fn desired(s: &Snapshot, now: OffsetDateTime) -> Desired {
         s.queue_order()
             .into_iter()
             .filter(|i| merge_ready(s, i))
-            .map(|i| Merge {
-                item_id: i.id,
-                pr_number: i.pr_number,
-                head_sha: i.head_sha.clone(),
+            .filter_map(|i| {
+                let run = s.runs.get(&i.verified_by_run_id?)?;
+                Some(Merge {
+                    item_id: i.id,
+                    pr_number: i.pr_number,
+                    head_sha: i.head_sha.clone(),
+                    run_id: run.id,
+                    tested_sha: run.test_sha.clone()?,
+                })
             })
             .collect()
     };
-    let observe = not_ready_items(s)
+    let observe = live_items(s)
         .filter_map(|item| read_due(s, item, now))
         .collect();
+    let check_reads = runs_in_progress(s)
+        .filter_map(|run| {
+            let (point, _) = grid(last_report(s, run), CHECK_READ_EVERY, now);
+            Some(CheckRead {
+                run_id: run.id,
+                test_sha: run.test_sha.clone()?,
+                test_branch: run.test_branch.clone(),
+                point: point?,
+            })
+        })
+        .collect();
+    let target_read = target_points(s, now).and_then(|(point, _)| point);
     Desired {
         test_branches,
         merges,
         observe,
+        check_reads,
+        target_read,
     }
 }

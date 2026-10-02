@@ -31,7 +31,9 @@ use tracing::{Instrument, info, info_span, warn};
 use crate::assembly::{assemble, cleanup};
 use crate::command::{Merge, parse_merge};
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
+use crate::merge::merge_job;
 use crate::projection::record_late_check;
+use crate::repair::{merge_in_flight, refresh_checks, refresh_target};
 use crate::target::QueueTarget;
 use crate::{COVER_AFTER, MergeQueueError, QueueLog};
 
@@ -174,10 +176,10 @@ impl Reconciler {
     }
 
     /// Requests `jobs`, then the jobs that make the SCM converge to the
-    /// desired state: the reads of the PRs that are due, the assembly of each
-    /// run that waits for its test branch, and the cleanup of each run that
-    /// ended, after the retention (`AGENTS.md` D117). Returns the number of
-    /// new jobs.
+    /// desired state: the reads that are due (PRs, checks, target head), the
+    /// assembly of each run that waits for its test branch, the merge of each
+    /// proved item, and the cleanup of each run that ended, after the
+    /// retention (`AGENTS.md` D117). Returns the number of new jobs.
     async fn request_jobs(
         &self,
         conn: &mut PgConnection,
@@ -190,6 +192,15 @@ impl Reconciler {
             for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
                 jobs.push(refresh_at(target, point, chunk, prs.to_vec()));
             }
+        }
+        for read in &converge.desired.check_reads {
+            jobs.push(refresh_checks(target, read));
+        }
+        if let Some(point) = converge.desired.target_read {
+            jobs.push(refresh_target(target, point));
+        }
+        for merge in &converge.desired.merges {
+            jobs.push(merge_job(target, merge));
         }
         for branch in &converge.desired.test_branches {
             let assembling = converge
@@ -265,7 +276,8 @@ impl Work<'_> {
     /// What the delivery asks: a fact that it holds, or a job that reads
     /// what it does not hold. The other events wait for their lots. Returns
     /// `false` for a delivery that waits for the next reconciliation: a check
-    /// reported on a test branch whose assembly fact has not come yet.
+    /// reported on a test branch whose assembly fact has not come yet, or a
+    /// push on the target while a merge of the queue is in flight.
     async fn read(
         &self,
         conn: &mut PgConnection,
@@ -315,13 +327,19 @@ impl Work<'_> {
                 sender,
                 ..
             } if branch == self.target.target_branch => {
+                // The push of a merge of the queue may come before the fact
+                // of its merge: it waits for the merge job to end.
+                let own = snapshot.target.own_shas.contains(&after);
+                if !own && merge_in_flight(conn, self.target.queue_id).await? {
+                    return Ok(false);
+                }
                 let sender_id = user_of(conn, self.target.scm_instance_id, &sender).await?;
                 facts.push(self.fact(
                     Actor::User { user_id: sender_id },
                     EventKind::TargetPushed {
                         before,
                         after,
-                        sender_id,
+                        sender_id: Some(sender_id),
                     },
                 ));
             }
@@ -640,9 +658,43 @@ pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize,
     Ok(queues.len())
 }
 
-/// Takes the leases of the queues that have work as `owner`, reconciles each
-/// one, then waits for a change or for [`TICK`], until `cancel`; then gives
-/// its leases back. An error is logged, and the work waits for the next pass.
+/// Marks dirty the queues that have a live item, in the organizations with
+/// the module (`AGENTS.md` D131): a plan of an older version may have asked
+/// for no wake-up. Returns their number.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
+    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let queues: Vec<String> = sqlx::query_scalar(
+        "SELECT q.id FROM queues q
+         JOIN org_modules m ON m.org_id = q.org_id AND m.module = $1::module_name
+         WHERE EXISTS (SELECT 1 FROM queue_items i
+                       WHERE i.queue_id = q.id AND i.concluded_at IS NULL)
+         ORDER BY q.id",
+    )
+    .bind(cihub_domain::ModuleName::Mergequeue.as_str())
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    for queue in &queues {
+        let queue_id: QueueId = queue.parse().map_err(|source| MergeQueueError::ReadQueue {
+            id: queue.clone(),
+            source,
+        })?;
+        mark_dirty(&mut tx, queue_id)
+            .await
+            .map_err(MergeQueueError::Platform)?;
+    }
+    tx.commit().await.map_err(MergeQueueError::Query)?;
+    Ok(queues.len())
+}
+
+/// Wakes the live queues once, then takes the leases of the queues that have
+/// work as `owner`, reconciles each one, then waits for a change or for
+/// [`TICK`], until `cancel`; then gives its leases back. An error is logged,
+/// and the work waits for the next pass.
 ///
 /// # Errors
 ///
@@ -657,6 +709,10 @@ pub async fn run_scheduler(
     let mut wakeup = QueueWakeup::listen(&pool)
         .await
         .map_err(MergeQueueError::Platform)?;
+    match wake_live_queues(&pool).await {
+        Ok(queues) => info!(queues, "live queues woken at start"),
+        Err(err) => warn!(error = &err as &dyn Error, "live queues not woken at start"),
+    }
     let mut next_cover = clock();
     while !cancel.is_cancelled() {
         let now = clock();

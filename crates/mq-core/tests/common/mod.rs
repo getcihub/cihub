@@ -180,7 +180,7 @@ impl World {
             EventKind::TargetPushed {
                 before,
                 after,
-                sender_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+                sender_id: Some(cihub_domain::UserId::from_ulid(ulid::Ulid(1))),
             },
         )
     }

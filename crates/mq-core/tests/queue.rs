@@ -6,10 +6,10 @@ mod common;
 
 use cihub_config::Setting;
 use cihub_domain::{
-    Actor, CheckConclusion, EventKind, ItemState, JobError, Mergeability, PrState, Priority,
-    QueueControl, QueueMode, QueueState, Reason, RunStatus,
+    Actor, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError, Mergeability,
+    PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
-use cihub_mq_core::{Head, Outcome, Read};
+use cihub_mq_core::{CheckRead, Head, Outcome, Read};
 use common::{World, head, settings, window};
 
 fn world() -> World {
@@ -359,6 +359,41 @@ fn a_merge_failure_fails_the_item() {
 }
 
 #[test]
+fn a_pr_merged_outside_the_queue_is_a_manual_merge() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    w.assemble_all();
+    w.report(1, CheckConclusion::Success);
+    w.report(2, CheckConclusion::Success);
+    assert_eq!(w.state(2), Some(ItemState::TestsPassed));
+    let item_id = w.item(1).unwrap().id;
+    w.fact(
+        Actor::Bot,
+        EventKind::MergeFailed {
+            item_id,
+            direct: false,
+            error: JobError::PrAlreadyMerged,
+        },
+    );
+    let reasons: Vec<(ItemState, Reason)> = w
+        .log
+        .iter()
+        .filter_map(|e| match e.kind {
+            EventKind::ItemTransitioned { to, reason, .. } => Some((to, reason)),
+            _ => None,
+        })
+        .collect();
+    assert!(reasons.contains(&(ItemState::Merged, Reason::ManualMerge)));
+    // The successor was tested on top of the head of PR 1, not on what landed.
+    assert!(reasons.contains(&(
+        ItemState::Pending,
+        Reason::PrerequisiteMergeItemManuallyMerged
+    )));
+    assert_replays(&w);
+}
+
+#[test]
 fn a_blocked_pr_stays_not_ready() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
@@ -640,7 +675,9 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
         point: at(1),
     };
     assert_eq!(plan.desired.observe, vec![read]);
-    assert_eq!(plan.wake_at, Some(at(3)));
+    // The read of the target head, 5 minutes after its observation, comes
+    // before the next read point of the PR.
+    assert!(plan.wake_at < Some(at(7)), "{:?}", plan.wake_at);
     // A read that changes nothing is not in the log: the read stays due at
     // the same point, so that the job of this point is the same.
     w.observe(1, |p| p.mergeability = Mergeability::Behind);
@@ -650,7 +687,6 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
     w.advance(60);
     let plan = w.reconcile();
     assert_eq!(plan.desired.observe[0].point, at(60));
-    assert_eq!(plan.wake_at, Some(at(75)));
 
     // A read that changes something comes after the point: nothing is due.
     // A mergeability that the SCM has not computed is read every minute.
@@ -662,16 +698,95 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
 }
 
 #[test]
-fn a_run_in_progress_wakes_the_queue_at_its_timeout() {
+fn every_live_pr_is_read_every_15_minutes() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
-    let started = w.now;
-    w.assemble_all();
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    let submitted = w.item(1).unwrap().submitted_at;
+    let minute = submitted.replace_second(0).unwrap();
+    w.advance(30);
     let plan = w.reconcile();
-    let timeout = time::Duration::minutes(i64::from(w.settings.testing_timeout_minutes.value));
-    assert_eq!(plan.wake_at, Some(started + timeout));
-    assert!(
-        plan.desired.observe.is_empty(),
-        "only not_ready PRs are read"
+    assert_eq!(
+        plan.desired.observe,
+        vec![Read {
+            pr_number: 1,
+            point: minute + time::Duration::minutes(30),
+        }]
     );
+}
+
+#[test]
+fn a_silent_run_has_its_checks_read_every_10_minutes() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    let run_id = w.run(1).unwrap();
+    let started = w.snapshot.runs[&run_id].started_at;
+    w.assemble_all();
+    assert!(w.reconcile().desired.check_reads.is_empty(), "just started");
+    w.advance(10);
+    let plan = w.reconcile();
+    let read = CheckRead {
+        run_id,
+        test_sha: format!("test-{run_id}"),
+        test_branch: w.snapshot.runs[&run_id].test_branch.clone(),
+        point: started + time::Duration::minutes(10),
+    };
+    assert_eq!(plan.desired.check_reads, vec![read.clone()]);
+    // A report moves the points: nothing is due until 10 minutes after it.
+    w.fact(
+        Actor::System,
+        EventKind::CheckObserved {
+            test_sha: format!("test-{run_id}"),
+            check: CheckReport {
+                name: "lint".into(),
+                kind: CheckKind::Check,
+                conclusion: None,
+                details_url: None,
+            },
+        },
+    );
+    let reported = w.now;
+    assert!(w.reconcile().desired.check_reads.is_empty());
+    w.advance(25);
+    let plan = w.reconcile();
+    assert_eq!(
+        plan.desired.check_reads,
+        vec![CheckRead {
+            point: reported + time::Duration::minutes(20),
+            ..read
+        }]
+    );
+    assert_replays(&w);
+}
+
+#[test]
+fn a_busy_queue_reads_its_target_head_every_5_minutes() {
+    let mut w = world();
+    let pushed = w.snapshot.target.head.as_ref().unwrap().observed_at;
+    w.advance(30);
+    let plan = w.reconcile();
+    assert_eq!(plan.desired.target_read, None, "nothing to do");
+    assert_eq!(plan.wake_at, None);
+    w.submit(1, Priority::MEDIUM);
+    let plan = w.reconcile();
+    assert_eq!(
+        plan.desired.target_read,
+        Some(pushed + time::Duration::minutes(30))
+    );
+    let timeout = time::Duration::minutes(i64::from(w.settings.testing_timeout_minutes.value));
+    assert!(plan.wake_at < Some(w.now + timeout));
+
+    // Without a known head, the head is read every minute.
+    let mut w = World::new(w.settings.clone());
+    w.snapshot.target = cihub_mq_core::TargetBranch::default();
+    w.initial = w.snapshot.clone();
+    w.log.clear();
+    w.submit(1, Priority::MEDIUM);
+    let now = w.now;
+    let minute = now
+        .replace_second(0)
+        .unwrap()
+        .replace_nanosecond(0)
+        .unwrap();
+    assert_eq!(w.reconcile().desired.target_read, Some(minute));
 }
