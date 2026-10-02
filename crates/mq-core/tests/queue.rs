@@ -20,6 +20,13 @@ fn reason(w: &World, pr: u64) -> Reason {
     w.item(pr).unwrap().state_reason
 }
 
+/// A decision of the log has the reason `want`.
+fn decided_with(w: &World, want: Reason) -> bool {
+    w.log
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::ItemTransitioned { reason, .. } if reason == want))
+}
+
 fn failed_with(w: &World, want: Reason) -> bool {
     w.log.iter().any(|e| {
         matches!(e.kind, EventKind::ItemTransitioned { to: ItemState::Failed, reason, .. } if reason == want)
@@ -28,6 +35,87 @@ fn failed_with(w: &World, want: Reason) -> bool {
 
 fn assert_replays(w: &World) {
     assert_eq!(w.replay(), w.snapshot);
+}
+
+#[test]
+fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    let old = w.item(1).unwrap().id;
+    // The job that reads the PR sees the push: it submits the new head, then
+    // gives the observation (`AGENTS.md` D152).
+    w.fact(
+        Actor::System,
+        EventKind::ItemSubmitted {
+            pr_number: 1,
+            head_sha: head(1, 1),
+            priority: Priority::MEDIUM,
+            no_batch: false,
+            direct: false,
+            submitted_via: cihub_domain::SubmittedVia::Comment,
+            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
+            additions: 1,
+            deletions: 0,
+            changed_files: 1,
+            sender_permission: None,
+        },
+    );
+    assert_eq!(
+        w.snapshot.current_item(1).map(|i| i.id),
+        Some(old),
+        "it waits"
+    );
+    w.observe(1, |pr| pr.head_sha = head(1, 1));
+    assert!(decided_with(&w, Reason::PrPushedTo));
+    let new = w.snapshot.current_item(1).unwrap();
+    assert_ne!(new.id, old);
+    assert_eq!(new.head_sha, head(1, 1));
+    let order: Vec<u64> = w
+        .snapshot
+        .queue_order()
+        .iter()
+        .map(|i| i.pr_number)
+        .collect();
+    assert_eq!(order, [2, 1], "the new item enters behind PR 2");
+    assert_replays(&w);
+}
+
+#[test]
+fn a_draining_queue_refuses_new_submissions() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    let live = w.item(1).unwrap().id;
+    w.fact(
+        Actor::System,
+        EventKind::QueueControlRequested {
+            control: QueueControl::Drain,
+        },
+    );
+    assert_eq!(w.snapshot.state, QueueState::Draining);
+    w.submit(2, Priority::MEDIUM);
+    let refused = |w: &World| {
+        w.log
+            .iter()
+            .filter_map(|e| match e.kind {
+                EventKind::ItemTransitioned {
+                    item_id,
+                    from: None,
+                    to: ItemState::Cancelled,
+                    reason,
+                    ..
+                } => Some((item_id, reason)),
+                _ => None,
+            })
+            .count()
+    };
+    assert_eq!(refused(&w), 1);
+    assert!(decided_with(&w, Reason::QueueDraining));
+    // A new command on a PR in flight changes nothing (D151).
+    w.submit(1, Priority::MEDIUM);
+    assert_eq!(refused(&w), 1);
+    assert_eq!(w.snapshot.current_item(1).map(|i| i.id), Some(live));
+    assert_replays(&w);
 }
 
 #[test]
@@ -502,7 +590,9 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
     w.fact(Actor::System, control(QueueControl::Drain));
     assert_eq!(w.snapshot.state, QueueState::Draining);
-    assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Ignored);
+    // A submission in drain gets a refused item (`AGENTS.md` D151).
+    assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
+    assert!(decided_with(&w, Reason::QueueDraining));
     w.fact(Actor::System, EventKind::AccessLost);
     assert_eq!(w.snapshot.state, QueueState::Paused);
     w.fact(Actor::System, EventKind::AccessRestored);

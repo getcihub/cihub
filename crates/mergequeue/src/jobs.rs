@@ -10,8 +10,8 @@ use std::sync::Arc;
 use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, ItemState, JobClass,
-    Mergeability, OrgId, Permission, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId,
-    SubmittedVia, UserId,
+    Mergeability, OrgId, Permission, PrState, Priority, QueueId, RepoId, ReviewDecision,
+    ScmInstanceId, SubmittedVia, UserId,
 };
 use cihub_platform::{Job, Outcome, error_chain, mark_dirty};
 use cihub_scm::{PrSnapshot, RequiredChecks, Scm, ScmError, ScmUser};
@@ -353,8 +353,15 @@ async fn refresh(
     tx.commit()
         .await
         .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let settings = target.settings()?;
     let mut facts = Vec::with_capacity(prs.len());
     for pr in &prs {
+        // The new submission comes before the observation, which cancels the
+        // old item: the queue keeps the observation for the new one.
+        let resubmitted = submissions
+            .get(&pr.number)
+            .and_then(|submission| resubmission(&settings, &target, pr, submission));
+        facts.extend(resubmitted);
         // An admitted item no longer depends on its conditions (D142).
         let unmet = match submissions.get(&pr.number) {
             Some(Submission { admitted: true, .. }) => Vec::new(),
@@ -388,6 +395,49 @@ struct Submission {
     /// The item left `not_ready`.
     admitted: bool,
     sender: Sender,
+    /// What a new submission of the PR keeps (D152).
+    head_sha: String,
+    priority: Priority,
+    no_batch: bool,
+    direct: bool,
+    via: SubmittedVia,
+    submitted_by: Option<UserId>,
+    author_id: UserId,
+}
+
+#[derive(sqlx::FromRow)]
+struct SubmissionRow {
+    pr_number: i64,
+    state: String,
+    login: Option<String>,
+    permission: Option<String>,
+    head_sha: String,
+    priority: i16,
+    no_batch: bool,
+    direct: bool,
+    via: String,
+    submitted_by: Option<String>,
+    author_id: String,
+}
+
+impl SubmissionRow {
+    fn decode(self) -> Option<(u64, Submission)> {
+        let submission = Submission {
+            admitted: self.state != ItemState::NotReady.as_str(),
+            sender: Sender {
+                login: self.login,
+                permission: self.permission.and_then(|p| p.parse().ok()),
+            },
+            head_sha: self.head_sha,
+            priority: Priority(u8::try_from(self.priority).ok()?),
+            no_batch: self.no_batch,
+            direct: self.direct,
+            via: self.via.parse().ok()?,
+            submitted_by: self.submitted_by.and_then(|id| id.parse().ok()),
+            author_id: self.author_id.parse().ok()?,
+        };
+        Some((u64::try_from(self.pr_number).ok()?, submission))
+    }
 }
 
 /// The live items of `prs` in `queue`, with who submitted them (D144).
@@ -396,10 +446,12 @@ async fn submissions(
     queue: QueueId,
     prs: &[u64],
 ) -> Result<HashMap<u64, Submission>, MergeQueueError> {
-    type Row = (i64, String, Option<String>, Option<String>);
     let numbers: Vec<i64> = prs.iter().filter_map(|n| i64::try_from(*n).ok()).collect();
-    let rows: Vec<Row> = sqlx::query_as(
-        "SELECT i.pr_number, i.state::text, u.login, i.sender_permission::text
+    let rows: Vec<SubmissionRow> = sqlx::query_as(
+        "SELECT i.pr_number, i.state::text AS state, u.login,
+                i.sender_permission::text AS permission, i.pr_head_sha AS head_sha,
+                i.priority_value AS priority, i.no_batch, i.force_enqueued AS direct,
+                i.submitted_via::text AS via, i.submitted_by, i.pr_author_id AS author_id
          FROM queue_items i LEFT JOIN users u ON u.id = i.submitted_by
          WHERE i.queue_id = $1 AND i.is_current AND i.concluded_at IS NULL
            AND i.pr_number = ANY($2)",
@@ -409,19 +461,45 @@ async fn submissions(
     .fetch_all(conn)
     .await
     .map_err(MergeQueueError::Query)?;
-    Ok(rows
-        .into_iter()
-        .filter_map(|(number, state, login, permission)| {
-            let submission = Submission {
-                admitted: state != ItemState::NotReady.as_str(),
-                sender: Sender {
-                    login,
-                    permission: permission.and_then(|p| p.parse().ok()),
-                },
-            };
-            Some((u64::try_from(number).ok()?, submission))
-        })
-        .collect())
+    Ok(rows.into_iter().filter_map(SubmissionRow::decode).collect())
+}
+
+/// The new submission of a PR in the queue that has a new head, when the
+/// queue resubmits on a push (D152): same priority, source and options. A
+/// PR that is closed, a draft or on another base leaves the queue instead,
+/// and a submission by label needs the label still.
+fn resubmission(
+    settings: &QueueSettings,
+    target: &QueueTarget,
+    pr: &PrSnapshot,
+    submission: &Submission,
+) -> Option<(Actor, EventKind)> {
+    let pushed = pr.state == PrState::Open
+        && !pr.draft
+        && pr.base_branch == target.target_branch
+        && pr.head_sha != submission.head_sha;
+    let labelled =
+        submission.via != SubmittedVia::Label || pr.labels.contains(&settings.enqueue_label.value);
+    if !(settings.resubmit_on_push.value && pushed && labelled) {
+        return None;
+    }
+    let actor = submission
+        .submitted_by
+        .map_or(Actor::System, |user_id| Actor::User { user_id });
+    let kind = EventKind::ItemSubmitted {
+        pr_number: pr.number,
+        head_sha: pr.head_sha.clone(),
+        priority: submission.priority,
+        no_batch: submission.no_batch,
+        direct: submission.direct,
+        submitted_via: submission.via,
+        author_id: submission.author_id,
+        additions: pr.additions,
+        deletions: pr.deletions,
+        changed_files: pr.changed_files,
+        sender_permission: submission.sender.permission,
+    };
+    Some((actor, kind))
 }
 
 /// The author of the command of `request` with their permission, or `None`

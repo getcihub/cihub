@@ -150,6 +150,8 @@ impl Lifecycle for ItemState {
         use ItemState as S;
         match (from, to) {
             (None, S::NotReady) => &[R::Submitted],
+            // A submission that the queue refuses (`AGENTS.md` D151).
+            (None, S::Cancelled) => &[R::QueueDraining, R::QueueSwitchingModes],
             (Some(S::NotReady), S::Pending) => &[R::MergeItemNowReady],
             (Some(S::Pending), S::Testing) => &[R::TestRunStarted],
             (Some(S::Pending), S::Merged) => &[R::MergeGraphDirectMerge, R::ManualMerge],
@@ -323,6 +325,11 @@ mod tests {
         ];
         assert_table::<ItemState>(&[
             (&[None], S::NotReady, &["submitted"]),
+            (
+                &[None],
+                S::Cancelled,
+                &["queue_draining", "queue_switching_modes"],
+            ),
             (&[Some(S::NotReady)], S::Pending, &["merge_item_now_ready"]),
             (&[Some(S::Pending)], S::Testing, &["test_run_started"]),
             (

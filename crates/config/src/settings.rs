@@ -93,6 +93,9 @@ settings! {
     label_commands_enabled: bool = true;
     enqueue_label: String = "cihub-merge-queue-submit".to_owned();
     state_labels_enabled: bool = false;
+    /// A push on a PR in the queue submits it again at the end of the queue
+    /// (`AGENTS.md` D152).
+    resubmit_on_push: bool = false;
     keep_test_branches_minutes: u32 = 0;
     /// Test branches are `<prefix>-merge/` and `<prefix>-temp/`.
     branch_prefix: String = "cihub".to_owned();

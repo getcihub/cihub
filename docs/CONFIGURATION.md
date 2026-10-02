@@ -114,6 +114,7 @@ Toutes les stratégies activent le merge direct (`direct_merge_mode: always`) et
 | `comments_enabled`, `commands_enabled`, `status_check_enabled` | activés                             | booléen                                                                    |
 | `label_commands.enabled` / `enqueue_label`                     | activé / `cihub-merge-queue-submit` | chaîne non vide                                                            |
 | `state_labels_enabled`                                         | désactivé                           | booléen                                                                    |
+| `resubmit_on_push`                                             | désactivé                           | booléen ; un push sur une PR en file la resoumet en fin de file (`AGENTS.md` D152) |
 | `keep_test_branches_minutes`                                   | 0                                   | 0–1440                                                                     |
 | `branch_prefix`                                                | `cihub`                             | chaîne sans `/` ni espace ; branches `<prefix>-merge/` et `<prefix>-temp/` |
 | `branch_protection_injection`                                  | `both`                              | `both`, `merge`, `none`                                                    |

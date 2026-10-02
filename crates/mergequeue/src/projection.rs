@@ -4,7 +4,8 @@
 //! (`UPDATE … WHERE state = $from`), and its row count is checked.
 
 use cihub_domain::{
-    CheckObservation, CheckReport, Event, EventKind, Item, OrgId, Priority, QueueId, RunStatus,
+    CheckObservation, CheckReport, Event, EventKind, Item, ItemId, ItemState, Mergeability, OrgId,
+    Priority, QueueId, Reason, RunStatus,
 };
 use cihub_mq_core::Snapshot;
 use sqlx::PgConnection;
@@ -32,10 +33,19 @@ pub(crate) async fn project(
         EventKind::ItemTransitioned {
             item_id,
             from: None,
+            to,
+            reason,
             ..
         } => {
-            let item = after.items.get(item_id).ok_or_else(mismatch)?;
-            create_item(conn, event, item, number(item.pr_number)?).await?;
+            let item = match after.items.get(item_id) {
+                Some(item) => item.clone(),
+                // A refused submission is concluded at once, so `apply`
+                // already evicted it (`AGENTS.md` D151).
+                None => refused_item(conn, event, *item_id, *to, *reason)
+                    .await?
+                    .ok_or_else(mismatch)?,
+            };
+            create_item(conn, event, &item, number(item.pr_number)?).await?;
         }
         EventKind::ItemTransitioned {
             item_id,
@@ -319,6 +329,62 @@ pub(crate) async fn project(
     Ok(())
 }
 
+/// The item of a refused submission, from the `item.submitted` that caused
+/// it, or `None` without that fact.
+async fn refused_item(
+    conn: &mut PgConnection,
+    event: &Event,
+    item_id: ItemId,
+    state: ItemState,
+    reason: Reason,
+) -> Result<Option<Item>, MergeQueueError> {
+    let payload: Option<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload FROM events WHERE queue_id = $1 AND id = $2 AND type = 'item.submitted'",
+    )
+    .bind(event.queue_id.to_string())
+    .bind(event.cause_id.map(|id| id.to_string()))
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    let Some(payload) = payload else {
+        return Ok(None);
+    };
+    let kind = serde_json::json!({ "type": "item.submitted", "payload": payload });
+    let EventKind::ItemSubmitted {
+        pr_number,
+        head_sha,
+        priority,
+        no_batch,
+        direct,
+        submitted_via,
+        ..
+    } = serde_json::from_value(kind).map_err(MergeQueueError::Snapshot)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Item {
+        id: item_id,
+        org_id: event.org_id,
+        queue_id: event.queue_id,
+        pr_number,
+        head_sha,
+        state,
+        state_reason: reason,
+        priority,
+        no_batch,
+        force_enqueued: direct,
+        submitted_via,
+        position: None,
+        is_current: false,
+        mergeability: Mergeability::Unknown,
+        block_reasons: Vec::new(),
+        group_id: None,
+        verified_by_run_id: None,
+        merged_sha: None,
+        submitted_at: event.occurred_at,
+    }))
+}
+
 /// A new item, from the submission that caused it: the submission gives its
 /// author and the account that submitted it.
 async fn create_item(
@@ -327,22 +393,28 @@ async fn create_item(
     item: &Item,
     pr_number: i64,
 ) -> Result<(), MergeQueueError> {
-    sqlx::query("UPDATE queue_items SET is_current = false WHERE queue_id = $1 AND pr_number = $2")
+    // A refused submission never becomes the live item of its PR (D151).
+    if item.is_current {
+        sqlx::query(
+            "UPDATE queue_items SET is_current = false WHERE queue_id = $1 AND pr_number = $2",
+        )
         .bind(event.queue_id.to_string())
         .bind(pr_number)
         .execute(&mut *conn)
         .await
         .map_err(MergeQueueError::Query)?;
+    }
     let blocks = serde_json::to_value(&item.block_reasons).map_err(MergeQueueError::Snapshot)?;
     let done = sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value,
                                   priority_name, no_batch, force_enqueued, skip_the_line,
                                   submitted_by, submitted_via, submitted_at, mergeability,
-                                  block_reasons, is_current, sender_permission)
+                                  block_reasons, is_current, sender_permission, concluded_at)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
                 $10, $11, $12, $13, s.actor_user_id, $14::submitted_via, s.occurred_at,
-                $15::mergeability, $16, true, (s.payload->>'sender_permission')::permission
+                $15::mergeability, $16, $18, (s.payload->>'sender_permission')::permission,
+                CASE WHEN $19 THEN $8 END
          FROM events s
          WHERE s.queue_id = $3 AND s.id = $17 AND s.type = 'item.submitted'",
     )
@@ -363,6 +435,8 @@ async fn create_item(
     .bind(item.mergeability.as_str())
     .bind(blocks)
     .bind(event.cause_id.map(|id| id.to_string()))
+    .bind(item.is_current)
+    .bind(item.state.is_terminal())
     .execute(conn)
     .await;
     one_row(done, event)

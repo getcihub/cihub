@@ -880,8 +880,7 @@ Autres valeurs fermées :
     (D150).
     Tests : la commande, et contre Postgres et le simulateur deux files sur `main` (routage par condition, par
     `--queue`, priorité d'une règle et de la commande, push lu par les deux files).
-  - Reste : réglage
-    `resubmit_on_push` (`AGENTS.md` D121) ; merge direct sur main (D125) ; états de la file ; attribut `schedule` (reporté : les fuseaux
+  - Reste : merge direct sur main (`AGENTS.md` D125) ; attribut `schedule` (reporté : les fuseaux
     horaires demandent une base embarquée dans le noyau pur).
   - Écarts : commencé avant les lots 2 à 6, car les deux crates sont pures et ne dépendent que de `cihub-domain`.
     `cihub-mergequeue` dépend de `cihub-conditions`, en plus des crates de D93, pour évaluer les conditions dans
@@ -889,6 +888,15 @@ Autres valeurs fermées :
   - Fait (2 octobre 2026, D149, D150) : l'option s'écrit `--queue=<nom>` ; un push sur une branche à plusieurs
     files attend la passe suivante tant qu'un merge d'une de ses files est en vol, puis demande `refresh_target` à
     chacune. Test : contre Postgres, un push qui attend la fin d'un merge, puis atteint les deux files.
+  - Fait (2 octobre 2026, D151, D152) : une soumission en `draining` ou en `switching_modes` crée une entrée
+    `cancelled` (raisons `queue_draining` et `queue_switching_modes`, transition « rien → `cancelled` »), qui ne
+    devient jamais l'entrée vivante de sa PR ; la projection la reconstruit depuis son `item.submitted`. Réglage
+    `resubmit_on_push` : `refresh_prs` dépose un nouveau `item.submitted` pour la nouvelle tête d'une PR en file,
+    avec la même priorité, la même source et les mêmes options, et `plan` crée la nouvelle entrée après
+    l'annulation de l'ancienne (`pr_pushed_to`). Tests : dans le noyau, le refus en vidange et une resoumission en
+    fin de file ; contre Postgres, les deux.
+  - Observé : avant D151, `apply` ignorait une soumission en `draining` ou en `switching_modes`, sans trace dans le
+    journal.
 
 ### Lot 9 : surfaces : PR, API, CLI
 

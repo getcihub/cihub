@@ -300,15 +300,36 @@ const fn merge_reason(error: JobError, direct: bool) -> Reason {
     }
 }
 
+/// The new item of a submission: `not_ready`, or `cancelled` at once while
+/// the queue drains or switches its mode (`AGENTS.md` D151).
+fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
+    let (to, reason) = match s.state {
+        QueueState::Draining => (ItemState::Cancelled, Reason::QueueDraining),
+        QueueState::SwitchingModes => (ItemState::Cancelled, Reason::QueueSwitchingModes),
+        QueueState::Running | QueueState::Paused => (ItemState::NotReady, Reason::Submitted),
+    };
+    EventKind::ItemTransitioned {
+        item_id: ItemId::from_ulid(ids.next()),
+        from: None,
+        to,
+        reason,
+        position: None,
+        verified_by_run_id: None,
+        merged_sha: None,
+    }
+}
+
 /// A decision for the first request that can receive one. In `paused`,
 /// only the requests on the queue itself.
 fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen) -> Option<Step> {
-    let (id, request) = s.requests.iter().find(|(_, r)| {
-        s.state != QueueState::Paused
-            || matches!(
-                r,
-                Request::Control(_) | Request::AccessLost | Request::AccessRestored
-            )
+    let (id, request) = s.requests.iter().find(|(_, r)| match r {
+        // A submission of a new head waits for the cancel of the live item
+        // of its PR (`AGENTS.md` D152).
+        Request::Submit { pr_number, .. } => {
+            s.state != QueueState::Paused && s.current_item(*pr_number).is_none()
+        }
+        Request::Control(_) | Request::AccessLost | Request::AccessRestored => true,
+        _ => s.state != QueueState::Paused,
     })?;
     let item = |item_id: &ItemId| s.items.get(item_id);
     let run = |run_id: &RunId| s.runs.get(run_id);
@@ -318,15 +339,7 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
         reason,
     };
     let kind = match request {
-        Request::Submit { .. } => EventKind::ItemTransitioned {
-            item_id: ItemId::from_ulid(ids.next()),
-            from: None,
-            to: ItemState::NotReady,
-            reason: Reason::Submitted,
-            position: None,
-            verified_by_run_id: None,
-            merged_sha: None,
-        },
+        Request::Submit { .. } => submitted(s, ids),
         Request::Cancel { item_id, by_admin } => {
             let reason = if *by_admin {
                 Reason::AdminRequested

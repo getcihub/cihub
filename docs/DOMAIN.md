@@ -62,6 +62,7 @@ est un `Request` du snapshot.
 ```mermaid
 stateDiagram-v2
   [*] --> not_ready: soumise
+  [*] --> cancelled: soumise pendant draining ou switching_modes
   not_ready --> pending: mergeable, base correcte, cibles envoyees
   pending --> testing: slot libre, groupe forme
   pending --> merged: merge direct sur main
@@ -148,9 +149,10 @@ budget de sa connexion) : `interactive`, `merge`, `speculate`, `repair`. État d
 
 ## File
 
-États (`QueueState`) : `running` accepte et merge ; `paused` n'accepte rien et ne merge rien mais conserve
-l'ordre ; `draining` n'accepte rien et laisse merger ce qui est en vol ; `switching_modes` est atteint
-automatiquement quand le mode change avec des entrées en vol et se comporte comme `draining` jusqu'à ce que la file
-soit vide. Mode (`QueueMode`) : `single` ou `parallel`. Demande d'un opérateur (`QueueControl`) : `pause`,
+États (`QueueState`) : `running` accepte et merge ; `paused` ne décide rien et ne merge rien mais conserve
+l'ordre, et une soumission y attend la reprise (`AGENTS.md` D113) ; `draining` laisse merger ce qui est en vol et
+refuse une nouvelle soumission, dont l'entrée est créée `cancelled` avec la raison `queue_draining` (D151) ;
+`switching_modes` est atteint automatiquement quand le mode change avec des entrées en vol et se comporte comme
+`draining` (raison `queue_switching_modes`) jusqu'à ce que la file soit vide. Mode (`QueueMode`) : `single` ou `parallel`. Demande d'un opérateur (`QueueControl`) : `pause`,
 `resume`, `drain`. Les réglages de la file sont dans `cihub-config`
 (`docs/CONFIGURATION.md`).

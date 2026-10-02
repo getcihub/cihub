@@ -462,9 +462,14 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             else {
                 return Err(ApplyError::NoSubmission { event_id: event.id });
             };
-            for item in snapshot.items.values_mut() {
-                if item.pr_number == pr_number {
-                    item.is_current = false;
+            // A refused submission never becomes the live item of its PR
+            // (`AGENTS.md` D151).
+            let is_current = !to.is_terminal();
+            if is_current {
+                for item in snapshot.items.values_mut() {
+                    if item.pr_number == pr_number {
+                        item.is_current = false;
+                    }
                 }
             }
             snapshot.items.insert(
@@ -482,7 +487,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     force_enqueued: direct,
                     submitted_via,
                     position: None,
-                    is_current: true,
+                    is_current,
                     mergeability: Mergeability::Unknown,
                     block_reasons: Vec::new(),
                     group_id: None,
@@ -724,11 +729,17 @@ pub(crate) fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             .is_some_and(|r| r.status == RunStatus::Assembling)
     };
     match request {
-        // A submission waits for the end of a pause (`AGENTS.md` D113).
-        Request::Submit { pr_number, .. } => {
-            matches!(snapshot.state, QueueState::Running | QueueState::Paused)
-                && snapshot.current_item(*pr_number).is_none()
-        }
+        // A submission waits for the end of a pause (`AGENTS.md` D113); one
+        // that comes while the queue drains or switches its mode gets a
+        // refused item (D151). A new head of a PR in the queue is submitted
+        // again (D152).
+        Request::Submit {
+            pr_number,
+            head_sha,
+            ..
+        } => snapshot
+            .current_item(*pr_number)
+            .is_none_or(|item| item.head_sha != *head_sha),
         Request::Cancel { item_id, .. } => snapshot
             .items
             .get(item_id)

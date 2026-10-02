@@ -1780,6 +1780,108 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     assert_eq!(state(pool.clone()).await, (0, 2));
 }
 
+/// `AGENTS.md` D152: with `resubmit_on_push`, a push on a PR in the queue
+/// cancels its item and submits the new head, with the same priority.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_push_submits_the_pr_again(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    resubmit_on_push: true\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge --priority=high")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let pushed = sim
+        .commit(&repo(), &head, &[("f1.txt", Some("y"))])
+        .unwrap();
+    sim.push(&repo(), "pr-1", &pushed, &bob()).unwrap();
+    sim.report_check(&repo(), &pushed, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(String, String, String, i16, bool)> = sqlx::query_as(
+        "SELECT pr_head_sha, state::text, state_reason::text, priority_value, is_current
+         FROM queue_items WHERE pr_number = $1 ORDER BY state_changed_at, id",
+    )
+    .bind(i64::try_from(number).unwrap())
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    drop(tx);
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert_eq!(
+        (
+            &items[0].0,
+            items[0].1.as_str(),
+            items[0].2.as_str(),
+            items[0].4
+        ),
+        (&head, "cancelled", "pr_pushed_to", false)
+    );
+    assert_eq!((&items[1].0, items[1].3, items[1].4), (&pushed, 10, true));
+    assert_ne!(items[1].1, "cancelled");
+    q.stop().await;
+}
+
+/// `AGENTS.md` D151: a submission while the queue drains gives an item that
+/// is cancelled at once, concluded, and not the live item of its PR.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    q.deliver().await;
+    q.settle().await;
+    let drain = Event {
+        id: EventId::from_ulid(Ulid(700)),
+        org_id: org(),
+        queue_id: queue(),
+        actor: Actor::System,
+        occurred_at: q.clock.now(),
+        cause_id: None,
+        kind: EventKind::QueueControlRequested {
+            control: cihub_domain::QueueControl::Drain,
+        },
+    };
+    let mut tx = begin_system(&pool).await.unwrap();
+    cihub_store::deposit_fact(&mut tx, &drain, q.clock.now())
+        .await
+        .unwrap();
+    mark_dirty(&mut tx, queue()).await.unwrap();
+    tx.commit().await.unwrap();
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(String, String, bool, bool)> = sqlx::query_as(
+        "SELECT state::text, state_reason::text, is_current, concluded_at IS NOT NULL
+         FROM queue_items",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    drop(tx);
+    assert_eq!(
+        items,
+        [("cancelled".into(), "queue_draining".into(), false, true)]
+    );
+    q.stop().await;
+}
+
 /// The last valid file of the queue, the head read, and the error.
 async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<String>) {
     let mut tx = begin_system(pool).await.unwrap();

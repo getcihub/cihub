@@ -650,6 +650,15 @@ décision qui dit ce qu'elle remplace, et on ajoute à l'ancienne la mention _Re
   livraisons de la connexion demande alors à chaque file de la branche de relire sa tête (`refresh_target`, classe
   `interactive`). Tant qu'un job `merge_pr` d'une de ces files attend ou tourne, la livraison attend la passe
   suivante, comme une livraison routée vers une seule file (écart 4 du lot 7).
+- **D151** Une soumission qui arrive quand la file est en `draining` ou en `switching_modes` crée une entrée
+  directement `cancelled`, avec la nouvelle raison `queue_draining` ou `queue_switching_modes` ; la table des
+  transitions permet « rien → `cancelled` » pour ces deux raisons. Cette entrée ne devient jamais l'entrée vivante
+  de la PR : une entrée vivante de la même PR le reste. En `paused`, la soumission attend la reprise (D113).
+- **D152** Nouveau réglage `resubmit_on_push` (désactivé par défaut). Quand il est actif et qu'un job qui lit une
+  PR voit une nouvelle tête sur une entrée vivante, il dépose un nouveau `item.submitted` avec la même priorité, la
+  même source et les mêmes options ; `plan` annule l'ancienne entrée (`pr_pushed_to`) et crée la nouvelle, qui
+  repart en `not_ready` à la fin de la file. Une soumission par label est refaite seulement si la PR a encore le
+  label. Complète D121.
 
 ### 4.1 Questions ouvertes
 
