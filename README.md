@@ -37,7 +37,7 @@ docker compose -f deploy/compose.yaml up -d
 ```
 
 Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
-starts `cihub-server` on port 8080. Put your HTTPS reverse proxy in front of this port.
+starts `cihub server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
 
 ### 3. Install the App and start your organization
 
@@ -45,7 +45,7 @@ Install the App on the repositories to serve (*Install App* on the page of the A
 installation is the last part of the URL of its settings page (`.../installations/<id>`). Then:
 
 ```sh
-docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
 ```
 
 The command creates the organization in CIHub, reads its repositories, and prints an API token **once**: keep it
@@ -56,7 +56,7 @@ in a secret store.
 With the CLI, in a clone of the repository:
 
 ```sh
-cargo install --locked --git https://github.com/getcihub/cihub cihub-cli
+cargo install --locked --git https://github.com/getcihub/cihub cihub-cli   # the cihub binary
 cihub login --url https://<your CIHub host>   # asks for the token
 cihub queue create main
 ```

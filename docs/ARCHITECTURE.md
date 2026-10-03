@@ -47,8 +47,8 @@ Target order of magnitude for a standard instance: 1,000 organizations, 20,000 r
 
 A single repository contains the whole project: the Cargo workspace, then, with their lots, the dashboard, the
 GitHub action, the Helm chart and the migrations. The workspace (edition 2024, Rust pinned by `mise.toml`)
-produces two binaries (`DECISIONS.md` D8): `cihub-server`, the server, and `cihub`, the CLI, distributed alone and without
-server code. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
+produces one binary, `cihub` (`DECISIONS.md` D168): `cihub server` starts and administers an instance,
+`cihub login` and `cihub queue` talk to its API. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
 a single version, that of the release. A crate is created when a lot needs it, after validation
 (`DECISIONS.md` D9); the list below is the target, and the "Lot" column says when each crate arrives.
 
@@ -70,15 +70,14 @@ crates/
   mq-core/               cihub-mq-core        (exists)
   scm/                   cihub-scm            (exists)
   github/                cihub-github         (exists)
-  server/                cihub-server         (exists)
   store/                 cihub-store          (exists)
   telemetry/             cihub-telemetry      (exists)
   web/                   cihub-web            (exists)
   api-types/             cihub-api-types      (exists)
   client/                cihub-client         (exists)
-  cli/                   cihub-cli            (exists)
+  cli/                   cihub-cli            (exists, the cihub binary)
   ...                    the other crates of the table, with their lot
-migrations/              Postgres migrations embedded in cihub-server (Lot 2)
+migrations/              Postgres migrations embedded in the cihub binary (Lot 2)
 web/                     dashboard, embedded by the web role (Lot 10)
 ```
 
@@ -98,23 +97,20 @@ web/                     dashboard, embedded by the web role (Lot 10)
 | `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage, `DECISIONS.md` D82 to D84, D91); token authentication, rate limit, `/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9, D159); then sessions, CSRF and dashboard (Lot 10) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
 | `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors (Lots 5 and 6); `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands (Lot 9) | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm` (`DECISIONS.md` D93), `conditions` (D142); `contracts` at Lot 14, `analytics` at Lot 11 | 5   | exists |
 | `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature (`DECISIONS.md` D159)                                                                                                            | `domain`                                                         | 9   | exists |
-| `cihub-client`     | Typed client of the public API, for the CLI and the end-to-end tests                                                                                                   | `api-types`                                                      | 9   | exists |
-| `cihub-cli`        | `cihub` binary                                                                                                                                                         | `client`, `api-types`; `otlp` at Lot 14                                     | 9   | exists |
+| `cihub-client`     | Typed client of the public API, for `cihub queue` and the end-to-end tests                                                                                             | `api-types`                                                      | 9   | exists |
 | `cihub-analytics`  | `AnalyticsStore` trait, Postgres implementation, then ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | target |
-| `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by the CLI                                                                                                | `domain`                                                         | 14  | target |
+| `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by `cihub`                                                                                                | `domain`                                                         | 14  | target |
 | `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | target |
-| `cihub-server`     | `cihub-server` binary: configuration, roles, `migrate` subcommand, module registration                                                                                 | the server crates                                                | 2   | exists |
+| `cihub-cli`        | `cihub` binary: every command, one file per command and per role, configuration file, module registration                                                             | the server crates, `client`, `api-types`                         | 2   | exists |
 
-Four rules structure the split, and each one is checked in CI rather than left to discipline:
+Three rules structure the split, and each one is checked in CI rather than left to discipline:
 
 - **The core is pure by construction.** The pure crates depend neither on `tokio`, nor on `sqlx`, nor on
   `reqwest`, nor on `axum`: the `bans` rules of `deny.toml` list, for each heavy dependency, the only
   crates that may declare it. The core changes often; since it depends on nothing heavy, it recompiles and
   tests in a few seconds.
-- **The CLI pulls no server code.** `cihub-cli` depends only on `cihub-client`, `cihub-api-types` and
-  `cihub-otlp`; the same `bans` rules check it.
 - **The modules do not know each other.** `cihub-mergequeue` and `cihub-flakytests` do not depend on each
-  other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-server` knows
+  other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-cli` knows
   them both. The `Module` contract of `cihub-platform` exposes the module name, its routes, its job
   executors and its event subscriptions; there is no dynamic loading.
 - **A single version per external dependency.** All versions are in `[workspace.dependencies]`
@@ -123,15 +119,19 @@ Four rules structure the split, and each one is checked in CI rather than left t
 
 Postgres queries are written in SQL with the `sqlx::query!` and `query_as!` macros, checked at
 compile time against the schema; the metadata is versioned in `.sqlx/` so that compilation and CI
-run without a database. The migrations are in `migrations/`, embedded in `cihub-server` and applied by
-`cihub-server migrate` (`DECISIONS.md` D14). The Postgres enums are not derived in `cihub-domain`, so that it
+run without a database. The migrations are in `migrations/`, embedded in `cihub` and applied by
+`cihub server migrate` (`DECISIONS.md` D14). The Postgres enums are not derived in `cihub-domain`, so that it
 stays free of `sqlx`: `cihub-store` converts them with `as_str` and `FromStr`, and a test compares `pg_enum` to the
 variants of each enumeration.
 
-## The `cihub-server` binary and its roles
+## The `cihub` binary and the roles of the server
 
-`cihub-server` runs the four roles in one process by default; `CIHUB_ROLES` selects a subset of them
-(`DECISIONS.md` D8). A role has no crate: it starts loops whose code is in the library crates.
+`cihub` has three groups of commands (`DECISIONS.md` D168): `cihub login` and `cihub queue` talk to the public API
+with a token (`docs/API.md`); `cihub server` talks to Postgres (`docs/DEPLOYMENT.md`). A command talks to one of
+the two, never both. `cihub server start` runs the roles given as arguments in one process, the four without an
+argument. `cihub-cli` defines every command, one file per command, and starts the components (`DECISIONS.md` D169).
+A role has no crate: `crates/cli/src/server/` has one file per role, which starts loops whose code is in the
+library crates.
 
 | Role        | What the role starts                            | Crate that holds the code |
 | ----------- | ----------------------------------------------- | ----------------------- |
@@ -153,10 +153,10 @@ processes. The all-in-one mode and the one-process-per-role mode therefore behav
 
 ### Scaling
 
-Each role can have its own processes, with the same image and a different value of `CIHUB_ROLES`, for
-example one Kubernetes deployment per role:
+Each role can have its own processes, with the same image, the same configuration file and a different
+argument of `cihub server start`, for example one Kubernetes deployment per role:
 
-| Deployment        | `CIHUB_ROLES` | Replicas                             | How the replicas share the work                                                                                                 |
+| Deployment        | Argument      | Replicas                             | How the replicas share the work                                                                                                 |
 | ----------------- | ------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `cihub-web`       | `web`         | N, behind a load balancer            | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received by another replica |
 | `cihub-scheduler` | `scheduler`   | N                                    | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |

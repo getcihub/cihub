@@ -12,7 +12,6 @@ publish = false
 
 [workspace.dependencies]
 cihub-api-types = { path = "crates/api-types" }
-cihub-cli = { path = "crates/cli" }
 cihub-client = { path = "crates/client" }
 cihub-conditions = { path = "crates/conditions" }
 cihub-config = { path = "crates/config" }

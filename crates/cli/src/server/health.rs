@@ -11,7 +11,7 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::Role;
+use super::Role;
 
 /// The body of the probes: only the identity of the binary and its roles
 /// (`docs/SECURITY.md`).
@@ -40,7 +40,7 @@ pub async fn serve(
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
     let identity = Identity {
-        name: env!("CARGO_PKG_NAME"),
+        name: env!("CARGO_BIN_NAME"),
         version: env!("CARGO_PKG_VERSION"),
         roles,
     };
