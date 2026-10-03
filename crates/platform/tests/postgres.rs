@@ -537,7 +537,7 @@ async fn a_new_delivery_wakes_a_scheduler_within_a_second(pool: PgPool) {
     store(&pool, &queue_3).await;
     let woken = tokio::time::timeout(
         std::time::Duration::from_secs(1),
-        wakeup.wait(std::time::Duration::from_secs(60), &cancel),
+        wakeup.wait(std::time::Duration::from_mins(1), &cancel),
     )
     .await
     .unwrap()
@@ -698,7 +698,7 @@ async fn a_worker_runs_each_job_with_its_executor(pool: PgPool) {
 async fn a_new_job_wakes_a_worker_within_a_second(pool: PgPool) {
     seed(&pool).await;
     let cancel = CancellationToken::new();
-    let worker = start_worker(&pool, at(10), std::time::Duration::from_secs(60), &cancel);
+    let worker = start_worker(&pool, at(10), std::time::Duration::from_mins(1), &cancel);
     tokio::time::sleep(SHORT_TICK).await;
     enqueue(&pool, &typed_job("a", "ok"), at(0)).await;
     assert_eq!(wait_for_state(&pool, "a", "done").await.0, "done");
@@ -875,7 +875,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         pool.clone(),
         fake_translate,
         || at(5),
-        std::time::Duration::from_secs(60),
+        std::time::Duration::from_mins(1),
         cancel.clone(),
     ));
     // The first pass finds nothing; a notification wakes the next one.
