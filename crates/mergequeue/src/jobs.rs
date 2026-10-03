@@ -5,6 +5,7 @@
 //! the queue dirty; it never writes the log.
 
 use std::collections::HashMap;
+use std::error::Error;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
@@ -21,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, rule_priority, unmet_conditions};
@@ -82,6 +83,9 @@ pub(crate) struct SubmitPr {
     pub queue: Option<String>,
     /// The label that the action put, for a submission by label.
     pub label: Option<String>,
+    /// The comment of the command, which the job acknowledges once the
+    /// queue has the submission (`DECISIONS.md` D166).
+    pub comment_id: Option<String>,
 }
 
 impl SubmitPr {
@@ -98,6 +102,7 @@ impl SubmitPr {
             direct: false,
             queue: None,
             label: Some(label),
+            comment_id: None,
         }
     }
 }
@@ -223,6 +228,26 @@ pub(crate) async fn reply(
     let body = format!("### CIHub Merge Queue\n\n{text}\n");
     scm.create_comment(repo, number, &body, class).await?;
     Ok(())
+}
+
+/// Acknowledges the comment of a command that the queue accepted
+/// (`DECISIONS.md` D166). A failure is only logged: a retry of the job would
+/// give its facts to the queue a second time.
+pub(crate) async fn acknowledge(
+    scm: &dyn Scm,
+    repo: &RepoRef,
+    comment_id: Option<&str>,
+    class: JobClass,
+) {
+    let Some(comment_id) = comment_id else {
+        return;
+    };
+    if let Err(err) = scm.acknowledge_comment(repo, comment_id, class).await {
+        warn!(
+            error = &err as &dyn Error,
+            comment_id, "command not acknowledged"
+        );
+    }
 }
 
 /// The commit status of the queue on the head of a PR (`docs/GITHUB.md`).
@@ -786,7 +811,9 @@ pub(crate) async fn submit_pr(
         (actor, submitted),
         (Actor::System, observed(&pr, &required, &own, unmet)),
     ];
-    give_back_facts(pool, target, facts, now).await
+    give_back_facts(pool, target, facts, now).await?;
+    acknowledge(scm, repo_ref, request.comment_id.as_deref(), job.class).await;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -884,6 +911,7 @@ mod tests {
             direct: false,
             queue: None,
             label: None,
+            comment_id: None,
         };
         let connection = (target.scm_instance_id, target.repo.connection.id);
         assert_eq!(
