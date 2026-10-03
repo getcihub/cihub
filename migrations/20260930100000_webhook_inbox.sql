@@ -6,6 +6,11 @@
 -- The ingestion fills what it knows: the organization, the connection and the
 -- queue stay empty for a delivery it cannot route yet (an installation of an
 -- unknown account), which only the system context sees.
+--
+-- The routing of the deliveries (D84 to D86): the web role stores a delivery
+-- without routing it; a loop translates it, finds its connection and its
+-- queue, then sets `routed_at`. A delivery whose connection is unknown is
+-- routed without an organization: only the system context sees it.
 
 CREATE TABLE webhook_inbox (
     scm_instance_id text        NOT NULL REFERENCES scm_instances (id),
@@ -17,6 +22,7 @@ CREATE TABLE webhook_inbox (
     action          text,
     payload         jsonb       NOT NULL,
     received_at     timestamptz NOT NULL,
+    routed_at       timestamptz,
     processed_at    timestamptz,
     -- Why the processing failed, for the operator.
     error           text,
@@ -30,8 +36,7 @@ CREATE TABLE webhook_inbox (
 CREATE INDEX webhook_inbox_pending ON webhook_inbox (queue_id, received_at)
     WHERE processed_at IS NULL;
 
-ALTER TABLE webhook_inbox ENABLE ROW LEVEL SECURITY;
-ALTER TABLE webhook_inbox FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON webhook_inbox
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+CREATE INDEX webhook_inbox_unrouted ON webhook_inbox (received_at)
+    WHERE routed_at IS NULL;
+
+SELECT cihub_tenant_table('webhook_inbox');

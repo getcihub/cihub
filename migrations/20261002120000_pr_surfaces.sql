@@ -5,15 +5,10 @@ CREATE TABLE pr_surfaces (
     org_id              text        NOT NULL REFERENCES orgs (id),
     queue_id            text        NOT NULL,
     pr_number           bigint      NOT NULL,
-    -- The item that the rendering shows.
-    item_id             text        NOT NULL,
     desired             jsonb       NOT NULL,
     desired_hash        text        NOT NULL,
     -- `NULL` until a job published a rendering.
     published_hash      text,
-    published_at        timestamptz,
-    -- The comment of the queue on the PR, once created.
-    comment_external_id text,
     PRIMARY KEY (queue_id, pr_number),
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
@@ -21,8 +16,17 @@ CREATE TABLE pr_surfaces (
 CREATE INDEX pr_surfaces_unpublished ON pr_surfaces (queue_id)
     WHERE published_hash IS DISTINCT FROM desired_hash;
 
-ALTER TABLE pr_surfaces ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pr_surfaces FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON pr_surfaces
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+SELECT cihub_tenant_table('pr_surfaces');
+
+-- The comment of CIHub on a PR belongs to the PR, not to a queue (D163): the
+-- welcome comment of a PR becomes the comment of the state of its item.
+CREATE TABLE pr_comments (
+    org_id              text   NOT NULL REFERENCES orgs (id),
+    repo_id             text   NOT NULL,
+    pr_number           bigint NOT NULL,
+    comment_external_id text   NOT NULL,
+    PRIMARY KEY (repo_id, pr_number),
+    FOREIGN KEY (org_id, repo_id) REFERENCES repos (org_id, id)
+);
+
+SELECT cihub_tenant_table('pr_comments');

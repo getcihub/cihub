@@ -10,7 +10,6 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use time::OffsetDateTime;
 use ulid::Ulid;
 
 macro_rules! id_type {
@@ -20,7 +19,7 @@ macro_rules! id_type {
         pub struct $name(Ulid);
 
         impl $name {
-            pub const PREFIX: &'static str = $prefix;
+            const PREFIX: &'static str = $prefix;
 
             /// Generates a new ULID from the system clock and random bytes.
             /// Pure code receives identifiers instead: `clippy.toml` forbids
@@ -43,13 +42,6 @@ macro_rules! id_type {
 
             pub const fn as_ulid(&self) -> &Ulid {
                 &self.0
-            }
-
-            /// Creation time from the 48-bit millisecond prefix of the ULID.
-            /// `None` past year 9999.
-            pub fn created_at(&self) -> Option<OffsetDateTime> {
-                let nanos = i128::from(self.0.timestamp_ms()) * 1_000_000;
-                OffsetDateTime::from_unix_timestamp_nanos(nanos).ok()
             }
         }
 
@@ -358,14 +350,5 @@ mod tests {
             Err(IdParseError::WrongType { expected: "item" })
         );
         assert!(serde_json::from_str::<ItemId>(&format!("\"{queue}\"")).is_err());
-    }
-
-    #[test]
-    fn created_at_reads_the_millisecond_prefix() {
-        // Go `Time()` gives 2022-11-14T08:51:47.106Z for this ULID.
-        let org = OrgId::from_ulid(ulid("01GHTNCS92MPM9T5710S8VDXQ1"));
-        let expected =
-            OffsetDateTime::from_unix_timestamp_nanos(1_668_415_907_106_000_000).unwrap();
-        assert_eq!(org.created_at(), Some(expected));
     }
 }

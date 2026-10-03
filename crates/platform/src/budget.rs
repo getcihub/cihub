@@ -15,7 +15,7 @@ use crate::PlatformError;
 
 /// A process writes the budgets of its connections at most this often, except
 /// a pause or a change of mode (`DECISIONS.md` D77).
-pub const BUDGET_WRITE_EVERY: Duration = Duration::from_secs(5);
+pub(crate) const BUDGET_WRITE_EVERY: Duration = Duration::from_secs(5);
 
 /// The budget of a connection as a process sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]

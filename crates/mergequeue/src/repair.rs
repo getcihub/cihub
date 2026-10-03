@@ -5,12 +5,10 @@
 //! a lost webhook is only a delay (principle V). `resync` asks for every read
 //! at once (D128).
 
-use std::sync::Arc;
-
 use cihub_domain::{Actor, EventKind, JobClass, QueueId, RunId, RunStatus};
 use cihub_mq_core::CheckRead;
-use cihub_platform::{Job, Outcome, enqueue_job};
-use cihub_scm::{MAX_PRS_PER_READ, Scm};
+use cihub_platform::{Job, enqueue_job};
+use cihub_scm::Scm;
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,14 +19,13 @@ use tracing::info;
 use crate::MergeQueueError;
 use crate::QueueLog;
 use crate::jobs::{
-    Failure, REFRESH_PRS, RefreshPrs, give_back, job, outcome, read_payload, subject, target_of,
-    window,
+    Failure, give_back_facts, job, read_payload, refresh_reads, subject, target_of, window,
 };
 use crate::merge::MERGE_PR;
 use crate::target::QueueTarget;
 
-pub const REFRESH_CHECKS: &str = "refresh_checks";
-pub const REFRESH_TARGET: &str = "refresh_target";
+pub(crate) const REFRESH_CHECKS: &str = "refresh_checks";
+pub(crate) const REFRESH_TARGET: &str = "refresh_target";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RefreshChecks {
@@ -91,18 +88,9 @@ pub(crate) async fn merge_in_flight(
     .map_err(MergeQueueError::Query)
 }
 
-pub(crate) async fn execute_refresh_checks(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(read_checks(&pool, scm.as_ref(), &job, now).await)
-}
-
 /// Reads the checks of the test SHA of a run still in progress and gives
 /// them back; creates again the test branch when it is gone.
-async fn read_checks(
+pub(crate) async fn read_checks(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -143,42 +131,22 @@ async fn read_checks(
             )
         })
         .collect();
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
-}
-
-pub(crate) async fn execute_refresh_target(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(read_target(&pool, scm.as_ref(), &job, now).await)
+    give_back_facts(pool, &target, facts, now).await
 }
 
 /// Reads the head of the target branch and gives it back, unless a merge
 /// of the queue is in flight: its head would look like a push from outside
 /// before the fact of the merge.
-async fn read_target(
+pub(crate) async fn read_target(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let target = target_of(pool, job).await?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let merging = merge_in_flight(&mut tx, target.queue_id).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    tx.commit().await?;
     if merging {
         return Ok(());
     }
@@ -193,21 +161,7 @@ async fn read_target(
         after,
         sender_id: None,
     };
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(
-        &mut tx,
-        target.org_id,
-        target.queue_id,
-        vec![(Actor::System, fact)],
-        now,
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
+    give_back_facts(pool, &target, vec![(Actor::System, fact)], now).await
 }
 
 /// Asks, in the class `interactive`, for a read of each live PR of `queue`,
@@ -234,23 +188,7 @@ pub async fn resync(
         .filter(|i| i.is_current && !i.state.is_terminal())
         .map(|i| i.pr_number)
         .collect();
-    let mut jobs = Vec::new();
-    for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
-        let rank = if chunk == 0 {
-            String::new()
-        } else {
-            format!("-{}", chunk + 1)
-        };
-        let key = format!("{REFRESH_PRS}:{queue}-{subject}{rank}:1");
-        let payload = json!(RefreshPrs { prs: prs.to_vec() });
-        jobs.push(job(
-            &target,
-            key,
-            REFRESH_PRS,
-            JobClass::Interactive,
-            payload,
-        ));
-    }
+    let mut jobs = refresh_reads(&target, &subject, JobClass::Interactive, &prs);
     for run in snapshot.runs.values() {
         if run.status != RunStatus::InProgress {
             continue;

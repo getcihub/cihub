@@ -16,7 +16,6 @@ CREATE TYPE actor_kind AS ENUM ('system', 'bot', 'user');
 CREATE TABLE events (
     id            text        NOT NULL,
     org_id        text        NOT NULL REFERENCES orgs (id),
-    -- The foreign key to `queues` arrives with the table (20260930090000_queues.sql).
     queue_id      text        NOT NULL,
     -- Rank in the log of the queue, from 1: the replay order.
     seq           bigint      NOT NULL CHECK (seq > 0),
@@ -26,23 +25,18 @@ CREATE TABLE events (
     -- The fact that caused a decision.
     cause_id      text,
     item_id       text,
-    group_id      text,
-    run_id        text,
     -- The fields of the type, as `cihub-domain` serializes them.
     payload       jsonb       NOT NULL,
     occurred_at   timestamptz NOT NULL,
     PRIMARY KEY (id, occurred_at),
+    FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     CHECK ((actor_kind = 'user') = (actor_user_id IS NOT NULL))
 ) PARTITION BY RANGE (occurred_at);
 
 CREATE INDEX events_queue_id_seq ON events (queue_id, seq);
 CREATE INDEX events_item_id_occurred_at ON events (item_id, occurred_at) WHERE item_id IS NOT NULL;
 
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE events FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON events
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+SELECT cihub_tenant_table('events');
 
 -- Creates `events_<YYYY>_<MM>` for the UTC month of `month` if it is missing,
 -- with its own forced policy: a query on the partition itself does not pass
@@ -65,13 +59,6 @@ BEGIN
         first_day AT TIME ZONE 'UTC',
         (first_day + interval '1 month') AT TIME ZONE 'UTC'
     );
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', partition);
-    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', partition);
-    EXECUTE format(
-        'CREATE POLICY tenant ON %I
-            USING (cihub_system() OR org_id = cihub_org_id())
-            WITH CHECK (cihub_system() OR org_id = cihub_org_id())',
-        partition
-    );
+    PERFORM cihub_tenant_table(partition::regclass);
 END
 $$;

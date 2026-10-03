@@ -4,9 +4,10 @@ use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
 
 use crate::PlatformError;
+use crate::wake::notify;
 
 /// The channel that says a job is waiting.
-pub const JOB_CHANNEL: &str = "cihub_jobs";
+pub(crate) const JOB_CHANNEL: &str = "cihub_jobs";
 
 /// A worker holds a job this long; past it, another worker takes it back.
 pub const JOB_LOCK: Duration = Duration::seconds(60);
@@ -24,6 +25,18 @@ pub const MAX_ATTEMPTS: i32 = 11;
 pub fn backoff(attempts: i32) -> Duration {
     let exponent = attempts.clamp(1, 9).unsigned_abs();
     Duration::seconds(2_i64.pow(exponent)).min(Duration::minutes(5))
+}
+
+/// The hour of `now` in the key of a periodic job (`20260910T09`), so that
+/// the schedulers that request it in the same hour ask for one job.
+pub(crate) fn hour_window(now: OffsetDateTime) -> String {
+    format!(
+        "{:04}{:02}{:02}T{:02}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour()
+    )
 }
 
 /// A job as the roles request it, and as a worker receives it.
@@ -80,11 +93,7 @@ pub async fn enqueue_job(
     .map_err(PlatformError::Query)?;
     let enqueued = done.rows_affected() == 1;
     if enqueued {
-        sqlx::query("SELECT pg_notify($1, '')")
-            .bind(JOB_CHANNEL)
-            .execute(conn)
-            .await
-            .map_err(PlatformError::Query)?;
+        notify(conn, JOB_CHANNEL).await?;
     }
     Ok(enqueued)
 }
@@ -173,29 +182,27 @@ pub async fn claim_jobs(
 fn decode(
     (key, job_type, class, org_id, instance, connection, queue_id, payload, attempts): JobRow,
 ) -> Result<Job, PlatformError> {
-    let read = |source: Box<dyn std::error::Error + Send + Sync>| PlatformError::ReadJob {
-        key: key.clone(),
-        source,
-    };
     let connection = match (instance, connection) {
         (Some(instance), Some(connection)) => Some((
-            instance.parse().map_err(|e| read(Box::new(e)))?,
-            connection.parse().map_err(|e| read(Box::new(e)))?,
+            instance.parse().map_err(PlatformError::read("job", &key))?,
+            connection
+                .parse()
+                .map_err(PlatformError::read("job", &key))?,
         )),
         _ => None,
     };
     Ok(Job {
         job_type,
-        class: class.parse().map_err(|e| read(Box::new(e)))?,
+        class: class.parse().map_err(PlatformError::read("job", &key))?,
         org_id: org_id
             .map(|id| id.parse())
             .transpose()
-            .map_err(|e| read(Box::new(e)))?,
+            .map_err(PlatformError::read("job", &key))?,
         connection,
         queue_id: queue_id
             .map(|id| id.parse())
             .transpose()
-            .map_err(|e| read(Box::new(e)))?,
+            .map_err(PlatformError::read("job", &key))?,
         payload,
         attempts,
         idempotency_key: key.clone(),

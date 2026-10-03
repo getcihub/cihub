@@ -10,7 +10,7 @@ use cihub_domain::{
     Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
 use cihub_mq_core::{CheckRead, Head, Outcome, Read};
-use common::{World, head, settings, window};
+use common::{World, head, settings, transitioned, window};
 
 fn world() -> World {
     World::new(settings(window(2)))
@@ -28,9 +28,7 @@ fn decided_with(w: &World, want: Reason) -> bool {
 }
 
 fn failed_with(w: &World, want: Reason) -> bool {
-    w.log.iter().any(|e| {
-        matches!(e.kind, EventKind::ItemTransitioned { to: ItemState::Failed, reason, .. } if reason == want)
-    })
+    transitioned(w, ItemState::Failed, want)
 }
 
 fn assert_replays(w: &World) {
@@ -109,22 +107,7 @@ fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
     let old = w.item(1).unwrap().id;
     // The job that reads the PR sees the push: it submits the new head, then
     // gives the observation (`DECISIONS.md` D152).
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: 1,
-            head_sha: head(1, 1),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: cihub_domain::SubmittedVia::Comment,
-            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-            additions: 1,
-            deletions: 0,
-            changed_files: 1,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(1, 1, Priority::MEDIUM);
     assert_eq!(
         w.snapshot.current_item(1).map(|i| i.id),
         Some(old),
@@ -185,22 +168,7 @@ fn a_draining_queue_refuses_new_submissions() {
 #[test]
 fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
     let mut w = world();
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: 1,
-            head_sha: head(1, 0),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: cihub_domain::SubmittedVia::Api,
-            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(1, 0, Priority::MEDIUM);
     w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
     let item = w.item(1).unwrap();
     assert_eq!(item.state, ItemState::NotReady);
@@ -380,10 +348,7 @@ fn pr_changes_cancel_the_item() {
         let mut w = world();
         w.submit(1, Priority::MEDIUM);
         w.observe(1, edit);
-        let cancelled = w.log.iter().any(|e| {
-            matches!(e.kind, EventKind::ItemTransitioned { to: ItemState::Cancelled, reason, .. } if reason == want)
-        });
-        assert!(cancelled, "{want}");
+        assert!(transitioned(&w, ItemState::Cancelled, want), "{want}");
         assert_replays(&w);
     }
 }
@@ -394,13 +359,10 @@ fn a_manual_merge_restarts_dependents() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     w.observe(1, |p| p.state = PrState::Merged);
-    assert!(w.log.iter().any(|e| matches!(
-        e.kind,
-        EventKind::ItemTransitioned {
-            reason: Reason::PrerequisiteMergeItemManuallyMerged,
-            ..
-        }
-    )));
+    assert!(decided_with(
+        &w,
+        Reason::PrerequisiteMergeItemManuallyMerged
+    ));
     assert_eq!(w.state(2), Some(ItemState::Testing));
     assert_replays(&w);
 }
@@ -454,13 +416,7 @@ fn urgent_goes_in_front_of_groups_in_test() {
         .map(|i| i.pr_number)
         .collect();
     assert_eq!(order, vec![3, 1, 2]);
-    assert!(w.log.iter().any(|e| matches!(
-        e.kind,
-        EventKind::ItemTransitioned {
-            reason: Reason::SkipTheLineInterrupted,
-            ..
-        }
-    )));
+    assert!(decided_with(&w, Reason::SkipTheLineInterrupted));
     assert_eq!(w.state(3), Some(ItemState::Testing));
     assert_replays(&w);
 }
@@ -488,14 +444,7 @@ fn a_merge_conflict_fails_the_item() {
     let run = w.run(1).unwrap();
     w.fail_assembly(run, JobError::MergeConflict);
     assert_eq!(w.state(1), None);
-    assert!(w.log.iter().any(|e| matches!(
-        e.kind,
-        EventKind::ItemTransitioned {
-            to: ItemState::Failed,
-            reason: Reason::StartTestRunMergeConflict,
-            ..
-        }
-    )));
+    assert!(failed_with(&w, Reason::StartTestRunMergeConflict));
     assert_replays(&w);
 }
 
@@ -510,14 +459,7 @@ fn a_silent_check_times_out() {
     w.advance(299);
     assert_eq!(w.state(1), Some(ItemState::Testing));
     w.advance(1);
-    assert!(w.log.iter().any(|e| matches!(
-        e.kind,
-        EventKind::ItemTransitioned {
-            to: ItemState::Failed,
-            reason: Reason::TestRunTimeout,
-            ..
-        }
-    )));
+    assert!(failed_with(&w, Reason::TestRunTimeout));
     assert_replays(&w);
 }
 
@@ -536,14 +478,7 @@ fn a_merge_failure_fails_the_item() {
             error: JobError::HeadChanged,
         },
     );
-    assert!(w.log.iter().any(|e| matches!(
-        e.kind,
-        EventKind::ItemTransitioned {
-            to: ItemState::Failed,
-            reason: Reason::PrUpdatedAtMergeTime,
-            ..
-        }
-    )));
+    assert!(failed_with(&w, Reason::PrUpdatedAtMergeTime));
     assert_replays(&w);
 }
 
@@ -595,22 +530,7 @@ fn a_blocked_pr_stays_not_ready() {
     let item = w.item(2).unwrap();
     assert_eq!(item.state, ItemState::Testing);
     let mut w = world();
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: 5,
-            head_sha: head(5, 0),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: cihub_domain::SubmittedVia::Api,
-            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(5, 0, Priority::MEDIUM);
     w.observe(5, |p| p.mergeability = Mergeability::Behind);
     let item = w.item(5).unwrap();
     assert_eq!(item.state, ItemState::NotReady);
@@ -804,22 +724,7 @@ fn check_finds_a_damaged_snapshot() {
 
 /// Submits the PR `pr`, seen behind its base: it stays `not_ready`.
 fn submit_behind(w: &mut World, pr: u64) {
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: pr,
-            head_sha: head(pr, 0),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: cihub_domain::SubmittedVia::Api,
-            author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(pr, 0, Priority::MEDIUM);
     w.observe(pr, |p| p.mergeability = Mergeability::Behind);
     assert_eq!(w.state(pr), Some(ItemState::NotReady));
 }

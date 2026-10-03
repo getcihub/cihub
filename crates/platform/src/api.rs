@@ -80,7 +80,7 @@ impl ApiError {
     }
 
     /// An error of the server: the log keeps its cause, the answer does not.
-    pub fn internal(err: &(dyn Error + 'static)) -> Self {
+    fn internal(err: &(dyn Error + 'static)) -> Self {
         error!(error = err, "API request failed");
         Self::new(ErrorCode::Internal, "the server failed".into())
     }
@@ -95,6 +95,13 @@ impl ApiError {
             ErrorCode::QueueExists | ErrorCode::InvalidState => StatusCode::CONFLICT,
             ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
+    }
+}
+
+/// Any error that a route does not name is an error of the server.
+impl<E: Error + 'static> From<E> for ApiError {
+    fn from(err: E) -> Self {
+        Self::internal(&err)
     }
 }
 

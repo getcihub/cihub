@@ -5,12 +5,10 @@
 mod common;
 
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState,
-    Mergeability, Priority, Reason, SubmittedVia, UserId,
+    BlockReason, CheckConclusion, CheckKind, CheckReport, ItemState, Mergeability, Priority, Reason,
 };
 use cihub_mq_core::Surface;
 use common::{World, head, settings, window};
-use ulid::Ulid;
 
 fn shown(surfaces: &[Surface]) -> Vec<(u64, ItemState, Option<usize>, Vec<u64>)> {
     surfaces
@@ -61,22 +59,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
 #[test]
 fn a_not_ready_item_shows_why() {
     let mut w = World::new(settings(window(2)));
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: 5,
-            head_sha: head(5, 0),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: SubmittedVia::Api,
-            author_id: UserId::from_ulid(Ulid(1)),
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(5, 0, Priority::MEDIUM);
     w.observe(5, |pr| pr.mergeability = Mergeability::Conflict);
     let last = w.surfaces.last().unwrap();
     assert_eq!(last[0].state, ItemState::NotReady);
@@ -88,22 +71,7 @@ fn a_not_ready_item_shows_why() {
 #[test]
 fn a_blocked_pr_names_its_required_checks() {
     let mut w = World::new(settings(window(2)));
-    w.fact(
-        Actor::System,
-        EventKind::ItemSubmitted {
-            pr_number: 5,
-            head_sha: head(5, 0),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: SubmittedVia::Api,
-            author_id: UserId::from_ulid(Ulid(1)),
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-            sender_permission: None,
-        },
-    );
+    w.submit_only(5, 0, Priority::MEDIUM);
     let report = |name: &str, conclusion| CheckReport {
         name: name.into(),
         kind: CheckKind::Check,

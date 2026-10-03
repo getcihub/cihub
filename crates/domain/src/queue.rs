@@ -22,3 +22,14 @@ closed_enum! {
         Drain,
     }
 }
+
+impl QueueControl {
+    /// The queue state that the control asks for.
+    pub const fn target(self) -> QueueState {
+        match self {
+            Self::Pause => QueueState::Paused,
+            Self::Resume => QueueState::Running,
+            Self::Drain => QueueState::Draining,
+        }
+    }
+}

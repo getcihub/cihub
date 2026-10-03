@@ -1,14 +1,12 @@
 -- The merge queue module (DECISIONS.md D94, D95, D100): the modules of an
--- organization, the state and the mode of a queue, the projections of the log
--- (`queue_items`, `test_groups`, `test_runs`, D28), the snapshots of the log,
--- and the inbox of the facts that the jobs give back to a queue.
+-- organization, the projections of the log (`queue_items`, `test_groups`,
+-- `test_runs`, D28), the snapshots of the log, and the inbox of the facts that
+-- the jobs give back to a queue.
 --
 -- The projections hold only what the log holds: a replay of the log rebuilds
 -- them exactly (principle I). A list of identifiers is in `text[]` (D37).
 
 CREATE TYPE module_name AS ENUM ('mergequeue');
-CREATE TYPE queue_state AS ENUM ('running', 'paused', 'draining', 'switching_modes');
-CREATE TYPE queue_mode AS ENUM ('single', 'parallel');
 CREATE TYPE item_state AS ENUM (
     'not_ready', 'pending', 'testing', 'tests_passed', 'pending_failure', 'merged', 'failed',
     'cancelled'
@@ -42,8 +40,11 @@ CREATE TYPE reason AS ENUM (
     'direct_merge_rejected', 'merge_rate_limit_exceeded', 'merge_branch_protection_unmet',
     'merge_already_in_progress', 'merge_repeated_server_errors', 'pr_updated_at_merge_time',
     'test_branch_assembled', 'access_lost', 'access_restored', 'mode_changed',
-    'mode_switch_completed'
+    'mode_switch_completed', 'queue_draining', 'queue_switching_modes'
 );
+-- The permission of the author of a command, read at the submission, so that
+-- a read of the PR evaluates `sender-permission` (D144, D145).
+CREATE TYPE permission AS ENUM ('none', 'read', 'write', 'admin');
 
 -- An organization has a module from `enabled_at`; without a row, it does not
 -- have it (D94).
@@ -53,11 +54,6 @@ CREATE TABLE org_modules (
     enabled_at timestamptz NOT NULL,
     PRIMARY KEY (org_id, module)
 );
-
--- A projection of the log, like the tables below.
-ALTER TABLE queues
-    ADD COLUMN state queue_state NOT NULL DEFAULT 'running',
-    ADD COLUMN mode  queue_mode  NOT NULL DEFAULT 'single';
 
 CREATE TABLE queue_items (
     id                 text          PRIMARY KEY,
@@ -75,13 +71,13 @@ CREATE TABLE queue_items (
     -- The queue order, by steps of 1 000 (docs/ALGORITHMS.md).
     position           bigint,
     priority_value     smallint      NOT NULL,
-    priority_name      text,
     no_batch           boolean       NOT NULL,
     force_enqueued     boolean       NOT NULL,
-    skip_the_line      boolean       NOT NULL,
     -- `NULL` when CIHub submitted the PR itself.
     submitted_by       text          REFERENCES users (id),
     submitted_via      submitted_via NOT NULL,
+    -- NULL for a submission by label.
+    sender_permission  permission,
     submitted_at       timestamptz   NOT NULL,
     mergeability       mergeability  NOT NULL,
     block_reasons      jsonb         NOT NULL,
@@ -139,6 +135,15 @@ CREATE TABLE test_runs (
     failure_reason           reason,
     failure_causing_statuses text[]                   NOT NULL,
     conflict_culprit         jsonb,
+    -- The head of the target branch that the run builds on: that of its group.
+    base_sha                 text                     NOT NULL,
+    -- The heads merged on `base_sha`, in order: the predecessors, then the
+    -- members of the group.
+    head_shas                text[]                   NOT NULL,
+    -- The PRs of the group.
+    tested_pr_numbers        bigint[]                 NOT NULL,
+    -- The last report of a check on the test SHA, late reports included.
+    last_report_at           timestamptz,
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     FOREIGN KEY (org_id, group_id) REFERENCES test_groups (org_id, id)
 );
@@ -183,38 +188,9 @@ CREATE TABLE queue_inbox (
 CREATE INDEX queue_inbox_pending ON queue_inbox (queue_id, arrival)
     WHERE processed_at IS NULL;
 
-ALTER TABLE org_modules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE org_modules FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON org_modules
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE queue_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE queue_items FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON queue_items
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE test_groups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE test_groups FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON test_groups
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE test_runs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE test_runs FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON test_runs
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE queue_snapshots ENABLE ROW LEVEL SECURITY;
-ALTER TABLE queue_snapshots FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON queue_snapshots
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE queue_inbox ENABLE ROW LEVEL SECURITY;
-ALTER TABLE queue_inbox FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON queue_inbox
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+SELECT cihub_tenant_table('org_modules');
+SELECT cihub_tenant_table('queue_items');
+SELECT cihub_tenant_table('test_groups');
+SELECT cihub_tenant_table('test_runs');
+SELECT cihub_tenant_table('queue_snapshots');
+SELECT cihub_tenant_table('queue_inbox');

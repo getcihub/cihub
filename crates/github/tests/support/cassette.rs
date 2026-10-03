@@ -8,6 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cihub_scm::contract::Fixture;
+use cihub_scm::{RequiredChecks, ScmUser};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -52,6 +54,30 @@ pub struct World {
     pub missing_pr: u64,
     pub admin: String,
     pub work_branch: String,
+}
+
+impl World {
+    /// The world as the contract suite takes it. The adapter reads only the
+    /// login of the admin, so the recording keeps no identifier for them.
+    pub fn fixture(&self) -> Fixture {
+        Fixture {
+            base_branch: self.base_branch.clone(),
+            required: RequiredChecks {
+                names: self.required_checks.clone(),
+                up_to_date: self.up_to_date,
+            },
+            file: (self.file_path.clone(), self.file_content.clone()),
+            mergeable_pr: self.mergeable_pr,
+            conflicting_pr: self.conflicting_pr,
+            draft_pr: self.draft_pr,
+            missing_pr: self.missing_pr,
+            admin: ScmUser {
+                external_id: String::new(),
+                login: self.admin.clone(),
+            },
+            work_branch: self.work_branch.clone(),
+        }
+    }
 }
 
 /// One call and its answer. The path starts after the address of the API

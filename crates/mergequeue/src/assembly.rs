@@ -6,7 +6,6 @@
 //! is already done (principle III).
 
 use std::fmt::Write;
-use std::sync::Arc;
 
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
@@ -14,7 +13,7 @@ use cihub_domain::{
     RequiredStatusesSource, RunId, RunStatus, Trigger, temp_branch,
 };
 use cihub_mq_core::{Head, TestBranch};
-use cihub_platform::{Job, MAX_ATTEMPTS, Outcome, error_chain};
+use cihub_platform::{Job, MAX_ATTEMPTS, error_chain};
 use cihub_scm::{MergeIntoRef, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
@@ -22,20 +21,17 @@ use serde_json::json;
 use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
-use crate::MergeQueueError;
 use crate::config::read_config_file;
-use crate::jobs::{
-    Failure, give_back, job, outcome, queue_status_context, read_payload, target_of,
-};
+use crate::jobs::{Failure, give_back_facts, job, queue_status_context, read_payload, target_of};
 use crate::target::QueueTarget;
 
-pub const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
-pub const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
+pub(crate) const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
+pub(crate) const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
 
 /// After this many attempts, an assembly that the SCM still refuses as not
 /// valid (422) gives up with `start_test_run_retry_exhausted` (`DECISIONS.md`
 /// D133).
-pub const ASSEMBLY_ATTEMPTS: i32 = 5;
+pub(crate) const ASSEMBLY_ATTEMPTS: i32 = 5;
 
 /// An assembly that meets another passing error (5xx, 429, a stop) tries
 /// again until this long after the start of its run (`DECISIONS.md` D133).
@@ -88,13 +84,13 @@ pub(crate) fn cleanup(target: &QueueTarget, run_id: RunId) -> Job {
 }
 
 /// The title of the draft PR of a run (`docs/CI.md`).
-pub fn draft_pr_title(members: &[u64], target_branch: &str) -> String {
+pub(crate) fn draft_pr_title(members: &[u64], target_branch: &str) -> String {
     format!("CIHub: test {} on {target_branch}", numbers(members))
 }
 
 /// The body of the draft PR of a run (`docs/CI.md`): the run, its base and
 /// the PRs it tests, each on its own line.
-pub fn draft_pr_body(
+pub(crate) fn draft_pr_body(
     run_id: RunId,
     target_branch: &str,
     base_sha: &str,
@@ -132,7 +128,7 @@ fn numbers(prs: &[u64]) -> String {
 /// # Errors
 ///
 /// The file is not valid, or it gives an empty list.
-pub fn required_statuses_of_file(
+pub(crate) fn required_statuses_of_file(
     text: &str,
     branch: &str,
     name: &str,
@@ -451,15 +447,12 @@ pub(crate) async fn run_state(
     pool: &PgPool,
     run_id: RunId,
 ) -> Result<Option<(RunStatus, OffsetDateTime)>, Failure> {
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let row: Option<(String, OffsetDateTime)> =
         sqlx::query_as("SELECT status::text, started_at FROM test_runs WHERE id = $1")
             .bind(run_id.to_string())
             .fetch_optional(&mut *tx)
-            .await
-            .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+            .await?;
     row.map(|(status, started_at)| {
         status
             .parse::<RunStatus>()
@@ -471,16 +464,7 @@ pub(crate) async fn run_state(
 
 /// Builds the test branch of the run of the job and gives back the result.
 /// A run that no longer waits for its assembly leaves the SCM as it is.
-pub(crate) async fn execute_assemble(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(assemble_run(&pool, scm.as_ref(), &job, now).await)
-}
-
-async fn assemble_run(
+pub(crate) async fn assemble_run(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -533,45 +517,27 @@ async fn assemble_run(
             }
         }
     };
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(
-        &mut tx,
-        target.org_id,
-        target.queue_id,
-        vec![(Actor::System, fact)],
-        now,
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
+    give_back_facts(pool, &target, vec![(Actor::System, fact)], now).await
 }
 
 /// Closes the draft PR and deletes the branches of the run of the job, once
 /// the run ended. Each step is a success when its state is already reached.
-pub(crate) async fn execute_cleanup(pool: PgPool, scm: Arc<dyn Scm>, job: Job) -> Outcome {
-    outcome(cleanup_run(&pool, scm.as_ref(), &job).await)
-}
-
-async fn cleanup_run(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Failure> {
+pub(crate) async fn cleanup_run(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    _now: OffsetDateTime,
+) -> Result<(), Failure> {
     let request: CleanupTestBranch = read_payload(job)?;
     let target = target_of(pool, job).await?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let run: Option<(String, Option<i64>, String)> = sqlx::query_as(
         "SELECT test_branch, draft_pr_number, status::text FROM test_runs WHERE id = $1",
     )
     .bind(request.run_id.to_string())
     .fetch_optional(&mut *tx)
-    .await
-    .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    .await?;
+    tx.commit().await?;
     let Some((test_branch, draft_pr_number, status)) = run else {
         return Ok(());
     };
@@ -599,35 +565,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_domain::{ConnectionId, OrgId, QueueId, RepoId, ScmInstanceId};
     use cihub_scm::RequiredChecks;
     use cihub_scm::sim::{Fault, Sim, bot};
     use ulid::Ulid;
 
     use super::*;
-
-    fn target() -> QueueTarget {
-        QueueTarget {
-            queue_id: QueueId::from_ulid(Ulid(2)),
-            org_id: OrgId::from_ulid(Ulid(1)),
-            scm_instance_id: ScmInstanceId::from_ulid(Ulid(3)),
-            repo: cihub_scm::RepoRef {
-                connection: cihub_scm::ConnectionRef {
-                    id: ConnectionId::from_ulid(Ulid(4)),
-                    external_id: "4".into(),
-                },
-                external_id: "5".into(),
-                namespace: "acme".into(),
-                name: "app".into(),
-            },
-            target_branch: "main".into(),
-            name: "main".into(),
-            config_text: None,
-            config_sha: None,
-            enabled: true,
-            repo_id: RepoId::from_ulid(Ulid(6)),
-        }
-    }
+    use crate::target::test_target as target;
 
     #[test]
     fn only_refusals_count_and_passing_errors_wait_15_minutes() {

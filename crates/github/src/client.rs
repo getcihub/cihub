@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use cihub_domain::{ConnectionId, JobClass, Permission};
 use cihub_scm::{ConnectionRef, ScmError};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
-use reqwest::{Client, Method, StatusCode};
+use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::Value;
@@ -272,29 +272,8 @@ impl GithubApp {
         path: &str,
     ) -> Result<(Answer, Option<String>), ScmError> {
         let now = (self.clock)();
-        let jwt = self
-            .key
-            .jwt(&self.app_id, now)
-            .map_err(|err| ScmError::Protocol(err.to_string()))?;
-        let response = self
-            .http
-            .request(method, format!("{}{path}", self.api_url))
-            .header(AUTHORIZATION, format!("Bearer {jwt}"))
-            .header(ACCEPT, JSON)
-            .header("X-GitHub-Api-Version", API_VERSION)
-            .send()
-            .await
-            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
-        let answer = Answer {
-            status,
-            body: body.to_vec(),
-        };
+        let (status, headers, body) = fetch(self.as_app(method, path, now)?).await?;
+        let answer = Answer { status, body };
         if let (_, Some(error)) = classify(&answer, &headers, now) {
             return Err(error);
         }
@@ -303,6 +282,25 @@ impl GithubApp {
             .and_then(|link| link.to_str().ok())
             .and_then(|link| next_page(link, path));
         Ok((answer, next))
+    }
+
+    /// `method path` with the JWT of the App, signed at `now`.
+    fn as_app(
+        &self,
+        method: Method,
+        path: &str,
+        now: OffsetDateTime,
+    ) -> Result<RequestBuilder, ScmError> {
+        let jwt = self
+            .key
+            .jwt(&self.app_id, now)
+            .map_err(|err| ScmError::Protocol(err.to_string()))?;
+        Ok(self
+            .http
+            .request(method, format!("{}{path}", self.api_url))
+            .header(AUTHORIZATION, format!("Bearer {jwt}"))
+            .header(ACCEPT, JSON)
+            .header("X-GitHub-Api-Version", API_VERSION))
     }
 
     async fn send_to(&self, request: Request<'_>, url: String) -> Result<Answer, ScmError> {
@@ -320,23 +318,13 @@ impl GithubApp {
                 .header(CONTENT_TYPE, "application/json")
                 .body(body.to_string());
         }
-        let answer = match builder.send().await {
-            Ok(response) => {
-                let status = response.status();
-                let headers = response.headers().clone();
-                match response.bytes().await {
-                    Ok(body) => Ok((status, headers, body.to_vec())),
-                    Err(err) => Err(err),
-                }
-            }
-            Err(err) => Err(err),
-        };
+        let answer = fetch(builder).await;
         let now = (self.clock)();
         let (status, headers, body) = match answer {
             Ok(answer) => answer,
             Err(err) => {
                 self.observe(connection, Observation::Failed, now);
-                return Err(ScmError::Unavailable(err.to_string()));
+                return Err(err);
             }
         };
         let answer = Answer { status, body };
@@ -400,32 +388,9 @@ impl GithubApp {
                 return Ok(token.clone());
             }
         }
-        let jwt = self
-            .key
-            .jwt(&self.app_id, now)
-            .map_err(|err| ScmError::Protocol(err.to_string()))?;
-        let url = format!(
-            "{}/app/installations/{installation}/access_tokens",
-            self.api_url
-        );
-        let response = self
-            .http
-            .post(url)
-            .header(AUTHORIZATION, format!("Bearer {jwt}"))
-            .header(ACCEPT, JSON)
-            .header("X-GitHub-Api-Version", API_VERSION)
-            .send()
-            .await
-            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
-        let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .map_err(|err| ScmError::Unavailable(err.to_string()))?;
-        let answer = Answer {
-            status,
-            body: body.to_vec(),
-        };
+        let path = format!("/app/installations/{installation}/access_tokens");
+        let (status, _, body) = fetch(self.as_app(Method::POST, &path, now)?).await?;
+        let answer = Answer { status, body };
         match status {
             StatusCode::CREATED => {}
             StatusCode::NOT_FOUND | StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED => {
@@ -453,6 +418,17 @@ impl std::fmt::Debug for GithubApp {
             .field("app_id", &self.app_id)
             .finish_non_exhaustive()
     }
+}
+
+/// Sends `request` and reads its whole answer. A failure of the transport is
+/// `Unavailable`.
+async fn fetch(request: RequestBuilder) -> Result<(StatusCode, HeaderMap, Vec<u8>), ScmError> {
+    let unavailable = |err: reqwest::Error| ScmError::Unavailable(err.to_string());
+    let response = request.send().await.map_err(unavailable)?;
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.bytes().await.map_err(unavailable)?;
+    Ok((status, headers, body.to_vec()))
 }
 
 /// The path of the `next` page in a `Link` header, from the path of the call

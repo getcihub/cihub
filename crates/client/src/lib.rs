@@ -1,10 +1,10 @@
 //! The typed client of the public API v1 of CIHub (`docs/API.md`,
-//! `DECISIONS.md` D161): one method per route, with the types of
+//! `DECISIONS.md` D161): the methods that the CLI uses, with the types of
 //! `cihub-api-types`. It holds no server code and no queue logic.
 
 use cihub_api_types::{
-    API_PREFIX, Accepted, BatchGet, BatchGetResponse, CreateQueue, Graph, ItemPage, PrItem,
-    Problem, Queue, QueueList, RepoList, RequestedQueueState, SubmitPr, TestRun, UpdateQueue,
+    API_PREFIX, Accepted, CreateQueue, Graph, ItemPage, PrItem, Problem, Queue, QueueList,
+    RepoList, RequestedQueueState, SubmitPr, UpdateQueue,
 };
 use reqwest::{Method, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -18,7 +18,7 @@ pub enum ClientError {
     #[error("the request to CIHub failed")]
     Http(#[source] reqwest::Error),
     /// CIHub refused the request, and says why.
-    #[error("{}: {}", .0.code.as_str(), .0.detail)]
+    #[error("{}: {}", .0.code, .0.detail)]
     Api(Problem),
     #[error("CIHub answered {status}: {body}")]
     Unexpected { status: StatusCode, body: String },
@@ -120,13 +120,6 @@ impl Client {
         self.send(Method::POST, &path, Some(request)).await
     }
 
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn queue(&self, queue_id: &str) -> Result<Queue, ClientError> {
-        self.get(&format!("/queues/{queue_id}")).await
-    }
-
     /// Asks the queue for `state`.
     ///
     /// # Errors
@@ -182,21 +175,6 @@ impl Client {
             .await
     }
 
-    /// The last item of each PR of `pr_numbers`, at most 50.
-    ///
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn batch_get(
-        &self,
-        queue_id: &str,
-        pr_numbers: Vec<u64>,
-    ) -> Result<BatchGetResponse, ClientError> {
-        let path = format!("/queues/{queue_id}/prs:batchGet");
-        self.send(Method::POST, &path, Some(&BatchGet { pr_numbers }))
-            .await
-    }
-
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
@@ -218,20 +196,5 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn graph(&self, queue_id: &str) -> Result<Graph, ClientError> {
         self.get(&format!("/queues/{queue_id}/graph")).await
-    }
-
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn resync(&self, queue_id: &str) -> Result<Accepted, ClientError> {
-        let path = format!("/queues/{queue_id}:resync");
-        self.send(Method::POST, &path, None::<&()>).await
-    }
-
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn test_run(&self, run_id: &str) -> Result<TestRun, ClientError> {
-        self.get(&format!("/test-runs/{run_id}")).await
     }
 }

@@ -23,22 +23,17 @@ pub async fn append_events(
 ) -> Result<Vec<i64>, StoreError> {
     let mut seqs = Vec::with_capacity(events.len());
     for event in events {
-        let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
-        let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
-        let subjects = event.kind.subjects();
-        let actor_user_id = match &event.actor {
-            Actor::User { user_id } => Some(user_id.to_string()),
-            Actor::System | Actor::Bot => None,
-        };
+        let (payload, actor_user_id) = columns(event)?;
+        let item_id = event.kind.subjects().item_id;
         let seq: i64 = sqlx::query_scalar(
             "INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, actor_user_id,
-                                 cause_id, item_id, group_id, run_id, payload, occurred_at)
+                                 cause_id, item_id, payload, occurred_at)
              SELECT $1, $2, $3,
                     greatest(
                         (SELECT coalesce(max(seq), 0) FROM events WHERE queue_id = $3),
                         (SELECT coalesce(max(seq), 0) FROM queue_snapshots WHERE queue_id = $3)
                     ) + 1,
-                    $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10, $11, $12
+                    $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10
              RETURNING seq",
         )
         .bind(event.id.to_string())
@@ -48,9 +43,7 @@ pub async fn append_events(
         .bind(event.actor.kind().as_str())
         .bind(actor_user_id)
         .bind(event.cause_id.map(|id| id.to_string()))
-        .bind(subjects.item_id.map(|id| id.to_string()))
-        .bind(subjects.group_id.map(|id| id.to_string()))
-        .bind(subjects.run_id.map(|id| id.to_string()))
+        .bind(item_id.map(|id| id.to_string()))
         .bind(payload)
         .bind(event.occurred_at)
         .fetch_one(&mut *conn)
@@ -59,6 +52,18 @@ pub async fn append_events(
         seqs.push(seq);
     }
     Ok(seqs)
+}
+
+/// The payload of `event` and its user, as `events` and `queue_inbox` store
+/// them.
+fn columns(event: &Event) -> Result<(Value, Option<String>), StoreError> {
+    let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
+    let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
+    let actor_user_id = match &event.actor {
+        Actor::User { user_id } => Some(user_id.to_string()),
+        Actor::System | Actor::Bot => None,
+    };
+    Ok((payload, actor_user_id))
 }
 
 type EventRow = (
@@ -98,7 +103,7 @@ pub async fn load_events(
     rows.into_iter()
         .map(|row| {
             let id = row.1.clone();
-            decode(row).map_err(|source| StoreError::ReadEvent { id, source })
+            decode(row).map_err(StoreError::read("event", &id))
         })
         .collect()
 }
@@ -143,12 +148,7 @@ pub async fn deposit_fact(
     if event.kind.event_type().is_decision() {
         return Err(StoreError::DecisionDeposited(event.id.to_string()));
     }
-    let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
-    let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
-    let actor_user_id = match &event.actor {
-        Actor::User { user_id } => Some(user_id.to_string()),
-        Actor::System | Actor::Bot => None,
-    };
+    let (payload, actor_user_id) = columns(event)?;
     let done = sqlx::query(
         "INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, actor_user_id, type, payload,
                                   received_at)
@@ -196,7 +196,7 @@ pub async fn pending_facts(
     rows.into_iter()
         .map(|row| {
             let id = row.1.clone();
-            let (_, event) = decode(row).map_err(|source| StoreError::ReadEvent { id, source })?;
+            let (_, event) = decode(row).map_err(StoreError::read("event", &id))?;
             Ok(event)
         })
         .collect()
@@ -241,7 +241,7 @@ pub async fn create_event_partitions(pool: &PgPool, today: Date) -> Result<(), S
 }
 
 /// The first day of the month after `date`.
-fn next_month(date: Date) -> Date {
+pub fn next_month(date: Date) -> Date {
     let (year, month) = match date.month() {
         Month::December => (date.year() + 1, Month::January),
         month => (date.year(), month.next()),

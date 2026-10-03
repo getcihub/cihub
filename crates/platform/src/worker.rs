@@ -8,26 +8,26 @@ use std::time::Duration;
 use cihub_domain::JobState;
 use cihub_store::begin_system;
 use sqlx::PgPool;
-use sqlx::postgres::PgListener;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, error, info, info_span, warn};
 
-use crate::{JOB_CHANNEL, Job, PlatformError, Retry, claim_jobs, complete_job, fail_job};
+use crate::jobs::JOB_CHANNEL;
+use crate::{Job, PlatformError, QueueWakeup, Retry, claim_jobs, complete_job, fail_job};
 
 /// A worker without a notification looks for due jobs this often: a retry
 /// after its backoff sends no notification.
 pub const JOB_POLL: Duration = Duration::from_secs(5);
 
 /// A worker claims at most this many jobs at a time and runs them together.
-pub const JOBS_PER_CLAIM: i64 = 16;
+pub(crate) const JOBS_PER_CLAIM: i64 = 16;
 
 /// A worker stops an executor after this long and retries its job, so that
 /// the lock of the job ([`JOB_LOCK`](crate::JOB_LOCK)) does not expire while
 /// the executor runs and another worker does not run the job at the same
 /// time. An executor must accept to stop at any `.await`.
-pub const JOB_TIMEOUT: Duration = Duration::from_secs(50);
+pub(crate) const JOB_TIMEOUT: Duration = Duration::from_secs(50);
 
 /// What an executor answers for a job (`DECISIONS.md` D66).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,13 +88,7 @@ pub async fn run_worker(
     idle_wait: Duration,
     cancel: CancellationToken,
 ) -> Result<(), PlatformError> {
-    let mut listener = PgListener::connect_with(&pool)
-        .await
-        .map_err(PlatformError::Query)?;
-    listener
-        .listen(JOB_CHANNEL)
-        .await
-        .map_err(PlatformError::Query)?;
+    let mut wakeup = QueueWakeup::listen_to(&pool, JOB_CHANNEL).await?;
     while !cancel.is_cancelled() {
         let now = clock();
         let jobs = match claim(&pool, &worker, now).await {
@@ -105,19 +99,9 @@ pub async fn run_worker(
             }
         };
         if jobs.is_empty() {
-            tokio::select! {
-                () = cancel.cancelled() => {}
-                received = listener.recv() => {
-                    if let Err(err) = received {
-                        warn!(error = &err as &dyn Error, "job notifications lost");
-                        tokio::select! {
-                            () = cancel.cancelled() => {}
-                            () = tokio::time::sleep(idle_wait) => {}
-                        }
-                    }
-                }
-                () = tokio::time::sleep(idle_wait) => {}
-            }
+            wakeup
+                .wait_or_pause(idle_wait, &cancel, "job notifications lost")
+                .await;
             continue;
         }
         let mut running = JoinSet::new();

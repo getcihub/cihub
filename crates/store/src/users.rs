@@ -30,8 +30,5 @@ pub async fn ensure_user(
     .fetch_one(conn)
     .await
     .map_err(StoreError::Query)?;
-    id.parse().map_err(|source| StoreError::ReadUser {
-        id,
-        source: Box::new(source),
-    })
+    id.parse().map_err(StoreError::read("user", &id))
 }

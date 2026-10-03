@@ -292,20 +292,11 @@ async fn installations(config: &GithubConfig) -> Result<()> {
     let key = AppKey::from_pem(&config.private_key)?;
     let jwt = key.jwt(&config.app_id, now())?;
     let (api, _) = api_urls(&config.url);
-    let response = reqwest::Client::builder()
-        .user_agent("cihub")
-        .build()?
+    let http = reqwest::Client::builder().user_agent("cihub").build()?;
+    let request = http
         .get(format!("{api}/app/installations"))
-        .bearer_auth(jwt)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await?;
-    let status = response.status();
-    let body: serde_json::Value =
-        serde_json::from_slice(&response.bytes().await?).unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!("GitHub answered {status}: {body}").into());
-    }
+        .bearer_auth(jwt);
+    let body = record::send(request, None).await?;
     for installation in body.as_array().into_iter().flatten() {
         println!(
             "installation {} on {} ({})",

@@ -1,7 +1,5 @@
 use std::fmt;
 
-use cihub_domain::{Permission, ReviewDecision};
-
 /// Value type of an attribute. It decides which operators are allowed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -95,36 +93,20 @@ impl fmt::Display for Attribute {
     }
 }
 
-/// Names of the values of `review-decision`, in the order of
-/// `review_decision_rank`.
+/// Names of the values of `review-decision`, in the declaration order of
+/// `ReviewDecision`, which is the rank the evaluation compares.
 const REVIEW_DECISION_NAMES: &[&str] =
     &["approved", "changes_requested", "review_required", "none"];
 
-pub(crate) const fn review_decision_rank(decision: ReviewDecision) -> i64 {
-    match decision {
-        ReviewDecision::Approved => 0,
-        ReviewDecision::ChangesRequested => 1,
-        ReviewDecision::ReviewRequired => 2,
-        ReviewDecision::None => 3,
-    }
-}
-
-/// Names of the values of `sender-permission`, in the order of
-/// `permission_rank` (`DECISIONS.md` D145).
+/// Names of the values of `sender-permission`, in the declaration order of
+/// `Permission` (`DECISIONS.md` D145).
 const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
-
-pub(crate) const fn permission_rank(permission: Permission) -> i64 {
-    match permission {
-        Permission::None => 0,
-        Permission::Read => 1,
-        Permission::Write => 2,
-        Permission::Admin => 3,
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+
+    use cihub_domain::{Permission, ReviewDecision};
 
     use super::*;
 
@@ -145,8 +127,7 @@ mod tests {
             ReviewDecision::ReviewRequired,
             ReviewDecision::None,
         ] {
-            let rank = usize::try_from(review_decision_rank(decision)).unwrap();
-            assert_eq!(REVIEW_DECISION_NAMES[rank], decision.as_str());
+            assert_eq!(REVIEW_DECISION_NAMES[decision as usize], decision.as_str());
         }
         for permission in [
             Permission::None,
@@ -154,8 +135,7 @@ mod tests {
             Permission::Write,
             Permission::Admin,
         ] {
-            let rank = usize::try_from(permission_rank(permission)).unwrap();
-            assert_eq!(PERMISSION_NAMES[rank], permission.as_str());
+            assert_eq!(PERMISSION_NAMES[permission as usize], permission.as_str());
         }
         assert_eq!(REVIEW_DECISION_NAMES.len(), 4);
     }

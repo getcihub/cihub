@@ -4,12 +4,11 @@
 //! `publish_surfaces` makes the SCM show the last rendering.
 
 use std::fmt::Write as _;
-use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{BlockReason, ConnectionId, ItemState, JobClass, OrgId, RepoId, ScmInstanceId};
 use cihub_mq_core::Surface;
-use cihub_platform::{Job, Outcome};
+use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
@@ -20,14 +19,14 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::jobs::{Failure, job, outcome, queue_status_context, read_payload, target_of};
+use crate::jobs::{Failure, connection_job, job, queue_status_context, read_payload, target_of};
 use crate::target::QueueTarget;
 
 /// The type of the job that publishes the surfaces of a PR.
-pub const PUBLISH_SURFACES: &str = "publish_surfaces";
+pub(crate) const PUBLISH_SURFACES: &str = "publish_surfaces";
 
 /// The labels that say the state of an item (`docs/GITHUB.md`).
-pub const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "cihub:failed"];
+pub(crate) const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "cihub:failed"];
 
 /// A commit status of the SCM is at most this long.
 const DESCRIPTION_LIMIT: usize = 140;
@@ -300,16 +299,14 @@ pub(crate) async fn converge_surfaces(
         }
         let desired = serde_json::to_value(&rendered).map_err(MergeQueueError::Snapshot)?;
         sqlx::query(
-            "INSERT INTO pr_surfaces (org_id, queue_id, pr_number, item_id, desired, desired_hash)
-             VALUES ($1, $2, $3, $4, $5, $6)
+            "INSERT INTO pr_surfaces (org_id, queue_id, pr_number, desired, desired_hash)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (queue_id, pr_number) DO UPDATE
-             SET item_id = EXCLUDED.item_id, desired = EXCLUDED.desired,
-                 desired_hash = EXCLUDED.desired_hash",
+             SET desired = EXCLUDED.desired, desired_hash = EXCLUDED.desired_hash",
         )
         .bind(target.org_id.to_string())
         .bind(target.queue_id.to_string())
         .bind(number)
-        .bind(surface.item_id.to_string())
         .bind(desired)
         .bind(&desired_hash)
         .execute(&mut *conn)
@@ -351,33 +348,21 @@ fn publish_job(target: &QueueTarget, pr_number: i64, hash: &str) -> Job {
     )
 }
 
-pub(crate) async fn execute_publish(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(publish(&pool, scm.as_ref(), &job, now).await)
-}
-
 /// The rendering that a PR must show, what it shows, and its comment.
 type SurfaceRow = (serde_json::Value, String, Option<String>, Option<String>);
 
 /// Makes the SCM show the last rendering of the PR. One job at a time
 /// publishes for a PR, so that an older rendering never lands after a newer
 /// one: the job takes a lock of the PR for its whole run.
-async fn publish(
+pub(crate) async fn publish(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
-    now: OffsetDateTime,
+    _now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: PublishSurfaces = read_payload(job)?;
     let target = target_of(pool, job).await?;
-    let query = |err| Failure::from(MergeQueueError::Query(err));
-    let mut lock = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut lock = begin_system(pool).await?;
     lock_comment(&mut lock, target.repo_id, request.pr_number).await?;
     let row: Option<SurfaceRow> = sqlx::query_as(
         "SELECT s.desired, s.desired_hash, s.published_hash, c.comment_external_id
@@ -389,8 +374,7 @@ async fn publish(
     .bind(request.pr_number)
     .bind(target.repo_id.to_string())
     .fetch_optional(&mut *lock)
-    .await
-    .map_err(query)?;
+    .await?;
     let Some((desired, desired_hash, published, comment_id)) = row else {
         return Ok(());
     };
@@ -424,17 +408,14 @@ async fn publish(
         keep_comment(&mut lock, &target, request.pr_number, &id).await?;
     }
     sqlx::query(
-        "UPDATE pr_surfaces SET published_hash = $3, published_at = $4
-         WHERE queue_id = $1 AND pr_number = $2",
+        "UPDATE pr_surfaces SET published_hash = $3 WHERE queue_id = $1 AND pr_number = $2",
     )
     .bind(target.queue_id.to_string())
     .bind(request.pr_number)
     .bind(&desired_hash)
-    .bind(now)
     .execute(&mut *lock)
-    .await
-    .map_err(query)?;
-    lock.commit().await.map_err(query)?;
+    .await?;
+    lock.commit().await?;
     info!(
         pr_number = number,
         hash = desired_hash,
@@ -456,8 +437,7 @@ async fn lock_comment(
             .bind(format!("pr_comments:{repo}"))
             .bind(pr_number)
             .fetch_one(conn)
-            .await
-            .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+            .await?;
     if locked {
         Ok(())
     } else {
@@ -485,8 +465,7 @@ async fn keep_comment(
     .bind(pr_number)
     .bind(id)
     .execute(conn)
-    .await
-    .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    .await?;
     Ok(())
 }
 
@@ -639,7 +618,7 @@ mod tests {
 
 /// The type of the job that posts the welcome comment of a PR
 /// (`DECISIONS.md` D163).
-pub const WELCOME_PR: &str = "welcome_pr";
+pub(crate) const WELCOME_PR: &str = "welcome_pr";
 
 /// The payload of `welcome_pr`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -649,23 +628,14 @@ pub(crate) struct WelcomePr {
     pub base_branch: String,
 }
 
-/// The welcome of the PR of `request` after the delivery `delivery_id`.
+/// The welcome of `request` after the delivery `delivery_id`.
 pub(crate) fn welcome_job(
     org_id: OrgId,
     connection: (ScmInstanceId, ConnectionId),
     delivery_id: &str,
     request: &WelcomePr,
 ) -> Job {
-    Job {
-        idempotency_key: format!("{WELCOME_PR}:{}:1", crate::jobs::subject(delivery_id)),
-        job_type: WELCOME_PR.to_owned(),
-        class: JobClass::Interactive,
-        org_id: Some(org_id),
-        connection: Some(connection),
-        queue_id: None,
-        payload: json!(request),
-        attempts: 0,
-    }
+    connection_job(org_id, connection, delivery_id, WELCOME_PR, json!(request))
 }
 
 /// The comment that welcomes a PR on a branch of a queue, with its
@@ -680,19 +650,17 @@ pub(crate) fn welcome(target_branch: &str) -> String {
     )
 }
 
-pub(crate) async fn execute_welcome(pool: PgPool, scm: Arc<dyn Scm>, job: Job) -> Outcome {
-    outcome(post_welcome(&pool, scm.as_ref(), &job).await)
-}
-
 /// Posts the welcome comment of the PR, once: a PR that has a comment of
 /// CIHub already keeps it. The first active queue of the branch decides
 /// whether the comment and the commands are on.
-async fn post_welcome(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Failure> {
+pub(crate) async fn post_welcome(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    _now: OffsetDateTime,
+) -> Result<(), Failure> {
     let request: WelcomePr = read_payload(job)?;
-    let query = |err| Failure::from(MergeQueueError::Query(err));
-    let mut lock = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut lock = begin_system(pool).await?;
     let queues =
         QueueTarget::queues_of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
     let Some(target) = queues.into_iter().find(|queue| queue.enabled) else {
@@ -710,8 +678,7 @@ async fn post_welcome(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Fai
     .bind(target.repo_id.to_string())
     .bind(number)
     .fetch_one(&mut *lock)
-    .await
-    .map_err(query)?;
+    .await?;
     if known {
         return Ok(());
     }
@@ -720,7 +687,7 @@ async fn post_welcome(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Fai
         .create_comment(&target.repo, request.pr_number, &body, job.class)
         .await?;
     keep_comment(&mut lock, &target, number, &id).await?;
-    lock.commit().await.map_err(query)?;
+    lock.commit().await?;
     info!(pr_number = request.pr_number, "welcome comment posted");
     Ok(())
 }

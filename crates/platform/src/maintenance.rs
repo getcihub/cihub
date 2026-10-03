@@ -1,5 +1,5 @@
 use cihub_domain::JobClass;
-use cihub_store::{begin_system, create_event_partitions};
+use cihub_store::{begin_system, create_event_partitions, next_month};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
@@ -13,14 +13,14 @@ pub const MAINTENANCE: &str = "maintenance";
 
 /// A processed delivery, or a delivery that no connection claimed, is
 /// deleted after this time (`DECISIONS.md` D130).
-pub const DELIVERY_RETENTION: Duration = Duration::days(7);
+pub(crate) const DELIVERY_RETENTION: Duration = Duration::days(7);
 
 /// A done job is deleted after this time.
-pub const DONE_JOB_RETENTION: Duration = Duration::days(3);
+pub(crate) const DONE_JOB_RETENTION: Duration = Duration::days(3);
 
 /// A partition of `events` is dropped once its month ended this long ago, and
 /// a snapshot covers each of its events (`DECISIONS.md` D57, D106).
-pub const EVENT_RETENTION: Duration = Duration::days(90);
+pub(crate) const EVENT_RETENTION: Duration = Duration::days(90);
 
 /// The maintenance job of `day`: its key admits one job per day, whatever the
 /// number of schedulers that request it.
@@ -100,17 +100,8 @@ fn partition_end(name: &str) -> Option<OffsetDateTime> {
     if name != format!("events_{year:04}_{month:02}") {
         return None;
     }
-    let month = Month::try_from(month).ok()?;
-    let (year, month) = match month {
-        Month::December => (year + 1, Month::January),
-        month => (year, month.next()),
-    };
-    Some(
-        Date::from_calendar_date(year, month, 1)
-            .ok()?
-            .with_time(Time::MIDNIGHT)
-            .assume_utc(),
-    )
+    let first_day = Date::from_calendar_date(year, Month::try_from(month).ok()?, 1).ok()?;
+    Some(next_month(first_day).with_time(Time::MIDNIGHT).assume_utc())
 }
 
 /// Drops the partitions of `events` whose month ended [`EVENT_RETENTION`]

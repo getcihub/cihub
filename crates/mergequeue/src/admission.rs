@@ -7,13 +7,10 @@ use std::time::Duration;
 
 use cihub_conditions::{Attribute, Check, Conditions, Context};
 use cihub_config::RepoConfig;
-use cihub_domain::{
-    BranchProtectionInjection, CheckConclusion, JobClass, Mergeability, Permission, Priority,
-};
-use cihub_scm::{PrSnapshot, RequiredChecks, Scm};
+use cihub_domain::{BranchProtectionInjection, JobClass, Mergeability, Permission, Priority};
+use cihub_scm::{PrSnapshot, RequiredChecks, Scm, check_passed};
 use time::OffsetDateTime;
 
-use crate::MergeQueueError;
 use crate::jobs::Failure;
 use crate::target::QueueTarget;
 
@@ -24,17 +21,13 @@ pub(crate) struct Sender {
     pub permission: Option<Permission>,
 }
 
-/// The `queue_conditions` of the entry of the queue in its last valid file;
-/// none without a file or an entry (D138).
-fn queue_conditions(target: &QueueTarget) -> Result<Conditions, MergeQueueError> {
-    let Some(text) = &target.config_text else {
-        return Ok(Conditions::default());
-    };
-    let config = RepoConfig::parse(text).map_err(MergeQueueError::Settings)?;
-    Ok(config
-        .queue(&target.target_branch, &target.name)
+/// The `queue_conditions` of the entry of the queue in `config`, its last
+/// valid file; none without a file or an entry (D138).
+fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Conditions {
+    config
+        .and_then(|config| config.queue(&target.target_branch, &target.name))
         .map(|queue| queue.queue_conditions.clone())
-        .unwrap_or_default())
+        .unwrap_or_default()
 }
 
 /// The context of the conditions for `pr`, before its admission: the PR is
@@ -90,29 +83,29 @@ pub(crate) struct Reading<'a> {
 }
 
 /// The `queue_conditions` of the queue of `target` that `pr` does not meet,
-/// as the file writes them, then, with `branch_protection_injection: both`,
+/// as `config`, the last valid file of the queue, writes them, then, with `branch_protection_injection: both`,
 /// each check that the rules require and that has not passed on the head of
 /// the PR, as `check-success = <name>` (D147). The files and the review
 /// threads are read only when a condition uses them (D143).
 pub(crate) async fn unmet_conditions(
     scm: &dyn Scm,
     target: &QueueTarget,
+    config: Option<&RepoConfig>,
     pr: &PrSnapshot,
     reading: &Reading<'_>,
 ) -> Result<Vec<String>, Failure> {
-    let mut unmet = file_conditions(scm, target, pr, reading).await?;
-    if target.settings()?.branch_protection_injection.value == BranchProtectionInjection::Both {
-        let passed = |name: &str| {
-            pr.checks.iter().any(|check| {
-                check.name == name && check.conclusion.is_some_and(CheckConclusion::is_passing)
-            })
-        };
+    let mut unmet = file_conditions(scm, target, config, pr, reading).await?;
+    let injection = target
+        .settings_in(config)?
+        .branch_protection_injection
+        .value;
+    if injection == BranchProtectionInjection::Both {
         unmet.extend(
             reading
                 .rules
                 .names
                 .iter()
-                .filter(|name| *name != reading.own_status && !passed(name))
+                .filter(|name| *name != reading.own_status && !check_passed(pr, name))
                 .map(|name| format!("check-success = {name}")),
         );
     }
@@ -122,10 +115,11 @@ pub(crate) async fn unmet_conditions(
 async fn file_conditions(
     scm: &dyn Scm,
     target: &QueueTarget,
+    config: Option<&RepoConfig>,
     pr: &PrSnapshot,
     reading: &Reading<'_>,
 ) -> Result<Vec<String>, Failure> {
-    let conditions = queue_conditions(target)?;
+    let conditions = queue_conditions(target, config);
     if conditions.0.is_empty() {
         return Ok(Vec::new());
     }
@@ -159,17 +153,17 @@ async fn loaded_context(
 }
 
 /// The priority of the first rule of `priority_rules` that `pr` meets, in
-/// the last valid file of the queue that it enters (D148).
+/// `config`, the last valid file of the queue that it enters (D148).
 pub(crate) async fn rule_priority(
     scm: &dyn Scm,
     target: &QueueTarget,
+    config: Option<&RepoConfig>,
     pr: &PrSnapshot,
     reading: &Reading<'_>,
 ) -> Result<Option<Priority>, Failure> {
-    let Some(text) = &target.config_text else {
+    let Some(config) = config else {
         return Ok(None);
     };
-    let config = RepoConfig::parse(text).map_err(MergeQueueError::Settings)?;
     let rules = &config.priority_rules;
     if rules.is_empty() {
         return Ok(None);
@@ -192,53 +186,11 @@ pub(crate) async fn rule_priority(
 mod tests {
     use std::collections::BTreeSet;
 
-    use cihub_domain::{CheckKind, CheckReport, PrState, ReviewDecision};
-    use cihub_scm::ScmUser;
+    use cihub_domain::ReviewDecision;
     use cihub_scm::sim::Sim;
 
     use super::*;
-    use crate::target::test_target;
-
-    fn pr(checks: &[(&str, bool)]) -> PrSnapshot {
-        PrSnapshot {
-            number: 1,
-            state: PrState::Open,
-            head_sha: "a".into(),
-            base_branch: "main".into(),
-            head_branch: "feature".into(),
-            from_fork: false,
-            created_at: OffsetDateTime::UNIX_EPOCH,
-            draft: false,
-            title: "PR 1".into(),
-            body: String::new(),
-            labels: BTreeSet::from(["ready".to_owned()]),
-            mergeability: Mergeability::Blocked,
-            review_decision: ReviewDecision::Approved,
-            approved_by: BTreeSet::new(),
-            changes_requested_by: BTreeSet::new(),
-            review_requested: BTreeSet::new(),
-            checks: checks
-                .iter()
-                .map(|(name, passed)| CheckReport {
-                    name: (*name).into(),
-                    kind: CheckKind::Check,
-                    conclusion: Some(if *passed {
-                        CheckConclusion::Success
-                    } else {
-                        CheckConclusion::Failure
-                    }),
-                    details_url: None,
-                })
-                .collect(),
-            author: ScmUser {
-                external_id: "1".into(),
-                login: "octocat".into(),
-            },
-            additions: 1,
-            deletions: 0,
-            changed_files: 1,
-        }
-    }
+    use crate::target::{test_pr, test_target};
 
     async fn unmet(injection: &str, checks: &[(&str, bool)]) -> Vec<String> {
         let mut target = test_target();
@@ -257,7 +209,10 @@ mod tests {
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
         };
-        let result = unmet_conditions(&Sim::new(), &target, &pr(checks), &reading).await;
+        let mut pr = test_pr(Mergeability::Blocked, ReviewDecision::Approved, checks);
+        pr.labels.insert("ready".to_owned());
+        let config = target.config().unwrap();
+        let result = unmet_conditions(&Sim::new(), &target, config.as_ref(), &pr, &reading).await;
         result.unwrap_or_else(|_| panic!("the conditions evaluate"))
     }
 

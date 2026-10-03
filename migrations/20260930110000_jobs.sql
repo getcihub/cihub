@@ -43,8 +43,4 @@ CREATE INDEX jobs_ready ON jobs (class, run_after) WHERE state = 'queued';
 
 CREATE INDEX jobs_running ON jobs (connection_id, locked_until) WHERE state = 'running';
 
-ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE jobs FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON jobs
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+SELECT cihub_tenant_table('jobs');

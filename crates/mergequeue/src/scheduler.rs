@@ -17,13 +17,13 @@ use cihub_domain::{
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
-    Delivery, Job, QueueWakeup, TICK, Wake, acquire_leases, begin_reconciliation, enqueue_job,
+    Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, enqueue_job,
     mark_dirty, mark_processed, pending_deliveries, release_leases, schedule_tick,
 };
-use cihub_scm::{MAX_PRS_PER_READ, ScmDelivery, ScmEvent, ScmUser};
+use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
 use serde_json::Value;
-use sqlx::PgConnection;
+use sqlx::{PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
@@ -34,26 +34,27 @@ use crate::command::{
 };
 use crate::config::load_config;
 use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
+use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
 use crate::surfaces::{WelcomePr, converge_surfaces, welcome_job};
 use crate::target::QueueTarget;
-use crate::{COVER_AFTER, MergeQueueError, QueueLog};
+use crate::{MergeQueueError, QueueLog, parse_id};
 
 /// The translation of a delivery of the SCM by its adapter (`DECISIONS.md` D84).
 pub type Translate =
     Arc<dyn Fn(&str, &Value) -> Result<ScmDelivery, Box<dyn Error + Send + Sync>> + Send + Sync>;
 
 /// A pass takes at most this many leases.
-pub const LEASES_PER_PASS: i64 = 50;
+pub(crate) const LEASES_PER_PASS: i64 = 50;
 
 /// A reconciliation reads at most this many deliveries and facts; the rest
 /// waits for the next one, which the queue, still dirty, asks for at once.
-pub const INBOX_PER_RECONCILIATION: i64 = 200;
+pub(crate) const INBOX_PER_RECONCILIATION: i64 = 200;
 
 /// A pass over the deliveries of the connections reads at most this many.
-pub const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
+pub(crate) const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
 
 /// What a reconciliation needs besides the queue.
 #[derive(Clone)]
@@ -219,9 +220,7 @@ impl Reconciler {
             jobs.push(load_config(target, &head.value));
         }
         for (point, prs) in reads_by_point(&converge.desired.observe) {
-            for (chunk, prs) in prs.chunks(MAX_PRS_PER_READ).enumerate() {
-                jobs.push(refresh_at(target, point, chunk, prs.to_vec()));
-            }
+            jobs.extend(refresh_at(target, point, &prs));
         }
         for read in &converge.desired.check_reads {
             jobs.push(refresh_checks(target, read));
@@ -335,17 +334,14 @@ impl Work<'_> {
                     && self.settings.comments_enabled.value
                     && self.settings.commands_enabled.value
                 {
-                    let request = WelcomePr {
-                        repo_id: self.target.repo_id,
-                        pr_number: number,
-                        base_branch,
-                    };
                     let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
-                    jobs.push(welcome_job(
+                    jobs.push(welcome(
                         self.target.org_id,
                         connection,
                         delivery_id,
-                        &request,
+                        self.target.repo_id,
+                        number,
+                        base_branch,
                     ));
                 }
                 let tracked = snapshot.current_item(number).is_some()
@@ -354,20 +350,11 @@ impl Work<'_> {
                     });
                 if tracked {
                     jobs.push(refresh_after(self.target, delivery_id, vec![number]));
-                } else if self.settings.label_commands_enabled.value
-                    && label_added.as_deref() == Some(self.settings.enqueue_label.value.as_str())
+                } else if let Some(label) = label_added
+                    && self.settings.label_commands_enabled.value
+                    && label == self.settings.enqueue_label.value
                 {
-                    let request = SubmitPr {
-                        repo_id: self.target.repo_id,
-                        pr_number: number,
-                        via: SubmittedVia::Label,
-                        requested_by: None,
-                        priority: None,
-                        no_batch: false,
-                        direct: false,
-                        queue: None,
-                        label: label_added,
-                    };
+                    let request = SubmitPr::by_label(self.target.repo_id, number, label);
                     let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
                     jobs.push(submit(
                         self.target.org_id,
@@ -488,6 +475,24 @@ impl Work<'_> {
     }
 }
 
+/// The welcome of the PR `pr_number` of `repo_id`, opened on `base_branch`,
+/// after the delivery `delivery_id` (`DECISIONS.md` D163).
+fn welcome(
+    org_id: OrgId,
+    connection: (ScmInstanceId, ConnectionId),
+    delivery_id: &str,
+    repo_id: RepoId,
+    pr_number: u64,
+    base_branch: String,
+) -> Job {
+    let request = WelcomePr {
+        repo_id,
+        pr_number,
+        base_branch,
+    };
+    welcome_job(org_id, connection, delivery_id, &request)
+}
+
 /// A delivery of a connection without a queue.
 struct ConnectionDelivery {
     instance: ScmInstanceId,
@@ -536,14 +541,10 @@ pub async fn pass_connection_deliveries(
     .map_err(MergeQueueError::Query)?;
     let count = rows.len();
     for (instance, delivery_id, org_id, connection, event, payload, received_at) in rows {
-        let read = |source| MergeQueueError::ReadQueue {
-            id: delivery_id.clone(),
-            source,
-        };
         let delivery = ConnectionDelivery {
-            instance: instance.parse().map_err(read)?,
-            org_id: org_id.parse().map_err(read)?,
-            connection: connection.parse().map_err(read)?,
+            instance: parse_id(&instance, &delivery_id)?,
+            org_id: parse_id(&org_id, &delivery_id)?,
+            connection: parse_id(&connection, &delivery_id)?,
             delivery_id: delivery_id.clone(),
             received_at,
         };
@@ -696,9 +697,7 @@ async fn give_to_queues(
     .await
     .map_err(MergeQueueError::Query)?;
     for queue in queues {
-        let queue_id: QueueId = queue
-            .parse()
-            .map_err(|source| MergeQueueError::ReadQueue { id: queue, source })?;
+        let queue_id: QueueId = parse_id(&queue, &queue)?;
         let fact = Event {
             id: new_event_id(),
             org_id: delivery.org_id,
@@ -761,11 +760,7 @@ async fn repo_of(
             .fetch_optional(&mut *conn)
             .await
             .map_err(MergeQueueError::Query)?;
-    repo.map(|id| {
-        id.parse()
-            .map_err(|source| MergeQueueError::ReadQueue { id, source })
-    })
-    .transpose()
+    repo.map(|id| parse_id(&id, &id)).transpose()
 }
 
 /// Gives `change` to the queue of the live item of its PR, which reads the
@@ -788,13 +783,15 @@ async fn route_pr_change(
             .iter()
             .any(|queue| queue.enabled)
     {
-        let request = WelcomePr {
-            repo_id: repo,
-            pr_number: change.number,
-            base_branch: change.base_branch.to_owned(),
-        };
         let connection = (delivery.instance, delivery.connection);
-        let job = welcome_job(delivery.org_id, connection, &delivery.delivery_id, &request);
+        let job = welcome(
+            delivery.org_id,
+            connection,
+            &delivery.delivery_id,
+            repo,
+            change.number,
+            change.base_branch.to_owned(),
+        );
         enqueue_job(conn, &job, now, now)
             .await
             .map_err(MergeQueueError::Platform)?;
@@ -809,10 +806,7 @@ async fn route_pr_change(
     .await
     .map_err(MergeQueueError::Query)?;
     let job = if let Some(queue) = live {
-        let queue: QueueId = queue
-            .parse()
-            .map_err(|source| MergeQueueError::ReadQueue { id: queue, source })?;
-        let target = QueueTarget::load(conn, queue).await?;
+        let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
         refresh_after(&target, &delivery.delivery_id, vec![change.number])
     } else {
         let Some(label) = change.label_added else {
@@ -827,17 +821,7 @@ async fn route_pr_change(
         if !wanted {
             return Ok(());
         }
-        let request = SubmitPr {
-            repo_id: repo,
-            pr_number: change.number,
-            via: SubmittedVia::Label,
-            requested_by: None,
-            priority: None,
-            no_batch: false,
-            direct: false,
-            queue: None,
-            label: Some(label),
-        };
+        let request = SubmitPr::by_label(repo, change.number, label);
         let connection = (delivery.instance, delivery.connection);
         submit(delivery.org_id, connection, &delivery.delivery_id, &request)
     };
@@ -919,7 +903,7 @@ async fn request_submission(
 }
 
 /// The scheduler looks for the queues to cover this often (`DECISIONS.md` D106).
-pub const COVER_EVERY: time::Duration = time::Duration::hours(1);
+pub(crate) const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
 /// Marks dirty the queues of the organizations with the module whose oldest
 /// event after their last snapshot is older than [`COVER_AFTER`]: their
@@ -943,12 +927,17 @@ pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize,
     .fetch_all(&mut *tx)
     .await
     .map_err(MergeQueueError::Query)?;
-    for queue in &queues {
-        let queue_id: QueueId = queue.parse().map_err(|source| MergeQueueError::ReadQueue {
-            id: queue.clone(),
-            source,
-        })?;
-        mark_dirty(&mut tx, queue_id)
+    mark_queues_dirty(tx, &queues).await
+}
+
+/// Marks dirty each of `queues` in `tx`, then commits it; returns their
+/// number.
+async fn mark_queues_dirty(
+    mut tx: Transaction<'static, Postgres>,
+    queues: &[String],
+) -> Result<usize, MergeQueueError> {
+    for queue in queues {
+        mark_dirty(&mut tx, parse_id(queue, queue)?)
             .await
             .map_err(MergeQueueError::Platform)?;
     }
@@ -976,17 +965,7 @@ pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
     .fetch_all(&mut *tx)
     .await
     .map_err(MergeQueueError::Query)?;
-    for queue in &queues {
-        let queue_id: QueueId = queue.parse().map_err(|source| MergeQueueError::ReadQueue {
-            id: queue.clone(),
-            source,
-        })?;
-        mark_dirty(&mut tx, queue_id)
-            .await
-            .map_err(MergeQueueError::Platform)?;
-    }
-    tx.commit().await.map_err(MergeQueueError::Query)?;
-    Ok(queues.len())
+    mark_queues_dirty(tx, &queues).await
 }
 
 /// Wakes the live queues once, then takes the leases of the queues that have
@@ -997,7 +976,7 @@ pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
 /// # Errors
 ///
 /// Postgres cannot be reached at the start, to listen to the queues.
-pub async fn run_scheduler(
+pub(crate) async fn run_scheduler(
     pool: PgPool,
     owner: String,
     reconciler: Reconciler,
@@ -1047,16 +1026,9 @@ pub async fn run_scheduler(
         if i64::try_from(queues.len()).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
             continue;
         }
-        match wakeup.wait(TICK, &cancel).await {
-            Ok(Wake::Notified | Wake::Tick | Wake::Cancelled) => {}
-            Err(err) => {
-                warn!(error = &err as &dyn Error, "queue notifications lost");
-                tokio::select! {
-                    () = cancel.cancelled() => {}
-                    () = tokio::time::sleep(TICK) => {}
-                }
-            }
-        }
+        wakeup
+            .wait_or_pause(TICK, &cancel, "queue notifications lost")
+            .await;
     }
     let mut tx = begin_system(&pool).await.map_err(MergeQueueError::Store)?;
     release_leases(&mut tx, &owner)

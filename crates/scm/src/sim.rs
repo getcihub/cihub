@@ -209,31 +209,32 @@ impl Sim {
     /// branch `default_branch`, and returns the commit.
     pub fn add_repo(&self, repo: &RepoRef, default_branch: &str, files: &[(&str, &str)]) -> String {
         self.with(|state| {
-            let sha = state.new_sha();
             let tree = files
                 .iter()
                 .map(|(path, content)| ((*path).to_owned(), (*content).to_owned()))
                 .collect();
-            let commit = Commit {
-                parents: Vec::new(),
-                tree,
+            let empty = Repo {
+                connection: repo.connection.external_id.clone(),
+                namespace: repo.namespace.clone(),
+                name: repo.name.clone(),
+                default_branch: default_branch.to_owned(),
+                commits: HashMap::new(),
+                branches: BTreeMap::new(),
+                prs: BTreeMap::new(),
+                checks: HashMap::new(),
+                comments: BTreeMap::new(),
+                rules: BTreeMap::new(),
+                permissions: BTreeMap::new(),
             };
-            state.repos.insert(
-                repo.external_id.clone(),
-                Repo {
-                    connection: repo.connection.external_id.clone(),
-                    namespace: repo.namespace.clone(),
-                    name: repo.name.clone(),
-                    default_branch: default_branch.to_owned(),
-                    commits: HashMap::from([(sha.clone(), commit)]),
-                    branches: BTreeMap::from([(default_branch.to_owned(), sha.clone())]),
-                    prs: BTreeMap::new(),
-                    checks: HashMap::new(),
-                    comments: BTreeMap::new(),
-                    rules: BTreeMap::new(),
-                    permissions: BTreeMap::new(),
-                },
-            );
+            let added = state
+                .repos
+                .entry(repo.external_id.clone())
+                .insert_entry(empty)
+                .into_mut();
+            let sha = added.new_commit(&mut state.next_sha, Vec::new(), tree);
+            added
+                .branches
+                .insert(default_branch.to_owned(), sha.clone());
             sha
         })
     }
@@ -320,28 +321,6 @@ impl Sim {
             } else {
                 ctx.pr_changed(number);
             }
-            Ok(())
-        })
-    }
-
-    /// Sets the title and the description of the PR `number`, and sends its
-    /// delivery. A PR opened by [`Sim::open_pr`] has its head branch as title.
-    ///
-    /// # Errors
-    ///
-    /// `NotFound` for an unknown repository or PR.
-    pub fn edit_pr(
-        &self,
-        repo: &RepoRef,
-        number: u64,
-        title: &str,
-        body: &str,
-    ) -> Result<(), ScmError> {
-        self.with_repo(&repo.external_id, |ctx| {
-            let pr = ctx.repo.pr_mut(number)?;
-            title.clone_into(&mut pr.title);
-            body.clone_into(&mut pr.body);
-            ctx.pr_changed(number);
             Ok(())
         })
     }
@@ -634,19 +613,14 @@ impl Sim {
         class: JobClass,
         run: impl FnOnce(&mut Ctx<'_>) -> Result<T, ScmError>,
     ) -> ScmFuture<'_, T> {
-        let result = self.with(|state| {
-            state.calls.push(SimCall { name, class });
-            if let Some(error) = state.take_fault(name) {
-                return Err(error);
-            }
+        self.instance_call(name, class, |state| {
             if state.lost.contains(&repo.connection.external_id) {
                 return Err(ScmError::AccessLost("connection suspended".into()));
             }
             state
                 .ctx(&repo.external_id)
                 .and_then(|mut ctx| run(&mut ctx))
-        });
-        Box::pin(std::future::ready(result))
+        })
     }
 }
 
@@ -661,11 +635,6 @@ pub enum PrChange {
 }
 
 impl State {
-    fn new_sha(&mut self) -> String {
-        self.next_sha += 1;
-        format!("{:040x}", self.next_sha)
-    }
-
     fn take_fault(&mut self, name: &str) -> Option<ScmError> {
         let Some(index) = self
             .faults
@@ -722,12 +691,7 @@ impl Ctx<'_> {
     }
 
     fn new_commit(&mut self, parents: Vec<String>, tree: Tree) -> String {
-        *self.next_sha += 1;
-        let sha = format!("{:040x}", *self.next_sha);
-        self.repo
-            .commits
-            .insert(sha.clone(), Commit { parents, tree });
-        sha
+        self.repo.new_commit(self.next_sha, parents, tree)
     }
 
     fn move_branch(&mut self, branch: &str, sha: Option<&str>, sender: &ScmUser) {
@@ -761,10 +725,6 @@ impl Ctx<'_> {
 
     fn pr_changed(&mut self, number: u64) {
         self.pr_event(number, None, false);
-    }
-
-    fn pr_labeled(&mut self, number: u64, label_added: Option<String>) {
-        self.pr_event(number, label_added, false);
     }
 
     /// The PR became ready for review (`DECISIONS.md` D163).
@@ -899,6 +859,15 @@ impl Ctx<'_> {
 }
 
 impl Repo {
+    /// Adds a commit and returns it. `next_sha` is the counter of the
+    /// simulator, so that no two repositories share a commit.
+    fn new_commit(&mut self, next_sha: &mut u64, parents: Vec<String>, tree: Tree) -> String {
+        *next_sha += 1;
+        let sha = format!("{next_sha:040x}");
+        self.commits.insert(sha.clone(), Commit { parents, tree });
+        sha
+    }
+
     fn tree(&self, sha: &str) -> Result<&Tree, ScmError> {
         self.commits
             .get(sha)
@@ -1026,44 +995,33 @@ impl Repo {
         })
     }
 
-    /// The paths that the PR `number` changes, from the merge base with its
-    /// base branch.
-    fn changed_files(&self, number: u64) -> Result<Vec<String>, ScmError> {
-        let pr = self.pr(number)?;
-        let head = self.head(pr);
+    /// The paths that the PR changes, from the merge base of `head` with its
+    /// base branch, with `true` for a path that the head deletes. Without a
+    /// merge base, nothing is a change.
+    fn changes(&self, pr: &Pr, head: &str) -> Result<BTreeMap<String, bool>, ScmError> {
         let base = self.branch_head(&pr.base_branch)?;
-        let (base_tree, head_tree) = match self.merge_base(&base, &head) {
-            Some(fork) => (self.tree(&fork)?, self.tree(&head)?),
-            None => (self.tree(&head)?, self.tree(&head)?),
+        let (base_tree, head_tree) = match self.merge_base(&base, head) {
+            Some(fork) => (self.tree(&fork)?, self.tree(head)?),
+            None => (self.tree(head)?, self.tree(head)?),
         };
-        let changed: BTreeSet<&String> = base_tree
+        Ok(base_tree
             .keys()
             .chain(head_tree.keys())
             .filter(|path| base_tree.get(*path) != head_tree.get(*path))
-            .collect();
-        Ok(changed.into_iter().cloned().collect())
+            .map(|path| (path.clone(), !head_tree.contains_key(path)))
+            .collect())
+    }
+
+    fn changed_files(&self, number: u64) -> Result<Vec<String>, ScmError> {
+        let pr = self.pr(number)?;
+        Ok(self.changes(pr, &self.head(pr))?.into_keys().collect())
     }
 
     fn snapshot(&self, number: u64) -> Result<PrSnapshot, ScmError> {
-        let pr = self
-            .prs
-            .get(&number)
-            .ok_or_else(|| ScmError::NotFound(format!("PR {number}")))?;
+        let pr = self.pr(number)?;
         let head = self.head(pr);
-        let base = self.branch_head(&pr.base_branch)?;
-        let (base_tree, head_tree) = match self.merge_base(&base, &head) {
-            Some(fork) => (self.tree(&fork)?, self.tree(&head)?),
-            None => (self.tree(&head)?, self.tree(&head)?),
-        };
-        let changed: BTreeSet<&String> = base_tree
-            .keys()
-            .chain(head_tree.keys())
-            .filter(|path| base_tree.get(*path) != head_tree.get(*path))
-            .collect();
-        let deletions = changed
-            .iter()
-            .filter(|path| !head_tree.contains_key(**path))
-            .count();
+        let changes = self.changes(pr, &head)?;
+        let deletions = changes.values().filter(|deleted| **deleted).count();
         let mergeability = if pr.state == PrState::Open {
             self.mergeability(pr, &head)?
         } else {
@@ -1089,9 +1047,9 @@ impl Repo {
             review_requested: pr.reviews.requested.clone(),
             checks: self.checks.get(&head).cloned().unwrap_or_default(),
             author: pr.author.clone(),
-            additions: (changed.len() - deletions) as u64,
+            additions: (changes.len() - deletions) as u64,
             deletions: deletions as u64,
-            changed_files: changed.len() as u64,
+            changed_files: changes.len() as u64,
         })
     }
 }
@@ -1113,17 +1071,6 @@ impl Scm for Sim {
                 .filter(|number| ctx.repo.prs.contains_key(number))
                 .map(|number| ctx.repo.snapshot(number))
                 .collect()
-        })
-    }
-
-    fn pull_request<'a>(
-        &'a self,
-        repo: &'a RepoRef,
-        number: u64,
-        class: JobClass,
-    ) -> ScmFuture<'a, PrSnapshot> {
-        self.call("pull_request", repo, class, move |ctx| {
-            ctx.repo.snapshot(number)
         })
     }
 
@@ -1204,11 +1151,9 @@ impl Scm for Sim {
     ) -> ScmFuture<'a, bool> {
         self.call("is_ancestor", repo, class, move |ctx| {
             for sha in [ancestor, descendant] {
-                if !ctx.repo.commits.contains_key(sha) {
-                    return Err(ScmError::NotFound(format!("commit {sha}")));
-                }
+                ctx.repo.tree(sha)?;
             }
-            Ok(ctx.repo.ancestors(descendant).contains(ancestor))
+            Ok(ctx.repo.is_ancestor(ancestor, descendant))
         })
     }
 
@@ -1414,7 +1359,7 @@ impl Scm for Sim {
         let label = label.to_owned();
         self.call("add_label", repo, class, move |ctx| {
             if ctx.repo.pr_mut(number)?.labels.insert(label.clone()) {
-                ctx.pr_labeled(number, Some(label));
+                ctx.pr_event(number, Some(label), false);
             }
             Ok(())
         })
@@ -1691,7 +1636,7 @@ mod tests {
         let (sim, fixture) = contract_world(&repo).unwrap();
         let until = time::OffsetDateTime::UNIX_EPOCH;
         sim.fail(Fault {
-            call: Some("pull_request"),
+            call: Some("pull_requests"),
             error: ScmError::RateLimited { until },
             times: 2,
         });

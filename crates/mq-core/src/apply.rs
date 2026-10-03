@@ -3,8 +3,8 @@
 
 use cihub_domain::{
     Actor, CheckObservation, Event, EventId, EventKind, GroupId, GroupState, Item, ItemId,
-    ItemState, JobError, Mergeability, QueueControl, QueueState, Reason, RunId, RunStatus,
-    TestGroup, TestRun, TransitionError, check_transition,
+    ItemState, JobError, Mergeability, QueueState, Reason, RunId, RunStatus, TestGroup, TestRun,
+    TransitionError, check_transition,
 };
 
 use crate::Snapshot;
@@ -742,7 +742,7 @@ fn set_cause(snapshot: &mut Snapshot, subject: Subject, event: &Event) {
 }
 
 /// A request that no decision can answer any more.
-pub(crate) fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
+fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
     let item_in = |item_id: &ItemId, states: &[ItemState]| {
         snapshot
             .items
@@ -790,14 +790,12 @@ pub(crate) fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
                 ItemState::TestsPassed
             }],
         ),
-        Request::Control(control) => {
-            let to = match control {
-                QueueControl::Pause => QueueState::Paused,
-                QueueControl::Resume => QueueState::Running,
-                QueueControl::Drain => QueueState::Draining,
-            };
-            check_transition(Some(snapshot.state), to, Reason::AdminRequested).is_ok()
-        }
+        Request::Control(control) => check_transition(
+            Some(snapshot.state),
+            control.target(),
+            Reason::AdminRequested,
+        )
+        .is_ok(),
         Request::AccessLost => snapshot.state != QueueState::Paused,
         Request::AccessRestored => snapshot.state == QueueState::Paused,
     }

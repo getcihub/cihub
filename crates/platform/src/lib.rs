@@ -21,36 +21,25 @@ mod wake;
 mod worker;
 
 pub use api::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery};
-pub use budget::{BUDGET_WRITE_EVERY, ConnectionBudget, record_budgets, run_budget_writer};
+pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{
-    BOOTSTRAP_TOKEN, Bootstrapped, SYNC_REPOS, bootstrap, request_repo_sync, request_repo_syncs,
-    run_sync_repos, sync_repos_executor, sync_repos_job,
+    Bootstrapped, SYNC_REPOS, bootstrap, request_repo_syncs, run_sync_repos, sync_repos_executor,
+    sync_repos_job,
 };
-pub use inbox::{Delivery, INBOX_CHANNEL, mark_processed, pending_deliveries, store_delivery};
+pub use inbox::{Delivery, mark_processed, pending_deliveries, store_delivery};
 pub use jobs::{
-    JOB_CHANNEL, JOB_LOCK, JOBS_PER_CONNECTION, Job, MAX_ATTEMPTS, Retry, backoff, claim_jobs,
-    complete_job, enqueue_job, fail_job,
+    JOB_LOCK, JOBS_PER_CONNECTION, Job, MAX_ATTEMPTS, Retry, backoff, claim_jobs, complete_job,
+    enqueue_job, fail_job,
 };
 pub use lease::{LEASE_TTL, acquire_leases, lock_queue, release_leases};
 pub use maintenance::{
-    DELIVERY_RETENTION, DONE_JOB_RETENTION, EVENT_RETENTION, MAINTENANCE, execute_maintenance,
-    maintenance_job, request_maintenance, run_maintenance,
+    MAINTENANCE, execute_maintenance, maintenance_job, request_maintenance, run_maintenance,
 };
-pub use module::{LoopError, Module, ModuleApi, ModuleLoop, module_enabled};
-pub use routing::{
-    ROUTE_POLL, ROUTES_PER_PASS, Route, UnroutedDelivery, find_route, route_delivery, run_router,
-    unrouted_deliveries,
-};
-pub use sweep::{
-    SWEEP_DELIVERIES, SWEEP_EVERY, SWEEP_LOOKBACK, request_sweep, run_sweep, sweep_executor,
-    sweep_job,
-};
-pub use wake::{
-    QUEUE_CHANNEL, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
-};
-pub use worker::{
-    Executors, JOB_POLL, JOB_TIMEOUT, JOBS_PER_CLAIM, Outcome, error_chain, run_worker,
-};
+pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
+pub use routing::{ROUTE_POLL, Route, find_route, run_router};
+pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
+pub use wake::{QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick};
+pub use worker::{Executors, JOB_POLL, Outcome, error_chain, run_worker};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {
@@ -60,30 +49,28 @@ pub enum PlatformError {
     Store(#[source] cihub_store::StoreError),
     #[error("SCM call failed")]
     Scm(#[source] cihub_scm::ScmError),
-    #[error("queue {id} does not match the identifiers of cihub-domain")]
-    ReadQueue {
+    #[error("{what} {id} does not match cihub-domain")]
+    Read {
+        what: &'static str,
         id: String,
-        #[source]
-        source: cihub_domain::IdParseError,
-    },
-    #[error("connection {id} does not match the identifiers of cihub-domain")]
-    ReadConnection {
-        id: String,
-        #[source]
-        source: cihub_domain::IdParseError,
-    },
-    #[error("job {0} has no connection")]
-    JobWithoutConnection(String),
-    #[error("delivery {id} does not match the identifiers of cihub-domain")]
-    ReadDelivery {
-        id: String,
-        #[source]
-        source: cihub_domain::IdParseError,
-    },
-    #[error("job {key} does not match the vocabulary of cihub-domain")]
-    ReadJob {
-        key: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+    #[error("job {0} has no connection")]
+    JobWithoutConnection(String),
+}
+
+impl PlatformError {
+    /// The error of the row `id` of `what` that does not decode.
+    pub(crate) fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
+        what: &'static str,
+        id: &str,
+    ) -> impl FnOnce(E) -> Self {
+        let id = id.to_owned();
+        move |source| Self::Read {
+            what,
+            id,
+            source: source.into(),
+        }
+    }
 }

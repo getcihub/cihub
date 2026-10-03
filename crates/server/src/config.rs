@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
 use anyhow::{Context, bail};
+use cihub_github::GithubConfig;
 use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde::Serialize;
@@ -56,10 +57,8 @@ pub struct Config {
 /// The GitHub App of the instance, created by hand (`DECISIONS.md` D79, D92).
 #[derive(Debug)]
 pub struct GithubApp {
-    /// github.com or a GitHub Enterprise Server, without a final `/`.
-    pub url: String,
-    pub app_id: String,
-    pub private_key: SecretString,
+    /// How to reach the App; its URL has no final `/`.
+    pub config: GithubConfig,
     pub webhook_secret: SecretString,
 }
 
@@ -130,9 +129,11 @@ fn github_app(get: &impl Fn(&str) -> Option<String>) -> anyhow::Result<Option<Gi
     };
     let url = get("CIHUB_GITHUB_URL").unwrap_or_else(|| DEFAULT_GITHUB_URL.to_owned());
     Ok(Some(GithubApp {
-        url: url.trim_end_matches('/').to_owned(),
-        app_id,
-        private_key: private_key.into(),
+        config: GithubConfig {
+            url: url.trim_end_matches('/').to_owned(),
+            app_id,
+            private_key: private_key.into(),
+        },
         webhook_secret: webhook_secret.into(),
     }))
 }
@@ -211,8 +212,8 @@ mod tests {
         .unwrap()
         .github
         .unwrap();
-        assert_eq!(app.url, DEFAULT_GITHUB_URL);
-        assert_eq!(app.app_id, "123");
+        assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
+        assert_eq!(app.config.app_id, "123");
     }
 
     #[test]

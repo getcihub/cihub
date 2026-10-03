@@ -19,9 +19,35 @@ CREATE FUNCTION cihub_system() RETURNS boolean
 LANGUAGE sql STABLE
 AS $$ SELECT coalesce(current_setting('cihub.system', true), '') = 'on' $$;
 
+-- Enables and forces row level security on `tenant_table`, with the `tenant`
+-- policy. The tenant of a row is its `org_id`; `orgs` is its own tenant.
+CREATE FUNCTION cihub_tenant_table(tenant_table regclass) RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    tenant_column text := CASE
+        WHEN EXISTS (
+            SELECT 1 FROM pg_attribute
+            WHERE attrelid = tenant_table AND attname = 'org_id' AND NOT attisdropped
+        ) THEN 'org_id'
+        ELSE 'id'
+    END;
+BEGIN
+    EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', tenant_table);
+    EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', tenant_table);
+    EXECUTE format(
+        'CREATE POLICY tenant ON %s
+            USING (cihub_system() OR %I = cihub_org_id())
+            WITH CHECK (cihub_system() OR %I = cihub_org_id())',
+        tenant_table, tenant_column, tenant_column
+    );
+END
+$$;
+
 CREATE TYPE membership_role AS ENUM ('admin', 'member', 'viewer');
 CREATE TYPE scm_kind AS ENUM ('github');
 CREATE TYPE connection_kind AS ENUM ('github_app', 'github_sudo_app');
+CREATE TYPE connection_mode AS ENUM ('normal', 'throttled', 'scm_unavailable', 'paused');
 CREATE TYPE api_scope AS ENUM (
     'queues:read', 'queues:write', 'prs:write', 'targets:write', 'metrics:read'
 );
@@ -54,16 +80,29 @@ CREATE TABLE scm_accounts (
 CREATE INDEX scm_accounts_org_id ON scm_accounts (org_id);
 
 -- How CIHub reaches the repositories of an account: a GitHub App installation.
+--
+-- The budget and the mode of the connection (DECISIONS.md D70, D77): each
+-- process keeps the rate limit headers of the SCM in memory and writes them
+-- here at most every 5 s; a pause after a 429 or a change of mode is written
+-- at once. The claim of the jobs skips a connection until `paused_until`.
 CREATE TABLE scm_connections (
-    id              text            PRIMARY KEY,
-    org_id          text            NOT NULL REFERENCES orgs (id),
-    scm_instance_id text            NOT NULL,
-    scm_account_id  text            NOT NULL,
-    kind            connection_kind NOT NULL,
-    external_id     text            NOT NULL,
-    suspended_at    timestamptz,
-    claimed_at      timestamptz,
-    created_at      timestamptz     NOT NULL DEFAULT now(),
+    id                   text            PRIMARY KEY,
+    org_id               text            NOT NULL REFERENCES orgs (id),
+    scm_instance_id      text            NOT NULL,
+    scm_account_id       text            NOT NULL,
+    kind                 connection_kind NOT NULL,
+    external_id          text            NOT NULL,
+    suspended_at         timestamptz,
+    claimed_at           timestamptz,
+    mode                 connection_mode NOT NULL DEFAULT 'normal',
+    -- Why the connection left `normal`, for the operator.
+    mode_reason          text,
+    rate_remaining       integer,
+    rate_limit           integer,
+    rate_reset_at        timestamptz,
+    paused_until         timestamptz,
+    consecutive_failures integer         NOT NULL DEFAULT 0,
+    created_at           timestamptz     NOT NULL DEFAULT now(),
     UNIQUE (scm_instance_id, kind, external_id),
     UNIQUE (org_id, scm_instance_id, id),
     -- A connection, its account and their instance belong together.
@@ -84,6 +123,8 @@ CREATE TABLE repos (
     default_branch  text        NOT NULL,
     created_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (scm_instance_id, external_id),
+    -- A queue and its repository belong to the same organization.
+    UNIQUE (org_id, id),
     -- A repository, its connection and their instance belong together.
     FOREIGN KEY (org_id, scm_instance_id, connection_id)
         REFERENCES scm_connections (org_id, scm_instance_id, id)
@@ -125,57 +166,25 @@ CREATE TABLE api_tokens (
 CREATE INDEX api_tokens_org_id ON api_tokens (org_id);
 
 CREATE TABLE audit_log (
-    id            text        PRIMARY KEY,
-    org_id        text        NOT NULL REFERENCES orgs (id),
-    actor_user_id text        REFERENCES users (id),
-    action        text        NOT NULL,
-    target        text        NOT NULL,
-    before        jsonb,
-    after         jsonb,
-    ip            inet,
-    occurred_at   timestamptz NOT NULL DEFAULT now()
+    id             text        PRIMARY KEY,
+    org_id         text        NOT NULL REFERENCES orgs (id),
+    actor_user_id  text        REFERENCES users (id),
+    -- The API token that made the change (DECISIONS.md D160): an action of a
+    -- token has no user.
+    actor_token_id text        REFERENCES api_tokens (id),
+    action         text        NOT NULL,
+    target         text        NOT NULL,
+    before         jsonb,
+    after          jsonb,
+    occurred_at    timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX audit_log_org_id_occurred_at ON audit_log (org_id, occurred_at);
 
-ALTER TABLE orgs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE orgs FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON orgs
-    USING (cihub_system() OR id = cihub_org_id())
-    WITH CHECK (cihub_system() OR id = cihub_org_id());
-
-ALTER TABLE scm_accounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scm_accounts FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON scm_accounts
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE scm_connections ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scm_connections FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON scm_connections
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE repos ENABLE ROW LEVEL SECURITY;
-ALTER TABLE repos FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON repos
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
-ALTER TABLE memberships FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON memberships
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE api_tokens ENABLE ROW LEVEL SECURITY;
-ALTER TABLE api_tokens FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON api_tokens
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
-
-ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
-CREATE POLICY tenant ON audit_log
-    USING (cihub_system() OR org_id = cihub_org_id())
-    WITH CHECK (cihub_system() OR org_id = cihub_org_id());
+SELECT cihub_tenant_table('orgs');
+SELECT cihub_tenant_table('scm_accounts');
+SELECT cihub_tenant_table('scm_connections');
+SELECT cihub_tenant_table('repos');
+SELECT cihub_tenant_table('memberships');
+SELECT cihub_tenant_table('api_tokens');
+SELECT cihub_tenant_table('audit_log');

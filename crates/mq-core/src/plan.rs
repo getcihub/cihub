@@ -11,8 +11,8 @@ use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
     GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability, PrState,
-    QueueControl, QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup,
-    TestRun, test_branch,
+    QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup, TestRun,
+    test_branch,
 };
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -359,11 +359,6 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
     })?;
     let item = |item_id: &ItemId| s.items.get(item_id);
     let run = |run_id: &RunId| s.runs.get(run_id);
-    let queue_to = |to, reason| EventKind::QueueTransitioned {
-        from: s.state,
-        to,
-        reason,
-    };
     let kind = match request {
         Request::Submit { .. } => submitted(s, ids),
         Request::Cancel { item_id, by_admin } => {
@@ -429,35 +424,31 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
             ItemState::Failed,
             merge_reason(*error, *direct),
         ),
-        Request::Control(control) => {
-            let to = match control {
-                QueueControl::Pause => QueueState::Paused,
-                QueueControl::Resume => QueueState::Running,
-                QueueControl::Drain => QueueState::Draining,
-            };
-            queue_to(to, Reason::AdminRequested)
-        }
-        Request::AccessLost => queue_to(QueueState::Paused, Reason::AccessLost),
-        Request::AccessRestored => queue_to(QueueState::Running, Reason::AccessRestored),
+        Request::Control(control) => queue_to(s, control.target(), Reason::AdminRequested),
+        Request::AccessLost => queue_to(s, QueueState::Paused, Reason::AccessLost),
+        Request::AccessRestored => queue_to(s, QueueState::Running, Reason::AccessRestored),
     };
     Step::one(Some(*id), kind)
 }
 
-/// A mode change waits in `switching_modes` until no item is live.
-fn mode_switch(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -> Option<Step> {
-    let queue_to = |to, reason| EventKind::QueueTransitioned {
+fn queue_to(s: &Snapshot, to: QueueState, reason: Reason) -> EventKind {
+    EventKind::QueueTransitioned {
         from: s.state,
         to,
         reason,
-    };
+    }
+}
+
+/// A mode change waits in `switching_modes` until no item is live.
+fn mode_switch(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -> Option<Step> {
     match s.state {
         QueueState::Running if s.requested_mode != s.mode => Step::one(
             None,
-            queue_to(QueueState::SwitchingModes, Reason::ModeChanged),
+            queue_to(s, QueueState::SwitchingModes, Reason::ModeChanged),
         ),
         QueueState::SwitchingModes if s.items.values().all(|i| i.state.is_terminal()) => Step::one(
             None,
-            queue_to(QueueState::Running, Reason::ModeSwitchCompleted),
+            queue_to(s, QueueState::Running, Reason::ModeSwitchCompleted),
         ),
         _ => None,
     }
@@ -682,14 +673,7 @@ fn members_follow_group(
         .filter(|i| !i.state.is_terminal())
         .find_map(|item| {
             let group = s.groups.get(&item.group_id?)?;
-            let to = match group.state {
-                GroupState::Testing => ItemState::Testing,
-                GroupState::PendingFailure => ItemState::PendingFailure,
-                GroupState::TestsPassed => ItemState::TestsPassed,
-                GroupState::Failed => ItemState::Failed,
-                GroupState::Dissolved | GroupState::Bisected => ItemState::Pending,
-                GroupState::Merged => return None,
-            };
+            let to = group.state.member_state()?;
             if item.state == to {
                 return None;
             }
@@ -1057,7 +1041,7 @@ fn direct_merge<'a>(s: &'a Snapshot, settings: &QueueSettings) -> Option<&'a Ite
 
 /// A tested item merges once its predecessors, and the members ahead of it
 /// in its group, have merged.
-pub(crate) fn merge_ready(s: &Snapshot, item: &Item) -> bool {
+fn merge_ready(s: &Snapshot, item: &Item) -> bool {
     let merged = |id: &ItemId| {
         s.items
             .get(id)
@@ -1094,10 +1078,7 @@ const TARGET_READ_EVERY: i64 = 5;
 /// the submission, so that the reads of one minute go together. While the SCM
 /// has not computed the mergeability, a point comes every minute.
 fn read_points(item: &Item, now: OffsetDateTime) -> (Option<OffsetDateTime>, OffsetDateTime) {
-    let submitted = item.submitted_at;
-    let minute = submitted
-        - Duration::seconds(i64::from(submitted.second()))
-        - Duration::nanoseconds(i64::from(submitted.nanosecond()));
+    let minute = floor_to_minute(item.submitted_at);
     let at = |minutes: i64| minute + Duration::minutes(minutes);
     let age = (now - minute).whole_minutes().max(0);
     if item.mergeability == Mergeability::Unknown {
@@ -1180,10 +1161,12 @@ fn target_points(
     if let Some(head) = &s.target.head {
         return Some(grid(head.observed_at, TARGET_READ_EVERY, now));
     }
-    let minute = now
-        - Duration::seconds(i64::from(now.second()))
-        - Duration::nanoseconds(i64::from(now.nanosecond()));
+    let minute = floor_to_minute(now);
     Some((Some(minute), minute + Duration::minutes(1)))
+}
+
+fn floor_to_minute(t: OffsetDateTime) -> OffsetDateTime {
+    t - Duration::seconds(i64::from(t.second())) - Duration::nanoseconds(i64::from(t.nanosecond()))
 }
 
 /// The earliest of the next read points, the not-ready timeouts and the run

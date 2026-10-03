@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::time::Duration;
 
 use cihub_domain::QueueId;
@@ -6,28 +7,35 @@ use sqlx::postgres::PgListener;
 use sqlx::{PgConnection, PgPool};
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use crate::{PlatformError, lock_queue};
 
 /// The channel that says a queue has work; the payload is its identifier, or
 /// empty for a delivery of a connection without a queue.
-pub const QUEUE_CHANNEL: &str = "cihub_queue";
+pub(crate) const QUEUE_CHANNEL: &str = "cihub_queue";
 
-/// Notifies the schedulers, when the transaction of `conn` commits, that a
-/// delivery of a connection waits without a queue.
-///
-/// # Errors
-///
-/// Postgres fails.
-pub(crate) async fn notify_connection_delivery(
-    conn: &mut PgConnection,
-) -> Result<(), PlatformError> {
+/// Notifies the listeners of `channel` when the transaction of `conn`
+/// commits.
+pub(crate) async fn notify(conn: &mut PgConnection, channel: &str) -> Result<(), PlatformError> {
     sqlx::query("SELECT pg_notify($1, '')")
-        .bind(QUEUE_CHANNEL)
+        .bind(channel)
         .execute(conn)
         .await
         .map_err(PlatformError::Query)?;
     Ok(())
+}
+
+/// Wakes the schedulers for a new routed delivery: marks its queue dirty, or,
+/// for a delivery of a connection without a queue, notifies them.
+pub(crate) async fn wake_for_delivery(
+    conn: &mut PgConnection,
+    queue: Option<QueueId>,
+) -> Result<(), PlatformError> {
+    match queue {
+        Some(queue) => mark_dirty(conn, queue).await,
+        None => notify(conn, QUEUE_CHANNEL).await,
+    }
 }
 
 /// A scheduler looks for work at least this often, even without a
@@ -109,7 +117,8 @@ pub enum Wake {
     Cancelled,
 }
 
-/// The notifications of [`QUEUE_CHANNEL`], on a connection of its own.
+/// The notifications of a channel, on a connection of its own: the queues
+/// for the schedulers, and the inbox and the jobs for the loops of the crate.
 pub struct QueueWakeup {
     listener: PgListener,
 }
@@ -121,11 +130,16 @@ impl QueueWakeup {
     ///
     /// Postgres cannot be reached.
     pub async fn listen(pool: &PgPool) -> Result<Self, PlatformError> {
+        Self::listen_to(pool, QUEUE_CHANNEL).await
+    }
+
+    /// Listens to `channel` on a new connection of `pool`.
+    pub(crate) async fn listen_to(pool: &PgPool, channel: &str) -> Result<Self, PlatformError> {
         let mut listener = PgListener::connect_with(pool)
             .await
             .map_err(PlatformError::Query)?;
         listener
-            .listen(QUEUE_CHANNEL)
+            .listen(channel)
             .await
             .map_err(PlatformError::Query)?;
         Ok(Self { listener })
@@ -144,11 +158,35 @@ impl QueueWakeup {
         tick: Duration,
         cancel: &CancellationToken,
     ) -> Result<Wake, PlatformError> {
+        self.recv(tick, cancel).await.map_err(PlatformError::Query)
+    }
+
+    /// Like [`wait`](Self::wait), but a lost connection is logged with
+    /// `lost`, then waits for `tick` or `cancel` before the caller looks for
+    /// work again.
+    pub async fn wait_or_pause(
+        &mut self,
+        tick: Duration,
+        cancel: &CancellationToken,
+        lost: &'static str,
+    ) {
+        if let Err(err) = self.recv(tick, cancel).await {
+            warn!(error = &err as &dyn Error, "{lost}");
+            tokio::select! {
+                () = cancel.cancelled() => {}
+                () = tokio::time::sleep(tick) => {}
+            }
+        }
+    }
+
+    async fn recv(
+        &mut self,
+        tick: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<Wake, sqlx::Error> {
         tokio::select! {
             () = cancel.cancelled() => Ok(Wake::Cancelled),
-            received = self.listener.recv() => {
-                received.map(|_| Wake::Notified).map_err(PlatformError::Query)
-            }
+            received = self.listener.recv() => received.map(|_| Wake::Notified),
             () = tokio::time::sleep(tick) => Ok(Wake::Tick),
         }
     }

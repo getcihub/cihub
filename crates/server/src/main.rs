@@ -13,13 +13,15 @@ mod health;
 
 use std::collections::BTreeSet;
 use std::error::Error;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
 use cihub_domain::{ConnectionId, ConnectionKind, ScmInstanceId, ScmKind};
-use cihub_github::{GithubApp, GithubConfig};
+use cihub_github::GithubApp;
 use cihub_mergequeue::Translate;
 use cihub_platform::{
     Bootstrapped, ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, ROUTE_POLL, SWEEP_DELIVERIES,
@@ -27,7 +29,7 @@ use cihub_platform::{
     request_sweep, run_budget_writer, run_router, sweep_executor, sync_repos_executor,
 };
 use cihub_scm::Scm;
-use cihub_store::{MIGRATOR, PgPool, begin_system, ensure_scm_instance};
+use cihub_store::{MIGRATOR, PgPool, Postgres, Transaction, begin_system, ensure_scm_instance};
 use cihub_web::GithubWebhooks;
 use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
@@ -82,28 +84,58 @@ async fn main() -> anyhow::Result<()> {
     logs.init()?;
     let pool = cihub_store::connect(&database_url).await?;
     cihub_store::check_role(&pool).await?;
-    if let Command::Migrate = command {
-        return migrate(&pool).await;
+    match command {
+        Command::Migrate => migrate(&pool).await,
+        Command::Bootstrap { installation } => {
+            let github = start_github(&pool, github).await?;
+            bootstrap(&pool, &github, &installation).await
+        }
+        Command::Serve => {
+            let github = start_github(&pool, github).await?;
+            serve(roles, internal_addr, http_addr, pool, github).await
+        }
     }
-    // `migrate` does not talk to GitHub; the other commands cannot run
-    // without it.
+}
+
+/// Checks that the database is migrated, then starts the client of the
+/// GitHub App and creates the row of its SCM instance when it is missing
+/// (`DECISIONS.md` D79). `migrate` does not talk to GitHub; the other
+/// commands cannot run without it.
+async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyhow::Result<Github> {
     let Some(github) = github else {
         bail!(
             "GitHub is not configured: set CIHUB_GITHUB_APP_ID, CIHUB_GITHUB_PRIVATE_KEY or \
              CIHUB_GITHUB_PRIVATE_KEY_FILE, and CIHUB_GITHUB_WEBHOOK_SECRET (docs/GITHUB.md)"
         );
     };
-    let missing = cihub_store::missing_migrations(&MIGRATOR, &pool).await?;
+    let missing = cihub_store::missing_migrations(&MIGRATOR, pool).await?;
     if !missing.is_empty() {
         bail!("the database misses the migrations {missing:?}: run `cihub-server migrate`");
     }
-    let github = start_github(&pool, &github).await?;
-    match command {
-        Command::Bootstrap { installation } => bootstrap(&pool, &github, &installation).await,
-        Command::Serve | Command::Migrate => {
-            serve(roles, internal_addr, http_addr, pool, github).await
-        }
-    }
+    let config::GithubApp {
+        config,
+        webhook_secret,
+    } = github;
+    let client = GithubApp::new(&config, Arc::new(now)).context("the GitHub App cannot start")?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the identifier of the SCM instance, used only when it is new"
+    )]
+    let candidate = ScmInstanceId::new();
+    let mut tx = begin_system(pool).await?;
+    let scm_instance_id =
+        ensure_scm_instance(&mut tx, candidate, ScmKind::Github, &config.url).await?;
+    tx.commit().await?;
+    info!(
+        url = config.url,
+        app_id = config.app_id,
+        "GitHub App configured"
+    );
+    Ok(Github {
+        app: Arc::new(client),
+        scm_instance_id,
+        webhook_secret,
+    })
 }
 
 /// Starts the organization of `installation`, and shows its API token once
@@ -316,32 +348,6 @@ fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform:
     )
 }
 
-/// Starts the client of the GitHub App, and creates the row of its SCM
-/// instance when it is missing (`DECISIONS.md` D79).
-async fn start_github(pool: &PgPool, app: &config::GithubApp) -> anyhow::Result<Github> {
-    let url = app.url.as_str();
-    let config = GithubConfig {
-        url: url.to_owned(),
-        app_id: app.app_id.clone(),
-        private_key: app.private_key.clone(),
-    };
-    let client = GithubApp::new(&config, Arc::new(now)).context("the GitHub App cannot start")?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the identifier of the SCM instance, used only when it is new"
-    )]
-    let candidate = ScmInstanceId::new();
-    let mut tx = begin_system(pool).await?;
-    let scm_instance_id = ensure_scm_instance(&mut tx, candidate, ScmKind::Github, url).await?;
-    tx.commit().await?;
-    info!(url, app_id = app.app_id, "GitHub App configured");
-    Ok(Github {
-        app: Arc::new(client),
-        scm_instance_id,
-        webhook_secret: app.webhook_secret.clone(),
-    })
-}
-
 /// The budgets that changed in the GitHub App, as `scm_connections` keeps
 /// them: the rate limit with the smallest share left (`DECISIONS.md` D77).
 fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> {
@@ -363,72 +369,99 @@ fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> 
         .collect()
 }
 
-/// Requests the maintenance job of the day (`DECISIONS.md` D67) and the read of
-/// the repositories of each connection (D155) at the start, then every hour.
-/// Each replica does it; the key of the day, or of the hour, admits one job.
-async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
-    let mut every_hour = tokio::time::interval(Duration::from_hours(1));
+/// Runs `request` at the start, then every `every`, until `cancel`. Each
+/// replica does it: the key of the period admits one job, so a copy changes
+/// nothing.
+async fn repeat_every<Fut: Future<Output = ()>>(
+    every: Duration,
+    cancel: &CancellationToken,
+    mut request: impl FnMut() -> Fut,
+) {
+    let mut interval = tokio::time::interval(every);
     loop {
         tokio::select! {
             () = cancel.cancelled() => return,
-            _ = every_hour.tick() => {
-                if let Err(err) = request_maintenance_now(pool).await {
-                    warn!(error = &*err as &dyn Error, "maintenance not requested");
-                }
-                if let Err(err) = request_repo_syncs_now(pool).await {
-                    warn!(error = &*err as &dyn Error, "reads of the repositories not requested");
-                }
-            }
+            _ = interval.tick() => request().await,
         }
     }
 }
 
-async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
+/// The work of one system transaction; boxed, because a closure cannot name
+/// the future that borrows its argument.
+type InTransaction<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Runs `request` in one system transaction, and commits it.
+async fn in_system_transaction<T, E>(
+    pool: &PgPool,
+    request: impl for<'a> FnOnce(
+        &'a mut Transaction<'static, Postgres>,
+    ) -> InTransaction<'a, Result<T, E>>,
+) -> anyhow::Result<T>
+where
+    anyhow::Error: From<E>,
+{
     let mut tx = begin_system(pool).await?;
-    let requested = request_repo_syncs(&mut tx, now()).await?;
+    let result = request(&mut tx).await?;
     tx.commit().await?;
+    Ok(result)
+}
+
+/// Requests the maintenance job of the day (`DECISIONS.md` D67) and the read of
+/// the repositories of each connection (D155), every hour.
+async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
+    repeat_every(Duration::from_hours(1), cancel, || async move {
+        if let Err(err) = request_maintenance_now(pool).await {
+            warn!(error = &*err as &dyn Error, "maintenance not requested");
+        }
+        if let Err(err) = request_repo_syncs_now(pool).await {
+            warn!(
+                error = &*err as &dyn Error,
+                "reads of the repositories not requested"
+            );
+        }
+    })
+    .await;
+}
+
+async fn request_maintenance_now(pool: &PgPool) -> anyhow::Result<()> {
+    let requested =
+        in_system_transaction(pool, |tx| Box::pin(request_maintenance(tx, now()))).await?;
+    if requested {
+        info!("maintenance requested");
+    }
+    Ok(())
+}
+
+async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
+    let requested =
+        in_system_transaction(pool, |tx| Box::pin(request_repo_syncs(tx, now()))).await?;
     if requested > 0 {
         info!(requested, "reads of the repositories requested");
     }
     Ok(())
 }
 
-/// Requests the sweep of the deliveries of `instance` at the start, then
-/// every [`SWEEP_EVERY`] (`DECISIONS.md` D88). Each replica does it; the key of
-/// the window admits one job.
+/// Requests the sweep of the deliveries of `instance` every [`SWEEP_EVERY`]
+/// (`DECISIONS.md` D88).
 async fn request_sweep_regularly(
     pool: &PgPool,
     instance: ScmInstanceId,
     cancel: &CancellationToken,
 ) {
-    let mut every = tokio::time::interval(SWEEP_EVERY);
-    loop {
-        tokio::select! {
-            () = cancel.cancelled() => return,
-            _ = every.tick() => {
-                if let Err(err) = request_sweep_now(pool, instance).await {
-                    warn!(error = &*err as &dyn Error, "sweep not requested");
-                }
-            }
+    repeat_every(SWEEP_EVERY, cancel, || async move {
+        if let Err(err) = request_sweep_now(pool, instance).await {
+            warn!(error = &*err as &dyn Error, "sweep not requested");
         }
-    }
+    })
+    .await;
 }
 
 async fn request_sweep_now(pool: &PgPool, instance: ScmInstanceId) -> anyhow::Result<()> {
-    let mut tx = begin_system(pool).await?;
-    if request_sweep(&mut tx, instance, now()).await? {
+    let requested =
+        in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, instance, now()))).await?;
+    if requested {
         info!("sweep of the deliveries requested");
     }
-    tx.commit().await?;
-    Ok(())
-}
-
-async fn request_maintenance_now(pool: &PgPool) -> anyhow::Result<()> {
-    let mut tx = begin_system(pool).await?;
-    if request_maintenance(&mut tx, now()).await? {
-        info!("maintenance requested");
-    }
-    tx.commit().await?;
     Ok(())
 }
 

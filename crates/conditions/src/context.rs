@@ -4,7 +4,6 @@ use std::time::Duration;
 use cihub_domain::{CheckConclusion, Permission, ReviewDecision};
 
 use crate::Attribute;
-use crate::attribute::{permission_rank, review_decision_rank};
 
 /// What conditions are evaluated on: a PR, its checks, and its place in the
 /// queue. The caller loads it; checks come from the PR head for
@@ -99,7 +98,7 @@ impl Context {
             A::Number => number(self.number),
             A::Title => Value::Texts(vec![&self.title]),
             A::Body => Value::Texts(vec![&self.body]),
-            A::ReviewDecision => Value::Number(Some(review_decision_rank(self.review_decision))),
+            A::ReviewDecision => Value::Number(Some(self.review_decision as i64)),
             A::ApprovedReviewsBy => texts(&self.approved_reviews_by),
             A::ChangesRequestedReviewsBy => texts(&self.changes_requested_reviews_by),
             A::ReviewRequested => texts(&self.review_requested),
@@ -112,7 +111,7 @@ impl Context {
             A::Label => texts(&self.labels),
             A::Author => Value::Texts(vec![&self.author]),
             A::Sender => Value::Texts(self.sender.as_deref().into_iter().collect()),
-            A::SenderPermission => Value::Number(self.sender_permission.map(permission_rank)),
+            A::SenderPermission => Value::Number(self.sender_permission.map(|p| p as i64)),
             A::Files => loaded(&self.files)?,
             A::Additions => number(self.additions),
             A::Deletions => number(self.deletions),

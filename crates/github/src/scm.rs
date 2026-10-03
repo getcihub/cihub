@@ -16,15 +16,17 @@ use cihub_scm::{
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::GithubApp;
 use crate::client::{Answer, JSON, Request};
+use crate::translate::status_conclusion;
 
-/// The fields of a PR that CIHub reads, and the checks of its head.
-const PR_FIELDS: &str = "
+/// The checks and statuses of a commit, as a fragment `checks`.
+const CHECKS_FRAGMENT: &str = "
 fragment checks on StatusCheckRollup {
   contexts(first: 100) {
     nodes {
@@ -33,7 +35,11 @@ fragment checks on StatusCheckRollup {
       ... on StatusContext { context state targetUrl }
     }
   }
-}
+}";
+
+/// The fields of a PR that CIHub reads, with the checks of its head from
+/// [`CHECKS_FRAGMENT`].
+const PR_FIELDS: &str = "
 fragment pr on PullRequest {
   number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt
   mergeable mergeStateStatus reviewDecision
@@ -58,19 +64,11 @@ query($owner: String!, $name: String!, $number: Int!) {
 /// GitHub lists 3 000 files of a PR at most, 100 per page.
 const FILE_PAGES: u32 = 30;
 
+/// The checks of a commit, with [`CHECKS_FRAGMENT`].
 const CHECKS_QUERY: &str = "
 query($owner: String!, $name: String!, $sha: GitObjectID!) {
   repository(owner: $owner, name: $name) {
     object(oid: $sha) { ... on Commit { statusCheckRollup { ...checks } } }
-  }
-}
-fragment checks on StatusCheckRollup {
-  contexts(first: 100) {
-    nodes {
-      __typename
-      ... on CheckRun { name status conclusion detailsUrl }
-      ... on StatusContext { context state targetUrl }
-    }
   }
 }";
 
@@ -233,6 +231,11 @@ fn check_conclusion(conclusion: &str) -> CheckConclusion {
     }
 }
 
+/// A part of a GraphQL answer, as `T`.
+fn decode<T: DeserializeOwned>(value: &Value) -> Result<T, ScmError> {
+    T::deserialize(value).map_err(|err| ScmError::Protocol(err.to_string()))
+}
+
 fn check_reports(rollup: Option<Rollup>) -> Vec<CheckReport> {
     let Some(rollup) = rollup else {
         return Vec::new();
@@ -263,12 +266,7 @@ fn check_reports(rollup: Option<Rollup>) -> Vec<CheckReport> {
             } => CheckReport {
                 name: context,
                 kind: CheckKind::Status,
-                conclusion: match state.as_str() {
-                    "SUCCESS" => Some(CheckConclusion::Success),
-                    "FAILURE" => Some(CheckConclusion::Failure),
-                    "ERROR" => Some(CheckConclusion::Error),
-                    _ => None,
-                },
+                conclusion: status_conclusion(&state),
                 details_url: target_url,
             },
         })
@@ -444,6 +442,36 @@ impl GithubApp {
         .await
     }
 
+    /// A REST call on the repository whose answer has the status `status`,
+    /// read as `T`.
+    async fn rest_json<T: DeserializeOwned>(
+        &self,
+        repo: &RepoRef,
+        class: JobClass,
+        method: Method,
+        rest: &str,
+        body: Option<Value>,
+        status: StatusCode,
+    ) -> Result<T, ScmError> {
+        let answer = self.rest(repo, class, method, rest, body).await?;
+        expect(answer, &[status])?.json()
+    }
+
+    /// A REST call on the repository whose answer has the status `status`,
+    /// and no content of use.
+    async fn rest_ok(
+        &self,
+        repo: &RepoRef,
+        class: JobClass,
+        method: Method,
+        rest: &str,
+        body: Option<Value>,
+        status: StatusCode,
+    ) -> Result<(), ScmError> {
+        let answer = self.rest(repo, class, method, rest, body).await?;
+        expect(answer, &[status]).map(drop)
+    }
+
     /// The `data` of a GraphQL answer. An error of type `NOT_FOUND` leaves
     /// its field `null`, as for a PR that does not exist.
     async fn query(
@@ -471,7 +499,7 @@ impl GithubApp {
         repo: &RepoRef,
         numbers: &[u64],
         class: JobClass,
-    ) -> Result<Vec<(GraphqlPr, Option<String>)>, ScmError> {
+    ) -> Result<Vec<GraphqlPr>, ScmError> {
         if numbers.len() > MAX_PRS_PER_READ {
             return Err(ScmError::Validation(format!(
                 "{} PRs in one read, {MAX_PRS_PER_READ} at most",
@@ -486,7 +514,7 @@ impl GithubApp {
             let _ = writeln!(fields, "p{i}: pullRequest(number: {number}) {{ ...pr }}");
         }
         let query = format!(
-            "query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}{PR_FIELDS}"
+            "query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}{CHECKS_FRAGMENT}{PR_FIELDS}"
         );
         let variables = json!({ "owner": repo.namespace, "name": repo.name });
         let data = self
@@ -501,10 +529,7 @@ impl GithubApp {
             let Some(pr) = repository.get(format!("p{i}")).filter(|pr| !pr.is_null()) else {
                 continue;
             };
-            let pr: GraphqlPr = serde_json::from_value(pr.clone())
-                .map_err(|err| ScmError::Protocol(err.to_string()))?;
-            let merged = pr.merge_commit.as_ref().map(|commit| commit.oid.clone());
-            prs.push((pr, merged));
+            prs.push(decode(pr)?);
         }
         Ok(prs)
     }
@@ -514,7 +539,7 @@ impl GithubApp {
         repo: &RepoRef,
         number: u64,
         class: JobClass,
-    ) -> Result<(GraphqlPr, Option<String>), ScmError> {
+    ) -> Result<GraphqlPr, ScmError> {
         self.read_prs(repo, &[number], class)
             .await?
             .pop()
@@ -585,18 +610,9 @@ impl Scm for GithubApp {
             self.read_prs(repo, numbers, class)
                 .await?
                 .into_iter()
-                .map(|(pr, _)| pr.snapshot())
+                .map(GraphqlPr::snapshot)
                 .collect()
         })
-    }
-
-    fn pull_request<'a>(
-        &'a self,
-        repo: &'a RepoRef,
-        number: u64,
-        class: JobClass,
-    ) -> ScmFuture<'a, PrSnapshot> {
-        Box::pin(async move { self.read_pr(repo, number, class).await?.0.snapshot() })
     }
 
     fn branch_head<'a>(
@@ -621,15 +637,15 @@ impl Scm for GithubApp {
                 status_check_rollup: Option<Rollup>,
             }
             let variables = json!({ "owner": repo.namespace, "name": repo.name, "sha": sha });
+            let query = format!("{CHECKS_QUERY}{CHECKS_FRAGMENT}");
             let data = self
-                .query(&repo.connection, class, CHECKS_QUERY, variables)
+                .query(&repo.connection, class, &query, variables)
                 .await?;
             let object = data
                 .pointer("/repository/object")
                 .filter(|object| !object.is_null())
                 .ok_or_else(|| ScmError::NotFound(format!("commit {sha}")))?;
-            let commit: Commit = serde_json::from_value(object.clone())
-                .map_err(|err| ScmError::Protocol(err.to_string()))?;
+            let commit: Commit = decode(object)?;
             Ok(check_reports(commit.status_check_rollup))
         })
     }
@@ -805,8 +821,9 @@ impl Scm for GithubApp {
             let mut paths = Vec::new();
             for page in 1..=FILE_PAGES {
                 let rest = format!("/pulls/{number}/files?per_page=100&page={page}");
-                let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
-                let files: Vec<File> = expect(answer, &[StatusCode::OK])?.json()?;
+                let files: Vec<File> = self
+                    .rest_json(repo, class, Method::GET, &rest, None, StatusCode::OK)
+                    .await?;
                 let last = files.len() < 100;
                 paths.extend(files.into_iter().map(|file| file.filename));
                 if last {
@@ -840,8 +857,7 @@ impl Scm for GithubApp {
                 .pointer("/repository/pullRequest/reviewThreads")
                 .filter(|threads| !threads.is_null())
                 .ok_or_else(|| ScmError::NotFound(format!("PR {number}")))?;
-            let threads: Nodes<Thread> = serde_json::from_value(threads.clone())
-                .map_err(|err| ScmError::Protocol(err.to_string()))?;
+            let threads: Nodes<Thread> = decode(threads)?;
             Ok(threads
                 .nodes
                 .into_iter()
@@ -926,9 +942,11 @@ impl Scm for GithubApp {
                 MergeMethod::MergeCommit => "merge",
                 MergeMethod::Rebase => "rebase",
                 MergeMethod::FastForward => {
-                    let (pr, merged) = self.read_pr(repo, merge.number, class).await?;
-                    if let Some(merged) = merged.filter(|_| pr.state == "MERGED") {
-                        return Ok(merged);
+                    let pr = self.read_pr(repo, merge.number, class).await?;
+                    if pr.state == "MERGED"
+                        && let Some(merged) = pr.merge_commit
+                    {
+                        return Ok(merged.oid);
                     }
                     if pr.head_ref_oid != merge.head_sha {
                         return Err(ScmError::HeadChanged);
@@ -963,9 +981,11 @@ impl Scm for GithubApp {
                 StatusCode::OK => Ok(answer.json::<Merged>()?.sha),
                 StatusCode::CONFLICT => Err(ScmError::HeadChanged),
                 StatusCode::METHOD_NOT_ALLOWED => {
-                    let (pr, merged) = self.read_pr(repo, merge.number, class).await?;
-                    if let Some(merged) = merged.filter(|_| pr.state == "MERGED") {
-                        return Ok(merged);
+                    let pr = self.read_pr(repo, merge.number, class).await?;
+                    if pr.state == "MERGED"
+                        && let Some(merged) = pr.merge_commit
+                    {
+                        return Ok(merged.oid);
                     }
                     let message = answer.message();
                     if message.contains("in progress") {
@@ -1001,10 +1021,15 @@ impl Scm for GithubApp {
                 "target_url": status.details_url,
             });
             let rest = format!("/statuses/{}", encode(&status.sha));
-            let answer = self
-                .rest(repo, class, Method::POST, &rest, Some(body))
-                .await?;
-            expect(answer, &[StatusCode::CREATED]).map(drop)
+            self.rest_ok(
+                repo,
+                class,
+                Method::POST,
+                &rest,
+                Some(body),
+                StatusCode::CREATED,
+            )
+            .await
         })
     }
 
@@ -1021,17 +1046,17 @@ impl Scm for GithubApp {
                 id: u64,
             }
             let rest = format!("/issues/{number}/comments");
-            let answer = self
-                .rest(
+            let comment: Comment = self
+                .rest_json(
                     repo,
                     class,
                     Method::POST,
                     &rest,
                     Some(json!({ "body": body })),
+                    StatusCode::CREATED,
                 )
                 .await?;
-            let answer = expect(answer, &[StatusCode::CREATED])?;
-            Ok(answer.json::<Comment>()?.id.to_string())
+            Ok(comment.id.to_string())
         })
     }
 
@@ -1044,16 +1069,15 @@ impl Scm for GithubApp {
     ) -> ScmFuture<'a, ()> {
         Box::pin(async move {
             let rest = format!("/issues/comments/{}", encode(comment_id));
-            let answer = self
-                .rest(
-                    repo,
-                    class,
-                    Method::PATCH,
-                    &rest,
-                    Some(json!({ "body": body })),
-                )
-                .await?;
-            expect(answer, &[StatusCode::OK]).map(drop)
+            self.rest_ok(
+                repo,
+                class,
+                Method::PATCH,
+                &rest,
+                Some(json!({ "body": body })),
+                StatusCode::OK,
+            )
+            .await
         })
     }
 
@@ -1067,10 +1091,8 @@ impl Scm for GithubApp {
         Box::pin(async move {
             let rest = format!("/issues/{number}/labels");
             let body = json!({ "labels": [label] });
-            let answer = self
-                .rest(repo, class, Method::POST, &rest, Some(body))
-                .await?;
-            expect(answer, &[StatusCode::OK]).map(drop)
+            self.rest_ok(repo, class, Method::POST, &rest, Some(body), StatusCode::OK)
+                .await
         })
     }
 
@@ -1112,19 +1134,25 @@ impl Scm for GithubApp {
                 encode(head),
                 encode(base)
             );
-            let open = self.rest(repo, class, Method::GET, &rest, None).await?;
-            let open: Vec<Pull> = expect(open, &[StatusCode::OK])?.json()?;
+            let open: Vec<Pull> = self
+                .rest_json(repo, class, Method::GET, &rest, None, StatusCode::OK)
+                .await?;
             if let Some(pull) = open.first() {
                 return Ok(pull.number);
             }
             let body =
                 json!({ "title": title, "head": head, "base": base, "body": body, "draft": true });
-            let answer = self
-                .rest(repo, class, Method::POST, "/pulls", Some(body))
+            let opened: Pull = self
+                .rest_json(
+                    repo,
+                    class,
+                    Method::POST,
+                    "/pulls",
+                    Some(body),
+                    StatusCode::CREATED,
+                )
                 .await?;
-            Ok(expect(answer, &[StatusCode::CREATED])?
-                .json::<Pull>()?
-                .number)
+            Ok(opened.number)
         })
     }
 
@@ -1137,10 +1165,15 @@ impl Scm for GithubApp {
         Box::pin(async move {
             let rest = format!("/pulls/{number}");
             let body = json!({ "state": "closed" });
-            let answer = self
-                .rest(repo, class, Method::PATCH, &rest, Some(body))
-                .await?;
-            expect(answer, &[StatusCode::OK]).map(drop)
+            self.rest_ok(
+                repo,
+                class,
+                Method::PATCH,
+                &rest,
+                Some(body),
+                StatusCode::OK,
+            )
+            .await
         })
     }
 
@@ -1256,8 +1289,9 @@ impl Scm for GithubApp {
             }
             for id in updates {
                 let rest = format!("/rulesets/{id}");
-                let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
-                let ruleset: Ruleset = expect(answer, &[StatusCode::OK])?.json()?;
+                let ruleset: Ruleset = self
+                    .rest_json(repo, class, Method::GET, &rest, None, StatusCode::OK)
+                    .await?;
                 let exempt = ruleset.bypass_actors.iter().any(|actor| {
                     actor.actor_type == "Integration"
                         && actor.actor_id.map(|id| id.to_string()).as_deref() == Some(self.app_id())

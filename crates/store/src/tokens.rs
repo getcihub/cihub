@@ -117,8 +117,7 @@ pub async fn authenticate(
             .map_err(StoreError::Query)?;
     }
     tx.commit().await.map_err(StoreError::Query)?;
-    let grant =
-        decode(&id, &org_id, &scopes).map_err(|source| StoreError::ReadToken { id, source })?;
+    let grant = decode(&id, &org_id, &scopes).map_err(StoreError::read("api token", &id))?;
     Ok(Some(grant))
 }
 

@@ -6,7 +6,7 @@
 
 mod apply;
 mod check;
-pub mod graph;
+mod graph;
 mod ids;
 mod plan;
 mod snapshot;

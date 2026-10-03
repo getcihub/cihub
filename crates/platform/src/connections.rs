@@ -15,6 +15,7 @@ use strum::IntoEnumIterator;
 use time::OffsetDateTime;
 use tracing::info;
 
+use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 /// The type of the job that reads the repositories of a connection
@@ -22,7 +23,7 @@ use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 pub const SYNC_REPOS: &str = "sync_repos";
 
 /// The name of the API token that [`bootstrap`] creates.
-pub const BOOTSTRAP_TOKEN: &str = "bootstrap";
+pub(crate) const BOOTSTRAP_TOKEN: &str = "bootstrap";
 
 /// What [`bootstrap`] did.
 pub struct Bootstrapped {
@@ -70,23 +71,16 @@ pub async fn bootstrap(
     .await
     .map_err(PlatformError::Query)?;
     let (org_id, connection_id, created) = if let Some((org, connection)) = known {
-        let read = |id: String| {
-            move |source| PlatformError::ReadConnection {
-                id: id.clone(),
-                source,
-            }
-        };
-        let org_id = org.parse().map_err(read(org.clone()))?;
-        let connection_id = connection.parse().map_err(read(connection.clone()))?;
+        let org_id = org
+            .parse()
+            .map_err(PlatformError::read("connection", &org))?;
+        let connection_id = connection
+            .parse()
+            .map_err(PlatformError::read("connection", &connection))?;
         (org_id, connection_id, false)
     } else {
-        let new = NewConnection {
-            instance,
-            kind,
-            external_id,
-            account: &account,
-        };
-        let (org_id, connection_id) = create_organization(&mut tx, &new, now).await?;
+        let (org_id, connection_id) =
+            create_organization(&mut tx, instance, kind, external_id, &account, now).await?;
         (org_id, connection_id, true)
     };
     let job = sync_repos_job(org_id, instance, connection_id, &hour_window(now));
@@ -135,19 +129,15 @@ pub async fn bootstrap(
     })
 }
 
-/// A connection that no organization has yet, and its account.
-struct NewConnection<'a> {
-    instance: ScmInstanceId,
-    kind: ConnectionKind,
-    external_id: &'a str,
-    account: &'a ScmAccount,
-}
-
-/// Creates the organization of `new`, named by its account, with the
-/// account, the connection and the merge queue module.
+/// Creates the organization of the connection `external_id`, which no
+/// organization has yet, named by its `account`, with the account, the
+/// connection and the merge queue module.
 async fn create_organization(
     conn: &mut PgConnection,
-    new: &NewConnection<'_>,
+    instance: ScmInstanceId,
+    kind: ConnectionKind,
+    external_id: &str,
+    account: &ScmAccount,
     now: OffsetDateTime,
 ) -> Result<(OrgId, ConnectionId), PlatformError> {
     #[expect(
@@ -158,7 +148,7 @@ async fn create_organization(
         (OrgId::new(), ScmAccountId::new(), ConnectionId::new());
     sqlx::query("INSERT INTO orgs (id, slug, created_at) VALUES ($1, $2, $3)")
         .bind(org_id.to_string())
-        .bind(&new.account.path)
+        .bind(&account.path)
         .bind(now)
         .execute(&mut *conn)
         .await
@@ -169,9 +159,9 @@ async fn create_organization(
     )
     .bind(account_id.to_string())
     .bind(org_id.to_string())
-    .bind(new.instance.to_string())
-    .bind(&new.account.external_id)
-    .bind(&new.account.path)
+    .bind(instance.to_string())
+    .bind(&account.external_id)
+    .bind(&account.path)
     .bind(now)
     .execute(&mut *conn)
     .await
@@ -183,10 +173,10 @@ async fn create_organization(
     )
     .bind(connection_id.to_string())
     .bind(org_id.to_string())
-    .bind(new.instance.to_string())
+    .bind(instance.to_string())
     .bind(account_id.to_string())
-    .bind(new.kind.as_str())
-    .bind(new.external_id)
+    .bind(kind.as_str())
+    .bind(external_id)
     .bind(now)
     .execute(&mut *conn)
     .await
@@ -201,18 +191,6 @@ async fn create_organization(
     .await
     .map_err(PlatformError::Query)?;
     Ok((org_id, connection_id))
-}
-
-/// The window of the hourly read and of the bootstrap: its hour, so that the
-/// schedulers ask for one read per hour.
-fn hour_window(now: OffsetDateTime) -> String {
-    format!(
-        "{:04}{:02}{:02}T{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        now.hour()
-    )
 }
 
 /// The read of the repositories of `connection` for `cause`: the hour of the
@@ -241,7 +219,7 @@ pub fn sync_repos_job(
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn request_repo_sync(
+pub(crate) async fn request_repo_sync(
     conn: &mut PgConnection,
     org_id: OrgId,
     instance: ScmInstanceId,
@@ -274,14 +252,11 @@ pub async fn request_repo_syncs(
     let window = hour_window(now);
     let mut requested = 0;
     for (org, instance, connection) in connections {
-        let read = |source| PlatformError::ReadConnection {
-            id: connection.clone(),
-            source,
-        };
+        let read = || PlatformError::read("connection", &connection);
         let job = sync_repos_job(
-            org.parse().map_err(read)?,
-            instance.parse().map_err(read)?,
-            connection.parse().map_err(read)?,
+            org.parse().map_err(read())?,
+            instance.parse().map_err(read())?,
+            connection.parse().map_err(read())?,
             &window,
         );
         if enqueue_job(conn, &job, now, now).await? {

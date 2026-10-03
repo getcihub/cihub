@@ -17,10 +17,10 @@ use std::time::Duration as StdDuration;
 
 use cihub_domain::{ConnectionId, JobClass, Permission};
 use cihub_github::{GithubApp, GithubConfig};
-use cihub_scm::contract::{self, Fixture};
+use cihub_scm::contract;
 use cihub_scm::{
-    ConnectionRef, RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmRepo,
-    ScmUser, SetupFinding,
+    ConnectionRef, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmRepo, ScmUser,
+    SetupFinding,
 };
 use secrecy::SecretString;
 use serde_json::json;
@@ -65,23 +65,7 @@ async fn the_contract_passes_on_recorded_answers() {
     let world = cassette.world;
     let replay = Replay::start(cassette.exchanges).await;
     let now = OffsetDateTime::from_unix_timestamp(cassette.recorded_at).unwrap();
-    let fixture = Fixture {
-        base_branch: world.base_branch,
-        required: RequiredChecks {
-            names: world.required_checks,
-            up_to_date: world.up_to_date,
-        },
-        file: (world.file_path, world.file_content),
-        mergeable_pr: world.mergeable_pr,
-        conflicting_pr: world.conflicting_pr,
-        draft_pr: world.draft_pr,
-        missing_pr: world.missing_pr,
-        admin: ScmUser {
-            external_id: String::new(),
-            login: world.admin,
-        },
-        work_branch: world.work_branch,
-    };
+    let fixture = world.fixture();
     let repo = repo(&world.installation, &world.namespace, &world.name);
     contract::run(&app(&replay.url, now), &repo, &fixture).await;
     replay.finish();

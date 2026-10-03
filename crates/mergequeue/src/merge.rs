@@ -3,41 +3,38 @@
 //! `merge.failed`. It reads the projection first, so that a decision that
 //! changed since the request merges nothing (principle III).
 
-use std::sync::Arc;
-
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, CheckConclusion, EventKind, ItemId, ItemState, JobClass, JobError, MergeCommitTitle,
-    MergeMethod, Mergeability, PrState, RunId,
+    Actor, EventKind, ItemId, ItemState, JobClass, JobError, MergeCommitTitle, MergeMethod,
+    Mergeability, PrState, RunId,
 };
 use cihub_mq_core::Merge;
-use cihub_platform::{Job, MAX_ATTEMPTS, Outcome, error_chain};
-use cihub_scm::{PrMerge, PrSnapshot, Scm, ScmError};
+use cihub_platform::{Job, MAX_ATTEMPTS, error_chain};
+use cihub_scm::{PrMerge, PrSnapshot, Scm, ScmError, check_passed};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
-use crate::MergeQueueError;
 use crate::assembly::{Step, required_statuses};
 use crate::jobs::{
-    Failure, give_back, job, mergeability, outcome, queue_status_context, read_payload, target_of,
+    Failure, give_back_facts, job, mergeability, queue_status_context, read_payload, target_of,
 };
 use crate::surfaces::merging_status;
 use crate::target::QueueTarget;
 
-pub const MERGE_PR: &str = "merge_pr";
+pub(crate) const MERGE_PR: &str = "merge_pr";
 
 /// After this many attempts, a merge that still fails on a passing error
 /// gives up (`DECISIONS.md` D123): with the backoff of the jobs, about a minute.
-pub const MERGE_ATTEMPTS: i32 = 6;
+pub(crate) const MERGE_ATTEMPTS: i32 = 6;
 
 // A retry must end in a fact before the job goes `dead`.
 const _: () = assert!(MERGE_ATTEMPTS < MAX_ATTEMPTS);
 
 /// A merge waits for the end of a rate limit at most this long.
-pub const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
+pub(crate) const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
 
 /// The merge of one item, as the plan describes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,7 +65,7 @@ pub(crate) fn merge_job(target: &QueueTarget, merge: &Merge) -> Job {
 
 /// The title of the merge commit: the `merge-commit-title:` line of the
 /// description, or the title of the PR as `merge_commit_title` says.
-pub fn merge_commit_title(
+pub(crate) fn merge_commit_title(
     title: &str,
     body: &str,
     number: u64,
@@ -123,16 +120,7 @@ fn after_error(request: &MergePr, err: &ScmError, attempts: i32, now: OffsetDate
     }
 }
 
-pub(crate) async fn execute_merge(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(merge_pr(&pool, scm.as_ref(), &job, now).await)
-}
-
-async fn merge_pr(
+pub(crate) async fn merge_pr(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -178,21 +166,7 @@ async fn merge_pr(
     {
         warn!(%item_id, error = error.as_str(), "PR not merged");
     }
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(
-        &mut tx,
-        target.org_id,
-        target.queue_id,
-        vec![(Actor::Bot, fact)],
-        now,
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
+    give_back_facts(pool, &target, vec![(Actor::Bot, fact)], now).await
 }
 
 /// What the merge of a PR did.
@@ -280,12 +254,7 @@ async fn direct_merge_possible(
         }
         Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
     };
-    let passed = |name: &String| {
-        pr.checks.iter().any(|check| {
-            check.name == *name && check.conclusion.is_some_and(CheckConclusion::is_passing)
-        })
-    };
-    if !names.iter().all(passed) {
+    if !names.iter().all(|name| check_passed(pr, name)) {
         return Ok(false);
     }
     let rules = scm
@@ -301,9 +270,7 @@ async fn direct_merge_possible(
 /// The item is still `tests_passed`, proved by the run of the request, or
 /// still `pending` for a direct merge.
 async fn still_to_merge(pool: &PgPool, request: &MergePr) -> Result<bool, Failure> {
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let state = if request.run_id.is_some() {
         ItemState::TestsPassed
     } else {
@@ -318,11 +285,8 @@ async fn still_to_merge(pool: &PgPool, request: &MergePr) -> Result<bool, Failur
     .bind(state.as_str())
     .bind(request.run_id.map(|run_id| run_id.to_string()))
     .fetch_one(&mut *tx)
-    .await
-    .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    .await?;
+    tx.commit().await?;
     Ok(to_merge)
 }
 

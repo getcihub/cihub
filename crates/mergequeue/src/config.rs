@@ -3,22 +3,21 @@
 //! valid. The file is the only source of the settings (D134).
 
 use std::error::Error;
-use std::sync::Arc;
 
 use cihub_config::{ConfigError, FILE_NAMES, RepoConfig, find_config_file};
 use cihub_domain::JobClass;
-use cihub_platform::{Job, Outcome, mark_dirty};
+use cihub_platform::{Job, mark_dirty};
 use cihub_scm::{RepoRef, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use time::OffsetDateTime;
 use tracing::{info, warn};
 
-use crate::MergeQueueError;
-use crate::jobs::{Failure, job, outcome, read_payload, target_of};
+use crate::jobs::{Failure, job, read_payload, target_of};
 use crate::target::QueueTarget;
 
-pub const LOAD_CONFIG: &str = "load_config";
+pub(crate) const LOAD_CONFIG: &str = "load_config";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct LoadConfig {
@@ -56,15 +55,16 @@ pub(crate) async fn read_config_file(
     Ok(find_config_file(found).map(|_| text))
 }
 
-pub(crate) async fn execute_load_config(pool: PgPool, scm: Arc<dyn Scm>, job: Job) -> Outcome {
-    outcome(load(&pool, scm.as_ref(), &job).await)
-}
-
 /// Reads the file at the SHA of the job, while it is still the head of the
 /// target, and keeps it with the SHA; a file that is not valid keeps the
 /// last valid one, with the error. Then marks the queue dirty, so that its
 /// next reconciliation uses the settings.
-async fn load(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Failure> {
+pub(crate) async fn load(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    _now: OffsetDateTime,
+) -> Result<(), Failure> {
     let request: LoadConfig = read_payload(job)?;
     let target = target_of(pool, job).await?;
     let head = scm
@@ -81,9 +81,7 @@ async fn load(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Failure> {
             .map(|_| Some(text)),
         None => Ok(None),
     });
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let query = match &checked {
         Ok(text) => sqlx::query(
             "UPDATE queues SET config_text = $2, config_sha = $3, config_error = NULL
@@ -102,16 +100,8 @@ async fn load(pool: &PgPool, scm: &dyn Scm, job: &Job) -> Result<(), Failure> {
                 .bind(err.to_string())
         }
     };
-    query
-        .bind(&request.sha)
-        .execute(&mut *tx)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    mark_dirty(&mut tx, target.queue_id)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Platform(err)))?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    query.bind(&request.sha).execute(&mut *tx).await?;
+    mark_dirty(&mut tx, target.queue_id).await?;
+    tx.commit().await?;
     Ok(())
 }

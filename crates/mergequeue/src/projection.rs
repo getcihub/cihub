@@ -5,14 +5,14 @@
 
 use cihub_domain::{
     CheckObservation, CheckReport, Event, EventKind, Item, ItemId, ItemState, Mergeability, OrgId,
-    Priority, QueueId, Reason, RunStatus,
+    QueueId, Reason, RunStatus,
 };
 use cihub_mq_core::Snapshot;
 use sqlx::PgConnection;
 use sqlx::postgres::PgQueryResult;
 use time::OffsetDateTime;
 
-use crate::MergeQueueError;
+use crate::{MergeQueueError, parse_id};
 
 /// Writes the change of `event`, the event `seq` of its log; `after` is the
 /// snapshot once `event` is applied.
@@ -409,15 +409,15 @@ async fn create_item(
     let done = sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value,
-                                  priority_name, no_batch, force_enqueued, skip_the_line,
-                                  submitted_by, submitted_via, submitted_at, mergeability,
-                                  block_reasons, is_current, sender_permission, concluded_at)
+                                  no_batch, force_enqueued, submitted_by, submitted_via,
+                                  submitted_at, mergeability, block_reasons, is_current,
+                                  sender_permission, concluded_at)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
-                $10, $11, $12, $13, s.actor_user_id, $14::submitted_via, s.occurred_at,
-                $15::mergeability, $16, $18, (s.payload->>'sender_permission')::permission,
-                CASE WHEN $19 THEN $8 END
+                $10, $11, s.actor_user_id, $12::submitted_via, s.occurred_at,
+                $13::mergeability, $14, $16, (s.payload->>'sender_permission')::permission,
+                CASE WHEN $17 THEN $8 END
          FROM events s
-         WHERE s.queue_id = $3 AND s.id = $17 AND s.type = 'item.submitted'",
+         WHERE s.queue_id = $3 AND s.id = $15 AND s.type = 'item.submitted'",
     )
     .bind(item.id.to_string())
     .bind(event.org_id.to_string())
@@ -428,10 +428,8 @@ async fn create_item(
     .bind(item.state_reason.as_str())
     .bind(event.occurred_at)
     .bind(i16::from(item.priority.0))
-    .bind(item.priority.name())
     .bind(item.no_batch)
     .bind(item.force_enqueued)
-    .bind(item.priority == Priority::URGENT)
     .bind(item.submitted_via.as_str())
     .bind(item.mergeability.as_str())
     .bind(blocks)
@@ -509,9 +507,7 @@ pub(crate) async fn record_late_check(
     };
     let observation = CheckObservation {
         org_id,
-        run_id: run_id
-            .parse()
-            .map_err(|source| MergeQueueError::ReadQueue { id: run_id, source })?,
+        run_id: parse_id(&run_id, &run_id)?,
         name: check.name.clone(),
         kind: check.kind,
         required: required.contains(&check.name),

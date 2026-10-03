@@ -45,6 +45,19 @@ impl GroupState {
             Self::Merged | Self::Failed | Self::Bisected | Self::Dissolved
         )
     }
+
+    /// The state that the members of a group in this state take. `None` for
+    /// a merged group: its members merged one by one before it.
+    pub const fn member_state(self) -> Option<ItemState> {
+        match self {
+            Self::Testing => Some(ItemState::Testing),
+            Self::PendingFailure => Some(ItemState::PendingFailure),
+            Self::TestsPassed => Some(ItemState::TestsPassed),
+            Self::Failed => Some(ItemState::Failed),
+            Self::Bisected | Self::Dissolved => Some(ItemState::Pending),
+            Self::Merged => None,
+        }
+    }
 }
 
 closed_enum! {

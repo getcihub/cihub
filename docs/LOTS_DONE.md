@@ -59,8 +59,8 @@ The tracking of the finished lots, moved out of `docs/LOTS.md` (D165). The lots 
     order of the graph, cancellations, PR changes, external push, manual merge, pause, draining,
     suspension, mode change; decision identifiers without randomness; `check` (rules of
     `docs/RELIABILITY.md`). Tests: transition tables, replayed scenarios, property test (20,000 cases
-    verified locally). `mise run cover` also covers `cihub-mq-core`. Example `simulate`, which plays a
-    scenario line by line and prints the decisions (`crates/mq-core/examples/`).
+    verified locally). `mise run cover` also covers `cihub-mq-core`. The `simulate` example was removed later
+    as unreferenced.
   - Validated deviations (Nicolas Lecoy, September 29, 2026): crate `cihub-mq-core` (`DECISIONS.md` D24); settings as a
     parameter of `plan` and `check` (D25); dependencies `thiserror` and `proptest`, no `insta` in this lot (D26);
     `item.submitted` carries `author_id`, `additions`, `deletions` and `changed_files` (D27, D42). Neutral vocabulary of the
@@ -398,9 +398,7 @@ Other closed values:
     with its executor, and a type without an executor fails; a new job wakes up a worker in less than 1 s; the
     maintenance has only one job per day and deletes only the rows that are too old; the all-in-one binary
     executes the maintenance of the day.
-  - Done (example): `cargo run -p cihub-platform --example transport` plays the lot on a temporary database
-    (`cihub_transport_demo`, deleted at the end) and prints the leases, the lock, the deliveries and the wakeup, a
-    write during a reconciliation, a stopped worker, the recoveries, the quota and the maintenance.
+  - Done (example): the `transport` example was removed later as unreferenced.
   - Done (review of the frozen interfaces): the worker stops an executor after `JOB_TIMEOUT` (50 s), shorter than
     `JOB_LOCK`, and puts its job back in waiting (D69). Tests: an executor that is too slow is put back in waiting, a
     fast executor keeps its answer. `Outcome` and `Executors::register` do not change (D70, D71).
@@ -541,7 +539,7 @@ Other closed values:
     tested, merged, closed or failed (more than 500 events) give the same projections and the same
     snapshots after `rebuild`, and a fact that changes nothing is not written.
   - Done (reconciliation, D100 to D105): `Module` contract of `cihub-platform` (name, executors, scheduler
-    loop) and `module_enabled`; a queue of an organization without the module does nothing. Table `queue_inbox`
+    loop) and `module_enabled` (removed later as unused); a queue of an organization without the module does nothing. Table `queue_inbox`
     in deposit order; `deposit_fact`, `pending_facts`, `mark_facts_processed` and `ensure_user` in
     `cihub-store`. In `cihub-mq-core`: `Item::submitted_at`, `Observed::observed_at`, rule
     `not_ready_timeout_expired`, `Desired::observe` (`Read`s at fixed points after the submission) and
@@ -683,7 +681,7 @@ Other closed values:
     `fast_forward` outside `sequential`; the transition table accepts the precise reasons of a direct merge
     failure from `pending`. In `cihub-scm`, `PrSnapshot` gains `title` and `body`, `PrMerge` gains `tested_sha`,
     `ScmError` gains `NotFastForward`; `cihub-github` and the simulator advance the target on the test SHA in
-    `fast_forward`; the simulator gains `edit_pr` and random faults drawn from a seed (`RandomFaults`).
+    `fast_forward`; the simulator gains `edit_pr` (removed later as unused) and random faults drawn from a seed (`RandomFaults`).
     In `cihub-mq-core`, `Merge` carries the run and the test SHA, `Desired` gains `check_reads` and `target_read`,
     `observe` rereads each live PR, and `wake_at` follows these reads. In `cihub-mergequeue`: `merge_pr` job
     (commit title, attempts, mapping of the errors), `refresh_checks` (recreates the test branch)

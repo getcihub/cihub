@@ -32,12 +32,21 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, Vec<PrSnapshot>>;
 
+    /// The PR `number`, by a read of one PR; `NotFound` when it does not
+    /// exist.
     fn pull_request<'a>(
         &'a self,
         repo: &'a RepoRef,
         number: u64,
         class: JobClass,
-    ) -> ScmFuture<'a, PrSnapshot>;
+    ) -> ScmFuture<'a, PrSnapshot> {
+        Box::pin(async move {
+            self.pull_requests(repo, std::slice::from_ref(&number), class)
+                .await?
+                .pop()
+                .ok_or_else(|| ScmError::NotFound(format!("PR {number}")))
+        })
+    }
 
     /// The commit of the branch `branch`, or `None` when it does not exist.
     fn branch_head<'a>(

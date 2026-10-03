@@ -14,7 +14,7 @@ mod translate;
 mod webhook;
 
 pub use auth::{AppKey, KeyError};
-pub use budget::{Budget, Observation, Rate};
+pub use budget::{Budget, Rate};
 pub use client::{ClientError, Clock, GithubApp, GithubConfig};
 pub use translate::{TranslateError, translate};
 pub use webhook::{ReceivedDelivery, WEBHOOK_PATH, WebhookError, receive};

@@ -19,5 +19,5 @@ pub use event::{SUBMIT_BOX, ScmDelivery, ScmEvent};
 pub use scm::{MAX_PRS_PER_READ, Scm, ScmFuture};
 pub use types::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
-    RequiredChecks, ScmAccount, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    RequiredChecks, ScmAccount, ScmRepo, ScmUser, SetupFinding, StatusUpdate, check_passed,
 };

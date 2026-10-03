@@ -45,10 +45,7 @@ pub async fn acquire_leases(
     .await
     .map_err(PlatformError::Query)?;
     ids.into_iter()
-        .map(|id| {
-            id.parse()
-                .map_err(|source| PlatformError::ReadQueue { id, source })
-        })
+        .map(|id| id.parse().map_err(PlatformError::read("queue", &id)))
         .collect()
 }
 

@@ -29,22 +29,21 @@ use cihub_scm::Scm;
 use cihub_store::PgPool;
 use time::OffsetDateTime;
 
-pub use assembly::{
-    ASSEMBLE_TEST_BRANCH, ASSEMBLY_ATTEMPTS, CLEANUP_TEST_BRANCH, draft_pr_body, draft_pr_title,
-    required_statuses_of_file,
-};
-pub use command::PR_COMMAND;
-pub use config::LOAD_CONFIG;
-pub use jobs::{REFRESH_PRS, SUBMIT_PR, queue_status_context};
-pub use log::{COVER_AFTER, QueueLog, SNAPSHOT_EVERY, rebuild};
-pub use merge::{MERGE_ATTEMPTS, MERGE_PR, MERGE_RATE_LIMIT_WAIT, merge_commit_title};
-pub use repair::{REFRESH_CHECKS, REFRESH_TARGET, resync};
+pub use jobs::{REFRESH_PRS, queue_status_context};
+pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
+pub use repair::resync;
 pub use scheduler::{
-    CONNECTION_DELIVERIES_PER_PASS, COVER_EVERY, INBOX_PER_RECONCILIATION, LEASES_PER_PASS,
-    Reconciler, Translate, pass_connection_deliveries, run_scheduler, wake_live_queues,
-    wake_uncovered,
+    Reconciler, Translate, pass_connection_deliveries, wake_live_queues, wake_uncovered,
 };
-pub use surfaces::{PUBLISH_SURFACES, STATE_LABELS, WELCOME_PR};
+
+use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
+use crate::command::PR_COMMAND;
+use crate::config::LOAD_CONFIG;
+use crate::jobs::SUBMIT_PR;
+use crate::merge::MERGE_PR;
+use crate::repair::{REFRESH_CHECKS, REFRESH_TARGET};
+use crate::scheduler::run_scheduler;
+use crate::surfaces::{PUBLISH_SURFACES, WELCOME_PR};
 
 #[derive(Debug, thiserror::Error)]
 pub enum MergeQueueError {
@@ -87,8 +86,34 @@ pub enum MergeQueueError {
     Snapshot(#[source] serde_json::Error),
 }
 
+/// Reads `text`, a column of the row `row`, as an identifier of
+/// `cihub-domain`.
+pub(crate) fn parse_id<T>(text: &str, row: impl std::fmt::Display) -> Result<T, MergeQueueError>
+where
+    T: std::str::FromStr<Err = cihub_domain::IdParseError>,
+{
+    text.parse().map_err(|source| MergeQueueError::ReadQueue {
+        id: row.to_string(),
+        source,
+    })
+}
+
 /// The clock of the process, as the module receives it.
 pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
+
+/// Runs the jobs of `job_type` with `run`, an `async fn(&PgPool, &dyn Scm,
+/// &Job, OffsetDateTime) -> Result<(), Failure>`. A macro: a generic
+/// function would need a helper trait to name the future of an `async fn`
+/// that borrows its arguments.
+macro_rules! register {
+    ($executors:expr, $scm:expr, $job_type:expr, $run:path) => {{
+        let scm = Arc::clone(&$scm);
+        $executors.register($job_type, move |pool, job, now| {
+            let scm = Arc::clone(&scm);
+            async move { jobs::outcome($run(&pool, scm.as_ref(), &job, now).await) }
+        });
+    }};
+}
 
 /// The merge queue module (`DECISIONS.md` D94): the executors of its jobs, which
 /// call `scm`, and its scheduler loop, which runs as `owner`.
@@ -104,43 +129,17 @@ pub fn module(
         name: ModuleName::Mergequeue,
         api: api::api(pool.clone(), clock.clone(), scm.clone()),
         executors: Box::new(move |executors| {
-            let (refresh_scm, submit_scm, assemble_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let (merge_scm, checks_scm, target_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let (config_scm, publish_scm, command_scm) = (scm.clone(), scm.clone(), scm.clone());
-            let welcome_scm = scm.clone();
-            executors.register(REFRESH_PRS, move |pool, job, now| {
-                jobs::execute_refresh(pool, refresh_scm.clone(), job, now)
-            });
-            executors.register(SUBMIT_PR, move |pool, job, now| {
-                jobs::execute_submit(pool, submit_scm.clone(), job, now)
-            });
-            executors.register(ASSEMBLE_TEST_BRANCH, move |pool, job, now| {
-                assembly::execute_assemble(pool, assemble_scm.clone(), job, now)
-            });
-            executors.register(CLEANUP_TEST_BRANCH, move |pool, job, _| {
-                assembly::execute_cleanup(pool, scm.clone(), job)
-            });
-            executors.register(MERGE_PR, move |pool, job, now| {
-                merge::execute_merge(pool, merge_scm.clone(), job, now)
-            });
-            executors.register(REFRESH_CHECKS, move |pool, job, now| {
-                repair::execute_refresh_checks(pool, checks_scm.clone(), job, now)
-            });
-            executors.register(REFRESH_TARGET, move |pool, job, now| {
-                repair::execute_refresh_target(pool, target_scm.clone(), job, now)
-            });
-            executors.register(LOAD_CONFIG, move |pool, job, _| {
-                config::execute_load_config(pool, config_scm.clone(), job)
-            });
-            executors.register(PR_COMMAND, move |pool, job, now| {
-                command::execute_pr_command(pool, command_scm.clone(), job, now)
-            });
-            executors.register(WELCOME_PR, move |pool, job, _| {
-                surfaces::execute_welcome(pool, welcome_scm.clone(), job)
-            });
-            executors.register(PUBLISH_SURFACES, move |pool, job, now| {
-                surfaces::execute_publish(pool, publish_scm.clone(), job, now)
-            });
+            register!(executors, scm, REFRESH_PRS, jobs::refresh);
+            register!(executors, scm, SUBMIT_PR, jobs::submit_pr);
+            register!(executors, scm, ASSEMBLE_TEST_BRANCH, assembly::assemble_run);
+            register!(executors, scm, CLEANUP_TEST_BRANCH, assembly::cleanup_run);
+            register!(executors, scm, MERGE_PR, merge::merge_pr);
+            register!(executors, scm, REFRESH_CHECKS, repair::read_checks);
+            register!(executors, scm, REFRESH_TARGET, repair::read_target);
+            register!(executors, scm, LOAD_CONFIG, config::load);
+            register!(executors, scm, PR_COMMAND, command::run_pr_command);
+            register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
+            register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);
         }),
         scheduler: Box::new(move |cancel| {
             Box::pin(async move {

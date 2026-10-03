@@ -85,12 +85,7 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
             check: CheckReport {
                 name: read.text("/context")?,
                 kind: CheckKind::Status,
-                conclusion: match read.text("/state")?.as_str() {
-                    "success" => Some(CheckConclusion::Success),
-                    "failure" => Some(CheckConclusion::Failure),
-                    "error" => Some(CheckConclusion::Error),
-                    _ => None,
-                },
+                conclusion: status_conclusion(&read.text("/state")?),
                 details_url: payload["target_url"].as_str().map(str::to_owned),
             },
         },
@@ -120,6 +115,17 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
         connection_external_id: id(payload.pointer("/installation/id")),
         event: scm_event,
     })
+}
+
+/// The conclusion of a commit status; `pending` and `expected` have none. A
+/// webhook writes the state in lower case, GraphQL in upper case.
+pub(crate) fn status_conclusion(state: &str) -> Option<CheckConclusion> {
+    match state.to_ascii_lowercase().as_str() {
+        "success" => Some(CheckConclusion::Success),
+        "failure" => Some(CheckConclusion::Failure),
+        "error" => Some(CheckConclusion::Error),
+        _ => None,
+    }
 }
 
 /// A change of a PR or of its reviews: the label that it added, and whether

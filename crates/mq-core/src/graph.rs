@@ -6,13 +6,13 @@ use cihub_domain::{ImpactedTargets, Item, ItemId, ItemState, Priority, QueueMode
 use crate::Snapshot;
 
 /// Gap between two positions after a renumbering.
-pub const POSITION_STEP: i64 = 1000;
+pub(crate) const POSITION_STEP: i64 = 1000;
 
 static ALL: ImpactedTargets = ImpactedTargets::All;
 
 /// The target set of an item: `All` in single mode, or when no upload
 /// exists for its head.
-pub fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTargets {
+pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTargets {
     if snapshot.mode == QueueMode::Single {
         return &ALL;
     }
@@ -33,7 +33,7 @@ fn overlap(a: &ImpactedTargets, b: &ImpactedTargets) -> bool {
 /// The predecessors of `order[index]`, in queue order: the items ahead of it
 /// that a chain of items ahead of it, with overlapping target sets, links to
 /// it.
-pub fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -> Vec<ItemId> {
+pub(crate) fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -> Vec<ItemId> {
     let ahead = &order[..index];
     let sets: Vec<_> = order[..=index]
         .iter()
@@ -61,7 +61,7 @@ pub fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -> Vec<I
 /// of every item that is not `urgent`, groups in test included; any other
 /// value goes in front of the first item that is not in test and has a
 /// higher value.
-pub fn insertion_index(order: &[&Item], priority: Priority) -> usize {
+pub(crate) fn insertion_index(order: &[&Item], priority: Priority) -> usize {
     order
         .iter()
         .position(|i| {
@@ -76,7 +76,7 @@ pub fn insertion_index(order: &[&Item], priority: Priority) -> usize {
 
 /// The position for a new item at `index` in `order`, or `None` when the
 /// interval is exhausted and the queue must be renumbered first.
-pub fn position_at(order: &[&Item], index: usize) -> Option<i64> {
+pub(crate) fn position_at(order: &[&Item], index: usize) -> Option<i64> {
     let before = index.checked_sub(1).and_then(|k| order[k].position);
     let after = order.get(index).and_then(|i| i.position);
     match (before, after) {
@@ -88,7 +88,7 @@ pub fn position_at(order: &[&Item], index: usize) -> Option<i64> {
 }
 
 /// New positions for `order` that leave a free step at `index`.
-pub fn renumber(order: &[&Item], index: usize) -> Vec<(ItemId, i64)> {
+pub(crate) fn renumber(order: &[&Item], index: usize) -> Vec<(ItemId, i64)> {
     order
         .iter()
         .zip(1_i64..)

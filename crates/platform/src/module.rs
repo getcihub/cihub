@@ -2,11 +2,10 @@ use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 
-use cihub_domain::{ModuleName, OrgId};
-use sqlx::PgConnection;
+use cihub_domain::ModuleName;
 use tokio_util::sync::CancellationToken;
 
-use crate::{Executors, PlatformError};
+use crate::Executors;
 
 /// What a loop of a module gives when it cannot start.
 pub type LoopError = Box<dyn Error + Send + Sync>;
@@ -35,25 +34,4 @@ pub struct Module {
 pub struct ModuleApi {
     pub routes: axum::Router,
     pub openapi: utoipa::openapi::OpenApi,
-}
-
-/// Whether `org` has the module `module` at the moment of the transaction of
-/// `conn`.
-///
-/// # Errors
-///
-/// Postgres fails.
-pub async fn module_enabled(
-    conn: &mut PgConnection,
-    org: OrgId,
-    module: ModuleName,
-) -> Result<bool, PlatformError> {
-    sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM org_modules WHERE org_id = $1 AND module = $2::module_name)",
-    )
-    .bind(org.to_string())
-    .bind(module.as_str())
-    .fetch_one(conn)
-    .await
-    .map_err(PlatformError::Query)
 }

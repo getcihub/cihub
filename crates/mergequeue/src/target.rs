@@ -3,7 +3,7 @@ use cihub_domain::{ModuleName, OrgId, QueueId, RepoId, ScmInstanceId};
 use cihub_scm::{ConnectionRef, RepoRef};
 use sqlx::PgConnection;
 
-use crate::MergeQueueError;
+use crate::{MergeQueueError, parse_id};
 
 /// A repository, as a job calls it through its connection.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,18 +75,14 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         cext,
         on,
     ) = row;
-    let read = |source| MergeQueueError::ReadQueue {
-        id: queue.clone(),
-        source,
-    };
     Ok(QueueTarget {
-        queue_id: queue.parse().map_err(read)?,
-        org_id: org.parse().map_err(read)?,
-        scm_instance_id: instance.parse().map_err(read)?,
-        repo_id: repo.parse().map_err(read)?,
+        queue_id: parse_id(&queue, &queue)?,
+        org_id: parse_id(&org, &queue)?,
+        scm_instance_id: parse_id(&instance, &queue)?,
+        repo_id: parse_id(&repo, &queue)?,
         repo: RepoRef {
             connection: ConnectionRef {
-                id: connection.parse().map_err(read)?,
+                id: parse_id(&connection, &queue)?,
                 external_id: cext,
             },
             external_id,
@@ -121,20 +117,44 @@ impl QueueTarget {
         decode(row.ok_or(MergeQueueError::UnknownQueue(queue))?)
     }
 
-    /// The settings of the queue, from its last valid file (`DECISIONS.md`
-    /// D136).
+    /// The last valid file of the queue (`DECISIONS.md` D136); `None` without
+    /// a file.
     ///
     /// # Errors
     ///
     /// The file is no longer valid: it was valid when the queue read it, so
     /// only a new version of CIHub can refuse it.
-    pub(crate) fn settings(&self) -> Result<QueueSettings, MergeQueueError> {
-        let settings = match &self.config_text {
-            Some(text) => RepoConfig::parse(text)
-                .and_then(|config| config.settings(&self.target_branch, &self.name)),
+    pub(crate) fn config(&self) -> Result<Option<RepoConfig>, MergeQueueError> {
+        self.config_text
+            .as_deref()
+            .map(RepoConfig::parse)
+            .transpose()
+            .map_err(MergeQueueError::Settings)
+    }
+
+    /// The settings of the queue in `config`, its last valid file.
+    ///
+    /// # Errors
+    ///
+    /// The file does not give valid settings for the queue.
+    pub(crate) fn settings_in(
+        &self,
+        config: Option<&RepoConfig>,
+    ) -> Result<QueueSettings, MergeQueueError> {
+        match config {
+            Some(config) => config.settings(&self.target_branch, &self.name),
             None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
-        };
-        settings.map_err(MergeQueueError::Settings)
+        }
+        .map_err(MergeQueueError::Settings)
+    }
+
+    /// The settings of the queue, from its last valid file.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::config`] and [`Self::settings_in`].
+    pub(crate) fn settings(&self) -> Result<QueueSettings, MergeQueueError> {
+        self.settings_in(self.config()?.as_ref())
     }
 
     /// The queues of the branch `branch` of the repository `repo`, in the
@@ -207,19 +227,15 @@ impl RepoTarget {
         .fetch_optional(conn)
         .await
         .map_err(MergeQueueError::Query)?;
-        let read = |source| MergeQueueError::ReadQueue {
-            id: repo.to_string(),
-            source,
-        };
         let (org, instance, external_id, namespace, name, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
         Ok(Self {
             repo_id: repo,
-            org_id: org.parse().map_err(read)?,
-            scm_instance_id: instance.parse().map_err(read)?,
+            org_id: parse_id(&org, repo)?,
+            scm_instance_id: parse_id(&instance, repo)?,
             repo: RepoRef {
                 connection: ConnectionRef {
-                    id: connection.parse().map_err(read)?,
+                    id: parse_id(&connection, repo)?,
                     external_id: cext,
                 },
                 external_id,
@@ -253,5 +269,58 @@ pub(crate) fn test_target() -> QueueTarget {
         config_sha: None,
         enabled: true,
         repo_id: RepoId::from_ulid(Ulid(6)),
+    }
+}
+
+/// A PR of the unit tests of the jobs, with the checks `checks` as (name,
+/// passed).
+#[cfg(test)]
+pub(crate) fn test_pr(
+    mergeability: cihub_domain::Mergeability,
+    review_decision: cihub_domain::ReviewDecision,
+    checks: &[(&str, bool)],
+) -> cihub_scm::PrSnapshot {
+    use std::collections::BTreeSet;
+
+    use cihub_domain::{CheckConclusion, CheckKind, CheckReport, PrState};
+    use time::OffsetDateTime;
+
+    cihub_scm::PrSnapshot {
+        number: 1,
+        state: PrState::Open,
+        head_sha: "a".into(),
+        base_branch: "main".into(),
+        head_branch: "feature".into(),
+        from_fork: false,
+        created_at: OffsetDateTime::UNIX_EPOCH,
+        draft: false,
+        title: "PR 1".into(),
+        body: String::new(),
+        labels: BTreeSet::new(),
+        mergeability,
+        review_decision,
+        approved_by: BTreeSet::new(),
+        changes_requested_by: BTreeSet::new(),
+        review_requested: BTreeSet::new(),
+        checks: checks
+            .iter()
+            .map(|(name, passed)| CheckReport {
+                name: (*name).into(),
+                kind: CheckKind::Status,
+                conclusion: Some(if *passed {
+                    CheckConclusion::Success
+                } else {
+                    CheckConclusion::Failure
+                }),
+                details_url: None,
+            })
+            .collect(),
+        author: cihub_scm::ScmUser {
+            external_id: "1".into(),
+            login: "octocat".into(),
+        },
+        additions: 0,
+        deletions: 0,
+        changed_files: 0,
     }
 }

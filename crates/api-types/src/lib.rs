@@ -3,6 +3,8 @@
 //! clients. Pure: no I/O and no server code. The feature `openapi` derives
 //! the `OpenAPI` schemas, for the server only.
 
+use std::fmt;
+
 use cihub_domain::{
     BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, Priority, QueueMode,
     QueueState, Reason, RequiredStatusesSource, RunStatus,
@@ -44,17 +46,12 @@ pub enum ErrorCode {
     Internal,
 }
 
-impl ErrorCode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Unauthorized => "unauthorized",
-            Self::Forbidden => "forbidden",
-            Self::NotFound => "not_found",
-            Self::InvalidRequest => "invalid_request",
-            Self::RateLimited => "rate_limited",
-            Self::QueueExists => "queue_exists",
-            Self::InvalidState => "invalid_state",
-            Self::Internal => "internal",
+impl fmt::Display for ErrorCode {
+    /// The name of the JSON, so that a message and the API never disagree.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match serde_json::to_value(self) {
+            Ok(Value::String(name)) => f.write_str(&name),
+            _ => Err(fmt::Error),
         }
     }
 }
@@ -417,8 +414,6 @@ mod tests {
         let json = serde_json::to_value(&problem).unwrap();
         assert_eq!(json["type"], "about:blank");
         assert_eq!(json["code"], "not_found");
-        for code in [ErrorCode::Unauthorized, ErrorCode::InvalidState] {
-            assert_eq!(serde_json::to_value(code).unwrap(), code.as_str());
-        }
+        assert_eq!(ErrorCode::InvalidState.to_string(), "invalid_state");
     }
 }

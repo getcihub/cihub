@@ -5,17 +5,18 @@
 //! the queue dirty; it never writes the log.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, CheckConclusion, ConnectionId, Event, EventId, EventKind, ItemState, JobClass,
-    Mergeability, OrgId, Permission, PrState, Priority, QueueId, RepoId, ReviewDecision,
-    ScmInstanceId, SubmittedVia, UserId,
+    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
+    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia,
+    UserId,
 };
-use cihub_platform::{Job, Outcome, error_chain, mark_dirty};
-use cihub_scm::{PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser};
-use cihub_store::{PgPool, begin_system, deposit_fact, ensure_user};
+use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
+use cihub_scm::{
+    MAX_PRS_PER_READ, PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser, check_passed,
+};
+use cihub_store::{PgPool, StoreError, begin_system, deposit_fact, ensure_user};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::PgConnection;
@@ -27,7 +28,7 @@ use crate::admission::{Reading, Sender, rule_priority, unmet_conditions};
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
-pub const SUBMIT_PR: &str = "submit_pr";
+pub(crate) const SUBMIT_PR: &str = "submit_pr";
 
 /// The PRs that `refresh_prs` reads, at most
 /// [`MAX_PRS_PER_READ`](cihub_scm::MAX_PRS_PER_READ).
@@ -83,6 +84,24 @@ pub(crate) struct SubmitPr {
     pub label: Option<String>,
 }
 
+impl SubmitPr {
+    /// The submission of the PR `pr_number` of `repo_id` by the label `label`
+    /// (D102): no author, and the priority of the rules.
+    pub(crate) fn by_label(repo_id: RepoId, pr_number: u64, label: String) -> Self {
+        Self {
+            repo_id,
+            pr_number,
+            via: SubmittedVia::Label,
+            requested_by: None,
+            priority: None,
+            no_batch: false,
+            direct: false,
+            queue: None,
+            label: Some(label),
+        }
+    }
+}
+
 /// A subject of a key has no `:` (`DECISIONS.md` D68).
 pub(crate) fn subject(text: &str) -> String {
     text.replace(':', "-")
@@ -107,6 +126,27 @@ pub(crate) fn job(
     }
 }
 
+/// A job of the connection `connection` after the delivery `delivery_id`,
+/// without a queue yet: the job finds it.
+pub(crate) fn connection_job(
+    org_id: OrgId,
+    connection: (ScmInstanceId, ConnectionId),
+    delivery_id: &str,
+    job_type: &str,
+    payload: serde_json::Value,
+) -> Job {
+    Job {
+        idempotency_key: format!("{job_type}:{}:1", subject(delivery_id)),
+        job_type: job_type.to_owned(),
+        class: JobClass::Interactive,
+        org_id: Some(org_id),
+        connection: Some(connection),
+        queue_id: None,
+        payload,
+        attempts: 0,
+    }
+}
+
 /// A read of `prs` after the delivery `delivery_id` (`DECISIONS.md` D101).
 pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u64>) -> Job {
     let key = format!(
@@ -118,23 +158,33 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
     job(target, key, REFRESH_PRS, JobClass::Interactive, payload)
 }
 
-/// The reads of `prs`, due at the read point `point` (`DECISIONS.md` D101); the
-/// chunks after the first one of a point add their rank to the key.
-pub(crate) fn refresh_at(
+/// The reads of `prs`, due at the read point `point` (`DECISIONS.md` D101).
+pub(crate) fn refresh_at(target: &QueueTarget, point: OffsetDateTime, prs: &[u64]) -> Vec<Job> {
+    refresh_reads(target, &window(point), JobClass::Repair, prs)
+}
+
+/// The reads of `prs` under the subject `subject`, by chunks of
+/// [`MAX_PRS_PER_READ`]; the chunks after the first one add their rank to
+/// the key (`DECISIONS.md` D101).
+pub(crate) fn refresh_reads(
     target: &QueueTarget,
-    point: OffsetDateTime,
-    chunk: usize,
-    prs: Vec<u64>,
-) -> Job {
-    let window = window(point);
-    let rank = if chunk == 0 {
-        String::new()
-    } else {
-        format!("-{}", chunk + 1)
-    };
-    let key = format!("{REFRESH_PRS}:{}-{window}{rank}:1", target.queue_id);
-    let payload = json!(RefreshPrs { prs });
-    job(target, key, REFRESH_PRS, JobClass::Repair, payload)
+    subject: &str,
+    class: JobClass,
+    prs: &[u64],
+) -> Vec<Job> {
+    prs.chunks(MAX_PRS_PER_READ)
+        .enumerate()
+        .map(|(chunk, prs)| {
+            let rank = if chunk == 0 {
+                String::new()
+            } else {
+                format!("-{}", chunk + 1)
+            };
+            let key = format!("{REFRESH_PRS}:{}-{subject}{rank}:1", target.queue_id);
+            let payload = json!(RefreshPrs { prs: prs.to_vec() });
+            job(target, key, REFRESH_PRS, class, payload)
+        })
+        .collect()
 }
 
 /// The window of a key of a read: the minute of its read point,
@@ -158,16 +208,7 @@ pub(crate) fn submit(
     delivery_id: &str,
     request: &SubmitPr,
 ) -> Job {
-    Job {
-        idempotency_key: format!("{SUBMIT_PR}:{}:1", subject(delivery_id)),
-        job_type: SUBMIT_PR.to_owned(),
-        class: JobClass::Interactive,
-        org_id: Some(org_id),
-        connection: Some(connection),
-        queue_id: None,
-        payload: json!(request),
-        attempts: 0,
-    }
+    connection_job(org_id, connection, delivery_id, SUBMIT_PR, json!(request))
 }
 
 /// Answers a command on its PR, to say why the queue refused it
@@ -202,17 +243,12 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
     ) {
         return Mergeability::Blocked;
     }
-    let passing = |name: &str| {
-        pr.checks
-            .iter()
-            .any(|c| c.name == name && c.conclusion.is_some_and(CheckConclusion::is_passing))
-    };
     let others_pass = required
         .names
         .iter()
         .filter(|name| *name != own)
-        .all(|name| passing(name));
-    if others_pass && !passing(own) {
+        .all(|name| check_passed(pr, name));
+    if others_pass && !check_passed(pr, own) {
         Mergeability::Mergeable
     } else {
         Mergeability::Blocked
@@ -309,6 +345,24 @@ impl From<MergeQueueError> for Failure {
     }
 }
 
+impl From<StoreError> for Failure {
+    fn from(err: StoreError) -> Self {
+        MergeQueueError::Store(err).into()
+    }
+}
+
+impl From<sqlx::Error> for Failure {
+    fn from(err: sqlx::Error) -> Self {
+        MergeQueueError::Query(err).into()
+    }
+}
+
+impl From<PlatformError> for Failure {
+    fn from(err: PlatformError) -> Self {
+        MergeQueueError::Platform(err).into()
+    }
+}
+
 impl From<ScmError> for Failure {
     fn from(err: ScmError) -> Self {
         let text = error_chain(&err);
@@ -335,28 +389,41 @@ pub(crate) async fn target_of(pool: &PgPool, job: &Job) -> Result<QueueTarget, F
     let queue = job
         .queue_id
         .ok_or_else(|| Failure::Never("the job has no queue".into()))?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    load_target(pool, queue).await
+}
+
+/// The queue `queue`, read in its own transaction.
+pub(crate) async fn load_target(pool: &PgPool, queue: QueueId) -> Result<QueueTarget, Failure> {
+    let mut tx = begin_system(pool).await?;
     let target = QueueTarget::load(&mut tx, queue).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    tx.commit().await?;
     Ok(target)
+}
+
+/// The repository `repo`, read in its own transaction.
+pub(crate) async fn load_repo(pool: &PgPool, repo: RepoId) -> Result<RepoTarget, Failure> {
+    let mut tx = begin_system(pool).await?;
+    let target = RepoTarget::load(&mut tx, repo).await?;
+    tx.commit().await?;
+    Ok(target)
+}
+
+/// Gives `facts` back to the queue of `target`, in their own transaction.
+pub(crate) async fn give_back_facts(
+    pool: &PgPool,
+    target: &QueueTarget,
+    facts: Vec<(Actor, EventKind)>,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let mut tx = begin_system(pool).await?;
+    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Reads the PRs of the job and gives back one `pr.observed` per PR. A PR
 /// that no longer exists gives nothing.
-pub(crate) async fn execute_refresh(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(refresh(&pool, scm.as_ref(), &job, now).await)
-}
-
-async fn refresh(
+pub(crate) async fn refresh(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -371,14 +438,11 @@ async fn refresh(
         .pull_requests(&target.repo, &request.prs, job.class)
         .await?;
     let own = queue_status_context(&target.target_branch);
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let submissions = submissions(&mut tx, target.queue_id, &request.prs).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    let settings = target.settings()?;
+    tx.commit().await?;
+    let config = target.config()?;
+    let settings = target.settings_in(config.as_ref())?;
     let mut facts = Vec::with_capacity(prs.len());
     for pr in &prs {
         // The new submission comes before the observation, which cancels the
@@ -399,20 +463,13 @@ async fn refresh(
                     class: job.class,
                     now,
                 };
-                unmet_conditions(scm, &target, pr, &reading).await?
+                unmet_conditions(scm, &target, config.as_ref(), pr, &reading).await?
             }
         };
         let kind = observed(pr, &required, &own, unmet);
         facts.push((Actor::System, kind));
     }
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
+    give_back_facts(pool, &target, facts, now).await
 }
 
 /// The live item of a PR, as `refresh_prs` needs it.
@@ -560,13 +617,9 @@ async fn enabled_queues(
     repo: RepoId,
     branch: &str,
 ) -> Result<Vec<QueueTarget>, Failure> {
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let queues = QueueTarget::queues_of_branch(&mut tx, repo, branch).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    tx.commit().await?;
     Ok(queues.into_iter().filter(|queue| queue.enabled).collect())
 }
 
@@ -587,12 +640,13 @@ async fn route<'a>(
         };
         return Ok(Some((
             queue,
-            unmet_conditions(scm, queue, pr, reading).await?,
+            unmet_conditions(scm, queue, queue.config()?.as_ref(), pr, reading).await?,
         )));
     }
     let mut first = None;
     for queue in queues {
-        let unmet = unmet_conditions(scm, queue, pr, reading).await?;
+        let config = queue.config()?;
+        let unmet = unmet_conditions(scm, queue, config.as_ref(), pr, reading).await?;
         if unmet.is_empty() {
             return Ok(Some((queue, unmet)));
         }
@@ -621,33 +675,18 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused command gets a comment
 /// that says why (`DECISIONS.md` D157); a refused label gets none.
-pub(crate) async fn execute_submit(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(submit_pr(&pool, scm.as_ref(), &job, now).await)
-}
-
 #[expect(
     clippy::too_many_lines,
     reason = "the checks of a submission read in their order, each refusal with its answer"
 )]
-async fn submit_pr(
+pub(crate) async fn submit_pr(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: SubmitPr = read_payload(job)?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    let repo = RepoTarget::load(&mut tx, request.repo_id).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let repo = load_repo(pool, request.repo_id).await?;
     let pr_number = request.pr_number;
     let (repo_ref, by_command) = (&repo.repo, request.requested_by.is_some());
     let refuse = |text: String| async move {
@@ -703,7 +742,8 @@ async fn submit_pr(
         ))
         .await;
     };
-    if let Some(reason) = refusal(&target.settings()?, &request, &pr) {
+    let config = target.config()?;
+    if let Some(reason) = refusal(&target.settings_in(config.as_ref())?, &request, &pr) {
         info!(pr_number, reason, "submission dropped");
         return refuse(format!(
             "`/cihub merge`: the commands are off for the queue `{}`.",
@@ -713,16 +753,14 @@ async fn submit_pr(
     }
     let priority = match request.priority {
         Some(priority) => priority,
-        None => rule_priority(scm, target, &pr, &reading)
+        None => rule_priority(scm, target, config.as_ref(), &pr, &reading)
             .await?
             .unwrap_or(Priority::MEDIUM),
     };
     // The accounts come in their own transaction: the one that gives the
     // facts back waits for the reconciliation of the queue, which may need
     // the same rows of `users`.
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let author_id = user_of(&mut tx, target.scm_instance_id, &pr.author).await?;
     let actor = match &request.requested_by {
         Some(account) => Actor::User {
@@ -730,12 +768,7 @@ async fn submit_pr(
         },
         None => Actor::System,
     };
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    tx.commit().await?;
     let submitted = EventKind::ItemSubmitted {
         pr_number,
         head_sha: pr.head_sha.clone(),
@@ -753,65 +786,15 @@ async fn submit_pr(
         (actor, submitted),
         (Actor::System, observed(&pr, &required, &own, unmet)),
     ];
-    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    Ok(())
+    give_back_facts(pool, target, facts, now).await
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use cihub_domain::{CheckKind, CheckReport, PrState};
-
     use super::*;
-
-    fn pr(
-        mergeability: Mergeability,
-        review: ReviewDecision,
-        checks: &[(&str, bool)],
-    ) -> PrSnapshot {
-        PrSnapshot {
-            number: 1,
-            state: PrState::Open,
-            head_sha: "a".into(),
-            base_branch: "main".into(),
-            head_branch: "feature".into(),
-            from_fork: false,
-            created_at: OffsetDateTime::UNIX_EPOCH,
-            draft: false,
-            title: "PR 1".into(),
-            body: String::new(),
-            labels: BTreeSet::new(),
-            mergeability,
-            review_decision: review,
-            approved_by: BTreeSet::new(),
-            changes_requested_by: BTreeSet::new(),
-            review_requested: BTreeSet::new(),
-            checks: checks
-                .iter()
-                .map(|(name, ok)| CheckReport {
-                    name: (*name).into(),
-                    kind: CheckKind::Status,
-                    conclusion: Some(if *ok {
-                        CheckConclusion::Success
-                    } else {
-                        CheckConclusion::Failure
-                    }),
-                    details_url: None,
-                })
-                .collect(),
-            author: ScmUser {
-                external_id: "1".into(),
-                login: "octocat".into(),
-            },
-            additions: 0,
-            deletions: 0,
-            changed_files: 0,
-        }
-    }
+    use crate::target::{test_pr as pr, test_target};
 
     #[test]
     fn a_pr_blocked_only_by_the_queue_status_is_mergeable() {
@@ -871,42 +854,26 @@ mod tests {
 
     #[test]
     fn keys_name_their_cause() {
-        let target = QueueTarget {
-            queue_id: QueueId::from_ulid(ulid::Ulid(2)),
-            org_id: OrgId::from_ulid(ulid::Ulid(1)),
-            scm_instance_id: ScmInstanceId::from_ulid(ulid::Ulid(3)),
-            repo: cihub_scm::RepoRef {
-                connection: cihub_scm::ConnectionRef {
-                    id: ConnectionId::from_ulid(ulid::Ulid(4)),
-                    external_id: "4".into(),
-                },
-                external_id: "5".into(),
-                namespace: "acme".into(),
-                name: "app".into(),
-            },
-            target_branch: "main".into(),
-            name: "main".into(),
-            config_text: None,
-            config_sha: None,
-            enabled: true,
-            repo_id: RepoId::from_ulid(ulid::Ulid(6)),
-        };
+        let target = test_target();
         let queue = target.queue_id;
         let after = refresh_after(&target, "a:b", vec![1]);
         assert_eq!(after.idempotency_key, format!("refresh_prs:{queue}-a-b:1"));
         assert_eq!(after.class, JobClass::Interactive);
         let point = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
-        let first = refresh_at(&target, point, 0, vec![1]);
+        let prs: Vec<u64> = (1..=u64::try_from(MAX_PRS_PER_READ + 1).unwrap()).collect();
+        let reads = refresh_at(&target, point, &prs);
+        assert_eq!(reads.len(), 2);
         assert_eq!(
-            first.idempotency_key,
+            reads[0].idempotency_key,
             format!("refresh_prs:{queue}-20260921T1413:1")
         );
-        assert_eq!(first.class, JobClass::Repair);
-        let second = refresh_at(&target, point, 1, vec![2]);
+        assert_eq!(reads[0].class, JobClass::Repair);
         assert_eq!(
-            second.idempotency_key,
+            reads[1].idempotency_key,
             format!("refresh_prs:{queue}-20260921T1413-2:1")
         );
+        let second: RefreshPrs = serde_json::from_value(reads[1].payload.clone()).unwrap();
+        assert_eq!(second.prs, vec![prs[MAX_PRS_PER_READ]]);
         let request = SubmitPr {
             repo_id: target.repo_id,
             pr_number: 1,

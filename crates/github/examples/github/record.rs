@@ -14,8 +14,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use cihub_domain::{JobClass, Mergeability, ReviewDecision};
 use cihub_github::{AppKey, GithubApp, GithubConfig};
-use cihub_scm::contract::{self, Fixture};
-use cihub_scm::{CommitStatus, RepoRef, RequiredChecks, Scm, ScmUser, StatusUpdate};
+use cihub_scm::contract;
+use cihub_scm::{CommitStatus, RepoRef, Scm, StatusUpdate};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -80,7 +80,9 @@ impl Rest {
     }
 }
 
-async fn send(request: reqwest::RequestBuilder, body: Option<Value>) -> Result<Value> {
+/// Sends a REST call of the example and reads its JSON answer; a status
+/// other than a success is an error with the message of GitHub.
+pub async fn send(request: reqwest::RequestBuilder, body: Option<Value>) -> Result<Value> {
     let mut request = request
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
@@ -203,24 +205,7 @@ pub async fn record(
         admin: prs.admin,
         work_branch: WORK_BRANCH.to_owned(),
     };
-    let fixture = Fixture {
-        base_branch: world.base_branch.clone(),
-        required: RequiredChecks {
-            names: world.required_checks.clone(),
-            up_to_date: world.up_to_date,
-        },
-        file: (world.file_path.clone(), world.file_content.clone()),
-        mergeable_pr: world.mergeable_pr,
-        conflicting_pr: world.conflicting_pr,
-        draft_pr: world.draft_pr,
-        missing_pr: world.missing_pr,
-        admin: ScmUser {
-            external_id: String::new(),
-            login: world.admin.clone(),
-        },
-        work_branch: world.work_branch.clone(),
-    };
-    contract::run(&recording_app, repo, &fixture).await;
+    contract::run(&recording_app, repo, &world.fixture()).await;
     let mut exchanges = std::mem::take(
         &mut *proxy
             .exchanges

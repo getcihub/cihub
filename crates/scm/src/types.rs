@@ -1,6 +1,8 @@
 use std::collections::BTreeSet;
 
-use cihub_domain::{CheckReport, ConnectionId, MergeMethod, Mergeability, PrState, ReviewDecision};
+use cihub_domain::{
+    CheckConclusion, CheckReport, ConnectionId, MergeMethod, Mergeability, PrState, ReviewDecision,
+};
 use time::OffsetDateTime;
 
 /// The connection that a call uses: its quota, its budget and its credentials.
@@ -57,6 +59,13 @@ pub struct PrSnapshot {
     pub additions: u64,
     pub deletions: u64,
     pub changed_files: u64,
+}
+
+/// The check `name` has a passing conclusion on the head of `pr`.
+pub fn check_passed(pr: &PrSnapshot, name: &str) -> bool {
+    pr.checks.iter().any(|check| {
+        check.name == name && check.conclusion.is_some_and(CheckConclusion::is_passing)
+    })
 }
 
 /// The checks that the rules of a branch require before a merge.

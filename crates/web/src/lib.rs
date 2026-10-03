@@ -34,7 +34,7 @@ const MAX_DELIVERY_BYTES: usize = 25 * 1024 * 1024;
 
 /// A delivery not stored within this time is refused: the SCM sees a failure,
 /// and the sweep asks for it again (`DECISIONS.md` D88).
-pub const ACK_WITHIN: Duration = Duration::from_secs(2);
+const ACK_WITHIN: Duration = Duration::from_secs(2);
 
 /// The webhooks of the GitHub App of the instance.
 pub struct GithubWebhooks {
@@ -49,7 +49,7 @@ struct Webhooks {
     github: Arc<GithubWebhooks>,
 }
 
-pub use api::{REQUESTS_PER_MINUTE, openapi};
+pub use api::REQUESTS_PER_MINUTE;
 
 /// The routes of the public address: the webhooks of the GitHub App, and the
 /// API with the routes of `modules`.

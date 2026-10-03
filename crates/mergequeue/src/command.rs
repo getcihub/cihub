@@ -2,13 +2,11 @@
 //! `/cihub merge`, which `submit_pr` runs, and `/cihub cancel` and
 //! `/cihub restart`, which the job `pr_command` runs (`DECISIONS.md` D157).
 
-use std::sync::Arc;
-
 use cihub_domain::{
-    Actor, ConnectionId, EventKind, ItemId, ItemState, JobClass, OrgId, Permission, Priority,
-    QueueId, RepoId, ScmInstanceId,
+    Actor, ConnectionId, EventKind, ItemId, ItemState, OrgId, Permission, Priority, QueueId,
+    RepoId, ScmInstanceId,
 };
-use cihub_platform::{Job, Outcome};
+use cihub_platform::Job;
 use cihub_scm::{Scm, ScmUser};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
@@ -16,12 +14,13 @@ use serde_json::json;
 use time::OffsetDateTime;
 use tracing::info;
 
-use crate::MergeQueueError;
-use crate::jobs::{Account, Failure, give_back, outcome, read_payload, reply, subject, user_of};
-use crate::target::{QueueTarget, RepoTarget};
+use crate::jobs::{
+    Account, Failure, connection_job, give_back_facts, load_repo, load_target, read_payload, reply,
+    user_of,
+};
 
 /// The type of the job that runs `/cihub cancel` and `/cihub restart`.
-pub const PR_COMMAND: &str = "pr_command";
+pub(crate) const PR_COMMAND: &str = "pr_command";
 
 /// A command of a comment.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -123,31 +122,13 @@ pub(crate) fn pr_command_job(
     delivery_id: &str,
     request: &PrCommandRequest,
 ) -> Job {
-    Job {
-        idempotency_key: format!("{PR_COMMAND}:{}:1", subject(delivery_id)),
-        job_type: PR_COMMAND.to_owned(),
-        class: JobClass::Interactive,
-        org_id: Some(org_id),
-        connection: Some(connection),
-        queue_id: None,
-        payload: json!(request),
-        attempts: 0,
-    }
-}
-
-pub(crate) async fn execute_pr_command(
-    pool: PgPool,
-    scm: Arc<dyn Scm>,
-    job: Job,
-    now: OffsetDateTime,
-) -> Outcome {
-    outcome(run_pr_command(&pool, scm.as_ref(), &job, now).await)
+    connection_job(org_id, connection, delivery_id, PR_COMMAND, json!(request))
 }
 
 /// Checks the permission of the author, finds the live item of the PR, and
 /// gives its request to its queue. A refused command gets a comment that
 /// says why.
-async fn run_pr_command(
+pub(crate) async fn run_pr_command(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -155,13 +136,7 @@ async fn run_pr_command(
 ) -> Result<(), Failure> {
     let request: PrCommandRequest = read_payload(job)?;
     let class = job.class;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    let repo = RepoTarget::load(&mut tx, request.repo_id).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let repo = load_repo(pool, request.repo_id).await?;
     let number = request.pr_number;
     let name = request.command.name();
     let refuse = |text: String| reply(scm, &repo.repo, number, text, class);
@@ -176,13 +151,7 @@ async fn run_pr_command(
     let Some((queue_id, item_id, state)) = live_item(pool, repo.repo_id, number).await? else {
         return refuse(format!("`{name}`: this PR has no item in a queue.")).await;
     };
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    let target = QueueTarget::load(&mut tx, queue_id).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    let target = load_target(pool, queue_id).await?;
     if !target.settings()?.commands_enabled.value {
         return refuse(format!(
             "`{name}`: the commands are off for the queue `{}`.",
@@ -208,27 +177,11 @@ async fn run_pr_command(
             .await;
         }
     };
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let user_id = user_of(&mut tx, target.scm_instance_id, &author).await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
-    give_back(
-        &mut tx,
-        target.org_id,
-        queue_id,
-        vec![(Actor::User { user_id }, kind)],
-        now,
-    )
-    .await?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    tx.commit().await?;
+    let facts = vec![(Actor::User { user_id }, kind)];
+    give_back_facts(pool, &target, facts, now).await?;
     info!(
         pr_number = number,
         command = name,
@@ -244,9 +197,7 @@ async fn live_item(
     repo: RepoId,
     number: u64,
 ) -> Result<Option<(QueueId, ItemId, ItemState)>, Failure> {
-    let mut tx = begin_system(pool)
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Store(err)))?;
+    let mut tx = begin_system(pool).await?;
     let row: Option<(String, String, String)> = sqlx::query_as(
         "SELECT i.queue_id, i.id, i.state::text FROM queue_items i
          JOIN queues q ON q.id = i.queue_id
@@ -258,11 +209,8 @@ async fn live_item(
     .bind(repo.to_string())
     .bind(i64::try_from(number).unwrap_or(i64::MAX))
     .fetch_optional(&mut *tx)
-    .await
-    .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
-    tx.commit()
-        .await
-        .map_err(|err| Failure::from(MergeQueueError::Query(err)))?;
+    .await?;
+    tx.commit().await?;
     let Some((queue, item, state)) = row else {
         return Ok(None);
     };

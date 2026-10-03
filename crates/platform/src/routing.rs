@@ -6,19 +6,20 @@ use cihub_scm::{ScmDelivery, ScmEvent};
 use cihub_store::{PgPool, begin_system};
 use serde_json::Value;
 use sqlx::PgConnection;
-use sqlx::postgres::PgListener;
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use crate::wake::notify_connection_delivery;
-use crate::{INBOX_CHANNEL, PlatformError, mark_dirty, request_repo_sync};
+use crate::connections::request_repo_sync;
+use crate::inbox::{DeliveryRow, INBOX_CHANNEL, decode};
+use crate::wake::wake_for_delivery;
+use crate::{Delivery, PlatformError, QueueWakeup};
 
 /// Without a notification, the routing loop looks for deliveries this often.
 pub const ROUTE_POLL: Duration = Duration::from_secs(5);
 
 /// A pass routes at most this many deliveries in one transaction.
-pub const ROUTES_PER_PASS: i64 = 100;
+pub(crate) const ROUTES_PER_PASS: i64 = 100;
 
 /// Where a delivery goes (`DECISIONS.md` D85, D86).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -35,27 +36,20 @@ pub struct Route {
     pub processed: bool,
 }
 
-/// A delivery that waits for its routing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UnroutedDelivery {
-    pub scm_instance_id: ScmInstanceId,
-    pub delivery_id: String,
-    pub event: String,
-    pub payload: Value,
-}
-
 /// The deliveries not routed yet, at most `limit`, in the order of reception.
 /// Another transaction that routes at the same time skips them.
 ///
 /// # Errors
 ///
 /// Postgres fails, or a row does not match the identifiers of `cihub-domain`.
-pub async fn unrouted_deliveries(
+pub(crate) async fn unrouted_deliveries(
     conn: &mut PgConnection,
     limit: i64,
-) -> Result<Vec<UnroutedDelivery>, PlatformError> {
-    let rows: Vec<(String, String, String, Value)> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, event, payload FROM webhook_inbox
+) -> Result<Vec<Delivery>, PlatformError> {
+    let rows: Vec<DeliveryRow> = sqlx::query_as(
+        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, action,
+                payload, received_at
+         FROM webhook_inbox
          WHERE routed_at IS NULL
          ORDER BY received_at, delivery_id
          LIMIT $1
@@ -65,23 +59,7 @@ pub async fn unrouted_deliveries(
     .fetch_all(conn)
     .await
     .map_err(PlatformError::Query)?;
-    rows.into_iter()
-        .map(|(instance, delivery_id, event, payload)| {
-            let scm_instance_id =
-                instance
-                    .parse()
-                    .map_err(|source| PlatformError::ReadDelivery {
-                        id: delivery_id.clone(),
-                        source,
-                    })?;
-            Ok(UnroutedDelivery {
-                scm_instance_id,
-                delivery_id,
-                event,
-                payload,
-            })
-        })
-        .collect()
+    rows.into_iter().map(decode).collect()
 }
 
 /// Where `delivery` goes: its connection when CIHub knows it, and its queue
@@ -140,17 +118,19 @@ pub async fn find_route(
         }
         _ => None,
     };
-    let read = |id: String| {
-        move |source| PlatformError::ReadDelivery {
-            id: id.clone(),
-            source,
-        }
-    };
     Ok(Route {
-        org_id: Some(org_id.parse().map_err(read(org_id.clone()))?),
-        connection_id: Some(connection_id.parse().map_err(read(connection_id.clone()))?),
+        org_id: Some(
+            org_id
+                .parse()
+                .map_err(PlatformError::read("delivery", &org_id))?,
+        ),
+        connection_id: Some(
+            connection_id
+                .parse()
+                .map_err(PlatformError::read("delivery", &connection_id))?,
+        ),
         queue_id: queue_id
-            .map(|id| id.parse().map_err(read(id.clone())))
+            .map(|id| id.parse().map_err(PlatformError::read("delivery", &id)))
             .transpose()?,
         processed: false,
     })
@@ -211,7 +191,7 @@ async fn queue_of_run(
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn route_delivery(
+pub(crate) async fn route_delivery(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
     delivery_id: &str,
@@ -235,16 +215,8 @@ pub async fn route_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let routed = done.rows_affected() == 1;
-    match route {
-        _ if !routed || route.processed => {}
-        Route {
-            queue_id: Some(queue),
-            ..
-        } => mark_dirty(conn, queue).await?,
-        Route {
-            org_id: Some(_), ..
-        } => notify_connection_delivery(conn).await?,
-        Route { .. } => {}
+    if routed && !route.processed && route.org_id.is_some() {
+        wake_for_delivery(conn, route.queue_id).await?;
     }
     Ok(routed)
 }
@@ -268,32 +240,16 @@ where
     T: Fn(&str, &Value) -> Result<ScmDelivery, E>,
     E: Error + 'static,
 {
-    let mut listener = PgListener::connect_with(&pool)
-        .await
-        .map_err(PlatformError::Query)?;
-    listener
-        .listen(INBOX_CHANNEL)
-        .await
-        .map_err(PlatformError::Query)?;
+    let mut wakeup = QueueWakeup::listen_to(&pool, INBOX_CHANNEL).await?;
     while !cancel.is_cancelled() {
         match route_pass(&pool, &translate, clock()).await {
             Ok(routed) if routed == ROUTES_PER_PASS => continue,
             Ok(_) => {}
             Err(err) => warn!(error = &err as &dyn Error, "deliveries not routed"),
         }
-        tokio::select! {
-            () = cancel.cancelled() => {}
-            received = listener.recv() => {
-                if let Err(err) = received {
-                    warn!(error = &err as &dyn Error, "inbox notifications lost");
-                    tokio::select! {
-                        () = cancel.cancelled() => {}
-                        () = tokio::time::sleep(idle_wait) => {}
-                    }
-                }
-            }
-            () = tokio::time::sleep(idle_wait) => {}
-        }
+        wakeup
+            .wait_or_pause(idle_wait, &cancel, "inbox notifications lost")
+            .await;
     }
     Ok(())
 }

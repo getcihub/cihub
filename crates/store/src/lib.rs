@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use cihub_domain::OrgId;
 pub use events::{
     append_events, create_event_partitions, deposit_fact, load_events, mark_facts_processed,
-    pending_facts,
+    next_month, pending_facts,
 };
 pub use instances::ensure_scm_instance;
 use secrecy::{ExposeSecret, SecretString};
@@ -47,26 +47,9 @@ pub enum StoreError {
     WriteEvent(#[source] serde_json::Error),
     #[error("event {0} is a decision: only the scheduler writes a decision")]
     DecisionDeposited(String),
-    #[error("event {id} does not match the events of cihub-domain")]
-    ReadEvent {
-        id: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-    #[error("api token {id} does not match the vocabulary of cihub-domain")]
-    ReadToken {
-        id: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-    #[error("scm instance {id} does not match the identifiers of cihub-domain")]
-    ReadInstance {
-        id: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-    #[error("user {id} does not match the identifiers of cihub-domain")]
-    ReadUser {
+    #[error("{what} {id} does not match cihub-domain")]
+    Read {
+        what: &'static str,
         id: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -77,6 +60,21 @@ pub enum StoreError {
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]
     Migrate(#[source] MigrateError),
+}
+
+impl StoreError {
+    /// The error of the row `id` of `what` that does not decode.
+    fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
+        what: &'static str,
+        id: &str,
+    ) -> impl FnOnce(E) -> Self {
+        let id = id.to_owned();
+        move |source| Self::Read {
+            what,
+            id,
+            source: source.into(),
+        }
+    }
 }
 
 /// Opens a pool on `url` (`postgres://user:password@host/database`).

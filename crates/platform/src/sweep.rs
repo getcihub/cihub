@@ -10,6 +10,7 @@ use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
 use tracing::info;
 
+use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 /// The type of the job that asks the SCM again for the deliveries missing
@@ -21,19 +22,12 @@ pub const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_mins(5);
 
 /// A sweep looks at the attempts of this last period: two periods, so that a
 /// sweep that fails leaves no hole.
-pub const SWEEP_LOOKBACK: Duration = Duration::minutes(10);
+pub(crate) const SWEEP_LOOKBACK: Duration = Duration::minutes(10);
 
 /// The sweep job of `instance` for the 5-minute window of `now`: its key
 /// admits one job per window, whatever the number of schedulers.
-pub fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
-    let window = format!(
-        "{:04}{:02}{:02}T{:02}{:02}",
-        now.year(),
-        u8::from(now.month()),
-        now.day(),
-        now.hour(),
-        now.minute() - now.minute() % 5
-    );
+pub(crate) fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
+    let window = format!("{}{:02}", hour_window(now), now.minute() - now.minute() % 5);
     Job {
         idempotency_key: format!("{SWEEP_DELIVERIES}:{instance}-{window}:1"),
         job_type: SWEEP_DELIVERIES.to_owned(),

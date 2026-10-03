@@ -4,7 +4,6 @@
 //! (`queue_inbox`) or a job: the scheduler stays the only writer of the log.
 
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::sync::Arc;
 
 use axum::Router;
@@ -105,15 +104,31 @@ pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     }
 }
 
-fn internal(err: impl Error + 'static) -> ApiError {
-    ApiError::internal(&err)
-}
-
 async fn begin(
     state: &ApiState,
     grant: &ApiGrant,
 ) -> Result<Transaction<'static, Postgres>, ApiError> {
-    begin_org(&state.pool, grant.org_id).await.map_err(internal)
+    Ok(begin_org(&state.pool, grant.org_id).await?)
+}
+
+/// A transaction of the organization of `grant`, and the queue `id` read in
+/// it.
+async fn begin_queue(
+    state: &ApiState,
+    grant: &ApiGrant,
+    id: &str,
+) -> Result<(Transaction<'static, Postgres>, QueueRow), ApiError> {
+    let mut tx = begin(state, grant).await?;
+    let row = queue_row(&mut tx, id).await?;
+    Ok((tx, row))
+}
+
+/// The answer of a request that the queue takes later.
+fn accepted() -> (StatusCode, axum::Json<Accepted>) {
+    (
+        StatusCode::ACCEPTED,
+        axum::Json(Accepted { accepted: true }),
+    )
 }
 
 #[derive(sqlx::FromRow)]
@@ -134,8 +149,8 @@ const QUEUE_COLUMNS: &str =
 impl QueueRow {
     fn into_queue(self) -> Result<Queue, ApiError> {
         Ok(Queue {
-            state: self.state.parse().map_err(internal)?,
-            mode: self.mode.parse().map_err(internal)?,
+            state: self.state.parse()?,
+            mode: self.mode.parse()?,
             id: self.id,
             repo_id: self.repo_id,
             name: self.name,
@@ -153,8 +168,7 @@ async fn queue_row(conn: &mut PgConnection, id: &str) -> Result<QueueRow, ApiErr
     )))
     .bind(id)
     .fetch_optional(conn)
-    .await
-    .map_err(internal)?
+    .await?
     .ok_or_else(|| ApiError::not_found("queue"))
 }
 
@@ -168,11 +182,10 @@ async fn repo_id(conn: &mut PgConnection, owner: &str, name: &str) -> Result<Rep
     .bind(owner)
     .bind(name)
     .fetch_optional(conn)
-    .await
-    .map_err(internal)?;
+    .await?;
     id.ok_or_else(|| ApiError::not_found(&format!("repository {owner}/{name}")))?
         .parse()
-        .map_err(internal)
+        .map_err(ApiError::from)
 }
 
 /// Writes an action of the token of `grant` in the audit log.
@@ -199,8 +212,7 @@ async fn audit(
     .bind(target)
     .bind(after)
     .execute(conn)
-    .await
-    .map_err(internal)?;
+    .await?;
     Ok(())
 }
 
@@ -225,8 +237,7 @@ async fn list_queues(
     )))
     .bind(repo.to_string())
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let queues = rows
         .into_iter()
         .map(QueueRow::into_queue)
@@ -274,8 +285,7 @@ async fn create_queue(
     .bind(branch)
     .bind(queue_name)
     .execute(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     if inserted.rows_affected() == 0 {
         return Err(ApiError::new(
             ErrorCode::QueueExists,
@@ -284,9 +294,9 @@ async fn create_queue(
     }
     let after = json!({ "name": queue_name, "target_branch": branch });
     audit(&mut tx, &grant, "queue.created", &id.to_string(), after).await?;
-    mark_dirty(&mut tx, id).await.map_err(internal)?;
+    mark_dirty(&mut tx, id).await?;
     let queue = queue_row(&mut tx, &id.to_string()).await?.into_queue()?;
-    tx.commit().await.map_err(internal)?;
+    tx.commit().await?;
     Ok((StatusCode::CREATED, axum::Json(queue)))
 }
 
@@ -303,10 +313,8 @@ async fn get_queue(
     ApiPath(queue_id): ApiPath<String>,
 ) -> Result<axum::Json<Queue>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin(&state, &grant).await?;
-    Ok(axum::Json(
-        queue_row(&mut tx, &queue_id).await?.into_queue()?,
-    ))
+    let (_, row) = begin_queue(&state, &grant, &queue_id).await?;
+    Ok(axum::Json(row.into_queue()?))
 }
 
 /// Asks the queue for a new state; the queue changes it at its next
@@ -326,23 +334,20 @@ async fn update_queue(
     ApiJson(request): ApiJson<UpdateQueue>,
 ) -> Result<(StatusCode, axum::Json<Queue>), ApiError> {
     grant.require(ApiScope::QueuesWrite)?;
-    let mut tx = begin(&state, &grant).await?;
-    let row = queue_row(&mut tx, &queue_id).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
     let control = match request.state {
         RequestedQueueState::Running => QueueControl::Resume,
         RequestedQueueState::Paused => QueueControl::Pause,
         RequestedQueueState::Draining => QueueControl::Drain,
     };
-    let id: QueueId = row.id.parse().map_err(internal)?;
+    let id: QueueId = row.id.parse()?;
     let now = (state.clock)();
     let facts = vec![(Actor::System, EventKind::QueueControlRequested { control })];
-    give_back(&mut tx, grant.org_id, id, facts, now)
-        .await
-        .map_err(internal)?;
+    give_back(&mut tx, grant.org_id, id, facts, now).await?;
     let after = json!({ "state": request.state });
     audit(&mut tx, &grant, "queue.state_requested", &queue_id, after).await?;
     let queue = row.into_queue()?;
-    tx.commit().await.map_err(internal)?;
+    tx.commit().await?;
     Ok((StatusCode::ACCEPTED, axum::Json(queue)))
 }
 
@@ -365,18 +370,12 @@ async fn queue_action(
         return Err(ApiError::not_found("action"));
     };
     grant.require(ApiScope::QueuesWrite)?;
-    let mut tx = begin(&state, &grant).await?;
-    let row = queue_row(&mut tx, queue_id).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, queue_id).await?;
     audit(&mut tx, &grant, "queue.resync", queue_id, json!({})).await?;
-    tx.commit().await.map_err(internal)?;
-    let id: QueueId = row.id.parse().map_err(internal)?;
-    crate::resync(&state.pool, id, (state.clock)())
-        .await
-        .map_err(internal)?;
-    Ok((
-        StatusCode::ACCEPTED,
-        axum::Json(Accepted { accepted: true }),
-    ))
+    tx.commit().await?;
+    let id: QueueId = row.id.parse()?;
+    crate::resync(&state.pool, id, (state.clock)()).await?;
+    Ok(accepted())
 }
 
 #[derive(sqlx::FromRow)]
@@ -404,11 +403,11 @@ const ITEM_COLUMNS: &str = "id, queue_id, pr_number, pr_head_sha, state::text, s
 impl ItemRow {
     fn into_item(self) -> Result<Item, ApiError> {
         Ok(Item {
-            pr_number: u64::try_from(self.pr_number).map_err(internal)?,
-            state: self.state.parse().map_err(internal)?,
-            state_reason: self.state_reason.parse().map_err(internal)?,
-            priority: Priority(u8::try_from(self.priority_value).map_err(internal)?),
-            block_reasons: serde_json::from_value(self.block_reasons).map_err(internal)?,
+            pr_number: u64::try_from(self.pr_number)?,
+            state: self.state.parse()?,
+            state_reason: self.state_reason.parse()?,
+            priority: Priority(u8::try_from(self.priority_value)?),
+            block_reasons: serde_json::from_value(self.block_reasons)?,
             id: self.id,
             queue_id: self.queue_id,
             head_sha: self.pr_head_sha,
@@ -464,8 +463,7 @@ async fn list_items(
     if take == 0 || take > MAX_TAKE {
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
-    let mut tx = begin(&state, &grant).await?;
-    queue_row(&mut tx, &queue_id).await?;
+    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let rows: Vec<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM queue_items
          WHERE queue_id = $1
@@ -484,8 +482,7 @@ async fn list_items(
     .bind(&filter.cursor)
     .bind(i64::from(take) + 1)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let mut page = items(rows)?;
     let next_cursor = if page.len() > take as usize {
         page.truncate(take as usize);
@@ -499,8 +496,6 @@ async fn list_items(
     }))
 }
 
-/// Submits a PR to the queue. The job `submit_pr` reads the PR first, then
-/// gives the submission to the queue (`DECISIONS.md` D160).
 #[utoipa::path(
     post,
     path = "/queues/{queue_id}/items",
@@ -525,10 +520,9 @@ async fn submit(
                 .ok_or_else(|| ApiError::invalid("the priority is a name or a value from 0 to 255"))
         })
         .transpose()?;
-    let mut tx = begin(&state, &grant).await?;
-    let row = queue_row(&mut tx, &queue_id).await?;
-    let id: QueueId = row.id.parse().map_err(internal)?;
-    let target = QueueTarget::load(&mut tx, id).await.map_err(internal)?;
+    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
+    let id: QueueId = row.id.parse()?;
+    let target = QueueTarget::load(&mut tx, id).await?;
     let payload = jobs::SubmitPr {
         repo_id: target.repo_id,
         pr_number: request.pr_number,
@@ -544,14 +538,9 @@ async fn submit(
     let connection = (target.scm_instance_id, target.repo.connection.id);
     let job: Job = jobs::submit(grant.org_id, connection, &cause, &payload);
     let now = (state.clock)();
-    enqueue_job(&mut tx, &job, now, now)
-        .await
-        .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
-    Ok((
-        StatusCode::ACCEPTED,
-        axum::Json(Accepted { accepted: true }),
-    ))
+    enqueue_job(&mut tx, &job, now, now).await?;
+    tx.commit().await?;
+    Ok(accepted())
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -575,8 +564,7 @@ async fn get_pr(
     ApiQuery(query): ApiQuery<PrQuery>,
 ) -> Result<axum::Json<PrItem>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin(&state, &grant).await?;
-    queue_row(&mut tx, &queue_id).await?;
+    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let number = i64::try_from(pr_number).map_err(|_| ApiError::not_found("PR"))?;
     let row: Option<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM queue_items WHERE queue_id = $1 AND pr_number = $2
@@ -585,8 +573,7 @@ async fn get_pr(
     .bind(&queue_id)
     .bind(number)
     .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let item = row.ok_or_else(|| ApiError::not_found("PR"))?.into_item()?;
     let timeline = match query.include.as_deref() {
         Some("timeline") => Some(timeline(&mut tx, &queue_id, &item.id).await?),
@@ -609,8 +596,7 @@ async fn timeline(
     .bind(queue_id)
     .bind(item_id)
     .fetch_all(conn)
-    .await
-    .map_err(internal)?;
+    .await?;
     Ok(rows
         .into_iter()
         .map(
@@ -647,8 +633,7 @@ async fn batch_get(
             "at most {MAX_BATCH_GET} PRs in one read"
         )));
     }
-    let mut tx = begin(&state, &grant).await?;
-    queue_row(&mut tx, &queue_id).await?;
+    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let numbers: Vec<i64> = request
         .pr_numbers
         .iter()
@@ -662,8 +647,7 @@ async fn batch_get(
     .bind(&queue_id)
     .bind(&numbers)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let found = items(rows)?;
     let not_found = request
         .pr_numbers
@@ -692,8 +676,7 @@ async fn graph(
     ApiPath(queue_id): ApiPath<String>,
 ) -> Result<axum::Json<Graph>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin(&state, &grant).await?;
-    queue_row(&mut tx, &queue_id).await?;
+    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let rows: Vec<(String, i64, String, Option<i64>)> = sqlx::query_as(
         "SELECT id, pr_number, state::text, position FROM queue_items
          WHERE queue_id = $1 AND is_current
@@ -702,15 +685,14 @@ async fn graph(
     )
     .bind(&queue_id)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let nodes = rows
         .into_iter()
         .map(|(item_id, pr_number, state, position)| {
             Ok(GraphNode {
                 item_id,
-                pr_number: u64::try_from(pr_number).map_err(internal)?,
-                state: state.parse().map_err(internal)?,
+                pr_number: u64::try_from(pr_number)?,
+                state: state.parse()?,
                 position,
             })
         })
@@ -721,8 +703,7 @@ async fn graph(
     )
     .bind(&queue_id)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let mut edges = Vec::new();
     for (members, predecessors) in groups {
         for to in &members {
@@ -746,14 +727,9 @@ async fn item_of(
         sqlx::query_as("SELECT queue_id, state::text FROM queue_items WHERE id = $1")
             .bind(id)
             .fetch_optional(conn)
-            .await
-            .map_err(internal)?;
+            .await?;
     let (queue, state) = row.ok_or_else(|| ApiError::not_found("item"))?;
-    Ok((
-        queue.parse().map_err(internal)?,
-        id.parse().map_err(internal)?,
-        state.parse().map_err(internal)?,
-    ))
+    Ok((queue.parse()?, id.parse()?, state.parse()?))
 }
 
 async fn give(
@@ -773,13 +749,9 @@ async fn give(
         vec![(Actor::System, fact)],
         (state.clock)(),
     )
-    .await
-    .map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
-    Ok((
-        StatusCode::ACCEPTED,
-        axum::Json(Accepted { accepted: true }),
-    ))
+    .await?;
+    tx.commit().await?;
+    Ok(accepted())
 }
 
 /// Cancels an item (`admin_requested`).
@@ -887,35 +859,32 @@ async fn test_run(
     )
     .bind(&run_id)
     .fetch_optional(&mut *tx)
-    .await
-    .map_err(internal)?
+    .await?
     .ok_or_else(|| ApiError::not_found("run"))?;
     let (members, predecessors): (Vec<String>, Vec<String>) =
         sqlx::query_as("SELECT item_ids, predecessor_ids FROM test_groups WHERE id = $1")
             .bind(&run.group_id)
             .fetch_one(&mut *tx)
-            .await
-            .map_err(internal)?;
+            .await?;
     let numbers: BTreeMap<String, i64> =
         sqlx::query_as("SELECT id, pr_number FROM queue_items WHERE id = ANY($1)")
             .bind(&predecessors)
             .fetch_all(&mut *tx)
-            .await
-            .map_err(internal)?
+            .await?
             .into_iter()
             .collect();
     let predecessor_pr_numbers = predecessors
         .iter()
         .filter_map(|id| numbers.get(id))
-        .map(|n| u64::try_from(*n).map_err(internal))
+        .map(|n| u64::try_from(*n).map_err(ApiError::from))
         .collect::<Result<_, _>>()?;
     let checks = run_checks(&mut tx, &run_id).await?;
     let dependents = dependents(&mut tx, &run.queue_id, &run_id, &members).await?;
-    let unsigned = |n: i64| u64::try_from(n).map_err(internal);
+    let unsigned = |n: i64| u64::try_from(n).map_err(ApiError::from);
     Ok(axum::Json(TestRun {
-        attempt: u32::try_from(run.attempt).map_err(internal)?,
-        status: run.status.parse().map_err(internal)?,
-        status_reason: run.status_reason.parse().map_err(internal)?,
+        attempt: u32::try_from(run.attempt)?,
+        status: run.status.parse()?,
+        status_reason: run.status_reason.parse()?,
         draft_pr_number: run.draft_pr_number.map(unsigned).transpose()?,
         tested_pr_numbers: run
             .tested_pr_numbers
@@ -924,15 +893,15 @@ async fn test_run(
             .collect::<Result<_, _>>()?,
         required_statuses_source: run
             .required_statuses_source
-            .map(|s| s.parse().map_err(internal))
+            .map(|s| s.parse().map_err(ApiError::from))
             .transpose()?,
         failure_reason: run
             .failure_reason
-            .map(|s| s.parse().map_err(internal))
+            .map(|s| s.parse().map_err(ApiError::from))
             .transpose()?,
         conflict_culprit: run
             .conflict_culprit
-            .map(|value| serde_json::from_value(value).map_err(internal))
+            .map(|value| serde_json::from_value(value).map_err(ApiError::from))
             .transpose()?,
         id: run.id,
         queue_id: run.queue_id,
@@ -968,17 +937,16 @@ async fn run_checks(conn: &mut PgConnection, run_id: &str) -> Result<Vec<RunChec
     )
     .bind(run_id)
     .fetch_all(conn)
-    .await
-    .map_err(internal)?;
+    .await?;
     rows.into_iter()
         .map(
             |(name, kind, required, conclusion, details_url, observed_at)| {
                 Ok(RunCheck {
                     name,
-                    kind: kind.parse().map_err(internal)?,
+                    kind: kind.parse()?,
                     required,
                     conclusion: conclusion
-                        .map(|c| c.parse().map_err(internal))
+                        .map(|c| c.parse().map_err(ApiError::from))
                         .transpose()?,
                     details_url,
                     observed_at,
@@ -1006,15 +974,14 @@ async fn dependents(
     .bind(run_id)
     .bind(members)
     .fetch_all(conn)
-    .await
-    .map_err(internal)?;
+    .await?;
     rows.into_iter()
         .map(|(run_id, numbers)| {
             Ok(Dependent {
                 run_id,
                 pr_numbers: numbers
                     .into_iter()
-                    .map(|n| u64::try_from(n).map_err(internal))
+                    .map(|n| u64::try_from(n).map_err(ApiError::from))
                     .collect::<Result<_, _>>()?,
             })
         })
@@ -1036,18 +1003,17 @@ async fn config_check(
     ApiPath(queue_id): ApiPath<String>,
 ) -> Result<axum::Json<ConfigCheck>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin(&state, &grant).await?;
-    let row = queue_row(&mut tx, &queue_id).await?;
-    let id: QueueId = row.id.parse().map_err(internal)?;
-    let target = QueueTarget::load(&mut tx, id).await.map_err(internal)?;
-    tx.commit().await.map_err(internal)?;
+    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
+    let id: QueueId = row.id.parse()?;
+    let target = QueueTarget::load(&mut tx, id).await?;
+    tx.commit().await?;
     let findings = state
         .scm
         .check_setup(&target.repo, &target.target_branch, JobClass::Interactive)
         .await
         .map_err(|err| match err {
             ScmError::NotFound(_) => ApiError::not_found("target branch"),
-            err => internal(err),
+            err => ApiError::from(err),
         })?;
     let findings = findings
         .into_iter()

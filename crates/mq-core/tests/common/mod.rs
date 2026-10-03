@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, CheckConclusion, CheckKind, CheckReport, Event, EventId, EventKind, Item, ItemState,
-    JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, SubmittedVia,
+    JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, Reason,
+    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
 };
 use cihub_mq_core::{Outcome, Plan, Snapshot, apply, check, plan};
 use time::{Duration, OffsetDateTime};
@@ -122,27 +122,32 @@ impl World {
         self.item(pr_number).map(|i| i.state)
     }
 
+    /// Submits the PR, then observes it open and mergeable.
     pub fn submit(&mut self, pr_number: u64, priority: Priority) -> Outcome {
-        let outcome = self.fact(
-            Actor::User {
-                user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-            },
+        let outcome = self.submit_only(pr_number, 0, priority);
+        self.observe(pr_number, |_| {});
+        outcome
+    }
+
+    /// Submits `head(pr_number, version)` without an observation: the test
+    /// chooses what the first observation says.
+    pub fn submit_only(&mut self, pr_number: u64, version: u32, priority: Priority) -> Outcome {
+        self.fact(
+            Actor::System,
             EventKind::ItemSubmitted {
                 pr_number,
-                head_sha: head(pr_number, 0),
+                head_sha: head(pr_number, version),
                 priority,
                 no_batch: false,
                 direct: false,
-                submitted_via: SubmittedVia::Comment,
-                author_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
-                additions: 1,
+                submitted_via: SubmittedVia::Api,
+                author_id: UserId::from_ulid(Ulid(1)),
+                additions: 0,
                 deletions: 0,
-                changed_files: 1,
+                changed_files: 0,
                 sender_permission: None,
             },
-        );
-        self.observe(pr_number, |_| {});
-        outcome
+        )
     }
 
     /// Observes the PR: open, mergeable, then `edit`.
@@ -190,7 +195,7 @@ impl World {
             EventKind::TargetPushed {
                 before,
                 after,
-                sender_id: Some(cihub_domain::UserId::from_ulid(ulid::Ulid(1))),
+                sender_id: Some(UserId::from_ulid(Ulid(1))),
             },
         )
     }
@@ -305,4 +310,11 @@ pub struct Pr {
 
 pub fn head(pr_number: u64, version: u32) -> String {
     format!("head-{pr_number}-{version}")
+}
+
+/// The log has a decision that moves an item to `to` for `reason`.
+pub fn transitioned(w: &World, to: ItemState, reason: Reason) -> bool {
+    w.log.iter().any(|e| {
+        matches!(e.kind, EventKind::ItemTransitioned { to: t, reason: r, .. } if t == to && r == reason)
+    })
 }

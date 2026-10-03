@@ -130,7 +130,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     Postgres, the authentication, the scopes, the limit and the document; and end to end on the simulator, a
     submission through the API, the item, its timeline, its run, the graph, restart, cancellation, pause, new
     queue, resync and audit log.
-  - Done (October 2, 2026, D161): step 4. `cihub-client` (one method per route) and `cihub-cli` (`cihub` binary,
+  - Done (October 2, 2026, D161): step 4. `cihub-client` (the methods that the CLI uses) and `cihub-cli` (`cihub` binary,
     `clap` dependency). Tests: git remote, choice of the queue, and the client against the real server in the
     end-to-end test of the API.
   - Done (October 2, 2026, D162): step 5. The `Scm` trait gains `check_setup` (neutral findings); GitHub reads the

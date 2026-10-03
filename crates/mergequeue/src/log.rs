@@ -4,8 +4,8 @@ use cihub_store::{append_events, load_events};
 use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
 
-use crate::MergeQueueError;
 use crate::projection::project;
+use crate::{MergeQueueError, parse_id};
 
 /// The log keeps a snapshot of its queue after every this many events.
 pub const SNAPSHOT_EVERY: i64 = 500;
@@ -13,7 +13,7 @@ pub const SNAPSHOT_EVERY: i64 = 500;
 /// The log also keeps a snapshot when its oldest event after the last
 /// snapshot is this old, so that a snapshot covers every event before the
 /// partitions of `events` are dropped (`DECISIONS.md` D106).
-pub const COVER_AFTER: Duration = Duration::days(30);
+pub(crate) const COVER_AFTER: Duration = Duration::days(30);
 
 /// The state of a queue after the last event of its log.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -187,12 +187,7 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
             .await
             .map_err(MergeQueueError::Query)?;
     let (org_id, target_branch) = row.ok_or(MergeQueueError::UnknownQueue(queue))?;
-    let org_id: OrgId = org_id
-        .parse()
-        .map_err(|source| MergeQueueError::ReadQueue {
-            id: queue.to_string(),
-            source,
-        })?;
+    let org_id: OrgId = parse_id(&org_id, queue)?;
     Ok(Snapshot::new(
         org_id,
         queue,

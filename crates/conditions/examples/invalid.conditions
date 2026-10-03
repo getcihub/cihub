@@ -1,6 +1,0 @@
--draft = true
-lable = ready-to-merge
-#approved-reviews-by >= two
-sender-permission >= god
-queue-age > 2x
-title ~= (

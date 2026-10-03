@@ -4,7 +4,6 @@
 //! the `OpenAPI` document of all of them.
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -123,7 +122,7 @@ async fn authenticated(
     let grant = match authenticate(&state.pool, &secret, now).await {
         Ok(Some(grant)) => grant,
         Ok(None) => return unauthorized().into_response(),
-        Err(err) => return ApiError::internal(&err).into_response(),
+        Err(err) => return ApiError::from(err).into_response(),
     };
     if let Some(wait) = over_limit(&state, grant.id, now) {
         let mut limited = ApiError::new(
@@ -157,10 +156,6 @@ fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Optio
     None
 }
 
-fn internal(err: impl Error + 'static) -> ApiError {
-    ApiError::internal(&err)
-}
-
 /// The repositories of the organization of the token.
 #[utoipa::path(
     get,
@@ -173,15 +168,12 @@ async fn list_repos(
     State(state): State<ApiState>,
 ) -> Result<Json<RepoList>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin_org(&state.pool, grant.org_id)
-        .await
-        .map_err(internal)?;
+    let mut tx = begin_org(&state.pool, grant.org_id).await?;
     let rows: Vec<(String, String, String, String)> = sqlx::query_as(
         "SELECT id, namespace, name, default_branch FROM repos ORDER BY namespace, name",
     )
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let repos = rows
         .into_iter()
         .map(|(id, namespace, name, default_branch)| Repo {
@@ -231,14 +223,11 @@ async fn list_audit(
     if take == 0 || take > MAX_TAKE {
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
-    let mut tx = begin_org(&state.pool, grant.org_id)
-        .await
-        .map_err(internal)?;
+    let mut tx = begin_org(&state.pool, grant.org_id).await?;
     let known: Option<String> = sqlx::query_scalar("SELECT id FROM orgs WHERE slug = $1")
         .bind(&org)
         .fetch_optional(&mut *tx)
-        .await
-        .map_err(internal)?;
+        .await?;
     if known.is_none() {
         return Err(ApiError::not_found("organization"));
     }
@@ -252,8 +241,7 @@ async fn list_audit(
     .bind(&query.cursor)
     .bind(i64::from(take) + 1)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(internal)?;
+    .await?;
     let mut entries: Vec<AuditEntry> = rows
         .into_iter()
         .map(

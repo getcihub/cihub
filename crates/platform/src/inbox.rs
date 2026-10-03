@@ -3,11 +3,11 @@ use serde_json::Value;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
 
-use crate::wake::notify_connection_delivery;
-use crate::{PlatformError, mark_dirty};
+use crate::PlatformError;
+use crate::wake::{notify, wake_for_delivery};
 
 /// The channel that says a delivery waits for its routing.
-pub const INBOX_CHANNEL: &str = "cihub_inbox";
+pub(crate) const INBOX_CHANNEL: &str = "cihub_inbox";
 
 /// A webhook delivery as the ingestion receives it: stored as is, before any
 /// decision.
@@ -61,22 +61,15 @@ pub async fn store_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let stored = done.rows_affected() == 1;
-    match (stored, delivery.org_id, delivery.queue_id) {
-        (true, _, Some(queue)) => mark_dirty(conn, queue).await?,
-        (true, Some(_), None) => notify_connection_delivery(conn).await?,
-        (true, None, _) => {
-            sqlx::query("SELECT pg_notify($1, '')")
-                .bind(INBOX_CHANNEL)
-                .execute(conn)
-                .await
-                .map_err(PlatformError::Query)?;
-        }
-        (false, ..) => {}
+    match (stored, delivery.org_id) {
+        (true, Some(_)) => wake_for_delivery(conn, delivery.queue_id).await?,
+        (true, None) => notify(conn, INBOX_CHANNEL).await?,
+        (false, _) => {}
     }
     Ok(stored)
 }
 
-type DeliveryRow = (
+pub(crate) type DeliveryRow = (
     String,
     String,
     Option<String>,
@@ -115,7 +108,7 @@ pub async fn pending_deliveries(
     rows.into_iter().map(decode).collect()
 }
 
-fn decode(
+pub(crate) fn decode(
     (
         scm_instance_id,
         delivery_id,
@@ -128,18 +121,15 @@ fn decode(
         received_at,
     ): DeliveryRow,
 ) -> Result<Delivery, PlatformError> {
-    let read = |source| PlatformError::ReadDelivery {
-        id: delivery_id.clone(),
-        source,
-    };
+    let read = || PlatformError::read("delivery", &delivery_id);
     Ok(Delivery {
-        scm_instance_id: scm_instance_id.parse().map_err(read)?,
-        org_id: org_id.map(|id| id.parse()).transpose().map_err(read)?,
+        scm_instance_id: scm_instance_id.parse().map_err(read())?,
+        org_id: org_id.map(|id| id.parse()).transpose().map_err(read())?,
         connection_id: connection_id
             .map(|id| id.parse())
             .transpose()
-            .map_err(read)?,
-        queue_id: queue_id.map(|id| id.parse()).transpose().map_err(read)?,
+            .map_err(read())?,
+        queue_id: queue_id.map(|id| id.parse()).transpose().map_err(read())?,
         delivery_id: delivery_id.clone(),
         event,
         action,
