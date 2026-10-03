@@ -54,7 +54,7 @@ later". The details are in `docs/ARCHITECTURE.md`.
 
 `Cargo.toml` (lints), `clippy.toml` and `deny.toml` already enforce: no `unwrap` or `expect` outside tests, no
 standard output, no clock or randomness outside their local exception (D16, D20), no `tokio`, `sqlx`, `reqwest`
-or `axum` in the pure crates or in the CLI, a single version per dependency in `[workspace.dependencies]`. When
+or `axum` in the pure crates, a single version per dependency in `[workspace.dependencies]`. When
 one of these tools refuses, fix the cause, never the rule. The rest:
 
 - **Neutral, closed vocabulary.** No SCM name outside `cihub-github`, its `CIHUB_GITHUB_*` variables and
@@ -62,7 +62,7 @@ one of these tools refuses, fix the cause, never the rule. The rest:
   comment) and in the Postgres enum, in the same change; a test compares the two. CIHub takes no interface,
   command or format from another product (D139).
 - **Errors**: one `thiserror` enumeration per library crate, which keeps the cause; `anyhow` only in
-  `cihub-server` and `cihub`.
+  `cihub-cli`, the crate of the `cihub` binary.
 - **Transitions guarded in SQL** (`UPDATE … WHERE id = $1 AND state = $2`) with a check of the row count.
 - **Async**: the core and `plan` are synchronous; every loop receives a `CancellationToken` and stops when it is
   cancelled; never hold a lock across an `.await`.
@@ -93,7 +93,7 @@ code (`.agents/rules/`). Read the rules of a part before you change it:
 mise run check             # lint (fmt, clippy -D warnings, cargo deny), then unit tests
 mise run test-integration  # Postgres from compose.yaml, then the tests/postgres.rs files
 mise run cover             # coverage of the pure crates, 90% at least
-mise run dev               # migrations, then cihub-server locally with the four roles
+mise run dev               # migrations, then cihub server start locally with the four roles
 mise run sim               # fault_injection on 1,000 seeds (long; the CI runs it at night)
 ```
 

@@ -1,4 +1,4 @@
-//! Starts the `cihub-server` binary against Postgres: each `#[sqlx::test]`
+//! Starts the `cihub` binary against Postgres: each `#[sqlx::test]`
 //! gets a new database.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
@@ -9,8 +9,13 @@ use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
+use cihub_domain::{
+    ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId, ScmAccountId, ScmInstanceId,
+};
 use ring::hmac;
-use sqlx::PgPool;
+use secrecy::ExposeSecret;
+use sqlx::{AssertSqlSafe, PgPool};
+use ulid::Ulid;
 
 /// The URL of the database of `pool`, on the server of `DATABASE_URL`.
 fn database_url(pool: &PgPool) -> String {
@@ -26,7 +31,7 @@ fn free_addr() -> String {
 }
 
 fn command(pool: &PgPool) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_cihub-server"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cihub"));
     command
         .env_clear()
         .env("CIHUB_DATABASE_URL", database_url(pool))
@@ -52,15 +57,14 @@ fn with_github(pool: &PgPool) -> Command {
     command
 }
 
-fn start(pool: &PgPool, addr: &str, roles: Option<&str>) -> Child {
-    let mut command = with_github(pool);
-    command
+fn start(pool: &PgPool, addr: &str, roles: &[&str]) -> Child {
+    with_github(pool)
+        .args(["server", "start"])
+        .args(roles)
         .env("CIHUB_INTERNAL_ADDR", addr)
-        .env("CIHUB_HTTP_ADDR", free_addr());
-    if let Some(roles) = roles {
-        command.env("CIHUB_ROLES", roles);
-    }
-    command.spawn().unwrap()
+        .env("CIHUB_HTTP_ADDR", free_addr())
+        .spawn()
+        .unwrap()
 }
 
 /// Sends `GET path` and returns the status line and the body.
@@ -118,7 +122,7 @@ fn stop(mut child: Child) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn all_in_one_answers_and_stops(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, None);
+    let child = start(&pool, &addr, &[]);
     for path in ["/healthz", "/readyz"] {
         let (status, body) = wait_for(&addr, path);
         assert_eq!(status, "HTTP/1.1 200 OK");
@@ -126,7 +130,7 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
             body.contains(r#""roles":["web","scheduler","worker","notifier"]"#),
             "{body}"
         );
-        assert!(body.contains(r#""name":"cihub-server""#), "{body}");
+        assert!(body.contains(r#""name":"cihub""#), "{body}");
     }
     stop(child);
 }
@@ -134,7 +138,7 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn one_role_per_process(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, Some("worker"));
+    let child = start(&pool, &addr, &["worker"]);
     let (status, body) = wait_for(&addr, "/readyz");
     assert_eq!(status, "HTTP/1.1 200 OK");
     assert!(body.contains(r#""roles":["worker"]"#), "{body}");
@@ -144,22 +148,31 @@ fn one_role_per_process(pool: PgPool) {
 #[sqlx::test(migrations = false)]
 fn migrate_twice_succeeds(pool: PgPool) {
     for _ in 0..2 {
-        let status = command(&pool).arg("migrate").status().unwrap();
+        let status = command(&pool).args(["server", "migrate"]).status().unwrap();
         assert!(status.success(), "{status}");
     }
 }
 
 #[sqlx::test(migrations = false)]
 fn a_missing_migration_stops_the_start(pool: PgPool) {
-    let status = with_github(&pool).status().unwrap();
+    let status = with_github(&pool)
+        .args(["server", "start"])
+        .status()
+        .unwrap();
     assert!(!status.success(), "{status}");
-    assert!(command(&pool).arg("migrate").status().unwrap().success());
+    assert!(
+        command(&pool)
+            .args(["server", "migrate"])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, None);
+    let child = start(&pool, &addr, &[]);
     let mut done: Vec<String> = Vec::new();
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
@@ -190,9 +203,9 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
 async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let (internal, public) = (free_addr(), free_addr());
     let child = with_github(&pool)
+        .args(["server", "start", "web"])
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
-        .env("CIHUB_ROLES", "web")
         .spawn()
         .unwrap();
     wait_for(&internal, "/readyz");
@@ -249,9 +262,111 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
-    let output = command(&pool).stderr(Stdio::piped()).output().unwrap();
+    let output = command(&pool)
+        .args(["server", "start"])
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("GitHub is not configured"), "{stderr}");
-    assert!(command(&pool).arg("migrate").status().unwrap().success());
+    assert!(
+        command(&pool)
+            .args(["server", "migrate"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+/// An organization with the repository `acme/app` and its two queues, and an
+/// API token of the organization with every scope.
+async fn two_queues(pool: &PgPool) -> String {
+    let org = OrgId::from_ulid(Ulid(1));
+    let instance = ScmInstanceId::from_ulid(Ulid(2));
+    let account = ScmAccountId::from_ulid(Ulid(3));
+    let connection = ConnectionId::from_ulid(Ulid(4));
+    let repo = RepoId::from_ulid(Ulid(5));
+    let mut tx = cihub_store::begin_system(pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO scm_instances (id, kind, base_url)
+             VALUES ('{instance}', 'github', 'https://github.com');
+         INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
+         INSERT INTO org_modules (org_id, module, enabled_at)
+             VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
+         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
+             VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
+             VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app', '1');
+         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
+                            name, default_branch)
+             VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+             VALUES ('{main}', '{org}', '{repo}', 'main', 'main'),
+                    ('{hotfix}', '{org}', '{repo}', 'main', 'hotfix');",
+        main = QueueId::from_ulid(Ulid(6)),
+        hotfix = QueueId::from_ulid(Ulid(7)),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let secret = cihub_store::new_api_token_secret().unwrap();
+    let token = cihub_store::NewApiToken {
+        id: ApiTokenId::from_ulid(Ulid(8)),
+        org_id: org,
+        name: "test",
+        scopes: &[
+            ApiScope::QueuesRead,
+            ApiScope::QueuesWrite,
+            ApiScope::PrsWrite,
+        ],
+        created_by: None,
+        expires_at: None,
+    };
+    cihub_store::create_api_token(&mut tx, &token, &secret)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret.expose_secret().to_owned()
+}
+
+/// `cihub queue` drives the API of a running server (`DECISIONS.md` D168):
+/// with two queues and no `--queue`, it refuses and lists the names.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_queue_commands_drive_the_api(pool: PgPool) {
+    let token = two_queues(&pool).await;
+    let (internal, public) = (free_addr(), free_addr());
+    let child = with_github(&pool)
+        .args(["server", "start", "web"])
+        .env("CIHUB_INTERNAL_ADDR", &internal)
+        .env("CIHUB_HTTP_ADDR", &public)
+        .spawn()
+        .unwrap();
+    wait_for(&public, "/api/v1/openapi.json");
+    let cihub = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_cihub"))
+            .args(["queue", "--repo", "acme/app"])
+            .args(args)
+            .env_clear()
+            .env("CIHUB_URL", format!("http://{public}"))
+            .env("CIHUB_TOKEN", &token)
+            .output()
+            .unwrap()
+    };
+    let refused = cihub(&["drain"]);
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr
+            .contains("acme/app has more than one queue: choose one with `--queue` (hotfix, main)"),
+        "{stderr}"
+    );
+    let drained = cihub(&["drain", "--queue", "hotfix"]);
+    let stdout = String::from_utf8_lossy(&drained.stdout);
+    assert!(drained.status.success(), "{stdout}");
+    assert_eq!(stdout, "queue `hotfix`: \"draining\" asked\n");
+    let status = cihub(&["status", "--queue", "main"]);
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    assert_eq!(stdout, "queue `main` on `main`: running\n");
+    stop(child);
 }

@@ -35,7 +35,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `CIHUB_ROLES` (`api`, `scheduler`, `worker`, `notifier`, comma-separated) selects those of the process. No crate
   per role: a role starts loops whose code is in the library crates. The roles of one process share only the
   Postgres pool. `cihub` is the CLI, distributed alone, without server code.
-  _The `api` role is renamed by D91._
+  _The `api` role is renamed by D91._ _Superseded by D168._
 - **D9** A crate is created when a lot needs it, after validation. `docs/ARCHITECTURE.md` describes the crates
   that exist and the target list. The skeleton of `cihub-server` arrives in Lot 2.
 - **D10** Tasks are in `mise.toml` at the root; a task exists only when it has something to run (§5). The CI
@@ -50,7 +50,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D14** Migrations are explicit. `cihub-server migrate` applies them then stops; at startup, `cihub-server`
   applies nothing and stops if an embedded migration is missing from the database. A dedicated process runs them
   before the roles: `mise run migrate` in development, a `cihub-migrate` service in the installation
-  `docker compose`, a `Job` as a Helm `pre-install` and `pre-upgrade` hook on Kubernetes.
+  `docker compose`, a `Job` as a Helm `pre-install` and `pre-upgrade` hook on Kubernetes. _Extended by D168._
 - **D15** The Rust practices of §5 (errors, lints, tests, async, dependencies, code documentation).
 - **D16** (Q11) The clock and randomness are forbidden everywhere by `disallowed-methods` in the root
   `clippy.toml` (`SystemTime::now`, `Instant::now`, `OffsetDateTime::now_utc`, `Ulid::generate`,
@@ -105,7 +105,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D30** Dependencies of Lot 2: `tokio`, `tokio-util`, `sqlx` (Postgres, `rustls`), `axum`, `anyhow` (binaries
   only), `tracing`, `tracing-subscriber`, `secrecy`, `sha2` and `rand`. Any other dependency is proposed
   according to §4.
-- **D31** All the environment variables of the server start with `CIHUB_`.
+- **D31** All the environment variables of the server start with `CIHUB_`. _Extended by D168._
 - **D32** An API token is `cht_` followed by 20 random bytes encoded in base32 with the typedid alphabet (36
   characters in total), sent by `Authorization: Bearer`. The server keeps only the SHA-256 fingerprint of the
   token and finds it by this fingerprint. `cht` is never a typedid identifier type.
@@ -541,7 +541,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   account and its connection from the installation, requests the synchronization of the repositories, and shows
   only once an API token of the organization. No admin command creates a queue: queues are created by
   `POST /api/v1/repos/{owner}/{name}/queues` or by `cihub queue create`, which is added to the CLI commands. No
-  MCP server in Lot 9. Extends D138.
+  MCP server in Lot 9. Extends D138. _Extended by D168._
 - **D155** Extends D154 and D86. The `Scm` trait gains two methods: `installation`, at the instance level, which
   returns the account of an installation (identifier and login), and `list_repos`, which returns the repositories
   of a connection. `bootstrap` gives the organization the login of the account as slug, enables the `mergequeue`
@@ -607,7 +607,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   queue comes from `--queue <name>`, or from the only queue of the repository. Commands: `login`,
   `merge <pr> [-p <priority>] [--no-batch]`, `cancel <pr>`, `restart <pr>`, `status [<pr>]`,
   `queue create <branch> [--name <name>]`, `queue pause|resume|drain`, `queue graph`. `targets upload` arrives
-  in Lot 13.
+  in Lot 13. _Extended by D168._
 - **D162** The configuration checker (D87). The `Scm` trait gains `check_setup(repo, branche)`, which returns
   neutral findings from a closed vocabulary: `update_restriction_missing` (no rule restricts the updates of the
   branch), `app_not_exempt` (the App is not exempt from this restriction), `test_branches_not_excluded` (a rule
@@ -655,6 +655,29 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the comment of the PR show the sentence instead of the code, with the detail that the surface already has
   (failing checks). The API `Item` gains `state_description`, computed from the same table, and the CLI shows
   it.
+
+**October 3, 2026, validated by Nicolas Lecoy.**
+
+- **D168** One binary, `cihub`. Supersedes D8; extends D14, D31, D154 and D161. `crates/server/` (`cihub-server`)
+  gives the `cihub` binary, with `clap`; `crates/cli/` is removed, and the CLI carries the server code. The
+  commands are in three groups: `cihub login`; `cihub queue merge|cancel|restart|status|graph|create|pause|
+  resume|drain`, with the options `--repo <owner/name>` (the `origin` remote of git by default) and
+  `--queue <name>` (the only queue of the repository by default; with two or more, the command fails and lists
+  the names); `cihub server start [<role>...]`, `cihub server migrate` and
+  `cihub server bootstrap --installation <id>`. The four roles (D91) are arguments of `cihub server start`, all
+  four without an argument; `CIHUB_ROLES` is removed. `cihub server` reads a YAML file named by
+  `--config <file>` (`serde-saphyr`, no default path), whose keys are `database.url`, `http.addr`,
+  `internal.addr`, `log.filter`, `log.format`, `github.url`, `github.app_id`, `github.private_key`,
+  `github.private_key_file` and `github.webhook_secret`. The variable of a key is `CIHUB_` followed by its path
+  in capitals, with `_` as separator; the precedence is variable, then file, then default; an unknown key or an
+  invalid value stops the process. `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`. `cihub queue targets upload`
+  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._
+- **D169** Extends D168. The `cihub` binary is given by `cihub-cli` (`crates/cli/`, the former `crates/server/`):
+  it defines every command, one file per command, and starts the components. The HTTP endpoints stay in
+  `cihub-web`, whose name follows the `web` role. No crate per role: `cihub-cli` has one file per role
+  (`server/web.rs`, `server/scheduler.rs`, `server/worker.rs`, `server/notifier.rs`), which starts the loops whose
+  code is in the library crates (`cihub-web`, `cihub-mergequeue`, `cihub-platform`); a role gets its own crate only
+  by a decision, when its code grows.
 
 **October 5, 2026, validated by Nicolas Lecoy.**
 

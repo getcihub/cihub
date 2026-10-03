@@ -40,6 +40,20 @@ Errors are in `application/problem+json` with `type`, `title`, `status`, `detail
 
 Outgoing webhooks follow the [Standard Webhooks](https://www.standardwebhooks.com) specification (headers `webhook-id`, `webhook-timestamp`, `webhook-signature` in HMAC-SHA256), are retried with exponential backoff over 24 hours and disabled after 7 days of failures. The event types, the payload fields and the reasons follow CIHub's vocabulary (`docs/DOMAIN.md`), without translation to that of another product (`DECISIONS.md` D139); their list is frozen at Lot 11. Per-PR events are emitted for each member of a batch.
 
-The CLI (`cihub`, crate `cihub-cli`) is a thin client, distributed alone and without any server code; it only talks to the public API, through `cihub-client` (`DECISIONS.md` D161): `cihub login --url <address> [--token <token>]`, `cihub merge <pr> [-p urgent|high|medium|low|0-255] [--no-batch]`, `cihub cancel <pr>`, `cihub restart <pr>`, `cihub status [<pr>]`, `cihub queue create <branch> [--name <name>]`, `cihub queue pause|resume|drain`, `cihub queue graph`. The repository comes from the `origin` remote of git; the queue comes from `--queue <name>`, or from the only queue of the repository. `cihub login` keeps the address and the token in `$XDG_CONFIG_HOME/cihub/credentials.json` (mode 0600); `CIHUB_URL` and `CIHUB_TOKEN` take precedence. `cihub targets upload` arrives at Lot 13.
+The command line is the `cihub` binary (crate `cihub-cli`, `DECISIONS.md` D161, D168, D169). `cihub login` and `cihub queue` only talk to the public API, through `cihub-client`; `cihub server` talks to Postgres and is described in `docs/DEPLOYMENT.md`. `cihub login --url <address> [--token <token>]` keeps the address and the token in `$XDG_CONFIG_HOME/cihub/credentials.json` (mode 0600), and reads the token from the standard input without `--token`; `CIHUB_URL` and `CIHUB_TOKEN` take precedence over the file.
+
+| Command                                                  | Role                                                     | Scope          |
+| -------------------------------------------------------- | -------------------------------------------------------- | -------------- |
+| `cihub queue merge <pr> [-p urgent\|high\|medium\|low\|0-255] [--no-batch]` | submits a PR                      | `prs:write`    |
+| `cihub queue cancel <pr>`                                | takes the PR out of the queue                            | `prs:write`    |
+| `cihub queue restart <pr>`                               | tests the PR again                                       | `prs:write`    |
+| `cihub queue status [<pr>]`                              | the state of the queue, or of a PR                       | `queues:read`  |
+| `cihub queue graph`                                      | the merge graph of the queue                             | `queues:read`  |
+| `cihub queue create <branch> [--name <name>]`            | creates a queue on a branch of the repository            | `queues:write` |
+| `cihub queue pause`                                      | stops the tests and the merges; the queue keeps its order | `queues:write` |
+| `cihub queue resume`                                     | starts the queue again                                   | `queues:write` |
+| `cihub queue drain`                                      | finishes the items in the queue and refuses new ones     | `queues:write` |
+
+Every `cihub queue` command takes `--repo <owner/name>`, else the repository of the `origin` remote of git, and `--queue <name>`, else the only queue of the repository. With two or more queues and no `--queue`, the command fails, lists the names and does nothing; `create` ignores `--queue`. `cihub queue targets upload` arrives at Lot 13.
 
 The internal interfaces are not RPC: the processes share Postgres, so the "internal API" consists of the `jobs` and `outbox` tables and the `NOTIFY` channels `cihub_queue`, `cihub_jobs`, `cihub_outbox`.
