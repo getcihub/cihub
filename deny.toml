@@ -19,7 +19,7 @@ multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
 # The pure core crates (domain, conditions, config, contracts, mq-core,
-# flaky-core) and the CLI must not reach these crates. Each entry lists the
+# flaky-core) must not reach these crates. Each entry lists the
 # only crates allowed to depend on it directly. When a new external crate
 # needs one of them (for example hyper needs tokio), add it here.
 deny = [
@@ -30,7 +30,6 @@ deny = [
         "cihub-platform",
         "cihub-mergequeue",
         "cihub-flakytests",
-        "cihub-server",
         "cihub-cli",
         "axum",
         "hyper",
@@ -50,7 +49,7 @@ deny = [
         "cihub-store",
         # A dev-dependency only: its tests against Postgres.
         "cihub-web",
-        "cihub-server",
+        "cihub-cli",
         "cihub-platform",
         "cihub-analytics",
         "cihub-mergequeue",
@@ -68,7 +67,7 @@ deny = [
         "cihub-web",
         "cihub-mergequeue",
         "cihub-flakytests",
-        "cihub-server",
+        "cihub-cli",
     ] },
 ]
 

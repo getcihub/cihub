@@ -1,4 +1,5 @@
-//! The repository of the working directory, from the remote `origin` of git.
+//! The repository of `cihub queue`: the value of `--repo`, else the remote
+//! `origin` of git in the working directory.
 
 use std::process::Command;
 
@@ -15,6 +16,16 @@ pub(crate) fn from_git() -> anyhow::Result<(String, String)> {
     }
     let url = String::from_utf8_lossy(&output.stdout);
     parse(url.trim()).with_context(|| format!("the remote `{}` names no repository", url.trim()))
+}
+
+/// The value of `--repo`: `owner/name`.
+pub(crate) fn from_arg(value: &str) -> Result<(String, String), String> {
+    match value.split_once('/') {
+        Some((owner, name)) if !owner.is_empty() && !name.is_empty() && !name.contains('/') => {
+            Ok((owner.to_owned(), name.to_owned()))
+        }
+        _ => Err(format!("`{value}` is not `owner/name`")),
+    }
 }
 
 /// The last two parts of the path of a remote, without `.git`: the forms
@@ -50,5 +61,16 @@ mod tests {
         }
         assert_eq!(parse("https://github.com/app"), None);
         assert_eq!(parse("app"), None);
+    }
+
+    #[test]
+    fn an_argument_names_its_repository() {
+        assert_eq!(
+            from_arg("acme/app"),
+            Ok(("acme".to_owned(), "app".to_owned()))
+        );
+        for value in ["acme", "acme/", "/app", "acme/app/x"] {
+            assert!(from_arg(value).is_err(), "{value}");
+        }
     }
 }

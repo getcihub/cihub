@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Image
 
-# Builds the image of cihub-server for each release (AGENTS.md D19), on a
+# Builds the image of CIHub for each release (AGENTS.md D19), on a
 # native runner per architecture, then joins the two in one manifest.
 
 on:
