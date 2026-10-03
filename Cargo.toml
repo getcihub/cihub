@@ -27,7 +27,7 @@ cihub-store = { path = "crates/store" }
 cihub-telemetry = { path = "crates/telemetry" }
 anyhow = "1.0.104"
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
-base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+base64 = { version = "0.23.0", default-features = false, features = ["std"] }
 axum = { version = "0.8.9", default-features = false }
 globset = { version = "0.4.20", default-features = false }
 rand = { version = "0.10.3", default-features = false, features = ["sys_rng"] }
