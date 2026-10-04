@@ -148,6 +148,10 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     item. Tests: translation of the opening and of the box, and against Postgres and the simulator the welcome,
     the submission by the box, its return after a cancellation, the refusal of an account without `write` and a
     box in the comment of someone else.
+  - Done (October 4, 2026, D167): sentence of each reason. `Reason::describe` in `cihub-domain`; the status and the
+    comment of a `failed` or `cancelled` PR show it instead of the code, the API `Item` gains `state_description`
+    and the CLI shows it. Tests: the table (one short, unique sentence per reason), the rendering of a failure, and
+    the field against Postgres.
   - Remaining: record the GitHub responses again for `check_setup` (D90, D162); until then,
     `the_contract_passes_on_recorded_answers` fails. Step 7, the exit criteria: the end-to-end test on staging,
     CIHub on its own queue, and an installation by an outside person, which need an instance, an App and a person.
