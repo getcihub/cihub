@@ -6,3 +6,9 @@ mise.local.toml
 .env
 .env.*
 deploy/
+# The local state of the dashboard: the image installs and builds it again.
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/.screenshots/

@@ -84,6 +84,7 @@ code (`.agents/rules/`). Read the rules of a part before you change it:
 | `cihub-domain`, `cihub-conditions`, `cihub-config`, `cihub-mq-core`  | `.agents/rules/core.md`   |
 | `cihub-store`, `cihub-platform`, `migrations/`                       | `.agents/rules/store.md`  |
 | `cihub-scm`, `cihub-github`                                          | `.agents/rules/scm.md`    |
+| `web/`                                                               | `.agents/rules/web.md`    |
 
 ## Commands
 
@@ -95,6 +96,8 @@ mise run test-integration  # Postgres from compose.yaml, then the tests/postgres
 mise run cover             # coverage of the pure crates, 90% at least
 mise run dev               # migrations, then cihub server start locally with the four roles
 mise run sim               # fault_injection on 1,000 seeds (long; the CI runs it at night)
+mise run web-e2e           # browser tests of the dashboard, without the cihub server
+mise run web-shots-compare # screenshots before (main) and after (working tree) of the dashboard
 ```
 
 The CI runs one task per job (`.github/workflows/ci.yml`); `Build Success` is the required status.

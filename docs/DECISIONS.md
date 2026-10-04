@@ -736,6 +736,28 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
   the run, with the details URL of the status (D156).
 
+**October 4, 2026, validated by Nicolas Lecoy.**
+
+- **D173** (Q9) The dashboard is a React application in TypeScript built by Vite, in `web/` at the root of the
+  repository. pnpm installs its dependencies; Node and pnpm are pinned by `mise.toml`, before Node so that the
+  pnpm of mise comes first in the `PATH`. `web/pnpm-workspace.yaml` installs a version 3 days after its
+  publication (`minimumReleaseAge`, as Renovate) and refuses a version whose trust level decreases
+  (`trustPolicy: no-downgrade`). Biome lints and formats; Vitest with Testing Library runs the component tests;
+  Playwright, with Chromium only, runs the browser tests and takes the screenshots. The TypeScript client
+  generated from `/api/v1/openapi.json` arrives with the first page that reads the API (Lot 10).
+- **D174** `cihub-web` embeds `web/dist` with `rust-embed`, behind the `dashboard` feature of `cihub-web` and of
+  `cihub-cli`. The image and `mise run dev` enable it; without it, the binary builds without Node and serves no
+  dashboard. The dashboard answers the paths that no other route takes: a file of `web/dist`, else `index.html`,
+  except under `assets/`, whose files are named after their content, are cached for one year, and answer `404`
+  when missing. A debug build reads `web/dist` from the disk at each request.
+- **D175** The dashboard runs without the cihub server: `mise run web-dev` (Vite, `/api` sent to the local
+  `cihub server start`) for development, and `vite preview` of the build for the browser tests, where every `/api` route
+  answers `503` unless the test mocks it. `mise run web-shots` takes one screenshot per scenario of
+  `web/e2e/shots.spec.ts`; `mise run web-shots-compare` takes them for a git ref (before) and the working tree
+  (after) with the scenarios of the working tree, and writes `web/.screenshots/compare.html`. The `Web E2E` job
+  compares a PR with its base branch and uploads the result as an artifact. The hosting of the screenshots and
+  the reference screenshots in the repository are deferred.
+
 ## Open questions
 
 Each question carries an identifier; `docs/LOTS.md` indicates the lot that needs the answer. A settled question
@@ -748,7 +770,5 @@ becomes a decision above and leaves this list.
 - **Q7** OpenTelemetry semantic conventions for tests: follow the proposal of the CI/CD group, or freeze
   `cihub.*` attributes as long as it is not stable. _(Lot 14)_
 - **Q8** Switch-over threshold to ClickHouse: volume from which the documentation recommends it. _(Lot 15)_
-- **Q9** Dashboard stack: React with the generated TypeScript client is the hypothesis; to be confirmed.
-  _(Lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` subscribes the module to `mergequeue.run.completed`, which is not an event type
   of `docs/DOMAIN.md` (`run.transitioned` ?). _(Lot 14)_

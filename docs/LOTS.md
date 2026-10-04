@@ -42,7 +42,7 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
-| 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
+| 10  | Dashboard                                              | 2     | 9          | —         | in progress                              |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | Q3        | to do                                    |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
@@ -197,6 +197,15 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 - **Exit criterion**: component tests and an end-to-end browser test on `docker compose`: login, creation of a
   queue, submission, follow-up until the merge; the assistant reports each configuration point of
   `docs/GITHUB.md` on a misconfigured repository.
+- **Tracking**:
+  - Deviation (October 4, 2026, validated by the project lead): the foundation of the dashboard starts before the
+    end of lot 9; the rest of the lot waits for it.
+  - Done (October 4, 2026, D173 to D175): foundation. `web/` (React, TypeScript, Vite, pnpm, Biome, Vitest,
+    Playwright), a home page and a not found page; `cihub-web` serves it with the `dashboard` feature; the image
+    builds it; `mise run web-*` tasks; screenshots before and after; CI jobs `Web Lint`, `Web Test`, `Web Embed`
+    and `Web E2E`. Tests: the component tests, the browser tests on the build, and the routes of the embedded
+    dashboard in `cihub-web`.
+  - Remaining: the whole content of the lot.
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 

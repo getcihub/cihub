@@ -1,0 +1,6 @@
+node_modules/
+dist/
+# Playwright results and the screenshots of `mise run web-shots`.
+test-results/
+playwright-report/
+.screenshots/

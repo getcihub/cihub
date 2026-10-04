@@ -15,6 +15,7 @@ cihub-domain.workspace = true
 cihub-github.workspace = true
 cihub-platform.workspace = true
 cihub-store.workspace = true
+rust-embed = { workspace = true, optional = true }
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -24,6 +25,10 @@ tokio = { workspace = true, features = ["net", "time"] }
 tokio-util.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
+
+[features]
+# The dashboard of web/, built before (`mise run web-build`; DECISIONS.md D174).
+dashboard = ["dep:rust-embed"]
 
 [dev-dependencies]
 ring.workspace = true

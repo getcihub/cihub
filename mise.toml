@@ -4,6 +4,9 @@
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
 "actionlint" = "1.7.12"
 "lefthook" = "2.1.16"
+# Before node, so that this pnpm comes first in the PATH (DECISIONS.md D173).
+"pnpm" = "12.9.0"
+"node" = "24.21.0"
 "rust" = { version = "1.98.1", profile = "minimal", components = "clippy,rustfmt,llvm-tools" }
 "zizmor" = "1.30.1"
 
@@ -52,8 +55,8 @@ description = "Check the line coverage of the pure crates (90 % or more)"
 run = "cargo llvm-cov nextest -p cihub-domain -p cihub-conditions -p cihub-config -p cihub-mq-core --fail-under-lines 90"
 
 [tasks.check]
-description = "Run lint, then test"
-run = ["mise run lint", "mise run test"]
+description = "Run lint, then test, for Rust and for the dashboard"
+run = ["mise run lint", "mise run web-lint", "mise run test", "mise run web-test"]
 
 [tasks.db]
 description = "Start the development Postgres of compose.yaml, then create or update the cihub role"
@@ -73,7 +76,72 @@ env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-cli -- server migrate"
 
 [tasks.dev]
-description = "Start Postgres, apply the migrations, then run cihub server start with the four roles"
-depends = ["migrate"]
+description = "Start Postgres, apply the migrations, build the dashboard, then run cihub server start with the four roles"
+depends = ["migrate", "web-build"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = "cargo run --quiet -p cihub-cli -- server start"
+run = "cargo run --quiet -p cihub-cli --features dashboard -- server start"
+
+# The dashboard (web/, DECISIONS.md D173 to D175).
+
+[tasks.web-install]
+description = "Install the dependencies of the dashboard"
+dir = "web"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.web-dev]
+description = "Run the dashboard alone with Vite; /api goes to the cihub server of `mise run dev`"
+depends = ["web-install"]
+dir = "web"
+run = "pnpm run dev"
+
+[tasks.web-build]
+description = "Build the dashboard into web/dist"
+depends = ["web-install"]
+dir = "web"
+run = "pnpm run build"
+
+[tasks.web-lint]
+description = "Check the dashboard with Biome and the TypeScript compiler"
+depends = ["web-install"]
+dir = "web"
+run = "pnpm run lint"
+
+[tasks.web-test]
+description = "Run the component tests of the dashboard"
+depends = ["web-install"]
+dir = "web"
+run = "pnpm run test"
+
+[tasks.web-embed]
+description = "Lint and test cihub-web with the dashboard embedded"
+depends = ["web-build"]
+run = [
+  "cargo clippy -p cihub-web -p cihub-cli --all-targets --features cihub-web/dashboard,cihub-cli/dashboard -- -D warnings",
+  "cargo nextest run -p cihub-web --features dashboard -E 'not binary(postgres)'",
+]
+
+[tasks.web-browsers]
+description = "Install the Chromium of Playwright"
+depends = ["web-install"]
+dir = "web"
+run = "pnpm exec playwright install chromium"
+
+[tasks.web-e2e]
+description = "Run the browser tests of the dashboard, without the cihub server"
+depends = ["web-build", "web-browsers"]
+dir = "web"
+run = "pnpm run e2e"
+
+[tasks.web-shots]
+description = "Take the screenshots of the dashboard into web/.screenshots/<label>"
+depends = ["web-build", "web-browsers"]
+dir = "web"
+usage = 'arg "[label]" default="current" help="Directory of the screenshots"'
+run = 'SHOTS_DIR=".screenshots/$usage_label" pnpm run shots'
+
+[tasks.web-shots-compare]
+description = "Compare the screenshots of a git ref and of the working tree in web/.screenshots/compare.html"
+depends = ["web-install", "web-browsers"]
+dir = "web"
+usage = 'arg "[ref]" default="main" help="The git ref of the screenshots before"'
+run = 'node scripts/shots-compare.ts "$usage_ref"'

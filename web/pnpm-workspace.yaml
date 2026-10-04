@@ -1,0 +1,5 @@
+# Supply chain (DECISIONS.md D173): a version is installed 3 days after its
+# publication, like the updates of Renovate, and never with a weaker trust
+# level than the previous releases.
+minimumReleaseAge: 4320
+trustPolicy: no-downgrade

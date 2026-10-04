@@ -1,13 +1,15 @@
 //! The HTTP server of the public address of the `web` role (`DECISIONS.md`
 //! D82, D91). It serves the webhooks of the SCM: it checks the signature,
 //! stores the delivery without routing it, and answers within 2 s (D83, D84);
-//! and the API v1 under `/api/v1`, with the routes of the modules (D159). The
-//! dashboard arrives with lot 10.
+//! the API v1 under `/api/v1`, with the routes of the modules (D159); and,
+//! with the `dashboard` feature, the dashboard on the other paths (D174).
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.
 
 mod api;
+#[cfg(feature = "dashboard")]
+mod dashboard;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -51,8 +53,8 @@ struct Webhooks {
 
 pub use api::REQUESTS_PER_MINUTE;
 
-/// The routes of the public address: the webhooks of the GitHub App, and the
-/// API with the routes of `modules`.
+/// The routes of the public address: the webhooks of the GitHub App, the API
+/// with the routes of `modules`, and the dashboard.
 pub fn router(
     pool: PgPool,
     now: fn() -> OffsetDateTime,
@@ -64,11 +66,14 @@ pub fn router(
         now,
         github: Arc::new(github),
     };
-    Router::new()
+    let router = Router::new()
         .route(WEBHOOK_PATH, post(github_webhook))
         .layer(DefaultBodyLimit::max(MAX_DELIVERY_BYTES))
         .with_state(webhooks)
-        .nest(API_PREFIX, api::router(pool, now, modules))
+        .nest(API_PREFIX, api::router(pool, now, modules));
+    #[cfg(feature = "dashboard")]
+    let router = router.fallback_service(axum::routing::get(dashboard::serve));
+    router
 }
 
 /// Serves `router` on `listener` until `cancel`.

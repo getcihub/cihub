@@ -19,7 +19,7 @@ a change to its command applies without erasing the data. These values are for d
 mise run db            # Postgres, then postgres-setup
 mise run db-reset      # erases the data, then mise run db (after a migration is rewritten)
 mise run migrate       # Postgres, then cihub server migrate
-mise run dev           # migrate, then cihub server start with the four roles and pretty logs
+mise run dev           # migrate and the dashboard, then cihub server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
 ```
 
@@ -39,6 +39,22 @@ The first time, `mise trust mise.local.toml` authorizes the file. To receive web
 of the App points to a tunnel that leads to port 8080.
 
 `mise tasks` lists the project tasks and their description.
+
+### Dashboard
+
+`web/` is the dashboard (`DECISIONS.md` D173 to D175). `mise run dev` builds it and runs `cihub server start` with the
+`dashboard` feature: the server serves it on `http://127.0.0.1:8080`, and reads `web/dist` again at each request,
+so `mise run web-build` is enough to see a change. Without the server:
+
+```sh
+mise run web-dev             # Vite on http://127.0.0.1:5173, /api sent to the cihub server of mise run dev
+mise run web-e2e             # the browser tests on the build, every /api route answers 503 unless mocked
+mise run web-shots [label]   # one screenshot per scenario in web/.screenshots/<label> (current by default)
+mise run web-shots-compare [ref]  # before (ref, main by default) and after (working tree): web/.screenshots/compare.html
+```
+
+The screenshots of two runs on the same machine compare byte for byte; the fonts of the system make them differ
+between macOS and Linux.
 
 ## Server configuration
 
@@ -99,9 +115,10 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 
 ## Image
 
-`Dockerfile`, at the root, builds the `cihub-server` image in two stages: compilation on
+`Dockerfile`, at the root, builds the `cihub-server` image in three stages: the dashboard on
+`node:24.21.0-bookworm-slim` (the Node and the pnpm of `mise.toml`), compilation with the `dashboard` feature on
 `rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
-`gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
+`gcr.io/distroless/cc-debian12:nonroot`. The images are pinned by their digest, with the tag as a
 comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
 image starts the four roles, and an argument replaces it (`server migrate`). The project
 license is in `/usr/share/doc/cihub/`.
@@ -172,8 +189,8 @@ Migrations are explicit (`DECISIONS.md` D14):
 ## Tools
 
 `mise install` installs the whole suite (`DECISIONS.md` D17): Rust (version pinned in `mise.toml`, with `clippy`,
-`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`
-and `lefthook`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
+`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
+`lefthook`, and Node and pnpm for the dashboard, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
 commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
@@ -187,6 +204,10 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 | `Rust Test`     | `mise run test`           |
 | `Rust Coverage` | `mise run cover`          |
 | `Workflow Lint` | `mise run lint-workflows` |
+| `Web Lint`      | `mise run web-lint`       |
+| `Web Test`      | `mise run web-test`       |
+| `Web Embed`     | `mise run web-embed`      |
+| `Web E2E`       | `mise run web-e2e`, then `mise run web-shots-compare` on a PR; the report and the screenshots as the `web-e2e` artifact |
 | `Build Success` | joins the jobs above      |
 
 `Build Success` is the required status of the `main` branch: it fails if a job failed or was cancelled. The CI
