@@ -142,8 +142,8 @@ fn description(surface: &Surface) -> String {
         ItemState::PendingFailure => at("Tests failed, waiting for the PRs ahead"),
         ItemState::TestsPassed => "Tests passed, merging".to_owned(),
         ItemState::Merged => "Merged by the queue".to_owned(),
-        ItemState::Failed => format!("Failed: {}", surface.reason.as_str()),
-        ItemState::Cancelled => format!("Cancelled: {}", surface.reason.as_str()),
+        ItemState::Failed => format!("Failed: {}", surface.reason.describe()),
+        ItemState::Cancelled => format!("Cancelled: {}", surface.reason.describe()),
     }
 }
 
@@ -558,6 +558,17 @@ mod tests {
         );
         assert!(comment.contains("Tested on top of #5."), "{comment}");
         assert!(comment.contains("`cihub-merge/main/run`"), "{comment}");
+    }
+
+    #[test]
+    fn a_failure_shows_the_sentence_of_its_reason() {
+        let mut failed = surface(ItemState::Failed);
+        failed.reason = Reason::PrPushedTo;
+        let rendered = render(&failed, &settings(|_| {}), "main");
+        let want = "Failed: the PR received a new commit after its submission";
+        assert_eq!(rendered.status.unwrap().description, want);
+        let comment = rendered.comment.unwrap();
+        assert!(comment.contains(&format!("**{want}**")), "{comment}");
     }
 
     #[test]

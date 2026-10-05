@@ -2244,6 +2244,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let (_, pr) = call("GET", format!("/queues/{queue}/prs/{number}"), None).await;
     assert_eq!(pr["item"]["state"], "cancelled");
     assert_eq!(pr["item"]["state_reason"], "admin_requested");
+    assert_eq!(
+        pr["item"]["state_description"],
+        "an administrator asked for it"
+    );
     let (status, again) = call("POST", format!("/items/{item_id}/cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),

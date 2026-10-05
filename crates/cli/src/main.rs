@@ -215,7 +215,7 @@ async fn run(
             writeln!(
                 out,
                 "#{pr}: {} ({}){position}",
-                item.state, item.state_reason
+                item.state, item.state_description
             )?;
             for reason in &item.block_reasons {
                 writeln!(out, "  blocked: {}", serde_json::to_string(reason)?)?;
@@ -235,7 +235,7 @@ async fn run(
                     writeln!(
                         out,
                         "  #{} {} ({})",
-                        item.pr_number, item.state, item.state_reason
+                        item.pr_number, item.state, item.state_description
                     )?;
                 }
             }

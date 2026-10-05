@@ -107,6 +107,11 @@ the assembly of the test branch); `test_run_*` (failure or timeout of the run); 
 `merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons,
 including `access_lost` and `access_restored` when CIHub loses or regains its access to the repository.
 
+Each reason has a sentence in English for a person, `Reason::describe` (for example `pr_pushed_to`: "the PR
+received a new commit after its submission"): the PR comment and status, the API (`state_description`) and the
+CLI show it instead of the code. The code is the stable contract; the sentence is a free rendering that can
+change without a decision.
+
 A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
 displayed in the PR comment. The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
 `conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
