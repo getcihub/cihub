@@ -220,6 +220,9 @@ fn comment(surface: &Surface, target_branch: &str, commands: bool) -> String {
             (true, Some(branch)) => details.push(format!("Tested in `{branch}`.")),
             (true, None) => {}
         }
+        if let Some(number) = surface.draft_pr_number {
+            details.push(format!("Draft PR of the test: #{number}"));
+        }
     }
     if !details.is_empty() {
         blocks.push(details.join("\n"));
@@ -569,6 +572,7 @@ mod tests {
             position: Some(2),
             predecessors: vec![5],
             test_branch: Some("cihub-merge/main/run".into()),
+            draft_pr_number: None,
             failing_checks: Vec::new(),
             block_reasons: Vec::new(),
             labels: BTreeSet::new(),
@@ -609,6 +613,8 @@ mod tests {
                 status: "in progress".into(),
             },
         ];
+        let mut testing = surface(ItemState::Testing);
+        testing.draft_pr_number = Some(42);
         let mut retrying = surface(ItemState::PendingFailure);
         retrying.failing_checks = vec!["build".into()];
         let mut failed = surface(ItemState::Failed);
@@ -631,9 +637,10 @@ mod tests {
                  <sub>`/cihub cancel` to leave the queue</sub>\n",
             ),
             (
-                surface(ItemState::Testing),
+                testing,
                 "🧪 **Testing** · position 2 in the queue for `main`\n\n\
-                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 Tested on top of #5 in `cihub-merge/main/run`.\n\
+                 Draft PR of the test: #42\n\n\
                  <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
             ),
             (
