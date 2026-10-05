@@ -181,58 +181,105 @@ fn block_text(reason: &BlockReason) -> String {
     }
 }
 
-/// The comment of the queue on the PR, in Markdown.
+/// The comment of the queue on the PR, in Markdown (`DECISIONS.md` D173): the
+/// state line, its details, then the commands in small print.
 fn comment(surface: &Surface, target_branch: &str, commands: bool) -> String {
-    let mut lines = vec![
-        format!("### {}", queue_status_context(target_branch)),
-        String::new(),
-        format!("**{}**", description(surface)),
-        String::new(),
-    ];
+    let mut blocks = vec![state_line(surface, target_branch)];
     if surface.state == ItemState::NotReady && !surface.block_reasons.is_empty() {
-        lines.push("The PR enters the queue when nothing blocks it:".to_owned());
-        for reason in &surface.block_reasons {
-            lines.push(format!("- {}", block_text(reason)));
-        }
-        lines.push(String::new());
-    }
-    let live = !surface.state.is_terminal();
-    if live && !surface.predecessors.is_empty() {
-        let prs: Vec<String> = surface
-            .predecessors
+        let reasons: Vec<String> = surface
+            .block_reasons
             .iter()
-            .map(|n| format!("#{n}"))
+            .map(|reason| format!("- {}", capitalized(&block_text(reason))))
             .collect();
-        lines.push(format!("Tested on top of {}.", prs.join(", ")));
+        blocks.push(reasons.join("\n"));
     }
-    if let (true, Some(branch)) = (live, &surface.test_branch) {
-        lines.push(format!("Test branch: `{branch}`."));
-    }
+    let queued = !surface.state.is_terminal() && surface.state != ItemState::NotReady;
+    let mut details = Vec::new();
     if !surface.failing_checks.is_empty() && surface.state != ItemState::Merged {
         let checks: Vec<String> = surface
             .failing_checks
             .iter()
             .map(|c| format!("`{c}`"))
             .collect();
-        lines.push(format!("Failing required checks: {}.", checks.join(", ")));
+        details.push(format!("Failing checks: {}", checks.join(", ")));
+    }
+    if queued {
+        let prs: Vec<String> = surface
+            .predecessors
+            .iter()
+            .map(|n| format!("#{n}"))
+            .collect();
+        match (prs.is_empty(), &surface.test_branch) {
+            (false, Some(branch)) => {
+                details.push(format!(
+                    "Tested on top of {} in `{branch}`.",
+                    prs.join(", ")
+                ));
+            }
+            (false, None) => details.push(format!("Tested on top of {}.", prs.join(", "))),
+            (true, Some(branch)) => details.push(format!("Tested in `{branch}`.")),
+            (true, None) => {}
+        }
+    }
+    if !details.is_empty() {
+        blocks.push(details.join("\n"));
     }
     // Only an item in test can restart (`DECISIONS.md` D157).
+    let mut notes = Vec::new();
     match surface.state {
         ItemState::Failed | ItemState::Cancelled if commands => {
-            lines.push(format!(
-                "- [ ] {SUBMIT_BOX} To submit it again, check this box or comment `/cihub merge` below."
-            ));
+            blocks.push(format!("- [ ] {SUBMIT_BOX} Submit again"));
+            notes.push("Or comment `/cihub merge`.");
         }
-        ItemState::Testing | ItemState::PendingFailure if commands => lines.push(
-            "Comment `/cihub restart` to test it again, or `/cihub cancel` to leave the queue."
-                .to_owned(),
-        ),
-        _ if live && commands => {
-            lines.push("Comment `/cihub cancel` to leave the queue.".to_owned());
+        ItemState::NotReady => {
+            if !surface.block_reasons.is_empty() {
+                notes.push("The PR enters the queue when nothing above blocks it");
+            }
+            if commands {
+                notes.push("`/cihub cancel` to withdraw");
+            }
+        }
+        ItemState::Pending if commands => notes.push("`/cihub cancel` to leave the queue"),
+        ItemState::Testing | ItemState::PendingFailure if commands => {
+            notes.push("`/cihub restart` to test again");
+            notes.push("`/cihub cancel` to leave the queue");
         }
         _ => {}
     }
-    lines.join("\n") + "\n"
+    if !notes.is_empty() {
+        blocks.push(format!("<sub>{}</sub>", notes.join(" · ")));
+    }
+    blocks.join("\n\n") + "\n"
+}
+
+/// The first line of the comment: an icon, the state, and why.
+fn state_line(surface: &Surface, target_branch: &str) -> String {
+    let queue = format!("in the queue for `{target_branch}`");
+    let at = match surface.position {
+        Some(position) => format!("position {position} {queue}"),
+        None => queue,
+    };
+    match surface.state {
+        ItemState::NotReady => {
+            format!("⏳ **Waiting** · not in the queue for `{target_branch}` yet")
+        }
+        ItemState::Pending => format!("🕓 **Queued** · {at}"),
+        ItemState::Testing => format!("🧪 **Testing** · {at}"),
+        ItemState::PendingFailure => {
+            "⚠️ **Tests failed** · waiting for the PRs ahead before it fails".to_owned()
+        }
+        ItemState::TestsPassed => format!("🚀 **Tests passed** · merging into `{target_branch}`"),
+        ItemState::Merged => format!("✅ **Merged** into `{target_branch}` by the queue"),
+        ItemState::Failed => format!("❌ **Failed** · {}", surface.reason.describe()),
+        ItemState::Cancelled => format!("⚪ **Cancelled** · {}", surface.reason.describe()),
+    }
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// The state labels to add and to remove. Without `enabled`, only a PR that
@@ -550,14 +597,90 @@ mod tests {
             assert_eq!(rendered.status.unwrap().state, want, "{state:?}");
             assert_eq!(rendered.sha, "abc");
         }
-        let testing = render(&surface(ItemState::Testing), &defaults, "main");
-        let comment = testing.comment.unwrap();
-        assert!(
-            comment.starts_with("### CIHub Merge Queue (main)\n"),
-            "{comment}"
-        );
-        assert!(comment.contains("Tested on top of #5."), "{comment}");
-        assert!(comment.contains("`cihub-merge/main/run`"), "{comment}");
+    }
+
+    #[test]
+    fn each_state_gives_its_comment() {
+        let mut blocked = surface(ItemState::NotReady);
+        blocked.block_reasons = vec![
+            BlockReason::ReviewRequired { have: 1, need: 2 },
+            BlockReason::AwaitingRequiredCheck {
+                check: "build".into(),
+                status: "in progress".into(),
+            },
+        ];
+        let mut retrying = surface(ItemState::PendingFailure);
+        retrying.failing_checks = vec!["build".into()];
+        let mut failed = surface(ItemState::Failed);
+        failed.reason = Reason::TestRunRequiredStatusFailed;
+        failed.failing_checks = vec!["build".into(), "lint".into()];
+        let mut cancelled = surface(ItemState::Cancelled);
+        cancelled.reason = Reason::PrPushedTo;
+        let cases = [
+            (
+                blocked,
+                "⏳ **Waiting** · not in the queue for `main` yet\n\n\
+                 - 1 of 2 required approvals\n\
+                 - The required check `build` is in progress\n\n\
+                 <sub>The PR enters the queue when nothing above blocks it · `/cihub cancel` to withdraw</sub>\n",
+            ),
+            (
+                surface(ItemState::Pending),
+                "🕓 **Queued** · position 2 in the queue for `main`\n\n\
+                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+            ),
+            (
+                surface(ItemState::Testing),
+                "🧪 **Testing** · position 2 in the queue for `main`\n\n\
+                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
+            ),
+            (
+                retrying,
+                "⚠️ **Tests failed** · waiting for the PRs ahead before it fails\n\n\
+                 Failing checks: `build`\n\
+                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
+            ),
+            (
+                surface(ItemState::TestsPassed),
+                "🚀 **Tests passed** · merging into `main`\n\n\
+                 Tested on top of #5 in `cihub-merge/main/run`.\n",
+            ),
+            (
+                surface(ItemState::Merged),
+                "✅ **Merged** into `main` by the queue\n",
+            ),
+            (
+                failed,
+                "❌ **Failed** · a required check failed\n\n\
+                 Failing checks: `build`, `lint`\n\n\
+                 - [ ] <!-- cihub:submit --> Submit again\n\n\
+                 <sub>Or comment `/cihub merge`.</sub>\n",
+            ),
+            (
+                cancelled,
+                "⚪ **Cancelled** · the PR received a new commit after its submission\n\n\
+                 - [ ] <!-- cihub:submit --> Submit again\n\n\
+                 <sub>Or comment `/cihub merge`.</sub>\n",
+            ),
+        ];
+        let defaults = settings(|_| {});
+        for (surface, want) in cases {
+            let comment = render(&surface, &defaults, "main").comment.unwrap();
+            assert_eq!(comment, want, "{:?}", surface.state);
+        }
+    }
+
+    #[test]
+    fn without_commands_the_comment_names_none() {
+        let off = settings(|l| l.commands_enabled = Some(Setting::new(false)));
+        for state in [ItemState::Testing, ItemState::Failed] {
+            let comment = render(&surface(state), &off, "main").comment.unwrap();
+            assert!(!comment.contains("/cihub"), "{comment}");
+            assert!(!comment.contains(SUBMIT_BOX), "{comment}");
+        }
     }
 
     #[test]
@@ -568,7 +691,11 @@ mod tests {
         let want = "Failed: the PR received a new commit after its submission";
         assert_eq!(rendered.status.unwrap().description, want);
         let comment = rendered.comment.unwrap();
-        assert!(comment.contains(&format!("**{want}**")), "{comment}");
+        assert!(
+            comment
+                .starts_with("❌ **Failed** · the PR received a new commit after its submission\n"),
+            "{comment}"
+        );
     }
 
     #[test]
@@ -653,11 +780,9 @@ pub(crate) fn welcome_job(
 /// submission box.
 pub(crate) fn welcome(target_branch: &str) -> String {
     format!(
-        "### {}\n\nMerging to `{target_branch}` in this repository is managed by CIHub.\n\n\
-         - [ ] {SUBMIT_BOX} To merge this pull request, check this box or comment `/cihub merge` \
-         below.\n\nAfter the submission, this comment shows the state of the PR in the queue, and the \
-         details of a failure.\n",
-        queue_status_context(target_branch)
+        "CIHub manages merges into `{target_branch}`.\n\n\
+         - [ ] {SUBMIT_BOX} Add this PR to the merge queue\n\n\
+         <sub>Or comment `/cihub merge`.</sub>\n"
     )
 }
 

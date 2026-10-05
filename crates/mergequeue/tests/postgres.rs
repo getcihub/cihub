@@ -682,6 +682,12 @@ fn open_pr(sim: &Sim, root: &str, n: u64) -> (u64, String) {
     (sim.open_pr(&repo(), &branch, "main", &bob()).unwrap(), head)
 }
 
+/// Whether `body` is the comment that CIHub edits in place: neither a
+/// command of a user nor the answer to a refused command.
+fn is_status_comment(body: &str) -> bool {
+    !body.starts_with("/cihub") && !body.starts_with("> ")
+}
+
 fn check(name: &str, passed: bool) -> CheckReport {
     CheckReport {
         name: name.into(),
@@ -2269,7 +2275,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     let shown = |number: u64| {
         sim.comments(&repo(), number)
             .into_iter()
-            .filter(|body| body.starts_with(&format!("### {own}")))
+            .filter(|body| is_status_comment(body))
             .collect::<Vec<_>>()
     };
     let status = |head: String| {
@@ -2299,7 +2305,10 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     };
     let merged = shown(first);
     assert_eq!(merged.len(), 1, "one comment, edited in place: {merged:?}");
-    assert!(merged[0].contains("**Merged by the queue**"), "{merged:?}");
+    assert!(
+        merged[0].starts_with("✅ **Merged** into `main` by the queue"),
+        "{merged:?}"
+    );
     assert_eq!(
         status(first_head).await,
         Some(Some(CheckConclusion::Success))
@@ -2309,13 +2318,10 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     let testing = shown(second);
     assert_eq!(testing.len(), 1, "{testing:?}");
     assert!(
-        testing[0].contains("**Testing, position 1**"),
+        testing[0].starts_with("🧪 **Testing** · position 1 in the queue for `main`"),
         "{testing:?}"
     );
-    assert!(
-        testing[0].contains("Test branch: `cihub-merge/"),
-        "{testing:?}"
-    );
+    assert!(testing[0].contains(" in `cihub-merge/"), "{testing:?}");
     assert_eq!(status(second_head).await, Some(None), "pending");
     assert_eq!(labels(second).await, ["cihub:testing"]);
     q.stop().await;
@@ -2587,11 +2593,10 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
     q.deliver().await;
     q.settle().await;
-    let own = format!("### {}", cihub_mergequeue::queue_status_context("main"));
     let shown = |number: u64| {
         sim.comments(&repo(), number)
             .into_iter()
-            .filter(|body| body.starts_with(&own))
+            .filter(|body| is_status_comment(body))
             .collect::<Vec<_>>()
     };
     let item = |pool: PgPool, number: i64| async move {
@@ -2613,7 +2618,10 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     q.settle().await;
     let welcome = shown(number);
     assert_eq!(welcome.len(), 1, "{welcome:?}");
-    assert!(welcome[0].contains("is managed by CIHub"), "{welcome:?}");
+    assert!(
+        welcome[0].starts_with("CIHub manages merges into `main`."),
+        "{welcome:?}"
+    );
     assert!(
         welcome[0].contains("- [ ] <!-- cihub:submit -->"),
         "{welcome:?}"
@@ -2630,7 +2638,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         "the same comment shows the item: {testing:?}"
     );
     assert!(
-        testing[0].contains("**Testing, position 1**"),
+        testing[0].starts_with("🧪 **Testing** · position 1 in the queue for `main`"),
         "{testing:?}"
     );
     assert!(
