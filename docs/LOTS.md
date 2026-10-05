@@ -41,7 +41,7 @@ configuration checker, in phase 1).
 | 6   | Test cycle                                             | 1     | 5          | —         | done                                     |
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
-| 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | in progress                              |
+| 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | Q3        | to do                                    |
@@ -171,9 +171,16 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `defaults` alone in `cihub-config`, the rule of the queues that take submissions, and against Postgres and
     the simulator the queue of the default branch, the queues of the file and their routing, a label and a
     command on another branch that create nothing.
-  - Remaining: record the GitHub responses again for `check_setup` (D90, D162); until then,
-    `the_contract_passes_on_recorded_answers` fails. Step 7, the exit criteria: the end-to-end test on staging,
-    CIHub on its own queue, and an installation by an outside person, which need an instance, an App and a person.
+  - Done (October 2, 2026): the GitHub responses are recorded again for `check_setup` (D90, D162), with the
+    rules of the target branch and of the test branches.
+  - Done (October 5, 2026): CIHub on its own queue, on an instance started locally behind a tunnel. The queue
+    `main` of `nlecoy/cihub` merged 9 PRs (#6, #7, #11, #15, #18, #22, #26, #28, #30); `Build Success` passes on
+    each commit of `main`, and the tree of each merge is the tree of its last test. Seen during this use: the
+    test `two_workers_at_the_same_time_never_share_a_job` is unstable (a claim locks up to ten times its limit,
+    so the other worker can get nothing); #15 did not start before a second `/cihub merge`, cause not verified.
+  - Closed on October 5, 2026 by the project lead without the rest of step 7: the end-to-end test on staging,
+    two weeks of CIHub on its own queue and an installation by an outside person wait for the deployment of an
+    instance.
   - Deviations (D160, D162): deferred, `DELETE /queues/{id}`, `GET /queues/{id}/test-results`, the `?branch=`
     search and the no-op ref update of the checker.
 
