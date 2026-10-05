@@ -730,7 +730,11 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   refused command quotes the command (`> /cihub restart`) and gives the cause after `Refused:`. The commit status
   does not change. Still no checkbox for `restart` or `cancel`: a click has no confirmation, both affect the PRs
   behind, and the comment of an item under test is often rewritten. A separate evolution, outside the plan of a
-  lot.
+  lot. _Extended by D174._
+- **D174** Extends D173: the comment of CIHub on the PR names no test branch and no run identifier. It says
+  where the test runs, as a link: the draft PR of the run (`Tested on top of #5 in #42.`), or its test commit with
+  `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
+  the run, with the details URL of the status (D156).
 
 ## Open questions
 
