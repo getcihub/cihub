@@ -1,47 +1,13 @@
-use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
 use anyhow::{Context, bail};
 use cihub_github::GithubConfig;
 use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
-use serde::Serialize;
-
-/// A role of the process (`DECISIONS.md` D8, D91).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-    /// HTTP server of the public address: API, webhooks, dashboard.
-    Web,
-    /// Reconciliation loop of the queues.
-    Scheduler,
-    /// Execution of the jobs of the modules.
-    Worker,
-    /// Delivery of the outbox.
-    Notifier,
-}
-
-impl Role {
-    const ALL: [Self; 4] = [Self::Web, Self::Scheduler, Self::Worker, Self::Notifier];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Web => "web",
-            Self::Scheduler => "scheduler",
-            Self::Worker => "worker",
-            Self::Notifier => "notifier",
-        }
-    }
-
-    fn parse(s: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|role| role.as_str() == s)
-    }
-}
 
 /// The configuration of the server, read from the `CIHUB_*` variables.
 #[derive(Debug)]
 pub struct Config {
-    pub roles: BTreeSet<Role>,
     /// Address of `/healthz` and `/readyz`, separate from the public routes.
     pub internal_addr: SocketAddr,
     /// Public address of the `web` role: webhooks, then API (`DECISIONS.md` D82).
@@ -72,10 +38,6 @@ impl Config {
     }
 
     fn from_lookup(get: impl Fn(&str) -> Option<String>) -> anyhow::Result<Self> {
-        let roles = match get("CIHUB_ROLES") {
-            None => Role::ALL.into_iter().collect(),
-            Some(value) => parse_roles(&value)?,
-        };
         let internal_addr =
             get("CIHUB_INTERNAL_ADDR").unwrap_or_else(|| DEFAULT_INTERNAL_ADDR.to_owned());
         let internal_addr = internal_addr
@@ -97,7 +59,6 @@ impl Config {
         let logs = Logs::new(&log, log_format)
             .with_context(|| format!("CIHUB_LOG `{log}` is not a valid filter"))?;
         Ok(Self {
-            roles,
             internal_addr,
             http_addr,
             database_url: database_url.into(),
@@ -138,19 +99,6 @@ fn github_app(get: &impl Fn(&str) -> Option<String>) -> anyhow::Result<Option<Gi
     }))
 }
 
-fn parse_roles(value: &str) -> anyhow::Result<BTreeSet<Role>> {
-    let mut roles = BTreeSet::new();
-    for name in value.split(',').map(str::trim) {
-        let Some(role) = Role::parse(name) else {
-            bail!(
-                "CIHUB_ROLES: unknown role `{name}`, expected web, scheduler, worker or notifier"
-            );
-        };
-        roles.insert(role);
-    }
-    Ok(roles)
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -165,25 +113,16 @@ mod tests {
     }
 
     #[test]
-    fn defaults_run_every_role() {
+    fn defaults() {
         let config = config(&[]).unwrap();
-        assert_eq!(config.roles, Role::ALL.into_iter().collect());
         assert_eq!(config.internal_addr, DEFAULT_INTERNAL_ADDR.parse().unwrap());
         assert_eq!(config.http_addr, DEFAULT_HTTP_ADDR.parse().unwrap());
         assert_eq!(config.logs.format(), LogFormat::Json);
     }
 
     #[test]
-    fn roles_select_a_part() {
-        let config = config(&[("CIHUB_ROLES", "worker, web,worker")]).unwrap();
-        assert_eq!(config.roles, BTreeSet::from([Role::Web, Role::Worker]));
-    }
-
-    #[test]
     fn invalid_values_stop_the_start() {
         for vars in [
-            [("CIHUB_ROLES", "web,cron")],
-            [("CIHUB_ROLES", "")],
             [("CIHUB_INTERNAL_ADDR", "localhost")],
             [("CIHUB_HTTP_ADDR", "localhost")],
             [("CIHUB_DATABASE_URL", "")],

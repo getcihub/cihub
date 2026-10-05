@@ -1,17 +1,17 @@
 //! `cihub-server`: reads the `CIHUB_*` configuration, starts the logs, checks
 //! that the database has every embedded migration, serves `/healthz` and
-//! `/readyz` on the internal address, and runs the roles of the process until
-//! `SIGTERM` or `SIGINT` (`DECISIONS.md` D8). `cihub-server migrate` applies the
-//! missing migrations and stops (`DECISIONS.md` D14). `cihub-server admin
-//! bootstrap --installation <id>` starts an organization from an installation
-//! of the GitHub App, shows its API token once, and stops (`DECISIONS.md` D154).
+//! `/readyz` on the internal address, and runs the four roles in one process
+//! until `SIGTERM` or `SIGINT` (`DECISIONS.md` D8, D168). `cihub-server
+//! migrate` applies the missing migrations and stops (`DECISIONS.md` D14).
+//! `cihub-server admin bootstrap --installation <id>` starts an organization
+//! from an installation of the GitHub App, shows its API token once, and stops
+//! (`DECISIONS.md` D154).
 //! It holds no queue logic: a role runs loops whose code lives in the library
 //! crates.
 
 mod config;
 mod health;
 
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -39,7 +39,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
-use crate::config::{Config, Role};
+use crate::config::Config;
 
 /// What the process does, from its arguments.
 enum Command {
@@ -74,7 +74,6 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = Command::parse(&args)?;
     let Config {
-        roles,
         internal_addr,
         http_addr,
         database_url,
@@ -92,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Serve => {
             let github = start_github(&pool, github).await?;
-            serve(roles, internal_addr, http_addr, pool, github).await
+            serve(internal_addr, http_addr, pool, github).await
         }
     }
 }
@@ -199,6 +198,33 @@ fn process_name() -> String {
     format!("cihub-{}", id.to_string().to_lowercase())
 }
 
+/// A role of the process: a part of its loops, named in the logs
+/// (`DECISIONS.md` D91, D168).
+#[derive(Clone, Copy)]
+enum Role {
+    /// HTTP server of the public address: API, webhooks, dashboard.
+    Web,
+    /// Reconciliation loop of the queues.
+    Scheduler,
+    /// Execution of the jobs of the modules.
+    Worker,
+    /// Delivery of the outbox.
+    Notifier,
+}
+
+impl Role {
+    const ALL: [Self; 4] = [Self::Web, Self::Scheduler, Self::Worker, Self::Notifier];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Scheduler => "scheduler",
+            Self::Worker => "worker",
+            Self::Notifier => "notifier",
+        }
+    }
+}
+
 /// What the roles of a process share.
 #[derive(Clone)]
 struct Shared {
@@ -218,7 +244,6 @@ struct Github {
 }
 
 async fn serve(
-    roles: BTreeSet<Role>,
     internal_addr: SocketAddr,
     http_addr: SocketAddr,
     pool: PgPool,
@@ -231,12 +256,7 @@ async fn serve(
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
-    tasks.spawn(health::serve(
-        listener,
-        roles.clone(),
-        pool.clone(),
-        cancel.clone(),
-    ));
+    tasks.spawn(health::serve(listener, pool.clone(), cancel.clone()));
     let shared = Shared {
         pool,
         process: process_name(),
@@ -244,9 +264,9 @@ async fn serve(
         github,
         cancel: cancel.clone(),
     };
-    for role in &roles {
+    for role in Role::ALL {
         let span = info_span!("role", role = role.as_str());
-        tasks.spawn(run_role(*role, shared.clone()).instrument(span));
+        tasks.spawn(run_role(role, shared.clone()).instrument(span));
     }
     let result = supervise(tasks, &cancel).await;
     info!("server stopped");

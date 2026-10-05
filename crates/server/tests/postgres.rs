@@ -52,15 +52,12 @@ fn with_github(pool: &PgPool) -> Command {
     command
 }
 
-fn start(pool: &PgPool, addr: &str, roles: Option<&str>) -> Child {
-    let mut command = with_github(pool);
-    command
+fn start(pool: &PgPool, addr: &str) -> Child {
+    with_github(pool)
         .env("CIHUB_INTERNAL_ADDR", addr)
-        .env("CIHUB_HTTP_ADDR", free_addr());
-    if let Some(roles) = roles {
-        command.env("CIHUB_ROLES", roles);
-    }
-    command.spawn().unwrap()
+        .env("CIHUB_HTTP_ADDR", free_addr())
+        .spawn()
+        .unwrap()
 }
 
 /// Sends `GET path` and returns the status line and the body.
@@ -118,26 +115,12 @@ fn stop(mut child: Child) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn all_in_one_answers_and_stops(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, None);
+    let child = start(&pool, &addr);
     for path in ["/healthz", "/readyz"] {
         let (status, body) = wait_for(&addr, path);
         assert_eq!(status, "HTTP/1.1 200 OK");
-        assert!(
-            body.contains(r#""roles":["web","scheduler","worker","notifier"]"#),
-            "{body}"
-        );
         assert!(body.contains(r#""name":"cihub-server""#), "{body}");
     }
-    stop(child);
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-fn one_role_per_process(pool: PgPool) {
-    let addr = free_addr();
-    let child = start(&pool, &addr, Some("worker"));
-    let (status, body) = wait_for(&addr, "/readyz");
-    assert_eq!(status, "HTTP/1.1 200 OK");
-    assert!(body.contains(r#""roles":["worker"]"#), "{body}");
     stop(child);
 }
 
@@ -159,7 +142,7 @@ fn a_missing_migration_stops_the_start(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, None);
+    let child = start(&pool, &addr);
     let mut done: Vec<String> = Vec::new();
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
@@ -192,7 +175,6 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let child = with_github(&pool)
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
-        .env("CIHUB_ROLES", "web")
         .spawn()
         .unwrap();
     wait_for(&internal, "/readyz");

@@ -18,7 +18,6 @@ fn refuses(args: &[&str], vars: &[(&str, &str)]) {
 
 #[test]
 fn invalid_configuration_stops_the_start() {
-    refuses(&[], &[("CIHUB_ROLES", "cron")]);
     refuses(&[], &[]);
 }
 

@@ -3,10 +3,9 @@
 ## Installation target
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
-`cihub-server` binary, which by default runs the four roles (`web`, `scheduler`, `worker`, `notifier`) in one
-process; `CIHUB_ROLES` selects a subset of them to give each role its own processes
-(`docs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `docs/GITHUB.md`
-(`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
+`cihub-server` binary, which runs the four roles (`web`, `scheduler`, `worker`, `notifier`) in one process; a
+deployment scales by identical replicas (`docs/ARCHITECTURE.md`, "Scaling", `DECISIONS.md` D168). The GitHub
+App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
 
 ## Development
 
@@ -48,7 +47,6 @@ process at startup.
 
 | Variable              | Default                             | Role                                                                        |
 | --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `CIHUB_ROLES`         | `web,scheduler,worker,notifier`     | Roles of the process, separated by commas (`DECISIONS.md` D8)                  |
 | `CIHUB_DATABASE_URL`  | none, required                      | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
 | `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Address of `/healthz` and `/readyz`, not to be exposed (`docs/SECURITY.md`) |
 | `CIHUB_HTTP_ADDR`     | `0.0.0.0:8080`                      | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API (`DECISIONS.md` D82, D83) |

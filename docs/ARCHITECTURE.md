@@ -130,8 +130,8 @@ variants of each enumeration.
 
 ## The `cihub-server` binary and its roles
 
-`cihub-server` runs the four roles in one process by default; `CIHUB_ROLES` selects a subset of them
-(`DECISIONS.md` D8). A role has no crate: it starts loops whose code is in the library crates.
+`cihub-server` always runs the four roles in one process (`DECISIONS.md` D8, D168). A role has no crate: it
+starts loops whose code is in the library crates.
 
 | Role        | What the role starts                            | Crate that holds the code |
 | ----------- | ----------------------------------------------- | ----------------------- |
@@ -149,24 +149,24 @@ reconciliations are transactional. The reconciliation itself is synchronous: the
 the state, calls `plan`, then writes the result.
 
 The roles of one process share only the Postgres pool and wake each other up with `LISTEN/NOTIFY`, as between
-processes. The all-in-one mode and the one-process-per-role mode therefore behave the same way.
+processes.
 
 ### Scaling
 
-Each role can have its own processes, with the same image and a different value of `CIHUB_ROLES`, for
-example one Kubernetes deployment per role:
+A deployment scales by identical replicas of `cihub-server`, behind a load balancer. Each role shares its work
+between the replicas:
 
-| Deployment        | `CIHUB_ROLES` | Replicas                             | How the replicas share the work                                                                                                 |
-| ----------------- | ------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `cihub-web`       | `web`         | N, behind a load balancer            | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received by another replica |
-| `cihub-scheduler` | `scheduler`   | N                                    | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
-| `cihub-worker`    | `worker`      | N                                    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
-| `cihub-notifier`  | `notifier`    | 1 or more                            | Same principle on the outbox                                                                                                    |
+| Role        | How the replicas share the work                                                                                                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `web`       | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received by another replica |
+| `scheduler` | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
+| `worker`    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
+| `notifier`  | Same principle on the outbox                                                                                                    |
 
 The limits: a queue is processed by only one replica at a time, to keep the order, so adding
-schedulers increases the number of queues processed in parallel, not the speed of one queue; beyond a certain
-number of workers, the SCM budget of the connection is what limits; Postgres is the shared resource
-(connections, with PgBouncer in front of `web`, and write throughput). v1 adds no broker (`DECISIONS.md` D63).
+replicas increases the number of queues processed in parallel, not the speed of one queue; beyond a certain
+number of replicas, the SCM budget of the connection is what limits; Postgres is the shared resource
+(connections, with PgBouncer in front of the replicas, and write throughput). v1 adds no broker (`DECISIONS.md` D63).
 
 ## The scheduler
 

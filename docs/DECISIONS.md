@@ -34,7 +34,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D8** Two binaries. `cihub-server` (`crates/server/`) carries the four roles, all-in-one by default;
   `CIHUB_ROLES` (`api`, `scheduler`, `worker`, `notifier`, comma-separated) selects those of the process. No crate
   per role: a role starts loops whose code is in the library crates. The roles of one process share only the
-  Postgres pool. `cihub` is the CLI, distributed alone, without server code.
+  Postgres pool. `cihub` is the CLI, distributed alone, without server code. _Extended by D168._
   _The `api` role is renamed by D91._
 - **D9** A crate is created when a lot needs it, after validation. `docs/ARCHITECTURE.md` describes the crates
   that exist and the target list. The skeleton of `cihub-server` arrives in Lot 2.
@@ -655,6 +655,14 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the comment of the PR show the sentence instead of the code, with the detail that the surface already has
   (failing checks). The API `Item` gains `state_description`, computed from the same table, and the CLI shows
   it.
+
+**October 5, 2026, validated by Nicolas Lecoy.**
+
+- **D168** Extends D8: `cihub-server` always runs the four roles in one process, and `CIHUB_ROLES` is removed.
+  A deployment scales by identical replicas; the leases, the locks and the idempotency keys already share the work
+  between them. A role stays an internal unit: one task and one `role` span in the logs. The probes give only the
+  name and the version of the binary. A selection of the roles can come back as an addition when a measured need
+  appears.
 
 ## Open questions
 
