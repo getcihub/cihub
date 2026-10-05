@@ -134,6 +134,8 @@ pub(crate) async fn merge_pr(
         info!(%item_id, "item no longer waits for its merge");
         return Ok(());
     }
+    // The answer of the SCM explains a failed merge; the fact keeps only its code.
+    let mut scm_error = None;
     let merged = match land(scm, settings, &target, &request, job.class).await {
         Ok(Landed::Merged(merged_sha)) => {
             info!(%item_id, merged_sha, "PR merged");
@@ -155,7 +157,11 @@ pub(crate) async fn merge_pr(
                 error: JobError::DirectMergeUnavailable,
             })
         }
-        Err(err) => after_error(&request, &err, job.attempts, now),
+        Err(err) => {
+            let merged = after_error(&request, &err, job.attempts, now);
+            scm_error = Some(error_chain(&err));
+            merged
+        }
     };
     let fact = match merged {
         Merged::Fact(fact) => fact,
@@ -164,7 +170,12 @@ pub(crate) async fn merge_pr(
     if let EventKind::MergeFailed { error, .. } = &fact
         && *error != JobError::DirectMergeUnavailable
     {
-        warn!(%item_id, error = error.as_str(), "PR not merged");
+        warn!(
+            %item_id,
+            error = error.as_str(),
+            scm_error = scm_error.as_deref(),
+            "PR not merged"
+        );
     }
     give_back_facts(pool, &target, vec![(Actor::Bot, fact)], now).await
 }
