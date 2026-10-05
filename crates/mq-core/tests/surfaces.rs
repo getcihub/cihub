@@ -5,10 +5,11 @@
 mod common;
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, CheckReport, ItemState, Mergeability, Priority, Reason,
+    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState,
+    Mergeability, Priority, Reason, RequiredStatusesSource,
 };
 use cihub_mq_core::Surface;
-use common::{World, head, settings, window};
+use common::{REQUIRED, World, head, settings, window};
 
 fn shown(surfaces: &[Surface]) -> Vec<(u64, ItemState, Option<usize>, Vec<u64>)> {
     surfaces
@@ -113,4 +114,24 @@ fn a_blocked_pr_names_its_required_checks() {
         w.item(5).unwrap().block_reasons,
         [BlockReason::Undetermined]
     );
+}
+
+#[test]
+fn an_item_in_test_shows_the_draft_pr_of_its_run() {
+    let mut w = World::new(settings(window(2)));
+    w.submit(1, Priority::MEDIUM);
+    let run_id = w.run(1).unwrap();
+    w.fact(
+        Actor::System,
+        EventKind::TestBranchAssembled {
+            run_id,
+            test_sha: format!("test-{run_id}"),
+            draft_pr_number: Some(42),
+            required_statuses: vec![REQUIRED.into()],
+            required_statuses_source: RequiredStatusesSource::RepoConfig,
+        },
+    );
+    let last = w.surfaces.last().unwrap();
+    assert_eq!(last[0].state, ItemState::Testing);
+    assert_eq!(last[0].draft_pr_number, Some(42));
 }

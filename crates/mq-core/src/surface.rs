@@ -23,6 +23,8 @@ pub struct Surface {
     pub predecessors: Vec<u64>,
     /// The test branch of the last run of its group.
     pub test_branch: Option<String>,
+    /// The draft PR of the last run of its group, in draft PR mode.
+    pub draft_pr_number: Option<u64>,
     /// The required statuses that failed the last run of its group.
     pub failing_checks: Vec<String>,
     pub block_reasons: Vec<BlockReason>,
@@ -57,6 +59,7 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
         position,
         predecessors,
         test_branch: run.map(|r| r.test_branch.clone()),
+        draft_pr_number: run.and_then(|r| r.draft_pr_number),
         failing_checks: run
             .map(|r| r.failure_causing_statuses.clone())
             .unwrap_or_default(),
