@@ -340,13 +340,13 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   scheduler is the only one that writes the log.
 - **D101** Extends D96: the key of `refresh_prs` names its cause. After a delivery, it carries its identifier
   (`refresh_prs:<queue_id>-<delivery_id>:1`, class `interactive`); the polling keeps the key of its window
-  (`refresh_prs:<queue_id>-<YYYYMMDDTHHMM>:1`, class `repair`).
+  (`refresh_prs:<queue_id>-<YYYYMMDDTHHMM>:1`, class `repair`). _Extended by D170._
 - **D102** The `submit_pr` job (class `interactive`, key `submit_pr:<delivery_id>:1`) submits a PR after a command
   or a label: it checks the permission of the author of a command (`write`, `admin` for `--direct`), reads the
   PR and deposits `item.submitted` and `pr.observed` in `queue_inbox`.
 - **D103** A scheduler pass reads the deliveries of a connection without a queue (access lost or restored),
   deposits their fact in the `queue_inbox` of each queue of the connection, marks these queues and marks the
-  delivery processed, in one transaction.
+  delivery processed, in one transaction. _Extended by D170._
 - **D104** Extends the interfaces of Lot 1: `Item` gains `submitted_at` and `Observed` gains `observed_at`, filled
   by `apply` with the time of the event; `plan` cancels a `not_ready` item after `not_ready_timeout_hours`
   (`not_ready_timeout_expired`, without a cause); `Desired` gains `observe`, the reads that are due (`Read`: the
@@ -710,6 +710,17 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   log. `POST /api/v1/repos/{owner}/{name}/queues`, `cihub queue create`, `CreateQueue` and the error code
   `queue_exists` are removed; the `write` permission of the author of the command is enough, the creation of a
   queue no longer needs an admin. The welcome comment (D163) does not change: it needs a queue.
+
+**October 5, 2026, validated by Nicolas Lecoy.**
+
+- **D170** Extends D101 and D103: a check run or a commit status that concludes (`CheckReport.conclusion` is
+  set) on the head of a live `not_ready` item asks the queue of that item to read the PR at once. The connection
+  deliveries pass requests `refresh_prs`, class `interactive`, keyed on the delivery
+  (`refresh_prs:<queue_id>-<delivery_id>:1`), so that a replayed delivery requests nothing more. A check that has not
+  concluded, or a check on another head, requests nothing. The read points of the plan do not change: they are
+  the fallback when the delivery is lost (principle V). No filter on the names of the checks: a CI with N checks
+  gives up to N reads per push of a waiting PR, to measure before a filter. A separate evolution, outside the plan
+  of a lot.
 
 ## Open questions
 
