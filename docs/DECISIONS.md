@@ -568,14 +568,14 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   The status has no details URL before Lot 10 (no public address since D92); the comment has no restart
   checkbox: it says to write `/cihub restart` for an item under test, and names the test branch without a link;
   for an ended item, it shows the submission checkbox of D163. A single job at a time writes the comment of a PR
-  (advisory lock).
+  (advisory lock). _Extended by D173._
 - **D157** The `/cihub cancel` and `/cihub restart` commands require `write` and go through the connection
   deliveries pass, like `merge` (D108). The `pr_command:<delivery_id>:1` job (class `interactive`) checks the
   permission, finds the live item of the PR and deposits `item.cancel_requested` or `item.restart_requested` in
   `queue_inbox` (reasons `user_requested`, `tests_restarted_by_user`). `cihub-github` keeps the permission of a
   user on a repository 5 minutes in memory, per connection. A refused command receives a comment from the job
   that says why: permission too low, commands disabled, no queue for the branch, or no live item.
-  _Extended by D166._
+  _Extended by D166._ _Extended by D173._
 - **D158** (D112) `pr.observed` gains `required_checks`, the checks that the rules of the branch require, without
   the queue status (D105). For a `blocked` PR, `plan` gives `failing_required_check { check }` for a failing
   required check, `awaiting_required_check { check, status }` for a required check that has not finished, and
@@ -627,7 +627,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   pass checks that the comment is the one of `pr_comments`, then requests `submit_pr` as for `/cihub merge`
   (`write` permission of the author, source `comment`). The checkbox comes back for a `failed` or `cancelled`
   item, and does not appear as long as the PR is in the queue. No checkbox for `restart` or `cancel`. Takes no
-  name or marker from another product (D139).
+  name or marker from another product (D139). _Extended by D173._
 
 - **D164** `AGENTS.md` stays under 150 lines and contains only what applies to each session: the working
   rules, the ten principles, the rules that the tools do not enforce, the commands and the map of the documents.
@@ -721,6 +721,16 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the fallback when the delivery is lost (principle V). No filter on the names of the checks: a CI with N checks
   gives up to N reads per push of a waiting PR, to measure before a filter. A separate evolution, outside the plan
   of a lot.
+- **D173** The layout of the comments of CIHub on the PR. Extends D156, D157 and D163. The comment has no title:
+  it starts with a state line, an icon, the state in bold, then its reason or its position (`⏳ **Waiting**`,
+  `🕓 **Queued**`, `🧪 **Testing**`, `⚠️ **Tests failed**`, `🚀 **Tests passed**`, `✅ **Merged**`, `❌ **Failed**`,
+  `⚪ **Cancelled**`); then the block reasons in a list, the failing checks, the predecessors and the test branch;
+  then the commands in small print (`<sub>`). The welcome comment says that CIHub manages merges into the branch,
+  with the box "Add this PR to the merge queue"; the box of an ended item says "Submit again". The answer to a
+  refused command quotes the command (`> /cihub restart`) and gives the cause after `Refused:`. The commit status
+  does not change. Still no checkbox for `restart` or `cancel`: a click has no confirmation, both affect the PRs
+  behind, and the comment of an item under test is often rewritten. A separate evolution, outside the plan of a
+  lot.
 
 ## Open questions
 

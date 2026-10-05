@@ -217,16 +217,17 @@ pub(crate) fn submit(
     connection_job(org_id, connection, delivery_id, SUBMIT_PR, json!(request))
 }
 
-/// Answers a command on its PR, to say why the queue refused it
-/// (`DECISIONS.md` D157).
+/// Answers `command` on its PR, to say why the queue refused it
+/// (`DECISIONS.md` D157, D173).
 pub(crate) async fn reply(
     scm: &dyn Scm,
     repo: &RepoRef,
     number: u64,
+    command: &str,
     text: String,
     class: JobClass,
 ) -> Result<(), Failure> {
-    let body = format!("### CIHub Merge Queue\n\n{text}\n");
+    let body = format!("> {command}\n\nRefused: {text}\n");
     scm.create_comment(repo, number, &body, class).await?;
     Ok(())
 }
@@ -810,7 +811,7 @@ pub(crate) async fn submit_pr(
     let (repo_ref, by_command) = (&repo.repo, request.requested_by.is_some());
     let refuse = |text: String| async move {
         if by_command {
-            reply(scm, repo_ref, pr_number, text, job.class).await
+            reply(scm, repo_ref, pr_number, "/cihub merge", text, job.class).await
         } else {
             Ok(())
         }
@@ -818,7 +819,7 @@ pub(crate) async fn submit_pr(
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
         info!(pr_number, "submission refused: permission");
         return refuse(
-            "`/cihub merge` needs the write permission on the repository (admin with `--direct`)."
+            "the command needs the write permission on the repository (admin with `--direct`)."
                 .to_owned(),
         )
         .await;
@@ -850,8 +851,7 @@ pub(crate) async fn submit_pr(
             "submission dropped: no queue"
         );
         return refuse(format!(
-            "`/cihub merge`: no queue serves the branch `{}`; a queue of `.cihub.yaml` on this \
-             branch would.",
+            "no queue serves the branch `{}`; a queue of `.cihub.yaml` on this branch would.",
             pr.base_branch
         ))
         .await;
@@ -870,7 +870,7 @@ pub(crate) async fn submit_pr(
     let Some((target, unmet)) = route(scm, &queues, &pr, &request, &reading).await? else {
         info!(pr_number, "submission dropped: no queue of that name");
         return refuse(format!(
-            "`/cihub merge`: the branch `{}` has no queue named `{}`.",
+            "the branch `{}` has no queue named `{}`.",
             pr.base_branch,
             request.queue.as_deref().unwrap_or_default()
         ))
@@ -880,7 +880,7 @@ pub(crate) async fn submit_pr(
     if let Some(reason) = refusal(&target.settings_in(config.as_ref())?, &request, &pr) {
         info!(pr_number, reason, "submission dropped");
         return refuse(format!(
-            "`/cihub merge`: the commands are off for the queue `{}`.",
+            "the commands are off for the queue `{}`.",
             target.name
         ))
         .await;
