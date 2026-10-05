@@ -21,5 +21,5 @@ glob = [".github/workflows/*.yaml", ".github/workflows/*.yml"]
 run = "zizmor --offline {staged_files}"
 
 [pre-push]
-[pre-push.commands.check]
-run = "mise run check"
+[pre-push.commands.lint]
+run = "mise run lint"
