@@ -1876,6 +1876,123 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     q.stop().await;
 }
 
+/// A check of the CI that has not concluded yet.
+fn running(name: &str) -> CheckReport {
+    CheckReport {
+        conclusion: None,
+        ..check(name, true)
+    }
+}
+
+/// The keys of the `refresh_prs` jobs, in order.
+async fn refresh_keys(pool: &PgPool) -> Vec<String> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar(
+        "SELECT idempotency_key FROM jobs WHERE type = 'refresh_prs' ORDER BY idempotency_key",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+/// The state of the live item of the PR `number`.
+async fn item_state(pool: &PgPool, number: u64) -> String {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT state::text FROM queue_items WHERE pr_number = $1 AND is_current")
+        .bind(i64::try_from(number).unwrap())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// `DECISIONS.md` D170: a check that concludes on the head of a waiting item
+/// asks its queue to read the PR at once, before any read point; a check in
+/// progress and a replayed delivery ask nothing.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    q.deliver().await;
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(item_state(&pool, number).await, "not_ready");
+    let before = refresh_keys(&pool).await;
+
+    sim.report_check(&repo(), &head, running(REQUIRED)).unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(refresh_keys(&pool).await, before, "a check in progress");
+    assert_eq!(item_state(&pool, number).await, "not_ready");
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    let delivery = format!("delivery-{}", q.sent);
+    q.settle().await;
+    let mut after = before.clone();
+    after.push(format!("refresh_prs:{}-{delivery}:1", queue()));
+    after.sort();
+    assert_eq!(refresh_keys(&pool).await, after);
+    assert_eq!(item_state(&pool, number).await, "testing", "admitted");
+    assert!(
+        q.clock.now() < clock() + Duration::minutes(1),
+        "no read point came due"
+    );
+
+    // The same delivery passed again requests nothing more.
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE webhook_inbox SET processed_at = NULL WHERE delivery_id = $1")
+        .bind(&delivery)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let reconciler = Reconciler {
+        translate: translate(&q.deliveries),
+    };
+    cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
+        .await
+        .unwrap();
+    q.settle().await;
+    assert_eq!(refresh_keys(&pool).await, after);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D170: a check that concludes on the head of an admitted
+/// item, or on a commit that is the head of no item, asks for no read.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    q.deliver().await;
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    let (_, other) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(item_state(&pool, number).await, "testing", "admitted");
+    let before = refresh_keys(&pool).await;
+
+    sim.report_check(&repo(), &head, check("lint", false))
+        .unwrap();
+    sim.report_check(&repo(), &other, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(refresh_keys(&pool).await, before);
+    q.stop().await;
+}
+
 /// `DECISIONS.md` D151: a submission while the queue drains gives an item that
 /// is cancelled at once, concluded, and not the live item of its PR.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
