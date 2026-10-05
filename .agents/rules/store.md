@@ -1,6 +1,6 @@
 # Store, migrations and internal transport
 
-- A migration is named `<YYYYMMDDHHMMSS>_<description>.sql` (D41) and is applied by `cihub-server migrate` (D14),
+- A migration is named `<YYYYMMDDHHMMSS>_<description>.sql` (D41) and is applied by `cihub server migrate` (D14),
   never at startup. Before the first published version, we rewrite a migration rather than add one that fixes it;
   `mise run db-reset` starts again from an empty database.
 - Every tenant table carries `org_id`, forced row level security and the `tenant` policy (D38). Only

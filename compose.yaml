@@ -7,7 +7,7 @@
 #   mise run db-reset    # delete the data, then mise run db
 #   docker compose down  # stop Postgres, keep the data
 #
-# postgres/postgres is the superuser. cihub-server connects as cihub/cihub,
+# postgres/postgres is the superuser. cihub server connects as cihub/cihub,
 # which is neither superuser nor BYPASSRLS (D38) and can create the databases
 # of #[sqlx::test].
 

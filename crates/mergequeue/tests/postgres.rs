@@ -1030,7 +1030,7 @@ async fn rate_limited_github(reset: OffsetDateTime) -> String {
 }
 
 /// The budgets that changed in `app`, as `scm_connections` keeps them; the
-/// same mapping as `cihub-server`.
+/// same mapping as the `worker` role of `cihub-cli`.
 fn changed_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> {
     app.take_changed_budgets()
         .into_iter()

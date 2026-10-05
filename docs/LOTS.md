@@ -152,6 +152,17 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     comment of a `failed` or `cancelled` PR show it instead of the code, the API `Item` gains `state_description`
     and the CLI shows it. Tests: the table (one short, unique sentence per reason), the rendering of a failure, and
     the field against Postgres.
+  - Done (October 3, 2026, D168, D169): one binary, `cihub`. `cihub-cli` (`crates/cli/`, the former
+    `crates/server/`) gives it, with `clap`: one file per command and one per role; the HTTP endpoints stay in
+    `cihub-web`. The former client-only `cihub-cli` crate is removed. Groups `login`, `queue` (`--repo`, `--queue`; with two queues and no `--queue`, the command refuses and
+    lists the names) and `server` (`start`, `migrate`, `bootstrap --installation <id>`, `--config
+    <file>`). `CIHUB_ROLES` is removed and `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`; the YAML file of the server has one
+    key per variable. Image: entry point `cihub`, default command `server start`. Tests: table tests of the
+    configuration (file only, variables only, a variable over the file, unknown key, wrong type, missing database,
+    rules of the `github` keys), the refused arguments, and against Postgres `cihub server start|migrate` and
+    `cihub queue drain|status` against a running server.
+  - Done (October 5, 2026, D170): `cihub server start` takes no argument and always runs the four roles; a
+    deployment scales by identical replicas. The probes give only the name and the version of the binary.
   - Remaining: record the GitHub responses again for `check_setup` (D90, D162); until then,
     `the_contract_passes_on_recorded_answers` fails. Step 7, the exit criteria: the end-to-end test on staging,
     CIHub on its own queue, and an installation by an outside person, which need an instance, an App and a person.
