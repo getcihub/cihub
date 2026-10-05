@@ -15,11 +15,11 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use cihub_domain::{ConnectionId, JobClass, Permission};
+use cihub_domain::{ConnectionId, JobClass, MergeMethod, Permission};
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_scm::contract;
 use cihub_scm::{
-    ConnectionRef, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmRepo, ScmUser,
+    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmRepo, ScmUser,
     SetupFinding,
 };
 use secrecy::SecretString;
@@ -383,6 +383,87 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
             SetupFinding::TestBranchesNotExcluded,
             SetupFinding::UpToDateRequired
         ]
+    );
+    replay.finish();
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: GitHub
+/// refuses a stacked PR on the merge endpoint and names its asynchronous one.
+#[tokio::test]
+async fn a_stacked_pr_merges_through_the_asynchronous_endpoint() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let merge_path = "/repos/acme/app/pulls/7/merge";
+    let async_path = "/repos/acme/app/pulls/7/merge-async";
+    let stacked = || {
+        answer(
+            "PUT",
+            merge_path,
+            403,
+            json!({ "message": "Merging stacked PRs via this endpoint is not supported. Use the asynchronous merge endpoint instead." }),
+        )
+    };
+    let pending = json!({ "status": "pending", "details": {
+        "message": "Merge request accepted", "uuid": "550e8400-e29b-41d4-a716-446655440000",
+        "merge_method": "squash", "merge_action": "direct_merge", "expected_head_sha": "h1" } });
+    let exchanges = vec![
+        token("7", now),
+        stacked(),
+        answer("PUT", async_path, 202, pending.clone()),
+        stacked(),
+        answer("PUT", async_path, 409, pending),
+        stacked(),
+        answer(
+            "PUT",
+            async_path,
+            200,
+            json!({ "status": "merged", "details": { "message": "Pull request merged", "sha": "m1" } }),
+        ),
+        stacked(),
+        answer(
+            "PUT",
+            async_path,
+            202,
+            json!({ "status": "failed", "details": { "message": "Merge conflict" } }),
+        ),
+        stacked(),
+        answer(
+            "PUT",
+            async_path,
+            400,
+            json!({ "message": "Pull request is closed" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+    let merge = PrMerge {
+        number: 7,
+        head_sha: "h1".into(),
+        tested_sha: "t1".into(),
+        method: MergeMethod::Squash,
+        title: "feat: x (#7)".into(),
+        message: String::new(),
+    };
+    let mut results = Vec::new();
+    for _ in 0..5 {
+        results.push(app.merge_pr(&repo, &merge, JobClass::Merge).await);
+    }
+    assert!(
+        matches!(results[0], Err(ScmError::MergeInProgress)),
+        "{results:?}"
+    );
+    assert!(
+        matches!(results[1], Err(ScmError::MergeInProgress)),
+        "{results:?}"
+    );
+    assert_eq!(results[2].as_deref().ok(), Some("m1"));
+    assert!(
+        matches!(&results[3], Err(ScmError::MergeRejected(m)) if m == "Merge conflict"),
+        "{results:?}"
+    );
+    assert!(
+        matches!(&results[4], Err(ScmError::MergeRejected(m)) if m.contains("closed")),
+        "{results:?}"
     );
     replay.finish();
 }
