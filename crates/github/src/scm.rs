@@ -390,6 +390,33 @@ fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
     }
 }
 
+/// The state of an asynchronous merge request of GitHub.
+#[derive(Deserialize)]
+struct AsyncMerge {
+    status: String,
+    details: AsyncMergeDetails,
+}
+
+#[derive(Deserialize)]
+struct AsyncMergeDetails {
+    sha: Option<String>,
+    message: Option<String>,
+}
+
+impl AsyncMerge {
+    fn outcome(self) -> Result<String, ScmError> {
+        let message = self.details.message.unwrap_or_default();
+        match (self.status.as_str(), self.details.sha) {
+            ("merged", Some(sha)) => Ok(sha),
+            ("pending", _) => Err(ScmError::MergeInProgress),
+            ("failed", _) => Err(ScmError::MergeRejected(message)),
+            (status, _) => Err(ScmError::Protocol(format!(
+                "asynchronous merge `{status}`: {message}"
+            ))),
+        }
+    }
+}
+
 /// A rule of a ruleset that applies to a branch.
 #[derive(Deserialize)]
 struct BranchRule {
@@ -470,6 +497,31 @@ impl GithubApp {
     ) -> Result<(), ScmError> {
         let answer = self.rest(repo, class, method, rest, body).await?;
         expect(answer, &[status]).map(drop)
+    }
+
+    /// Merges the PR with the asynchronous endpoint, as a direct merge: the
+    /// commit when the merge is done, `MergeInProgress` while GitHub works on
+    /// it, so that the job asks again later.
+    async fn merge_pr_async(
+        &self,
+        repo: &RepoRef,
+        number: u64,
+        mut body: Value,
+        class: JobClass,
+    ) -> Result<String, ScmError> {
+        body["merge_action"] = json!("direct_merge");
+        let rest = format!("/pulls/{number}/merge-async");
+        let answer = self
+            .rest(repo, class, Method::PUT, &rest, Some(body))
+            .await?;
+        match answer.status {
+            StatusCode::OK | StatusCode::ACCEPTED => answer.json::<AsyncMerge>()?.outcome(),
+            // Another request of the PR is still pending.
+            StatusCode::CONFLICT => Err(ScmError::MergeInProgress),
+            // Closed, draft: the PR cannot merge.
+            StatusCode::BAD_REQUEST => Err(ScmError::MergeRejected(answer.message())),
+            _ => Err(unexpected(&answer)),
+        }
     }
 
     /// The `data` of a GraphQL answer. An error of type `NOT_FOUND` leaves
@@ -975,11 +1027,18 @@ impl Scm for GithubApp {
             });
             let rest = format!("/pulls/{}/merge", merge.number);
             let answer = self
-                .rest(repo, class, Method::PUT, &rest, Some(body))
+                .rest(repo, class, Method::PUT, &rest, Some(body.clone()))
                 .await?;
             match answer.status {
                 StatusCode::OK => Ok(answer.json::<Merged>()?.sha),
                 StatusCode::CONFLICT => Err(ScmError::HeadChanged),
+                // GitHub merges a stacked PR only through its asynchronous
+                // endpoint, which GitHub Enterprise Server does not have.
+                StatusCode::FORBIDDEN
+                    if answer.message().contains("asynchronous merge endpoint") =>
+                {
+                    self.merge_pr_async(repo, merge.number, body, class).await
+                }
                 StatusCode::METHOD_NOT_ALLOWED => {
                     let pr = self.read_pr(repo, merge.number, class).await?;
                     if pr.state == "MERGED"

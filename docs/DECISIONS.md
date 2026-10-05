@@ -656,6 +656,15 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   (failing checks). The API `Item` gains `state_description`, computed from the same table, and the CLI shows
   it.
 
+**October 5, 2026, validated by Nicolas Lecoy.**
+
+- **D171** The `merge_pr` job keeps `PUT /pulls/{n}/merge`, the only merge endpoint of GitHub Enterprise Server
+  (3.22 has no asynchronous merge). When GitHub refuses a stacked PR there with a 403 that names its asynchronous
+  endpoint, the GitHub adapter asks `PUT /pulls/{n}/merge-async` with `merge_action: direct_merge` and the same
+  `sha` guard: `merged` gives the commit, `pending` or `409` give `MergeInProgress` (the job retries with its
+  backoff), `failed` or `400` give `MergeRejected`. The `Scm` trait does not change, and the job does not keep the
+  identifier of the request.
+
 ## Open questions
 
 Each question carries an identifier; `docs/LOTS.md` indicates the lot that needs the answer. A settled question
