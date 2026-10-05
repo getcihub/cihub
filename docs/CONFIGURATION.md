@@ -6,8 +6,12 @@ and the strategy table are in `crates/config/src/settings.rs`. This file explain
 The behavior of a queue is configured in a `.cihub.yaml` or `.cihub.yml` file at the root of the repository, read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
 each new head (`DECISIONS.md` D136); the settings apply from the reconciliation that follows the
-read. An entry of `queues` links to its queue by `branch` and `name`; a queue without an entry has the default
-settings, without `defaults` (D138). This file is the only
+read. No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
+creates the queues that the file names on that branch, or, without such an entry, on the default branch of the
+repository, a queue named after the branch, with the default settings and `defaults`. Without a file, a team thus
+starts with one queue on its default branch; an entry `name: main`, `branch: main` then sets that same queue. An
+entry of `queues` links to its queue by `branch` and `name`; a queue without an entry has `defaults`. A queue
+that the file no longer names takes no new submission and finishes its items. This file is the only
 source of the settings (`DECISIONS.md` D134): the dashboard helps write it through a form that opens a PR on
 the repository, never a direct commit on the target. If both file names exist, the configuration is in error, because neither
 one wins. Several queues can target the same branch: a PR is routed to the first queue, in

@@ -51,25 +51,7 @@ docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --i
 The command creates the organization in CIHub, reads its repositories, and prints an API token **once**: keep it
 in a secret store.
 
-### 4. Create a queue
-
-With the CLI, in a clone of the repository:
-
-```sh
-cargo install --locked --git https://github.com/getcihub/cihub cihub-cli   # the cihub binary
-cihub login --url https://<your CIHub host>   # asks for the token
-cihub queue create main
-```
-
-Or with the API:
-
-```sh
-curl -X POST https://<your CIHub host>/api/v1/repos/<owner>/<repo>/queues \
-  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
-  -d '{"target_branch": "main"}'
-```
-
-### 5. Protect the target branch
+### 4. Protect the target branch
 
 Two rulesets on the target branch ([`docs/GITHUB.md`](docs/GITHUB.md)):
 
@@ -77,29 +59,43 @@ Two rulesets on the target branch ([`docs/GITHUB.md`](docs/GITHUB.md)):
 - one that holds the rules a PR must meet (reviews, required checks), without any bypass.
 
 Any other ruleset must exclude the branches `cihub-temp/**/*` and `cihub-merge/**/*`. Turn off "Require branches
-to be up to date before merging". CIHub checks these points for you:
+to be up to date before merging".
 
-```sh
-curl https://<your CIHub host>/api/v1/queues/<queue id>/config-check -H "Authorization: Bearer <token>"
-```
+### 5. Merge a pull request
 
-An empty list of `findings` means a sound configuration.
-
-### 6. Merge a pull request
-
-Comment on an approved, green pull request:
+You do not create a queue. Comment on an approved, green pull request of the default branch:
 
 ```
 /cihub merge
 ```
 
+The first command creates the queue of the branch, with the default settings, and submits the pull request.
 CIHub answers with a comment that it keeps up to date, and a commit status `CIHub Merge Queue (<branch>)`. Other
 commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high|medium|low|0-255`,
-`--no-batch`, `--queue=<name>`.
+`--no-batch`, `--queue=<name>`. A queue on another branch, or a second queue, comes from `.cihub.yaml` (below).
+
+CIHub checks the protection of the branch for you, once the queue exists:
+
+```sh
+curl https://<your CIHub host>/api/v1/repos/<owner>/<repo>/queues -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/queues/<queue id>/config-check -H "Authorization: Bearer <token>"
+```
+
+An empty list of `findings` means a sound configuration.
+
+### 6. Use the CLI
+
+In a clone of the repository:
+
+```sh
+cargo install --locked --git https://github.com/getcihub/cihub cihub-cli   # the cihub binary
+cihub login --url https://<your CIHub host>   # asks for the token
+cihub queue status
+```
 
 ## Write your `.cihub.yaml` with an assistant
 
-A queue works without a file. To change its behavior, add `.cihub.yaml` at the root of the repository; CIHub reads
+A queue works without a file. To change its behavior, or to add queues, add `.cihub.yaml` at the root of the repository; CIHub reads
 it on the head of the target branch, never from a pull request. Copy this prompt into an LLM assistant:
 
 ```text
@@ -117,6 +113,8 @@ Rules of the file (version 1):
 - Each queue has `name` and `branch`. Several queues can target the same
   branch: a pull request goes to the first one, in file order, whose
   `queue_conditions` pass.
+- Without an entry for it, the default branch has a queue named after the
+  branch; an entry with that `name` and `branch` sets that same queue.
 - `strategy`: `sequential` (one test at a time) or `pipelined` (default: tests
   in parallel, each on top of the ones ahead). `batched` and `parallel` are not
   ready yet: do not use them.

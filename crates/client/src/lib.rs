@@ -3,8 +3,8 @@
 //! `cihub-api-types`. It holds no server code and no queue logic.
 
 use cihub_api_types::{
-    API_PREFIX, Accepted, CreateQueue, Graph, ItemPage, PrItem, Problem, Queue, QueueList,
-    RepoList, RequestedQueueState, SubmitPr, UpdateQueue,
+    API_PREFIX, Accepted, Graph, ItemPage, PrItem, Problem, Queue, QueueList, RepoList,
+    RequestedQueueState, SubmitPr, UpdateQueue,
 };
 use reqwest::{Method, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -103,21 +103,6 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn queues(&self, owner: &str, name: &str) -> Result<QueueList, ClientError> {
         self.get(&format!("/repos/{owner}/{name}/queues")).await
-    }
-
-    /// Creates a queue on a branch of the repository `owner/name`.
-    ///
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn create_queue(
-        &self,
-        owner: &str,
-        name: &str,
-        request: &CreateQueue,
-    ) -> Result<Queue, ClientError> {
-        let path = format!("/repos/{owner}/{name}/queues");
-        self.send(Method::POST, &path, Some(request)).await
     }
 
     /// Asks the queue for `state`.

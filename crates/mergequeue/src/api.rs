@@ -10,17 +10,15 @@ use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use cihub_api_types::{
-    Accepted, BatchGet, BatchGetResponse, ConfigCheck, CreateQueue, Dependent, ErrorCode, Finding,
-    Graph, GraphEdge, GraphNode, Item, ItemPage, MAX_BATCH_GET, MAX_TAKE, PrItem, Queue, QueueList,
+    Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
+    GraphEdge, GraphNode, Item, ItemPage, MAX_BATCH_GET, MAX_TAKE, PrItem, Queue, QueueList,
     RequestedQueueState, RunCheck, SubmitPr, TestRun, TimelineEvent, UpdateQueue,
 };
 use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
     Reason, RepoId, RunId, SubmittedVia,
 };
-use cihub_platform::{
-    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, ModuleApi, enqueue_job, mark_dirty,
-};
+use cihub_platform::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, ModuleApi, enqueue_job};
 use cihub_scm::{Scm, ScmError, SetupFinding};
 use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::Deserialize;
@@ -44,7 +42,6 @@ struct ApiState {
 #[openapi(
     paths(
         list_queues,
-        create_queue,
         get_queue,
         update_queue,
         queue_action,
@@ -64,7 +61,6 @@ struct ApiState {
         Finding,
         BatchGet,
         BatchGetResponse,
-        CreateQueue,
         Graph,
         Item,
         ItemPage,
@@ -81,10 +77,7 @@ struct MergeQueueApi;
 /// The routes of the module and their `OpenAPI` document.
 pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     let routes = Router::new()
-        .route(
-            "/repos/{owner}/{name}/queues",
-            get(list_queues).post(create_queue),
-        )
+        .route("/repos/{owner}/{name}/queues", get(list_queues))
         .route(
             "/queues/{queue_id}",
             get(get_queue).patch(update_queue).post(queue_action),
@@ -243,61 +236,6 @@ async fn list_queues(
         .map(QueueRow::into_queue)
         .collect::<Result<_, _>>()?;
     Ok(axum::Json(QueueList { queues }))
-}
-
-/// Creates a queue on a branch of a repository. Its settings come from the
-/// file of the repository (`DECISIONS.md` D134).
-#[utoipa::path(
-    post,
-    path = "/repos/{owner}/{name}/queues",
-    params(("owner" = String, Path), ("name" = String, Path)),
-    request_body = CreateQueue,
-    responses((status = 201, body = Queue)),
-    security(("token" = ["queues:write"]))
-)]
-async fn create_queue(
-    grant: ApiGrant,
-    axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath((owner, name)): ApiPath<(String, String)>,
-    ApiJson(request): ApiJson<CreateQueue>,
-) -> Result<(StatusCode, axum::Json<Queue>), ApiError> {
-    grant.require(ApiScope::QueuesWrite)?;
-    let branch = request.target_branch.trim();
-    let queue_name = request.name.as_deref().unwrap_or(branch).trim();
-    if branch.is_empty() || queue_name.is_empty() {
-        return Err(ApiError::invalid("the branch and the name cannot be empty"));
-    }
-    let mut tx = begin(&state, &grant).await?;
-    let repo = repo_id(&mut tx, &owner, &name).await?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "a new queue gets a new identifier"
-    )]
-    let id = QueueId::new();
-    let inserted = sqlx::query(
-        "INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty)
-         VALUES ($1, $2, $3, $4, $5, true)
-         ON CONFLICT (repo_id, name) DO NOTHING",
-    )
-    .bind(id.to_string())
-    .bind(grant.org_id.to_string())
-    .bind(repo.to_string())
-    .bind(branch)
-    .bind(queue_name)
-    .execute(&mut *tx)
-    .await?;
-    if inserted.rows_affected() == 0 {
-        return Err(ApiError::new(
-            ErrorCode::QueueExists,
-            format!("the repository has a queue named `{queue_name}`"),
-        ));
-    }
-    let after = json!({ "name": queue_name, "target_branch": branch });
-    audit(&mut tx, &grant, "queue.created", &id.to_string(), after).await?;
-    mark_dirty(&mut tx, id).await?;
-    let queue = queue_row(&mut tx, &id.to_string()).await?.into_queue()?;
-    tx.commit().await?;
-    Ok((StatusCode::CREATED, axum::Json(queue)))
 }
 
 #[utoipa::path(

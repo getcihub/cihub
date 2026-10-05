@@ -157,6 +157,29 @@ impl QueueTarget {
         self.settings_in(self.config()?.as_ref())
     }
 
+    /// Whether the queue takes new submissions (`DECISIONS.md` D172): its
+    /// file names it, or names no queue of its branch and the queue is the
+    /// one of `default_branch`, named after it. A queue that the file no
+    /// longer names finishes its items.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::config`].
+    pub(crate) fn takes_submissions(&self, default_branch: &str) -> Result<bool, MergeQueueError> {
+        let config = self.config()?;
+        let mut names = config
+            .iter()
+            .flat_map(|config| &config.queues)
+            .filter(|queue| queue.branch == self.target_branch)
+            .map(|queue| queue.name.as_str())
+            .peekable();
+        Ok(if names.peek().is_none() {
+            self.target_branch == default_branch && self.name == self.target_branch
+        } else {
+            names.any(|name| name == self.name)
+        })
+    }
+
     /// The queues of the branch `branch` of the repository `repo`, in the
     /// order of the configuration file, which is the order of the routing
     /// (`DECISIONS.md` D148); the queues that the file does not name come last,
@@ -322,5 +345,50 @@ pub(crate) fn test_pr(
         additions: 0,
         deletions: 0,
         changed_files: 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt::Write;
+
+    use super::*;
+
+    #[test]
+    fn a_queue_takes_submissions_while_the_file_names_it() {
+        let file = |names: &[(&str, &str)]| {
+            let mut text = "version: 1\nqueues:\n".to_owned();
+            for (name, branch) in names {
+                writeln!(text, "  - name: {name}\n    branch: {branch}").unwrap();
+            }
+            Some(text)
+        };
+        let cases = [
+            // No file: only the queue of the default branch, named after it.
+            ("main", "main", None, true),
+            ("other", "main", None, false),
+            ("release", "release", None, false),
+            // The file names no queue of the branch.
+            ("main", "main", file(&[("rel", "release")]), true),
+            // The file names queues of the branch.
+            ("main", "main", file(&[("main", "main")]), true),
+            (
+                "hotfix",
+                "main",
+                file(&[("main", "main"), ("hotfix", "main")]),
+                true,
+            ),
+            ("main", "main", file(&[("fast", "main")]), false),
+            ("rel", "release", file(&[("rel", "release")]), true),
+        ];
+        for (n, (name, branch, config_text, want)) in cases.into_iter().enumerate() {
+            let queue = QueueTarget {
+                name: name.into(),
+                target_branch: branch.into(),
+                config_text,
+                ..test_target()
+            };
+            assert_eq!(queue.takes_submissions("main").unwrap(), want, "case {n}");
+        }
     }
 }

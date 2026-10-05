@@ -469,7 +469,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the `queue.settings_changed` fact (actor `system`) before `plan`.
 - **D138** Lot 8 creates no queue from the file: the admin command of Lot 9 creates them (Q14). An entry of the
   file is linked to its queue by its branch and its name; a queue without an entry has the default settings,
-  without the `defaults` of the file. _Extended by D154: the API and the CLI create the queues._
+  without the `defaults` of the file. _Extended by D154: the API and the CLI create the queues._ _Superseded by D172._
 - **D139** CIHub integrates with no other product: it studies the competition but takes none of its interfaces
   for compatibility. No command alias (`/trunk`), no names or format of another product in the outgoing
   webhooks, the API or the test branches, no translation of the reasons to another vocabulary. The specification
@@ -541,7 +541,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   account and its connection from the installation, requests the synchronization of the repositories, and shows
   only once an API token of the organization. No admin command creates a queue: queues are created by
   `POST /api/v1/repos/{owner}/{name}/queues` or by `cihub queue create`, which is added to the CLI commands. No
-  MCP server in Lot 9. Extends D138. _Extended by D168._
+  MCP server in Lot 9. Extends D138. _Extended by D168._ _Extended by D172._
 - **D155** Extends D154 and D86. The `Scm` trait gains two methods: `installation`, at the instance level, which
   returns the account of an installation (identifier and login), and `list_repos`, which returns the repositories
   of a connection. `bootstrap` gives the organization the login of the account as slug, enables the `mergequeue`
@@ -600,6 +600,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   /queues/{id}` (the log of a queue is append-only: its deletion requires a decision on its retention),
   `GET /queues/{id}/test-results` (Lot 11, with the fact tables), the `?branch=` search (the projection does not
   keep the head branch), `impacted-targets` (Lot 13), `/metrics` and `/orgs/{org}/webhooks` (Lot 11).
+  _Extended by D172._
 - **D161** The CLI (Lot 9). `cihub-client` (`crates/client/`) is the typed client of the API, on `reqwest` and
   `rustls`; `cihub-cli` (`crates/cli/`) gives the `cihub` binary, with `clap` (new dependency). `cihub login`
   keeps the address and the token in `$XDG_CONFIG_HOME/cihub/credentials.json` (or `~/.config/cihub/`), in mode
@@ -607,7 +608,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   queue comes from `--queue <name>`, or from the only queue of the repository. Commands: `login`,
   `merge <pr> [-p <priority>] [--no-batch]`, `cancel <pr>`, `restart <pr>`, `status [<pr>]`,
   `queue create <branch> [--name <name>]`, `queue pause|resume|drain`, `queue graph`. `targets upload` arrives
-  in Lot 13. _Extended by D168._
+  in Lot 13. _Extended by D168._ _Extended by D172._
 - **D162** The configuration checker (D87). The `Scm` trait gains `check_setup(repo, branche)`, which returns
   neutral findings from a closed vocabulary: `update_restriction_missing` (no rule restricts the updates of the
   branch), `app_not_exempt` (the App is not exempt from this restriction), `test_branches_not_excluded` (a rule
@@ -671,7 +672,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `github.private_key_file` and `github.webhook_secret`. The variable of a key is `CIHUB_` followed by its path
   in capitals, with `_` as separator; the precedence is variable, then file, then default; an unknown key or an
   invalid value stops the process. `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`. `cihub queue targets upload`
-  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._ _Extended by D170._
+  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._ _Extended by D170._ _Extended by D172._
 - **D169** Extends D168. The `cihub` binary is given by `cihub-cli` (`crates/cli/`, the former `crates/server/`):
   it defines every command, one file per command, and starts the components. The HTTP endpoints stay in
   `cihub-web`, whose name follows the `web` role. No crate per role: `cihub-cli` has one file per role
@@ -692,6 +693,23 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `sha` guard: `merged` gives the commit, `pending` or `409` give `MergeInProgress` (the job retries with its
   backoff), `failed` or `400` give `MergeRejected`. The `Scm` trait does not change, and the job does not keep the
   identifier of the request.
+
+**October 4, 2026, validated by Nicolas Lecoy.**
+
+- **D172** No queue is created by hand. Supersedes D138; extends D154, D160, D161 and D168. A command
+  (`/cihub merge` or the box of D163) on a PR whose base branch has no queue that takes submissions creates the
+  queues of that branch in the `submit_pr` job, then routes the submission (D148): the queues that the
+  configuration file names on the branch, read on its head; without such an entry, on the default branch of
+  the repository, a queue named after the branch; on another branch, none, and the command is refused with a
+  comment. A created queue keeps the file that it was read from (`config_text`, `config_sha`, `config_error`),
+  so that the routing of the first submission reads its conditions. Nothing is created when the organization
+  does not have the module, nor by a label, which is a setting of a queue. An entry of the file is linked to
+  its queue by its branch and its name; a queue without an entry has the `defaults` of the file. A queue takes
+  new submissions while its file names it, or while its file names no queue of its branch and it is the queue
+  of the default branch named after it; a queue that the file no longer names finishes its items and keeps its
+  log. `POST /api/v1/repos/{owner}/{name}/queues`, `cihub queue create`, `CreateQueue` and the error code
+  `queue_exists` are removed; the `write` permission of the author of the command is enough, the creation of a
+  queue no longer needs an admin. The welcome comment (D163) does not change: it needs a queue.
 
 ## Open questions
 
