@@ -575,6 +575,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `queue_inbox` (reasons `user_requested`, `tests_restarted_by_user`). `cihub-github` keeps the permission of a
   user on a repository 5 minutes in memory, per connection. A refused command receives a comment from the job
   that says why: permission too low, commands disabled, no queue for the branch, or no live item.
+  _Extended by D166._
 - **D158** (D112) `pr.observed` gains `required_checks`, the checks that the rules of the branch require, without
   the queue status (D105). For a `blocked` PR, `plan` gives `failing_required_check { check }` for a failing
   required check, `awaiting_required_check { check, status }` for a required check that has not finished, and
@@ -635,6 +636,17 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   repository is in English, the documents included; an agent replies to a person in the language they write in.
 - **D165** Extends D3: `docs/LOTS.md` keeps the phases, the table, the current lot and the lots to do; the
   tracking of a finished lot moves to `docs/LOTS_DONE.md` when the next lot starts.
+
+**October 3, 2026, validated by Nicolas Lecoy.**
+
+- **D166** Extends D157: a `/cihub merge`, `/cihub cancel` or `/cihub restart` command that its job accepts
+  receives an acknowledgement on its comment, after the job gives its facts to the queue. `ScmEvent::Commented`
+  gains `comment_external_id`, the payloads of `submit_pr` and `pr_command` gain `comment_id` (`None` for a
+  label, the checkbox or the API), and the `Scm` trait gains `acknowledge_comment(repo, comment_id)`, which the
+  GitHub adapter makes a `+1` reaction (permission Issues: write, already granted). A failed acknowledgement is
+  logged at `warn` and does not fail the job, so that a retry does not give the facts twice. No reaction at the
+  reception of the command; a refused command keeps only its comment (D157). A separate evolution, outside the
+  plan of a lot.
 
 ## Open questions
 

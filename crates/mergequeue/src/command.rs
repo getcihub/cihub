@@ -15,8 +15,8 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::jobs::{
-    Account, Failure, connection_job, give_back_facts, load_repo, load_target, read_payload, reply,
-    user_of,
+    Account, Failure, acknowledge, connection_job, give_back_facts, load_repo, load_target,
+    read_payload, reply, user_of,
 };
 
 /// The type of the job that runs `/cihub cancel` and `/cihub restart`.
@@ -112,6 +112,8 @@ pub(crate) struct PrCommandRequest {
     pub pr_number: u64,
     pub requested_by: Account,
     pub command: ItemCommand,
+    /// The comment of the command (`DECISIONS.md` D166).
+    pub comment_id: String,
 }
 
 /// The job of `request` after the delivery `delivery_id` (`DECISIONS.md`
@@ -182,6 +184,7 @@ pub(crate) async fn run_pr_command(
     tx.commit().await?;
     let facts = vec![(Actor::User { user_id }, kind)];
     give_back_facts(pool, &target, facts, now).await?;
+    acknowledge(scm, &repo.repo, Some(&request.comment_id), class).await;
     info!(
         pr_number = number,
         command = name,

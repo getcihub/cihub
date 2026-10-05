@@ -200,6 +200,29 @@ fn answer(method: &str, path: &str, status: u16, body: serde_json::Value) -> Exc
     }
 }
 
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording of D90 needs a test repository on GitHub.
+#[tokio::test]
+async fn acknowledging_a_comment_twice_is_one_reaction() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let reaction = json!({ "id": 1, "content": "+1" });
+    let path = "/repos/acme/app/issues/comments/40/reactions";
+    let exchanges = vec![
+        token("7", now),
+        answer("POST", path, 201, reaction.clone()),
+        answer("POST", path, 200, reaction),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+    for _ in 0..2 {
+        app.acknowledge_comment(&repo, "40", JobClass::Interactive)
+            .await
+            .unwrap();
+    }
+    replay.finish();
+}
+
 #[tokio::test]
 async fn an_installation_gives_its_account_and_every_page_of_its_repositories() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
