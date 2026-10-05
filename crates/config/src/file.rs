@@ -78,6 +78,8 @@ impl RepoConfig {
             .map(defaults_layer)
             .transpose()?
             .unwrap_or_default();
+        // A queue without an entry has `defaults` alone (`DECISIONS.md` D172).
+        QueueSettings::resolve(&Layer::default(), &defaults)?;
         let mut names = HashSet::new();
         let mut queues = Vec::with_capacity(file.queues.len());
         for raw in file.queues {
@@ -125,8 +127,7 @@ impl RepoConfig {
     }
 
     /// The settings of the queue `name` on the branch `branch`. A queue
-    /// without an entry has the defaults, without `defaults` of the file
-    /// (`DECISIONS.md` D138).
+    /// without an entry has the `defaults` of the file (`DECISIONS.md` D172).
     ///
     /// # Errors
     ///
@@ -135,7 +136,7 @@ impl RepoConfig {
     pub fn settings(&self, branch: &str, name: &str) -> Result<QueueSettings, ConfigError> {
         match self.queue(branch, name) {
             Some(queue) => QueueSettings::resolve(&queue.settings, &self.defaults),
-            None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
+            None => QueueSettings::resolve(&Layer::default(), &self.defaults),
         }
     }
 }
@@ -650,12 +651,19 @@ queues:
         let hotfix = config.settings("main", "hotfix").unwrap();
         assert_eq!(hotfix.strategy.value, Strategy::Pipelined);
         assert_eq!(hotfix.testing_timeout_minutes.source, Source::File);
-        // Without an entry, neither the queue nor `defaults` applies.
+        // Without an entry, only `defaults` applies.
         for (branch, name) in [("release", "main"), ("main", "other")] {
             assert!(config.queue(branch, name).is_none());
             let settings = config.settings(branch, name).unwrap();
-            assert_eq!(settings.testing_timeout_minutes.source, Source::Default);
+            assert_eq!(settings.strategy.value, Strategy::Pipelined);
+            assert_eq!(settings.testing_timeout_minutes.value, 60);
         }
+    }
+
+    #[test]
+    fn defaults_without_a_queue_must_go_together() {
+        let e = error("version: 1\ndefaults:\n  merge_method: fast_forward\n");
+        assert!(e.message.contains("needs strategy"), "{}", e.message);
     }
 
     #[test]

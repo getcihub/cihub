@@ -1926,6 +1926,149 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.stop().await;
 }
 
+/// The queues of the repository, as (name, target branch, whether it keeps
+/// a file, config SHA), and the queue of each current item.
+async fn queues_and_items(
+    pool: &PgPool,
+) -> (
+    Vec<(String, String, bool, Option<String>)>,
+    Vec<(i64, String)>,
+) {
+    let mut tx = begin_system(pool).await.unwrap();
+    let queues = sqlx::query_as(
+        "SELECT name, target_branch, config_text IS NOT NULL, config_sha FROM queues ORDER BY name",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let items = sqlx::query_as(
+        "SELECT i.pr_number, q.name FROM queue_items i JOIN queues q ON q.id = i.queue_id
+         WHERE i.is_current ORDER BY i.pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    drop(tx);
+    (queues, items)
+}
+
+/// A repository without a queue: the seeded queue is removed before any
+/// event.
+async fn without_queue(pool: &PgPool) {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query("DELETE FROM queues WHERE id = $1")
+        .bind(queue().to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
+/// `DECISIONS.md` D172: without a file, the first command on the default
+/// branch creates its queue; a label, or a command on another branch,
+/// creates none.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    without_queue(&pool).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    sim.push(&repo(), "release", &main, &alice()).unwrap();
+    let fix = sim
+        .commit(&repo(), &main, &[("fix.txt", Some("x"))])
+        .unwrap();
+    sim.push(&repo(), "fix", &fix, &bob()).unwrap();
+    let release_pr = sim.open_pr(&repo(), "fix", "release", &bob()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (labelled, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.add_label(&repo(), labelled, "ready-to-merge", JobClass::Interactive)
+        .await
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(queues_and_items(&pool).await, (Vec::new(), Vec::new()));
+
+    sim.comment(&repo(), labelled, &alice(), "/cihub merge")
+        .unwrap();
+    let (other, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), other, &alice(), "/cihub merge")
+        .unwrap();
+    sim.comment(&repo(), release_pr, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(
+        queues_and_items(&pool).await,
+        (
+            vec![("main".into(), "main".into(), false, Some(main))],
+            vec![
+                (i64::try_from(labelled).unwrap(), "main".into()),
+                (i64::try_from(other).unwrap(), "main".into())
+            ]
+        )
+    );
+    let refused = sim.comments(&repo(), release_pr);
+    assert!(
+        refused
+            .iter()
+            .any(|body| body.contains("no queue serves the branch `release`")),
+        "{refused:?}"
+    );
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D172: the first command on a branch creates the queues
+/// that the file names on it, with the file, so that the routing of the
+/// command reads their conditions.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_command_creates_the_queues_that_the_file_names(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    without_queue(&pool).await;
+    let sim = q.sim.clone();
+    let config = "version: 1
+queues:
+  - name: hotfix
+    branch: main
+    queue_conditions:
+      - label = hotfix
+  - name: fast
+    branch: main
+";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    q.deliver().await;
+    q.settle().await;
+    for (n, labels) in [(1, &["hotfix"][..]), (2, &[][..])] {
+        let path = format!("f{n}.txt");
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        for label in labels {
+            sim.add_label(&repo(), number, label, JobClass::Interactive)
+                .await
+                .unwrap();
+        }
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+    let queue = |name: &str| (name.to_owned(), "main".to_owned(), true, Some(main.clone()));
+    assert_eq!(
+        queues_and_items(&pool).await,
+        (
+            vec![queue("fast"), queue("hotfix")],
+            vec![(1, "hotfix".into()), (2, "fast".into())]
+        )
+    );
+    q.stop().await;
+}
+
 /// `DECISIONS.md` D153: with `direct_merge_mode: always`, a green PR that
 /// contains the head of the target merges without a test branch; a PR that
 /// does not contain it goes through the tests.
@@ -2265,17 +2408,8 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let (_, read) = call("GET", format!("/queues/{queue}"), None).await;
     assert_eq!(read["state"], "paused");
 
-    let new_queue = Some(serde_json::json!({ "target_branch": "release" }));
-    let (status, created) = call("POST", "/repos/acme/app/queues".into(), new_queue.clone()).await;
-    assert_eq!(status, 201, "{created}");
-    assert_eq!(created["name"], "release");
-    let (status, exists) = call("POST", "/repos/acme/app/queues".into(), new_queue).await;
-    assert_eq!(
-        (status, &exists["code"]),
-        (409, &serde_json::json!("queue_exists"))
-    );
     let (_, queues) = call("GET", "/repos/acme/app/queues".into(), None).await;
-    assert_eq!(queues["queues"].as_array().unwrap().len(), 2);
+    assert_eq!(queues["queues"].as_array().unwrap().len(), 1);
     assert_eq!(
         call("POST", format!("/queues/{queue}:resync"), None)
             .await
@@ -2302,17 +2436,14 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .iter()
         .map(|entry| entry["action"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        actions,
-        ["queue.resync", "queue.created", "queue.state_requested"]
-    );
+    assert_eq!(actions, ["queue.resync", "queue.state_requested"]);
 
     // The typed client reads the same API (`DECISIONS.md` D161).
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
     let queues = client.queues("acme", "app").await.unwrap().queues;
-    assert_eq!(queues.len(), 2);
+    assert_eq!(queues.len(), 1);
     let item = client.pr(&queue, number, true).await.unwrap();
     assert_eq!(item.item.state, ItemState::Cancelled);
     assert!(!item.timeline.unwrap().is_empty());

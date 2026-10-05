@@ -163,6 +163,14 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `cihub queue drain|status` against a running server.
   - Done (October 5, 2026, D170): `cihub server start` takes no argument and always runs the four roles; a
     deployment scales by identical replicas. The probes give only the name and the version of the binary.
+  - Done (October 4, 2026, D172): no queue is created by hand. The first `/cihub merge` on a branch without a
+    queue creates, in `submit_pr`, the queues that `.cihub.yaml` names on the branch, or the queue of the default
+    branch named after it, with the file that it read; a queue without an entry has `defaults`; a queue that the
+    file no longer names takes no new submission. `POST /repos/{owner}/{name}/queues`, `cihub queue create`,
+    `CreateQueue` and `queue_exists` are removed; the README no longer has a step that creates a queue. Tests:
+    `defaults` alone in `cihub-config`, the rule of the queues that take submissions, and against Postgres and
+    the simulator the queue of the default branch, the queues of the file and their routing, a label and a
+    command on another branch that create nothing.
   - Remaining: record the GitHub responses again for `check_setup` (D90, D162); until then,
     `the_contract_passes_on_recorded_answers` fails. Step 7, the exit criteria: the end-to-end test on staging,
     CIHub on its own queue, and an installation by an outside person, which need an instance, an App and a person.

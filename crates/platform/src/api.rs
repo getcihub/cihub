@@ -92,7 +92,7 @@ impl ApiError {
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-            ErrorCode::QueueExists | ErrorCode::InvalidState => StatusCode::CONFLICT,
+            ErrorCode::InvalidState => StatusCode::CONFLICT,
             ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

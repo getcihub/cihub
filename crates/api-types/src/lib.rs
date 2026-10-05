@@ -39,8 +39,6 @@ pub enum ErrorCode {
     InvalidRequest,
     /// The token made too many requests: retry after `Retry-After`.
     RateLimited,
-    /// A queue of the repository has this name already.
-    QueueExists,
     /// The item is not in a state that allows the request.
     InvalidState,
     Internal,
@@ -107,17 +105,6 @@ pub struct Queue {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct QueueList {
     pub queues: Vec<Queue>,
-}
-
-/// `POST /repos/{owner}/{name}/queues`: the settings come from the file of
-/// the repository only (`DECISIONS.md` D134).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct CreateQueue {
-    pub target_branch: String,
-    /// The name of the queue, unique in the repository; the target branch
-    /// by default.
-    pub name: Option<String>,
 }
 
 /// The state that `PATCH /queues/{id}` asks for.

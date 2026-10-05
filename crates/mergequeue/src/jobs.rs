@@ -7,11 +7,11 @@
 use std::collections::HashMap;
 use std::error::Error;
 
-use cihub_config::QueueSettings;
+use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
-    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia,
-    UserId,
+    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, ModuleName,
+    OrgId, Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId,
+    SubmittedVia, UserId,
 };
 use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
 use cihub_scm::{
@@ -26,6 +26,7 @@ use tracing::{info, warn};
 
 use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, rule_priority, unmet_conditions};
+use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
@@ -635,17 +636,110 @@ async fn sender_of(
     }))
 }
 
-/// The queues of `branch` in the organizations with the module, in the
-/// order of the routing.
-async fn enabled_queues(
+/// The default branch of `repo`, and whether its organization has the
+/// module.
+async fn repo_facts(pool: &PgPool, repo: RepoId) -> Result<(String, bool), Failure> {
+    let mut tx = begin_system(pool).await?;
+    let facts = sqlx::query_as(
+        "SELECT r.default_branch,
+                EXISTS (SELECT 1 FROM org_modules m
+                        WHERE m.org_id = r.org_id AND m.module = $2::module_name)
+         FROM repos r WHERE r.id = $1",
+    )
+    .bind(repo.to_string())
+    .bind(ModuleName::Mergequeue.as_str())
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(facts)
+}
+
+/// The queues of `branch` that take submissions (`DECISIONS.md` D172), in
+/// the organizations with the module, in the order of the routing.
+async fn open_queues(
     pool: &PgPool,
     repo: RepoId,
     branch: &str,
+    default_branch: &str,
 ) -> Result<Vec<QueueTarget>, Failure> {
     let mut tx = begin_system(pool).await?;
     let queues = QueueTarget::queues_of_branch(&mut tx, repo, branch).await?;
     tx.commit().await?;
-    Ok(queues.into_iter().filter(|queue| queue.enabled).collect())
+    let mut open = Vec::with_capacity(queues.len());
+    for queue in queues {
+        if queue.enabled && queue.takes_submissions(default_branch)? {
+            open.push(queue);
+        }
+    }
+    Ok(open)
+}
+
+/// Creates the queues of `branch` (`DECISIONS.md` D172): the ones that the
+/// configuration file names on the head of the branch, or else, on the
+/// default branch, the queue named after it. Each one keeps the file that it
+/// comes from, so that the routing of the submission reads its conditions.
+async fn create_queues(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    repo: &RepoTarget,
+    branch: &str,
+    default_branch: &str,
+    class: JobClass,
+) -> Result<(), Failure> {
+    let Some(head) = scm.branch_head(&repo.repo, branch, class).await? else {
+        return Ok(());
+    };
+    let read = read_config_file(scm, &repo.repo, &head, class).await?;
+    let checked = read.and_then(|text| {
+        text.map(|text| RepoConfig::parse(&text).map(|config| (text, config)))
+            .transpose()
+    });
+    let mut names: Vec<String> = match &checked {
+        Ok(Some((_, config))) => config
+            .queues
+            .iter()
+            .filter(|queue| queue.branch == branch)
+            .map(|queue| queue.name.clone())
+            .collect(),
+        _ => Vec::new(),
+    };
+    if names.is_empty() && branch == default_branch {
+        names.push(branch.to_owned());
+    }
+    let (text, error) = match checked {
+        Ok(found) => (found.map(|(text, _)| text), None),
+        Err(err) => (None, Some(err.to_string())),
+    };
+    let mut tx = begin_system(pool).await?;
+    for name in names {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "a new queue gets a new identifier"
+        )]
+        let id = QueueId::new();
+        let inserted = sqlx::query(
+            "INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty,
+                                 config_text, config_sha, config_error)
+             VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
+             ON CONFLICT (repo_id, name) DO NOTHING",
+        )
+        .bind(id.to_string())
+        .bind(repo.org_id.to_string())
+        .bind(repo.repo_id.to_string())
+        .bind(branch)
+        .bind(&name)
+        .bind(&text)
+        .bind(&head)
+        .bind(&error)
+        .execute(&mut *tx)
+        .await?;
+        if inserted.rows_affected() == 1 {
+            info!(queue_name = name, target_branch = branch, "queue created");
+            mark_dirty(&mut tx, id).await?;
+        }
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The queue that `pr` enters, with the conditions that it does not meet
@@ -734,7 +828,21 @@ pub(crate) async fn submit_pr(
         Err(ScmError::NotFound(_)) => return Ok(()),
         Err(err) => return Err(err.into()),
     };
-    let queues = enabled_queues(pool, repo.repo_id, &pr.base_branch).await?;
+    let (default_branch, enabled) = repo_facts(pool, repo.repo_id).await?;
+    let mut queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
+    // A label is a setting of a queue: only a command creates one.
+    if queues.is_empty() && enabled && request.via == SubmittedVia::Comment {
+        create_queues(
+            pool,
+            scm,
+            &repo,
+            &pr.base_branch,
+            &default_branch,
+            job.class,
+        )
+        .await?;
+        queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
+    }
     let Some(first) = queues.first() else {
         info!(
             pr_number,
@@ -742,7 +850,8 @@ pub(crate) async fn submit_pr(
             "submission dropped: no queue"
         );
         return refuse(format!(
-            "`/cihub merge`: no queue serves the branch `{}`.",
+            "`/cihub merge`: no queue serves the branch `{}`; a queue of `.cihub.yaml` on this \
+             branch would.",
             pr.base_branch
         ))
         .await;

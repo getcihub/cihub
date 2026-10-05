@@ -22,7 +22,7 @@ pub(crate) struct Sender {
 }
 
 /// The `queue_conditions` of the entry of the queue in `config`, its last
-/// valid file; none without a file or an entry (D138).
+/// valid file; none without a file or an entry (D172).
 fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Conditions {
     config
         .and_then(|config| config.queue(&target.target_branch, &target.name))

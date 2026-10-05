@@ -6,7 +6,7 @@
 use std::io::Write;
 
 use anyhow::{Context, bail};
-use cihub_api_types::{CreateQueue, PriorityInput, Queue, RequestedQueueState, SubmitPr};
+use cihub_api_types::{PriorityInput, Queue, RequestedQueueState, SubmitPr};
 use cihub_client::Client;
 use clap::{Args, Subcommand};
 use secrecy::SecretString;
@@ -47,13 +47,6 @@ enum QueueCommand {
     Status { pr: Option<u64> },
     /// The merge graph of the queue.
     Graph,
-    /// Creates a queue on a branch of the repository; ignores `--queue`.
-    Create {
-        branch: String,
-        /// The branch by default.
-        #[arg(long)]
-        name: Option<String>,
-    },
     /// Stops the tests and the merges; the queue keeps its order.
     Pause,
     /// Starts the queue again.
@@ -69,23 +62,6 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
         Some(repo) => repo,
         None => repo::from_git()?,
     };
-    if let QueueCommand::Create {
-        branch,
-        name: queue_name,
-    } = args.command
-    {
-        let request = CreateQueue {
-            target_branch: branch,
-            name: queue_name,
-        };
-        let queue = client.create_queue(&owner, &name, &request).await?;
-        writeln!(
-            out,
-            "queue `{}` created on `{}`",
-            queue.name, queue.target_branch
-        )?;
-        return Ok(());
-    }
     let queues = client.queues(&owner, &name).await?.queues;
     let queue = pick_queue(queues, args.queue.as_deref(), &format!("{owner}/{name}"))?;
     let id = &queue.id;
@@ -127,7 +103,6 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
         QueueCommand::Drain => {
             set_state(out, &client, &queue, RequestedQueueState::Draining).await?;
         }
-        QueueCommand::Create { .. } => {}
     }
     Ok(())
 }
@@ -221,7 +196,9 @@ fn pick_queue(queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyhow::R
     }
     let mut queues = queues;
     match queues.len() {
-        0 => bail!("{repo} has no queue: create one with `cihub queue create <branch>`"),
+        0 => bail!(
+            "{repo} has no queue yet: comment `/cihub merge` on a PR of its default branch to create one"
+        ),
         1 => Ok(queues.remove(0)),
         _ => bail!(
             "{repo} has more than one queue: choose one with `--queue` ({})",
