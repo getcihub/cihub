@@ -505,8 +505,9 @@ struct ConnectionDelivery {
 /// Reads the deliveries of a connection without a queue (`DECISIONS.md` D103),
 /// and returns their number. A lost or restored access goes to each queue of
 /// the connection; a `merge` command requests its submission, whose job finds
-/// the queue by the base branch of the PR. A delivery that no queue uses is
-/// marked processed.
+/// the queue by the base branch of the PR; a concluded check on the head of a
+/// `not_ready` item asks its queue to read the PR. A delivery that no queue
+/// uses is marked processed.
 ///
 /// # Errors
 ///
@@ -651,6 +652,15 @@ async fn pass_delivery(
                 author: &author,
             };
             pass_comment(conn, delivery, &comment, &body, now).await?;
+        }
+        // A check that has not concluded changes no condition.
+        ScmEvent::CheckChanged {
+            repo_external_id,
+            sha,
+            check,
+            ..
+        } if check.conclusion.is_some() => {
+            read_waiting_prs(conn, delivery, &repo_external_id, &sha, now).await?;
         }
         _ => {}
     }
@@ -858,6 +868,47 @@ async fn route_pr_change(
     enqueue_job(conn, &job, now, now)
         .await
         .map_err(MergeQueueError::Platform)?;
+    Ok(())
+}
+
+/// Asks each queue of a `not_ready` item whose PR head is `sha` to read the
+/// PR again, after a check concluded on that head (`DECISIONS.md` D170). The
+/// read points of the plan stay the fallback when the delivery is lost.
+async fn read_waiting_prs(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    repo_external_id: &str,
+    sha: &str,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
+        return Ok(());
+    };
+    let items: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT i.queue_id, i.pr_number FROM queue_items i JOIN queues q ON q.id = i.queue_id
+         WHERE q.repo_id = $1 AND i.pr_head_sha = $2
+           AND i.is_current AND i.concluded_at IS NULL AND i.state = 'not_ready'
+         ORDER BY i.queue_id, i.pr_number",
+    )
+    .bind(repo.to_string())
+    .bind(sha)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    let mut prs_by_queue: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+    for (queue, number) in items {
+        prs_by_queue
+            .entry(queue)
+            .or_default()
+            .push(u64::try_from(number).unwrap_or_default());
+    }
+    for (queue, prs) in prs_by_queue {
+        let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
+        let job = refresh_after(&target, &delivery.delivery_id, prs);
+        enqueue_job(conn, &job, now, now)
+            .await
+            .map_err(MergeQueueError::Platform)?;
+    }
     Ok(())
 }
 
