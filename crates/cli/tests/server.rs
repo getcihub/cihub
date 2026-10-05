@@ -30,7 +30,7 @@ fn unknown_command_stops_the_start() {
     let database = [("CIHUB_DATABASE_URL", "postgres://127.0.0.1/cihub")];
     refuses(&[], &database);
     refuses(&["server"], &database);
-    refuses(&["server", "start", "cron"], &database);
+    refuses(&["server", "start", "web"], &database);
     refuses(&["server", "bootstrap"], &database);
     refuses(&["queue"], &database);
     refuses(&["queue", "drain", "--repo", "acme"], &database);

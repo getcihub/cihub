@@ -1,9 +1,8 @@
-//! `cihub server start [<role>...]`: serves `/healthz` and `/readyz` on the
-//! internal address, and runs the given roles in one process until `SIGTERM`
-//! or `SIGINT` (`DECISIONS.md` D168). The roles of one process share only the
+//! `cihub server start`: serves `/healthz` and `/readyz` on the internal
+//! address, and runs the four roles in one process until `SIGTERM` or `SIGINT`
+//! (`DECISIONS.md` D168, D170). The roles of one process share only the
 //! Postgres pool.
 
-use std::collections::BTreeSet;
 use std::net::SocketAddr;
 
 use anyhow::{Context, anyhow};
@@ -14,7 +13,34 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span};
 
-use super::{Github, Role, health, notifier, scheduler, web, worker};
+use super::{Github, health, notifier, scheduler, web, worker};
+
+/// A role of the process: a part of its loops, named in the logs
+/// (`DECISIONS.md` D91, D170).
+#[derive(Clone, Copy)]
+enum Role {
+    /// The public address: API, webhooks, dashboard.
+    Web,
+    /// The reconciliation loop of the queues.
+    Scheduler,
+    /// The execution of the jobs of the modules.
+    Worker,
+    /// The delivery of the outbox.
+    Notifier,
+}
+
+impl Role {
+    const ALL: [Self; 4] = [Self::Web, Self::Scheduler, Self::Worker, Self::Notifier];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Scheduler => "scheduler",
+            Self::Worker => "worker",
+            Self::Notifier => "notifier",
+        }
+    }
+}
 
 /// What the roles of a process share.
 #[derive(Clone)]
@@ -28,7 +54,6 @@ pub(super) struct Shared {
 }
 
 pub(super) async fn run(
-    roles: BTreeSet<Role>,
     internal_addr: SocketAddr,
     http_addr: SocketAddr,
     pool: PgPool,
@@ -41,12 +66,7 @@ pub(super) async fn run(
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
-    tasks.spawn(health::serve(
-        listener,
-        roles.clone(),
-        pool.clone(),
-        cancel.clone(),
-    ));
+    tasks.spawn(health::serve(listener, pool.clone(), cancel.clone()));
     let shared = Shared {
         pool,
         process: process_name(),
@@ -54,9 +74,9 @@ pub(super) async fn run(
         github,
         cancel: cancel.clone(),
     };
-    for role in &roles {
+    for role in Role::ALL {
         let span = info_span!("role", role = role.as_str());
-        tasks.spawn(run_role(*role, shared.clone()).instrument(span));
+        tasks.spawn(run_role(role, shared.clone()).instrument(span));
     }
     let result = supervise(tasks, &cancel).await;
     info!("server stopped");

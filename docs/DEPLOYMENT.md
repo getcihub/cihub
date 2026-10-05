@@ -4,9 +4,8 @@
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
 `cihub` binary (`DECISIONS.md` D168); `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
-`notifier`) in one process, and `cihub server start <role>...` runs only the given roles, to give each role its
-own processes (`docs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `docs/GITHUB.md`
-(`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
+`notifier`) in one process; a deployment scales by identical replicas (`docs/ARCHITECTURE.md`, "Scaling",
+`DECISIONS.md` D170). The GitHub App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
 
 ## Development
 
@@ -83,19 +82,17 @@ github:
   webhook_secret: …
 ```
 
-The roles are not keys of the file, so one file serves every process. On Kubernetes, a ConfigMap carries the
+One file serves every replica. On Kubernetes, a ConfigMap carries the
 file without its secrets, and a Secret gives `CIHUB_DATABASE_URL` and `CIHUB_GITHUB_WEBHOOK_SECRET`. A file that
 carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`docs/SECURITY.md`).
 
 ```sh
 cihub server migrate --config /etc/cihub/server.yaml
-cihub server start --config /etc/cihub/server.yaml              # the four roles
-cihub server start web --config /etc/cihub/server.yaml          # one role per process
-cihub server start worker --config /etc/cihub/server.yaml       # as many replicas as needed
+cihub server start --config /etc/cihub/server.yaml    # the four roles, as many replicas as needed
 ```
 
-`cihub server` alone shows the help of the group: a typo never starts a server. `cihub server start --help`
-lists the roles, and an unknown role is refused.
+`cihub server` alone shows the help of the group: a typo never starts a server. `cihub server start` takes no
+argument, and refuses one.
 
 In a container, `CIHUB_INTERNAL_ADDR` must listen on `0.0.0.0` so that the probes reach it. `/healthz`
 answers `200` as long as the process runs; `/readyz` answers `503` when Postgres does not answer within 2 s.
@@ -106,7 +103,7 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 `rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
 `gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
 comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
-image starts the four roles, and an argument replaces it (`server migrate`, `server start web`). The project
+image starts the four roles, and an argument replaces it (`server migrate`). The project
 license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
 probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root certificates of the system, which

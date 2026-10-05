@@ -57,10 +57,9 @@ fn with_github(pool: &PgPool) -> Command {
     command
 }
 
-fn start(pool: &PgPool, addr: &str, roles: &[&str]) -> Child {
+fn start(pool: &PgPool, addr: &str) -> Child {
     with_github(pool)
         .args(["server", "start"])
-        .args(roles)
         .env("CIHUB_INTERNAL_ADDR", addr)
         .env("CIHUB_HTTP_ADDR", free_addr())
         .spawn()
@@ -122,26 +121,12 @@ fn stop(mut child: Child) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn all_in_one_answers_and_stops(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, &[]);
+    let child = start(&pool, &addr);
     for path in ["/healthz", "/readyz"] {
         let (status, body) = wait_for(&addr, path);
         assert_eq!(status, "HTTP/1.1 200 OK");
-        assert!(
-            body.contains(r#""roles":["web","scheduler","worker","notifier"]"#),
-            "{body}"
-        );
         assert!(body.contains(r#""name":"cihub""#), "{body}");
     }
-    stop(child);
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-fn one_role_per_process(pool: PgPool) {
-    let addr = free_addr();
-    let child = start(&pool, &addr, &["worker"]);
-    let (status, body) = wait_for(&addr, "/readyz");
-    assert_eq!(status, "HTTP/1.1 200 OK");
-    assert!(body.contains(r#""roles":["worker"]"#), "{body}");
     stop(child);
 }
 
@@ -172,7 +157,7 @@ fn a_missing_migration_stops_the_start(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
     let addr = free_addr();
-    let child = start(&pool, &addr, &[]);
+    let child = start(&pool, &addr);
     let mut done: Vec<String> = Vec::new();
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
@@ -203,7 +188,7 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
 async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let (internal, public) = (free_addr(), free_addr());
     let child = with_github(&pool)
-        .args(["server", "start", "web"])
+        .args(["server", "start"])
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
@@ -337,7 +322,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
     let token = two_queues(&pool).await;
     let (internal, public) = (free_addr(), free_addr());
     let child = with_github(&pool)
-        .args(["server", "start", "web"])
+        .args(["server", "start"])
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
