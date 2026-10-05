@@ -671,13 +671,21 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `github.private_key_file` and `github.webhook_secret`. The variable of a key is `CIHUB_` followed by its path
   in capitals, with `_` as separator; the precedence is variable, then file, then default; an unknown key or an
   invalid value stops the process. `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`. `cihub queue targets upload`
-  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._
+  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._ _Extended by D170._
 - **D169** Extends D168. The `cihub` binary is given by `cihub-cli` (`crates/cli/`, the former `crates/server/`):
   it defines every command, one file per command, and starts the components. The HTTP endpoints stay in
   `cihub-web`, whose name follows the `web` role. No crate per role: `cihub-cli` has one file per role
   (`server/web.rs`, `server/scheduler.rs`, `server/worker.rs`, `server/notifier.rs`), which starts the loops whose
   code is in the library crates (`cihub-web`, `cihub-mergequeue`, `cihub-platform`); a role gets its own crate only
   by a decision, when its code grows.
+
+**October 5, 2026, validated by Nicolas Lecoy.**
+
+- **D170** Extends D168: `cihub server start` takes no argument and always runs the four roles in one process; the
+  `ROLE` argument is removed. A deployment scales by identical replicas; the leases, the locks and the idempotency
+  keys already share the work between them. A role stays an internal unit: one task and one `role` span in the
+  logs. The probes give only the name and the version of the binary. A selection of the roles can come back as an
+  addition when a measured need appears.
 
 ## Open questions
 

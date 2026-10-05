@@ -14,7 +14,6 @@ mod start;
 mod web;
 mod worker;
 
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,9 +24,8 @@ use cihub_github::GithubApp;
 use cihub_mergequeue::Translate;
 use cihub_scm::Scm;
 use cihub_store::{MIGRATOR, PgPool, begin_system, ensure_scm_instance};
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Args, Subcommand};
 use secrecy::SecretString;
-use serde::Serialize;
 use time::OffsetDateTime;
 use tracing::info;
 
@@ -46,11 +44,8 @@ pub(crate) struct ServerArgs {
 
 #[derive(Subcommand)]
 enum ServerCommand {
-    /// Starts the given roles in one process; the four without argument.
-    Start {
-        #[arg(value_name = "ROLE")]
-        roles: Vec<Role>,
-    },
+    /// Starts the four roles in one process.
+    Start,
     /// Applies the migrations, creates the partitions, then stops.
     Migrate,
     /// Creates the organization of an installation of the GitHub App and
@@ -60,33 +55,6 @@ enum ServerCommand {
         #[arg(long)]
         installation: String,
     },
-}
-
-/// A role of the process (`DECISIONS.md` D91, D168).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, ValueEnum)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-    /// The public address: API, webhooks, dashboard.
-    Web,
-    /// The reconciliation loop of the queues.
-    Scheduler,
-    /// The execution of the jobs of the modules.
-    Worker,
-    /// The delivery of the outbox.
-    Notifier,
-}
-
-impl Role {
-    const ALL: [Self; 4] = [Self::Web, Self::Scheduler, Self::Worker, Self::Notifier];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Web => "web",
-            Self::Scheduler => "scheduler",
-            Self::Worker => "worker",
-            Self::Notifier => "notifier",
-        }
-    }
 }
 
 pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
@@ -106,14 +74,9 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
             let github = start_github(&pool, github).await?;
             bootstrap::run(&pool, &github, &installation).await
         }
-        ServerCommand::Start { roles } => {
-            let roles: BTreeSet<Role> = if roles.is_empty() {
-                Role::ALL.into_iter().collect()
-            } else {
-                roles.into_iter().collect()
-            };
+        ServerCommand::Start => {
             let github = start_github(&pool, github).await?;
-            start::run(roles, internal_addr, http_addr, pool, github).await
+            start::run(internal_addr, http_addr, pool, github).await
         }
     }
 }
