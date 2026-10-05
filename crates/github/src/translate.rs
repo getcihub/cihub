@@ -36,6 +36,7 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
             ScmEvent::Commented {
                 repo_external_id: read.id("/repository/id")?,
                 number: read.number("/issue/number")?,
+                comment_external_id: read.id("/comment/id")?,
                 author: read.user("/comment/user")?,
                 body: read.text("/comment/body")?,
             }
@@ -360,7 +361,7 @@ mod tests {
                 "action": action,
                 "repository": { "id": 7 },
                 "issue": { "number": 12, "pull_request": pull_request },
-                "comment": { "user": user(3, "alice"), "body": "/cihub merge" },
+                "comment": { "id": 40, "user": user(3, "alice"), "body": "/cihub merge" },
             })
         };
         let on_pr = json!({ "url": "https://api.github.com/repos/o/r/pulls/12" });
@@ -369,6 +370,7 @@ mod tests {
             ScmEvent::Commented {
                 repo_external_id: "7".into(),
                 number: 12,
+                comment_external_id: "40".into(),
                 author: ScmUser {
                     external_id: "3".into(),
                     login: "alice".into()

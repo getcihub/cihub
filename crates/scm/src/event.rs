@@ -63,6 +63,7 @@ pub enum ScmEvent {
     Commented {
         repo_external_id: String,
         number: u64,
+        comment_external_id: String,
         author: ScmUser,
         body: String,
     },

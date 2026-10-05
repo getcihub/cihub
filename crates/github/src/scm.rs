@@ -1081,6 +1081,23 @@ impl Scm for GithubApp {
         })
     }
 
+    fn acknowledge_comment<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        comment_id: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()> {
+        Box::pin(async move {
+            // `200` when the reaction is already there.
+            let rest = format!("/issues/comments/{}/reactions", encode(comment_id));
+            let body = json!({ "content": "+1" });
+            let answer = self
+                .rest(repo, class, Method::POST, &rest, Some(body))
+                .await?;
+            expect(answer, &[StatusCode::OK, StatusCode::CREATED]).map(drop)
+        })
+    }
+
     fn add_label<'a>(
         &'a self,
         repo: &'a RepoRef,

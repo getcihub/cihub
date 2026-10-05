@@ -181,6 +181,15 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, ()>;
 
+    /// Shows on the comment `comment_id` that CIHub accepted its command
+    /// (`DECISIONS.md` D166). Acknowledging twice has no more effect.
+    fn acknowledge_comment<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        comment_id: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()>;
+
     fn add_label<'a>(
         &'a self,
         repo: &'a RepoRef,

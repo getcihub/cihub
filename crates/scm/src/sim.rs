@@ -155,6 +155,7 @@ struct Repo {
     prs: BTreeMap<u64, Pr>,
     checks: HashMap<String, Vec<CheckReport>>,
     comments: BTreeMap<String, (u64, String)>,
+    acknowledged: BTreeSet<String>,
     rules: BTreeMap<String, RequiredChecks>,
     permissions: BTreeMap<String, Permission>,
 }
@@ -223,6 +224,7 @@ impl Sim {
                 prs: BTreeMap::new(),
                 checks: HashMap::new(),
                 comments: BTreeMap::new(),
+                acknowledged: BTreeSet::new(),
                 rules: BTreeMap::new(),
                 permissions: BTreeMap::new(),
             };
@@ -390,6 +392,24 @@ impl Sim {
     ) -> Result<(), ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
             ctx.add_comment(number, author, body).map(drop)
+        })
+    }
+
+    /// The bodies of the comments of the PR `number` that CIHub
+    /// acknowledged, in their order.
+    pub fn acknowledged_comments(&self, repo: &RepoRef, number: u64) -> Vec<String> {
+        self.with(|state| {
+            state
+                .repos
+                .get(&repo.external_id)
+                .map(|repo| {
+                    repo.comments
+                        .iter()
+                        .filter(|(id, (pr, _))| *pr == number && repo.acknowledged.contains(*id))
+                        .map(|(_, (_, body))| body.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
         })
     }
 
@@ -818,6 +838,7 @@ impl Ctx<'_> {
         self.emit(ScmEvent::Commented {
             repo_external_id: self.repo_external_id.clone(),
             number,
+            comment_external_id: id.clone(),
             author: author.clone(),
             body: body.to_owned(),
         });
@@ -1345,6 +1366,22 @@ impl Scm for Sim {
                 .get_mut(&comment_id)
                 .ok_or_else(|| ScmError::NotFound(format!("comment {comment_id}")))?;
             comment.1 = body;
+            Ok(())
+        })
+    }
+
+    fn acknowledge_comment<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        comment_id: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()> {
+        let comment_id = comment_id.to_owned();
+        self.call("acknowledge_comment", repo, class, move |ctx| {
+            if !ctx.repo.comments.contains_key(&comment_id) {
+                return Err(ScmError::NotFound(format!("comment {comment_id}")));
+            }
+            ctx.repo.acknowledged.insert(comment_id);
             Ok(())
         })
     }

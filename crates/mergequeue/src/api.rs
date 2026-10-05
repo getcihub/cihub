@@ -533,6 +533,7 @@ async fn submit(
         direct: request.direct,
         queue: Some(target.name.clone()),
         label: None,
+        comment_id: None,
     };
     let cause = format!("api-{}", new_event_id());
     let connection = (target.scm_instance_id, target.repo.connection.id);

@@ -2136,6 +2136,11 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         item(pool.clone()).await,
         ("cancelled".into(), "user_requested".into())
     );
+    // The refused command of bob gets no acknowledgement (`DECISIONS.md` D166).
+    assert_eq!(
+        sim.acknowledged_comments(&repo(), number),
+        ["/cihub merge", "/cihub restart", "/cihub cancel"]
+    );
     q.stop().await;
 }
 

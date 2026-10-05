@@ -618,6 +618,7 @@ async fn pass_delivery(
                 let command = Command {
                     repo_external_id: &repo_external_id,
                     number,
+                    comment_external_id: None,
                     author: &sender,
                     merge: Merge {
                         priority: None,
@@ -639,45 +640,74 @@ async fn pass_delivery(
         ScmEvent::Commented {
             repo_external_id,
             number,
+            comment_external_id,
             author,
             body,
         } => {
-            // The jobs check `commands_enabled` on the queue that they find.
-            let item_command = match parse_command(&body) {
-                Some(PrCommand::Merge(merge)) => {
-                    let command = Command {
-                        repo_external_id: &repo_external_id,
-                        number,
-                        author: &author,
-                        merge,
-                    };
-                    request_submission(conn, delivery, &command, now).await?;
-                    None
-                }
-                Some(PrCommand::Cancel) => Some(ItemCommand::Cancel),
-                Some(PrCommand::Restart) => Some(ItemCommand::Restart),
-                None => None,
+            let comment = Comment {
+                repo_external_id: &repo_external_id,
+                number,
+                external_id: &comment_external_id,
+                author: &author,
             };
-            if let Some(command) = item_command
-                && let Some(repo_id) = repo_of(conn, delivery, &repo_external_id).await?
-            {
-                let request = PrCommandRequest {
-                    repo_id,
-                    pr_number: number,
-                    requested_by: (&author).into(),
-                    command,
-                };
-                let connection = (delivery.instance, delivery.connection);
-                let job =
-                    pr_command_job(delivery.org_id, connection, &delivery.delivery_id, &request);
-                enqueue_job(conn, &job, now, now)
-                    .await
-                    .map_err(MergeQueueError::Platform)?;
-            }
+            pass_comment(conn, delivery, &comment, &body, now).await?;
         }
         _ => {}
     }
     Ok(true)
+}
+
+/// A comment on the PR `number`, which can hold a command.
+struct Comment<'a> {
+    repo_external_id: &'a str,
+    number: u64,
+    /// The identifier of the comment on the SCM.
+    external_id: &'a str,
+    author: &'a ScmUser,
+}
+
+/// Requests the job of the command that `body` holds, if it holds one.
+async fn pass_comment(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    comment: &Comment<'_>,
+    body: &str,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    // The jobs check `commands_enabled` on the queue that they find.
+    let item_command = match parse_command(body) {
+        Some(PrCommand::Merge(merge)) => {
+            let command = Command {
+                repo_external_id: comment.repo_external_id,
+                number: comment.number,
+                comment_external_id: Some(comment.external_id),
+                author: comment.author,
+                merge,
+            };
+            request_submission(conn, delivery, &command, now).await?;
+            None
+        }
+        Some(PrCommand::Cancel) => Some(ItemCommand::Cancel),
+        Some(PrCommand::Restart) => Some(ItemCommand::Restart),
+        None => None,
+    };
+    if let Some(command) = item_command
+        && let Some(repo_id) = repo_of(conn, delivery, comment.repo_external_id).await?
+    {
+        let request = PrCommandRequest {
+            repo_id,
+            pr_number: comment.number,
+            requested_by: comment.author.into(),
+            command,
+            comment_id: comment.external_id.to_owned(),
+        };
+        let connection = (delivery.instance, delivery.connection);
+        let job = pr_command_job(delivery.org_id, connection, &delivery.delivery_id, &request);
+        enqueue_job(conn, &job, now, now)
+            .await
+            .map_err(MergeQueueError::Platform)?;
+    }
+    Ok(())
 }
 
 /// Deposits the fact `kind` of `delivery` in the inbox of each queue of its
@@ -868,6 +898,8 @@ async fn read_heads(
 struct Command<'a> {
     repo_external_id: &'a str,
     number: u64,
+    /// `None` for the submission box, which is not a command to acknowledge.
+    comment_external_id: Option<&'a str>,
     author: &'a ScmUser,
     merge: Merge,
 }
@@ -893,6 +925,7 @@ async fn request_submission(
         direct: command.merge.direct,
         queue: command.merge.queue.clone(),
         label: None,
+        comment_id: command.comment_external_id.map(str::to_owned),
     };
     let connection = (delivery.instance, delivery.connection);
     let job = submit(delivery.org_id, connection, &delivery.delivery_id, &request);
