@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -11,15 +10,11 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::Role;
-
-/// The body of the probes: only the identity of the binary and its roles
-/// (`docs/SECURITY.md`).
+/// The body of the probes: only the identity of the binary (`docs/SECURITY.md`).
 #[derive(Clone, Serialize)]
 struct Identity {
     name: &'static str,
     version: &'static str,
-    roles: BTreeSet<Role>,
 }
 
 const READY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -35,14 +30,12 @@ struct Probes {
 /// [`READY_TIMEOUT`].
 pub async fn serve(
     listener: TcpListener,
-    roles: BTreeSet<Role>,
     pool: PgPool,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
     let identity = Identity {
-        name: env!("CARGO_PKG_NAME"),
+        name: env!("CARGO_BIN_NAME"),
         version: env!("CARGO_PKG_VERSION"),
-        roles,
     };
     let app = Router::new()
         .route("/healthz", get(healthz))

@@ -3,10 +3,9 @@
 ## Installation target
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
-`cihub-server` binary, which by default runs the four roles (`web`, `scheduler`, `worker`, `notifier`) in one
-process; `CIHUB_ROLES` selects a subset of them to give each role its own processes
-(`docs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `docs/GITHUB.md`
-(`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
+`cihub` binary (`DECISIONS.md` D168); `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
+`notifier`) in one process; a deployment scales by identical replicas (`docs/ARCHITECTURE.md`, "Scaling",
+`DECISIONS.md` D170). The GitHub App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
 
 ## Development
 
@@ -19,8 +18,8 @@ a change to its command applies without erasing the data. These values are for d
 ```sh
 mise run db            # Postgres, then postgres-setup
 mise run db-reset      # erases the data, then mise run db (after a migration is rewritten)
-mise run migrate       # Postgres, then cihub-server migrate
-mise run dev           # migrate, then cihub-server with the four roles and pretty logs
+mise run migrate       # Postgres, then cihub server migrate
+mise run dev           # migrate, then cihub server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
 ```
 
@@ -41,24 +40,59 @@ of the App points to a tunnel that leads to port 8080.
 
 `mise tasks` lists the project tasks and their description.
 
-## Server variables
+## Server configuration
 
-`cihub-server` reads its configuration from `CIHUB_*` variables (`DECISIONS.md` D31). An invalid value stops the
-process at startup.
+`cihub server` reads its configuration from a YAML file named by `--config <file>`, and from the `CIHUB_*`
+variables (`DECISIONS.md` D31, D168). Without `--config`, it reads no file: a file forgotten in `/etc` never
+changes the behavior. The documentation names the file `server.yaml`, never `cihub.yaml`, which would look like
+`.cihub.yaml`, the configuration of a repository (`docs/CONFIGURATION.md`).
 
-| Variable              | Default                             | Role                                                                        |
-| --------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `CIHUB_ROLES`         | `web,scheduler,worker,notifier`     | Roles of the process, separated by commas (`DECISIONS.md` D8)                  |
-| `CIHUB_DATABASE_URL`  | none, required                      | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
-| `CIHUB_INTERNAL_ADDR` | `127.0.0.1:8081`                    | Address of `/healthz` and `/readyz`, not to be exposed (`docs/SECURITY.md`) |
-| `CIHUB_HTTP_ADDR`     | `0.0.0.0:8080`                      | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API (`DECISIONS.md` D82, D83) |
-| `CIHUB_LOG`           | `info`                              | Log filter (`docs/OBSERVABILITY.md`)                                        |
-| `CIHUB_LOG_FORMAT`    | `json`                              | `json` or `pretty` (`docs/OBSERVABILITY.md`)                                |
-| `CIHUB_GITHUB_URL`    | `https://github.com`                | github.com or the address of a GitHub Enterprise Server (`DECISIONS.md` D79)   |
-| `CIHUB_GITHUB_APP_ID` | none, required for the server       | Identifier of the GitHub App; `cihub-server migrate` does not need it (`DECISIONS.md` D92) |
-| `CIHUB_GITHUB_PRIVATE_KEY` | none                           | PEM private key of the App, secret; required with `CIHUB_GITHUB_APP_ID`, or `CIHUB_GITHUB_PRIVATE_KEY_FILE` |
-| `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                      | File that contains the private key, instead of `CIHUB_GITHUB_PRIVATE_KEY` |
-| `CIHUB_GITHUB_WEBHOOK_SECRET` | none                        | Secret that signs the webhooks of the App; required with `CIHUB_GITHUB_APP_ID` |
+The variable of a key is `CIHUB_` followed by its path in capitals, with `_` as separator. A variable wins over
+the file, the file over the default. An unknown key, a wrong type or an invalid value stops the process at
+startup, with a message that names the key and the file, or the variable.
+
+| Key                       | Variable                        | Default              | Role                                                                        |
+| ------------------------- | ------------------------------- | -------------------- | --------------------------------------------------------------------------- |
+| `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
+| `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`docs/SECURITY.md`) |
+| `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API (`DECISIONS.md` D82, D83) |
+| `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`docs/OBSERVABILITY.md`)                                        |
+| `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`docs/OBSERVABILITY.md`)                                |
+| `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server (`DECISIONS.md` D79) |
+| `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub server migrate` does not need it (`DECISIONS.md` D92) |
+| `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
+| `github.private_key_file` | `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                 | File that contains the private key, instead of `github.private_key`         |
+| `github.webhook_secret`   | `CIHUB_GITHUB_WEBHOOK_SECRET`   | none                 | Secret that signs the webhooks of the App; required with `github.app_id`   |
+
+```yaml
+# /etc/cihub/server.yaml
+database:
+  url: postgres://cihub:…@db/cihub
+http:
+  addr: 0.0.0.0:8080
+internal:
+  addr: 127.0.0.1:8081
+log:
+  filter: info
+  format: json
+github:
+  url: https://github.com
+  app_id: 123456
+  private_key_file: /run/secrets/app.pem
+  webhook_secret: …
+```
+
+One file serves every replica. On Kubernetes, a ConfigMap carries the
+file without its secrets, and a Secret gives `CIHUB_DATABASE_URL` and `CIHUB_GITHUB_WEBHOOK_SECRET`. A file that
+carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`docs/SECURITY.md`).
+
+```sh
+cihub server migrate --config /etc/cihub/server.yaml
+cihub server start --config /etc/cihub/server.yaml    # the four roles, as many replicas as needed
+```
+
+`cihub server` alone shows the help of the group: a typo never starts a server. `cihub server start` takes no
+argument, and refuses one.
 
 In a container, `CIHUB_INTERNAL_ADDR` must listen on `0.0.0.0` so that the probes reach it. `/healthz`
 answers `200` as long as the process runs; `/readyz` answers `503` when Postgres does not answer within 2 s.
@@ -68,7 +102,9 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 `Dockerfile`, at the root, builds the `cihub-server` image in two stages: compilation on
 `rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
 `gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
-comment. The binary is `/usr/local/bin/cihub-server`, the project license is in `/usr/share/doc/cihub/`.
+comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
+image starts the four roles, and an argument replaces it (`server migrate`). The project
+license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
 probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root certificates of the system, which
 the runtime image provides: the binary does not embed a list of certificates (`DECISIONS.md` D81). The
@@ -87,7 +123,7 @@ native runner and pushes it by its digest; a last job joins the two digests in a
 | ---------------- | ------------------------------------------------------------------------------------------ |
 | `postgres`       | Postgres 17, with a data volume; no port published on the host                             |
 | `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start (D38, D52) |
-| `cihub-migrate`  | One-shot: `cihub-server migrate` (D14)                                                     |
+| `cihub-migrate`  | One-shot: `cihub server migrate` (D14)                                                     |
 | `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
 
 The values come from `deploy/.env`, to be created from `deploy/.env.example`: the Postgres passwords,
@@ -98,7 +134,7 @@ the host (`docs/SECURITY.md`). The complete procedure is in `README.md`.
 
 ```sh
 docker compose -f deploy/compose.yaml up -d
-docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
 ```
 
 ## Bootstrap an organization
@@ -107,10 +143,10 @@ After the App is installed on an account, a command links the installation to a 
 the dashboard (`DECISIONS.md` D154, D155):
 
 ```sh
-cihub-server admin bootstrap --installation <identifier of the installation>
+cihub server bootstrap --installation <identifier of the installation>
 ```
 
-It requires the variables of the server and of the GitHub App, and an up-to-date database. It creates the
+It requires the configuration of the server and of the GitHub App, and an up-to-date database. It creates the
 organization (its name is the login of the account), enables the merge queue, requests the read of the
 repositories of the installation and shows once an API token of the organization with all the scopes. The
 identifier of the installation is at the end of the URL of the installation page (*Settings → GitHub Apps →
@@ -121,13 +157,13 @@ serves to recover an organization without a token.
 
 Migrations are explicit (`DECISIONS.md` D14):
 
-- `cihub-server migrate` applies the embedded migrations that are missing, then stops.
-- At startup, `cihub-server` applies nothing: it stops if an embedded migration is missing in the database. A
+- `cihub server migrate` applies the embedded migrations that are missing, creates the partitions, then stops.
+- At startup, `cihub server start` applies nothing: it stops if an embedded migration is missing in the database. A
   migration in the database that the binary does not know comes from a newer version and does not prevent startup.
 - A published migration stays backward compatible for one version, so that old and new processes
   coexist during a deployment.
 
-| Environment                     | What runs `cihub-server migrate`                       | When                                     |
+| Environment                     | What runs `cihub server migrate`                       | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
 | Development                     | `mise run migrate`                                     | By hand                                  |
 | Installation `docker compose`   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |

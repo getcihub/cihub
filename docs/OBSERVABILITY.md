@@ -12,19 +12,19 @@ Each process emits OpenTelemetry traces, Prometheus metrics and structured logs 
 
 ## Logs
 
-The logs use `tracing` and `tracing-subscriber` (`DECISIONS.md` D13). Only `cihub-server` (and the CLI for its
-own messages) installs the subscriber, through `cihub-telemetry` (`DECISIONS.md` D34); the library crates write with the `tracing` macros
+The logs use `tracing` and `tracing-subscriber` (`DECISIONS.md` D13). Only `cihub server` installs the
+subscriber, through `cihub-telemetry` (`DECISIONS.md` D34); the library crates write with the `tracing` macros
 (`info!`, `warn!`...) and open spans. The pure crates write no logs: the caller writes their
 decisions.
 
 ### Settings
 
-| Variable            | Default | Role                                                                                                                             |
-| ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `CIHUB_LOG`         | `info`  | Level filter, global or per crate, in the `EnvFilter` syntax: `info,cihub_github=debug` puts a single crate in `debug`          |
-| `CIHUB_LOG_FORMAT`  | `json`  | `json` (one JSON line per record, for the log storage) or `pretty` (one colored text line, for a terminal)                      |
+| Key          | Variable            | Default | Role                                                                                                                             |
+| ------------ | ------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `log.filter` | `CIHUB_LOG_FILTER`  | `info`  | Level filter, global or per crate, in the `EnvFilter` syntax: `info,cihub_github=debug` puts a single crate in `debug`          |
+| `log.format` | `CIHUB_LOG_FORMAT`  | `json`  | `json` (one JSON line per record, for the log storage) or `pretty` (one colored text line, for a terminal)                      |
 
-An invalid value stops the process at startup. `mise run dev` uses `pretty`.
+The keys are those of the configuration file (`docs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
 
 ### Format
 

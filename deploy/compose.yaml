@@ -5,7 +5,7 @@
 # Usage, from the root of the repository:
 #   cp deploy/.env.example deploy/.env   # then fill it in
 #   docker compose -f deploy/compose.yaml up -d
-#   docker compose -f deploy/compose.yaml run --rm cihub-server admin bootstrap --installation <id>
+#   docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
 
 name: cihub
 
@@ -17,7 +17,7 @@ x-cihub: &cihub
     CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:?set CIHUB_GITHUB_APP_ID in deploy/.env}
     CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
     CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:?set CIHUB_GITHUB_WEBHOOK_SECRET in deploy/.env}
-    CIHUB_LOG: ${CIHUB_LOG:-info}
+    CIHUB_LOG_FILTER: ${CIHUB_LOG_FILTER:-info}
   volumes:
     # The user of the image (65532) must be able to read this file.
     - ${CIHUB_GITHUB_PRIVATE_KEY_PATH:?set CIHUB_GITHUB_PRIVATE_KEY_PATH in deploy/.env}:/run/secrets/github-app.pem:ro
@@ -64,7 +64,7 @@ services:
 
   cihub-migrate:
     <<: *cihub
-    command: ["migrate"]
+    command: ["server", "migrate"]
     depends_on:
       postgres-setup:
         condition: service_completed_successfully
