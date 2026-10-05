@@ -141,22 +141,20 @@ pub(crate) async fn run_pr_command(
     let repo = load_repo(pool, request.repo_id).await?;
     let number = request.pr_number;
     let name = request.command.name();
-    let refuse = |text: String| reply(scm, &repo.repo, number, text, class);
+    let refuse = |text: String| reply(scm, &repo.repo, number, name, text, class);
     let author = ScmUser::from(&request.requested_by);
     if scm.permission(&repo.repo, &author, class).await? < Permission::Write {
         info!(pr_number = number, "command refused: permission");
-        return refuse(format!(
-            "`{name}` needs the write permission on the repository."
-        ))
-        .await;
+        return refuse("the command needs the write permission on the repository.".to_owned())
+            .await;
     }
     let Some((queue_id, item_id, state)) = live_item(pool, repo.repo_id, number).await? else {
-        return refuse(format!("`{name}`: this PR has no item in a queue.")).await;
+        return refuse("this PR has no item in a queue.".to_owned()).await;
     };
     let target = load_target(pool, queue_id).await?;
     if !target.settings()?.commands_enabled.value {
         return refuse(format!(
-            "`{name}`: the commands are off for the queue `{}`.",
+            "the commands are off for the queue `{}`.",
             target.name
         ))
         .await;
@@ -174,7 +172,7 @@ pub(crate) async fn run_pr_command(
         }
         ItemCommand::Restart => {
             return refuse(format!(
-                "`{name}`: only an item in test can restart; this one is `{state}`."
+                "only a PR under test can restart. This PR is `{state}`."
             ))
             .await;
         }
