@@ -1,0 +1,10 @@
+version: 1
+queues:
+  - name: main
+    branch: main
+    queue_conditions:
+      - -draft
+      - -label = do-not-merge
+      - check-success = Build Success
+    merge_conditions:
+      - check-success = Build Success
