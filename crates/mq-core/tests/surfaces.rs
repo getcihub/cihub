@@ -33,7 +33,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
         ]
     );
     assert_eq!(last[0].head_sha, head(1, 0));
-    assert!(last[0].test_branch.is_some());
+    assert!(last[0].test_sha.is_some());
     assert!(last[0].failing_checks.is_empty());
 
     // The budget retries, then the item fails: it leaves the snapshot, and
