@@ -21,8 +21,8 @@ pub struct Surface {
     pub position: Option<usize>,
     /// The PRs that the test of the item merges before it.
     pub predecessors: Vec<u64>,
-    /// The test branch of the last run of its group.
-    pub test_branch: Option<String>,
+    /// The commit that the last run of its group tests, once assembled.
+    pub test_sha: Option<String>,
     /// The draft PR of the last run of its group, in draft PR mode.
     pub draft_pr_number: Option<u64>,
     /// The required statuses that failed the last run of its group.
@@ -58,7 +58,7 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
         reason: item.state_reason,
         position,
         predecessors,
-        test_branch: run.map(|r| r.test_branch.clone()),
+        test_sha: run.and_then(|r| r.test_sha.clone()),
         draft_pr_number: run.and_then(|r| r.draft_pr_number),
         failing_checks: run
             .map(|r| r.failure_causing_statuses.clone())

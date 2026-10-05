@@ -2321,7 +2321,9 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         testing[0].starts_with("🧪 **Testing** · position 1 in the queue for `main`"),
         "{testing:?}"
     );
-    assert!(testing[0].contains(" in `cihub-merge/"), "{testing:?}");
+    // The draft PR of the test, never the name of its branch (`DECISIONS.md` D174).
+    assert!(testing[0].contains(" in #"), "{testing:?}");
+    assert!(!testing[0].contains("cihub-merge/"), "{testing:?}");
     assert_eq!(status(second_head).await, Some(None), "pending");
     assert_eq!(labels(second).await, ["cihub:testing"]);
     q.stop().await;

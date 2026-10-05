@@ -209,19 +209,19 @@ fn comment(surface: &Surface, target_branch: &str, commands: bool) -> String {
             .iter()
             .map(|n| format!("#{n}"))
             .collect();
-        match (prs.is_empty(), &surface.test_branch) {
-            (false, Some(branch)) => {
-                details.push(format!(
-                    "Tested on top of {} in `{branch}`.",
-                    prs.join(", ")
-                ));
+        // Where the CI of the test shows: its draft PR, else its commit;
+        // GitHub links both.
+        let test = surface
+            .draft_pr_number
+            .map(|number| format!("#{number}"))
+            .or_else(|| surface.test_sha.clone());
+        match (prs.is_empty(), test) {
+            (false, Some(test)) => {
+                details.push(format!("Tested on top of {} in {test}.", prs.join(", ")));
             }
             (false, None) => details.push(format!("Tested on top of {}.", prs.join(", "))),
-            (true, Some(branch)) => details.push(format!("Tested in `{branch}`.")),
+            (true, Some(test)) => details.push(format!("Tested in {test}.")),
             (true, None) => {}
-        }
-        if let Some(number) = surface.draft_pr_number {
-            details.push(format!("Draft PR of the test: #{number}"));
         }
     }
     if !details.is_empty() {
@@ -571,7 +571,7 @@ mod tests {
             reason: Reason::Submitted,
             position: Some(2),
             predecessors: vec![5],
-            test_branch: Some("cihub-merge/main/run".into()),
+            test_sha: Some("def456".into()),
             draft_pr_number: None,
             failing_checks: Vec::new(),
             block_reasons: Vec::new(),
@@ -633,27 +633,26 @@ mod tests {
             (
                 surface(ItemState::Pending),
                 "🕓 **Queued** · position 2 in the queue for `main`\n\n\
-                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 Tested on top of #5 in def456.\n\n\
                  <sub>`/cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 testing,
                 "🧪 **Testing** · position 2 in the queue for `main`\n\n\
-                 Tested on top of #5 in `cihub-merge/main/run`.\n\
-                 Draft PR of the test: #42\n\n\
+                 Tested on top of #5 in #42.\n\n\
                  <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 retrying,
                 "⚠️ **Tests failed** · waiting for the PRs ahead before it fails\n\n\
                  Failing checks: `build`\n\
-                 Tested on top of #5 in `cihub-merge/main/run`.\n\n\
+                 Tested on top of #5 in def456.\n\n\
                  <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 surface(ItemState::TestsPassed),
                 "🚀 **Tests passed** · merging into `main`\n\n\
-                 Tested on top of #5 in `cihub-merge/main/run`.\n",
+                 Tested on top of #5 in def456.\n",
             ),
             (
                 surface(ItemState::Merged),
