@@ -21,6 +21,10 @@ The public API is a resource-oriented REST under `/api/v1`, on the address of th
 | GET, POST, DELETE  | `/orgs/{org}/webhooks`                                   | Manage the outgoing webhook endpoints, test a delivery                                                                                                                                                                                         |
 | GET                | `/orgs/{org}/audit`                                      | Setting changes and admin actions                                                                                                                                                                                                              |
 
+An item (`Item` in `cihub-api-types`) carries `state_reason`, the code of the closed vocabulary, and
+`state_description`, its sentence for a person (`Reason::describe`, `docs/DOMAIN.md`). A client shows the
+sentence and decides on the code: the sentence can change without notice.
+
 **`GET /test-runs/{run_id}`** returns a JSON object whose fields are the columns of `test_runs` and of
 `check_observations` (`docs/DATA_MODEL.md`), with the names of the closed vocabulary: `id`, `queue_id`, `group_id`,
 `attempt`, `status`, `status_reason`, `test_branch`, `test_sha`, `base_sha`, `draft_pr_number`,

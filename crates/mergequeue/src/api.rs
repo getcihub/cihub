@@ -16,7 +16,7 @@ use cihub_api_types::{
 };
 use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
-    RepoId, RunId, SubmittedVia,
+    Reason, RepoId, RunId, SubmittedVia,
 };
 use cihub_platform::{
     ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, ModuleApi, enqueue_job, mark_dirty,
@@ -402,10 +402,12 @@ const ITEM_COLUMNS: &str = "id, queue_id, pr_number, pr_head_sha, state::text, s
 
 impl ItemRow {
     fn into_item(self) -> Result<Item, ApiError> {
+        let state_reason: Reason = self.state_reason.parse()?;
         Ok(Item {
             pr_number: u64::try_from(self.pr_number)?,
             state: self.state.parse()?,
-            state_reason: self.state_reason.parse()?,
+            state_reason,
+            state_description: state_reason.describe().to_owned(),
             priority: Priority(u8::try_from(self.priority_value)?),
             block_reasons: serde_json::from_value(self.block_reasons)?,
             id: self.id,

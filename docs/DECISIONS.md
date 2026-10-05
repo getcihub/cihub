@@ -648,6 +648,14 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   reception of the command; a refused command keeps only its comment (D157). A separate evolution, outside the
   plan of a lot.
 
+**October 4, 2026, validated by Nicolas Lecoy.**
+
+- **D167** Each `Reason` has a sentence for a person, `Reason::describe()` in `cihub-domain`: in English, a free
+  rendering that can change without a decision; the code (`as_str`) stays the stable contract. The status and
+  the comment of the PR show the sentence instead of the code, with the detail that the surface already has
+  (failing checks). The API `Item` gains `state_description`, computed from the same table, and the CLI shows
+  it.
+
 ## Open questions
 
 Each question carries an identifier; `docs/LOTS.md` indicates the lot that needs the answer. A settled question

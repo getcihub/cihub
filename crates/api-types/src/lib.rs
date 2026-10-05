@@ -148,6 +148,9 @@ pub struct Item {
     pub state: ItemState,
     #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub state_reason: Reason,
+    /// The sentence of `state_reason`, in English, for a person; it can
+    /// change without notice, unlike `state_reason`.
+    pub state_description: String,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub state_changed_at: OffsetDateTime,
