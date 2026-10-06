@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "neverConnectToCloud": true,
+  "plugins": [
+    {
+      "plugin": "./tools/nx/cargo.js",
+      "options": {
+        "inputs": [".github/workflows/ci.yml", "clippy.toml", "deny.toml"]
+      }
+    }
+  ],
+  "analytics": false
+}

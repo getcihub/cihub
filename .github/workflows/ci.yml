@@ -22,10 +22,39 @@ permissions:
   contents: read
 
 jobs:
-  rust-lint:
+  affected:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Affected
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      crates: ${{ steps.affected.outputs.crates }}
+      core: ${{ steps.affected.outputs.core }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          install_args: --locked
+
+      - name: Select the affected crates
+        id: affected
+        run: mise run --quiet affected >> "$GITHUB_OUTPUT"
+        env:
+          NX_BASE: >-
+            ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.merge_group.base_sha }}
+
+  rust-lint:
+    needs: affected
+    if: ${{ needs.affected.outputs.crates != '' }}
     name: Rust Lint
     runs-on: ubuntu-26.04
     permissions:
@@ -43,11 +72,12 @@ jobs:
 
       - name: Run linters
         run: mise run lint
+        env:
+          CRATES: ${{ needs.affected.outputs.crates }}
 
   rust-test:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: affected
+    if: ${{ needs.affected.outputs.crates != '' }}
     name: Rust Test
     runs-on: ubuntu-26.04
     permissions:
@@ -65,11 +95,12 @@ jobs:
 
       - name: Run unit tests
         run: mise run test
+        env:
+          CRATES: ${{ needs.affected.outputs.crates }}
 
   rust-test-integration:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: affected
+    if: ${{ needs.affected.outputs.crates != '' }}
     name: Rust Integration Test
     runs-on: ubuntu-26.04
     permissions:
@@ -87,11 +118,12 @@ jobs:
 
       - name: Run tests against Postgres
         run: mise run test-integration
+        env:
+          CRATES: ${{ needs.affected.outputs.crates }}
 
   rust-cover:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    needs: affected
+    if: ${{ needs.affected.outputs.core == 'true' }}
     name: Rust Coverage
     runs-on: ubuntu-26.04
     permissions:
@@ -138,6 +170,7 @@ jobs:
     if: ${{ !cancelled() }}
     name: Build Success
     needs:
+      - affected
       - rust-lint
       - rust-test
       - rust-test-integration
@@ -146,8 +179,6 @@ jobs:
     runs-on: ubuntu-26.04
     permissions: {}
     steps:
-      # cancelled counts as failed: a required job that never reached a
-      # verdict must not clear the merge gate.
       - name: Any jobs failed?
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1

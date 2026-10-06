@@ -1,0 +1,2 @@
+# Tracked although .gitignore excludes *.pem: Nx must see its changes.
+!crates/github/tests/test-only-key.pem

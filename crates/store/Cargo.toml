@@ -24,3 +24,7 @@ ulid.workspace = true
 
 [lints]
 workspace = true
+
+# sqlx::migrate! embeds the migrations at build time.
+[package.metadata.nx]
+inputs = ["migrations/**"]

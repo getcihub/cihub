@@ -1,0 +1,8 @@
+{
+  "name": "cihub",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "devDependencies": {
+    "nx": "23.2.1"
+  }
+}

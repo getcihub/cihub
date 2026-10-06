@@ -172,8 +172,8 @@ Migrations are explicit (`DECISIONS.md` D14):
 ## Tools
 
 `mise install` installs the whole suite (`DECISIONS.md` D17): Rust (version pinned in `mise.toml`, with `clippy`,
-`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`
-and `lefthook`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
+`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
+`lefthook`, Node and pnpm, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
 commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
@@ -181,13 +181,43 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 `.github/workflows/ci.yml` follows the organization of `home-operations/external-dns-unifi-webhook` (`DECISIONS.md` D18):
 
-| Job             | Task                      |
-| --------------- | ------------------------- |
-| `Rust Lint`     | `mise run lint`           |
-| `Rust Test`     | `mise run test`           |
-| `Rust Coverage` | `mise run cover`          |
-| `Workflow Lint` | `mise run lint-workflows` |
-| `Build Success` | joins the jobs above      |
+| Job                     | Task                                | Runs when                         |
+| ----------------------- | ----------------------------------- | --------------------------------- |
+| `Affected`              | `mise run affected`                 | always                            |
+| `Rust Lint`             | `mise run lint`                     | a crate is affected               |
+| `Rust Test`             | `mise run test`                     | a crate is affected               |
+| `Rust Integration Test` | `mise run test-integration`         | a crate is affected               |
+| `Rust Coverage`         | `mise run cover`                    | a crate tagged `core` is affected |
+| `Workflow Lint`         | `mise run lint-workflows`           | always                            |
+| `Build Success`         | joins the jobs above                | always                            |
+
+`Affected` selects the crates that a change reaches. Nx (`nx.json`, installed by pnpm from `package.json`)
+builds the graph of the crates from `cargo metadata` through the local plugin `tools/nx/cargo.js`: a crate is
+affected when one of its files changed, or a file of a crate it depends on, dev-dependencies included.
+`[package.metadata.nx]` in a `Cargo.toml` adds tags (`core` for the pure crates) and the files outside the crate
+that its build reads (`migrations/**` for `cihub-store`). The files of the whole workspace touch the crates as
+follows:
+
+| File                           | Touched crates                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| `Cargo.lock`                   | those whose set of reached packages (version, source, checksum) changed         |
+| `[workspace.dependencies]`     | those that use the dependency whose line changed                                |
+| rest of the root `Cargo.toml`  | all (lints, version, profiles)                                                  |
+| `mise.toml`                    | all, except a change to a tool outside Rust (`node`, `pnpm`, `actionlint`, …)   |
+| `clippy.toml`, `deny.toml`, `ci.yml` | all (the `inputs` of the plugin in `nx.json`)                             |
+| `mise.lock`, `package.json`, `pnpm-lock.yaml`, `tools/nx/` | none                                                |
+
+Nx reads the lock files of JavaScript package by package, not `Cargo.lock`: `tools/nx/affected.js` reads the
+first three rows, then Nx adds the crates that depend on the touched ones. The base of the comparison,
+`NX_BASE`, is the target branch for a PR and the base of the group for `merge_group`. A push to `main` and
+`workflow_dispatch` have none and check every crate: an edge missing from the graph shows at the latest on
+`main`, after the merge.
+
+`mise run affected` prints `crates=-p cihub-domain -p …` and `core=true|false`. `lint`, `test` and
+`test-integration` read the selection in `CRATES`, and cover the whole workspace without it. Nx runs no cargo
+task: one cargo invocation over the selected crates resolves the features once, where one invocation per crate
+rebuilds the shared dependencies (three times slower from a cold `target/`). Locally, `NX_BASE=main mise run
+affected` shows what the CI of a branch will check.
 
 `Build Success` is the required status of the `main` branch: it fails if a job failed or was cancelled. The CI
 runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on

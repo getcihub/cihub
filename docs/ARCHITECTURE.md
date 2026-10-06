@@ -59,6 +59,9 @@ clippy.toml              lint settings, including the ban on the clock and rando
 deny.toml                licenses, security advisories, dependency rules between crates
 mise.toml                Rust, tools and tasks (mise tasks)
 mise.lock                versions and checksums of the tools, per platform
+package.json, pnpm-lock.yaml, pnpm-workspace.yaml   Nx, installed by pnpm
+nx.json, .nxignore       graph of the projects, for the affected crates of the CI (docs/DEPLOYMENT.md)
+tools/nx/                Nx plugin that reads the crates from cargo metadata, and the affected selection
 compose.yaml             development Postgres
 release-please-config.json, .release-please-manifest.json   versions and CHANGELOG.md (DECISIONS.md D19)
 .renovaterc.json5        dependency updates (DECISIONS.md D21)

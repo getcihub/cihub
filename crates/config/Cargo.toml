@@ -16,3 +16,6 @@ serde-saphyr.workspace = true
 
 [lints]
 workspace = true
+
+[package.metadata.nx]
+tags = ["core"]

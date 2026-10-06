@@ -6,3 +6,5 @@ mise.local.toml
 .env
 .env.*
 deploy/
+node_modules/
+.nx/
