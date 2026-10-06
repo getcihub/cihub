@@ -55,4 +55,4 @@ The command line is the `cihub` binary (crate `cihub-cli`, `DECISIONS.md` D161, 
 
 Every `cihub queue` command takes `--repo <owner/name>`, else the repository of the `origin` remote of git, and `--queue <name>`, else the only queue of the repository. With two or more queues and no `--queue`, the command fails, lists the names and does nothing; with none, it fails and says that the first `/cihub merge` on a PR of the default branch creates the queue. `cihub queue targets upload` arrives at Lot 13.
 
-The internal interfaces are not RPC: the processes share Postgres, so the "internal API" consists of the `jobs` and `outbox` tables and the `NOTIFY` channels `cihub_queue`, `cihub_jobs`, `cihub_outbox`.
+The internal interfaces are not RPC: the processes share Postgres, so the "internal API" consists of the `jobs` table, the `events` log (`DECISIONS.md` D213) and the `NOTIFY` channels `cihub_queue`, `cihub_jobs`.

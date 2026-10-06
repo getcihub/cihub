@@ -25,7 +25,7 @@ enum Role {
     Scheduler,
     /// The execution of the jobs of the modules.
     Worker,
-    /// The delivery of the outbox.
+    /// The delivery of the events of the log (`DECISIONS.md` D213).
     Notifier,
 }
 
