@@ -3227,6 +3227,8 @@ const CHAOS_PRS: u64 = 5;
 /// calls at random, and webhooks lost, sent twice and reordered.
 struct Chaos {
     seed: u64,
+    /// The `.cihub.yaml` of the repository; `None` keeps the defaults.
+    config: Option<&'static str>,
     pool: PgPool,
     sim: Arc<Sim>,
     clock: TestClock,
@@ -3265,9 +3267,10 @@ impl Chaos {
         }
     }
 
-    async fn new(pool: PgPool, seed: u64, clock: TestClock) -> Self {
+    async fn new(pool: PgPool, seed: u64, clock: TestClock, config: Option<&'static str>) -> Self {
         let mut chaos = Self {
             seed,
+            config,
             pool,
             sim: Arc::new(Sim::new()),
             clock,
@@ -3516,10 +3519,12 @@ impl Chaos {
         .unwrap()
     }
 
-    async fn runs_in_progress(&self) -> Vec<(String, Vec<i64>)> {
+    /// The test SHA of each run in progress, and the heads that it tests: its
+    /// predecessors, then its members.
+    async fn runs_in_progress(&self) -> Vec<(String, Vec<String>)> {
         let mut tx = begin_system(&self.pool).await.unwrap();
         sqlx::query_as(
-            "SELECT test_sha, tested_pr_numbers FROM test_runs
+            "SELECT test_sha, head_shas FROM test_runs
              WHERE queue_id = $1 AND status = 'in_progress'",
         )
         .bind(self.queue().to_string())
@@ -3533,7 +3538,9 @@ impl Chaos {
     async fn play(&mut self) {
         let repo = self.repo();
         let sim = self.sim.clone();
-        let root = sim.add_repo(&repo, "main", &[("a.txt", "a")]);
+        let mut files = vec![("a.txt", "a")];
+        files.extend(self.config.map(|config| (".cihub.yaml", config)));
+        let root = sim.add_repo(&repo, "main", &files);
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
             up_to_date: false,
@@ -3542,6 +3549,7 @@ impl Chaos {
         sim.set_permission(&repo, &alice(), Permission::Write)
             .unwrap();
         let mut red = BTreeSet::new();
+        let mut red_heads = BTreeSet::new();
         for n in 1..=CHAOS_PRS {
             let branch = format!("pr-{n}");
             let path = format!("f{n}.txt");
@@ -3552,6 +3560,7 @@ impl Chaos {
                 .unwrap();
             if self.rng.chance(25) {
                 red.insert(i64::try_from(number).unwrap());
+                red_heads.insert(head.clone());
             }
             sim.comment(&repo, number, &alice(), "/cihub merge")
                 .unwrap();
@@ -3587,11 +3596,13 @@ impl Chaos {
                 break;
             }
             let mut new = 0;
-            for (test_sha, prs) in self.runs_in_progress().await {
+            for (test_sha, heads) in self.runs_in_progress().await {
                 if !reported.insert(test_sha.clone()) {
                     continue;
                 }
-                let passed = !prs.iter().any(|pr| red.contains(pr));
+                // A red PR fails every run that tests its code, as a member
+                // or as a predecessor.
+                let passed = !heads.iter().any(|head| red_heads.contains(head));
                 sim.report_check(&repo, &test_sha, check(REQUIRED, passed))
                     .unwrap();
                 new += 1;
@@ -3673,9 +3684,35 @@ impl Chaos {
 /// twice and reordered, and processes killed at random, each green PR is
 /// merged exactly once, in the order of the queue, and each red PR fails with
 /// a reason. `CIHUB_SIM_SEEDS` gives the number of seeds (10 by default;
-/// `mise run sim` plays 1 000).
+/// `mise run sim` plays 1 000, for this test and the `batched` one).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn fault_injection(pool: PgPool) {
+    play_chaos(pool, None).await;
+}
+
+/// The same test with the `batched` strategy (lot 12): batches, bisections,
+/// failure depth and optimistic merge under the same faults.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn fault_injection_batched(pool: PgPool) {
+    play_chaos(
+        pool.clone(),
+        Some("version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n"),
+    )
+    .await;
+    // The file applied: the seeds formed batches and bisected some.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let kinds: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT kind::text FROM test_groups ORDER BY 1")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert!(
+        kinds.contains(&"batch".to_owned()) && kinds.contains(&"bisection".to_owned()),
+        "{kinds:?}"
+    );
+}
+
+async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
     let seeds: u64 = std::env::var("CIHUB_SIM_SEEDS")
         .ok()
         .and_then(|seeds| seeds.parse().ok())
@@ -3697,7 +3734,7 @@ async fn fault_injection(pool: PgPool) {
     tx.commit().await.unwrap();
     let clock = TestClock::new();
     for seed in 0..seeds {
-        let mut chaos = Chaos::new(pool.clone(), seed, clock.clone()).await;
+        let mut chaos = Chaos::new(pool.clone(), seed, clock.clone(), config).await;
         chaos.play().await;
     }
 }
