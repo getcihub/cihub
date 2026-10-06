@@ -520,6 +520,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     verified_by_run_id: None,
                     merged_sha: None,
                     submitted_at: event.occurred_at,
+                    admitted_at: None,
                     direct_merge_tried: false,
                 },
             );
@@ -546,6 +547,9 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 });
             }
             check_transition(Some(*from), *to, *reason)?;
+            if *from == ItemState::NotReady && *to == ItemState::Pending {
+                item.admitted_at.get_or_insert(event.occurred_at);
+            }
             item.state = *to;
             item.state_reason = *reason;
             if position.is_some() {
@@ -821,6 +825,18 @@ fn evict(snapshot: &mut Snapshot) {
         .filter(|g| {
             g.state.is_terminal()
                 && snapshot.live_run(g.id).is_none()
+                // An item proved by a successor merges with its run.
+                && !snapshot.items.values().any(|i| {
+                    !i.state.is_terminal()
+                        && i.verified_by_run_id
+                            .and_then(|r| snapshot.runs.get(&r))
+                            .is_some_and(|r| r.group_id == g.id)
+                })
+                // A bisection reads the result of its halves.
+                && g
+                    .parent_group_id
+                    .and_then(|p| snapshot.groups.get(&p))
+                    .is_none_or(|p| p.state.is_terminal())
                 && !snapshot
                     .items
                     .values()

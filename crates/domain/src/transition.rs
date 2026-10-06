@@ -94,12 +94,7 @@ const START_TEST_RUN: [Reason; 11] = [
     R::StartTestRunDraftPrsNotAllowed,
     R::StartTestRunPermissionsBlockTestBranch,
 ];
-const TESTING_FAILED: [Reason; 12] = concat(&[&START_TEST_RUN, &[R::TestRunFailedByOptimization]]);
-const RUN_FAILED: [Reason; 3] = [
-    R::TestRunRequiredStatusFailed,
-    R::TestRunTimeout,
-    R::TestRunFailedByOptimization,
-];
+const RUN_FAILED: [Reason; 2] = [R::TestRunRequiredStatusFailed, R::TestRunTimeout];
 /// Failure of the merge call of a tested item.
 const MERGE_FAILED: [Reason; 6] = [
     R::MergeRejected,
@@ -119,31 +114,41 @@ const DIRECT_MERGE_FAILED: [Reason; 6] = [
     R::MergeRepeatedServerErrors,
     R::PrUpdatedAtMergeTime,
 ];
-/// Something ahead of the item changed.
-const UPSTREAM_CHANGED: [Reason; 4] = [
+/// A failed run of a group that waits to know who is at fault: a conflict at
+/// the assembly of a group of several PRs is bisected too (`DECISIONS.md`
+/// D218).
+const PENDING_FAILURE: [Reason; 3] = [
+    R::TestRunRequiredStatusFailed,
+    R::TestRunTimeout,
+    R::StartTestRunMergeConflict,
+];
+/// Something that the run of the item tested changed: the target, a
+/// predecessor, or another member of its batch.
+const UPSTREAM_CHANGED: [Reason; 5] = [
     R::ManualPushToTargetBranch,
     R::PrerequisiteMergeItemFailed,
     R::PrerequisiteMergeItemCancelled,
     R::PrerequisiteMergeItemManuallyMerged,
+    R::BatchMemberLeft,
 ];
 const RESTARTED: [Reason; 2] = [R::TestsRestartedByUser, R::TestsRestartedByApiRequest];
-const TESTING_TO_PENDING: [Reason; 7] =
+const TESTING_TO_PENDING: [Reason; 8] =
     concat(&[&UPSTREAM_CHANGED, &RESTARTED, &[R::SkipTheLineInterrupted]]);
-const PENDING_FAILURE_TO_PENDING: [Reason; 9] = concat(&[
+const PENDING_FAILURE_TO_PENDING: [Reason; 10] = concat(&[
     &TESTING_TO_PENDING,
     &[R::BisectionRequired, R::BisectionTestRunPassed],
 ]);
-const TESTS_PASSED_TO_PENDING: [Reason; 5] =
+const TESTS_PASSED_TO_PENDING: [Reason; 6] =
     concat(&[&[R::SkipTheLineInterrupted], &UPSTREAM_CHANGED]);
 /// The reason that the item which causes the give-up receives, other than a
 /// cancellation.
-const GIVEN_UP: [Reason; 17] = concat(&[
+const GIVEN_UP: [Reason; 18] = concat(&[
     &PENDING_FAILURE_TO_PENDING,
     &[R::ManualMerge, R::StartTestRunMergeConflict],
     &MERGE_FAILED,
 ]);
-const DISSOLVED: [Reason; 24] = concat(&[&GIVEN_UP, &CANCELLED]);
-const INTERRUPTED: [Reason; 18] = concat(&[&[R::PassedByOptimization], &GIVEN_UP]);
+const DISSOLVED: [Reason; 25] = concat(&[&GIVEN_UP, &CANCELLED]);
+const INTERRUPTED: [Reason; 19] = concat(&[&[R::PassedByOptimization], &GIVEN_UP]);
 
 impl Lifecycle for ItemState {
     fn allowed_reasons(from: Option<Self>, to: Self) -> &'static [Reason] {
@@ -157,10 +162,8 @@ impl Lifecycle for ItemState {
             (Some(S::Pending), S::Merged) => &[R::MergeGraphDirectMerge, R::ManualMerge],
             (Some(S::Pending), S::Failed) => &DIRECT_MERGE_FAILED,
             (Some(S::Testing), S::TestsPassed) => &[R::TestRunPassed, R::PassedByOptimization],
-            (Some(S::Testing), S::PendingFailure) => {
-                &[R::TestRunRequiredStatusFailed, R::TestRunTimeout]
-            }
-            (Some(S::Testing), S::Failed) => &TESTING_FAILED,
+            (Some(S::Testing), S::PendingFailure) => &PENDING_FAILURE,
+            (Some(S::Testing), S::Failed) => &START_TEST_RUN,
             (Some(S::Testing), S::Pending) => &TESTING_TO_PENDING,
             (Some(S::PendingFailure), S::Pending) => &PENDING_FAILURE_TO_PENDING,
             (Some(S::PendingFailure), S::Testing) => &[R::FailureBudgetRetry],
@@ -185,10 +188,8 @@ impl Lifecycle for GroupState {
         match (from, to) {
             (None, S::Testing) => &[R::TestRunStarted],
             (Some(S::Testing), S::TestsPassed) => &[R::TestRunPassed, R::PassedByOptimization],
-            (Some(S::Testing), S::PendingFailure) => {
-                &[R::TestRunRequiredStatusFailed, R::TestRunTimeout]
-            }
-            (Some(S::Testing), S::Failed) => &TESTING_FAILED,
+            (Some(S::Testing), S::PendingFailure) => &PENDING_FAILURE,
+            (Some(S::Testing), S::Failed) => &START_TEST_RUN,
             (Some(S::PendingFailure), S::Testing) => &[R::FailureBudgetRetry],
             (Some(S::PendingFailure), S::TestsPassed) => &[R::SuccessorTestRunPassed],
             (Some(S::PendingFailure), S::Failed) => &RUN_FAILED,
@@ -296,6 +297,7 @@ mod tests {
         "prerequisite_merge_item_failed",
         "prerequisite_merge_item_cancelled",
         "prerequisite_merge_item_manually_merged",
+        "batch_member_left",
     ];
     const RESTARTED: &[&str] = &["tests_restarted_by_user", "tests_restarted_by_api_request"];
     const MERGE_FAILED: &[&str] = &[
@@ -307,11 +309,7 @@ mod tests {
         "pr_updated_at_merge_time",
     ];
     const BISECTION: &[&str] = &["bisection_required", "bisection_test_run_passed"];
-    const RUN_FAILED: &[&str] = &[
-        "test_run_required_status_failed",
-        "test_run_timeout",
-        "test_run_failed_by_optimization",
-    ];
+    const RUN_FAILED: &[&str] = &["test_run_required_status_failed", "test_run_timeout"];
 
     #[test]
     fn item_table() {
@@ -357,13 +355,13 @@ mod tests {
             (
                 &[Some(S::Testing)],
                 S::PendingFailure,
-                &["test_run_required_status_failed", "test_run_timeout"],
+                &[
+                    "test_run_required_status_failed",
+                    "test_run_timeout",
+                    "start_test_run_merge_conflict",
+                ],
             ),
-            (
-                &[Some(S::Testing)],
-                S::Failed,
-                &["start_test_run_*", "test_run_failed_by_optimization"],
-            ),
+            (&[Some(S::Testing)], S::Failed, &["start_test_run_*"]),
             (&[Some(S::Testing)], S::Pending, UPSTREAM),
             (&[Some(S::Testing)], S::Pending, RESTARTED),
             (
@@ -426,13 +424,13 @@ mod tests {
             (
                 &[Some(S::Testing)],
                 S::PendingFailure,
-                &["test_run_required_status_failed", "test_run_timeout"],
+                &[
+                    "test_run_required_status_failed",
+                    "test_run_timeout",
+                    "start_test_run_merge_conflict",
+                ],
             ),
-            (
-                &[Some(S::Testing)],
-                S::Failed,
-                &["start_test_run_*", "test_run_failed_by_optimization"],
-            ),
+            (&[Some(S::Testing)], S::Failed, &["start_test_run_*"]),
             (
                 &[Some(S::PendingFailure)],
                 S::Testing,

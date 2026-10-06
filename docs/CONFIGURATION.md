@@ -88,7 +88,7 @@ follow. A strategy is a table of default values, with no code in the core:
 | ------------ | ---------- | ---------------------------- | ------------------ | ----------------------- | -------------------- |
 | `sequential` | `single`   | 1 / 1                        | no                 | 0                       | no                   |
 | `pipelined`  | `single`   | 2 / 20                       | no                 | 0                       | no                   |
-| `batched`    | `single`   | 2 / 20                       | yes, at most 8     | 1                       | yes                  |
+| `batched`    | `single`   | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 | `parallel`   | `parallel` | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 
 All strategies keep direct merge disabled (`direct_merge_mode: off`, `DECISIONS.md` D153) and give one

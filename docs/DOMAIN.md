@@ -65,7 +65,7 @@ stateDiagram-v2
   pending --> merged: direct merge on main
   pending --> failed: direct merge failed
   testing --> tests_passed: required checks green, or validated by optimization
-  testing --> pending_failure: one required check red or timeout
+  testing --> pending_failure: one required check red or timeout, or a conflict in a group of several PRs
   testing --> failed: conflict or config error at assembly
   testing --> pending: restarted (upstream change, urgent preemption)
   pending_failure --> pending: the predecessor was the culprit
@@ -100,9 +100,9 @@ The allowed transitions and their reasons are in the code: a single `Reason` enu
 state machine, a table (start state, end state) → allowed reasons (`DECISIONS.md` D6), the
 `Lifecycle` trait and the `check_transition` function.
 
-Families of reasons, to find one's way: admission and test; return to `pending` (upstream change, restart,
-`urgent` preemption, bisection); `tests_passed`; `merged`; `cancelled`; `start_test_run_*` (failure at
-the assembly of the test branch); `test_run_*` (failure or timeout of the run); failure of the merge call
+Families of reasons, to find one's way: admission and test; return to `pending` (upstream change, a member
+of the batch left with `batch_member_left`, restart, `urgent` preemption, bisection); `tests_passed`; `merged`;
+`cancelled`; `start_test_run_*` (failure at the assembly of the test branch); `test_run_*` (failure or timeout of the run); failure of the merge call
 (`merge_rejected`, `direct_merge_rejected`, `merge_rate_limit_exceeded`, `merge_branch_protection_unmet`,
 `merge_already_in_progress`, `merge_repeated_server_errors`, `pr_updated_at_merge_time`); queue reasons,
 including `access_lost` and `access_restored` when CIHub loses or regains its access to the repository.
@@ -125,11 +125,12 @@ Priority (`Priority`): a value from 0 to 255; the smallest goes first. The names
 ## Test group
 
 Nature of a group (`GroupKind`): `single` (one PR), `batch` (a batch), `bisection` (one half of a failed
-batch). A group has its own state, because a split or abandoned group has no items anymore, and the members
+group of several PRs; `parent_group_id` names that group). A group has its own state, because a split or abandoned group has no items anymore, and the members
 of a batch move one by one to `merged`. States (`GroupState`): `testing`, `pending_failure`, `tests_passed`,
 `merged`, `failed`, `bisected`, `dissolved`; the last four are terminal. A `dissolved` group is
 abandoned by the queue (a member left, a predecessor or the base changed); its members that are still live
-return to `pending`. The consistency rule between the state of a group and that of its items is in
+return to `pending`. A group in bisection stays `pending_failure` with the PRs that wait for the result of
+its current half, and ends `bisected` when its PRs have all left to its halves. The consistency rule between the state of a group and that of its items is in
 `docs/RELIABILITY.md`.
 
 ## Test run

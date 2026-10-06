@@ -8,70 +8,14 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use cihub_domain::{CheckConclusion, EventKind, ItemState, Priority, RunStatus};
-use common::{World, settings};
+use cihub_domain::{EventKind, ItemState, Priority};
+use common::{Rng, World, settings};
 
-/// A small generator with a fixed seed, so that the test gives the same
-/// queue each time.
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-
-    /// `true` with the probability `percent` / 100.
-    fn chance(&mut self, percent: u64) -> bool {
-        self.next() % 100 < percent
-    }
-}
-
-/// The CI: a run fails when it tests a bad PR, as a member or as a
-/// predecessor. Each round assembles, reports and merges, until no item is
-/// live. Returns the window after each change.
+/// Drains the queue with the CI of the world; returns the window after each
+/// change.
 fn drain(w: &mut World, bad: &BTreeSet<u64>) -> Vec<u32> {
     let start = w.log.len();
-    for _ in 0..10_000 {
-        w.assemble_all();
-        let runs: Vec<_> = w
-            .snapshot
-            .runs
-            .values()
-            .filter(|r| r.status == RunStatus::InProgress)
-            .map(|r| r.id)
-            .collect();
-        for run_id in &runs {
-            // A report may end the runs above it.
-            let Some(run) = w.snapshot.runs.get(run_id) else {
-                continue;
-            };
-            if run.status != RunStatus::InProgress {
-                continue;
-            }
-            let group = &w.snapshot.groups[&run.group_id];
-            let tested = group.predecessor_ids.iter().chain(&group.item_ids);
-            let fails = tested
-                .filter_map(|id| w.snapshot.items.get(id))
-                .any(|item| bad.contains(&item.pr_number));
-            let conclusion = if fails {
-                CheckConclusion::Failure
-            } else {
-                CheckConclusion::Success
-            };
-            w.report_run(*run_id, conclusion);
-        }
-        w.merge_all();
-        if w.snapshot.items.values().all(|i| i.state.is_terminal()) {
-            break;
-        }
-    }
-    assert!(
-        w.snapshot.items.values().all(|i| i.state.is_terminal()),
-        "the queue did not drain"
-    );
+    w.drain(bad);
     w.log[start..]
         .iter()
         .filter_map(|e| match e.kind {

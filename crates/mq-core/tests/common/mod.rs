@@ -17,6 +17,30 @@ use ulid::Ulid;
 
 pub const REQUIRED: &str = "ci";
 
+/// A small generator with a fixed seed, so that a test gives the same queue
+/// each time.
+pub struct Rng(pub u64);
+
+impl Rng {
+    pub fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    /// `true` with the probability `percent` / 100.
+    pub fn chance(&mut self, percent: u64) -> bool {
+        self.next() % 100 < percent
+    }
+
+    /// A uniform value in (0, 1], with 32 bits.
+    pub fn unit(&mut self) -> f64 {
+        let value = f64::from(u32::try_from((self.next() >> 32) + 1).unwrap_or(u32::MAX));
+        value / f64::from(u32::MAX)
+    }
+}
+
 pub fn settings(edit: impl FnOnce(&mut Layer)) -> QueueSettings {
     let mut queue = Layer::default();
     edit(&mut queue);
@@ -132,13 +156,30 @@ impl World {
     /// Submits `head(pr_number, version)` without an observation: the test
     /// chooses what the first observation says.
     pub fn submit_only(&mut self, pr_number: u64, version: u32, priority: Priority) -> Outcome {
+        self.submit_with(pr_number, version, priority, false)
+    }
+
+    /// Submits the PR with `no_batch`, then observes it.
+    pub fn submit_no_batch(&mut self, pr_number: u64) -> Outcome {
+        let outcome = self.submit_with(pr_number, 0, Priority::MEDIUM, true);
+        self.observe(pr_number, |_| {});
+        outcome
+    }
+
+    fn submit_with(
+        &mut self,
+        pr_number: u64,
+        version: u32,
+        priority: Priority,
+        no_batch: bool,
+    ) -> Outcome {
         self.fact(
             Actor::System,
             EventKind::ItemSubmitted {
                 pr_number,
                 head_sha: head(pr_number, version),
                 priority,
-                no_batch: false,
+                no_batch,
                 direct: false,
                 submitted_via: SubmittedVia::Api,
                 author_id: UserId::from_ulid(Ulid(1)),
@@ -285,6 +326,98 @@ impl World {
             }
         }
         count
+    }
+
+    /// The CI: a run fails when it tests a bad PR, as a member or as a
+    /// predecessor. Each round assembles, reports and merges, until no item
+    /// is live; a round without a run moves the clock by one minute.
+    pub fn drain(&mut self, bad: &BTreeSet<u64>) {
+        self.drain_with(|_, prs| prs.iter().any(|pr| bad.contains(pr)));
+    }
+
+    /// The CI, with `fails` that receives the number of the run and the PRs
+    /// that it tests.
+    pub fn drain_with(&mut self, mut fails: impl FnMut(usize, &[u64]) -> bool) {
+        let mut count = 0;
+        for _ in 0..10_000 {
+            self.assemble_all();
+            let runs: Vec<RunId> = self
+                .snapshot
+                .runs
+                .values()
+                .filter(|r| r.status == RunStatus::InProgress)
+                .map(|r| r.id)
+                .collect();
+            for run_id in &runs {
+                // A report may end the runs above it.
+                let Some(run) = self.snapshot.runs.get(run_id) else {
+                    continue;
+                };
+                if run.status != RunStatus::InProgress {
+                    continue;
+                }
+                let group = &self.snapshot.groups[&run.group_id];
+                let tested: Vec<u64> = group
+                    .predecessor_ids
+                    .iter()
+                    .chain(&group.item_ids)
+                    .filter_map(|id| self.snapshot.items.get(id))
+                    .map(|item| item.pr_number)
+                    .collect();
+                count += 1;
+                let conclusion = if fails(count, &tested) {
+                    CheckConclusion::Failure
+                } else {
+                    CheckConclusion::Success
+                };
+                self.report_run(*run_id, conclusion);
+            }
+            self.merge_all();
+            if self.snapshot.items.values().all(|i| i.state.is_terminal()) {
+                break;
+            }
+            // A batch that is not full waits for the clock.
+            if runs.is_empty() {
+                self.advance(1);
+            }
+        }
+        assert!(
+            self.snapshot.items.values().all(|i| i.state.is_terminal()),
+            "the queue did not drain"
+        );
+    }
+
+    /// How each PR ended, from the log: concluded items leave the snapshot.
+    pub fn ended(&self) -> std::collections::BTreeMap<u64, ItemState> {
+        let mut prs = std::collections::BTreeMap::new();
+        let mut items = std::collections::BTreeMap::new();
+        for event in &self.log {
+            match &event.kind {
+                EventKind::ItemSubmitted { pr_number, .. } => {
+                    prs.insert(event.id, *pr_number);
+                }
+                EventKind::ItemTransitioned {
+                    item_id,
+                    from: None,
+                    ..
+                } => {
+                    if let Some(pr) = event.cause_id.and_then(|c| prs.get(&c)) {
+                        items.insert(*item_id, *pr);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut ended = std::collections::BTreeMap::new();
+        for event in &self.log {
+            if let EventKind::ItemTransitioned { item_id, to, .. } = &event.kind
+                && to.is_terminal()
+                && let Some(pr) = items.get(item_id)
+            {
+                ended.insert(*pr, *to);
+            }
+        }
+        ended
     }
 
     /// Replays the log on the initial snapshot.

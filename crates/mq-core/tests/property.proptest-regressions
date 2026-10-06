@@ -5,3 +5,8 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc a2f828f5600731c2256f3c2926f43a15bca95e37bd9439cf534720ddd4caf3a6 # shrinks to actions = [Submit(2, 0), Submit(1, 0), Submit(3, 0), Assemble(0), Report(0, true), Assemble(0), Report(0, false), Merge], window = 1, retries = 1
+cc de0b0baaec6e53c9b2acf15f694d388b574f9353e2a139f746b25ccf2f346997 # shrinks to actions = [Submit(2, 0), Submit(1, 0), Cancel(0)], window = 1, retries = 0, batch = Some(2), split = 0.0
+cc 2ddd6d5c713a987719c1d745e32afa84fa5a14dff75b4d3e77a54281cbfcc697 # shrinks to actions = [Submit(1, 0), Submit(2, 0), Drive, ManualMerge(0)], window = 1, retries = 0, batch = Some(2), split = 0.0
+cc 79ffd4324a2d6c89903482eab4571a0e669e9156c2a2c4cea95870549f42e1df # shrinks to actions = [Submit(1, 10), Submit(2, 0), Drive, Cancel(0), Submit(1, 10), Restart(0), Submit(1, 0), Submit(2, 0), Assemble(5446191591216253362), Report(0, true), Submit(3, 0)], window = 2, retries = 0, batch = None, depth = 0, optimistic = true, split = 0.0
+cc d6ebfbe0449a17ad3c456ab2ff4256523c8d747641800ca965e5b32006d87c87 # shrinks to actions = [Submit(1, 10), Submit(4, 10), Submit(2, 0), Submit(5, 0), Advance(5), Drive], window = 3, retries = 0, batch = Some(2), depth = 0, optimistic = true, split = 0.0
+cc 9270248de08faf6244e0d5b751a9d0b6d296c780fa71a443d49933126bb2ab41 # shrinks to actions = [Submit(1, 0), Submit(2, 0), Submit(3, 0), Submit(4, 0), Conflict(0), Advance(5), Assemble(6434260768459511875), Report(0, true), PushPr(1105853050783511096)], window = 1, retries = 0, batch = Some(3), depth = 0, optimistic = true, split = 0.0

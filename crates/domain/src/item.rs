@@ -43,6 +43,10 @@ pub struct Item {
     /// When the submission came: the time of the creation of the item.
     #[serde(with = "time::serde::rfc3339")]
     pub submitted_at: OffsetDateTime,
+    /// When the item first entered the queue (`pending`): the start of its
+    /// wait for a batch.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub admitted_at: Option<OffsetDateTime>,
     /// A direct merge was tried and could not happen: the item follows the
     /// path of the tests (`DECISIONS.md` D153).
     pub direct_merge_tried: bool,

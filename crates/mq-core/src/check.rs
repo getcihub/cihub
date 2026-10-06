@@ -42,9 +42,14 @@ pub fn check(snapshot: &Snapshot, settings: &QueueSettings) -> Vec<Violation> {
     let position = |id: &ItemId| order.iter().position(|i| i.id == *id);
 
     for item in snapshot.items.values() {
-        let groups = live_groups
+        // A group in bisection keeps the members that its halves test.
+        let containing: Vec<_> = live_groups
             .iter()
             .filter(|g| g.item_ids.contains(&item.id))
+            .collect();
+        let groups = containing
+            .iter()
+            .filter(|g| !containing.iter().any(|c| c.parent_group_id == Some(g.id)))
             .count();
         if groups > 1 {
             violations.push(Violation::SeveralGroups { item_id: item.id });
