@@ -344,6 +344,13 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     targets of each live item again, with the SHA of the file in the key of `read_targets` (D230, D235).
     Tests: three scenarios in `tests/batching.rs`, and the change of patterns in
     `disjoint_prs_are_tested_side_by_side_from_their_files`. `mise run load` passes.
+  - Done (October 7, 2026): step 6. `disjoint_prs_merge_apart_and_an_all_pr_holds_the_ones_behind_it`: on the
+    simulator, a PR merges before a PR of another lane ahead of it, and the PRs behind an `ALL` PR wait for
+    it. `fault_injection_parallel` plays the fault injection test with `strategy: parallel` and
+    `source: files`: each PR changes a file of `x/`, of `y/` or a file that no target keeps; the oracle keeps
+    the order of the queue between two PRs that share a target, and the test checks that two lanes were
+    tested side by side. The seeds now push to `main` before the submissions, so that the queue reads its
+    file first. `mise run sim` plays the three tests and passes on 1,000 seeds (2,520 s).
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

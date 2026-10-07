@@ -38,7 +38,7 @@ depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
 [tasks.sim]
-description = "Run the fault injection tests, default and batched, on 1 000 seeds (DECISIONS.md D129)"
+description = "Run the fault injection tests, default, batched and parallel, on 1 000 seeds (DECISIONS.md D129)"
 depends = ["db"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
