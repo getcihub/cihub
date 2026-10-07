@@ -104,6 +104,7 @@ failure budget retry.
 | Setting                                                        | Default                             | Range                                                                      |
 | -------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------- |
 | `mode`                                                         | `single`                            | `single`, `parallel`                                                       |
+| `affected_targets.source` / `targets`                          | none                                | `files`, `upload`; required in `parallel` mode (below)                     |
 | `window.floor` / `window.ceiling`                              | 2 / 20                              | 1–100, floor ≤ ceiling                                                     |
 | `testing_concurrency`                                          | none (shortcut)                     | 1–100; sets floor and ceiling to the same value; exclusive with `window`   |
 | `bisection_concurrency`                                        | the window ceiling                  | 1–200                                                                      |
@@ -127,6 +128,46 @@ failure budget retry.
 | `branch_prefix`                                                | `cihub`                             | string without `/` or space; branches `<prefix>-merge/` and `<prefix>-temp/` |
 | `branch_protection_injection`                                  | `both`                              | `both`, `merge`, `none`                                                    |
 | `required_statuses`                                            | inherited from branch protection    | list; empty list = none, `null` = inherited                                |
+
+## Affected targets (Lot 13)
+
+In `parallel` mode, each PR carries the targets that it affects; two PRs without a common target are tested and
+merged in parallel (`docs/ALGORITHMS.md`, merge graph). The `affected_targets` block, in a queue or in
+`defaults`, says where the targets come from (`DECISIONS.md` D226); a queue in `parallel` mode without it is a
+configuration error.
+
+```yaml
+affected_targets:
+  source: files                 # files | upload
+  targets:                      # only with source: files
+    web:
+      - apps/web/**
+      - libs/auth/**            # a shared library belongs to both targets
+      - "!apps/web/**/*.md"     # quoted: a bare `!` starts a YAML tag
+    api:
+      - services/api/**
+      - libs/auth/**
+    docs:
+      - docs/**
+      - "**/*.md"
+```
+
+With `source: files`, CIHub reads the changed files of each head of the PR and computes its targets
+(`DECISIONS.md` D227). A pattern is the glob of the `files *=` condition: the whole path from the root, `*` inside
+one segment, `**` across `/`; a folder is `apps/web/**`. A pattern that starts with `!` excludes: the patterns
+of a target are read in order, and the last one that matches a file decides. A file takes every target that
+keeps it, a renamed file counts by its old and its new path, and the PR takes the union over its files. A file
+that no target keeps, or more than 3,000 changed files, gives `ALL`: the PR waits for every PR ahead of it and
+every PR behind waits for it. A pattern that ends with `/`, or a list without any pattern that includes, is a
+configuration error, as are `source: files` without a `targets` map, an empty pattern and an invalid glob. A
+change of the block computes again the targets of every PR in the queue (`DECISIONS.md` D230). The model and
+the computation are in `crates/config/src/targets.rs`; the glob, shared with `files *=`, is `PathGlob` in
+`cihub-conditions`.
+
+With `source: upload`, the CI of the user computes the targets (Bazel, Nx, a script) and sends them to the
+`affected-targets` route (`docs/API.md`, `docs/CI.md`): opaque strings compared by equality, or `"ALL"`
+(`DECISIONS.md` D228); the block then has no `targets`. Until the targets of its head arrive, the PR stays `not_ready` with the block reason
+`awaiting_affected_targets`.
 
 ## Per-PR options and multiple queues
 

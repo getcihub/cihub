@@ -45,4 +45,4 @@ Consistency rules that the reconciler enforces at each pass, and that a nightly 
 
 GitHub is the source of truth for the git state, Postgres for the queue state. In case of disagreement (a PR that Postgres believes in the queue is actually merged or closed on GitHub), the reconciler believes GitHub and records the transition with `manual_merge` or `pr_closed`. A full resynchronization of a queue (`POST /queues/{id}:resync`, admins only) rereads from GitHub each live PR and each run in progress: it is the emergency exit after an incident.
 
-Capacity limits protect the shared database: at most 500 live items per queue, 20 MB per impacted targets upload, 2,000 webhook deliveries per minute and per connection before deliveries drop to low priority, and 100 jobs in flight per connection.
+Capacity limits protect the shared database: at most 500 live items per queue, 20 MB per affected targets upload, 2,000 webhook deliveries per minute and per connection before deliveries drop to low priority, and 100 jobs in flight per connection.

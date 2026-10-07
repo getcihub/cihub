@@ -892,7 +892,7 @@ async fn test_run(
         last_report_at: run.last_report_at,
         failure_causing_statuses: run.failure_causing_statuses,
         checks,
-        impacted_targets: None,
+        affected_targets: None,
         dependents,
     }))
 }

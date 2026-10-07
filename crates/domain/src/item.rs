@@ -118,7 +118,7 @@ pub enum BlockReason {
 /// single mode, for a PR that uploaded `ALL`, and past the 20 MB upload limit.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ImpactedTargets {
+pub enum AffectedTargets {
     All,
     Targets(BTreeSet<String>),
 }
@@ -146,12 +146,12 @@ mod tests {
     }
 
     #[test]
-    fn impacted_targets_serialize_all_or_a_set() {
+    fn affected_targets_serialize_all_or_a_set() {
         assert_eq!(
-            serde_json::to_string(&ImpactedTargets::All).unwrap(),
+            serde_json::to_string(&AffectedTargets::All).unwrap(),
             r#""all""#
         );
-        let targets = ImpactedTargets::Targets(["//b".into(), "//a".into()].into());
+        let targets = AffectedTargets::Targets(["//b".into(), "//a".into()].into());
         assert_eq!(
             serde_json::to_string(&targets).unwrap(),
             r#"{"targets":["//a","//b"]}"#

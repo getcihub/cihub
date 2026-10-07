@@ -747,7 +747,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D210** The size of a batch is not adaptive: a batch takes the consecutive waiting items that can join it
   (`docs/ALGORITHMS.md`, "Batching"), up to `batching.size`, and starts when it is full or when its oldest member
   has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12) _Extended by
-  D224._ _Extended by D241._
+  D224 and D229._ _Extended by D241._
 - **D211** An inferred failure never evicts a PR. With `bisection_skip_redundant_tests`, a half that a bisection
   proves failed without a run is split again when it has several items; a half of a single PR is tested, and
   the PR is evicted only after its own failed run and its failure budget. A confirmed failure of a batch or of a
@@ -813,6 +813,33 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `next_tick_at` that is not due yet, at least 1 second and at most `TICK` (30 seconds), instead of `TICK`
   always. A `wake_at` was served up to 30 seconds late: a batch with `max_wait_minutes: 1` waited up to 1 minute
   30 on a manual test. One more query per pass. A separate evolution, outside the plan of a lot.
+- **D246** The vocabulary says "affected targets", as Nx and target-determinator, never "impacted targets":
+  the type `AffectedTargets`, the route `POST /repos/{owner}/{name}/prs/{pr_number}/affected-targets`, the
+  table `affected_targets`, the field `affected_targets` of a run. The scope `targets:write` and the event
+  `targets.received` keep their names. (Lot 13)
+- **D226** A queue in `parallel` mode reads its targets from the `affected_targets` block, in the queue or in
+  `defaults`: `source: files` or `source: upload`. With `files`, CIHub computes the targets of each head of a PR
+  from its changed files and the `targets` map, a name to a list of patterns; with `upload`, the CI of the user
+  sends them and the block has no `targets`. A queue in `parallel` mode without this block is a configuration
+  error. (Lot 13)
+- **D227** The patterns of `source: files` use the glob of the `files *=` condition: the whole path from the root
+  of the repository, `*` inside one segment, `**` across `/`. A pattern that starts with `!` excludes: the
+  patterns of a target are read in order and the last one that matches a file decides, as in `.gitignore`. A
+  file takes every target that keeps it, and a PR takes the union over its files; a renamed file counts by its
+  old and its new path. A file that no target keeps, or a PR with more than 3,000 changed files (the limit of
+  `Scm::pr_files`), gives `ALL`. A pattern that ends with `/` is a configuration error, whose message gives the
+  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230._
+- **D228** With `source: upload`, the targets are opaque strings compared by equality, or `"ALL"`; the body of
+  the upload is limited to 20 MB, and a larger list is sent as `"ALL"`. Until the targets of its head SHA
+  arrive, the item stays `not_ready` with the block reason `awaiting_affected_targets`, without a fallback to
+  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13)
+- **D229** Extends D210: in `parallel` mode, a batch takes the next pending items of its lane, the items that
+  overlapping targets link to it, and skips the items of the other lanes; the order stays the order of the
+  queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
+- **D230** Extends D227: when a new configuration changes the `affected_targets` block, the targets of every
+  live item are computed again; a run whose predecessors change restarts through the rules of validity. (Lot 13)
+- **D231** The example actions for Bazel and Nx are composite actions in the repository that send the targets to
+  the `affected-targets` route with `curl`; no command of the CLI uploads targets. (Lot 13)
 - **D232** Extends D148: a queue entry can carry `route_conditions`, in the language of the conditions; the
   routing of a submission reads only them. The queue named by `--queue=<name>` wins; otherwise the first queue of
   the branch, in file order, whose `route_conditions` pass; a queue without `route_conditions` takes every PR;

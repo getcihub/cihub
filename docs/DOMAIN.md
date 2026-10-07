@@ -25,7 +25,7 @@ from it.
 | Test group           | `group_id`                   | The unit that is tested and held in pending failure: a single PR, a batch, or one half of a bisection                                         | `TestGroup`            |
 | Test run             | `run_id`                     | One attempt to test a group on a test branch; a group can have several runs (restarts)                                                        | `TestRun`              |
 | Check observation    | (`run_id`, name)             | The last observation of a check run or of a commit status on the test SHA                                                                     | `CheckObservation`     |
-| Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
+| Affected targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `AffectedTargets`      |
 | Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
 
 Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). An SCM identifier is an

@@ -332,7 +332,7 @@ pub struct TestRun {
     pub conflict_culprit: Option<ConflictCulprit>,
     pub checks: Vec<RunCheck>,
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
-    pub impacted_targets: Option<Value>,
+    pub affected_targets: Option<Value>,
     pub dependents: Vec<Dependent>,
 }
 

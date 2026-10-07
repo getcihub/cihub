@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{
-    BlockReason, CheckReport, ConflictCulprit, EventId, GroupId, GroupKind, GroupState,
-    ImpactedTargets, ItemId, ItemState, JobError, Mergeability, OrgId, Permission, PrState,
-    Priority, QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
+    AffectedTargets, BlockReason, CheckReport, ConflictCulprit, EventId, GroupId, GroupKind,
+    GroupState, ItemId, ItemState, JobError, Mergeability, OrgId, Permission, PrState, Priority,
+    QueueControl, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource, ReviewDecision,
+    RunId, RunStatus, SubmittedVia, UserId,
 };
 
 /// Immutable, append-only record of a fact or a decision in the log of a
@@ -77,7 +77,7 @@ pub enum EventKind {
     TargetsReceived {
         pr_number: u64,
         head_sha: String,
-        targets: ImpactedTargets,
+        targets: AffectedTargets,
     },
     #[serde(rename = "test_branch.assembled")]
     TestBranchAssembled {
@@ -196,7 +196,7 @@ closed_enum! {
         #[serde(rename = "check.observed")]
         #[strum(serialize = "check.observed")]
         CheckObserved,
-        /// The impacted targets of a PR head arrived.
+        /// The affected targets of a PR head arrived.
         #[serde(rename = "targets.received")]
         #[strum(serialize = "targets.received")]
         TargetsReceived,

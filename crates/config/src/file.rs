@@ -1,9 +1,9 @@
 //! The `.cihub.yaml` model, read with the position of each value.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
-use cihub_conditions::{Conditions, Expr};
+use cihub_conditions::{Conditions, Expr, PathGlob};
 use cihub_domain::{
     BranchProtectionInjection, DirectMergeMode, MergeCommitTitle, MergeMethod, OptimizationMode,
     Priority, QueueMode, Strategy, Trigger, UpdateMethod,
@@ -13,7 +13,10 @@ use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter, Spanned};
 
 use crate::settings::in_range;
-use crate::{ConfigError, ConfigErrorKind, Layer, Position, QueueSettings, Setting};
+use crate::{
+    ConfigError, ConfigErrorKind, Layer, Position, QueueSettings, Setting, Target, TargetPattern,
+    TargetsSource,
+};
 
 /// Names of the configuration file at the root of the repository.
 pub const FILE_NAMES: [&str; 2] = [".cihub.yaml", ".cihub.yml"];
@@ -208,6 +211,7 @@ struct RawQueue {
     merge_conditions: Value<Vec<Spanned<RawExpr>>>,
     strategy: Value<Strategy>,
     mode: Value<QueueMode>,
+    affected_targets: Value<RawAffectedTargets>,
     window: Value<RawWindow>,
     testing_concurrency: Value<u32>,
     bisection_concurrency: Value<u32>,
@@ -250,6 +254,21 @@ struct RawBatching {
     enabled: Value<bool>,
     size: Value<u32>,
     max_wait_minutes: Value<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAffectedTargets {
+    source: Spanned<RawTargetsSource>,
+    #[serde(default)]
+    targets: Value<BTreeMap<String, Vec<Spanned<String>>>>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RawTargetsSource {
+    Files,
+    Upload,
 }
 
 #[derive(Default, Deserialize)]
@@ -370,9 +389,19 @@ fn layer(raw: RawQueue) -> Result<Layer, ConfigError> {
     };
     let batching = raw.batching.unwrap_or_default();
     let label_commands = raw.label_commands.unwrap_or_default();
+    let affected_targets = raw
+        .affected_targets
+        .map(|block| {
+            Ok::<_, ConfigError>(Setting {
+                at: position(&block),
+                value: Some(targets_source(block.value)?),
+            })
+        })
+        .transpose()?;
     Ok(Layer {
         strategy: setting(raw.strategy),
         mode: setting(raw.mode),
+        affected_targets,
         window_floor,
         window_ceiling,
         bisection_concurrency: setting(raw.bisection_concurrency),
@@ -402,6 +431,68 @@ fn layer(raw: RawQueue) -> Result<Layer, ConfigError> {
         branch_protection_injection: setting(raw.branch_protection_injection),
         required_statuses: setting(raw.required_statuses),
     })
+}
+
+/// The `affected_targets` block (`DECISIONS.md` D226, D227).
+fn targets_source(raw: RawAffectedTargets) -> Result<TargetsSource, ConfigError> {
+    match (raw.source.value, raw.targets) {
+        (RawTargetsSource::Upload, None) => Ok(TargetsSource::Upload),
+        (RawTargetsSource::Upload, Some(targets)) => Err(ConfigError::parsing(
+            position(&targets),
+            "`source: upload` takes no `targets`: the CI sends them",
+        )),
+        (RawTargetsSource::Files, Some(targets)) if !targets.value.is_empty() => {
+            let at = position(&targets);
+            targets
+                .value
+                .into_iter()
+                .map(|(name, patterns)| target(name, &patterns, at))
+                .collect::<Result<_, _>>()
+                .map(TargetsSource::Files)
+        }
+        (RawTargetsSource::Files, _) => Err(ConfigError::parsing(
+            position(&raw.source),
+            "`source: files` needs a `targets` map of names to patterns",
+        )),
+    }
+}
+
+fn target(
+    name: String,
+    patterns: &[Spanned<String>],
+    targets_at: Option<Position>,
+) -> Result<Target, ConfigError> {
+    let patterns = patterns
+        .iter()
+        .map(target_pattern)
+        .collect::<Result<Vec<_>, _>>()?;
+    if patterns.iter().all(|pattern| pattern.exclude) {
+        return Err(ConfigError::parsing(
+            targets_at,
+            format!("target `{name}` has no pattern that includes; a `!` pattern only excludes"),
+        ));
+    }
+    Ok(Target { name, patterns })
+}
+
+fn target_pattern(raw: &Spanned<String>) -> Result<TargetPattern, ConfigError> {
+    let (exclude, glob) = match raw.value.strip_prefix('!') {
+        Some(glob) => (true, glob),
+        None => (false, raw.value.as_str()),
+    };
+    let fail = |message: String| Err(ConfigError::parsing(position(raw), message));
+    if glob.is_empty() {
+        return fail("empty pattern".to_owned());
+    }
+    if glob.ends_with('/') {
+        return fail(format!(
+            "`{glob}` matches no file: write `{glob}**` for a folder"
+        ));
+    }
+    match PathGlob::new(glob) {
+        Ok(glob) => Ok(TargetPattern { exclude, glob }),
+        Err(cause) => fail(format!("invalid glob `{glob}`: {cause}")),
+    }
 }
 
 fn priority_rule(raw: RawPriorityRule, text: &str) -> Result<PriorityRule, ConfigError> {
@@ -850,5 +941,136 @@ queues:
         );
         assert_eq!(find_config_file(["README.md"]), Ok(None));
         assert!(find_config_file([".cihub.yaml", ".cihub.yml"]).is_err());
+    }
+
+    #[test]
+    fn affected_targets_come_from_the_files_or_the_ci() {
+        let text = queue(
+            "    strategy: parallel
+    affected_targets:
+      source: files
+      targets:
+        web:
+          - apps/web/**
+          - \"!apps/web/**/*.md\"
+        docs:
+          - \"**/*.md\"
+",
+        );
+        let settings = RepoConfig::parse(&text)
+            .unwrap()
+            .settings("main", "main")
+            .unwrap();
+        assert_eq!(settings.affected_targets.at, Some(at(7, 7)));
+        let Some(TargetsSource::Files(targets)) = settings.affected_targets.value else {
+            panic!("expected source: files");
+        };
+        let names: Vec<_> = targets.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["docs", "web"]);
+        assert_eq!(
+            crate::targets_of(&targets, ["apps/web/a.ts", "apps/web/b.md"]),
+            cihub_domain::AffectedTargets::Targets(["docs".into(), "web".into()].into())
+        );
+
+        // `defaults` carries the block for every queue.
+        let text = "version: 1
+defaults:
+  strategy: parallel
+  affected_targets: { source: upload }
+queues:
+  - name: main
+    branch: main
+";
+        let config = RepoConfig::parse(text).unwrap();
+        for name in ["main", "other"] {
+            let settings = config.settings("main", name).unwrap();
+            assert_eq!(settings.affected_targets.value, Some(TargetsSource::Upload));
+        }
+    }
+
+    #[test]
+    fn affected_targets_errors_point_at_their_value() {
+        let missing = "a queue in `parallel` mode needs an `affected_targets` block";
+        let no_targets = "`source: files` needs a `targets` map of names to patterns";
+        // The line of the error, the text that it points at, the message.
+        let cases = [
+            ("    strategy: parallel", "parallel", missing),
+            ("    mode: parallel", "parallel", missing),
+            (
+                "    affected_targets: { source: files }",
+                "files",
+                no_targets,
+            ),
+            (
+                "    affected_targets: { source: files, targets: {} }",
+                "files",
+                no_targets,
+            ),
+            (
+                "    affected_targets: { source: upload, targets: { a: [x] } }",
+                "{ a",
+                "`source: upload` takes no `targets`: the CI sends them",
+            ),
+            (
+                "    affected_targets: { source: files, targets: { web: [apps/web/] } }",
+                "apps",
+                "`apps/web/` matches no file: write `apps/web/**` for a folder",
+            ),
+            (
+                "    affected_targets: { source: files, targets: { web: ['!'] } }",
+                "'!'",
+                "empty pattern",
+            ),
+            (
+                "    affected_targets: { source: files, targets: { web: ['a['] } }",
+                "'a['",
+                "invalid glob `a[`: unclosed character class; missing ']'",
+            ),
+            (
+                "    affected_targets: { source: files, targets: { web: ['!a/**'] } }",
+                "{ web",
+                "target `web` has no pattern that includes; a `!` pattern only excludes",
+            ),
+        ];
+        for (line, points_at, message) in cases {
+            let text = if line.contains("affected_targets") {
+                queue(&format!("    strategy: parallel\n{line}\n"))
+            } else {
+                queue(&format!("{line}\n"))
+            };
+            let row = text.lines().position(|l| l == line).unwrap() + 1;
+            let column = line.find(points_at).unwrap() + 1;
+            let error = error(&text);
+            assert_eq!(
+                (error.position, error.message.as_str()),
+                (Some(at(row as u64, column as u64)), message),
+                "{line}"
+            );
+        }
+        for block in [
+            "    affected_targets: { source: ci }\n",
+            "    affected_targets: { source: upload, other: 1 }\n",
+            "    affected_targets: { targets: { a: [x] } }\n",
+        ] {
+            let text = queue(&format!("    strategy: parallel\n{block}"));
+            assert_eq!(error(&text).kind, ConfigErrorKind::Parsing, "{block}");
+        }
+    }
+
+    #[test]
+    fn an_unquoted_exclusion_is_an_error() {
+        // A bare `!` starts a YAML tag: the element is not a pattern.
+        let text = queue(
+            "    strategy: parallel
+    affected_targets:
+      source: files
+      targets:
+        web:
+          - apps/web/**
+          - !apps/web/**/*.md
+",
+        );
+        let error = error(&text);
+        assert_eq!(error.position.map(|p| p.line), Some(11), "{error}");
     }
 }

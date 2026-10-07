@@ -3,11 +3,11 @@
 use std::fmt;
 use std::str::FromStr;
 
-use globset::{GlobBuilder, GlobMatcher};
 use regex::Regex;
 
 use crate::attribute::{Attribute, Kind};
 use crate::context::{Context, EvalError, Value};
+use crate::glob::PathGlob;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operator {
@@ -84,7 +84,7 @@ enum Test {
 enum Pattern {
     Exact(String),
     Regex(Regex),
-    Glob(GlobMatcher),
+    Glob(PathGlob),
 }
 
 impl Condition {
@@ -449,11 +449,9 @@ fn pattern(op: Operator, value: &str) -> Result<Pattern, ParseErrorKind> {
         Operator::Regex => Regex::new(value)
             .map(Pattern::Regex)
             .map_err(|e| ParseErrorKind::InvalidRegex(regex_cause(&e))),
-        Operator::Glob => GlobBuilder::new(value)
-            .literal_separator(true)
-            .build()
-            .map(|glob| Pattern::Glob(glob.compile_matcher()))
-            .map_err(|e| ParseErrorKind::InvalidGlob(e.kind().to_string())),
+        Operator::Glob => PathGlob::new(value)
+            .map(Pattern::Glob)
+            .map_err(ParseErrorKind::InvalidGlob),
         _ => Ok(Pattern::Exact(value.to_owned())),
     }
 }

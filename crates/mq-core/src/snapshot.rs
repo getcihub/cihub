@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use cihub_domain::{
-    CheckKind, CheckObservation, CheckReport, EventId, GroupId, ImpactedTargets, Item, ItemId,
+    AffectedTargets, CheckKind, CheckObservation, CheckReport, EventId, GroupId, Item, ItemId,
     JobError, Mergeability, OrgId, PrState, Priority, QueueControl, QueueId, QueueMode, QueueState,
     ReviewDecision, RunId, RunStatus, SubmittedVia, TestGroup, TestRun,
 };
@@ -38,11 +38,11 @@ pub struct PrObservation {
     pub required_checks: Vec<String>,
 }
 
-/// The impacted targets uploaded for one head of a PR.
+/// The affected targets uploaded for one head of a PR.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TargetsUpload {
     pub head_sha: String,
-    pub targets: ImpactedTargets,
+    pub targets: AffectedTargets,
 }
 
 /// Number of past heads of the target branch kept to recognise a late push.

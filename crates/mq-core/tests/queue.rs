@@ -4,7 +4,7 @@
 
 mod common;
 
-use cihub_config::Setting;
+use cihub_config::{Setting, TargetsSource};
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError,
     Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
@@ -686,6 +686,7 @@ fn disjoint_targets_are_tested_in_parallel_lanes() {
     let mut w = World::new(settings(|l| {
         window(3)(l);
         l.mode = Some(Setting::new(QueueMode::Parallel));
+        l.affected_targets = Some(Setting::new(Some(TargetsSource::Upload)));
     }));
 
     for (pr, target) in [(1, "//a"), (2, "//b"), (3, "//a")] {
@@ -695,7 +696,7 @@ fn disjoint_targets_are_tested_in_parallel_lanes() {
             EventKind::TargetsReceived {
                 pr_number: pr,
                 head_sha: head(pr, 0),
-                targets: cihub_domain::ImpactedTargets::Targets([target.into()].into()),
+                targets: cihub_domain::AffectedTargets::Targets([target.into()].into()),
             },
         );
     }

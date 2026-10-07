@@ -1153,7 +1153,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
 }
 
 /// Mergeability and block reasons of a `not_ready` item: the mergeability on
-/// the SCM, the impacted targets in parallel mode, and the `queue_conditions`
+/// the SCM, the affected targets in parallel mode, and the `queue_conditions`
 /// that the job that read the PR found unmet (`DECISIONS.md` D142).
 fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReason> {
     let mut blocks = match pr.mergeability {
