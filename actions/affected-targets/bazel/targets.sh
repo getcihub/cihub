@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Writes to TARGETS_FILE the Bazel labels that the changed files of the PR
 # affect, as a JSON list, or "ALL" when the query fails (DECISIONS.md D236),
-# as for a file that no rule holds.
+# as for a file that no rule holds, or when a file that defines the build
+# changes (D238).
 set -uo pipefail
 
 all() {

@@ -870,12 +870,17 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   event; their output `targets` gives what they sent. Bazel sends the labels that the changed files affect
   (reverse dependencies); Nx sends the names of the affected projects. When the computation fails, the action
   sends `ALL`. A PR from a fork without a token stops the action with a clear message (D234). (Lot 13)
+  _Extended by D238._
 - **D237** Extends D136 and D137. Until a queue has read its configuration file once (`config_sha` is `NULL`),
   `plan` neither admits an item nor forms a group: the submissions are kept, `not_ready`, and wait for the
   settings of the file; that first `load_config` has class `interactive`. `switching_modes` ends as soon as no
   group of the queue is live, instead of when the queue is empty: at once, in the same reconciliation, when the
   mode changes without a live group; the waiting items keep their place and form their groups in the new mode.
   (Lot 13)
+- **D238** Extends D236. The Bazel action also sends `ALL` when the PR changes a file that defines the build
+  (`BUILD`, `BUILD.bazel`, `*.bzl`, `MODULE.bazel`, `MODULE.bazel.lock`, `WORKSPACE`, `WORKSPACE.bazel`,
+  `WORKSPACE.bzlmod`, `.bazelrc`, `.bazelversion`): the query sees such a file as one that no target depends on,
+  so the PR would look disjoint from the targets that it redefines. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 
@@ -1000,3 +1005,9 @@ becomes a decision above and leaves this list.
   _(Lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` subscribes the module to `mergequeue.run.completed`, which is not an event type
   of `docs/DOMAIN.md` (`run.transitioned` ?). _(Lot 14)_
+- **Q15** The upload of the affected targets from a PR of a fork, without a token (D234). Proposal: the body
+  carries `ci_job_id`, the job that sends it (`job.check_run_id` in GitHub Actions); a route outside the token
+  middleware reads it through a new `Scm::ci_job` (the check run, with `Checks: read`, which the App has), and
+  stores the upload only when the job is in progress, belongs to GitHub Actions on that repository and has the
+  announced head SHA; at most 60 such requests per minute and per repository, so that nobody spends the SCM
+  budget of an organization. Needs a new recording of GitHub. _(Lot 13)_

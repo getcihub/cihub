@@ -45,7 +45,7 @@ configuration checker, in phase 1).
 | 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
-| 13  | `parallel` strategy                                    | 4     | 12         | —         | in progress                              |
+| 13  | `parallel` strategy                                    | 4     | 12         | Q15       | in progress                              |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, Helm, hardening                     | 4     | 11, 13     | Q8        | to do                                    |
 
@@ -354,7 +354,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   - Done (October 7, 2026, D236): step 7. The composite actions `actions/affected-targets/bazel` and
     `actions/affected-targets/nx` compute the targets and send them with the shared `upload.sh`; they send
     `ALL` when the computation fails, and the Bazel one also when a file that defines the build changes (the
-    query gives no target for it). Test: `the_upload_script_of_the_actions_sends_the_targets`. The Bazel script
+    query gives no target for it, D238). Test: `the_upload_script_of_the_actions_sends_the_targets`. The Bazel script
     was run by hand on a small workspace; the Nx one only on its failure; the pilot monorepo checks both.
   - Done (October 7, 2026, D237): a queue that has not read its file yet admits nothing and forms no group, and
     its first `load_config` is `interactive`; `switching_modes` ends when no group is live. Before, the first
@@ -362,6 +362,8 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     cancelled. Tests: `a_queue_admits_nothing_before_its_file_is_read`,
     `a_mode_change_waits_for_the_live_groups` (core),
     `a_new_queue_waits_for_its_file_before_its_first_groups` (simulator and Postgres).
+  - Open (Q15): the upload from a fork, without a token. It needs a route without a token, a new `Scm` method and
+    a new recording of GitHub, so it waits for the validation of the project lead.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

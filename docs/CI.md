@@ -51,7 +51,7 @@ set(<files>))'`), and `actions/affected-targets/nx` the names of the affected pr
 --affected`). Both read the PR number and the head SHA from the `pull_request` event, take `url` and `token` (scope
 `targets:write`), give the list sent as the output `targets`, and send `ALL` when the computation fails; the Bazel
 action also sends `ALL` when a file that defines the build changes (`BUILD`, `.bzl`, `MODULE.bazel`,
-`WORKSPACE`, `.bazelrc`), since the query sees no target that depends on it. They need `jq`, a checkout with the
+`WORKSPACE`, `.bazelrc`), since the query sees no target that depends on it (D238). They need `jq`, a checkout with the
 base of the PR, and Bazel or the installed Nx workspace:
 
 ```yaml
