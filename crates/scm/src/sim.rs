@@ -16,9 +16,9 @@ use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
-    CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
-    RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ChangedFile, CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery,
+    RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture,
+    ScmInstallation, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -1105,9 +1105,18 @@ impl Repo {
             .collect())
     }
 
-    fn changed_files(&self, number: u64) -> Result<Vec<String>, ScmError> {
+    /// A move shows as a deleted path and a new path: the simulator has no
+    /// renames.
+    fn changed_files(&self, number: u64) -> Result<Vec<ChangedFile>, ScmError> {
         let pr = self.pr(number)?;
-        Ok(self.changes(pr, &self.head(pr))?.into_keys().collect())
+        Ok(self
+            .changes(pr, &self.head(pr))?
+            .into_keys()
+            .map(|path| ChangedFile {
+                path,
+                previous_path: None,
+            })
+            .collect())
     }
 
     fn snapshot(&self, number: u64) -> Result<PrSnapshot, ScmError> {
@@ -1254,7 +1263,7 @@ impl Scm for Sim {
         repo: &'a RepoRef,
         number: u64,
         class: JobClass,
-    ) -> ScmFuture<'a, Vec<String>> {
+    ) -> ScmFuture<'a, Vec<ChangedFile>> {
         self.call("pr_files", repo, class, move |ctx| {
             ctx.repo.changed_files(number)
         })

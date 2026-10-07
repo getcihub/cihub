@@ -1930,6 +1930,65 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
+/// `DECISIONS.md` D227, D247: with `source: files`, the queue computes the
+/// targets of each head from its files. Two PRs on disjoint targets are tested
+/// side by side; a PR with a file that no target keeps is `ALL`, and is tested
+/// on top of both.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn disjoint_prs_are_tested_side_by_side_from_their_files(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    testing_concurrency: 5\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets:\n      source: files\n      targets:\n        web: [web/**]\n        api: [api/**]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    // The PRs are opened first, so that their numbers are 1 to 3: the draft
+    // PRs of the queue come after them.
+    let heads: Vec<String> = [(1, "web/page.txt"), (2, "api/main.txt"), (3, "other.txt")]
+        .into_iter()
+        .map(|(n, path)| open_pr_with(&sim, &main, n, &[(path, Some("x"))]).1)
+        .collect();
+    for (number, head) in (1..).zip(&heads) {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let mut tx = begin_system(&pool).await.unwrap();
+    let targets: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload->'targets' FROM events WHERE type::text = 'targets.received' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(
+        targets,
+        [
+            serde_json::json!({ "targets": ["web"] }),
+            serde_json::json!({ "targets": ["api"] }),
+            serde_json::json!("all"),
+        ]
+    );
+    let groups: Vec<(Vec<String>, i32)> = sqlx::query_as(
+        "SELECT tested_pr_numbers::text[], cardinality(g.predecessor_ids)
+         FROM test_runs r JOIN test_groups g ON g.id = r.group_id ORDER BY r.started_at, r.id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let groups: Vec<(&str, i32)> = groups
+        .iter()
+        .map(|(prs, predecessors)| (prs[0].as_str(), *predecessors))
+        .collect();
+    assert_eq!(groups, [("1", 0), ("2", 0), ("3", 2)]);
+    drop(tx);
+    q.stop().await;
+}
+
 /// A queue `hotfix` on `main` next to the queue `main` of the seed, both
 /// set by `config` once the queues read the head of `main`, which the
 /// function returns.
@@ -3553,7 +3612,7 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         "{error}"
     );
 
-    let parallel_file = file("    strategy: parallel\n");
+    let parallel_file = file("    strategy: parallel\n    affected_targets: { source: upload }\n");
     let parallel = sim
         .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
         .unwrap();

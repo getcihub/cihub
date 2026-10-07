@@ -714,6 +714,36 @@ fn disjoint_targets_are_tested_in_parallel_lanes() {
 }
 
 #[test]
+fn a_head_waits_for_the_targets_of_its_files() {
+    let mut w = World::new(settings(|l| {
+        l.mode = Some(Setting::new(QueueMode::Parallel));
+        l.affected_targets = Some(Setting::new(Some(TargetsSource::Files(Vec::new()))));
+    }));
+    w.submit(1, Priority::MEDIUM);
+    assert_eq!(w.state(1), Some(ItemState::NotReady));
+    assert_eq!(
+        w.item(1).unwrap().block_reasons,
+        [BlockReason::AwaitingAffectedTargets]
+    );
+    let wanted = Head {
+        pr_number: 1,
+        sha: head(1, 0),
+    };
+    assert_eq!(w.reconcile().desired.target_reads, [wanted]);
+    w.fact(
+        Actor::System,
+        EventKind::TargetsReceived {
+            pr_number: 1,
+            head_sha: head(1, 0),
+            targets: cihub_domain::AffectedTargets::Targets(["web".into()].into()),
+        },
+    );
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    assert!(w.reconcile().desired.target_reads.is_empty());
+    assert_replays(&w);
+}
+
+#[test]
 fn restart_request_restarts_the_tests() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);

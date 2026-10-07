@@ -194,6 +194,9 @@ fn block_text(reason: &BlockReason) -> String {
             format!("the branch must be rebased onto #{onto_pr_number}")
         }
         BlockReason::Undetermined => "the SCM does not say yet why the PR is blocked".to_owned(),
+        BlockReason::AwaitingAffectedTargets => {
+            "the affected targets of the head are not known yet".to_owned()
+        }
         BlockReason::QueueConditionsUnmet { conditions } => {
             let list: Vec<String> = conditions.iter().map(|c| format!("`{c}`")).collect();
             format!("the queue conditions {} are not met", list.join(", "))

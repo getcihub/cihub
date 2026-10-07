@@ -107,6 +107,9 @@ pub enum BlockReason {
         onto_pr_number: u64,
     },
     Undetermined,
+    /// In `parallel` mode, the affected targets of the head of the PR have
+    /// not arrived yet (`DECISIONS.md` D228, D247).
+    AwaitingAffectedTargets,
     /// The PR does not meet these `queue_conditions` of the queue, as the
     /// file writes them (`DECISIONS.md` D142).
     QueueConditionsUnmet {

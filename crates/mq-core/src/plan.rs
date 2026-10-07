@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cihub_config::QueueSettings;
+use cihub_config::{QueueSettings, TargetsSource};
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
     GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability,
@@ -47,6 +47,9 @@ pub struct Desired {
     pub check_reads: Vec<CheckRead>,
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
+    /// The heads whose affected targets CIHub must compute from their files
+    /// (`DECISIONS.md` D247).
+    pub target_reads: Vec<Head>,
     /// What each PR must show: its live item, or the item that this
     /// reconciliation concluded (`DECISIONS.md` D156), by PR number.
     pub surfaces: Vec<Surface>,
@@ -1152,6 +1155,13 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
     })
 }
 
+/// The affected targets of the head of `item` have arrived.
+fn has_targets(s: &Snapshot, item: &Item) -> bool {
+    s.targets
+        .get(&item.pr_number)
+        .is_some_and(|t| t.value.head_sha == item.head_sha)
+}
+
 /// Mergeability and block reasons of a `not_ready` item: the mergeability on
 /// the SCM, the affected targets in parallel mode, and the `queue_conditions`
 /// that the job that read the PR found unmet (`DECISIONS.md` D142).
@@ -1167,12 +1177,8 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         Mergeability::Unknown => vec![BlockReason::Undetermined],
     };
 
-    let has_targets = s
-        .targets
-        .get(&item.pr_number)
-        .is_some_and(|t| t.value.head_sha == item.head_sha);
-    if s.mode == QueueMode::Parallel && !has_targets && blocks.is_empty() {
-        blocks.push(BlockReason::Undetermined);
+    if s.mode == QueueMode::Parallel && !has_targets(s, item) {
+        blocks.push(BlockReason::AwaitingAffectedTargets);
     }
 
     if !pr.unmet_conditions.is_empty() {
@@ -1696,12 +1702,25 @@ fn desired(
 
     let target_read = target_points(s, now).and_then(|(point, _)| point);
 
+    let from_files = matches!(
+        settings.affected_targets.value,
+        Some(TargetsSource::Files(_))
+    );
+    let target_reads = live_items(s)
+        .filter(|item| s.mode == QueueMode::Parallel && from_files && !has_targets(s, item))
+        .map(|item| Head {
+            pr_number: item.pr_number,
+            sha: item.head_sha.clone(),
+        })
+        .collect();
+
     Desired {
         test_branches,
         merges,
         observe,
         check_reads,
         target_read,
+        target_reads,
         surfaces,
     }
 }

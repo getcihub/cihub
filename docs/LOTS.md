@@ -327,6 +327,12 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     PR from its paths (D227). The glob of `files *=` becomes `PathGlob` in `cihub-conditions`, shared by both.
     An unquoted `!` pattern is a YAML tag: the file fails with a YAML error at its line. Tests: tables in
     `targets.rs` and `file.rs`.
+  - Done (October 7, 2026, D247): step 3. `Scm::pr_files` gives the old path of a renamed file. With
+    `source: files`, `plan` asks for the targets of each head without them, and the `read_targets` job
+    computes them, or `ALL` when the files are cut; an item waits with `awaiting_affected_targets`, in both
+    sources. Tests: `a_head_waits_for_the_targets_of_its_files` (core),
+    `disjoint_prs_are_tested_side_by_side_from_their_files` (simulator and Postgres). The recording of the
+    GitHub contract has no renamed file: the project lead will record it again.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

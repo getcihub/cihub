@@ -10,7 +10,7 @@ use cihub_domain::{
     PrState, ReviewDecision,
 };
 use cihub_scm::{
-    CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
+    ChangedFile, CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
     RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
     ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
@@ -896,11 +896,13 @@ impl Scm for GithubApp {
         repo: &'a RepoRef,
         number: u64,
         class: JobClass,
-    ) -> ScmFuture<'a, Vec<String>> {
+    ) -> ScmFuture<'a, Vec<ChangedFile>> {
         Box::pin(async move {
             #[derive(Deserialize)]
             struct File {
                 filename: String,
+                /// Present when the PR renames the file.
+                previous_filename: Option<String>,
             }
             let mut paths = Vec::new();
             for page in 1..=FILE_PAGES {
@@ -910,7 +912,10 @@ impl Scm for GithubApp {
                     .await?;
                 let last = files.len() < 100;
 
-                paths.extend(files.into_iter().map(|file| file.filename));
+                paths.extend(files.into_iter().map(|file| ChangedFile {
+                    path: file.filename,
+                    previous_path: file.previous_filename,
+                }));
                 if last {
                     break;
                 }

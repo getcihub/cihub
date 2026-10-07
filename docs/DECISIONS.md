@@ -828,11 +828,11 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   file takes every target that keeps it, and a PR takes the union over its files; a renamed file counts by its
   old and its new path. A file that no target keeps, or a PR with more than 3,000 changed files (the limit of
   `Scm::pr_files`), gives `ALL`. A pattern that ends with `/` is a configuration error, whose message gives the
-  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230._
+  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230 and D247._
 - **D228** With `source: upload`, the targets are opaque strings compared by equality, or `"ALL"`; the body of
   the upload is limited to 20 MB, and a larger list is sent as `"ALL"`. Until the targets of its head SHA
   arrive, the item stays `not_ready` with the block reason `awaiting_affected_targets`, without a fallback to
-  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13)
+  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D247._
 - **D229** Extends D210: in `parallel` mode, a batch takes the next pending items of its lane, the items that
   overlapping targets link to it, and skips the items of the other lanes; the order stays the order of the
   queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
@@ -846,6 +846,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   otherwise the first queue of the branch. `queue_conditions` no longer route: they only admit, and the item
   waits in `not_ready` in its queue until they pass. `route_conditions` is not allowed in `defaults`. The routing
   reads the PR once, at the submission; an item still never changes queue.
+- **D247** Extends D227 and D228. `Scm::pr_files` gives each changed file with its old path when the PR renames
+  it; the conditions `files *=` still read only the new path. With `source: files`, each head of a live item
+  without its targets gets one `read_targets:<queue_id>-<pr>-<head_sha>:1` job (class `interactive`): it reads
+  the files, then the PR, and gives nothing when the head moved in between, `ALL` when it read fewer files than
+  the PR changes, else the targets of the patterns, as `targets.received`. In both sources, an item that waits
+  for its targets has the block reason `awaiting_affected_targets`. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

@@ -170,7 +170,8 @@ async fn loaded_context(
     let mut ctx = context(target, pr, reading.sender, reading.now);
 
     if uses(Attribute::Files) {
-        ctx.files = Some(scm.pr_files(&target.repo, pr.number, class).await?);
+        let files = scm.pr_files(&target.repo, pr.number, class).await?;
+        ctx.files = Some(files.into_iter().map(|file| file.path).collect());
     }
 
     if uses(Attribute::ReviewThreadsUnresolved) {
