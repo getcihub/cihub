@@ -18,7 +18,7 @@ use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
     queue_status_context, rebuild, wake_uncovered,
 };
-use cihub_mq_core::plan;
+use cihub_mq_core::{ConfigFile, plan};
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, Job, SYNC_INSTALLATION, SYNC_INSTALLATIONS, SYNC_REPOS,
     begin_reconciliation, claim_jobs, enqueue_job, find_route, mark_dirty,
@@ -178,7 +178,13 @@ impl World {
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
         let mut written = self.log.write(&mut tx, vec![event]).await.unwrap();
-        let plan = plan(&self.log.snapshot, &self.settings, self.now).unwrap();
+        let plan = plan(
+            &self.log.snapshot,
+            &self.settings,
+            ConfigFile::Read,
+            self.now,
+        )
+        .unwrap();
 
         written.extend(self.log.write(&mut tx, plan.decisions).await.unwrap());
         tx.commit().await.unwrap();
@@ -291,10 +297,15 @@ impl World {
 
     /// Merges the PRs of the desired state, as the merge job does.
     async fn merge_all(&mut self) {
-        let merges = plan(&self.log.snapshot, &self.settings, self.now)
-            .unwrap()
-            .desired
-            .merges;
+        let merges = plan(
+            &self.log.snapshot,
+            &self.settings,
+            ConfigFile::Read,
+            self.now,
+        )
+        .unwrap()
+        .desired
+        .merges;
         for merge in merges {
             self.target += 1;
             let sha = format!("target-{}", self.target);
@@ -2097,6 +2108,68 @@ async fn disjoint_prs_merge_apart_and_an_all_pr_holds_the_ones_behind_it(pool: P
     q.deliver().await;
     q.settle().await;
     assert_eq!(merged().await, [2, 1, 3, 4]);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D237: the first submissions of a new queue arrive with the
+/// first head of its target. The queue waits for its file before it admits
+/// them, takes the `parallel` mode at once, and tests the two lanes side by
+/// side; nothing is cancelled by the change of mode.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_new_queue_waits_for_its_file_before_its_first_groups(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets:\n      source: files\n      targets:\n        web: [web/**]\n        api: [api/**]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    for (n, path) in [(1, "web/page.txt"), (2, "api/main.txt")] {
+        let (number, head) = open_pr_with(&sim, &main, n, &[(path, Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let classes: Vec<String> =
+        sqlx::query_scalar("SELECT class::text FROM jobs WHERE type = 'load_config'")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(classes, ["interactive"]);
+    let items: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT pr_number, state::text FROM queue_items WHERE is_current ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(items, [(1, "testing".into()), (2, "testing".into())]);
+    let predecessors: Vec<i32> = sqlx::query_scalar(
+        "SELECT cardinality(predecessor_ids) FROM test_groups ORDER BY created_at, id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(predecessors, [0, 0]);
+    let queue: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload FROM events WHERE type::text = 'queue.transitioned' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(
+        queue,
+        [
+            serde_json::json!({ "from": "running", "to": "switching_modes", "reason": "mode_changed" }),
+            serde_json::json!({
+                "from": "switching_modes", "to": "running", "reason": "mode_switch_completed"
+            }),
+        ]
+    );
+    drop(tx);
     q.stop().await;
 }
 

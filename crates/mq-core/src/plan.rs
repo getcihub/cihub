@@ -131,6 +131,15 @@ impl Step {
     }
 }
 
+/// Whether the queue has read its configuration file once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigFile {
+    /// Its settings are the defaults, so it neither admits an item nor forms
+    /// a group (`DECISIONS.md` D237).
+    Unread,
+    Read,
+}
+
 /// Computes the decisions of the queue and the desired state.
 ///
 /// # Errors
@@ -140,6 +149,7 @@ impl Step {
 pub fn plan(
     snapshot: &Snapshot,
     settings: &QueueSettings,
+    file: ConfigFile,
     now: OffsetDateTime,
 ) -> Result<Plan, PlanError> {
     let mut state = snapshot.clone();
@@ -148,7 +158,7 @@ pub fn plan(
     let mut concluded = Vec::new();
     let limit = 64 * (snapshot.items.len() + snapshot.requests.len() + snapshot.groups.len() + 1);
 
-    while let Some(step) = next_step(&state, settings, now, &mut ids) {
+    while let Some(step) = next_step(&state, settings, file, now, &mut ids) {
         for kind in step.kinds {
             if decisions.len() >= limit {
                 return Err(PlanError::NoFixedPoint(limit));
@@ -210,20 +220,30 @@ const RULES: &[Rule] = &[
     validity,
     bisection,
     readiness,
-    admission,
-    formation,
 ];
+
+/// The last rules, which wait for the settings of the file (`DECISIONS.md`
+/// D237).
+const RULES_AFTER_READ: &[Rule] = &[admission, formation];
 
 fn next_step(
     s: &Snapshot,
     settings: &QueueSettings,
+    file: ConfigFile,
     now: OffsetDateTime,
     ids: &mut IdGen,
 ) -> Option<Step> {
     if s.state == QueueState::Paused {
         return requests(s, settings, now, ids);
     }
-    RULES.iter().find_map(|rule| rule(s, settings, now, ids))
+    let after_read = match file {
+        ConfigFile::Read => RULES_AFTER_READ,
+        ConfigFile::Unread => &[],
+    };
+    RULES
+        .iter()
+        .chain(after_read)
+        .find_map(|rule| rule(s, settings, now, ids))
 }
 
 /// Optional fields of an item transition.
@@ -447,7 +467,9 @@ fn mode_switch(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen
             None,
             queue_to(s, QueueState::SwitchingModes, Reason::ModeChanged),
         ),
-        QueueState::SwitchingModes if s.items.values().all(|i| i.state.is_terminal()) => Step::one(
+        // The waiting items have tested nothing in the old mode (`DECISIONS.md`
+        // D237).
+        QueueState::SwitchingModes if s.live_groups().next().is_none() => Step::one(
             None,
             queue_to(s, QueueState::Running, Reason::ModeSwitchCompleted),
         ),

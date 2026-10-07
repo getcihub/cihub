@@ -356,6 +356,12 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `ALL` when the computation fails, and the Bazel one also when a file that defines the build changes (the
     query gives no target for it). Test: `the_upload_script_of_the_actions_sends_the_targets`. The Bazel script
     was run by hand on a small workspace; the Nx one only on its failure; the pilot monorepo checks both.
+  - Done (October 7, 2026, D237): a queue that has not read its file yet admits nothing and forms no group, and
+    its first `load_config` is `interactive`; `switching_modes` ends when no group is live. Before, the first
+    PRs of a new `parallel` queue were tested in `single` mode, and a submission during the switch was
+    cancelled. Tests: `a_queue_admits_nothing_before_its_file_is_read`,
+    `a_mode_change_waits_for_the_live_groups` (core),
+    `a_new_queue_waits_for_its_file_before_its_first_groups` (simulator and Postgres).
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

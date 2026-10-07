@@ -6,7 +6,8 @@ and the strategy table are in `crates/config/src/settings.rs`. This file explain
 The behavior of a queue is configured in a `.cihub.yaml` or `.cihub.yml` file at the root of the repository, read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
 each new head (`DECISIONS.md` D136); the settings apply from the reconciliation that follows the
-read. No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
+read. Until its first read, which has class `interactive`, a queue keeps its submissions `not_ready`: it admits
+nothing and forms no group with settings that its file may change (`DECISIONS.md` D237). No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
 creates the queues that the file names on that branch, or, without such an entry, on the default branch of the
 repository, a queue named after the branch, with the default settings and `defaults`. Without a file, a team thus
 starts with one queue on its default branch; an entry `name: main`, `branch: main` then sets that same queue. An
@@ -180,4 +181,5 @@ base branch change cancels the item with `pr_base_branch_changed`.
 A queue cannot be deleted while it contains live items; its deletion erases its settings
 and its history from Postgres but not from ClickHouse. Changing `mode` with items in flight switches to
 `switching_modes`, refuses new submissions with `queue_switching_modes`, and ends automatically
-when the last item concludes.
+when no group is live any more; without a live group, the change ends at once and the waiting items keep their
+place (`DECISIONS.md` D237).

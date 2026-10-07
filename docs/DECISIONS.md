@@ -467,9 +467,9 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the target has moved since. `queues` gains `config_text` (the last valid file, `NULL` without a file),
   `config_sha` (the head read) and `config_error` (why the file read is not valid). Each reconciliation and each
   job resolves the settings of its queue from `config_text`; the assembly always reads the required statuses at
-  `base_sha`.
+  `base_sha`. _Extended by D237._
 - **D137** When the mode of the settings differs from the requested mode of the queue, the reconciliation writes
-  the `queue.settings_changed` fact (actor `system`) before `plan`.
+  the `queue.settings_changed` fact (actor `system`) before `plan`. _Extended by D237._
 - **D138** Lot 8 creates no queue from the file: the admin command of Lot 9 creates them (Q14). An entry of the
   file is linked to its queue by its branch and its name; a queue without an entry has the default settings,
   without the `defaults` of the file. _Extended by D154: the API and the CLI create the queues._ _Superseded by D172._
@@ -870,6 +870,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   event; their output `targets` gives what they sent. Bazel sends the labels that the changed files affect
   (reverse dependencies); Nx sends the names of the affected projects. When the computation fails, the action
   sends `ALL`. A PR from a fork without a token stops the action with a clear message (D234). (Lot 13)
+- **D237** Extends D136 and D137. Until a queue has read its configuration file once (`config_sha` is `NULL`),
+  `plan` neither admits an item nor forms a group: the submissions are kept, `not_ready`, and wait for the
+  settings of the file; that first `load_config` has class `interactive`. `switching_modes` ends as soon as no
+  group of the queue is live, instead of when the queue is empty: at once, in the same reconciliation, when the
+  mode changes without a live group; the waiting items keep their place and form their groups in the new mode.
+  (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

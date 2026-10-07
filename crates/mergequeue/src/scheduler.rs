@@ -15,7 +15,7 @@ use cihub_domain::{
     Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RepoId, RunId, RunStatus, SubmittedVia,
     run_of_test_branch,
 };
-use cihub_mq_core::plan;
+use cihub_mq_core::{ConfigFile, plan};
 use cihub_platform::{
     Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
     enqueue_job, mark_dirty, pending_deliveries, release_leases, schedule_tick, until_next_tick,
@@ -167,7 +167,12 @@ impl Reconciler {
 
         written += log.write(conn, facts).await?.len();
 
-        let plan = plan(&log.snapshot, &settings, now)?;
+        let file = if target.config_sha.is_some() {
+            ConfigFile::Read
+        } else {
+            ConfigFile::Unread
+        };
+        let plan = plan(&log.snapshot, &settings, file, now)?;
         let ended = ended_runs(&plan.decisions);
         let decisions = log.write(conn, plan.decisions).await?.len();
         let converge = Converge {

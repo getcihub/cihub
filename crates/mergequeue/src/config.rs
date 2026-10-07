@@ -52,13 +52,20 @@ async fn live_heads(conn: &mut PgConnection, queue: QueueId) -> Result<Vec<Head>
         .collect())
 }
 
-/// The read of the configuration file of `target` at the head `sha`.
+/// The read of the configuration file of `target` at the head `sha`. The
+/// first read holds the admissions of the queue, so it is `interactive`
+/// (`DECISIONS.md` D237).
 pub(crate) fn load_config(target: &QueueTarget, sha: &str) -> Job {
     let key = format!("{LOAD_CONFIG}:{}-{sha}:1", target.queue_id);
     let request = LoadConfig {
         sha: sha.to_owned(),
     };
-    job(target, key, LOAD_CONFIG, JobClass::Repair, json!(request))
+    let class = if target.config_sha.is_some() {
+        JobClass::Repair
+    } else {
+        JobClass::Interactive
+    };
+    job(target, key, LOAD_CONFIG, class, json!(request))
 }
 
 /// The configuration file of `repo` at `sha`, or `None` without a file.

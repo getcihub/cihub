@@ -11,7 +11,7 @@ use cihub_domain::{
     JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, Reason,
     RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
 };
-use cihub_mq_core::{Outcome, Plan, Snapshot, apply, check, plan};
+use cihub_mq_core::{ConfigFile, Outcome, Plan, Snapshot, apply, check, plan};
 use time::{Duration, OffsetDateTime};
 use ulid::Ulid;
 
@@ -68,6 +68,8 @@ pub struct World {
     pub snapshot: Snapshot,
     pub log: Vec<Event>,
     pub settings: QueueSettings,
+    /// `Read` unless the test plays a queue that has not read its file yet.
+    pub file: ConfigFile,
     pub now: OffsetDateTime,
     /// The surfaces of every reconciliation, in order.
     pub surfaces: Vec<Vec<cihub_mq_core::Surface>>,
@@ -83,6 +85,7 @@ impl World {
             snapshot,
             log: Vec::new(),
             settings,
+            file: ConfigFile::Read,
             now: OffsetDateTime::UNIX_EPOCH + Duration::days(20_000),
             surfaces: Vec::new(),
             facts: 0,
@@ -120,7 +123,7 @@ impl World {
 
     /// Runs `plan`, applies its decisions, and checks the snapshot.
     pub fn reconcile(&mut self) -> Plan {
-        let plan = plan(&self.snapshot, &self.settings, self.now).unwrap();
+        let plan = plan(&self.snapshot, &self.settings, self.file, self.now).unwrap();
 
         for event in &plan.decisions {
             assert_eq!(apply(&mut self.snapshot, event), Ok(Outcome::Applied));
@@ -128,7 +131,8 @@ impl World {
         }
 
         self.surfaces.push(plan.desired.surfaces.clone());
-        let again = cihub_mq_core::plan(&self.snapshot, &self.settings, self.now).unwrap();
+        let again =
+            cihub_mq_core::plan(&self.snapshot, &self.settings, self.file, self.now).unwrap();
         assert!(again.decisions.is_empty(), "no fixed point: {again:#?}");
         assert_eq!(check(&self.snapshot, &self.settings), vec![]);
 

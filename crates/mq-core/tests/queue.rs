@@ -9,7 +9,7 @@ use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError,
     Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
 };
-use cihub_mq_core::{CheckRead, Head, Outcome, Read};
+use cihub_mq_core::{CheckRead, ConfigFile, Head, Outcome, Read};
 use common::{World, head, settings, transitioned, window};
 
 fn world() -> World {
@@ -656,20 +656,24 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_replays(&w);
 }
 
+fn to_parallel() -> EventKind {
+    EventKind::QueueSettingsChanged {
+        before: QueueMode::Single,
+        after: QueueMode::Parallel,
+    }
+}
+
 #[test]
-fn a_mode_change_waits_for_an_empty_queue() {
+fn a_mode_change_waits_for_the_live_groups() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
 
-    w.fact(
-        Actor::System,
-        EventKind::QueueSettingsChanged {
-            before: QueueMode::Single,
-            after: QueueMode::Parallel,
-        },
-    );
+    w.fact(Actor::System, to_parallel());
 
     assert_eq!(w.snapshot.state, QueueState::SwitchingModes);
+    // A submission while a group is live gets a refused item (D151).
+    assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
+    assert!(decided_with(&w, Reason::QueueSwitchingModes));
 
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
@@ -678,6 +682,50 @@ fn a_mode_change_waits_for_an_empty_queue() {
     assert_eq!(w.snapshot.state, QueueState::Running);
     assert_eq!(w.snapshot.mode, QueueMode::Parallel);
 
+    assert_replays(&w);
+}
+
+/// `DECISIONS.md` D237: before the first read of its file, the queue keeps
+/// the submissions `not_ready`; the file read, the first mode applies at
+/// once, since no group tested anything, and nothing is cancelled.
+#[test]
+fn a_queue_admits_nothing_before_its_file_is_read() {
+    let mut w = world();
+    w.file = ConfigFile::Unread;
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    assert_eq!(w.state(1), Some(ItemState::NotReady));
+    assert!(w.snapshot.groups.is_empty());
+
+    w.file = ConfigFile::Read;
+    w.settings.mode.value = QueueMode::Parallel;
+    w.settings.affected_targets.value = Some(TargetsSource::Upload);
+    w.fact(Actor::System, to_parallel());
+    assert_eq!(w.snapshot.state, QueueState::Running);
+    assert_eq!(w.snapshot.mode, QueueMode::Parallel);
+    // The items now wait for their targets, as in a queue that started in
+    // parallel mode.
+    assert_eq!(w.state(1), Some(ItemState::NotReady));
+    assert_eq!(
+        w.item(1).unwrap().block_reasons,
+        [BlockReason::AwaitingAffectedTargets]
+    );
+    assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
+    assert_eq!(w.state(3), Some(ItemState::NotReady));
+    for (pr, target) in [(1, "//a"), (2, "//b")] {
+        w.fact(
+            Actor::System,
+            EventKind::TargetsReceived {
+                pr_number: pr,
+                head_sha: head(pr, 0),
+                targets: cihub_domain::AffectedTargets::Targets([target.into()].into()),
+            },
+        );
+    }
+    assert_eq!(w.state(1), Some(ItemState::Testing));
+    assert_eq!(w.state(2), Some(ItemState::Testing));
+    let group = w.item(2).unwrap().group_id.unwrap();
+    assert!(w.snapshot.groups[&group].predecessor_ids.is_empty());
     assert_replays(&w);
 }
 
