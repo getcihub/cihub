@@ -182,4 +182,5 @@ A queue cannot be deleted while it contains live items; its deletion erases its 
 and its history from Postgres but not from ClickHouse. Changing `mode` with items in flight switches to
 `switching_modes`, refuses new submissions with `queue_switching_modes`, and ends automatically
 when no group is live any more; without a live group, the change ends at once and the waiting items keep their
-place (`DECISIONS.md` D237).
+place (`DECISIONS.md` D237). No group forms in the meantime, and after a switch to `parallel`, a waiting PR waits
+for its targets before its test (D240).

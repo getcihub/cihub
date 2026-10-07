@@ -685,6 +685,42 @@ fn a_mode_change_waits_for_the_live_groups() {
     assert_replays(&w);
 }
 
+/// `DECISIONS.md` D240: while the mode changes, a waiting PR forms no group in
+/// the old mode; once the queue takes the `parallel` mode, it waits for its
+/// targets instead of a test as `ALL`.
+#[test]
+fn a_pending_pr_waits_for_its_targets_after_a_switch_to_parallel() {
+    let mut w = World::new(settings(window(1)));
+    w.submit(1, Priority::MEDIUM);
+    w.submit(2, Priority::MEDIUM);
+    assert_eq!(w.state(2), Some(ItemState::Pending));
+    w.settings.mode.value = QueueMode::Parallel;
+    w.settings.affected_targets.value = Some(TargetsSource::Upload);
+    w.fact(Actor::System, to_parallel());
+    assert_eq!(w.snapshot.state, QueueState::SwitchingModes);
+    w.assemble_all();
+    w.report(1, CheckConclusion::Success);
+    assert_eq!(
+        w.state(2),
+        Some(ItemState::Pending),
+        "no group in the old mode"
+    );
+    w.merge_all();
+    assert_eq!(w.snapshot.mode, QueueMode::Parallel);
+    assert_eq!(w.state(2), Some(ItemState::Pending));
+    assert!(w.item(2).unwrap().group_id.is_none());
+    w.fact(
+        Actor::System,
+        EventKind::TargetsReceived {
+            pr_number: 2,
+            head_sha: head(2, 0),
+            targets: cihub_domain::AffectedTargets::Targets(["//b".into()].into()),
+        },
+    );
+    assert_eq!(w.state(2), Some(ItemState::Testing));
+    assert_replays(&w);
+}
+
 /// `DECISIONS.md` D237: before the first read of its file, the queue keeps
 /// the submissions `not_ready`; the file read, the first mode applies at
 /// once, since no group tested anything, and nothing is cancelled.

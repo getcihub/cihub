@@ -1184,6 +1184,13 @@ fn has_targets(s: &Snapshot, item: &Item) -> bool {
         .is_some_and(|t| t.value.head_sha == item.head_sha)
 }
 
+/// Whether a group can take `item`: pending and, in parallel mode, with the
+/// targets of its head. An item admitted before the queue took the parallel
+/// mode keeps its place until they arrive (`DECISIONS.md` D240).
+fn formable(s: &Snapshot, item: &Item) -> bool {
+    item.state == ItemState::Pending && (s.mode == QueueMode::Single || has_targets(s, item))
+}
+
 /// Mergeability and block reasons of a `not_ready` item: the mergeability on
 /// the SCM, the affected targets in parallel mode, and the `queue_conditions`
 /// that the job that read the PR found unmet (`DECISIONS.md` D142).
@@ -1313,7 +1320,12 @@ fn formation(
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
 
-    if !window_has_room(s, settings) || direct_merge(s, settings).is_some() {
+    // While the mode changes, a new group would test in the old mode
+    // (`DECISIONS.md` D240).
+    if !window_has_room(s, settings)
+        || direct_merge(s, settings).is_some()
+        || s.state == QueueState::SwitchingModes
+    {
         return None;
     }
 
@@ -1387,7 +1399,7 @@ fn next_group<'a>(
 ) -> Option<Next<'a>> {
     let mut waiting = Vec::new();
     for (index, item) in order.iter().enumerate() {
-        let ready = item.state == ItemState::Pending
+        let ready = formable(s, item)
             && predecessors(s, order, index).iter().all(|id| {
                 s.items
                     .get(id)
@@ -1443,7 +1455,7 @@ fn group_at<'a>(
         if !needs.iter().any(member) {
             continue;
         }
-        let joins = item.state == ItemState::Pending
+        let joins = formable(s, item)
             && !item.no_batch
             && needs.iter().all(|id| member(id) || below.contains(id));
         if !joins {

@@ -832,7 +832,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D228** With `source: upload`, the targets are opaque strings compared by equality, or `"ALL"`; the body of
   the upload is limited to 20 MB, and a larger list is sent as `"ALL"`. Until the targets of its head SHA
   arrive, the item stays `not_ready` with the block reason `awaiting_affected_targets`, without a fallback to
-  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D247._
+  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D247 and D240._
 - **D229** Extends D210: in `parallel` mode, a batch takes the next pending items of its lane, the items that
   overlapping targets link to it, and skips the items of the other lanes; the order stays the order of the
   queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
@@ -876,7 +876,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   settings of the file; that first `load_config` has class `interactive`. `switching_modes` ends as soon as no
   group of the queue is live, instead of when the queue is empty: at once, in the same reconciliation, when the
   mode changes without a live group; the waiting items keep their place and form their groups in the new mode.
-  (Lot 13)
+  (Lot 13) _Extended by D240._
 - **D238** Extends D236. The Bazel action also sends `ALL` when the PR changes a file that defines the build
   (`BUILD`, `BUILD.bazel`, `*.bzl`, `MODULE.bazel`, `MODULE.bazel.lock`, `WORKSPACE`, `WORKSPACE.bazel`,
   `WORKSPACE.bzlmod`, `.bazelrc`, `.bazelversion`): the query sees such a file as one that no target depends on,
@@ -889,6 +889,10 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   data; the head SHA comes from the event, so the targets reach only that head. A route without a token was
   refused: the identifier of a running job is public on a public repository, so anyone could send the targets
   of another PR. CIHub does not change. (Lot 13)
+- **D240** Extends D228 and D237. While the queue is in `switching_modes`, no group forms: a new group would test in
+  the old mode, and the switch ends when the live groups end. In `parallel` mode, a `pending` item without the
+  targets of its head forms no group and joins no batch; it keeps its place until they arrive, as a `not_ready`
+  item waits for them. Before, an item admitted in `single` mode was tested as `ALL` after the switch. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

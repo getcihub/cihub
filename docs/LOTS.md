@@ -365,6 +365,9 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     the targets in the artifact `cihub-affected-targets`; `actions/affected-targets/forward`, in a `workflow_run`
     workflow, sends it with the token, for the head SHA of the event. CIHub does not change; `jq` joins the
     tools of `mise.toml` for the test. Test: `the_scripts_of_the_actions_send_the_targets`.
+  - Done (October 7, 2026, D240): no group forms in `switching_modes`, and in `parallel` mode a pending item
+    waits for the targets of its head before a group takes it. Before, a PR admitted in `single` mode was tested
+    as `ALL` after the switch. Test: `a_pending_pr_waits_for_its_targets_after_a_switch_to_parallel`.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

@@ -157,6 +157,7 @@ the order, and a submission there waits for the resume (`DECISIONS.md` D113); `d
 refuses a new submission, whose item is created `cancelled` with the reason `queue_draining` (D151);
 `switching_modes` is reached automatically when the mode changes and behaves like
 `draining` (reason `queue_switching_modes`) until no group is live: at once without a live group, in the same
-reconciliation (`DECISIONS.md` D237). Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
+reconciliation (`DECISIONS.md` D237). No group forms in the meantime, so that the waiting items are tested in the
+new mode (D240). Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`
 (`docs/CONFIGURATION.md`).
