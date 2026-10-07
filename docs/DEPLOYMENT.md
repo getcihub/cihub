@@ -196,7 +196,10 @@ or its digest, with the version as a comment or a tag.
 The jobs of `ci.yml` and `sim.yaml` run on `cihub-runner`, a self-hosted runner set (Actions Runner Controller in
 Kubernetes mode), which has no Docker daemon, on a small machine. Its image cannot link Rust (no C library headers),
 so the Rust jobs run in the `rust` image. The Rust checks are one job, so that the unit tests and the tests against
-Postgres share one build. `Rust` and `Fault Injection` cannot start `compose.yaml`: Postgres is a service of the
+Postgres share one build. The pod is new for each run, so `Rust` turns off incremental compilation
+(`CARGO_INCREMENTAL=0`) and keeps only the line numbers of the debug information
+(`CARGO_PROFILE_DEV_DEBUG=line-tables-only`); nextest runs 4 tests at a time (`NEXTEST_TEST_THREADS`), as the tests
+share one Postgres. `Rust` and `Fault Injection` cannot start `compose.yaml`: Postgres is a service of the
 job, on `127.0.0.1:5432` as in development; the job runs `postgres-setup.sql`, then the task without its `db`
 dependency. `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint`
 ignore the label `ubuntu-26.04`, which it does not know yet.

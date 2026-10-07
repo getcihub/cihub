@@ -42,6 +42,13 @@ jobs:
           POSTGRES_PASSWORD: postgres
     permissions:
       contents: read
+    env:
+      # The pod is new for each run: incremental state and full debug
+      # information are work that no one reads.
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # The tests share one Postgres and the node runs other workloads.
+      NEXTEST_TEST_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
