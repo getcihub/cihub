@@ -5,7 +5,7 @@
 //! with `apply`, and stops when no rule gives a step. A replay of the
 //! decisions with `apply` thus gives the same state.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
@@ -1343,60 +1343,95 @@ fn in_bisection(s: &Snapshot, item: &Item) -> bool {
         })
 }
 
-/// The next group of the queue, or its batch that waits until `until`.
+/// The next group of the queue, or the batches that wait, each until its
+/// time.
 enum Next<'a> {
     Form {
         index: usize,
         members: Vec<&'a Item>,
     },
-    Wait {
-        members: Vec<&'a Item>,
-        until: OffsetDateTime,
-    },
+    Wait(Vec<(Vec<&'a Item>, OffsetDateTime)>),
 }
 
-/// The first pending item whose predecessors are all in groups, at `index`
-/// in `order`. With batching, the pending items that follow it join it, up to
-/// `batching.size`, until an item that is not pending or is `no_batch`. A
-/// batch that is not full waits until its oldest member has waited
-/// `batching.max_wait_minutes` in the queue (`DECISIONS.md` D210), unless the
-/// item right behind it is `no_batch`: the batch cannot grow, and that item
-/// would wait for nothing (D224).
+/// The next group to form: the first pending item whose predecessors are
+/// all in groups, with its batch. In `parallel` mode, a lane whose batch
+/// waits does not hold the other lanes: the first group that can form wins,
+/// else the queue waits for the earliest batch (`DECISIONS.md` D229).
 fn next_group<'a>(
     s: &Snapshot,
     order: &[&'a Item],
     settings: &QueueSettings,
     now: OffsetDateTime,
 ) -> Option<Next<'a>> {
-    let index = order.iter().enumerate().position(|(index, item)| {
-        item.state == ItemState::Pending
+    let mut waiting = Vec::new();
+    for (index, item) in order.iter().enumerate() {
+        let ready = item.state == ItemState::Pending
             && predecessors(s, order, index).iter().all(|id| {
                 s.items
                     .get(id)
                     .is_some_and(|p| p.state != ItemState::Pending && !in_bisection(s, p))
-            })
-    })?;
+            });
+        if !ready {
+            continue;
+        }
 
+        match group_at(s, order, index, settings, now) {
+            Next::Wait(batches) => waiting.extend(batches),
+            form @ Next::Form { .. } => return Some(form),
+        }
+    }
+
+    (!waiting.is_empty()).then_some(Next::Wait(waiting))
+}
+
+/// The group of `order[index]`. With batching, the pending items behind it
+/// in its lane join it, up to `batching.size`: an item that no member
+/// links to is in another lane and is skipped; the first item of the lane
+/// that cannot join, because it is not pending, is `no_batch` or needs
+/// another predecessor, ends the batch (`DECISIONS.md` D229). In single mode,
+/// every item is in the lane. A batch that is not full waits until its
+/// oldest member has waited `batching.max_wait_minutes` in the queue
+/// (`DECISIONS.md` D210), unless the item that ends it is `no_batch`: the batch
+/// cannot grow, and that item would wait for nothing (D224).
+fn group_at<'a>(
+    s: &Snapshot,
+    order: &[&'a Item],
+    index: usize,
+    settings: &QueueSettings,
+    now: OffsetDateTime,
+) -> Next<'a> {
     let first = order[index];
     if !settings.batching_enabled.value || first.no_batch {
-        return Some(Next::Form {
+        return Next::Form {
             index,
             members: vec![first],
-        });
+        };
     }
 
     let size = usize::try_from(settings.batching_size.value).unwrap_or(usize::MAX);
-    let members: Vec<&Item> = order[index..]
-        .iter()
-        .take_while(|i| i.state == ItemState::Pending && !i.no_batch)
-        .take(size)
-        .copied()
-        .collect();
-    let closed = order
-        .get(index + members.len())
-        .is_some_and(|i| i.state == ItemState::Pending && i.no_batch);
+    let below: BTreeSet<ItemId> = predecessors(s, order, index).into_iter().collect();
+    let mut members = vec![first];
+    let mut closed = false;
+    for (j, item) in order.iter().enumerate().skip(index + 1) {
+        if members.len() == size {
+            break;
+        }
+        let needs = predecessors(s, order, j);
+        let member = |id: &ItemId| members.iter().any(|m| m.id == *id);
+        if !needs.iter().any(member) {
+            continue;
+        }
+        let joins = item.state == ItemState::Pending
+            && !item.no_batch
+            && needs.iter().all(|id| member(id) || below.contains(id));
+        if !joins {
+            closed = item.state == ItemState::Pending && item.no_batch;
+            break;
+        }
+        members.push(item);
+    }
     if closed {
-        return Some(Next::Form { index, members });
+        return Next::Form { index, members };
     }
 
     let wait = Duration::minutes(i64::from(settings.batching_max_wait_minutes.value));
@@ -1407,11 +1442,8 @@ fn next_group<'a>(
         .map(|t| t + wait);
 
     match ready {
-        Some(ready) if members.len() < size && now < ready => Some(Next::Wait {
-            members,
-            until: ready,
-        }),
-        _ => Some(Next::Form { index, members }),
+        Some(ready) if members.len() < size && now < ready => Next::Wait(vec![(members, ready)]),
+        _ => Next::Form { index, members },
     }
 }
 
@@ -1615,7 +1647,7 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
     });
     let target = target_points(s, now).map(|(_, next)| next);
     let batch = match next_group(s, &s.queue_order(), settings, now) {
-        Some(Next::Wait { until, .. }) => Some(until),
+        Some(Next::Wait(batches)) => batches.iter().map(|(_, until)| *until).min(),
         _ => None,
     };
 
@@ -1723,7 +1755,7 @@ fn desired(
 }
 
 /// The surface of each PR: its live item, else the last item that this
-/// reconciliation concluded. The members of the batch that waits show when it
+/// reconciliation concluded. The members of each batch that waits show when it
 /// closes (`DECISIONS.md` D241), with the time that `wake_at` uses.
 fn surfaces(
     s: &Snapshot,
@@ -1737,14 +1769,15 @@ fn surfaces(
         .collect();
 
     let waiting = match next_group(s, &s.queue_order(), settings, now) {
-        Some(Next::Wait { members, until }) => Some((members, until)),
-        _ => None,
+        Some(Next::Wait(batches)) => batches,
+        _ => Vec::new(),
     };
 
     for item in live_items(s) {
         let mut surface = surface(s, item);
-        if let Some((members, until)) = &waiting
-            && members.iter().any(|m| m.id == item.id)
+        if let Some((members, until)) = waiting
+            .iter()
+            .find(|(members, _)| members.iter().any(|m| m.id == item.id))
         {
             surface.batch_wait = Some(BatchWait {
                 members: members.len(),

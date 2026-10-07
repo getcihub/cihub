@@ -1987,6 +1987,42 @@ async fn disjoint_prs_are_tested_side_by_side_from_their_files(pool: PgPool) {
         .collect();
     assert_eq!(groups, [("1", 0), ("2", 0), ("3", 2)]);
     drop(tx);
+
+    // A new block computes the targets of each live item again (D230, D235).
+    let file = config.replace(
+        "        api: [api/**]\n",
+        "        api: [api/**]\n        other: [other.txt]\n",
+    );
+    let next = sim
+        .commit(&repo(), &main, &[(".cihub.yaml", Some(&file))])
+        .unwrap();
+    sim.push(&repo(), "main", &next, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let targets: Vec<(i64, serde_json::Value)> = sqlx::query_as(
+        "SELECT (payload->>'pr_number')::bigint, payload->'targets' FROM events
+         WHERE type::text = 'targets.received' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    // The same targets for PRs 1 and 2 change nothing, so the log does not
+    // keep them.
+    assert_eq!(
+        targets[3..],
+        [(3, serde_json::json!({ "targets": ["other"] }))]
+    );
+    let reads: Vec<String> = sqlx::query_scalar(
+        "SELECT idempotency_key FROM jobs WHERE type = 'read_targets' AND idempotency_key LIKE $1
+         ORDER BY idempotency_key",
+    )
+    .bind(format!("%-{next}:1"))
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(reads.len(), 3, "{reads:?}");
+    drop(tx);
     q.stop().await;
 }
 

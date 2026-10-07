@@ -175,11 +175,12 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
     job(target, key, REFRESH_PRS, JobClass::Interactive, payload)
 }
 
-/// The computation of the affected targets of `head`, once per head
-/// (`DECISIONS.md` D247).
+/// The computation of the affected targets of `head`, once per head and per
+/// configuration (`DECISIONS.md` D247, D235).
 pub(crate) fn read_targets(target: &QueueTarget, head: &Head) -> Job {
+    let config = target.config_sha.as_deref().unwrap_or("none");
     let key = format!(
-        "{READ_TARGETS}:{}-{}-{}:1",
+        "{READ_TARGETS}:{}-{}-{}-{config}:1",
         target.queue_id, head.pr_number, head.sha
     );
     let payload = json!(ReadTargets {

@@ -838,6 +838,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
 - **D230** Extends D227: when a new configuration changes the `affected_targets` block, the targets of every
   live item are computed again; a run whose predecessors change restarts through the rules of validity. (Lot 13)
+  _Extended by D235._
 - **D231** The example actions for Bazel and Nx are composite actions in the repository that send the targets to
   the `affected-targets` route with `curl`; no command of the CLI uploads targets. (Lot 13)
 - **D232** Extends D148: a queue entry can carry `route_conditions`, in the language of the conditions; the
@@ -851,13 +852,18 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   without its targets gets one `read_targets:<queue_id>-<pr>-<head_sha>:1` job (class `interactive`): it reads
   the files, then the PR, and gives nothing when the head moved in between, `ALL` when it read fewer files than
   the PR changes, else the targets of the patterns, as `targets.received`. In both sources, an item that waits
-  for its targets has the block reason `awaiting_affected_targets`. (Lot 13) _Extended by D234._
+  for its targets has the block reason `awaiting_affected_targets`. (Lot 13) _Extended by D234 and D235._
 - **D234** Extends D228 and D247. The `affected-targets` route stores each upload in `affected_targets`, by
   repository, PR and head SHA, with a token that has `targets:write`, and answers `202`; the body is limited to
   20 MB. It gives `targets.received` at once to each queue in `source: upload` whose live item of the PR has that
   head; otherwise the `read_targets` job of the head reads the stored upload, so that an upload before the
   submission is kept. A queue in `source: files` ignores the uploads. The upload of a PR from a fork, without a
   token, comes later. (Lot 13)
+- **D235** Extends D230 and D247. The key of the `read_targets` job carries the SHA of the configuration:
+  `read_targets:<queue_id>-<pr>-<head_sha>-<config_sha>:1`. When `load_config` keeps a file whose
+  `affected_targets` block changes, it asks a `read_targets` job for the head of each live item, which gives
+  the targets again. An item whose queue goes from `source: files` to `source: upload` without an upload of its
+  head keeps the targets of its files. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

@@ -160,7 +160,7 @@ keeps it, a renamed file counts by its old and its new path, and the PR takes th
 that no target keeps, or more than 3,000 changed files, gives `ALL`: the PR waits for every PR ahead of it and
 every PR behind waits for it. A pattern that ends with `/`, or a list without any pattern that includes, is a
 configuration error, as are `source: files` without a `targets` map, an empty pattern and an invalid glob. A
-change of the block computes again the targets of every PR in the queue (`DECISIONS.md` D230). The model and
+change of the block computes again the targets of every PR in the queue (`DECISIONS.md` D230, D235). The model and
 the computation are in `crates/config/src/targets.rs`; the glob, shared with `files *=`, is `PathGlob` in
 `cihub-conditions`.
 

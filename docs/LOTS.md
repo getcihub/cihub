@@ -338,6 +338,12 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `read_targets` reads a stored upload for a head submitted after it. Test:
     `the_ci_uploads_the_targets_before_or_after_the_submission`. Remains: the upload from a fork, without a
     token (a new method of `Scm` and a new recording of GitHub).
+  - Done (October 7, 2026): step 5. In `parallel` mode, a batch takes the pending items of its lane and skips
+    the others; the first item of its lane that cannot join ends it, and a lane whose batch waits does not hold
+    the others (D229). When `load_config` keeps a file whose `affected_targets` block changes, it asks the
+    targets of each live item again, with the SHA of the file in the key of `read_targets` (D230, D235).
+    Tests: three scenarios in `tests/batching.rs`, and the change of patterns in
+    `disjoint_prs_are_tested_side_by_side_from_their_files`. `mise run load` passes.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening
