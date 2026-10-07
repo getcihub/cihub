@@ -21,34 +21,26 @@ concurrency:
 permissions:
   contents: read
 
+# The pod of a job is new for each run: incremental state and full debug
+# information are work that no one reads.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
 # The jobs run on cihub-runner, a self-hosted runner set in Kubernetes mode,
-# without a Docker daemon, on a small machine. The image of the runner cannot
-# link Rust (no C library headers), so the Rust checks run in the rust image,
-# in one job: the unit tests and the tests against Postgres share one build.
+# without a Docker daemon. The image of the runner cannot link Rust (no C
+# library headers), so the Rust jobs run in the rust image.
 jobs:
-  rust:
+  rust-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Rust
+    name: Rust Lint
     runs-on: cihub-runner
     container:
       image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
-    # Postgres runs in the pod of the job, on 127.0.0.1 as in compose.yaml.
-    services:
-      postgres:
-        image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
-        env:
-          POSTGRES_PASSWORD: postgres
     permissions:
       contents: read
-    env:
-      # The pod is new for each run: incremental state and full debug
-      # information are work that no one reads.
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
-      # The tests share one Postgres and the node runs other workloads.
-      NEXTEST_TEST_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,8 +55,62 @@ jobs:
       - name: Run linters
         run: mise run lint
 
+  rust-test:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Rust Test
+    runs-on: cihub-runner
+    container:
+      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          install_args: --locked
+
       - name: Run unit tests
         run: mise run test
+
+      - name: Check coverage of the pure crates
+        run: mise run cover
+
+  rust-test-integration:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Rust Integration Test
+    runs-on: cihub-runner
+    container:
+      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+    # Postgres runs in the pod of the job, on 127.0.0.1 as in compose.yaml.
+    services:
+      postgres:
+        image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
+        env:
+          POSTGRES_PASSWORD: postgres
+    permissions:
+      contents: read
+    env:
+      # The tests share one Postgres and the node runs other workloads.
+      NEXTEST_TEST_THREADS: "4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        with:
+          install_args: --locked
 
       - name: Setup Postgres
         env:
@@ -79,9 +125,6 @@ jobs:
 
       - name: Run tests against Postgres
         run: mise run --skip-deps test-integration
-
-      - name: Check coverage of the pure crates
-        run: mise run cover
 
   workflow-lint:
     if: >-
@@ -111,7 +154,9 @@ jobs:
     if: ${{ !cancelled() }}
     name: Build Success
     needs:
-      - rust
+      - rust-lint
+      - rust-test
+      - rust-test-integration
       - workflow-lint
     runs-on: cihub-runner
     permissions: {}
