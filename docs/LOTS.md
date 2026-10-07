@@ -351,6 +351,11 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     the order of the queue between two PRs that share a target, and the test checks that two lanes were
     tested side by side. The seeds now push to `main` before the submissions, so that the queue reads its
     file first. `mise run sim` plays the three tests and passes on 1,000 seeds (2,520 s).
+  - Done (October 7, 2026, D236): step 7. The composite actions `actions/affected-targets/bazel` and
+    `actions/affected-targets/nx` compute the targets and send them with the shared `upload.sh`; they send
+    `ALL` when the computation fails, and the Bazel one also when a file that defines the build changes (the
+    query gives no target for it). Test: `the_upload_script_of_the_actions_sends_the_targets`. The Bazel script
+    was run by hand on a small workspace; the Nx one only on its failure; the pilot monorepo checks both.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

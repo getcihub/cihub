@@ -840,7 +840,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   live item are computed again; a run whose predecessors change restarts through the rules of validity. (Lot 13)
   _Extended by D235._
 - **D231** The example actions for Bazel and Nx are composite actions in the repository that send the targets to
-  the `affected-targets` route with `curl`; no command of the CLI uploads targets. (Lot 13)
+  the `affected-targets` route with `curl`; no command of the CLI uploads targets. (Lot 13) _Extended by D236._
 - **D232** Extends D148: a queue entry can carry `route_conditions`, in the language of the conditions; the
   routing of a submission reads only them. The queue named by `--queue=<name>` wins; otherwise the first queue of
   the branch, in file order, whose `route_conditions` pass; a queue without `route_conditions` takes every PR;
@@ -864,6 +864,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `affected_targets` block changes, it asks a `read_targets` job for the head of each live item, which gives
   the targets again. An item whose queue goes from `source: files` to `source: upload` without an upload of its
   head keeps the targets of its files. (Lot 13)
+- **D236** Extends D231. The example actions are at `actions/affected-targets/bazel` and
+  `actions/affected-targets/nx`, used as `uses: nlecoy/cihub/actions/affected-targets/<tool>@<tag>`. Their inputs
+  are `url` and `token` (scope `targets:write`); the PR number and the head SHA come from the `pull_request`
+  event; their output `targets` gives what they sent. Bazel sends the labels that the changed files affect
+  (reverse dependencies); Nx sends the names of the affected projects. When the computation fails, the action
+  sends `ALL`. A PR from a fork without a token stops the action with a clear message (D234). (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

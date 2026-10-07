@@ -2177,6 +2177,66 @@ async fn the_ci_uploads_the_targets_before_or_after_the_submission(pool: PgPool)
     q.stop().await;
 }
 
+/// `DECISIONS.md` D236: the script that the example actions share sends the
+/// file of targets to the route, and refuses to run without a token, as for a
+/// PR from a fork.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_upload_script_of_the_actions_sends_the_targets(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    required_statuses: [{REQUIRED}]\n    affected_targets: {{ source: upload }}\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, token) = q.serve_api().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("web/page.txt", Some("x"))]);
+    let file = std::env::temp_dir().join(format!("cihub-targets-{}.json", std::process::id()));
+    std::fs::write(&file, r#"["//web:app"]"#).unwrap();
+    let script = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../actions/affected-targets/upload.sh"
+    );
+    let run = |token: String| {
+        let (addr, head, file) = (addr.clone(), head.clone(), file.clone());
+        // The server runs on the runtime of the test: the script must not
+        // block it.
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new("bash")
+                .arg(script)
+                .env("UPLOAD_URL", format!("http://{addr}/"))
+                .env("UPLOAD_TOKEN", token)
+                .env("REPOSITORY", "acme/app")
+                .env("PR_NUMBER", number.to_string())
+                .env("HEAD_SHA", head)
+                .env("TARGETS_FILE", file)
+                .output()
+                .unwrap()
+        })
+    };
+
+    let refused = run(String::new()).await.unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("fork"),
+        "{refused:?}"
+    );
+    let sent = run(token).await.unwrap();
+    assert!(sent.status.success(), "{sent:?}");
+    std::fs::remove_file(&file).unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    let stored: Vec<(Vec<String>, bool)> =
+        sqlx::query_as("SELECT targets, is_all FROM affected_targets WHERE head_sha = $1")
+            .bind(&head)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(stored, [(vec!["//web:app".to_owned()], false)]);
+    drop(tx);
+    q.stop().await;
+}
+
 /// A queue `hotfix` on `main` next to the queue `main` of the seed, both
 /// set by `config` once the queues read the head of `main`, which the
 /// function returns.

@@ -1,0 +1,36 @@
+name: CIHub affected targets (Bazel)
+description: >-
+  Sends to CIHub the Bazel labels that the changed files of the pull request affect, or ALL when the computation fails (DECISIONS.md D236).
+  Needs `bazel` (or Bazelisk) on the PATH, `jq`, and a checkout with the base of the pull request (`fetch-depth: 0`). Runs on pull_request events.
+inputs:
+  url:
+    description: Address of the CIHub instance, for example https://cihub.example.com
+    required: true
+  token:
+    description: CIHub API token with the targets:write scope
+    required: true
+outputs:
+  targets:
+    description: The targets sent, as JSON (a list, or "ALL")
+    value: ${{ steps.compute.outputs.targets }}
+runs:
+  using: composite
+  steps:
+    - id: compute
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        TARGETS_FILE: ${{ runner.temp }}/cihub-affected-targets.json
+      run: |
+        "$GITHUB_ACTION_PATH/targets.sh"
+        echo "targets=$(cat "$TARGETS_FILE")" >>"$GITHUB_OUTPUT"
+    - shell: bash
+      env:
+        UPLOAD_URL: ${{ inputs.url }}
+        UPLOAD_TOKEN: ${{ inputs.token }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        TARGETS_FILE: ${{ runner.temp }}/cihub-affected-targets.json
+      run: '"$GITHUB_ACTION_PATH/../upload.sh"'
