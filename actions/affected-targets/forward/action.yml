@@ -1,0 +1,44 @@
+name: CIHub affected targets (from a fork)
+description: >-
+  In a workflow on workflow_run, sends to CIHub the affected targets that the run of a pull request from a fork
+  kept in the artifact cihub-affected-targets (DECISIONS.md D239). It runs no code of the pull request. Needs
+  `jq` and the permission actions: read.
+inputs:
+  url:
+    description: Address of the CIHub instance, for example https://cihub.example.com
+    required: true
+  token:
+    description: CIHub API token with the targets:write scope
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: fork
+      shell: bash
+      env:
+        EVENT: ${{ github.event.workflow_run.event }}
+        HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        REPOSITORY: ${{ github.repository }}
+      run: |
+        if [ "$EVENT" = pull_request ] && [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
+          echo "fork=true" >>"$GITHUB_OUTPUT"
+        else
+          echo "::notice::not a pull request from a fork: its run sent its targets with the token"
+        fi
+    - if: steps.fork.outputs.fork == 'true'
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: cihub-affected-targets
+        path: ${{ runner.temp }}/cihub-forward
+        github-token: ${{ github.token }}
+        run-id: ${{ github.event.workflow_run.id }}
+    - if: steps.fork.outputs.fork == 'true'
+      shell: bash
+      env:
+        UPLOAD_URL: ${{ inputs.url }}
+        UPLOAD_TOKEN: ${{ inputs.token }}
+        REPOSITORY: ${{ github.repository }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        ARTIFACT_FILE: ${{ runner.temp }}/cihub-forward/targets.json
+        TARGETS_FILE: ${{ runner.temp }}/cihub-forward-targets.json
+      run: '"$GITHUB_ACTION_PATH/forward.sh"'

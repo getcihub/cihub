@@ -5,9 +5,7 @@
 set -euo pipefail
 
 if [ -z "${UPLOAD_TOKEN:-}" ]; then
-  # A PR from a fork receives no secrets, and the route does not yet accept
-  # an upload without a token (DECISIONS.md D234).
-  echo "::error::no CIHub token: a PR from a fork cannot send its affected targets yet" >&2
+  echo "::error::no CIHub token: the route needs a token with the targets:write scope" >&2
   exit 1
 fi
 

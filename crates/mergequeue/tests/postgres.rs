@@ -2250,11 +2250,13 @@ async fn the_ci_uploads_the_targets_before_or_after_the_submission(pool: PgPool)
     q.stop().await;
 }
 
-/// `DECISIONS.md` D236: the script that the example actions share sends the
-/// file of targets to the route, and refuses to run without a token, as for a
-/// PR from a fork.
+/// `DECISIONS.md` D236, D239: the scripts of the example actions against the
+/// route. `upload.sh` sends a file of targets with the token and refuses to
+/// run without one; for a PR from a fork, `keep.sh` writes the artifact and
+/// `forward.sh` sends it for the head of the event, and refuses an artifact
+/// that is not data of the expected shape.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn the_upload_script_of_the_actions_sends_the_targets(pool: PgPool) {
+async fn the_scripts_of_the_actions_send_the_targets(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
@@ -2264,49 +2266,104 @@ async fn the_upload_script_of_the_actions_sends_the_targets(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     let (addr, token) = q.serve_api().await;
-    let (number, head) = open_pr_with(&sim, &main, 1, &[("web/page.txt", Some("x"))]);
-    let file = std::env::temp_dir().join(format!("cihub-targets-{}.json", std::process::id()));
-    std::fs::write(&file, r#"["//web:app"]"#).unwrap();
-    let script = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../actions/affected-targets/upload.sh"
-    );
-    let run = |token: String| {
-        let (addr, head, file) = (addr.clone(), head.clone(), file.clone());
+    let (own, own_head) = open_pr_with(&sim, &main, 1, &[("web/page.txt", Some("x"))]);
+    let (fork, fork_head) = open_pr_with(&sim, &main, 2, &[("api/main.txt", Some("x"))]);
+    let dir = std::env::temp_dir().join(format!("cihub-actions-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let url = format!("http://{addr}/");
+    let run = |script: &str, env: Vec<(&'static str, String)>| {
+        let path = format!(
+            "{}/../../actions/affected-targets/{script}",
+            env!("CARGO_MANIFEST_DIR")
+        );
         // The server runs on the runtime of the test: the script must not
         // block it.
         tokio::task::spawn_blocking(move || {
             std::process::Command::new("bash")
-                .arg(script)
-                .env("UPLOAD_URL", format!("http://{addr}/"))
-                .env("UPLOAD_TOKEN", token)
-                .env("REPOSITORY", "acme/app")
-                .env("PR_NUMBER", number.to_string())
-                .env("HEAD_SHA", head)
-                .env("TARGETS_FILE", file)
+                .arg(path)
+                .envs(env)
                 .output()
                 .unwrap()
         })
     };
+    let stored = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let rows: Vec<(i64, String, Vec<String>)> = sqlx::query_as(
+            "SELECT pr_number, head_sha, targets FROM affected_targets ORDER BY pr_number",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        rows
+    };
 
-    let refused = run(String::new()).await.unwrap();
+    std::fs::write(file("own.json"), r#"["//web:app"]"#).unwrap();
+    let upload = |token: &str| {
+        vec![
+            ("UPLOAD_URL", url.clone()),
+            ("UPLOAD_TOKEN", token.to_owned()),
+            ("REPOSITORY", "acme/app".to_owned()),
+            ("PR_NUMBER", own.to_string()),
+            ("HEAD_SHA", own_head.clone()),
+            ("TARGETS_FILE", file("own.json")),
+        ]
+    };
+    let refused = run("upload.sh", upload("")).await.unwrap();
     assert!(!refused.status.success());
     assert!(
-        String::from_utf8_lossy(&refused.stderr).contains("fork"),
+        String::from_utf8_lossy(&refused.stderr).contains("no CIHub token"),
         "{refused:?}"
     );
-    let sent = run(token).await.unwrap();
+    let sent = run("upload.sh", upload(&token)).await.unwrap();
     assert!(sent.status.success(), "{sent:?}");
-    std::fs::remove_file(&file).unwrap();
-    let mut tx = begin_system(&pool).await.unwrap();
-    let stored: Vec<(Vec<String>, bool)> =
-        sqlx::query_as("SELECT targets, is_all FROM affected_targets WHERE head_sha = $1")
-            .bind(&head)
-            .fetch_all(&mut *tx)
+
+    // The run of the fork keeps its targets without a token.
+    std::fs::write(file("fork.json"), r#"["//api"]"#).unwrap();
+    let kept = run(
+        "keep.sh",
+        vec![
+            ("PR_NUMBER", fork.to_string()),
+            ("TARGETS_FILE", file("fork.json")),
+            ("ARTIFACT_FILE", file("artifact/targets.json")),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(kept.status.success(), "{kept:?}");
+    let forward = |artifact: String| {
+        vec![
+            ("UPLOAD_URL", url.clone()),
+            ("UPLOAD_TOKEN", token.clone()),
+            ("REPOSITORY", "acme/app".to_owned()),
+            ("HEAD_SHA", fork_head.clone()),
+            ("ARTIFACT_FILE", artifact),
+            ("TARGETS_FILE", file("forwarded.json")),
+        ]
+    };
+    for trap in [
+        r#"{"pr_number": "2; touch pwned", "targets": []}"#,
+        r#"{"pr_number": 2, "targets": [1]}"#,
+        r#"{"pr_number": 2.5, "targets": "ALL"}"#,
+    ] {
+        std::fs::write(file("trap.json"), trap).unwrap();
+        let refused = run("forward/forward.sh", forward(file("trap.json")))
             .await
             .unwrap();
-    assert_eq!(stored, [(vec!["//web:app".to_owned()], false)]);
-    drop(tx);
+        assert!(!refused.status.success(), "{trap}: {refused:?}");
+    }
+    let forwarded = run("forward/forward.sh", forward(file("artifact/targets.json")))
+        .await
+        .unwrap();
+    assert!(forwarded.status.success(), "{forwarded:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        stored().await,
+        [
+            (1, own_head, vec!["//web:app".to_owned()]),
+            (2, fork_head, vec!["//api".to_owned()]),
+        ]
+    );
     q.stop().await;
 }
 

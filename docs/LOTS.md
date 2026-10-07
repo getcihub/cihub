@@ -45,7 +45,7 @@ configuration checker, in phase 1).
 | 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
-| 13  | `parallel` strategy                                    | 4     | 12         | Q15       | in progress                              |
+| 13  | `parallel` strategy                                    | 4     | 12         | —         | in progress                              |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, Helm, hardening                     | 4     | 11, 13     | Q8        | to do                                    |
 
@@ -309,8 +309,8 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 
 - **Content**: the `affected_targets` block of `.cihub.yaml` (`DECISIONS.md` D226 to D228 and D246); `source: files`,
   with the patterns and the old paths of renamed files read by `Scm::pr_files`; `source: upload`, with
-  `POST /repos/{owner}/{name}/prs/{pr}/affected-targets` (`targets:write` token or GitHub Actions run for forks,
-  20 MB limit) and the block reason `awaiting_affected_targets`; lanes by overlap; batches per lane (D229);
+  `POST /repos/{owner}/{name}/prs/{pr}/affected-targets` (`targets:write` token; for forks, an artifact
+  sent by a `workflow_run` workflow, D239; 20 MB limit) and the block reason `awaiting_affected_targets`; lanes by overlap; batches per lane (D229);
   targets computed again after a change of configuration (D230); `parallel` strategy; example actions for Bazel
   and Nx, composite actions with `curl` (D231).
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in
@@ -336,8 +336,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   - Done (October 7, 2026, D234): step 4, with a token. The `affected-targets` route stores the upload in the
     `affected_targets` table and gives it at once to the queues in `source: upload` whose live item has the head;
     `read_targets` reads a stored upload for a head submitted after it. Test:
-    `the_ci_uploads_the_targets_before_or_after_the_submission`. Remains: the upload from a fork, without a
-    token (a new method of `Scm` and a new recording of GitHub).
+    `the_ci_uploads_the_targets_before_or_after_the_submission`. The upload from a fork is done with D239.
   - Done (October 7, 2026): step 5. In `parallel` mode, a batch takes the pending items of its lane and skips
     the others; the first item of its lane that cannot join ends it, and a lane whose batch waits does not hold
     the others (D229). When `load_config` keeps a file whose `affected_targets` block changes, it asks the
@@ -354,7 +353,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   - Done (October 7, 2026, D236): step 7. The composite actions `actions/affected-targets/bazel` and
     `actions/affected-targets/nx` compute the targets and send them with the shared `upload.sh`; they send
     `ALL` when the computation fails, and the Bazel one also when a file that defines the build changes (the
-    query gives no target for it, D238). Test: `the_upload_script_of_the_actions_sends_the_targets`. The Bazel script
+    query gives no target for it, D238). Test: `the_scripts_of_the_actions_send_the_targets`. The Bazel script
     was run by hand on a small workspace; the Nx one only on its failure; the pilot monorepo checks both.
   - Done (October 7, 2026, D237): a queue that has not read its file yet admits nothing and forms no group, and
     its first `load_config` is `interactive`; `switching_modes` ends when no group is live. Before, the first
@@ -362,8 +361,10 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     cancelled. Tests: `a_queue_admits_nothing_before_its_file_is_read`,
     `a_mode_change_waits_for_the_live_groups` (core),
     `a_new_queue_waits_for_its_file_before_its_first_groups` (simulator and Postgres).
-  - Open (Q15): the upload from a fork, without a token. It needs a route without a token, a new `Scm` method and
-    a new recording of GitHub, so it waits for the validation of the project lead.
+  - Done (October 7, 2026, D239): the upload from a fork. With an empty `token`, the Bazel and Nx actions keep
+    the targets in the artifact `cihub-affected-targets`; `actions/affected-targets/forward`, in a `workflow_run`
+    workflow, sends it with the token, for the head SHA of the event. CIHub does not change; `jq` joins the
+    tools of `mise.toml` for the test. Test: `the_scripts_of_the_actions_send_the_targets`.
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

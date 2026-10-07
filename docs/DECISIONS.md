@@ -858,7 +858,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   20 MB. It gives `targets.received` at once to each queue in `source: upload` whose live item of the PR has that
   head; otherwise the `read_targets` job of the head reads the stored upload, so that an upload before the
   submission is kept. A queue in `source: files` ignores the uploads. The upload of a PR from a fork, without a
-  token, comes later. (Lot 13)
+  token, comes later. (Lot 13) _Extended by D239._
 - **D235** Extends D230 and D247. The key of the `read_targets` job carries the SHA of the configuration:
   `read_targets:<queue_id>-<pr>-<head_sha>-<config_sha>:1`. When `load_config` keeps a file whose
   `affected_targets` block changes, it asks a `read_targets` job for the head of each live item, which gives
@@ -881,6 +881,14 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   (`BUILD`, `BUILD.bazel`, `*.bzl`, `MODULE.bazel`, `MODULE.bazel.lock`, `WORKSPACE`, `WORKSPACE.bazel`,
   `WORKSPACE.bzlmod`, `.bazelrc`, `.bazelversion`): the query sees such a file as one that no target depends on,
   so the PR would look disjoint from the targets that it redefines. (Lot 13)
+- **D239** (Q15) Extends D234 and D236. A PR from a fork sends its targets through its repository, never through
+  a route without a token: with an empty `token`, the Bazel and Nx actions keep `{pr_number, targets}` as the
+  artifact `cihub-affected-targets` of the run; the composite action `actions/affected-targets/forward`, in a
+  workflow of the repository on `workflow_run`, which has the secrets, downloads it from the run of a
+  `pull_request` from a fork and sends it with the token. It runs no code of the PR and reads the artifact as
+  data; the head SHA comes from the event, so the targets reach only that head. A route without a token was
+  refused: the identifier of a running job is public on a public repository, so anyone could send the targets
+  of another PR. CIHub does not change. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 
@@ -1005,9 +1013,3 @@ becomes a decision above and leaves this list.
   _(Lot 10)_
 - **Q12** `docs/FLAKY_TESTS.md` subscribes the module to `mergequeue.run.completed`, which is not an event type
   of `docs/DOMAIN.md` (`run.transitioned` ?). _(Lot 14)_
-- **Q15** The upload of the affected targets from a PR of a fork, without a token (D234). Proposal: the body
-  carries `ci_job_id`, the job that sends it (`job.check_run_id` in GitHub Actions); a route outside the token
-  middleware reads it through a new `Scm::ci_job` (the check run, with `Checks: read`, which the App has), and
-  stores the upload only when the job is in progress, belongs to GitHub Actions on that repository and has the
-  announced head SHA; at most 60 such requests per minute and per repository, so that nobody spends the SCM
-  budget of an organization. Needs a new recording of GitHub. _(Lot 13)_
