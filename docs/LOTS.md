@@ -278,6 +278,8 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `batch_member_left`); the run of the closed PR alone does not count. Measured: `pipelined` 2 out of 1,765
     assemblies, `batched` 0 out of 454: under 5 %, so nothing to remove. Limit: an assembly is instant in the
     simulated world, so the measure is a floor.
+  - Done (October 7, 2026, D224), after a manual test on `getsyncr/contracts`: a batch that is not full starts
+    at once when the item right behind it is `no_batch`. Test: `a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it`.
   - Closed on October 6, 2026 by the project lead: the exit criteria pass (`mise run load`, `mise run sim`, the
     bisection test).
   - Later, outside the lot (asked by the project lead on October 6, 2026, not done): a nightly CI job for

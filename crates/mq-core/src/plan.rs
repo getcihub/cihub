@@ -1328,7 +1328,9 @@ enum Next<'a> {
 /// in `order`. With batching, the pending items that follow it join it, up to
 /// `batching.size`, until an item that is not pending or is `no_batch`. A
 /// batch that is not full waits until its oldest member has waited
-/// `batching.max_wait_minutes` in the queue (`DECISIONS.md` D210).
+/// `batching.max_wait_minutes` in the queue (`DECISIONS.md` D210), unless the
+/// item right behind it is `no_batch`: the batch cannot grow, and that item
+/// would wait for nothing (D224).
 fn next_group<'a>(
     s: &Snapshot,
     order: &[&'a Item],
@@ -1357,6 +1359,12 @@ fn next_group<'a>(
         .take(size)
         .copied()
         .collect();
+    let closed = order
+        .get(index + members.len())
+        .is_some_and(|i| i.state == ItemState::Pending && i.no_batch);
+    if closed {
+        return Some(Next::Form { index, members });
+    }
     let wait = Duration::minutes(i64::from(settings.batching_max_wait_minutes.value));
     let ready = members
         .iter()

@@ -742,7 +742,8 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   restart, because their tests included code that will not land. No lenient option. (Lot 12)
 - **D210** The size of a batch is not adaptive: a batch takes the consecutive waiting items that can join it
   (`docs/ALGORITHMS.md`, "Batching"), up to `batching.size`, and starts when it is full or when its oldest member
-  has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12)
+  has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12) _Extended by
+  D224._
 - **D211** An inferred failure never evicts a PR. With `bisection_skip_redundant_tests`, a half that a bisection
   proves failed without a run is split again when it has several items; a half of a single PR is tested, and
   the PR is evicted only after its own failed run and its failure budget. A confirmed failure of a batch or of a
@@ -797,6 +798,13 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   of `pipelined`. Bisection: a planted failure is isolated in at most log2(batch size) rounds of runs, counted
   after the confirmed failure of the batch, since the two halves of a round run at once (D220). The test of the
   scenario takes about 90 seconds: it runs in its own task, `mise run load`, not in `mise run check`. (Lot 12)
+
+**October 7, 2026, validated by Nicolas Lecoy.**
+
+- **D224** Extends D210: a batch that is not full also starts at once when the item right behind it in the queue
+  is `no_batch`: it cannot grow, and the `no_batch` item, which keeps its place, would wait for it. The items
+  behind the `no_batch` item still wait for their batch. Seen on a manual test, where a batch of one PR waited
+  `max_wait_minutes` for nothing. (Lot 12)
 
 ## Open questions
 

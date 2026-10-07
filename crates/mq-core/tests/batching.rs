@@ -99,8 +99,10 @@ fn a_no_batch_item_is_tested_alone_and_cuts_the_series() {
     assert_eq!(groups(&w), vec![(GroupKind::Single, vec![1])]);
     w.submit(2, Priority::MEDIUM);
     w.submit_no_batch(3);
+    // 2 cannot grow behind 3: both start at once (`DECISIONS.md` D224).
+    assert_eq!(groups(&w).len(), 3);
     w.submit(4, Priority::MEDIUM);
-    assert_eq!(groups(&w).len(), 1);
+    assert_eq!(groups(&w).len(), 3);
     w.advance(5);
     assert_eq!(
         groups(&w),
@@ -415,4 +417,25 @@ fn a_planted_failure_is_isolated_in_log2_rounds() {
             assert_replays(&w);
         }
     }
+}
+
+/// The scenario of a manual test on a real repository: a `no_batch` PR behind
+/// a PR that waits for its batch starts at once, with it; the PRs behind
+/// still wait for their batch (`DECISIONS.md` D224).
+#[test]
+fn a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it() {
+    let mut w = world(4, 4);
+    w.submit(1, Priority::MEDIUM);
+    assert!(w.snapshot.groups.is_empty());
+    w.submit_no_batch(2);
+    assert_eq!(
+        groups(&w),
+        vec![(GroupKind::Single, vec![1]), (GroupKind::Single, vec![2])]
+    );
+    w.submit(3, Priority::MEDIUM);
+    w.submit(4, Priority::MEDIUM);
+    assert_eq!(groups(&w).len(), 2);
+    w.advance(5);
+    assert_eq!(groups(&w)[2], (GroupKind::Batch, vec![3, 4]));
+    assert_replays(&w);
 }
