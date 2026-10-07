@@ -106,6 +106,32 @@ pub async fn schedule_tick(
     Ok(())
 }
 
+/// A scheduler waits for a notification at most this little: a tick a few
+/// milliseconds away, against a clock that a test holds still, would make it
+/// loop.
+pub const MIN_WAIT: Duration = Duration::from_secs(1);
+
+/// How long a scheduler waits for a notification after a pass: until the next
+/// tick of a queue that is not due yet, between [`MIN_WAIT`] and [`TICK`], so
+/// that the `wake_at` of a plan is served on time and not at the next
+/// [`TICK`] (`DECISIONS.md` D225).
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn until_next_tick(
+    conn: &mut PgConnection,
+    now: OffsetDateTime,
+) -> Result<Duration, PlatformError> {
+    let next: Option<OffsetDateTime> =
+        sqlx::query_scalar("SELECT min(next_tick_at) FROM queues WHERE next_tick_at > $1")
+            .bind(now)
+            .fetch_one(conn)
+            .await
+            .map_err(PlatformError::Query)?;
+    Ok(next.map_or(TICK, |at| (at - now).unsigned_abs().clamp(MIN_WAIT, TICK)))
+}
+
 /// Why a scheduler woke up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wake {
