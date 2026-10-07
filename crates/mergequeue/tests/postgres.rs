@@ -604,6 +604,7 @@ impl SimQueue {
             ApiScope::QueuesRead,
             ApiScope::QueuesWrite,
             ApiScope::PrsWrite,
+            ApiScope::TargetsWrite,
         ];
         let token = cihub_store::NewApiToken {
             id: ApiTokenId::from_ulid(Ulid(40)),
@@ -1986,6 +1987,83 @@ async fn disjoint_prs_are_tested_side_by_side_from_their_files(pool: PgPool) {
         .collect();
     assert_eq!(groups, [("1", 0), ("2", 0), ("3", 2)]);
     drop(tx);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D234: with `source: upload`, an upload before the submission
+/// is kept for its head, and an upload after it reaches the queue at once; the
+/// item waits with `awaiting_affected_targets` in between.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_ci_uploads_the_targets_before_or_after_the_submission(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    testing_concurrency: 5\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets: {{ source: upload }}\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, token) = q.serve_api().await;
+    let upload = |number: u64, head: &str, targets: serde_json::Value| {
+        let (addr, token) = (addr.clone(), token.clone());
+        let body = serde_json::json!({ "head_sha": head, "targets": targets });
+        async move {
+            let path = format!("/repos/acme/app/prs/{number}/affected-targets");
+            call(&addr, &token, "POST", &path, Some(body)).await.0
+        }
+    };
+    let heads: Vec<String> = (1..=2)
+        .map(|n| open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]).1)
+        .collect();
+    assert_eq!(
+        upload(1, &heads[0], serde_json::json!(["//web"])).await,
+        202
+    );
+    for (number, head) in (1..).zip(&heads) {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let states = admissions(&pool).await;
+    assert_eq!((states[0].0, states[0].1.as_str()), (1, "testing"));
+    assert_eq!(
+        (states[1].0, states[1].1.as_str(), &states[1].2),
+        (
+            2,
+            "not_ready",
+            &serde_json::json!([{ "kind": "awaiting_affected_targets" }])
+        )
+    );
+
+    assert_eq!(upload(2, &heads[1], serde_json::json!("all")).await, 400);
+    assert_eq!(upload(2, &heads[1], serde_json::json!("ALL")).await, 202);
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let groups: Vec<(Vec<String>, i32)> = sqlx::query_as(
+        "SELECT tested_pr_numbers::text[], cardinality(g.predecessor_ids)
+         FROM test_runs r JOIN test_groups g ON g.id = r.group_id ORDER BY r.started_at, r.id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let groups: Vec<(&str, i32)> = groups
+        .iter()
+        .map(|(prs, predecessors)| (prs[0].as_str(), *predecessors))
+        .collect();
+    assert_eq!(groups, [("1", 0), ("2", 1)]);
+    drop(tx);
+    let unknown = call(
+        &addr,
+        &token,
+        "POST",
+        "/repos/acme/other/prs/1/affected-targets",
+        Some(serde_json::json!({ "head_sha": "abc", "targets": [] })),
+    )
+    .await;
+    assert_eq!(unknown.0, 404);
     q.stop().await;
 }
 

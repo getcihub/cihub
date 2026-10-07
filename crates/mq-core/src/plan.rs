@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cihub_config::{QueueSettings, TargetsSource};
+use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
     GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability,
@@ -47,8 +47,8 @@ pub struct Desired {
     pub check_reads: Vec<CheckRead>,
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
-    /// The heads whose affected targets CIHub must compute from their files
-    /// (`DECISIONS.md` D247).
+    /// The heads whose affected targets CIHub must compute from their files,
+    /// or read from a stored upload (`DECISIONS.md` D247, D234).
     pub target_reads: Vec<Head>,
     /// What each PR must show: its live item, or the item that this
     /// reconciliation concluded (`DECISIONS.md` D156), by PR number.
@@ -1702,12 +1702,9 @@ fn desired(
 
     let target_read = target_points(s, now).and_then(|(point, _)| point);
 
-    let from_files = matches!(
-        settings.affected_targets.value,
-        Some(TargetsSource::Files(_))
-    );
+    let has_source = settings.affected_targets.value.is_some();
     let target_reads = live_items(s)
-        .filter(|item| s.mode == QueueMode::Parallel && from_files && !has_targets(s, item))
+        .filter(|item| s.mode == QueueMode::Parallel && has_source && !has_targets(s, item))
         .map(|item| Head {
             pr_number: item.pr_number,
             sha: item.head_sha.clone(),

@@ -20,6 +20,7 @@ mod repair;
 mod scheduler;
 mod surfaces;
 mod target;
+mod targets;
 
 use std::sync::Arc;
 

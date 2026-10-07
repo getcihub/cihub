@@ -7,12 +7,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use cihub_api_types::{
     Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
     GraphEdge, GraphNode, Item, ItemPage, MAX_BATCH_GET, MAX_TAKE, PrItem, Queue, QueueList,
-    RequestedQueueState, RunCheck, SubmitPr, TestRun, TimelineEvent, UpdateQueue,
+    RequestedQueueState, RunCheck, SubmitPr, TargetsUpload, TestRun, TimelineEvent, UpdateQueue,
 };
 use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
@@ -30,6 +31,7 @@ use utoipa::OpenApi;
 use crate::Clock;
 use crate::jobs::{self, give_back, new_event_id};
 use crate::target::QueueTarget;
+use crate::targets;
 
 #[derive(Clone)]
 struct ApiState {
@@ -42,6 +44,7 @@ struct ApiState {
 #[openapi(
     paths(
         list_queues,
+        upload_targets,
         get_queue,
         update_queue,
         queue_action,
@@ -78,6 +81,10 @@ struct MergeQueueApi;
 pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     let routes = Router::new()
         .route("/repos/{owner}/{name}/queues", get(list_queues))
+        .route(
+            "/repos/{owner}/{name}/prs/{pr_number}/affected-targets",
+            post(upload_targets).layer(DefaultBodyLimit::max(TARGETS_BODY_LIMIT)),
+        )
         .route(
             "/queues/{queue_id}",
             get(get_queue).patch(update_queue).post(queue_action),
@@ -238,6 +245,42 @@ async fn list_queues(
         .collect::<Result<_, _>>()?;
 
     Ok(axum::Json(QueueList { queues }))
+}
+
+/// The largest upload of affected targets; a larger list is sent as `"ALL"`
+/// (`DECISIONS.md` D228).
+const TARGETS_BODY_LIMIT: usize = 20 * 1024 * 1024;
+
+/// Stores the affected targets that the CI computed for a head of the PR,
+/// and gives them to the queues in `source: upload` whose live item has that
+/// head (`DECISIONS.md` D234).
+#[utoipa::path(
+    post,
+    path = "/repos/{owner}/{name}/prs/{pr_number}/affected-targets",
+    params(("owner" = String, Path), ("name" = String, Path), ("pr_number" = u64, Path)),
+    request_body = TargetsUpload,
+    responses((status = 202, body = Accepted)),
+    security(("token" = ["targets:write"]))
+)]
+async fn upload_targets(
+    grant: ApiGrant,
+    axum::extract::State(state): axum::extract::State<ApiState>,
+    ApiPath((owner, name, pr_number)): ApiPath<(String, String, u64)>,
+    ApiJson(upload): ApiJson<TargetsUpload>,
+) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
+    grant.require(ApiScope::TargetsWrite)?;
+    let targets = upload
+        .targets
+        .targets()
+        .ok_or_else(|| ApiError::invalid("`targets` is a list of strings or \"ALL\""))?;
+    let mut tx = begin(&state, &grant).await?;
+    let repo = repo_id(&mut tx, &owner, &name).await?;
+    let now = (state.clock)();
+    let head = &upload.head_sha;
+    targets::store(&mut tx, grant.org_id, repo, pr_number, head, &targets, now).await?;
+    targets::deliver(&mut tx, grant.org_id, repo, pr_number, head, &targets, now).await?;
+    tx.commit().await?;
+    Ok(accepted())
 }
 
 #[utoipa::path(

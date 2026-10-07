@@ -31,7 +31,7 @@ $$;
 
 CREATE TYPE connection_kind AS ENUM ('github_app');
 CREATE TYPE connection_mode AS ENUM ('normal', 'throttled', 'scm_unavailable', 'paused');
-CREATE TYPE api_scope AS ENUM ('queues:read', 'queues:write', 'prs:write');
+CREATE TYPE api_scope AS ENUM ('queues:read', 'queues:write', 'prs:write', 'targets:write');
 
 CREATE TABLE orgs (
     id         text        PRIMARY KEY,

@@ -1,7 +1,7 @@
 //! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
 //! again (`DECISIONS.md` D96, D101), `submit_pr` submits a PR after a command
-//! or a label (D102), `read_targets` computes the affected targets of a head
-//! from its files (D247); the jobs of the test cycle are in `assembly`. Each one
+//! or a label (D102), `read_targets` gives the affected targets of a head,
+//! from its files or from the upload of the CI (D247, D234); the jobs of the test cycle are in `assembly`. Each one
 //! gives its facts back to the queue through `queue_inbox` (D100) and marks
 //! the queue dirty; it never writes the log.
 
@@ -30,6 +30,7 @@ use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, routes_to, rule_priority, unmet_conditions};
 use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
+use crate::targets;
 
 pub const REFRESH_PRS: &str = "refresh_prs";
 pub(crate) const SUBMIT_PR: &str = "submit_pr";
@@ -550,8 +551,10 @@ pub(crate) async fn compute_targets(
     let target = target_of(pool, job).await?;
     let config = target.config()?;
     let settings = target.settings_in(config.as_ref())?;
-    let Some(TargetsSource::Files(targets)) = settings.affected_targets.value else {
-        return Ok(());
+    let targets = match settings.affected_targets.value {
+        Some(TargetsSource::Files(targets)) => targets,
+        Some(TargetsSource::Upload) => return deliver_stored(pool, &target, &request, now).await,
+        None => return Ok(()),
     };
     let files = scm
         .pr_files(&target.repo, request.pr_number, job.class)
@@ -577,6 +580,43 @@ pub(crate) async fn compute_targets(
         targets: affected,
     };
     give_back_facts(pool, &target, vec![(Actor::System, kind)], now).await
+}
+
+/// Gives the stored upload of the head, if the CI sent it before the
+/// submission (`DECISIONS.md` D234); without it, the item waits for the
+/// upload, which the route gives at once.
+async fn deliver_stored(
+    pool: &PgPool,
+    target: &QueueTarget,
+    request: &ReadTargets,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let mut tx = begin_system(pool).await?;
+    let stored = targets::stored(
+        &mut tx,
+        target.org_id,
+        target.repo_id,
+        request.pr_number,
+        &request.head_sha,
+    )
+    .await?;
+    if let Some(targets) = stored {
+        let kind = EventKind::TargetsReceived {
+            pr_number: request.pr_number,
+            head_sha: request.head_sha.clone(),
+            targets,
+        };
+        give_back(
+            &mut tx,
+            target.org_id,
+            target.queue_id,
+            vec![(Actor::System, kind)],
+            now,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The live item of a PR, as `refresh_prs` needs it.

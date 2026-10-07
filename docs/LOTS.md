@@ -333,6 +333,11 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     sources. Tests: `a_head_waits_for_the_targets_of_its_files` (core),
     `disjoint_prs_are_tested_side_by_side_from_their_files` (simulator and Postgres). The recording of the
     GitHub contract has no renamed file: the project lead will record it again.
+  - Done (October 7, 2026, D234): step 4, with a token. The `affected-targets` route stores the upload in the
+    `affected_targets` table and gives it at once to the queues in `source: upload` whose live item has the head;
+    `read_targets` reads a stored upload for a head submitted after it. Test:
+    `the_ci_uploads_the_targets_before_or_after_the_submission`. Remains: the upload from a fork, without a
+    token (a new method of `Scm` and a new recording of GitHub).
   - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening

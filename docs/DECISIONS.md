@@ -851,7 +851,13 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   without its targets gets one `read_targets:<queue_id>-<pr>-<head_sha>:1` job (class `interactive`): it reads
   the files, then the PR, and gives nothing when the head moved in between, `ALL` when it read fewer files than
   the PR changes, else the targets of the patterns, as `targets.received`. In both sources, an item that waits
-  for its targets has the block reason `awaiting_affected_targets`. (Lot 13)
+  for its targets has the block reason `awaiting_affected_targets`. (Lot 13) _Extended by D234._
+- **D234** Extends D228 and D247. The `affected-targets` route stores each upload in `affected_targets`, by
+  repository, PR and head SHA, with a token that has `targets:write`, and answers `202`; the body is limited to
+  20 MB. It gives `targets.received` at once to each queue in `source: upload` whose live item of the PR has that
+  head; otherwise the `read_targets` job of the head reads the stored upload, so that an upload before the
+  submission is kept. A queue in `source: files` ignores the uploads. The upload of a PR from a fork, without a
+  token, comes later. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 
