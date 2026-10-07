@@ -27,7 +27,8 @@ services:
       retries: 15
 
   # One-shot: bring the cihub role and database to the wanted state. It runs
-  # on every start, so a change here applies without deleting the data.
+  # on every start, so a change to postgres-setup.sql applies without deleting
+  # the data. The CI runs the same file.
   postgres-setup:
     image: postgres:17.5-alpine
     depends_on:
@@ -37,18 +38,9 @@ services:
       PGHOST: postgres
       PGUSER: postgres
       PGPASSWORD: postgres
-    command:
-      - sh
-      - -c
-      - |
-        psql --quiet --set ON_ERROR_STOP=1 <<'SQL'
-        SELECT 'CREATE ROLE cihub'
-        WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cihub') \gexec
-        ALTER ROLE cihub LOGIN PASSWORD 'cihub' CREATEDB NOSUPERUSER NOBYPASSRLS;
-        SELECT 'CREATE DATABASE cihub OWNER cihub'
-        WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'cihub') \gexec
-        ALTER DATABASE cihub OWNER TO cihub;
-        SQL
+    volumes:
+      - ./postgres-setup.sql:/postgres-setup.sql:ro
+    command: ["psql", "--quiet", "--set", "ON_ERROR_STOP=1", "--file", "/postgres-setup.sql"]
     restart: "no"
 
 volumes:

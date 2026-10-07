@@ -11,9 +11,10 @@ The reference installation is one image, one Postgres 17 and one GitHub App. The
 
 `compose.yaml`, at the root, starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`
 (`DECISIONS.md` D12). The superuser is `postgres` (password `postgres`). The one-shot service
-`postgres-setup` brings the `cihub` role (password `cihub`), which is not a superuser and can create
-databases for the tests, and the `cihub` database it owns, to the desired state (D38, D52). It runs at each start:
-a change to its command applies without erasing the data. These values are for development only.
+`postgres-setup` runs `postgres-setup.sql`, which brings the `cihub` role (password `cihub`), which is not a
+superuser and can create databases for the tests, and the `cihub` database it owns, to the desired state (D38, D52).
+It runs at each start: a change to the file applies without erasing the data. These values are for development
+only.
 
 ```sh
 mise run db            # Postgres, then postgres-setup
@@ -181,20 +182,26 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 `.github/workflows/ci.yml` follows the organization of `home-operations/external-dns-unifi-webhook` (`DECISIONS.md` D18):
 
-| Job             | Task                      |
-| --------------- | ------------------------- |
-| `Rust Lint`     | `mise run lint`           |
-| `Rust Test`     | `mise run test`           |
-| `Rust Coverage` | `mise run cover`          |
-| `Workflow Lint` | `mise run lint-workflows` |
-| `Build Success` | joins the jobs above      |
+| Job                     | Task                                    |
+| ----------------------- | --------------------------------------- |
+| `Rust Lint`             | `mise run lint`                         |
+| `Rust Test`             | `mise run test`                         |
+| `Rust Integration Test` | `mise run --skip-deps test-integration` |
+| `Rust Coverage`         | `mise run cover`                        |
+| `Workflow Lint`         | `mise run lint-workflows`               |
+| `Build Success`         | joins the jobs above                    |
 
 `Build Success` is the required status of the `main` branch: it fails if a job failed or was cancelled. The CI
 runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on
-demand. Each job installs the tools with `mise install --locked`. Each action is pinned by the SHA of its
-commit, with the version as a comment. `.github/actionlint.yaml` makes `actionlint` ignore the label
-`ubuntu-26.04`, which it does not know yet. A Postgres service is added in Lot 2, for
-`mise run test-integration`.
+demand. Each job installs the tools with `mise install --locked`. Each action and each image is pinned by its SHA
+or its digest, with the version as a comment or a tag.
+
+The jobs of `ci.yml` and `sim.yaml` run on `cihub-runner`, a self-hosted runner set (Actions Runner Controller in
+Kubernetes mode), which has no Docker daemon. Its image cannot link Rust (no C library headers), so the Rust jobs
+run in the `rust` image. `Rust Integration Test` and `Fault Injection` cannot start `compose.yaml`: Postgres is a
+service of the job, on `127.0.0.1:5432` as in development; the job runs `postgres-setup.sql`, then the task
+without its `db` dependency. `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint`
+ignore the label `ubuntu-26.04`, which it does not know yet.
 
 ## Versions
 
