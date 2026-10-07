@@ -508,7 +508,8 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D148** `submit_pr` selects the queue named by `/cihub merge --queue <name>`, otherwise the first queue of the
   branch, in the order of the file, whose `queue_conditions` pass, otherwise the first queue of the branch. An
   item never changes queue; a delivery of a PR goes to the queue of its live item. `submit_pr` applies
-  `priority_rules`: the first true rule gives the priority, and `--priority` of the command wins.
+  `priority_rules`: the first true rule gives the priority, and `--priority` of the command wins. _Extended by
+  D232._
 - **D149** Extends D148: the option is written `/cihub merge --queue=<name>`, like `--priority=<value>`; an
   option with a value is always written `--option=<value>`.
 - **D150** Extends D135: a push on a branch that has several queues is routed to no queue; the connection
@@ -809,6 +810,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `next_tick_at` that is not due yet, at least 1 second and at most `TICK` (30 seconds), instead of `TICK`
   always. A `wake_at` was served up to 30 seconds late: a batch with `max_wait_minutes: 1` waited up to 1 minute
   30 on a manual test. One more query per pass. A separate evolution, outside the plan of a lot.
+- **D232** Extends D148: a queue entry can carry `route_conditions`, in the language of the conditions; the
+  routing of a submission reads only them. The queue named by `--queue=<name>` wins; otherwise the first queue of
+  the branch, in file order, whose `route_conditions` pass; a queue without `route_conditions` takes every PR;
+  otherwise the first queue of the branch. `queue_conditions` no longer route: they only admit, and the item
+  waits in `not_ready` in its queue until they pass. `route_conditions` is not allowed in `defaults`. The routing
+  reads the PR once, at the submission; an item still never changes queue.
 
 ## Open questions
 

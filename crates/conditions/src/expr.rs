@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::{Attribute, Condition, Context, EvalError};
 
-/// A list of conditions, as written under `queue_conditions`,
-/// `merge_conditions` or a priority rule: all of them must hold.
+/// A list of conditions, as written under `route_conditions`,
+/// `queue_conditions`, `merge_conditions` or a priority rule: all of them must hold.
 #[derive(Clone, Debug, Default)]
 pub struct Conditions(pub Vec<Expr>);
 

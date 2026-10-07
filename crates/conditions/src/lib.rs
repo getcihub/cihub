@@ -1,5 +1,6 @@
-//! Condition language of `queue_conditions`, `merge_conditions` and
-//! `priority_rules`: parsing and evaluation on a PR context. Pure: no I/O.
+//! Condition language of `route_conditions`, `queue_conditions`,
+//! `merge_conditions` and `priority_rules`: parsing and evaluation on a PR
+//! context. Pure: no I/O.
 
 mod attribute;
 mod condition;
