@@ -1178,7 +1178,9 @@ type RunRow = (
 
 async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
     sqlx::query_as(
-        "SELECT id, test_sha, status::text, failure_reason::text, head_shas, tested_pr_numbers,
+        "SELECT id, test_sha, status::text,
+                CASE WHEN status IN ('failed', 'timed_out') THEN status_reason::text END,
+                head_shas, tested_pr_numbers,
                 required_statuses, required_statuses_source::text, conflict_culprit, test_branch,
                 draft_pr_number
          FROM test_runs ORDER BY started_at, id",

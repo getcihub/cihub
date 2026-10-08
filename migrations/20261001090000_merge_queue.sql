@@ -101,13 +101,11 @@ CREATE TABLE test_runs (
     required_statuses_source required_statuses_source,
     started_at               timestamptz              NOT NULL,
     ended_at                 timestamptz,
-    failure_reason           reason,
     failure_causing_statuses text[]                   NOT NULL,
     conflict_culprit         jsonb,
     base_sha                 text                     NOT NULL,
     head_shas                text[]                   NOT NULL,
     tested_pr_numbers        bigint[]                 NOT NULL,
-    last_report_at           timestamptz,
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     FOREIGN KEY (org_id, group_id) REFERENCES test_groups (org_id, id)
 );

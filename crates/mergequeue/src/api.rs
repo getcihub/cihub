@@ -795,7 +795,11 @@ async fn test_run(
         "SELECT id, queue_id, group_id, attempt, status::text, status_reason::text, test_branch,
                 test_sha, base_sha, draft_pr_number, tested_pr_numbers, head_shas,
                 required_statuses, required_statuses_source::text, started_at, ended_at,
-                last_report_at, failure_reason::text, failure_causing_statuses, conflict_culprit
+                (SELECT max(c.observed_at) FROM check_observations c
+                 WHERE c.run_id = test_runs.id) AS last_report_at,
+                CASE WHEN status IN ('failed', 'timed_out') THEN status_reason::text END
+                    AS failure_reason,
+                failure_causing_statuses, conflict_culprit
          FROM test_runs WHERE id = $1",
     )
     .bind(&run_id)

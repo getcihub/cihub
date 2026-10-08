@@ -205,7 +205,6 @@ pub(crate) async fn project(
                 "UPDATE test_runs SET
                      status = $3::run_status, status_reason = $4::reason,
                      ended_at = CASE WHEN $6 THEN $5 ELSE ended_at END,
-                     failure_reason = CASE WHEN $7 THEN $4::reason ELSE failure_reason END,
                      failure_causing_statuses = CASE WHEN $7 THEN $8
                                                      ELSE failure_causing_statuses END
                  WHERE id = $1 AND status = $2::run_status",
@@ -414,7 +413,7 @@ async fn create_item(
 }
 
 /// Writes the last report of a check on the test SHA of its run, when it is
-/// newer than the one stored, and the time of the last report of the run.
+/// newer than the one stored.
 /// The same rows come from a fact of the log and from a late report (D118),
 /// so a replay of the log keeps the late reports.
 pub(crate) async fn upsert_check(
@@ -438,18 +437,10 @@ pub(crate) async fn upsert_check(
     .bind(check.conclusion.map(cihub_domain::CheckConclusion::as_str))
     .bind(&check.details_url)
     .bind(check.observed_at)
-    .execute(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
-    sqlx::query(
-        "UPDATE test_runs
-         SET last_report_at = (SELECT max(observed_at) FROM check_observations WHERE run_id = $1)
-         WHERE id = $1",
-    )
-    .bind(check.run_id.to_string())
     .execute(conn)
     .await
     .map_err(MergeQueueError::Query)?;
+
     Ok(())
 }
 
