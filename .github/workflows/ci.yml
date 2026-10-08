@@ -33,11 +33,11 @@ env:
 # two runners share one node: two builds at once each take twice as long
 # (DECISIONS.md D242).
 jobs:
-  build:
+  ci:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Build Success
+    name: CI
     runs-on: cihub-runner
     container:
       image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546

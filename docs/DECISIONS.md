@@ -833,12 +833,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   for room in the window. The items behind the batch and the other states show no time, and the commit status
   does not change. `Surface` gains `batch_wait`, set by `plan` for these members only. A separate evolution,
   outside the plan of a lot.
-- **D242** Supersedes D233: `ci.yml` has one job, `Build Success`, which runs `mise run lint`,
-  `mise run lint-workflows`, the unit tests, the tests against Postgres, then `mise run cover`. The two runners of
-  `cihub-runner` share one node, so two builds at once each take about twice as long; with one job, a run takes
-  one runner and the other one is free for another run. `Build Success` stays the required status. The `main`
-  queue of `.cihub.yaml` admits a PR whose `Build Success` is `success` or `skipped`, as `ci.yml` skips it on the
-  release-please PR; the test branch of the queue still runs it in full.
+- **D242** Supersedes D233: `ci.yml` has one job, `CI`, which runs `mise run lint`, `mise run lint-workflows`, the
+  unit tests, the tests against Postgres, then `mise run cover`. The two runners of `cihub-runner` share one node,
+  so two builds at once each take about twice as long; with one job, a run takes one runner and the other one is
+  free for another run. `CI` replaces `Build Success` as the required status, in the `queue_conditions` and the
+  `merge_conditions` of `.cihub.yaml`. The `main` queue admits a PR whose `CI` is `success` or `skipped`, as
+  `ci.yml` skips it on the release-please PR; the test branch of the queue still runs it in full.
 
 ## Open questions
 

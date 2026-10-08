@@ -180,11 +180,11 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 ## Project CI
 
-`.github/workflows/ci.yml` has one job, `Build Success` (`DECISIONS.md` D242). It runs, in order: `mise run lint`,
+`.github/workflows/ci.yml` has one job, `CI` (`DECISIONS.md` D242). It runs, in order: `mise run lint`,
 `mise run lint-workflows`, `postgres-setup.sql`, `mise run test`, `mise run --skip-deps test-integration`, then
 `mise run cover`.
 
-`Build Success` is the required status of the `main` branch: it fails at the first step that fails. The CI runs on
+`CI` is the required status of the `main` branch: it fails at the first step that fails. The CI runs on
 pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. The job installs the
 tools with `mise install --locked`. Each action and each image is pinned by its SHA or its digest, with the version
 as a comment or a tag.
@@ -196,7 +196,7 @@ run in the `rust` image. The pod of a job is new for each run, so `ci.yml` turns
 (`CARGO_PROFILE_DEV_DEBUG=line-tables-only`). The two runners of the runner set share one node: two builds at once
 each take about twice as long, so a run of the CI takes one runner, and the other runner is free for another run.
 nextest builds every test binary of the workspace before it filters them, so the unit tests and the tests against
-Postgres share one build. `Build Success` and `Fault Injection` cannot start `compose.yaml`: Postgres is a service
+Postgres share one build. `CI` and `Fault Injection` cannot start `compose.yaml`: Postgres is a service
 of the job, on `127.0.0.1:5432` as in development; the job runs `postgres-setup.sql`, then the task without its `db`
 dependency. The tests against Postgres run 4 at a time (`NEXTEST_TEST_THREADS`), as they share one Postgres.
 `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint` ignore the label `ubuntu-26.04`,
