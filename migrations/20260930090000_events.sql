@@ -25,6 +25,8 @@ CREATE TABLE events (
     -- The fact that caused a decision.
     cause_id      text,
     item_id       text,
+    -- The run of the event, as `EventKind::subjects` gives it.
+    run_id        text,
     -- The fields of the type, as `cihub-domain` serializes them.
     payload       jsonb       NOT NULL,
     occurred_at   timestamptz NOT NULL,
@@ -35,6 +37,8 @@ CREATE TABLE events (
 
 CREATE INDEX events_queue_id_seq ON events (queue_id, seq);
 CREATE INDEX events_item_id_occurred_at ON events (item_id, occurred_at) WHERE item_id IS NOT NULL;
+-- The history of a PR finds the test branches of its runs (DECISIONS.md D245).
+CREATE INDEX events_run_id ON events (run_id) WHERE run_id IS NOT NULL;
 
 SELECT cihub_tenant_table('events');
 

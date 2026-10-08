@@ -860,7 +860,17 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   partial history. `converge_surfaces` reads the events of the surfaces of the queue in one query, from their
   items (a new index `queue_items (queue_id, pr_number)` over all the items). No new setting: `comments_enabled`
   covers the history. The state line and the commit status do not change. A separate evolution, outside the plan
-  of a lot.
+  of a lot. _Extended by D245._
+- **D245** Extends D244: the history also says where the CI of the PR ran and which commit landed. Each
+  `test_branch.assembled` of a run that tested the PR gives a row, `🧪 Test branch ready: the CI runs in #<draft
+  PR>`, or `on <test SHA>` without a draft PR, followed by `, with #<other PRs of the group>` and `, on top of
+  #<PRs ahead of the group>` when they exist; `By` is empty. This report is a row, and the only event of a run in
+  the history, because no decision carries the draft PR. The row `✅ Merged` ends with `, as <merged SHA>`, from
+  `merged_sha` of `item.transitioned`; the full SHA lets the SCM link it. `events` gains the column `run_id`,
+  written from `EventKind::subjects` like `item_id`, with the index `events (run_id) WHERE run_id IS NOT NULL`;
+  `test_runs` gains the GIN index `test_runs (tested_pr_numbers)`, which finds the runs of a PR. An expression
+  index on `payload->>'run_id'` does not do: Postgres ignores the statistics of the expression of a partial index
+  and reads the whole partition. The failing checks of a failed run are not in the history.
 
 ## Open questions
 
