@@ -91,7 +91,6 @@ pub async fn bootstrap(
         org_id,
         name: BOOTSTRAP_TOKEN,
         scopes: &scopes,
-        created_by: None,
         expires_at: None,
     };
     create_api_token(&mut tx, &new, &token)
@@ -159,8 +158,8 @@ async fn create_organization(
     .map_err(PlatformError::Query)?;
     sqlx::query(
         "INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,
-                                      external_id, claimed_at, created_at)
-         VALUES ($1, $2, $3, $4, $5::connection_kind, $6, $7, $7)",
+                                      external_id, created_at)
+         VALUES ($1, $2, $3, $4, $5::connection_kind, $6, $7)",
     )
     .bind(connection_id.to_string())
     .bind(org_id.to_string())

@@ -1,4 +1,4 @@
-use cihub_domain::{ApiScope, ApiTokenId, OrgId, UserId, format_api_token, is_api_token};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId, format_api_token, is_api_token};
 use rand::TryRng;
 use rand::rngs::SysRng;
 use secrecy::{ExposeSecret, SecretString};
@@ -15,7 +15,6 @@ pub struct NewApiToken<'a> {
     pub org_id: OrgId,
     pub name: &'a str,
     pub scopes: &'a [ApiScope],
-    pub created_by: Option<UserId>,
     pub expires_at: Option<OffsetDateTime>,
 }
 
@@ -59,15 +58,14 @@ pub async fn create_api_token(
 ) -> Result<(), StoreError> {
     let scopes: Vec<&str> = token.scopes.iter().map(|scope| scope.as_str()).collect();
     sqlx::query(
-        "INSERT INTO api_tokens (id, org_id, name, token_hash, scopes, created_by, expires_at)
-         VALUES ($1, $2, $3, $4, $5::api_scope[], $6, $7)",
+        "INSERT INTO api_tokens (id, org_id, name, token_hash, scopes, expires_at)
+         VALUES ($1, $2, $3, $4, $5::api_scope[], $6)",
     )
     .bind(token.id.to_string())
     .bind(token.org_id.to_string())
     .bind(token.name)
     .bind(hash(secret))
     .bind(scopes)
-    .bind(token.created_by.map(|id| id.to_string()))
     .bind(token.expires_at)
     .execute(conn)
     .await

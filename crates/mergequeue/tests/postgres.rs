@@ -555,7 +555,6 @@ impl SimQueue {
             org_id: org(),
             name: "test",
             scopes: &scopes,
-            created_by: None,
             expires_at: None,
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
@@ -591,7 +590,6 @@ impl SimQueue {
                 connection_id: route.connection_id,
                 queue_id: route.queue_id,
                 event: "sim".into(),
-                action: None,
                 payload: serde_json::json!({ "id": id }),
                 received_at: self.clock.now(),
             };
@@ -912,7 +910,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
             connection_id: route.connection_id,
             queue_id: route.queue_id,
             event: "sim".into(),
-            action: None,
             payload: serde_json::json!({ "id": id }),
             received_at: clock(),
         };
@@ -1792,7 +1789,6 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
             connection_id: route.connection_id,
             queue_id: None,
             event: "sim".into(),
-            action: None,
             payload: serde_json::json!({ "id": id }),
             received_at: clock(),
         };
@@ -3502,7 +3498,6 @@ impl Chaos {
                 connection_id: route.connection_id,
                 queue_id: route.queue_id,
                 event: "sim".into(),
-                action: None,
                 payload: serde_json::json!({ "id": id }),
                 received_at: self.clock.now(),
             };

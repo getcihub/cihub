@@ -133,7 +133,6 @@ fn delivery(id: &str, received: i64) -> Delivery {
         connection_id: Some(connection()),
         queue_id: Some(queue(1)),
         event: "pull_request".to_owned(),
-        action: Some("opened".to_owned()),
         payload: json!({ "number": 12 }),
         received_at: at(received),
     }
@@ -825,7 +824,6 @@ fn unrouted(id: &str, event: &str, payload: serde_json::Value) -> Delivery {
         connection_id: None,
         queue_id: None,
         event: event.to_owned(),
-        action: None,
         payload,
         ..delivery(id, 0)
     }
@@ -1009,12 +1007,12 @@ async fn sync_jobs(pool: &PgPool) -> Vec<String> {
     .unwrap()
 }
 
-type OrgRow = (String, String, String, String, bool);
+type OrgRow = (String, String, String, String);
 
 async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT o.slug, a.external_id, a.path, c.external_id, c.claimed_at IS NOT NULL
+        "SELECT o.slug, a.external_id, a.path, c.external_id
          FROM orgs o
          JOIN scm_accounts a ON a.org_id = o.id
          JOIN scm_connections c ON c.scm_account_id = a.id
@@ -1045,14 +1043,12 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
         "70".to_owned(),
         "globex".to_owned(),
         "7".to_owned(),
-        true,
     );
     let acme = (
         "org".to_owned(),
         "1".to_owned(),
         "acme".to_owned(),
         "1".to_owned(),
-        false,
     );
     assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);
     let grant = authenticate(&pool, &first.token, at(0))

@@ -29,7 +29,6 @@ BEGIN
 END
 $$;
 
-CREATE TYPE membership_role AS ENUM ('admin', 'member', 'viewer');
 CREATE TYPE scm_kind AS ENUM ('github');
 CREATE TYPE connection_kind AS ENUM ('github_app', 'github_sudo_app');
 CREATE TYPE connection_mode AS ENUM ('normal', 'throttled', 'scm_unavailable', 'paused');
@@ -71,7 +70,6 @@ CREATE TABLE scm_connections (
     kind                 connection_kind NOT NULL,
     external_id          text            NOT NULL,
     suspended_at         timestamptz,
-    claimed_at           timestamptz,
     mode                 connection_mode NOT NULL DEFAULT 'normal',
     mode_reason          text,
     rate_remaining       integer,
@@ -115,21 +113,12 @@ CREATE TABLE users (
     UNIQUE (scm_instance_id, external_id)
 );
 
-CREATE TABLE memberships (
-    org_id     text            NOT NULL REFERENCES orgs (id),
-    user_id    text            NOT NULL REFERENCES users (id),
-    role       membership_role NOT NULL,
-    created_at timestamptz     NOT NULL DEFAULT now(),
-    PRIMARY KEY (org_id, user_id)
-);
-
 CREATE TABLE api_tokens (
     id           text        PRIMARY KEY,
     org_id       text        NOT NULL REFERENCES orgs (id),
     name         text        NOT NULL,
     token_hash   bytea       NOT NULL UNIQUE CHECK (length(token_hash) = 32),
     scopes       api_scope[] NOT NULL,
-    created_by   text        REFERENCES users (id),
     created_at   timestamptz NOT NULL DEFAULT now(),
     expires_at   timestamptz,
     last_used_at timestamptz
@@ -155,6 +144,5 @@ SELECT cihub_tenant_table('orgs');
 SELECT cihub_tenant_table('scm_accounts');
 SELECT cihub_tenant_table('scm_connections');
 SELECT cihub_tenant_table('repos');
-SELECT cihub_tenant_table('memberships');
 SELECT cihub_tenant_table('api_tokens');
 SELECT cihub_tenant_table('audit_log');

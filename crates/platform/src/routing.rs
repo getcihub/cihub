@@ -32,8 +32,8 @@ pub(crate) async fn unrouted_deliveries(
     limit: i64,
 ) -> Result<Vec<Delivery>, PlatformError> {
     let rows: Vec<DeliveryRow> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, action,
-                payload, received_at
+        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, payload,
+                received_at
          FROM webhook_inbox
          WHERE routed_at IS NULL
          ORDER BY received_at, delivery_id

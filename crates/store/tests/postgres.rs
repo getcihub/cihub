@@ -7,9 +7,9 @@ use std::path::Path;
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
-    EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState,
-    MembershipRole, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason,
-    RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState, OrgId,
+    Permission, Priority, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
+    RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -63,7 +63,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 20] = [
+const TENANT_TABLES: [&str; 19] = [
     "orgs",
     "scm_accounts",
     "scm_connections",
@@ -72,7 +72,6 @@ const TENANT_TABLES: [&str; 20] = [
     "queue_leases",
     "webhook_inbox",
     "jobs",
-    "memberships",
     "api_tokens",
     "audit_log",
     "events",
@@ -113,7 +112,6 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
              VALUES ('job-{n}', 'test', 'repair', '{org}', '{{}}', '2026-09-15T00:00:00Z',
                      '2026-09-15T00:00:00Z');
-         INSERT INTO memberships (org_id, user_id, role) VALUES ('{org}', 'user-1', 'admin');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
              VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
          INSERT INTO audit_log (id, org_id, action, target)
@@ -331,7 +329,6 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("item_state", values::<ItemState>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
-        ("membership_role", values::<MembershipRole>()),
         ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),
         ("queue_state", values::<QueueState>()),
@@ -541,7 +538,6 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         org_id: org(1),
         name: "ci",
         scopes: &scopes,
-        created_by: None,
         expires_at: Some(at(3600)),
     };
     let mut tx = begin_org(&pool, org(1)).await.unwrap();

@@ -79,14 +79,13 @@ type InboxRow = (
     Option<String>,
     Option<String>,
     String,
-    Option<String>,
     OffsetDateTime,
 );
 
 async fn inbox(pool: &PgPool) -> Vec<InboxRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT delivery_id, org_id, queue_id, event, action, received_at
+        "SELECT delivery_id, org_id, queue_id, event, received_at
          FROM webhook_inbox ORDER BY delivery_id",
     )
     .fetch_all(&mut *tx)
@@ -107,14 +106,7 @@ async fn a_signed_delivery_is_stored_once_and_unrouted(pool: PgPool) {
     assert_eq!(post(&addr, &headers, BODY).await, 202);
     assert_eq!(
         inbox(&pool).await,
-        [(
-            "d1".into(),
-            None,
-            None,
-            "pull_request".into(),
-            Some("opened".into()),
-            now()
-        )]
+        [("d1".into(), None, None, "pull_request".into(), now())]
     );
 }
 
@@ -187,7 +179,6 @@ async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
         org_id: org,
         name: "test",
         scopes,
-        created_by: None,
         expires_at: None,
     };
     create_api_token(&mut tx, &new, &secret).await.unwrap();

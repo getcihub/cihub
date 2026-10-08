@@ -89,8 +89,7 @@ id_type!(
     ScmAccountId => "scmaccount",
     /// How CIHub reaches the repositories of an SCM account.
     ConnectionId => "connection",
-    /// A user account of an SCM instance, global: memberships link it to
-    /// organizations.
+    /// A user account of an SCM instance, global.
     UserId => "user",
     /// The row of an API token; the secret itself is `cht_…` (`DECISIONS.md` D32).
     ApiTokenId => "apitoken",

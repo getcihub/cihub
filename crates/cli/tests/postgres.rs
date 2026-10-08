@@ -295,7 +295,6 @@ async fn two_queues(pool: &PgPool) -> String {
             ApiScope::QueuesWrite,
             ApiScope::PrsWrite,
         ],
-        created_by: None,
         expires_at: None,
     };
     cihub_store::create_api_token(&mut tx, &token, &secret)

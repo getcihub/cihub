@@ -1,16 +1,4 @@
 closed_enum! {
-    /// The role of a user in an organization.
-    pub enum MembershipRole {
-        /// Changes the settings, pauses the queues, creates API tokens.
-        Admin,
-        /// Submits and cancels PRs.
-        Member,
-        /// Reads only.
-        Viewer,
-    }
-}
-
-closed_enum! {
     /// The product of an SCM instance.
     pub enum ScmKind {
         /// github.com or GitHub Enterprise Server.
@@ -82,7 +70,6 @@ mod tests {
             serde_json::to_string(&ApiScope::MetricsRead).unwrap(),
             r#""metrics:read""#
         );
-        assert_eq!(MembershipRole::Viewer.as_str(), "viewer");
         assert_eq!(ConnectionKind::GithubSudoApp.to_string(), "github_sudo_app");
         assert_eq!(ScmKind::Github.as_str(), "github");
     }
