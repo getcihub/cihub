@@ -35,9 +35,10 @@ pub(crate) const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "ci
 /// A commit status of the SCM is at most this long.
 const DESCRIPTION_LIMIT: usize = 140;
 
-/// The events that the history of a PR shows (`DECISIONS.md` D244): the
-/// decisions on its items. A request of a user is not a row: the decision that
-/// answers it names the user.
+/// The events of its items that the history of a PR shows (`DECISIONS.md`
+/// D244): the decisions. A request of a user is not a row: the decision that
+/// answers it names the user. The history also shows the test branches of the
+/// runs of the PR (`DECISIONS.md` D245).
 const HISTORY_EVENTS: [EventType; 2] =
     [EventType::ItemTransitioned, EventType::ItemReadinessChanged];
 
@@ -331,6 +332,10 @@ pub(crate) struct HistoryEvent {
     /// The login of the user whose request caused the event; `None` for the
     /// system and the bot.
     pub login: Option<String>,
+    /// For a test branch: the other PRs of its group, then the PRs ahead of
+    /// the group, in order. Empty for another event.
+    pub tested_with: Vec<i64>,
+    pub tested_on_top_of: Vec<i64>,
 }
 
 /// The history of a PR as a folded table (`DECISIONS.md` D244), `None` without
@@ -339,7 +344,7 @@ pub(crate) struct HistoryEvent {
 fn history_block(events: &[HistoryEvent]) -> Option<String> {
     let mut rows: Vec<(&HistoryEvent, String)> = events
         .iter()
-        .filter_map(|event| Some((event, event_text(&event.kind)?)))
+        .filter_map(|event| Some((event, event_text(event)?)))
         .collect();
     rows.dedup_by(|later, kept| later.1 == kept.1 && later.0.login == kept.0.login);
     if rows.is_empty() {
@@ -372,12 +377,34 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
 }
 
 /// The sentence of a row, `None` for an event that the history does not show.
-fn event_text(kind: &EventKind) -> Option<String> {
-    match kind {
-        EventKind::ItemTransitioned { to, reason, .. } => Some(transition_text(*to, *reason)),
+fn event_text(event: &HistoryEvent) -> Option<String> {
+    match &event.kind {
+        EventKind::ItemTransitioned {
+            to,
+            reason,
+            merged_sha,
+            ..
+        } => {
+            let text = transition_text(*to, *reason);
+            // The SCM links a full SHA.
+            Some(match merged_sha {
+                Some(sha) => format!("{text}, as {sha}"),
+                None => text,
+            })
+        }
         EventKind::ItemReadinessChanged { block_reasons, .. } => {
             Some(readiness_text(block_reasons))
         }
+        EventKind::TestBranchAssembled {
+            test_sha,
+            draft_pr_number,
+            ..
+        } => Some(test_branch_text(
+            test_sha,
+            *draft_pr_number,
+            &event.tested_with,
+            &event.tested_on_top_of,
+        )),
         _ => None,
     }
 }
@@ -391,6 +418,30 @@ fn by_cell(login: Option<&str>) -> String {
 fn transition_text(to: ItemState, reason: Reason) -> String {
     let (icon, label) = state_mark(to);
     format!("{icon} {label}: {}", reason.describe())
+}
+
+/// Where the CI of a test runs, as the details of the comment say it.
+fn test_branch_text(
+    test_sha: &str,
+    draft_pr_number: Option<u64>,
+    with: &[i64],
+    on_top_of: &[i64],
+) -> String {
+    let prs = |numbers: &[i64]| -> String {
+        let numbers: Vec<String> = numbers.iter().map(|n| format!("#{n}")).collect();
+        numbers.join(", ")
+    };
+    let mut text = match draft_pr_number {
+        Some(number) => format!("🧪 Test branch ready: the CI runs in #{number}"),
+        None => format!("🧪 Test branch ready: the CI runs on {test_sha}"),
+    };
+    if !with.is_empty() {
+        let _ = write!(text, ", with {}", prs(with));
+    }
+    if !on_top_of.is_empty() {
+        let _ = write!(text, ", on top of {}", prs(on_top_of));
+    }
+    text
 }
 
 fn readiness_text(block_reasons: &[BlockReason]) -> String {
@@ -546,14 +597,25 @@ pub(crate) async fn converge_surfaces(
 }
 
 /// An event of the history, as `read_histories` selects it: its PR, id, type,
-/// payload and time, and the login of the user whose request caused it.
-type HistoryRow = (i64, String, String, Value, OffsetDateTime, Option<String>);
+/// payload and time, the login of the user whose request caused it, and the
+/// PRs tested with it and before it.
+type HistoryRow = (
+    i64,
+    String,
+    String,
+    Value,
+    OffsetDateTime,
+    Option<String>,
+    Vec<i64>,
+    Vec<i64>,
+);
 
 /// The events of the history of the PRs `numbers` of the queue, by PR, in the
 /// order of the log (`DECISIONS.md` D244). All the items of a PR count, not
 /// only the current one. The reading starts from these items: their events
 /// come through `events.item_id`. A decision has the system as actor; the
-/// user is the actor of its cause.
+/// user is the actor of its cause. The test branches come through the runs
+/// that tested the PR (`DECISIONS.md` D245).
 async fn read_histories(
     conn: &mut PgConnection,
     target: &QueueTarget,
@@ -561,13 +623,30 @@ async fn read_histories(
 ) -> Result<BTreeMap<i64, Vec<HistoryEvent>>, MergeQueueError> {
     let types: Vec<&str> = HISTORY_EVENTS.into_iter().map(EventType::as_str).collect();
     let rows: Vec<HistoryRow> = sqlx::query_as(
-        "SELECT i.pr_number, e.id, e.type::text, e.payload, e.occurred_at, u.login
+        "SELECT pr_number, id, type, payload, occurred_at, login, tested_with, tested_on_top_of
+         FROM (
+         SELECT i.pr_number, e.id, e.type::text AS type, e.payload, e.occurred_at, u.login,
+                '{}'::bigint[] AS tested_with, '{}'::bigint[] AS tested_on_top_of, e.seq
          FROM queue_items i
          JOIN events e ON e.item_id = i.id AND e.type = ANY($2::event_type[])
          LEFT JOIN events c ON c.id = e.cause_id
          LEFT JOIN users u ON u.id = c.actor_user_id
          WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
-         ORDER BY e.seq",
+         UNION ALL
+         SELECT n.pr_number, e.id, e.type::text, e.payload, e.occurred_at, NULL,
+                array_remove(r.tested_pr_numbers, n.pr_number),
+                ARRAY(SELECT p.pr_number
+                      FROM unnest(g.predecessor_ids) WITH ORDINALITY AS a (id, rank)
+                      JOIN queue_items p ON p.id = a.id
+                      ORDER BY a.rank),
+                e.seq
+         FROM test_runs r
+         CROSS JOIN LATERAL unnest(r.tested_pr_numbers) AS n (pr_number)
+         JOIN test_groups g ON g.id = r.group_id
+         JOIN events e ON e.run_id = r.id AND e.type = 'test_branch.assembled'
+         WHERE r.queue_id = $1 AND r.tested_pr_numbers && $3 AND n.pr_number = ANY($3)
+         ) history
+         ORDER BY seq",
     )
     .bind(target.queue_id.to_string())
     .bind(&types)
@@ -576,13 +655,15 @@ async fn read_histories(
     .await
     .map_err(MergeQueueError::Query)?;
     let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
-    for (number, id, kind, payload, occurred_at, login) in rows {
+    for (number, id, kind, payload, occurred_at, login, tested_with, tested_on_top_of) in rows {
         let kind = event_kind(&kind, &payload)
             .map_err(|source| MergeQueueError::ReadEvent { id, source })?;
         histories.entry(number).or_default().push(HistoryEvent {
             occurred_at,
             kind,
             login,
+            tested_with,
+            tested_on_top_of,
         });
     }
     Ok(histories)
@@ -767,7 +848,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_domain::{ItemId, JobError, Mergeability, Reason};
+    use cihub_domain::{ItemId, JobError, Mergeability, Reason, RequiredStatusesSource, RunId};
     use ulid::Ulid;
 
     use super::*;
@@ -1022,6 +1103,8 @@ mod tests {
             occurred_at,
             kind,
             login: login.map(str::to_owned),
+            tested_with: Vec::new(),
+            tested_on_top_of: Vec::new(),
         }
     }
 
@@ -1093,6 +1176,63 @@ mod tests {
         for (kind, actor, want) in cases {
             let rows = rows_of(&[logged(kind.clone(), actor, at(7, 14, 3))]);
             assert_eq!(rows, [want], "{kind:?}");
+        }
+    }
+
+    /// `DECISIONS.md` D245.
+    #[test]
+    fn a_merge_gives_its_commit() {
+        let merged = EventKind::ItemTransitioned {
+            item_id: ItemId::from_ulid(Ulid(1)),
+            from: Some(ItemState::TestsPassed),
+            to: ItemState::Merged,
+            reason: Reason::MergeGraphMerge,
+            position: None,
+            verified_by_run_id: None,
+            merged_sha: Some("abc123".into()),
+        };
+        assert_eq!(
+            rows_of(&[logged(merged, None, at(7, 14, 3))]),
+            [
+                "| 2026-10-07 14:03 | ✅ Merged: the queue merged the PR after its tests passed, as abc123 |  |"
+            ]
+        );
+    }
+
+    /// `DECISIONS.md` D245.
+    #[test]
+    fn a_test_branch_gives_where_its_ci_runs() {
+        let assembled = |draft_pr_number| EventKind::TestBranchAssembled {
+            run_id: RunId::from_ulid(Ulid(1)),
+            test_sha: "def456".into(),
+            draft_pr_number,
+            required_statuses: Vec::new(),
+            required_statuses_source: RequiredStatusesSource::RepoConfig,
+        };
+        let cases = [
+            (Some(54), vec![], vec![], "the CI runs in #54"),
+            (
+                Some(54),
+                vec![],
+                vec![50, 51],
+                "the CI runs in #54, on top of #50, #51",
+            ),
+            (
+                Some(54),
+                vec![52],
+                vec![50],
+                "the CI runs in #54, with #52, on top of #50",
+            ),
+            (None, vec![], vec![], "the CI runs on def456"),
+        ];
+        for (draft, with, on_top_of, want) in cases {
+            let event = HistoryEvent {
+                tested_with: with,
+                tested_on_top_of: on_top_of,
+                ..logged(assembled(draft), None, at(7, 14, 3))
+            };
+            let want = format!("| 2026-10-07 14:03 | 🧪 Test branch ready: {want} |  |");
+            assert_eq!(rows_of(&[event]), [want]);
         }
     }
 

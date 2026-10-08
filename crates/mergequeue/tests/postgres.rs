@@ -2374,10 +2374,11 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         merged[0].starts_with("✅ **Merged** into `main` by the queue"),
         "{merged:?}"
     );
-    // The history keeps the whole life of the item (`DECISIONS.md` D244).
+    // The history keeps the whole life of the item (`DECISIONS.md` D244) and
+    // the merged commit (`DECISIONS.md` D245).
     for row in [
         "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
-        "✅ Merged: ",
+        "✅ Merged: the queue merged the PR without a test branch, as ",
     ] {
         assert!(merged[0].contains(row), "{row}: {merged:?}");
     }
@@ -2396,6 +2397,11 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     // The draft PR of the test, never the name of its branch (`DECISIONS.md` D174).
     assert!(testing[0].contains(" in #"), "{testing:?}");
     assert!(!testing[0].contains("cihub-merge/"), "{testing:?}");
+    // The history keeps where the CI ran (`DECISIONS.md` D245).
+    assert!(
+        testing[0].contains("| 🧪 Test branch ready: the CI runs in #"),
+        "{testing:?}"
+    );
     assert_eq!(status(second_head).await, Some(None), "pending");
     assert_eq!(labels(second).await, ["cihub:testing"]);
     q.stop().await;

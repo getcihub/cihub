@@ -24,16 +24,16 @@ pub async fn append_events(
     let mut seqs = Vec::with_capacity(events.len());
     for event in events {
         let (payload, actor_user_id) = columns(event)?;
-        let item_id = event.kind.subjects().item_id;
+        let subjects = event.kind.subjects();
         let seq: i64 = sqlx::query_scalar(
             "INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, actor_user_id,
-                                 cause_id, item_id, payload, occurred_at)
+                                 cause_id, item_id, run_id, payload, occurred_at)
              SELECT $1, $2, $3,
                     greatest(
                         (SELECT coalesce(max(seq), 0) FROM events WHERE queue_id = $3),
                         (SELECT coalesce(max(seq), 0) FROM queue_snapshots WHERE queue_id = $3)
                     ) + 1,
-                    $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10
+                    $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10, $11
              RETURNING seq",
         )
         .bind(event.id.to_string())
@@ -43,7 +43,8 @@ pub async fn append_events(
         .bind(event.actor.kind().as_str())
         .bind(actor_user_id)
         .bind(event.cause_id.map(|id| id.to_string()))
-        .bind(item_id.map(|id| id.to_string()))
+        .bind(subjects.item_id.map(|id| id.to_string()))
+        .bind(subjects.run_id.map(|id| id.to_string()))
         .bind(payload)
         .bind(event.occurred_at)
         .fetch_one(&mut *conn)
