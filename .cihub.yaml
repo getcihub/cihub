@@ -9,9 +9,9 @@ queues:
     queue_conditions:
       - -draft
       - -label = do-not-merge
-      - check-success = Build Success
+      - check-success = CI
     merge_conditions:
-      - check-success = Build Success
+      - check-success = CI
   - name: main
     branch: main
     strategy: batched
@@ -19,6 +19,10 @@ queues:
     queue_conditions:
       - -draft
       - -label = do-not-merge
-      - check-success = Build Success
+      # ci.yml skips CI on the release-please PR; the test branch
+      # of the queue still runs it in full.
+      - or:
+          - check-success = CI
+          - check-skipped = CI
     merge_conditions:
-      - check-success = Build Success
+      - check-success = CI

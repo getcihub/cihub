@@ -27,49 +27,17 @@ env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
-# The jobs run on cihub-runner, a self-hosted runner set in Kubernetes mode,
+# The job runs on cihub-runner, a self-hosted runner set in Kubernetes mode,
 # without a Docker daemon. The image of the runner cannot link Rust (no C
-# library headers), so the Rust jobs run in the rust image.
+# library headers), so the job runs in the rust image. One job, because the
+# two runners share one node: two builds at once each take twice as long
+# (DECISIONS.md D242).
 jobs:
-  rust-lint:
+  ci:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Rust Lint
-    runs-on: cihub-runner
-    container:
-      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-        with:
-          install_args: --locked
-
-      - name: Run linters
-        run: mise run lint
-
-      - name: Lint workflows
-        run: mise run lint-workflows
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      # In this job rather than in Rust Test, so that the two jobs take about
-      # the same time on the two runners of cihub-runner (DECISIONS.md D233).
-      - name: Check coverage of the pure crates
-        run: mise run cover
-
-  rust-test:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Rust Test
+    name: CI
     runs-on: cihub-runner
     container:
       image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
@@ -91,6 +59,14 @@ jobs:
         uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           install_args: --locked
+
+      - name: Run linters
+        run: mise run lint
+
+      - name: Lint workflows
+        run: mise run lint-workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Setup Postgres
         env:
@@ -114,21 +90,5 @@ jobs:
           # The tests share one Postgres and the node runs other workloads.
           NEXTEST_TEST_THREADS: "4"
 
-  status:
-    if: ${{ !cancelled() }}
-    name: Build Success
-    needs:
-      - rust-lint
-      - rust-test
-    runs-on: cihub-runner
-    permissions: {}
-    steps:
-      # cancelled counts as failed: a required job that never reached a
-      # verdict must not clear the merge gate.
-      - name: Any jobs failed?
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-        run: exit 1
-
-      - name: All jobs passed or skipped?
-        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
-        run: echo "All jobs passed or skipped"
+      - name: Check coverage of the pure crates
+        run: mise run cover
