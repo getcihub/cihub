@@ -14,10 +14,13 @@ entry of `queues` links to its queue by `branch` and `name`; a queue without an 
 that the file no longer names takes no new submission and finishes its items. This file is the only
 source of the settings (`DECISIONS.md` D134): the dashboard helps write it through a form that opens a PR on
 the repository, never a direct commit on the target. If both file names exist, the configuration is in error, because neither
-one wins. Several queues can target the same branch: a PR is routed to the first queue, in
-file order, whose `queue_conditions` are satisfied, or to the one named in the command
-(`/cihub merge --queue=hotfix`), otherwise to the first queue of the branch; an item never changes queue
-(`DECISIONS.md` D148). The first rule of `priority_rules` that the PR satisfies gives its priority, unless the
+one wins. Several queues can target the same branch: a PR is routed to the queue named in the command
+(`/cihub merge --queue=hotfix`), otherwise to the first queue, in file order, whose `route_conditions` are
+satisfied (a queue without `route_conditions` takes every PR), otherwise to the first queue of the branch
+(`DECISIONS.md` D148, D232). The routing reads the PR once, at the submission, and an item never changes queue.
+`queue_conditions` do not route: they only admit, and the item waits in `not_ready` in its queue until they are
+satisfied. Write in `route_conditions` what says where a PR goes and does not change (its head branch, for example),
+and in `queue_conditions` what says whether it is ready (its checks, its reviews). The first rule of `priority_rules` that the PR satisfies gives its priority, unless the
 command gives one (`--priority`).
 
 ```yaml
@@ -45,8 +48,9 @@ queues:
     branch: main
     strategy: sequential
     merge_method: fast_forward
-    queue_conditions:
+    route_conditions:                     # routing: the queue that the PR enters
       - label = hotfix
+    queue_conditions:
       - sender-permission >= write
 priority_rules:
   - name: urgent
@@ -70,7 +74,8 @@ together give `start_test_run_config_parsing_failure`, with the line and column 
 `required_statuses` list with an empty or duplicate name gives `start_test_run_config_bad_required_statuses`.
 For now, `merge_conditions` accepts only `check-success = <name>` at the first level (`DECISIONS.md` D146):
 another form gives `start_test_run_config_parsing_failure`, with its position. `defaults` accepts every
-queue setting, but not `name`, `branch` or the conditions; two queues cannot have the same `name`.
+queue setting, but not `name`, `branch` or the conditions (`route_conditions`, `queue_conditions`,
+`merge_conditions`); two queues cannot have the same `name`.
 
 ## Sources and strategies
 

@@ -25,7 +25,7 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
-use crate::admission::{Reading, Sender, rule_priority, unmet_conditions};
+use crate::admission::{Reading, Sender, routes_to, rule_priority, unmet_conditions};
 use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
 
@@ -743,36 +743,27 @@ async fn create_queues(
     Ok(())
 }
 
-/// The queue that `pr` enters, with the conditions that it does not meet
-/// (`DECISIONS.md` D148): the queue that the command names, or else the first
-/// queue of the branch whose conditions it meets, or else the first one.
-/// `None` when the command names a queue that the branch does not have.
+/// The queue that `pr` enters (`DECISIONS.md` D148, D232): the queue that the
+/// command names, or else the first queue of the branch whose
+/// `route_conditions` it meets, or else the first one. The `queue_conditions`
+/// do not route: they only admit. `None` when the command names a queue that
+/// the branch does not have.
 async fn route<'a>(
     scm: &dyn Scm,
     queues: &'a [QueueTarget],
     pr: &PrSnapshot,
     request: &SubmitPr,
     reading: &Reading<'_>,
-) -> Result<Option<(&'a QueueTarget, Vec<String>)>, Failure> {
+) -> Result<Option<&'a QueueTarget>, Failure> {
     if let Some(name) = &request.queue {
-        let Some(queue) = queues.iter().find(|queue| queue.name == *name) else {
-            return Ok(None);
-        };
-        return Ok(Some((
-            queue,
-            unmet_conditions(scm, queue, queue.config()?.as_ref(), pr, reading).await?,
-        )));
+        return Ok(queues.iter().find(|queue| queue.name == *name));
     }
-    let mut first = None;
     for queue in queues {
-        let config = queue.config()?;
-        let unmet = unmet_conditions(scm, queue, config.as_ref(), pr, reading).await?;
-        if unmet.is_empty() {
-            return Ok(Some((queue, unmet)));
+        if routes_to(scm, queue, queue.config()?.as_ref(), pr, reading).await? {
+            return Ok(Some(queue));
         }
-        first.get_or_insert((queue, unmet));
     }
-    Ok(first)
+    Ok(queues.first())
 }
 
 /// Why the queue refuses the submission, if it does: a command while the
@@ -867,7 +858,7 @@ pub(crate) async fn submit_pr(
         class: job.class,
         now,
     };
-    let Some((target, unmet)) = route(scm, &queues, &pr, &request, &reading).await? else {
+    let Some(target) = route(scm, &queues, &pr, &request, &reading).await? else {
         info!(pr_number, "submission dropped: no queue of that name");
         return refuse(format!(
             "the branch `{}` has no queue named `{}`.",
@@ -885,6 +876,7 @@ pub(crate) async fn submit_pr(
         ))
         .await;
     }
+    let unmet = unmet_conditions(scm, target, config.as_ref(), &pr, &reading).await?;
     let priority = match request.priority {
         Some(priority) => priority,
         None => rule_priority(scm, target, config.as_ref(), &pr, &reading)

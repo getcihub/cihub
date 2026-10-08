@@ -51,6 +51,9 @@ pub struct RepoConfig {
 pub struct QueueConfig {
     pub name: String,
     pub branch: String,
+    /// Which PRs the routing of a submission sends to this queue; empty
+    /// takes every PR (`DECISIONS.md` D232).
+    pub route_conditions: Conditions,
     pub queue_conditions: Conditions,
     pub merge_conditions: Conditions,
     pub settings: Layer,
@@ -199,6 +202,7 @@ struct RawFile {
 struct RawQueue {
     name: Value<String>,
     branch: Value<String>,
+    route_conditions: Value<Vec<Spanned<RawExpr>>>,
     queue_conditions: Value<Vec<Spanned<RawExpr>>>,
     merge_conditions: Value<Vec<Spanned<RawExpr>>>,
     strategy: Value<Strategy>,
@@ -297,6 +301,7 @@ fn queue(
     let queue = QueueConfig {
         name,
         branch,
+        route_conditions: conditions(&list(raw.route_conditions.take()), text)?,
         queue_conditions: conditions(&list(raw.queue_conditions.take()), text)?,
         merge_conditions: merge_conditions(&list(raw.merge_conditions.take()), text)?,
         settings: layer(raw)?,
@@ -308,6 +313,10 @@ fn defaults_layer(raw: RawQueue) -> Result<Layer, ConfigError> {
     let queue_only = [
         ("name", raw.name.as_ref().and_then(position)),
         ("branch", raw.branch.as_ref().and_then(position)),
+        (
+            "route_conditions",
+            raw.route_conditions.as_ref().and_then(position),
+        ),
         (
             "queue_conditions",
             raw.queue_conditions.as_ref().and_then(position),
@@ -540,8 +549,9 @@ queues:
     branch: main
     strategy: sequential
     merge_method: fast_forward
-    queue_conditions:
+    route_conditions:                     # routing: the queue that the PR enters
       - label = hotfix
+    queue_conditions:
       - sender-permission >= write
 priority_rules:
   - name: urgent
@@ -579,6 +589,9 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             ("main", "hotfix")
         );
         assert_eq!(main.queue_conditions.0.len(), 4);
+        assert!(main.route_conditions.0.is_empty());
+        assert_eq!(hotfix.route_conditions.0.len(), 1);
+        assert_eq!(hotfix.queue_conditions.0.len(), 1);
         assert_eq!(
             config
                 .priority_rules
@@ -710,11 +723,13 @@ queues:
 
     #[test]
     fn reports_condition_errors_at_their_character() {
-        let e = error(&queue(
-            "    queue_conditions:\n      - -draft\n      - lable = x\n",
-        ));
-        assert_eq!(e.position, Some(at(7, 9)));
-        assert_eq!(e.message, "unknown attribute `lable`");
+        for key in ["route_conditions", "queue_conditions"] {
+            let e = error(&queue(&format!(
+                "    {key}:\n      - -draft\n      - lable = x\n"
+            )));
+            assert_eq!(e.position, Some(at(7, 9)), "{key}");
+            assert_eq!(e.message, "unknown attribute `lable`", "{key}");
+        }
 
         let e = error(&queue("    queue_conditions:\n      - label ~= (\n"));
         assert_eq!(e.position, Some(at(6, 18)));
@@ -786,9 +801,18 @@ queues:
         assert_eq!(e.message, "queue `main` is defined twice");
         assert_eq!(e.position, Some(at(5, 11)));
 
-        let e = error("version: 1\ndefaults:\n  branch: main\n");
-        assert_eq!(e.message, "`branch` is not allowed in `defaults`");
-        assert_eq!(e.position, Some(at(3, 11)));
+        for (defaults, key, position) in [
+            ("  branch: main\n", "branch", at(3, 11)),
+            (
+                "  route_conditions:\n    - draft\n",
+                "route_conditions",
+                at(4, 5),
+            ),
+        ] {
+            let e = error(&format!("version: 1\ndefaults:\n{defaults}"));
+            assert_eq!(e.message, format!("`{key}` is not allowed in `defaults`"));
+            assert_eq!(e.position, Some(position), "{key}");
+        }
     }
 
     #[test]

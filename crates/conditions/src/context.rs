@@ -7,7 +7,7 @@ use crate::Attribute;
 
 /// What conditions are evaluated on: a PR, its checks, and its place in the
 /// queue. The caller loads it; checks come from the PR head for
-/// `queue_conditions` and from the test SHA for `merge_conditions`.
+/// `route_conditions` and `queue_conditions`, and from the test SHA for `merge_conditions`.
 #[derive(Clone, Debug, Default)]
 #[allow(
     clippy::struct_excessive_bools,
