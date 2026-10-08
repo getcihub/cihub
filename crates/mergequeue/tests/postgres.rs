@@ -96,8 +96,6 @@ async fn seed(pool: &PgPool) {
          INSERT INTO users (id, scm_instance_id, external_id, login)
              VALUES ('{user}', '{instance}', '3', 'octocat');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO org_modules (org_id, module, enabled_at)
-             VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
          INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
              VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
          INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
@@ -3380,8 +3378,6 @@ impl Chaos {
         let mut tx = begin_system(&chaos.pool).await.unwrap();
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
-             INSERT INTO org_modules (org_id, module, enabled_at)
-                 VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
              INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
                  VALUES ('{account}', '{org}', '{instance}', 'account-{seed}', 'acme-{seed}');
              INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,

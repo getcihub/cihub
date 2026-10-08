@@ -1,5 +1,5 @@
 use cihub_config::{Layer, QueueSettings, RepoConfig};
-use cihub_domain::{ModuleName, OrgId, QueueId, RepoId, ScmInstanceId};
+use cihub_domain::{OrgId, QueueId, RepoId, ScmInstanceId};
 use cihub_scm::{ConnectionRef, RepoRef};
 use sqlx::PgConnection;
 
@@ -28,8 +28,6 @@ pub(crate) struct QueueTarget {
     /// last read (`DECISIONS.md` D136).
     pub config_text: Option<String>,
     pub config_sha: Option<String>,
-    /// The organization has the module (`DECISIONS.md` D94).
-    pub enabled: bool,
 }
 
 type Row = (
@@ -46,14 +44,11 @@ type Row = (
     String,
     String,
     String,
-    bool,
 );
 
-/// The columns of [`Row`]: the queue, its repository, its connection, and
-/// whether its organization has the module (`$1`).
+/// The columns of [`Row`]: the queue, its repository and its connection.
 const COLUMNS: &str = "q.id, q.org_id, q.target_branch, q.name, q.config_text, q.config_sha, r.id, r.scm_instance_id, r.external_id,
-    r.namespace, r.name, c.id, c.external_id,
-    EXISTS (SELECT 1 FROM org_modules m WHERE m.org_id = q.org_id AND m.module = $1::module_name)
+    r.namespace, r.name, c.id, c.external_id
     FROM queues q
     JOIN repos r ON r.id = q.repo_id
     JOIN scm_connections c ON c.id = r.connection_id";
@@ -73,7 +68,6 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         name,
         connection,
         cext,
-        on,
     ) = row;
     Ok(QueueTarget {
         queue_id: parse_id(&queue, &queue)?,
@@ -93,7 +87,6 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         name: queue_name,
         config_text,
         config_sha,
-        enabled: on,
     })
 }
 
@@ -107,9 +100,8 @@ impl QueueTarget {
         queue: QueueId,
     ) -> Result<Self, MergeQueueError> {
         let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} WHERE q.id = $2"
+            "SELECT {COLUMNS} WHERE q.id = $1"
         )))
-        .bind(ModuleName::Mergequeue.as_str())
         .bind(queue.to_string())
         .fetch_optional(conn)
         .await
@@ -195,9 +187,8 @@ impl QueueTarget {
         branch: &str,
     ) -> Result<Vec<Self>, MergeQueueError> {
         let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} WHERE r.id = $2 AND q.target_branch = $3 ORDER BY q.created_at, q.id"
+            "SELECT {COLUMNS} WHERE r.id = $1 AND q.target_branch = $2 ORDER BY q.created_at, q.id"
         )))
-        .bind(ModuleName::Mergequeue.as_str())
         .bind(repo.to_string())
         .bind(branch)
         .fetch_all(conn)
@@ -290,7 +281,6 @@ pub(crate) fn test_target() -> QueueTarget {
         name: "main".into(),
         config_text: None,
         config_sha: None,
-        enabled: true,
         repo_id: RepoId::from_ulid(Ulid(6)),
     }
 }

@@ -1419,7 +1419,7 @@ pub(crate) async fn post_welcome(
     let mut lock = begin_system(pool).await?;
     let queues =
         QueueTarget::queues_of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
-    let Some(target) = queues.into_iter().find(|queue| queue.enabled) else {
+    let Some(target) = queues.into_iter().next() else {
         return Ok(());
     };
     let settings = target.settings()?;

@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use cihub_domain::{
-    ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, ModuleName, OrgId,
-    RepoId, ScmAccountId, ScmInstanceId,
+    ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, OrgId, RepoId,
+    ScmAccountId, ScmInstanceId,
 };
 use cihub_scm::{ConnectionRef, Scm, ScmAccount, ScmError};
 use cihub_store::{NewApiToken, PgPool, begin_system, create_api_token, new_api_token_secret};
@@ -168,15 +168,6 @@ async fn create_organization(
     .bind(account_id.to_string())
     .bind(kind.as_str())
     .bind(external_id)
-    .bind(now)
-    .execute(&mut *conn)
-    .await
-    .map_err(PlatformError::Query)?;
-    sqlx::query(
-        "INSERT INTO org_modules (org_id, module, enabled_at) VALUES ($1, $2::module_name, $3)",
-    )
-    .bind(org_id.to_string())
-    .bind(ModuleName::Mergequeue.as_str())
     .bind(now)
     .execute(&mut *conn)
     .await

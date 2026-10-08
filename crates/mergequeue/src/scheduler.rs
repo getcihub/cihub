@@ -104,11 +104,6 @@ impl Reconciler {
     ) -> Result<(), MergeQueueError> {
         let target = QueueTarget::load(conn, queue).await?;
         tracing::Span::current().record("org_id", tracing::field::display(target.org_id));
-        if !target.enabled {
-            return schedule_tick(conn, queue, None)
-                .await
-                .map_err(MergeQueueError::Platform);
-        }
         let settings = target.settings()?;
         let mut log = QueueLog::load(conn, queue).await?;
         // The facts that the jobs gave back come first: a check reported on
@@ -818,10 +813,9 @@ async fn route_pr_change(
     // The welcome job checks the settings of the first active queue of the
     // branch (`DECISIONS.md` D163).
     if change.opened
-        && QueueTarget::queues_of_branch(conn, repo, change.base_branch)
+        && !QueueTarget::queues_of_branch(conn, repo, change.base_branch)
             .await?
-            .iter()
-            .any(|queue| queue.enabled)
+            .is_empty()
     {
         let connection = (delivery.instance, delivery.connection);
         let job = welcome(
@@ -854,7 +848,7 @@ async fn route_pr_change(
             return Ok(());
         };
         let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
-        let wanted = queues.iter().filter(|queue| queue.enabled).any(|queue| {
+        let wanted = queues.iter().any(|queue| {
             queue.settings().is_ok_and(|settings| {
                 settings.label_commands_enabled.value && settings.enqueue_label.value == label
             })
@@ -927,11 +921,7 @@ async fn read_heads(
     let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
         return Ok(true);
     };
-    let queues: Vec<QueueTarget> = QueueTarget::queues_of_branch(conn, repo, branch)
-        .await?
-        .into_iter()
-        .filter(|queue| queue.enabled)
-        .collect();
+    let queues = QueueTarget::queues_of_branch(conn, repo, branch).await?;
     for queue in &queues {
         if merge_in_flight(conn, queue.queue_id).await? {
             return Ok(false);
@@ -990,10 +980,9 @@ async fn request_submission(
 /// The scheduler looks for the queues to cover this often (`DECISIONS.md` D106).
 pub(crate) const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
-/// Marks dirty the queues of the organizations with the module whose oldest
-/// event after their last snapshot is older than [`COVER_AFTER`]: their
-/// reconciliation keeps a snapshot, so that the old partitions of `events`
-/// can go. Returns their number.
+/// Marks dirty the queues whose oldest event after their last snapshot is
+/// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that
+/// the old partitions of `events` can go. Returns their number.
 ///
 /// # Errors
 ///
@@ -1002,13 +991,11 @@ pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize,
     let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT e.queue_id FROM events e
-         JOIN org_modules m ON m.org_id = e.org_id AND m.module = $2::module_name
          WHERE e.occurred_at <= $1
            AND e.seq > coalesce(
                (SELECT max(s.seq) FROM queue_snapshots s WHERE s.queue_id = e.queue_id), 0)",
     )
     .bind(now - COVER_AFTER)
-    .bind(cihub_domain::ModuleName::Mergequeue.as_str())
     .fetch_all(&mut *tx)
     .await
     .map_err(MergeQueueError::Query)?;
@@ -1030,9 +1017,8 @@ async fn mark_queues_dirty(
     Ok(queues.len())
 }
 
-/// Marks dirty the queues that have a live item, in the organizations with
-/// the module (`DECISIONS.md` D131): a plan of an older version may have asked
-/// for no wake-up. Returns their number.
+/// Marks dirty the queues that have a live item (`DECISIONS.md` D131): a plan
+/// of an older version may have asked for no wake-up. Returns their number.
 ///
 /// # Errors
 ///
@@ -1041,12 +1027,10 @@ pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
     let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT q.id FROM queues q
-         JOIN org_modules m ON m.org_id = q.org_id AND m.module = $1::module_name
          WHERE EXISTS (SELECT 1 FROM queue_items i
                        WHERE i.queue_id = q.id AND i.state NOT IN ('merged', 'failed', 'cancelled'))
          ORDER BY q.id",
     )
-    .bind(cihub_domain::ModuleName::Mergequeue.as_str())
     .fetch_all(&mut *tx)
     .await
     .map_err(MergeQueueError::Query)?;

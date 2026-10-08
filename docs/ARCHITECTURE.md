@@ -111,7 +111,7 @@ Three rules structure the split, and each one is checked in CI rather than left 
   tests in a few seconds.
 - **The modules do not know each other.** `cihub-mergequeue` and `cihub-flakytests` do not depend on each
   other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-cli` knows
-  them both. The `Module` contract of `cihub-platform` exposes the module name, its routes, its job
+  them both. The `Module` contract of `cihub-platform` exposes its routes, its job
   executors and its event subscriptions; there is no dynamic loading.
 - **A single version per external dependency.** All versions are in `[workspace.dependencies]`
   (`DECISIONS.md` D2); edition, license and `rust-version` come from `[workspace.package]`, the lints from

@@ -1009,13 +1009,12 @@ async fn sync_jobs(pool: &PgPool) -> Vec<String> {
     .unwrap()
 }
 
-type OrgRow = (String, String, String, String, bool, bool);
+type OrgRow = (String, String, String, String, bool);
 
 async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT o.slug, a.external_id, a.path, c.external_id, c.claimed_at IS NOT NULL,
-                EXISTS (SELECT 1 FROM org_modules m WHERE m.org_id = o.id AND m.module = 'mergequeue')
+        "SELECT o.slug, a.external_id, a.path, c.external_id, c.claimed_at IS NOT NULL
          FROM orgs o
          JOIN scm_accounts a ON a.org_id = o.id
          JOIN scm_connections c ON c.scm_account_id = a.id
@@ -1047,14 +1046,12 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
         "globex".to_owned(),
         "7".to_owned(),
         true,
-        true,
     );
     let acme = (
         "org".to_owned(),
         "1".to_owned(),
         "acme".to_owned(),
         "1".to_owned(),
-        false,
         false,
     );
     assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);

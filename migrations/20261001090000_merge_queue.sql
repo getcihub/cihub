@@ -1,4 +1,3 @@
-CREATE TYPE module_name AS ENUM ('mergequeue');
 CREATE TYPE item_state AS ENUM (
     'not_ready', 'pending', 'testing', 'tests_passed', 'pending_failure', 'merged', 'failed',
     'cancelled'
@@ -34,13 +33,6 @@ CREATE TYPE reason AS ENUM (
     'mode_switch_completed', 'queue_draining', 'queue_switching_modes'
 );
 CREATE TYPE permission AS ENUM ('none', 'read', 'write', 'admin');
-
-CREATE TABLE org_modules (
-    org_id     text        NOT NULL REFERENCES orgs (id),
-    module     module_name NOT NULL,
-    enabled_at timestamptz NOT NULL,
-    PRIMARY KEY (org_id, module)
-);
 
 CREATE TABLE queue_items (
     id                 text          PRIMARY KEY,
@@ -142,7 +134,6 @@ CREATE TABLE queue_inbox (
 CREATE INDEX queue_inbox_pending ON queue_inbox (queue_id, arrival)
     WHERE processed_at IS NULL;
 
-SELECT cihub_tenant_table('org_modules');
 SELECT cihub_tenant_table('queue_items');
 SELECT cihub_tenant_table('test_groups');
 SELECT cihub_tenant_table('test_runs');

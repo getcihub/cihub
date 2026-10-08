@@ -9,9 +9,9 @@ use std::error::Error;
 
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, ModuleName,
-    OrgId, Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId,
-    SubmittedVia, UserId,
+    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
+    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia,
+    UserId,
 };
 use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
 use cihub_scm::{
@@ -638,26 +638,19 @@ async fn sender_of(
     }))
 }
 
-/// The default branch of `repo`, and whether its organization has the
-/// module.
-async fn repo_facts(pool: &PgPool, repo: RepoId) -> Result<(String, bool), Failure> {
+/// The default branch of `repo`.
+async fn default_branch_of(pool: &PgPool, repo: RepoId) -> Result<String, Failure> {
     let mut tx = begin_system(pool).await?;
-    let facts = sqlx::query_as(
-        "SELECT r.default_branch,
-                EXISTS (SELECT 1 FROM org_modules m
-                        WHERE m.org_id = r.org_id AND m.module = $2::module_name)
-         FROM repos r WHERE r.id = $1",
-    )
-    .bind(repo.to_string())
-    .bind(ModuleName::Mergequeue.as_str())
-    .fetch_one(&mut *tx)
-    .await?;
+    let default_branch = sqlx::query_scalar("SELECT default_branch FROM repos WHERE id = $1")
+        .bind(repo.to_string())
+        .fetch_one(&mut *tx)
+        .await?;
     tx.commit().await?;
-    Ok(facts)
+    Ok(default_branch)
 }
 
 /// The queues of `branch` that take submissions (`DECISIONS.md` D172), in
-/// the organizations with the module, in the order of the routing.
+/// the order of the routing.
 async fn open_queues(
     pool: &PgPool,
     repo: RepoId,
@@ -669,7 +662,7 @@ async fn open_queues(
     tx.commit().await?;
     let mut open = Vec::with_capacity(queues.len());
     for queue in queues {
-        if queue.enabled && queue.takes_submissions(default_branch)? {
+        if queue.takes_submissions(default_branch)? {
             open.push(queue);
         }
     }
@@ -821,10 +814,10 @@ pub(crate) async fn submit_pr(
         Err(ScmError::NotFound(_)) => return Ok(()),
         Err(err) => return Err(err.into()),
     };
-    let (default_branch, enabled) = repo_facts(pool, repo.repo_id).await?;
+    let default_branch = default_branch_of(pool, repo.repo_id).await?;
     let mut queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
     // A label is a setting of a queue: only a command creates one.
-    if queues.is_empty() && enabled && request.via == SubmittedVia::Comment {
+    if queues.is_empty() && request.via == SubmittedVia::Comment {
         create_queues(
             pool,
             scm,

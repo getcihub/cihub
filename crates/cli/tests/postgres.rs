@@ -269,8 +269,6 @@ async fn two_queues(pool: &PgPool) -> String {
         "INSERT INTO scm_instances (id, kind, base_url)
              VALUES ('{instance}', 'github', 'https://github.com');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO org_modules (org_id, module, enabled_at)
-             VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
          INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
              VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
          INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)

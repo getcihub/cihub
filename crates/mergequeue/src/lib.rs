@@ -23,7 +23,6 @@ mod target;
 
 use std::sync::Arc;
 
-use cihub_domain::ModuleName;
 use cihub_platform::{LoopError, Module};
 use cihub_scm::Scm;
 use cihub_store::PgPool;
@@ -132,7 +131,6 @@ pub fn module(
 ) -> Module {
     let reconciler = Reconciler { translate };
     Module {
-        name: ModuleName::Mergequeue,
         api: api::api(pool.clone(), clock.clone(), scm.clone()),
         executors: Box::new(move |executors| {
             register!(executors, scm, REFRESH_PRS, jobs::refresh);

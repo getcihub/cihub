@@ -45,14 +45,6 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// A module of CIHub, that an organization enables (`DECISIONS.md` D94).
-    pub enum ModuleName {
-        /// The merge queue (`cihub-mergequeue`).
-        Mergequeue,
-    }
-}
-
-closed_enum! {
     /// What an API token may do (`docs/API.md`).
     pub enum ApiScope {
         /// Read the queues, their items and their timeline.

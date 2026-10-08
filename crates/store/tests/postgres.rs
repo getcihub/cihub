@@ -8,8 +8,8 @@ use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
     EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState,
-    MembershipRole, ModuleName, OrgId, Permission, Priority, QueueId, QueueMode, QueueState,
-    Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    MembershipRole, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason,
+    RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -63,9 +63,8 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 21] = [
+const TENANT_TABLES: [&str; 20] = [
     "orgs",
-    "org_modules",
     "scm_accounts",
     "scm_connections",
     "repos",
@@ -122,8 +121,6 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, payload, occurred_at)
              VALUES ('event-{n}', '{org}', '{queue}', 1, 'access.lost', 'system', 'null',
                      '2026-09-15T00:00:00Z');
-         INSERT INTO org_modules (org_id, module, enabled_at)
-             VALUES ('{org}', 'mergequeue', '2026-09-15T00:00:00Z');
          INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id, state,
                                   state_reason, state_changed_at, priority_value, no_batch,
                                   force_enqueued, submitted_via, submitted_at, block_reasons,
@@ -335,7 +332,6 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
         ("membership_role", values::<MembershipRole>()),
-        ("module_name", values::<ModuleName>()),
         ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),
         ("queue_state", values::<QueueState>()),
