@@ -178,7 +178,8 @@ replica; the transaction-level advisory lock guarantees that only one reconcilia
 during the takeover of an expired lease. Any write on the items of a queue (by the ingestion, by a
 job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. The reconciliation of a
 queue never runs in parallel with itself and waits on no I/O other than Postgres: one replica therefore
-handles hundreds of queues.
+handles hundreds of queues. Between two passes, a replica waits for a notification until the next tick that is
+not due yet, between 1 and 30 seconds (`DECISIONS.md` D225), so that a `wake_at` is served on time.
 
 A reconciliation (`cihub-mergequeue`, Lots 5 and 6) happens in a single transaction: load the last
 snapshot and the events that follow it, write the facts of `queue_inbox` that change the state with their

@@ -353,7 +353,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   PR and its read point), and `Plan` gains `wake_at`, the next wake-up of the queue. The read points depend only
   on the age of the item: 1, 3, 7 and 15 minutes after the submission, then every 15 minutes, and every minute
   as long as the mergeability is `unknown`. A read that changes nothing is not in the log; the point gives the
-  window of the polling key (D101).
+  window of the polling key (D101). _Extended by D225._
 - **D105** The queue status exception is in the jobs that read a PR: when the only unsatisfied required check is
   the `CIHub Merge Queue (<branch>)` status, the job reports the PR `mergeable`. `plan` does not change.
 - **D106** Extends D57: the `maintenance` job deletes an `events` partition older than 90 days only when each
@@ -805,6 +805,10 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   is `no_batch`: it cannot grow, and the `no_batch` item, which keeps its place, would wait for it. The items
   behind the `no_batch` item still wait for their batch. Seen on a manual test, where a batch of one PR waited
   `max_wait_minutes` for nothing. (Lot 12)
+- **D225** Extends D104: between two passes, a scheduler waits for a notification until the earliest
+  `next_tick_at` that is not due yet, at least 1 second and at most `TICK` (30 seconds), instead of `TICK`
+  always. A `wake_at` was served up to 30 seconds late: a batch with `max_wait_minutes: 1` waited up to 1 minute
+  30 on a manual test. One more query per pass. A separate evolution, outside the plan of a lot.
 
 ## Open questions
 

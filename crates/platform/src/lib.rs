@@ -38,7 +38,10 @@ pub use maintenance::{
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
-pub use wake::{QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick};
+pub use wake::{
+    MIN_WAIT, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
+    until_next_tick,
+};
 pub use worker::{Executors, JOB_POLL, Outcome, error_chain, run_worker};
 
 #[derive(Debug, thiserror::Error)]
