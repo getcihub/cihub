@@ -60,11 +60,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # In this job rather than in Rust Test, so that the two jobs take about
-      # the same time on the two runners of cihub-runner (DECISIONS.md D233).
-      - name: Check coverage of the pure crates
-        run: mise run cover
-
   rust-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
@@ -113,6 +108,9 @@ jobs:
         env:
           # The tests share one Postgres and the node runs other workloads.
           NEXTEST_TEST_THREADS: "4"
+
+      - name: Check coverage of the pure crates
+        run: mise run cover
 
   status:
     if: ${{ !cancelled() }}

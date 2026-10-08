@@ -183,11 +183,11 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 `.github/workflows/ci.yml` follows the organization of `home-operations/external-dns-unifi-webhook` (`DECISIONS.md` D18),
 with the jobs of D233:
 
-| Job             | Tasks                                                                               |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `Rust Lint`     | `mise run lint`, `mise run lint-workflows`, then `mise run cover`                   |
-| `Rust Test`     | `postgres-setup.sql`, `mise run test`, then `mise run --skip-deps test-integration` |
-| `Build Success` | joins the jobs above                                                                |
+| Job             | Tasks                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| `Rust Lint`     | `mise run lint`, then `mise run lint-workflows`                                                       |
+| `Rust Test`     | `postgres-setup.sql`, `mise run test`, `mise run --skip-deps test-integration`, then `mise run cover` |
+| `Build Success` | joins the jobs above                                                                                  |
 
 `Build Success` is the required status of the `main` branch: it fails if a job failed or was cancelled. The CI
 runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on
@@ -198,13 +198,12 @@ The jobs of `ci.yml` and `sim.yaml` run on `cihub-runner`, a self-hosted runner 
 Kubernetes mode), which has no Docker daemon. Its image cannot link Rust (no C library headers), so the Rust jobs
 run in the `rust` image. The pod of a job is new for each run, so `ci.yml` turns off incremental compilation
 (`CARGO_INCREMENTAL=0`) and keeps only the line numbers of the debug information
-(`CARGO_PROFILE_DEV_DEBUG=line-tables-only`). The runner set has two runners: the CI has two jobs that do the
-work, which take about the same time, and one build for all the tests, as nextest builds every test binary of the
-workspace before it filters them. `Rust Test` and `Fault Injection` cannot start `compose.yaml`: Postgres is a
-service of the job, on `127.0.0.1:5432` as in development; the job runs `postgres-setup.sql`, then the task without
-its `db` dependency. The tests against Postgres run 4 at a time (`NEXTEST_TEST_THREADS`), as they share one
-Postgres. `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint` ignore the label
-`ubuntu-26.04`, which it does not know yet.
+(`CARGO_PROFILE_DEV_DEBUG=line-tables-only`). The runner set has two runners: the CI has two jobs that do the work,
+and one build for all the tests, as nextest builds every test binary of the workspace before it filters them.
+`Rust Test` and `Fault Injection` cannot start `compose.yaml`: Postgres is a service of the job, on `127.0.0.1:5432`
+as in development; the job runs `postgres-setup.sql`, then the task without its `db` dependency. The tests against
+Postgres run 4 at a time (`NEXTEST_TEST_THREADS`), as they share one Postgres. `.github/actionlint.yaml` declares
+the label `cihub-runner` and makes `actionlint` ignore the label `ubuntu-26.04`, which it does not know yet.
 
 ## Versions
 
