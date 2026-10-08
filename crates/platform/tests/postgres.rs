@@ -45,8 +45,6 @@ fn at(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(1_789_000_000 + seconds).unwrap()
 }
 
-/// Two SCM instances, one organization and one repository with three queues:
-/// 1 is dirty, 2 has a tick due at `at(0)`, 3 has no work.
 async fn seed(pool: &PgPool) {
     let (org, i1, i2, c) = (org(), instance(1), instance(2), connection());
     let (q1, q2, q3) = (queue(1), queue(2), queue(3));
@@ -85,13 +83,10 @@ async fn acquire(pool: &PgPool, owner: &str, now: OffsetDateTime) -> Vec<QueueId
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_lease_goes_to_one_owner_until_it_expires(pool: PgPool) {
     seed(&pool).await;
-    // Only the queues with work, the dirty one first.
     assert_eq!(acquire(&pool, "a", at(0)).await, [queue(1), queue(2)]);
     assert_eq!(acquire(&pool, "b", at(1)).await, []);
-    // Its owner renews a lease.
     assert_eq!(acquire(&pool, "a", at(10)).await, [queue(1), queue(2)]);
     assert_eq!(acquire(&pool, "b", at(20)).await, []);
-    // Not renewed, it expires, and another owner takes it.
     let expired = at(10) + LEASE_TTL;
     assert_eq!(acquire(&pool, "b", expired).await, [queue(1), queue(2)]);
     assert_eq!(acquire(&pool, "a", expired + Duration::SECOND).await, []);
@@ -126,7 +121,6 @@ async fn one_transaction_at_a_time_holds_the_lock_of_a_queue(pool: PgPool) {
     assert!(lock_queue(&mut first, queue(1)).await.unwrap());
     assert!(!lock_queue(&mut second, queue(1)).await.unwrap());
     assert!(lock_queue(&mut second, queue(2)).await.unwrap());
-    // The lock ends with the transaction.
     first.commit().await.unwrap();
     assert!(lock_queue(&mut second, queue(1)).await.unwrap());
 }
@@ -169,7 +163,6 @@ async fn a_copy_of_a_delivery_changes_nothing(pool: PgPool) {
     };
     assert!(!store(&pool, &copy).await);
     assert_eq!(pending(&pool).await, [first]);
-    // A delivery identifier is unique within its SCM instance only.
     let unrouted = Delivery {
         scm_instance_id: instance(2),
         org_id: None,
@@ -217,7 +210,6 @@ async fn an_unrouted_delivery_is_seen_by_the_system_only(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(seen, 0);
-    // A routed delivery needs its organization.
     let orphan = Delivery {
         org_id: None,
         ..delivery("d2", 0)
@@ -239,7 +231,6 @@ fn job(key: &str, class: JobClass) -> Job {
     }
 }
 
-/// A job of the system: no organization, no connection, no quota.
 fn system_job(key: &str) -> Job {
     Job {
         org_id: None,
@@ -315,11 +306,9 @@ async fn the_job_of_a_stopped_worker_is_taken_back_and_finished_once(pool: PgPoo
     seed(&pool).await;
     enqueue(&pool, &job("j", JobClass::Merge), at(0)).await;
     assert_eq!(claim(&pool, "a", at(0), 10).await, ["j"]);
-    // Worker a stops: the job stays with it until its lock expires.
     assert_eq!(claim(&pool, "b", at(30), 10).await, Vec::<String>::new());
     assert_eq!(claim(&pool, "b", at(0) + JOB_LOCK, 10).await, ["j"]);
     assert_eq!(state(&pool, "j").await, ("running".to_owned(), 2));
-    // A late answer of worker a changes nothing: worker b finishes the job.
     assert!(!complete(&pool, "j", "a").await);
     assert!(!fail(&pool, "j", at(70), Retry::Later).await);
     assert!(complete(&pool, "j", "b").await);
@@ -337,8 +326,6 @@ async fn two_workers_at_the_same_time_never_share_a_job(pool: PgPool) {
     for key in &keys {
         enqueue(&pool, &job(key, JobClass::Speculate), at(0)).await;
     }
-    // The claim of `b` runs while the transaction of `a` is still open: the
-    // worst overlap, every time.
     let mut tx = begin_system(&pool).await.unwrap();
     let a: Vec<String> = claim_jobs(&mut tx, "a", at(1), 20)
         .await
@@ -364,7 +351,6 @@ async fn a_failed_job_waits_then_dies_after_its_last_attempt(pool: PgPool) {
         assert!(fail(&pool, "j", now, Retry::Later).await);
         now += backoff(attempt);
         if attempt < MAX_ATTEMPTS {
-            // Not before its backoff.
             assert_eq!(
                 claim(&pool, "a", now - Duration::SECOND, 10).await,
                 Vec::<String>::new()
@@ -391,7 +377,6 @@ async fn a_connection_gets_no_more_jobs_past_its_quota(pool: PgPool) {
     let first = claim(&pool, "a", at(1), 1_000).await;
     assert_eq!(first.len(), quota + 1);
     assert!(first.contains(&"system".to_owned()));
-    // The last job waits until a job of the connection ends.
     assert_eq!(claim(&pool, "b", at(2), 1_000).await, Vec::<String>::new());
     complete(&pool, "j000", "a").await;
     assert_eq!(
@@ -492,7 +477,6 @@ async fn an_urgent_budget_is_written_before_the_next_period(pool: PgPool) {
         Arc::clone(&urgent),
         cancel.clone(),
     ));
-    // The first period passes at once; the next one is 5 s later.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     changed
         .lock()
@@ -556,7 +540,6 @@ async fn a_new_delivery_wakes_a_scheduler_within_a_second(pool: PgPool) {
     assert_eq!(woken, Wake::Notified);
     assert!(queue_state(&pool, queue(3)).await.0);
 
-    // A copy is not new work: no notification.
     store(&pool, &queue_3).await;
     assert_eq!(wakeup.wait(SHORT_TICK, &cancel).await.unwrap(), Wake::Tick);
     cancel.cancel();
@@ -571,7 +554,6 @@ async fn the_tick_finds_a_queue_whose_notification_was_lost(pool: PgPool) {
     seed(&pool).await;
     let cancel = CancellationToken::new();
     let mut wakeup = QueueWakeup::listen(&pool).await.unwrap();
-    // Dirty without a notification, as when the listener was down.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query("UPDATE queues SET dirty = true WHERE id = $1")
         .bind(queue(3).to_string())
@@ -583,8 +565,6 @@ async fn the_tick_finds_a_queue_whose_notification_was_lost(pool: PgPool) {
     assert!(acquire(&pool, "a", at(0)).await.contains(&queue(3)));
 }
 
-/// A scheduler waits until the next tick that is not due, within its bounds
-/// (`DECISIONS.md` D225): queue 2 has a tick at `at(0)`.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_scheduler_waits_until_the_next_tick(pool: PgPool) {
     seed(&pool).await;
@@ -613,7 +593,6 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
             .is_none()
     );
 
-    // A delivery arrives during the reconciliation: it waits for the commit.
     let writer = tokio::spawn({
         let pool = pool.clone();
         async move { store(&pool, &delivery("d1", 0)).await }
@@ -628,7 +607,6 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
     assert!(writer.await.unwrap());
     assert_eq!(queue_state(&pool, queue(1)).await, (true, Some(at(50))));
 
-    // Without a write, the queue stays clean after its reconciliation.
     let tx = begin_reconciliation(&pool, queue(1))
         .await
         .unwrap()
@@ -637,7 +615,6 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
     assert_eq!(queue_state(&pool, queue(1)).await, (false, Some(at(50))));
 }
 
-/// Starts a worker whose clock stays at `now`, and returns its handle.
 fn start_worker(
     pool: &PgPool,
     now: OffsetDateTime,
@@ -671,7 +648,6 @@ fn typed_job(key: &str, job_type: &str) -> Job {
     }
 }
 
-/// Waits until the job `key` has `wanted` as its state, for at most 2 s.
 async fn wait_for_state(pool: &PgPool, key: &str, wanted: &str) -> (String, i32) {
     for _ in 0..40 {
         let current = state(pool, key).await;
@@ -750,7 +726,6 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         "maintenance:2026-10-10:1"
     );
 
-    // Old and recent rows: only the old ones go.
     for (id, processed) in [
         ("old", now - Duration::days(8)),
         ("recent", now - Duration::days(1)),
@@ -762,7 +737,6 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .unwrap();
         tx.commit().await.unwrap();
     }
-    // A delivery that no connection claimed goes after the same time.
     for (id, received) in [("unrouted-old", 22), ("unrouted-recent", 29)] {
         let unrouted = Delivery {
             org_id: None,
@@ -806,8 +780,6 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
     assert_eq!(partitions, ["events_2026_10", "events_2026_11"]);
 }
 
-/// A delivery of a fake SCM whose payload says what it is: the routing does
-/// not depend on one SCM.
 fn fake_translate(
     event: &str,
     payload: &serde_json::Value,
@@ -883,7 +855,6 @@ async fn routes(pool: &PgPool) -> Vec<RouteRow> {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: PgPool) {
     seed(&pool).await;
-    // Two queues on one branch: no queue is sure (`DECISIONS.md` D135).
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name) VALUES
@@ -905,7 +876,6 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         std::time::Duration::from_mins(1),
         cancel.clone(),
     ));
-    // The first pass finds nothing; a notification wakes the next one.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let known = json!({ "installation": "1", "repo": "1", "branch": "release" });
     for delivery in [
@@ -990,11 +960,8 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     })
     .await;
     assert_eq!(routes(&pool).await, expected, "routed within a second");
-    // The queues of a routed delivery are dirty.
     assert!(queue_state(&pool, queue(2)).await.0);
     assert!(queue_state(&pool, queue(3)).await.0);
-    // A change of the repositories of a known connection asks to read them
-    // again (`DECISIONS.md` D155).
     assert_eq!(
         sync_jobs(&pool).await,
         [format!("sync_repos:{}-i-repos:1", connection())]
@@ -1025,7 +992,6 @@ async fn the_sweep_asks_again_only_for_the_deliveries_missing_from_the_inbox(poo
         sim.push(&repo, branch, &root, &alice).unwrap();
     }
     let sent = sim.take_deliveries();
-    // The inbox got the first and the third delivery; the second was lost.
     for id in ["sim-1", "sim-3"] {
         store(&pool, &unrouted(id, "push", json!({}))).await;
     }
@@ -1045,7 +1011,6 @@ async fn sync_jobs(pool: &PgPool) -> Vec<String> {
 
 type OrgRow = (String, String, String, String, bool, bool);
 
-/// The organizations with their account, connection and module.
 async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
@@ -1103,8 +1068,6 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
     let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
     assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
 
-    // Again, in the same hour: the same organization and a new token; the
-    // read of the hour is already requested.
     let second = bootstrap(&pool, &sim, instance(1), kind, "7", at(60))
         .await
         .unwrap();
@@ -1128,7 +1091,6 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
     drop(tx);
     assert_eq!(audited, 2, "each token is in the audit log");
 
-    // An installation that the SCM does not know starts nothing.
     let unknown = bootstrap(&pool, &sim, instance(1), kind, "8", at(0)).await;
     assert!(
         matches!(unknown, Err(PlatformError::Scm(ScmError::NotFound(_)))),
@@ -1166,7 +1128,6 @@ fn sim_repo(connection: &str, external_id: &str, name: &str) -> RepoRef {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     seed(&pool).await;
-    // Another organization has the repository 4.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('other', 'other');
@@ -1208,7 +1169,6 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
         row("4", "other", "c2", "other", "kept", "main"),
     ];
     assert_eq!(repos(&pool).await, expected);
-    // The repository 1 keeps its identifier, and its queues with it.
     let mut tx = begin_system(&pool).await.unwrap();
     let id: String = sqlx::query_scalar("SELECT id FROM repos WHERE external_id = '1'")
         .fetch_one(&mut *tx)
@@ -1217,7 +1177,6 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     tx.commit().await.unwrap();
     assert_eq!(id, "r");
 
-    // A suspended connection is not read.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query("UPDATE scm_connections SET suspended_at = now() WHERE id = $1")
         .bind(connection().to_string())
@@ -1243,7 +1202,6 @@ async fn each_active_connection_is_read_once_an_hour(pool: PgPool) {
         }
     };
     assert_eq!(request(at(0)).await, 1);
-    // Another scheduler in the same hour asks for nothing more.
     assert_eq!(request(at(60)).await, 0);
     assert_eq!(request(at(3600)).await, 1);
     assert_eq!(

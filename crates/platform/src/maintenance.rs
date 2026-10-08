@@ -7,23 +7,14 @@ use tracing::info;
 
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
-/// The type of the daily job that keeps the shared tables in shape
-/// (`DECISIONS.md` D67).
 pub const MAINTENANCE: &str = "maintenance";
 
-/// A processed delivery, or a delivery that no connection claimed, is
-/// deleted after this time (`DECISIONS.md` D130).
 pub(crate) const DELIVERY_RETENTION: Duration = Duration::days(7);
 
-/// A done job is deleted after this time.
 pub(crate) const DONE_JOB_RETENTION: Duration = Duration::days(3);
 
-/// A partition of `events` is dropped once its month ended this long ago, and
-/// a snapshot covers each of its events (`DECISIONS.md` D57, D106).
 pub(crate) const EVENT_RETENTION: Duration = Duration::days(90);
 
-/// The maintenance job of `day`: its key admits one job per day, whatever the
-/// number of schedulers that request it.
 pub fn maintenance_job(day: Date) -> Job {
     Job {
         idempotency_key: format!("{MAINTENANCE}:{day}:1"),
@@ -92,8 +83,6 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
     Ok(())
 }
 
-/// The first instant after the month of the partition `name`
-/// (`events_<YYYY>_<MM>`), or `None` for another name.
 fn partition_end(name: &str) -> Option<OffsetDateTime> {
     let (year, month) = name.strip_prefix("events_")?.split_once('_')?;
     let (year, month): (i32, u8) = (year.parse().ok()?, month.parse().ok()?);
@@ -104,10 +93,6 @@ fn partition_end(name: &str) -> Option<OffsetDateTime> {
     Some(next_month(first_day).with_time(Time::MIDNIGHT).assume_utc())
 }
 
-/// Drops the partitions of `events` whose month ended [`EVENT_RETENTION`]
-/// before `now`, when the last snapshot of each queue has a `seq` at least
-/// as high as its events there. Returns the partitions dropped, then those
-/// kept for want of a snapshot.
 async fn drop_old_event_partitions(
     conn: &mut PgConnection,
     now: OffsetDateTime,
@@ -127,8 +112,6 @@ async fn drop_old_event_partitions(
         if partition_end(&name).is_none_or(|end| end > now - EVENT_RETENTION) {
             continue;
         }
-        // `name` is a partition name that `partition_end` rebuilt: no quote
-        // can be in it.
         let uncovered: bool = sqlx::query_scalar(AssertSqlSafe(format!(
             "SELECT EXISTS (
                  SELECT 1 FROM {name} e
@@ -151,7 +134,6 @@ async fn drop_old_event_partitions(
     Ok((dropped, kept))
 }
 
-/// The executor of [`MAINTENANCE`]: a failure is retried after the backoff.
 pub async fn execute_maintenance(pool: PgPool, _job: Job, now: OffsetDateTime) -> Outcome {
     match run_maintenance(&pool, now).await {
         Ok(()) => Outcome::Done,

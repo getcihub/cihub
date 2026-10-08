@@ -8,10 +8,8 @@ use serde_json::Value;
 
 use crate::signature::verify_signature;
 
-/// The route of the webhooks of the App (`DECISIONS.md` D83).
 pub const WEBHOOK_PATH: &str = "/webhooks/github";
 
-/// A delivery whose signature is valid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReceivedDelivery {
     /// `X-GitHub-Delivery`: a copy of a delivery has the same.

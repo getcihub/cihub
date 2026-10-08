@@ -7,10 +7,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::Executors;
 
-/// What a loop of a module gives when it cannot start.
 pub type LoopError = Box<dyn Error + Send + Sync>;
 
-/// A loop of a module, which runs until its token is cancelled.
 pub type ModuleLoop = Box<
     dyn FnOnce(CancellationToken) -> Pin<Box<dyn Future<Output = Result<(), LoopError>> + Send>>
         + Send,
@@ -21,9 +19,7 @@ pub type ModuleLoop = Box<
 /// the web role (D159). The subscriptions come with lot 11.
 pub struct Module {
     pub name: ModuleName,
-    /// Registers the executors of the module in the registry of the worker.
     pub executors: Box<dyn FnOnce(&mut Executors) + Send>,
-    /// The loop of the module in the scheduler role.
     pub scheduler: ModuleLoop,
     pub api: ModuleApi,
 }

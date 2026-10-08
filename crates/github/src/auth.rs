@@ -26,7 +26,6 @@ pub enum KeyError {
     Rejected(String),
 }
 
-/// The private key of the App.
 #[derive(Debug)]
 pub struct AppKey(RsaKeyPair);
 
@@ -82,7 +81,6 @@ impl AppKey {
     }
 }
 
-/// The header and the claims of the JWT, encoded: what the key signs.
 fn signing_input(app_id: &str, now: OffsetDateTime) -> String {
     let header = serde_json::json!({ "alg": "RS256", "typ": "JWT" });
     let claims = serde_json::json!({

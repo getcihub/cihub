@@ -1,11 +1,3 @@
--- The merge queue module (DECISIONS.md D94, D95, D100): the modules of an
--- organization, the projections of the log (`queue_items`, `test_groups`,
--- `test_runs`, D28), the snapshots of the log, and the inbox of the facts that
--- the jobs give back to a queue.
---
--- The projections hold only what the log holds: a replay of the log rebuilds
--- them exactly (principle I). A list of identifiers is in `text[]` (D37).
-
 CREATE TYPE module_name AS ENUM ('mergequeue');
 CREATE TYPE item_state AS ENUM (
     'not_ready', 'pending', 'testing', 'tests_passed', 'pending_failure', 'merged', 'failed',
@@ -43,12 +35,8 @@ CREATE TYPE reason AS ENUM (
     'test_branch_assembled', 'access_lost', 'access_restored', 'mode_changed',
     'mode_switch_completed', 'queue_draining', 'queue_switching_modes'
 );
--- The permission of the author of a command, read at the submission, so that
--- a read of the PR evaluates `sender-permission` (D144, D145).
 CREATE TYPE permission AS ENUM ('none', 'read', 'write', 'admin');
 
--- An organization has a module from `enabled_at`; without a row, it does not
--- have it (D94).
 CREATE TABLE org_modules (
     org_id     text        NOT NULL REFERENCES orgs (id),
     module     module_name NOT NULL,
@@ -62,22 +50,17 @@ CREATE TABLE queue_items (
     queue_id           text          NOT NULL,
     pr_number          bigint        NOT NULL,
     pr_head_sha        text          NOT NULL,
-    -- The author of the PR; `users` keeps the login (D42).
     pr_author_id       text          NOT NULL REFERENCES users (id),
     state              item_state    NOT NULL,
     state_reason       reason        NOT NULL,
     state_changed_at   timestamptz   NOT NULL,
-    -- The rank in the log of the admission, the order of entry.
     seq                bigint,
-    -- The queue order, by steps of 1 000 (docs/ALGORITHMS.md).
     position           bigint,
     priority_value     smallint      NOT NULL,
     no_batch           boolean       NOT NULL,
     force_enqueued     boolean       NOT NULL,
-    -- `NULL` when CIHub submitted the PR itself.
     submitted_by       text          REFERENCES users (id),
     submitted_via      submitted_via NOT NULL,
-    -- NULL for a submission by label.
     sender_permission  permission,
     submitted_at       timestamptz   NOT NULL,
     mergeability       mergeability  NOT NULL,
@@ -91,9 +74,7 @@ CREATE TABLE queue_items (
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
 
--- A PR has at most one live item; its history stays.
 CREATE UNIQUE INDEX queue_items_current ON queue_items (queue_id, pr_number) WHERE is_current;
--- The history of a PR on its comment reads all its items (DECISIONS.md D244).
 CREATE INDEX queue_items_pr ON queue_items (queue_id, pr_number);
 CREATE INDEX queue_items_order ON queue_items (queue_id, position)
     WHERE is_current AND state NOT IN ('merged', 'failed', 'cancelled');
@@ -103,12 +84,10 @@ CREATE TABLE test_groups (
     org_id          text        NOT NULL REFERENCES orgs (id),
     queue_id        text        NOT NULL,
     kind            group_kind  NOT NULL,
-    -- In order.
     item_ids        text[]      NOT NULL,
     parent_group_id text,
     predecessor_ids text[]      NOT NULL,
     base_sha        text        NOT NULL,
-    -- The rank in the log of the formation.
     seq             bigint      NOT NULL,
     state           group_state NOT NULL,
     state_reason    reason      NOT NULL,
@@ -138,14 +117,9 @@ CREATE TABLE test_runs (
     failure_reason           reason,
     failure_causing_statuses text[]                   NOT NULL,
     conflict_culprit         jsonb,
-    -- The head of the target branch that the run builds on: that of its group.
     base_sha                 text                     NOT NULL,
-    -- The heads merged on `base_sha`, in order: the predecessors, then the
-    -- members of the group.
     head_shas                text[]                   NOT NULL,
-    -- The PRs of the group.
     tested_pr_numbers        bigint[]                 NOT NULL,
-    -- The last report of a check on the test SHA, late reports included.
     last_report_at           timestamptz,
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     FOREIGN KEY (org_id, group_id) REFERENCES test_groups (org_id, id)
@@ -153,37 +127,27 @@ CREATE TABLE test_runs (
 
 CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
--- The history of a PR finds its runs (DECISIONS.md D245).
 CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
 
--- The state of a queue after the event `seq` of its log, every 500 events: a
--- reconciliation applies only the events after the last snapshot.
 CREATE TABLE queue_snapshots (
     org_id     text        NOT NULL,
     queue_id   text        NOT NULL,
     seq        bigint      NOT NULL CHECK (seq > 0),
-    -- The snapshot of `cihub-mq-core`, as it serializes it.
     payload    jsonb       NOT NULL,
     created_at timestamptz NOT NULL,
     PRIMARY KEY (queue_id, seq),
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
 
--- The facts that a job or the API gives back to a queue (D100). Only the
--- scheduler writes the log: it applies them under the lock of the queue.
 CREATE TABLE queue_inbox (
-    -- The identifier of the event in the log.
     id            text        PRIMARY KEY,
     org_id        text        NOT NULL REFERENCES orgs (id),
     queue_id      text        NOT NULL,
     actor_kind    actor_kind  NOT NULL,
     actor_user_id text        REFERENCES users (id),
     type          event_type  NOT NULL,
-    -- The fields of the type, as `cihub-domain` serializes them.
     payload       jsonb       NOT NULL,
     received_at   timestamptz NOT NULL,
-    -- The order of the deposits: the facts of one job have the same time, and
-    -- their order counts (a submission before the read of its PR).
     arrival       bigint      GENERATED ALWAYS AS IDENTITY,
     processed_at  timestamptz,
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),

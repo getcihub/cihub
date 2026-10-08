@@ -25,7 +25,6 @@ use crate::GithubApp;
 use crate::client::{Answer, JSON, Request};
 use crate::translate::status_conclusion;
 
-/// The checks and statuses of a commit, as a fragment `checks`.
 const CHECKS_FRAGMENT: &str = "
 fragment checks on StatusCheckRollup {
   contexts(first: 100) {
@@ -37,8 +36,6 @@ fragment checks on StatusCheckRollup {
   }
 }";
 
-/// The fields of a PR that CIHub reads, with the checks of its head from
-/// [`CHECKS_FRAGMENT`].
 const PR_FIELDS: &str = "
 fragment pr on PullRequest {
   number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt
@@ -64,7 +61,6 @@ query($owner: String!, $name: String!, $number: Int!) {
 /// GitHub lists 3 000 files of a PR at most, 100 per page.
 const FILE_PAGES: u32 = 30;
 
-/// The checks of a commit, with [`CHECKS_FRAGMENT`].
 const CHECKS_QUERY: &str = "
 query($owner: String!, $name: String!, $sha: GitObjectID!) {
   repository(owner: $owner, name: $name) {
@@ -226,12 +222,10 @@ fn check_conclusion(conclusion: &str) -> CheckConclusion {
         "TIMED_OUT" => CheckConclusion::TimedOut,
         "ACTION_REQUIRED" => CheckConclusion::ActionRequired,
         "STALE" => CheckConclusion::Stale,
-        // `FAILURE`, `STARTUP_FAILURE`, and a value that GitHub adds later.
         _ => CheckConclusion::Failure,
     }
 }
 
-/// A part of a GraphQL answer, as `T`.
 fn decode<T: DeserializeOwned>(value: &Value) -> Result<T, ScmError> {
     T::deserialize(value).map_err(|err| ScmError::Protocol(err.to_string()))
 }
@@ -356,7 +350,6 @@ fn encode(text: &str) -> String {
     encoded
 }
 
-/// The error of an answer whose status the caller does not expect.
 fn unexpected(answer: &Answer) -> ScmError {
     let message = answer.message();
     match answer.status {
@@ -390,7 +383,6 @@ fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
     }
 }
 
-/// The state of an asynchronous merge request of GitHub.
 #[derive(Deserialize)]
 struct AsyncMerge {
     status: String,
@@ -417,7 +409,6 @@ impl AsyncMerge {
     }
 }
 
-/// A rule of a ruleset that applies to a branch.
 #[derive(Deserialize)]
 struct BranchRule {
     #[serde(rename = "type")]
@@ -426,8 +417,6 @@ struct BranchRule {
 }
 
 impl GithubApp {
-    /// The rules that apply to `branch`: none on a private repository of
-    /// GitHub Free, which has no rules.
     async fn branch_rules(
         &self,
         repo: &RepoRef,
@@ -469,8 +458,6 @@ impl GithubApp {
         .await
     }
 
-    /// A REST call on the repository whose answer has the status `status`,
-    /// read as `T`.
     async fn rest_json<T: DeserializeOwned>(
         &self,
         repo: &RepoRef,
@@ -484,8 +471,6 @@ impl GithubApp {
         expect(answer, &[status])?.json()
     }
 
-    /// A REST call on the repository whose answer has the status `status`,
-    /// and no content of use.
     async fn rest_ok(
         &self,
         repo: &RepoRef,
@@ -499,9 +484,6 @@ impl GithubApp {
         expect(answer, &[status]).map(drop)
     }
 
-    /// Merges the PR with the asynchronous endpoint, as a direct merge: the
-    /// commit when the merge is done, `MergeInProgress` while GitHub works on
-    /// it, so that the job asks again later.
     async fn merge_pr_async(
         &self,
         repo: &RepoRef,
@@ -788,8 +770,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The permission of `user`, kept 5 minutes per connection
-    /// (`DECISIONS.md` D157).
     fn permission<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -827,8 +807,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The comparison of the two commits: `ahead` or `identical` when
-    /// `ancestor` is in the history of `descendant`.
     fn is_ancestor<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -886,8 +864,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The first 100 review threads of the PR: a PR with more of them is an
-    /// exception that a condition can still count as unresolved.
     fn unresolved_threads<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -1180,7 +1156,6 @@ impl Scm for GithubApp {
         class: JobClass,
     ) -> ScmFuture<'a, ()> {
         Box::pin(async move {
-            // A label name can hold `/`, which is not a path separator here.
             let rest = format!(
                 "/issues/{number}/labels/{}",
                 encode(label).replace('/', "%2F")
@@ -1253,8 +1228,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The pages of `GET /app/hook/deliveries`, newest first, until an
-    /// attempt older than `since`.
     fn recent_deliveries(
         &self,
         since: OffsetDateTime,
@@ -1301,8 +1274,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// `GET /app/installations/{id}`: the organization or the user that the
-    /// installation serves.
     fn installation<'a>(
         &'a self,
         external_id: &'a str,
@@ -1331,10 +1302,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The rulesets of `branch` and of the test branches (`docs/GITHUB.md`):
-    /// an `update` rule must restrict the branch, and each ruleset with one
-    /// must exempt the App; no rule may cover the test branches; and no rule
-    /// may ask for branches up to date.
     fn check_setup<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -1395,7 +1362,6 @@ impl Scm for GithubApp {
         })
     }
 
-    /// The pages of `GET /installation/repositories`, until `total_count`.
     fn list_repos<'a>(
         &'a self,
         connection: &'a ConnectionRef,

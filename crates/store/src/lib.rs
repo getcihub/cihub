@@ -26,7 +26,6 @@ pub use tokens::{
 };
 pub use users::ensure_user;
 
-/// The migrations of `migrations/`, embedded in the binary.
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
 #[derive(Debug, thiserror::Error)]
@@ -63,7 +62,6 @@ pub enum StoreError {
 }
 
 impl StoreError {
-    /// The error of the row `id` of `what` that does not decode.
     fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
         what: &'static str,
         id: &str,
@@ -77,8 +75,6 @@ impl StoreError {
     }
 }
 
-/// Opens a pool on `url` (`postgres://user:password@host/database`).
-///
 /// # Errors
 ///
 /// Postgres cannot be reached or refuses the connection.
@@ -149,13 +145,10 @@ async fn begin_with(
     Ok(tx)
 }
 
-/// Whether Postgres answers a query on `pool`.
 pub async fn ping(pool: &PgPool) -> bool {
     sqlx::query("SELECT 1").execute(pool).await.is_ok()
 }
 
-/// The versions of `migrator` that the database has not applied, in order.
-///
 /// # Errors
 ///
 /// The table of the applied migrations cannot be read.

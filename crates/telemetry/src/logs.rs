@@ -7,9 +7,7 @@ use tracing_subscriber::fmt::time::UtcTime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogFormat {
-    /// One JSON object per line, for a log store.
     Json,
-    /// One colored line of text, for a terminal.
     Pretty,
 }
 
@@ -21,7 +19,6 @@ pub enum LogsError {
     AlreadyInstalled(#[source] Box<dyn Error + Send + Sync>),
 }
 
-/// The settings of the logs, checked before they are installed.
 #[derive(Debug)]
 pub struct Logs {
     filter: EnvFilter,

@@ -64,7 +64,6 @@ pub enum PlatformError {
 }
 
 impl PlatformError {
-    /// The error of the row `id` of `what` that does not decode.
     pub(crate) fn read<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
         what: &'static str,
         id: &str,

@@ -17,7 +17,6 @@ use secrecy::ExposeSecret;
 use sqlx::{AssertSqlSafe, PgPool};
 use ulid::Ulid;
 
-/// The URL of the database of `pool`, on the server of `DATABASE_URL`.
 fn database_url(pool: &PgPool) -> String {
     let server = std::env::var("DATABASE_URL").unwrap();
     let (server, _) = server.rsplit_once('/').unwrap();
@@ -45,8 +44,6 @@ const TEST_KEY: &str = concat!(
     "/../github/tests/test-only-key.pem"
 );
 
-/// `command` with a GitHub App: the key of the tests, and an address of
-/// GitHub where nothing listens, so that no test reaches the real GitHub.
 fn with_github(pool: &PgPool) -> Command {
     let mut command = command(pool);
     command
@@ -66,7 +63,6 @@ fn start(pool: &PgPool, addr: &str) -> Child {
         .unwrap()
 }
 
-/// Sends `GET path` and returns the status line and the body.
 fn get(addr: &str, path: &str) -> Option<(String, String)> {
     let mut stream = TcpStream::connect(addr).ok()?;
     write!(
@@ -80,7 +76,6 @@ fn get(addr: &str, path: &str) -> Option<(String, String)> {
     Some((head.lines().next()?.to_owned(), body.to_owned()))
 }
 
-/// Sends `POST path` with `headers` and `body`, and returns the status line.
 fn post(addr: &str, path: &str, headers: &[(&str, &str)], body: &str) -> Option<String> {
     let mut stream = TcpStream::connect(addr).ok()?;
     write!(
@@ -220,7 +215,6 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         sleep(Duration::from_millis(50));
     }
     assert_eq!(status.as_deref(), Some("HTTP/1.1 202 Accepted"));
-    // The routing loop routes the delivery; CIHub does not use a ping.
     let mut stored = None;
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
@@ -264,8 +258,6 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
     );
 }
 
-/// An organization with the repository `acme/app` and its two queues, and an
-/// API token of the organization with every scope.
 async fn two_queues(pool: &PgPool) -> String {
     let org = OrgId::from_ulid(Ulid(1));
     let instance = ScmInstanceId::from_ulid(Ulid(2));
@@ -315,8 +307,6 @@ async fn two_queues(pool: &PgPool) -> String {
     secret.expose_secret().to_owned()
 }
 
-/// `cihub queue` drives the API of a running server (`DECISIONS.md` D168):
-/// with two queues and no `--queue`, it refuses and lists the names.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_queue_commands_drive_the_api(pool: PgPool) {
     let token = two_queues(&pool).await;

@@ -182,15 +182,12 @@ impl QueueSettings {
                 ),
             ));
         }
-        // `DECISIONS.md` D119: the mode comes with a later lot.
         if self.trigger.value == Trigger::Inplace {
             return Err(ConfigError::parsing(
                 self.trigger.at,
                 "trigger `inplace` is not available yet".to_owned(),
             ));
         }
-        // `DECISIONS.md` D120: the test commit of a PR descends from the target
-        // only when no predecessor is merged into it.
         if self.merge_method.value == MergeMethod::FastForward
             && self.strategy.value != Strategy::Sequential
         {

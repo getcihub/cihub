@@ -81,7 +81,6 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
     }
 }
 
-/// The GitHub App of the instance, once started.
 #[derive(Clone)]
 struct Github {
     app: Arc<GithubApp>,
@@ -89,10 +88,6 @@ struct Github {
     webhook_secret: SecretString,
 }
 
-/// Checks that the database is migrated, then starts the client of the
-/// GitHub App and creates the row of its SCM instance when it is missing
-/// (`DECISIONS.md` D79). `migrate` does not talk to GitHub; the other
-/// commands cannot run without it.
 async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyhow::Result<Github> {
     let Some(github) = github else {
         bail!(
@@ -131,7 +126,6 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
     })
 }
 
-/// The merge queue module, on the GitHub App of the instance.
 fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)
@@ -147,7 +141,6 @@ fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform:
     )
 }
 
-/// The clock of the process: the library crates receive the time from here.
 fn now() -> OffsetDateTime {
     #[expect(
         clippy::disallowed_methods,

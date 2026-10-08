@@ -23,19 +23,14 @@ use time::OffsetDateTime;
 use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-/// Each token makes at most this many requests per minute
-/// (`docs/API.md`).
 pub const REQUESTS_PER_MINUTE: u32 = 600;
 
-/// The body of a request is at most this large (`docs/SECURITY.md`).
 const MAX_BODY_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Clone)]
 struct ApiState {
     pool: PgPool,
     now: fn() -> OffsetDateTime,
-    /// The requests of each token in its current minute, in this replica
-    /// only (`DECISIONS.md` D159).
     windows: Arc<Mutex<HashMap<ApiTokenId, (i64, u32)>>>,
 }
 
@@ -61,7 +56,6 @@ impl Modify for Security {
 )]
 struct PlatformApi;
 
-/// The `OpenAPI` document of the platform and of `modules`.
 pub fn openapi(modules: &[ModuleApi]) -> utoipa::openapi::OpenApi {
     let mut document = PlatformApi::openapi();
     for module in modules {
@@ -70,8 +64,6 @@ pub fn openapi(modules: &[ModuleApi]) -> utoipa::openapi::OpenApi {
     document
 }
 
-/// The router of `/api/v1`: `openapi.json` without a token, everything else
-/// behind the authentication.
 pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<ModuleApi>) -> Router {
     let document = openapi(&modules);
     let state = ApiState {
@@ -101,8 +93,6 @@ pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<Mod
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
 }
 
-/// Authenticates the request by its token, counts it in the minute of the
-/// token, then gives the [`ApiGrant`] to the route.
 async fn authenticated(
     State(state): State<ApiState>,
     mut request: Request,
@@ -140,12 +130,9 @@ async fn authenticated(
     next.run(request).await
 }
 
-/// Counts a request of `token` at `now`, and returns the seconds to wait
-/// when the token made its requests of the minute already.
 fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Option<u64> {
     let minute = now.unix_timestamp().div_euclid(60);
     let mut windows = state.windows.lock().unwrap_or_else(PoisonError::into_inner);
-    // The windows of the minutes before are over.
     windows.retain(|_, (window, _)| *window == minute);
     let (_, count) = windows.entry(token).or_insert((minute, 0));
     if *count >= REQUESTS_PER_MINUTE {

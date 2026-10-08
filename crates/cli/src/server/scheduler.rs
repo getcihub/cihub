@@ -33,9 +33,6 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     queues.map_err(|err| anyhow!(err).context("the scheduler of the queues stopped"))
 }
 
-/// Runs `request` at the start, then every `every`, until `cancel`. Each
-/// replica does it: the key of the period admits one job, so a copy changes
-/// nothing.
 async fn repeat_every<Fut: Future<Output = ()>>(
     every: Duration,
     cancel: &CancellationToken,
@@ -54,7 +51,6 @@ async fn repeat_every<Fut: Future<Output = ()>>(
 /// the future that borrows its argument.
 type InTransaction<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Runs `request` in one system transaction, and commits it.
 async fn in_system_transaction<T, E>(
     pool: &PgPool,
     request: impl for<'a> FnOnce(
@@ -70,8 +66,6 @@ where
     Ok(result)
 }
 
-/// Requests the maintenance job of the day (`DECISIONS.md` D67) and the read of
-/// the repositories of each connection (D155), every hour.
 async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
     repeat_every(Duration::from_hours(1), cancel, || async move {
         if let Err(err) = request_maintenance_now(pool).await {
@@ -105,8 +99,6 @@ async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Requests the sweep of the deliveries of `instance` every [`SWEEP_EVERY`]
-/// (`DECISIONS.md` D88).
 async fn request_sweep_regularly(
     pool: &PgPool,
     instance: ScmInstanceId,

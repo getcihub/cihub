@@ -38,21 +38,16 @@ pub enum EventKind {
         no_batch: bool,
         direct: bool,
         submitted_via: SubmittedVia,
-        /// Attributes kept for a probabilistic speculation (`DECISIONS.md` D27,
-        /// D42).
         author_id: UserId,
         additions: u64,
         deletions: u64,
         changed_files: u64,
-        /// The permission of the author of the command, read at the
-        /// submission; `None` for a label (`DECISIONS.md` D144).
         sender_permission: Option<Permission>,
     },
     #[serde(rename = "item.cancel_requested")]
     ItemCancelRequested { item_id: ItemId, by_admin: bool },
     #[serde(rename = "item.restart_requested")]
     ItemRestartRequested { item_id: ItemId, by_api: bool },
-    /// The full state of the PR as read, whatever the SCM action.
     #[serde(rename = "pr.observed")]
     PrObserved {
         pr_number: u64,
@@ -64,22 +59,15 @@ pub enum EventKind {
         mergeability: Mergeability,
         review_decision: ReviewDecision,
         checks: Vec<CheckReport>,
-        /// The `queue_conditions` of the queue that the PR does not meet, as
-        /// the file writes them (`DECISIONS.md` D142).
         unmet_conditions: Vec<String>,
-        /// The checks that the rules of the base branch require, without the
-        /// status of the queue (`DECISIONS.md` D158).
         required_checks: Vec<String>,
     },
     #[serde(rename = "target.pushed")]
     TargetPushed {
-        /// `None` for a read of the tick.
         before: Option<String>,
         after: String,
-        /// `None` for a read of the tick, which does not know who pushed.
         sender_id: Option<UserId>,
     },
-    /// Only for the test SHA of a live run.
     #[serde(rename = "check.observed")]
     CheckObserved {
         test_sha: String,
@@ -118,8 +106,6 @@ pub enum EventKind {
     /// Only the mode: the other settings are a parameter of `plan`.
     #[serde(rename = "queue.settings_changed")]
     QueueSettingsChanged { before: QueueMode, after: QueueMode },
-    /// CIHub lost its access to the repository: the GitHub App
-    /// installation is suspended or deleted.
     #[serde(rename = "access.lost")]
     AccessLost,
     #[serde(rename = "access.restored")]
@@ -131,12 +117,10 @@ pub enum EventKind {
         from: Option<ItemState>,
         to: ItemState,
         reason: Reason,
-        /// Set at admission.
         position: Option<i64>,
         verified_by_run_id: Option<RunId>,
         merged_sha: Option<String>,
     },
-    /// The full list of block reasons.
     #[serde(rename = "item.readiness_changed")]
     ItemReadinessChanged {
         item_id: ItemId,
@@ -146,7 +130,6 @@ pub enum EventKind {
     /// New positions after the interval ran out or an `urgent` preemption.
     #[serde(rename = "queue.renumbered")]
     QueueRenumbered { positions: BTreeMap<ItemId, i64> },
-    /// A new group, in `testing`.
     #[serde(rename = "group.formed")]
     GroupFormed {
         group_id: GroupId,
@@ -173,7 +156,6 @@ pub enum EventKind {
         reason: Reason,
         attempt: u32,
         test_branch: String,
-        /// Set when the run ends in failure.
         failure_causing_statuses: Vec<String>,
     },
     #[serde(rename = "queue.transitioned")]
@@ -381,12 +363,8 @@ impl EventKind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Actor {
-    /// CIHub itself: the reconciler, the tick or a resync.
     System,
-    /// The account that CIHub acts with on the SCM: the GitHub App, a
-    /// GitLab service account.
     Bot,
-    /// A user of the SCM; the `users` table keeps the login (`DECISIONS.md` D42).
     User { user_id: UserId },
 }
 

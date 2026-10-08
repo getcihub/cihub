@@ -13,21 +13,15 @@ use tracing::warn;
 
 use crate::PlatformError;
 
-/// A process writes the budgets of its connections at most this often, except
-/// a pause or a change of mode (`DECISIONS.md` D77).
 pub(crate) const BUDGET_WRITE_EVERY: Duration = Duration::from_secs(5);
 
-/// The budget of a connection as a process sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionBudget {
     pub mode: ConnectionMode,
-    /// Why the connection left `normal`, for the operator.
     pub mode_reason: Option<String>,
-    /// The rate limit with the smallest share left, when the SCM gave one.
     pub rate_remaining: Option<u32>,
     pub rate_limit: Option<u32>,
     pub rate_reset_at: Option<OffsetDateTime>,
-    /// The jobs of the connection wait until then (`DECISIONS.md` D70).
     pub paused_until: Option<OffsetDateTime>,
     pub consecutive_failures: u32,
 }

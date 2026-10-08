@@ -223,7 +223,6 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         for reason in Reason::iter() {
             let text = reason.describe();
-            // The commit status keeps 140 characters, after `Cancelled: `.
             assert!(!text.is_empty() && text.len() <= 100, "{reason}: {text}");
             assert!(!text.ends_with('.'), "{reason}: {text}");
             assert!(seen.insert(text), "{reason}: {text} is used twice");

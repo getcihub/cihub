@@ -5,7 +5,6 @@ use std::process::Command;
 
 use anyhow::{Context, bail};
 
-/// The owner and the name of the repository of `origin`.
 pub(crate) fn from_git() -> anyhow::Result<(String, String)> {
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
@@ -18,7 +17,6 @@ pub(crate) fn from_git() -> anyhow::Result<(String, String)> {
     parse(url.trim()).with_context(|| format!("the remote `{}` names no repository", url.trim()))
 }
 
-/// The value of `--repo`: `owner/name`.
 pub(crate) fn from_arg(value: &str) -> Result<(String, String), String> {
     match value.split_once('/') {
         Some((owner, name)) if !owner.is_empty() && !name.is_empty() && !name.contains('/') => {

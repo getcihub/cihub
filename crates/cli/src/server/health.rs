@@ -10,7 +10,6 @@ use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-/// The body of the probes: only the identity of the binary (`docs/SECURITY.md`).
 #[derive(Clone, Serialize)]
 struct Identity {
     name: &'static str,
@@ -25,9 +24,6 @@ struct Probes {
     pool: PgPool,
 }
 
-/// Serves `/healthz` and `/readyz` on the internal address until `cancel`.
-/// `/readyz` answers `503` while Postgres does not answer within
-/// [`READY_TIMEOUT`].
 pub async fn serve(
     listener: TcpListener,
     pool: PgPool,

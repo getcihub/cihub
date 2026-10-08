@@ -39,8 +39,6 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     assert!(last[0].test_sha.is_some());
     assert!(last[0].failing_checks.is_empty());
 
-    // The budget retries, then the item fails: it leaves the snapshot, and
-    // the reconciliation that concluded it still shows its end.
     w.report(1, CheckConclusion::Failure);
     w.assemble_all();
     w.report(1, CheckConclusion::Failure);
@@ -54,7 +52,6 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     assert_eq!(concluded.reason, Reason::TestRunRequiredStatusFailed);
     assert_eq!(concluded.position, None);
     assert!(!concluded.failing_checks.is_empty());
-    // The next reconciliation shows only the live item.
     w.advance(1);
     let next = w.surfaces.last().unwrap();
     assert_eq!(next.iter().map(|s| s.pr_number).collect::<Vec<_>>(), [2]);
@@ -107,7 +104,6 @@ fn a_blocked_pr_names_its_required_checks() {
             },
         ]
     );
-    // Every required check passed: the SCM does not say why.
     w.observe(5, |pr| {
         pr.mergeability = Mergeability::Blocked;
         pr.required_checks = vec!["unit".into()];
@@ -167,8 +163,6 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
     );
     assert_eq!(waits(&w), [(1, None), (2, None), (3, None)]);
 
-    // The window has no room: the batch behind still says when it closes,
-    // not when its test starts.
     w.submit(4, Priority::MEDIUM);
     let closes_at = w.item(4).unwrap().admitted_at.unwrap() + Duration::minutes(5);
     let wait = |members| Some(BatchWait { members, closes_at });
@@ -179,7 +173,6 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
         [(1, None), (2, None), (3, None), (4, wait(2)), (5, wait(2))]
     );
 
-    // Closed, the batch waits for room in the window and shows no time.
     w.now = closes_at;
     w.reconcile();
     assert_eq!(w.state(4), Some(ItemState::Pending));

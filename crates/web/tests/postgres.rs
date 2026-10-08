@@ -29,7 +29,6 @@ fn instance() -> ScmInstanceId {
     ScmInstanceId::from_ulid(Ulid(1))
 }
 
-/// Serves the router on a free address and returns it.
 async fn start(pool: &PgPool) -> String {
     let mut tx = begin_system(pool).await.unwrap();
     ensure_scm_instance(&mut tx, instance(), ScmKind::Github, "https://github.com")
@@ -57,7 +56,6 @@ fn signature(secret: &str, body: &str) -> String {
     format!("sha256={hex}")
 }
 
-/// Sends `POST /webhooks/github` and returns the status code.
 async fn post(addr: &str, headers: &[(&str, &str)], body: &str) -> u16 {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let mut request = format!(
@@ -106,7 +104,6 @@ async fn a_signed_delivery_is_stored_once_and_unrouted(pool: PgPool) {
         ("X-Hub-Signature-256", signature.as_str()),
     ];
     assert_eq!(post(&addr, &headers, BODY).await, 202);
-    // GitHub sends copies: a copy is accepted and changes nothing.
     assert_eq!(post(&addr, &headers, BODY).await, 202);
     assert_eq!(
         inbox(&pool).await,
@@ -142,14 +139,12 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
     assert_eq!(inbox(&pool).await, []);
 }
 
-/// An answer of the server: its status, its head and its body.
 struct Answer {
     status: u16,
     head: String,
     body: String,
 }
 
-/// Sends `method path` with `token` and returns the answer.
 async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answer {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
@@ -168,7 +163,6 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
     }
 }
 
-/// An organization with one repository and one token of `scopes`.
 async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
     let org = OrgId::from_ulid(Ulid(7));
     let mut tx = begin_system(pool).await.unwrap();
@@ -235,7 +229,6 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(unknown.status, 404);
     assert!(unknown.head.contains("application/problem+json"));
 
-    // The document needs no token.
     let document = call(&addr, "GET", "/api/v1/openapi.json", None).await;
     assert_eq!(document.status, 200);
     let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
@@ -257,7 +250,6 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
     }
     let limited = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
     assert_eq!(limited.status, 429);
-    // `now()` is 40 seconds into its minute.
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
     let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();
     assert_eq!(problem["code"], "rate_limited");

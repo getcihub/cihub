@@ -158,8 +158,6 @@ pub fn plan(
                 cause_id: step.cause,
                 kind,
             };
-            // A concluded item leaves the snapshot with its decision: its PR
-            // shows it from here.
             if let EventKind::ItemTransitioned { item_id, to, .. } = &event.kind
                 && to.is_terminal()
             {
@@ -197,7 +195,6 @@ const RULES: &[Rule] = &[
     group_follows_run,
     group_follows_members,
     members_follow_group,
-    // After the members took the state of their group.
     optimistic,
     runs_follow_group,
     pending_failure,
@@ -302,7 +299,6 @@ const fn assembly_reason(error: JobError) -> Reason {
         JobError::RetryExhausted => Reason::StartTestRunRetryExhausted,
         JobError::DraftPrsNotAllowed => Reason::StartTestRunDraftPrsNotAllowed,
         JobError::PermissionsBlockTestBranch => Reason::StartTestRunPermissionsBlockTestBranch,
-        // A merge error from the assembly job is an invalid report.
         JobError::InvalidEvent
         | JobError::MergeRejected
         | JobError::RateLimitExceeded
@@ -352,8 +348,6 @@ fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
 /// only the requests on the queue itself.
 fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen) -> Option<Step> {
     let (id, request) = s.requests.iter().find(|(_, r)| match r {
-        // A submission of a new head waits for the cancel of the live item
-        // of its PR (`DECISIONS.md` D152).
         Request::Submit { pr_number, .. } => {
             s.state != QueueState::Paused && s.current_item(*pr_number).is_none()
         }
@@ -412,7 +406,6 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
                 },
             )
         }
-        // Someone merged the PR outside the queue (`DECISIONS.md` D132).
         Request::MergeFailed {
             item_id,
             error: JobError::PrAlreadyMerged,
@@ -483,7 +476,6 @@ fn pr_changes(
             let observed = s.prs.get(&item.pr_number)?;
             let pr = &observed.value;
             let (to, reason) = if pr.state == PrState::Merged {
-                // The merge job reports the merge that the queue asked for.
                 if merge_ready(s, item)
                     || direct_merge(s, settings).is_some_and(|d| d.id == item.id)
                 {
@@ -602,8 +594,6 @@ fn group_follows_run(
             let reason = run.failure_reason;
             let (to, reason) = match (run.status, reason) {
                 (RunStatus::Succeeded, _) => (GroupState::TestsPassed, Reason::TestRunPassed),
-                // A member of the group conflicts: the bisection finds which
-                // one (`DECISIONS.md` D218).
                 (RunStatus::Failed, Some(r @ Reason::StartTestRunMergeConflict))
                     if group.item_ids.len() > 1 =>
                 {
@@ -669,8 +659,6 @@ fn optimistic(
             let group = s
                 .live_groups()
                 .filter(|g| matches!(g.state, GroupState::Testing | GroupState::PendingFailure))
-                // A group in bisection waits for its halves, which can pass
-                // in this way.
                 .filter(|g| children(s, g).next().is_none())
                 .find(proved)?;
             let reason = if group.state == GroupState::Testing {
@@ -712,7 +700,6 @@ fn group_follows_members(
     _: &mut IdGen,
 ) -> Option<Step> {
     s.live_groups().find_map(|group| {
-        // A bisection moved some members to its children: they follow them.
         let bisecting = children(s, group).next().is_some();
         let members: Vec<&Item> = group
             .item_ids
@@ -739,8 +726,6 @@ fn group_follows_members(
         } else {
             GroupState::Dissolved
         };
-        // The other members of a batch restart: their run tested the code of
-        // the member that left (`DECISIONS.md` D217).
         let reason = if members.len() > 1 && left.state.is_terminal() {
             Reason::BatchMemberLeft
         } else {
@@ -986,8 +971,6 @@ fn bisection(
             }
             let mut kinds = split(s, settings, ids, group, &waiting, reason)?;
             if children.is_empty() {
-                // The groups behind test the failure: they go back to the
-                // queue until the bisection ends (`DECISIONS.md` D221).
                 kinds.extend(
                     s.live_groups()
                         .filter(|g| g.id != group.id)
@@ -1078,7 +1061,6 @@ fn split(
 fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -> Option<Step> {
     let order = s.queue_order();
     s.live_groups().find_map(|group| {
-        // The members ahead in a batch may have merged already.
         let index = group
             .item_ids
             .iter()
@@ -1253,8 +1235,6 @@ fn formation(
     ids: &mut IdGen,
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
-    // The item that the queue merges directly waits for the answer of the
-    // merge job (`DECISIONS.md` D153).
     if !window_has_room(s, settings) || direct_merge(s, settings).is_some() {
         return None;
     }

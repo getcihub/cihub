@@ -4,8 +4,6 @@ use time::{Duration, OffsetDateTime};
 
 use crate::PlatformError;
 
-/// A lease that its owner does not renew goes to another replica after this
-/// time (`DECISIONS.md` D54).
 pub const LEASE_TTL: Duration = Duration::seconds(15);
 
 /// Takes or renews the leases of at most `limit` queues that have work at

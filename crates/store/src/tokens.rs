@@ -8,10 +8,8 @@ use time::{Duration, OffsetDateTime};
 
 use crate::{StoreError, begin_system};
 
-/// `last_used_at` moves at most once per minute: an API call does not write.
 const LAST_USE_PRECISION: Duration = Duration::minutes(1);
 
-/// A new API token. Its secret is shown once, at creation.
 pub struct NewApiToken<'a> {
     pub id: ApiTokenId,
     pub org_id: OrgId,
@@ -21,7 +19,6 @@ pub struct NewApiToken<'a> {
     pub expires_at: Option<OffsetDateTime>,
 }
 
-/// What a valid API token lets its caller do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiTokenGrant {
     pub id: ApiTokenId,
@@ -29,8 +26,6 @@ pub struct ApiTokenGrant {
     pub scopes: Vec<ApiScope>,
 }
 
-/// Draws a new secret `cht_…` from the random source of the system.
-///
 /// # Errors
 ///
 /// The system has no random source.

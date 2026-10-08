@@ -245,9 +245,6 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
         EventKind::TargetPushed { before, after, .. } => {
             target_pushed(snapshot, event, before.as_deref(), after)
         }
-        // A live run has its test SHA from the assembly fact, before the
-        // decision that makes it `in_progress`: a check reported meanwhile
-        // counts.
         EventKind::CheckObserved { test_sha, check } => {
             let Some(run) = snapshot
                 .runs
@@ -366,8 +363,6 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             }
             outcome
         }
-        // A direct merge that cannot happen marks the item, which follows the
-        // path of the tests; no decision follows (`DECISIONS.md` D153).
         EventKind::MergeFailed {
             item_id,
             direct: true,
@@ -488,8 +483,6 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             else {
                 return Err(ApplyError::NoSubmission { event_id: event.id });
             };
-            // A refused submission never becomes the live item of its PR
-            // (`DECISIONS.md` D151).
             let is_current = !to.is_terminal();
             if is_current {
                 for item in snapshot.items.values_mut() {
@@ -760,10 +753,6 @@ fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             .is_some_and(|r| r.status == RunStatus::Assembling)
     };
     match request {
-        // A submission waits for the end of a pause (`DECISIONS.md` D113); one
-        // that comes while the queue drains or switches its mode gets a
-        // refused item (D151). A new head of a PR in the queue is submitted
-        // again (D152).
         Request::Submit {
             pr_number,
             head_sha,
@@ -825,16 +814,13 @@ fn evict(snapshot: &mut Snapshot) {
         .filter(|g| {
             g.state.is_terminal()
                 && snapshot.live_run(g.id).is_none()
-                // An item proved by a successor merges with its run.
                 && !snapshot.items.values().any(|i| {
                     !i.state.is_terminal()
                         && i.verified_by_run_id
                             .and_then(|r| snapshot.runs.get(&r))
                             .is_some_and(|r| r.group_id == g.id)
                 })
-                // A bisection reads the result of its halves.
-                && g
-                    .parent_group_id
+                && g.parent_group_id
                     .and_then(|p| snapshot.groups.get(&p))
                     .is_none_or(|p| p.state.is_terminal())
                 && !snapshot

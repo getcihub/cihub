@@ -15,33 +15,18 @@ use crate::inbox::{DeliveryRow, INBOX_CHANNEL, decode};
 use crate::wake::wake_for_delivery;
 use crate::{Delivery, PlatformError, QueueWakeup};
 
-/// Without a notification, the routing loop looks for deliveries this often.
 pub const ROUTE_POLL: Duration = Duration::from_secs(5);
 
-/// A pass routes at most this many deliveries in one transaction.
 pub(crate) const ROUTES_PER_PASS: i64 = 100;
 
-/// Where a delivery goes (`DECISIONS.md` D85, D86).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Route {
-    /// `None` while the connection is unknown: only the system sees the
-    /// delivery.
     pub org_id: Option<OrgId>,
     pub connection_id: Option<ConnectionId>,
-    /// `Some` only when one queue is sure; otherwise the queues of the
-    /// connection read the delivery (lot 5).
     pub queue_id: Option<QueueId>,
-    /// Nothing is left to do: CIHub does not use the delivery, or cannot read
-    /// it.
     pub processed: bool,
 }
 
-/// The deliveries not routed yet, at most `limit`, in the order of reception.
-/// Another transaction that routes at the same time skips them.
-///
-/// # Errors
-///
-/// Postgres fails, or a row does not match the identifiers of `cihub-domain`.
 pub(crate) async fn unrouted_deliveries(
     conn: &mut PgConnection,
     limit: i64,
@@ -136,8 +121,6 @@ pub async fn find_route(
     })
 }
 
-/// The queue of the branch `branch` of a repository, when the branch has
-/// only one (`DECISIONS.md` D135).
 async fn queue_of_branch(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -157,9 +140,6 @@ async fn queue_of_branch(
     .map_err(PlatformError::Query)
 }
 
-/// The queue of the run that a check on a repository reports on: the run
-/// named by the test branch, or, once the branch is gone, the last run whose
-/// test SHA is `sha` (a late report, `DECISIONS.md` D118).
 async fn queue_of_run(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -184,13 +164,6 @@ async fn queue_of_run(
     .map_err(PlatformError::Query)
 }
 
-/// Writes `route` on a delivery not routed yet, and marks its queue dirty,
-/// or wakes the schedulers for a delivery of a connection without a queue.
-/// Returns `false` when the delivery was already routed.
-///
-/// # Errors
-///
-/// Postgres fails.
 pub(crate) async fn route_delivery(
     conn: &mut PgConnection,
     scm_instance_id: ScmInstanceId,
@@ -254,7 +227,6 @@ where
     Ok(())
 }
 
-/// Routes one batch of deliveries in one transaction, and returns its size.
 async fn route_pass<T, E>(
     pool: &PgPool,
     translate: &T,
@@ -289,8 +261,6 @@ where
         };
         let routed =
             route_delivery(&mut tx, delivery.scm_instance_id, delivery_id, route, now).await?;
-        // The repositories of the connection changed: CIHub reads them again
-        // (`DECISIONS.md` D155).
         if let (true, true, Some(org_id), Some(connection)) =
             (routed, repos_changed, route.org_id, route.connection_id)
         {

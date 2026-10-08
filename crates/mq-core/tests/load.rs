@@ -65,13 +65,10 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
         arrivals.push(at);
     }
     let mut flaky = Rng(seed ^ 0xF1A4);
-    // Its own generator, so that the load without closes stays the same.
     let mut close_rng = Rng(seed ^ 0xC105);
     let mut closing: Vec<(OffsetDateTime, u64)> = Vec::new();
     let mut next = 0;
     let mut pr = 0;
-    // The queue may stay behind the arrivals for long: the cap only stops a
-    // queue that never drains.
     let end = start + Duration::hours(HOURS * 40);
     while w.now < end {
         while next < arrivals.len() && arrivals[next] <= w.now {

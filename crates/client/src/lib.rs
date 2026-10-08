@@ -17,7 +17,6 @@ pub enum ClientError {
     Start(#[source] reqwest::Error),
     #[error("the request to CIHub failed")]
     Http(#[source] reqwest::Error),
-    /// CIHub refused the request, and says why.
     #[error("{}: {}", .0.code, .0.detail)]
     Api(Problem),
     #[error("CIHub answered {status}: {body}")]
@@ -26,7 +25,6 @@ pub enum ClientError {
     Encode(#[source] serde_json::Error),
 }
 
-/// A client of one instance, with one API token.
 pub struct Client {
     http: reqwest::Client,
     base: String,

@@ -13,8 +13,6 @@ use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-/// The keys of the file. The code looks up the variable of each one, so a
-/// `_` inside a key (`app_id`) is never ambiguous.
 const KEYS: [&str; 10] = [
     "database.url",
     "http.addr",
@@ -28,25 +26,17 @@ const KEYS: [&str; 10] = [
     "github.webhook_secret",
 ];
 
-/// The configuration of the server.
 #[derive(Debug)]
 pub struct Config {
-    /// Address of `/healthz` and `/readyz`, separate from the public routes.
     pub internal_addr: SocketAddr,
-    /// Public address of the `web` role: webhooks, then API (`DECISIONS.md` D82).
     pub http_addr: SocketAddr,
-    /// `postgres://user:password@host/database`.
     pub database_url: SecretString,
     pub logs: Logs,
-    /// `None` when its keys are missing: `migrate` does not need it, the
-    /// server stops without it (`DECISIONS.md` D92).
     pub github: Option<GithubApp>,
 }
 
-/// The GitHub App of the instance, created by hand (`DECISIONS.md` D79, D92).
 #[derive(Debug)]
 pub struct GithubApp {
-    /// How to reach the App; its URL has no final `/`.
     pub config: GithubConfig,
     pub webhook_secret: SecretString,
 }
@@ -56,8 +46,6 @@ const DEFAULT_HTTP_ADDR: &str = "0.0.0.0:8080";
 const DEFAULT_GITHUB_URL: &str = "https://github.com";
 
 impl Config {
-    /// The configuration of the variables of the process, over `file` when
-    /// one is given.
     pub fn load(file: Option<&Path>) -> anyhow::Result<Self> {
         let file = match file {
             None => None,
@@ -113,11 +101,8 @@ impl Config {
     }
 }
 
-/// The values of the file by key, such as `github.app_id`.
 type FileValues = BTreeMap<String, String>;
 
-/// Reads the two levels of the file, `section.key`, and refuses a key that
-/// is not in [`KEYS`].
 fn read_file(path: &str, text: &str) -> anyhow::Result<(String, FileValues)> {
     let sections: Option<BTreeMap<String, BTreeMap<String, String>>> = serde_saphyr::from_str(text)
         .map_err(|err| {
@@ -148,13 +133,11 @@ fn read_file(path: &str, text: &str) -> anyhow::Result<(String, FileValues)> {
     Ok((path.to_owned(), values))
 }
 
-/// The variables of the process, and the file when there is one.
 struct Sources<G> {
     file: Option<(String, FileValues)>,
     get: G,
 }
 
-/// A value, and where it comes from, for the messages.
 struct Found {
     value: String,
     origin: String,
@@ -186,18 +169,14 @@ impl<G: Fn(&str) -> Option<String>> Sources<G> {
     }
 }
 
-/// The two names of `key`, for a message about a missing value.
 fn names(key: &str) -> String {
     format!("{} or `{key}`", variable(key))
 }
 
-/// `github.app_id` -> `CIHUB_GITHUB_APP_ID`.
 fn variable(key: &str) -> String {
     format!("CIHUB_{}", key.replace('.', "_").to_ascii_uppercase())
 }
 
-/// The GitHub App when `github.app_id` is set; its key comes from
-/// `github.private_key` or from the file `github.private_key_file`.
 fn github_app(
     sources: &Sources<impl Fn(&str) -> Option<String>>,
 ) -> anyhow::Result<Option<GithubApp>> {

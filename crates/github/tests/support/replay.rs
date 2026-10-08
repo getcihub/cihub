@@ -21,7 +21,6 @@ struct Calls {
 }
 
 pub struct Replay {
-    /// The address to give to `GithubConfig::url`.
     pub url: String,
     calls: Arc<Mutex<Calls>>,
 }
@@ -41,10 +40,6 @@ impl Replay {
         Self { url, calls }
     }
 
-    /// # Panics
-    ///
-    /// When a call differed from the recording, or a recorded call did not
-    /// come.
     pub fn finish(&self) {
         let calls = self.calls.lock().unwrap();
         assert_eq!(calls.mismatch, None);

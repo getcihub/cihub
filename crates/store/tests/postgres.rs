@@ -88,16 +88,12 @@ const TENANT_TABLES: [&str; 21] = [
     "pr_comments",
 ];
 
-/// The month of the events of the tests.
 fn september() -> Date {
     Date::from_calendar_date(2026, Month::September, 15).unwrap()
 }
 
-/// The SCM instance of the tests, a global row.
 const GITHUB: &str = "scminstance-1";
 
-/// Inserts the rows of `org` in every tenant table; `n` keeps the unique
-/// columns apart.
 fn rows(org: OrgId, n: u8) -> String {
     let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
@@ -161,7 +157,6 @@ fn rows(org: OrgId, n: u8) -> String {
     )
 }
 
-/// Inserts the global rows: the SCM instance and one user.
 async fn seed_global(conn: &mut PgConnection) {
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO scm_instances (id, kind, base_url)
@@ -219,7 +214,6 @@ async fn an_organization_neither_reads_nor_writes_another(pool: PgPool) {
         tx.rollback().await.unwrap();
     }
 
-    // Moving a row of A to B, or writing a row of B, breaks the policy.
     let mut tx = begin_org(&pool, org_a).await.unwrap();
     let err = sqlx::query(AssertSqlSafe(format!(
         "UPDATE repos SET org_id = '{org_b}'"
@@ -296,7 +290,6 @@ async fn an_external_id_is_unique_within_its_instance_only(pool: PgPool) {
     assert_eq!(err.as_database_error().unwrap().code().unwrap(), "23505");
 }
 
-/// A new table with `org_id` fails here until it has its policy.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn every_tenant_table_forces_row_level_security(pool: PgPool) {
     create_event_partitions(&pool, september()).await.unwrap();
@@ -321,15 +314,12 @@ async fn every_tenant_table_forces_row_level_security(pool: PgPool) {
     let mut expected = TENANT_TABLES.to_vec();
     expected.sort_unstable();
     assert_eq!(names, expected);
-    // The partitions of `events` too: a query on a partition does not pass
-    // through the policy of `events`.
     assert!(tables.iter().any(|(name, ..)| name == "events_2026_09"));
     for (name, enabled, forced, _) in &tables {
         assert!(*enabled && *forced, "{name}");
     }
 }
 
-/// A new Postgres enum fails here until it is compared with its domain enum.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn postgres_enums_match_the_domain(pool: PgPool) {
     fn values<E: IntoEnumIterator + Into<&'static str>>() -> Vec<String> {
@@ -471,7 +461,6 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
         read,
         [1, 2, 3].into_iter().zip(log.clone()).collect::<Vec<_>>()
     );
-    // After the event 2, only the last one.
     let tail = load_events(&mut tx, queue, 2).await.unwrap();
     assert_eq!(tail, [(3, log[2].clone())]);
     let rows: Vec<(i64, Option<String>)> =
@@ -483,7 +472,6 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let item = Some(ItemId::from_ulid(Ulid(1)).to_string());
     assert_eq!(rows, [(1, None), (2, item), (3, None)]);
 
-    // Another organization does not see the log.
     let mut tx = begin_org(&pool, org(2)).await.unwrap();
     assert!(
         load_events(&mut tx, QueueId::from_ulid(Ulid(1)), 0)
@@ -517,7 +505,6 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
     .unwrap();
     assert_eq!(partitions, ["events_2026_12", "events_2027_01"]);
 
-    // Without a partition for its month, an event is refused.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query("INSERT INTO orgs (id, slug) VALUES ($1, 'org')")
         .bind(org(1).to_string())
@@ -570,7 +557,6 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
     create_api_token(&mut tx, &token, &secret).await.unwrap();
     tx.commit().await.unwrap();
 
-    // Only the hash is stored.
     let mut tx = begin_system(&pool).await.unwrap();
     let hash: Vec<u8> = sqlx::query_scalar("SELECT token_hash FROM api_tokens")
         .fetch_one(&mut *tx)
@@ -589,7 +575,6 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         Some(grant)
     );
     assert_eq!(last_used_at(&pool).await, Some(at(0)));
-    // Within a minute, a new call does not write.
     authenticate(&pool, &secret, at(30)).await.unwrap().unwrap();
     assert_eq!(last_used_at(&pool).await, Some(at(0)));
     authenticate(&pool, &secret, at(90)).await.unwrap().unwrap();

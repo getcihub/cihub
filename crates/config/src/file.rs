@@ -81,7 +81,6 @@ impl RepoConfig {
             .map(defaults_layer)
             .transpose()?
             .unwrap_or_default();
-        // A queue without an entry has `defaults` alone (`DECISIONS.md` D172).
         QueueSettings::resolve(&Layer::default(), &defaults)?;
         let mut names = HashSet::new();
         let mut queues = Vec::with_capacity(file.queues.len());
@@ -171,8 +170,6 @@ fn check_version(text: &str) -> Result<(), ConfigError> {
 
 fn yaml_error(error: &serde_saphyr::Error) -> ConfigError {
     let error = error.without_snippet();
-    // The formatter leaves control characters as they are; the message ends
-    // up in PR comments and logs.
     let message = DefaultMessageFormatter
         .format_message(error)
         .chars()
@@ -453,7 +450,6 @@ fn expr(node: &Spanned<RawExpr>, text: &str) -> Result<Expr, ConfigError> {
     match &node.value {
         RawExpr::Condition(source) => source.parse().map(Expr::Condition).map_err(|e| {
             let start = Position::of(&node.referenced);
-            // The scalar starts at its quote, if any.
             let quote = node
                 .referenced
                 .span()
@@ -664,7 +660,6 @@ queues:
         let hotfix = config.settings("main", "hotfix").unwrap();
         assert_eq!(hotfix.strategy.value, Strategy::Pipelined);
         assert_eq!(hotfix.testing_timeout_minutes.source, Source::File);
-        // Without an entry, only `defaults` applies.
         for (branch, name) in [("release", "main"), ("main", "other")] {
             assert!(config.queue(branch, name).is_none());
             let settings = config.settings(branch, name).unwrap();

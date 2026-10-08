@@ -21,15 +21,9 @@ use crate::budget::{Budget, Observation, Rate, SECONDARY_WAIT};
 /// The REST API version of every call: GitHub Enterprise Server accepts it
 /// too.
 const API_VERSION: &str = "2022-11-28";
-/// A token of an installation is renewed this long before its end.
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
-/// A permission of a user on a repository is kept this long
-/// (`DECISIONS.md` D157).
 const PERMISSION_TTL: Duration = Duration::minutes(5);
-/// Past this many kept permissions, the expired ones go.
 const PERMISSIONS_KEPT: usize = 10_000;
-/// A call gives up after this long, below the timeout of a job
-/// (`DECISIONS.md` D69).
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const JSON: &str = "application/vnd.github+json";
 
@@ -53,8 +47,6 @@ pub enum ClientError {
     Http(#[source] reqwest::Error),
 }
 
-/// An answer of GitHub that is not an error of the transport, the budget or
-/// the access: the caller reads its status.
 #[derive(Debug)]
 pub(crate) struct Answer {
     pub status: StatusCode,
@@ -66,7 +58,6 @@ impl Answer {
         serde_json::from_slice(&self.body).map_err(|err| ScmError::Protocol(err.to_string()))
     }
 
-    /// The `message` of an error of GitHub, for the operator.
     pub(crate) fn message(&self) -> String {
         #[derive(Deserialize)]
         struct Message {
@@ -79,7 +70,6 @@ impl Answer {
     }
 }
 
-/// A request of the App to GitHub.
 pub(crate) struct Request<'a> {
     pub connection: &'a ConnectionRef,
     pub class: JobClass,
@@ -104,8 +94,6 @@ pub struct GithubApp {
     urgent: Arc<Notify>,
 }
 
-/// The budgets of the connections that this process called, and those that
-/// changed since the last write.
 #[derive(Default)]
 struct Budgets {
     all: HashMap<ConnectionId, Budget>,
@@ -113,8 +101,6 @@ struct Budgets {
 }
 
 impl Budgets {
-    /// Records what a call on `connection` observed, and returns `true` when
-    /// the pause or the mode of the connection changed.
     fn observe(
         &mut self,
         connection: ConnectionId,
@@ -137,17 +123,13 @@ impl Budgets {
     }
 }
 
-/// A user on a repository of a connection: a permission is not shared
-/// between connections.
 pub(crate) type PermissionKey = (ConnectionId, String, String);
 
 impl GithubApp {
-    /// The identifier of the App on GitHub.
     pub(crate) fn app_id(&self) -> &str {
         &self.app_id
     }
 
-    /// The permission kept for `key`, when it has not expired.
     pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
         let now = (self.clock)();
         let kept = self
@@ -159,7 +141,6 @@ impl GithubApp {
             .map(|(permission, _)| *permission)
     }
 
-    /// Keeps `permission` for `key` during [`PERMISSION_TTL`].
     pub(crate) fn keep_permission(&self, key: PermissionKey, permission: Permission) {
         let now = (self.clock)();
         let mut kept = self
@@ -233,18 +214,11 @@ impl GithubApp {
         }
     }
 
-    /// Sends `request` with the token of its installation.
-    ///
-    /// # Errors
-    ///
-    /// The budget refuses the call, GitHub cannot be reached or fails, the
-    /// rate limit is spent, or the installation lost its access.
     pub(crate) async fn send(&self, request: Request<'_>) -> Result<Answer, ScmError> {
         let url = format!("{}{}", self.api_url, request.path);
         self.send_to(request, url).await
     }
 
-    /// Sends a GraphQL query of `query` with `variables`.
     pub(crate) async fn graphql(
         &self,
         connection: &ConnectionRef,
@@ -263,9 +237,6 @@ impl GithubApp {
         self.send_to(request, self.graphql_url.clone()).await
     }
 
-    /// Sends `method path` as the App, with its JWT: a call on the whole
-    /// instance, outside the budget of a connection. Returns the answer and
-    /// the path of its next page, when the answer has one.
     pub(crate) async fn send_as_app(
         &self,
         method: Method,
@@ -284,7 +255,6 @@ impl GithubApp {
         Ok((answer, next))
     }
 
-    /// `method path` with the JWT of the App, signed at `now`.
     fn as_app(
         &self,
         method: Method,
@@ -331,8 +301,6 @@ impl GithubApp {
         let (observation, error) = classify(&answer, &headers, now);
         self.observe(connection, observation, now);
         if status == StatusCode::UNAUTHORIZED {
-            // The token is refused: the next call asks for a new one, which
-            // tells whether the installation still exists.
             self.forget_token(&request.connection.external_id);
         }
         match error {
@@ -341,8 +309,6 @@ impl GithubApp {
         }
     }
 
-    /// Pauses `connection` after a GraphQL answer that says its rate limit
-    /// is spent, until the reset of that limit.
     pub(crate) fn graphql_limit_reached(&self, connection: ConnectionId) -> ScmError {
         let now = (self.clock)();
         let reset_at = {
@@ -370,8 +336,6 @@ impl GithubApp {
         tokens.remove(installation);
     }
 
-    /// The token of the installation of `connection`, from the cache while
-    /// it lives more than 5 minutes.
     async fn token(&self, connection: &ConnectionRef) -> Result<SecretString, ScmError> {
         #[derive(Deserialize)]
         struct Token {
@@ -420,8 +384,6 @@ impl std::fmt::Debug for GithubApp {
     }
 }
 
-/// Sends `request` and reads its whole answer. A failure of the transport is
-/// `Unavailable`.
 async fn fetch(request: RequestBuilder) -> Result<(StatusCode, HeaderMap, Vec<u8>), ScmError> {
     let unavailable = |err: reqwest::Error| ScmError::Unavailable(err.to_string());
     let response = request.send().await.map_err(unavailable)?;
@@ -441,8 +403,6 @@ fn next_page(link: &str, path: &str) -> Option<String> {
         .and_then(|(url, _)| url.find(base).map(|start| url[start..].to_owned()))
 }
 
-/// What an answer tells the budget, and the error it is for CIHub when it is
-/// a failure of the server or of the rate limit.
 fn classify(
     answer: &Answer,
     headers: &HeaderMap,

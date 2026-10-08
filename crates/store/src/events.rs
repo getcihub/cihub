@@ -55,9 +55,6 @@ pub async fn append_events(
     Ok(seqs)
 }
 
-/// Reads the columns `type` and `payload` of a row of `events` as the kind of
-/// its event: the inverse of `columns`.
-///
 /// # Errors
 ///
 /// The columns do not match an event of `cihub-domain`.
@@ -65,8 +62,6 @@ pub fn event_kind(kind: &str, payload: &Value) -> Result<EventKind, serde_json::
     serde_json::from_value(json!({ "type": kind, "payload": payload }))
 }
 
-/// The payload of `event` and its user, as `events` and `queue_inbox` store
-/// them.
 fn columns(event: &Event) -> Result<(Value, Option<String>), StoreError> {
     let serialized = serde_json::to_value(&event.kind).map_err(StoreError::WriteEvent)?;
     let payload = serialized.get("payload").cloned().unwrap_or(Value::Null);
@@ -90,9 +85,6 @@ type EventRow = (
     OffsetDateTime,
 );
 
-/// The events of the log of `queue` after the event `after` (0 for the whole
-/// log), in order, each with its `seq`.
-///
 /// # Errors
 ///
 /// Postgres fails, or a row does not match the events of `cihub-domain`.
@@ -213,9 +205,6 @@ pub async fn pending_facts(
         .collect()
 }
 
-/// Marks the facts `ids` as processed at `now`, in the transaction that
-/// writes them to the log.
-///
 /// # Errors
 ///
 /// Postgres fails.
@@ -251,7 +240,6 @@ pub async fn create_event_partitions(pool: &PgPool, today: Date) -> Result<(), S
     Ok(())
 }
 
-/// The first day of the month after `date`.
 pub fn next_month(date: Date) -> Date {
     let (year, month) = match date.month() {
         Month::December => (date.year() + 1, Month::January),

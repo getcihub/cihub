@@ -1,7 +1,3 @@
--- The log of the queues (DECISIONS.md D5): facts and decisions, append-only,
--- partitioned by month on occurred_at (D36). A user actor points to `users`,
--- which keeps the login (D42).
-
 CREATE TYPE event_type AS ENUM (
     'item.submitted', 'item.cancel_requested', 'item.restart_requested', 'pr.observed',
     'target.pushed', 'check.observed', 'targets.received', 'test_branch.assembled',
@@ -17,17 +13,13 @@ CREATE TABLE events (
     id            text        NOT NULL,
     org_id        text        NOT NULL REFERENCES orgs (id),
     queue_id      text        NOT NULL,
-    -- Rank in the log of the queue, from 1: the replay order.
     seq           bigint      NOT NULL CHECK (seq > 0),
     type          event_type  NOT NULL,
     actor_kind    actor_kind  NOT NULL,
     actor_user_id text        REFERENCES users (id),
-    -- The fact that caused a decision.
     cause_id      text,
     item_id       text,
-    -- The run of the event, as `EventKind::subjects` gives it.
     run_id        text,
-    -- The fields of the type, as `cihub-domain` serializes them.
     payload       jsonb       NOT NULL,
     occurred_at   timestamptz NOT NULL,
     PRIMARY KEY (id, occurred_at),
@@ -37,7 +29,6 @@ CREATE TABLE events (
 
 CREATE INDEX events_queue_id_seq ON events (queue_id, seq);
 CREATE INDEX events_item_id_occurred_at ON events (item_id, occurred_at) WHERE item_id IS NOT NULL;
--- The history of a PR finds the test branches of its runs (DECISIONS.md D245).
 CREATE INDEX events_run_id ON events (run_id) WHERE run_id IS NOT NULL;
 
 SELECT cihub_tenant_table('events');

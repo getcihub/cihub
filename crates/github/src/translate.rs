@@ -129,8 +129,6 @@ pub(crate) fn status_conclusion(state: &str) -> Option<CheckConclusion> {
     }
 }
 
-/// A change of a PR or of its reviews: the label that it added, and whether
-/// it made the PR ready for review (`DECISIONS.md` D163).
 fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateError> {
     let on_pr = read.event == "pull_request";
     Ok(ScmEvent::PrChanged {
@@ -158,9 +156,6 @@ fn submit_box(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
     })
 }
 
-/// An edit of a comment that checked its submission box (`DECISIONS.md`
-/// D163): the box was empty before, it is checked now, and the App did not
-/// make the edit itself.
 fn submit_box_checked(payload: &Value) -> bool {
     let has = |pointer: &str, check: &str| {
         payload
@@ -172,7 +167,6 @@ fn submit_box_checked(payload: &Value) -> bool {
     !by_bot && has("/comment/body", "x") && has("/changes/body/from", " ")
 }
 
-/// A numeric or text identifier of GitHub, as text (`DECISIONS.md` D46).
 fn id(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::Number(n) => Some(n.to_string()),
@@ -234,8 +228,6 @@ impl Reader<'_> {
         })
     }
 
-    /// The identifiers of the repositories of a list; an absent list is
-    /// empty.
     fn ids(&self, pointer: &'static str) -> Result<Vec<String>, TranslateError> {
         let Some(list) = self.payload.pointer(pointer) else {
             return Ok(Vec::new());
@@ -291,9 +283,7 @@ mod tests {
             event("pull_request", &payload),
             changed(Some("ready"), false)
         );
-        // A review adds no label, whatever its action.
         assert_eq!(event("pull_request_review", &payload), changed(None, false));
-        // A PR ready for review opens (`DECISIONS.md` D163); a draft does not.
         let action = |action: &str, draft: bool| {
             json!({
                 "action": action,
@@ -341,7 +331,6 @@ mod tests {
                 },
             }
         );
-        // The App edits its own comment; an unchecked box; no box before.
         for (before, after, sender) in [
             (box_of(" "), box_of("x"), "Bot"),
             (box_of("x"), box_of(" "), "User"),

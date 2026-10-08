@@ -11,12 +11,8 @@ use tracing::warn;
 
 use crate::{PlatformError, lock_queue};
 
-/// The channel that says a queue has work; the payload is its identifier, or
-/// empty for a delivery of a connection without a queue.
 pub(crate) const QUEUE_CHANNEL: &str = "cihub_queue";
 
-/// Notifies the listeners of `channel` when the transaction of `conn`
-/// commits.
 pub(crate) async fn notify(conn: &mut PgConnection, channel: &str) -> Result<(), PlatformError> {
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(channel)
@@ -26,8 +22,6 @@ pub(crate) async fn notify(conn: &mut PgConnection, channel: &str) -> Result<(),
     Ok(())
 }
 
-/// Wakes the schedulers for a new routed delivery: marks its queue dirty, or,
-/// for a delivery of a connection without a queue, notifies them.
 pub(crate) async fn wake_for_delivery(
     conn: &mut PgConnection,
     queue: Option<QueueId>,
@@ -38,8 +32,6 @@ pub(crate) async fn wake_for_delivery(
     }
 }
 
-/// A scheduler looks for work at least this often, even without a
-/// notification: a notification sent while its connection was down is lost.
 pub const TICK: Duration = Duration::from_secs(30);
 
 /// Marks `queue` as having work, and notifies the schedulers when the
@@ -106,9 +98,6 @@ pub async fn schedule_tick(
     Ok(())
 }
 
-/// A scheduler waits for a notification at most this little: a tick a few
-/// milliseconds away, against a clock that a test holds still, would make it
-/// loop.
 pub const MIN_WAIT: Duration = Duration::from_secs(1);
 
 /// How long a scheduler waits for a notification after a pass: until the next
@@ -132,26 +121,18 @@ pub async fn until_next_tick(
     Ok(next.map_or(TICK, |at| (at - now).unsigned_abs().clamp(MIN_WAIT, TICK)))
 }
 
-/// Why a scheduler woke up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wake {
-    /// A queue was marked dirty.
     Notified,
-    /// [`TICK`] passed without a notification.
     Tick,
-    /// The process stops.
     Cancelled,
 }
 
-/// The notifications of a channel, on a connection of its own: the queues
-/// for the schedulers, and the inbox and the jobs for the loops of the crate.
 pub struct QueueWakeup {
     listener: PgListener,
 }
 
 impl QueueWakeup {
-    /// Listens to [`QUEUE_CHANNEL`] on a new connection of `pool`.
-    ///
     /// # Errors
     ///
     /// Postgres cannot be reached.
@@ -159,7 +140,6 @@ impl QueueWakeup {
         Self::listen_to(pool, QUEUE_CHANNEL).await
     }
 
-    /// Listens to `channel` on a new connection of `pool`.
     pub(crate) async fn listen_to(pool: &PgPool, channel: &str) -> Result<Self, PlatformError> {
         let mut listener = PgListener::connect_with(pool)
             .await

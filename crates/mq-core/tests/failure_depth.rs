@@ -40,12 +40,10 @@ fn at_depth_1_the_culprit_waits_for_the_run_of_its_first_successor() {
     let mut w = world(1);
     first_fails(&mut w);
     assert_eq!(w.state(1), Some(ItemState::PendingFailure));
-    // The run of PR 3 does not count: the depth is 1.
     w.report(3, CheckConclusion::Failure);
     assert_eq!(w.state(1), Some(ItemState::PendingFailure));
     w.report(2, CheckConclusion::Failure);
     assert_eq!(w.ended().get(&1), Some(&ItemState::Failed));
-    // The successors restart without it.
     assert_eq!(w.state(2), Some(ItemState::Testing));
     assert_eq!(w.replay(), w.snapshot);
 }

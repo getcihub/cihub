@@ -1,16 +1,3 @@
--- Tenancy: SCM instances, organizations, their SCM accounts and connections,
--- repositories, users, memberships, API tokens and the audit log.
---
--- No column depends on one SCM (DECISIONS.md D46): an identifier of the SCM is
--- an `external_id` in text, unique within its SCM instance only.
---
--- Isolation (DECISIONS.md D38): every table that carries org_id has row level
--- security, forced on the owner too. A transaction sees the rows of the
--- organization in `cihub.org_id`, or every row when `cihub.system` is `on`;
--- without either setting it sees nothing. `scm_instances` and `users` are
--- global: organizations share an instance, and a user belongs to several
--- organizations through `memberships`.
-
 CREATE FUNCTION cihub_org_id() RETURNS text
 LANGUAGE sql STABLE
 AS $$ SELECT nullif(current_setting('cihub.org_id', true), '') $$;
@@ -19,8 +6,6 @@ CREATE FUNCTION cihub_system() RETURNS boolean
 LANGUAGE sql STABLE
 AS $$ SELECT coalesce(current_setting('cihub.system', true), '') = 'on' $$;
 
--- Enables and forces row level security on `tenant_table`, with the `tenant`
--- policy. The tenant of a row is its `org_id`; `orgs` is its own tenant.
 CREATE FUNCTION cihub_tenant_table(tenant_table regclass) RETURNS void
 LANGUAGE plpgsql
 AS $$
@@ -65,7 +50,6 @@ CREATE TABLE orgs (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- An account of the SCM (a GitHub organization) linked to an organization.
 CREATE TABLE scm_accounts (
     id              text        PRIMARY KEY,
     org_id          text        NOT NULL REFERENCES orgs (id),
@@ -79,12 +63,6 @@ CREATE TABLE scm_accounts (
 
 CREATE INDEX scm_accounts_org_id ON scm_accounts (org_id);
 
--- How CIHub reaches the repositories of an account: a GitHub App installation.
---
--- The budget and the mode of the connection (DECISIONS.md D70, D77): each
--- process keeps the rate limit headers of the SCM in memory and writes them
--- here at most every 5 s; a pause after a 429 or a change of mode is written
--- at once. The claim of the jobs skips a connection until `paused_until`.
 CREATE TABLE scm_connections (
     id                   text            PRIMARY KEY,
     org_id               text            NOT NULL REFERENCES orgs (id),
@@ -95,7 +73,6 @@ CREATE TABLE scm_connections (
     suspended_at         timestamptz,
     claimed_at           timestamptz,
     mode                 connection_mode NOT NULL DEFAULT 'normal',
-    -- Why the connection left `normal`, for the operator.
     mode_reason          text,
     rate_remaining       integer,
     rate_limit           integer,
@@ -105,7 +82,6 @@ CREATE TABLE scm_connections (
     created_at           timestamptz     NOT NULL DEFAULT now(),
     UNIQUE (scm_instance_id, kind, external_id),
     UNIQUE (org_id, scm_instance_id, id),
-    -- A connection, its account and their instance belong together.
     FOREIGN KEY (org_id, scm_instance_id, scm_account_id)
         REFERENCES scm_accounts (org_id, scm_instance_id, id)
 );
@@ -123,16 +99,13 @@ CREATE TABLE repos (
     default_branch  text        NOT NULL,
     created_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (scm_instance_id, external_id),
-    -- A queue and its repository belong to the same organization.
     UNIQUE (org_id, id),
-    -- A repository, its connection and their instance belong together.
     FOREIGN KEY (org_id, scm_instance_id, connection_id)
         REFERENCES scm_connections (org_id, scm_instance_id, id)
 );
 
 CREATE INDEX repos_org_id ON repos (org_id);
 
--- An account of an SCM user; several accounts of one person are several rows.
 CREATE TABLE users (
     id              text        PRIMARY KEY,
     scm_instance_id text        NOT NULL REFERENCES scm_instances (id),
@@ -154,7 +127,6 @@ CREATE TABLE api_tokens (
     id           text        PRIMARY KEY,
     org_id       text        NOT NULL REFERENCES orgs (id),
     name         text        NOT NULL,
-    -- SHA-256 of the whole token `cht_…` (DECISIONS.md D32).
     token_hash   bytea       NOT NULL UNIQUE CHECK (length(token_hash) = 32),
     scopes       api_scope[] NOT NULL,
     created_by   text        REFERENCES users (id),
@@ -169,8 +141,6 @@ CREATE TABLE audit_log (
     id             text        PRIMARY KEY,
     org_id         text        NOT NULL REFERENCES orgs (id),
     actor_user_id  text        REFERENCES users (id),
-    -- The API token that made the change (DECISIONS.md D160): an action of a
-    -- token has no user.
     actor_token_id text        REFERENCES api_tokens (id),
     action         text        NOT NULL,
     target         text        NOT NULL,

@@ -13,7 +13,6 @@ use cihub_scm::{RequiredChecks, ScmUser};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// The headers of an answer that the adapter reads.
 pub const KEPT_HEADERS: [&str; 7] = [
     "content-type",
     "retry-after",
@@ -24,7 +23,6 @@ pub const KEPT_HEADERS: [&str; 7] = [
     "x-ratelimit-used",
 ];
 
-/// The token of an installation, in place of the real one.
 pub const RECORDED_TOKEN: &str = "ghs_recorded";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -36,8 +34,6 @@ pub struct Cassette {
     pub exchanges: Vec<Exchange>,
 }
 
-/// The repository of the recording and what it held: the `Fixture` of the
-/// contract suite.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct World {
     pub installation: String,
@@ -57,8 +53,6 @@ pub struct World {
 }
 
 impl World {
-    /// The world as the contract suite takes it. The adapter reads only the
-    /// login of the admin, so the recording keeps no identifier for them.
     pub fn fixture(&self) -> Fixture {
         Fixture {
             base_branch: self.base_branch.clone(),
@@ -80,8 +74,6 @@ impl World {
     }
 }
 
-/// One call and its answer. The path starts after the address of the API
-/// (`/repos/o/r/pulls/1`, `/graphql`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Exchange {
     pub method: String,
@@ -91,10 +83,8 @@ pub struct Exchange {
     pub status: u16,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
-    /// The body of the answer when it is JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
-    /// The body of the answer when it is not JSON, such as a raw file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }

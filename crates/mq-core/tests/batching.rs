@@ -99,7 +99,6 @@ fn a_no_batch_item_is_tested_alone_and_cuts_the_series() {
     assert_eq!(groups(&w), vec![(GroupKind::Single, vec![1])]);
     w.submit(2, Priority::MEDIUM);
     w.submit_no_batch(3);
-    // 2 cannot grow behind 3: both start at once (`DECISIONS.md` D224).
     assert_eq!(groups(&w).len(), 3);
     w.submit(4, Priority::MEDIUM);
     assert_eq!(groups(&w).len(), 3);
@@ -245,8 +244,6 @@ fn a_bisection_isolates_the_last_pr_and_tests_it_alone() {
     w.drain(&[8].into());
     assert_eq!(
         formed_since(&w, 0),
-        // The two halves are tested at once (`DECISIONS.md` D220): three
-        // rounds of runs isolate 8, which is tested alone (D211).
         vec![
             (Batch, (1..=8).collect()),
             (Bisection, vec![1, 2, 3, 4]),
@@ -284,7 +281,6 @@ fn a_bisection_isolates_the_first_pr_and_retests_the_other_half() {
 fn a_flaky_failure_of_a_batch_evicts_no_pr() {
     let mut w = bisecting(4);
     submit_all(&mut w, 1..=4);
-    // Only the first run fails: the batch failure was not real.
     w.drain_with(|run, _| run == 1);
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 2, 3, 4]);
     assert!(ended(&w, ItemState::Failed).is_empty());
@@ -293,7 +289,6 @@ fn a_flaky_failure_of_a_batch_evicts_no_pr() {
 
 #[test]
 fn without_the_skip_the_other_half_goes_back_to_the_queue() {
-    // A pool of one run tests one half at a time.
     let mut w = World::new(settings(|l| {
         batching(4, 4)(l);
         l.bisection_concurrency = Some(Setting::new(1));
@@ -398,7 +393,6 @@ fn a_planted_failure_is_isolated_in_log2_rounds() {
             let mut w = bisecting(u32::try_from(size).unwrap());
             submit_all(&mut w, 1..=size);
             w.drain(&[culprit].into());
-            // The halves that tested the culprit, one per round.
             let chain: Vec<Vec<u64>> = formed_since(&w, 0)
                 .into_iter()
                 .filter(|(kind, prs)| *kind == GroupKind::Bisection && prs.contains(&culprit))

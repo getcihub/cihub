@@ -18,20 +18,14 @@ use tracing::info;
 use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
-/// The type of the job that reads the repositories of a connection
-/// (`DECISIONS.md` D155).
 pub const SYNC_REPOS: &str = "sync_repos";
 
-/// The name of the API token that [`bootstrap`] creates.
 pub(crate) const BOOTSTRAP_TOKEN: &str = "bootstrap";
 
-/// What [`bootstrap`] did.
 pub struct Bootstrapped {
     pub org_id: OrgId,
     pub connection_id: ConnectionId,
-    /// `false` when the connection was already known: only the token is new.
     pub created: bool,
-    /// The secret of the new API token, shown once.
     pub token: SecretString,
 }
 
@@ -129,9 +123,6 @@ pub async fn bootstrap(
     })
 }
 
-/// Creates the organization of the connection `external_id`, which no
-/// organization has yet, named by its `account`, with the account, the
-/// connection and the merge queue module.
 async fn create_organization(
     conn: &mut PgConnection,
     instance: ScmInstanceId,
@@ -193,8 +184,6 @@ async fn create_organization(
     Ok((org_id, connection_id))
 }
 
-/// The read of the repositories of `connection` for `cause`: the hour of the
-/// hourly read, or the delivery that reported a change (`DECISIONS.md` D155).
 pub fn sync_repos_job(
     org_id: OrgId,
     instance: ScmInstanceId,
@@ -213,12 +202,6 @@ pub fn sync_repos_job(
     }
 }
 
-/// Requests a read of the repositories of `connection` now, after the
-/// delivery `delivery_id` reported a change: each delivery gets its own read.
-///
-/// # Errors
-///
-/// Postgres fails.
 pub(crate) async fn request_repo_sync(
     conn: &mut PgConnection,
     org_id: OrgId,
@@ -346,9 +329,6 @@ pub async fn run_sync_repos(
     Ok(written)
 }
 
-/// The executor of [`SYNC_REPOS`], with its SCM (`DECISIONS.md` D71). A
-/// connection that the SCM no longer serves fails the job: the next hour
-/// tries again.
 pub fn sync_repos_executor(
     scm: Arc<dyn Scm>,
 ) -> impl Fn(PgPool, Job, OffsetDateTime) -> Pin<Box<dyn Future<Output = Outcome> + Send>>

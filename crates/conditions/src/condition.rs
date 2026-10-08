@@ -352,7 +352,6 @@ impl<'a> Cursor<'a> {
                 pattern: pattern(op, &value).map_err(invalid)?,
             }
         } else {
-            // `#` needs a list, so durations and choices are never counted.
             let (number, error) = match kind {
                 Kind::Duration => (
                     parse_duration(&value),
@@ -441,7 +440,6 @@ fn pattern(op: Operator, value: &str) -> Result<Pattern, ParseErrorKind> {
         Operator::Regex => Regex::new(value)
             .map(Pattern::Regex)
             .map_err(|e| ParseErrorKind::InvalidRegex(regex_cause(&e))),
-        // `*` stays inside one path segment; `**` crosses `/`.
         Operator::Glob => GlobBuilder::new(value)
             .literal_separator(true)
             .build()

@@ -1,18 +1,7 @@
--- The jobs: the side effects that the roles ask the workers to do (DECISIONS.md
--- D55, D58 to D60). Workers share them with FOR UPDATE SKIP LOCKED; the job of
--- a stopped worker goes back to the others when its lock expires.
---
--- A job of the system (the partitions of `events`) has no organization, and
--- only the system context sees it. A job with a connection counts against the
--- quota of that connection.
-
--- In order of priority: the claim sorts on this enum.
 CREATE TYPE job_class AS ENUM ('interactive', 'merge', 'speculate', 'repair');
 CREATE TYPE job_state AS ENUM ('queued', 'running', 'done', 'failed', 'dead');
 
 CREATE TABLE jobs (
-    -- `<type>:<subject>:<version>` (D60): a second request of the same job
-    -- changes nothing.
     idempotency_key text        PRIMARY KEY,
     type            text        NOT NULL,
     class           job_class   NOT NULL,
@@ -28,7 +17,6 @@ CREATE TABLE jobs (
     locked_until    timestamptz,
     last_error      text,
     created_at      timestamptz NOT NULL,
-    -- When the job reached `done`, `failed` or `dead`.
     finished_at     timestamptz,
     FOREIGN KEY (org_id, scm_instance_id, connection_id)
         REFERENCES scm_connections (org_id, scm_instance_id, id),

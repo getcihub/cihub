@@ -107,7 +107,6 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
     Ok(())
 }
 
-/// The state of the PR `pr`, or of `queue` and its live items.
 async fn status(
     out: &mut impl Write,
     client: &Client,
@@ -184,8 +183,6 @@ async fn set_state(
     Ok(())
 }
 
-/// The queue named `wanted`, or the only queue of the repository. A queue
-/// command never guesses between two queues.
 fn pick_queue(queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyhow::Result<Queue> {
     let names: Vec<String> = queues.iter().map(|q| q.name.clone()).collect();
     if let Some(wanted) = wanted {

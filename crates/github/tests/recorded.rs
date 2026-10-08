@@ -118,7 +118,6 @@ async fn a_rate_limit_pauses_the_connection_until_its_reset() {
     assert_eq!(changed.len(), 1);
     assert_eq!(changed[0].0, connection());
     assert_eq!(changed[0].1.paused_until, Some(reset));
-    // Until the reset, no call goes out: the replay has no answer left.
     let again = app.branch_head(&repo, "main", JobClass::Interactive).await;
     assert_eq!(again, Err(ScmError::RateLimited { until: reset }));
     replay.finish();
@@ -334,7 +333,6 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
             200,
             json!([{ "type": "update", "ruleset_id": 5 }, { "type": "pull_request", "ruleset_id": 6 }]),
         ),
-        // The App of the tests has the identifier 1: the ruleset exempts it.
         answer(
             "GET",
             "/repos/acme/app/rulesets/5",

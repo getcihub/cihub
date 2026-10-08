@@ -13,19 +13,12 @@ use tracing::info;
 use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
-/// The type of the job that asks the SCM again for the deliveries missing
-/// from the inbox (`DECISIONS.md` D88).
 pub const SWEEP_DELIVERIES: &str = "sweep_deliveries";
 
-/// A scheduler requests the sweep this often.
 pub const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_mins(5);
 
-/// A sweep looks at the attempts of this last period: two periods, so that a
-/// sweep that fails leaves no hole.
 pub(crate) const SWEEP_LOOKBACK: Duration = Duration::minutes(10);
 
-/// The sweep job of `instance` for the 5-minute window of `now`: its key
-/// admits one job per window, whatever the number of schedulers.
 pub(crate) fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
     let window = format!("{}{:02}", hour_window(now), now.minute() - now.minute() % 5);
     Job {
@@ -40,8 +33,6 @@ pub(crate) fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
     }
 }
 
-/// Requests the sweep of `instance` for the window of `now`.
-///
 /// # Errors
 ///
 /// Postgres fails.
@@ -103,8 +94,6 @@ pub async fn run_sweep(
     Ok(asked)
 }
 
-/// The executor of [`SWEEP_DELIVERIES`] for `instance`, with its SCM
-/// (`DECISIONS.md` D71).
 pub fn sweep_executor(
     scm: Arc<dyn Scm>,
     instance: ScmInstanceId,

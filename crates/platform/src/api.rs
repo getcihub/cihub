@@ -10,9 +10,6 @@ use cihub_domain::{ApiScope, ApiTokenId, OrgId};
 use serde::de::DeserializeOwned;
 use tracing::error;
 
-/// What the API token of a request lets its caller do, as the web role
-/// authenticates it (`DECISIONS.md` D159). A route reads it to know the
-/// organization and to check its scope.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiGrant {
     pub org_id: OrgId,
@@ -53,12 +50,10 @@ impl<S: Send + Sync> FromRequestParts<S> for ApiGrant {
     }
 }
 
-/// An error of the API, rendered as `application/problem+json`.
 #[derive(Debug)]
 pub struct ApiError {
     pub code: ErrorCode,
     pub detail: String,
-    /// The seconds before a new request, for `rate_limited`.
     pub retry_after: Option<u64>,
 }
 
@@ -79,7 +74,6 @@ impl ApiError {
         Self::new(ErrorCode::InvalidRequest, detail.into())
     }
 
-    /// An error of the server: the log keeps its cause, the answer does not.
     fn internal(err: &(dyn Error + 'static)) -> Self {
         error!(error = err, "API request failed");
         Self::new(ErrorCode::Internal, "the server failed".into())
@@ -98,7 +92,6 @@ impl ApiError {
     }
 }
 
-/// Any error that a route does not name is an error of the server.
 impl<E: Error + 'static> From<E> for ApiError {
     fn from(err: E) -> Self {
         Self::internal(&err)
@@ -125,7 +118,6 @@ impl IntoResponse for ApiError {
     }
 }
 
-/// A JSON body; a body that does not parse gives `invalid_request`.
 pub struct ApiJson<T>(pub T);
 
 impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for ApiJson<T> {
@@ -139,8 +131,6 @@ impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for ApiJson<T> {
     }
 }
 
-/// The parameters of the path; a path that does not parse gives
-/// `invalid_request`.
 pub struct ApiPath<T>(pub T);
 
 impl<T: DeserializeOwned + Send, S: Send + Sync> FromRequestParts<S> for ApiPath<T> {
@@ -154,7 +144,6 @@ impl<T: DeserializeOwned + Send, S: Send + Sync> FromRequestParts<S> for ApiPath
     }
 }
 
-/// The query string; a query that does not parse gives `invalid_request`.
 pub struct ApiQuery<T>(pub T);
 
 impl<T: DeserializeOwned, S: Send + Sync> FromRequestParts<S> for ApiQuery<T> {

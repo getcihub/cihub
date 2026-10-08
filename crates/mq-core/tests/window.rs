@@ -34,7 +34,6 @@ fn the_window_closes_under_failures_then_opens_again() {
     );
     assert_eq!((floor, ceiling), (2, 20), "the defaults of `pipelined`");
 
-    // First, 20 % of the PRs fail: the window comes down to the floor.
     let mut rng = Rng(0x00C1_4B00);
     let mut bad = BTreeSet::new();
     for pr in 1..=100 {
@@ -46,7 +45,6 @@ fn the_window_closes_under_failures_then_opens_again() {
     let windows = drain(&mut w, &bad);
     assert!(windows.contains(&floor), "{windows:?}");
     assert!(windows.iter().all(|n| (floor..=ceiling).contains(n)));
-    // Concluded items leave the snapshot: the log tells how they ended.
     let ended = |to: ItemState| {
         w.log
             .iter()
@@ -56,7 +54,6 @@ fn the_window_closes_under_failures_then_opens_again() {
     assert_eq!(ended(ItemState::Failed), bad.len());
     assert_eq!(ended(ItemState::Merged), 100 - bad.len());
 
-    // Then every PR passes: the window opens up to the ceiling.
     let before = w.snapshot.window.unwrap();
     for pr in 101..=140 {
         w.submit(pr, Priority::MEDIUM);
@@ -75,7 +72,6 @@ fn the_window_stays_within_new_bounds() {
     }
     drain(&mut w, &BTreeSet::new());
     assert_eq!(w.snapshot.window, Some(7));
-    // A file with a lower ceiling brings the window down at once.
     w.settings = settings(|l| {
         l.window_ceiling = Some(cihub_config::Setting::new(4));
     });

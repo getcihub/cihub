@@ -28,7 +28,6 @@ use cassette::{Cassette, Exchange, KEPT_HEADERS, RECORDED_TOKEN, World, api_path
 
 const CLASS: JobClass = JobClass::Interactive;
 const BASE: &str = "main";
-/// The status that the rules of `main` require.
 const REQUIRED: &str = "cihub-contract-ci";
 const FILE: (&str, &str) = ("cihub-contract/file.txt", "contract\n");
 const CONFLICTING_BRANCH: &str = "cihub-contract/conflicting";
@@ -37,7 +36,6 @@ const WORK_BRANCH: &str = "cihub-temp/contract";
 const MISSING_PR: u64 = 999_999;
 const RECORDING: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/recorded/contract.json");
 
-/// The writes that the `Scm` trait does not do: files and ready PRs.
 struct Rest {
     http: reqwest::Client,
     repo_url: String,
@@ -80,8 +78,6 @@ impl Rest {
     }
 }
 
-/// Sends a REST call of the example and reads its JSON answer; a status
-/// other than a success is an error with the message of GitHub.
 pub async fn send(request: reqwest::RequestBuilder, body: Option<Value>) -> Result<Value> {
     let mut request = request
         .header("Accept", "application/vnd.github+json")
@@ -100,8 +96,6 @@ pub async fn send(request: reqwest::RequestBuilder, body: Option<Value>) -> Resu
     Ok(body)
 }
 
-/// Once, before the rules of `main`: the file of the suite, a PR in conflict
-/// with `main` and a draft PR.
 pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) -> Result<()> {
     let rest = Rest::new(config, repo).await?;
     let head = app
@@ -137,8 +131,6 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
     Ok(())
 }
 
-/// Before each recording, since the suite merges it: a new PR whose
-/// required status passed. A person approves it, then runs `record`.
 pub async fn prepare_pr(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) -> Result<()> {
     let rest = Rest::new(config, repo).await?;
     let stamp = now().unix_timestamp();
@@ -164,7 +156,6 @@ pub async fn prepare_pr(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) 
     Ok(())
 }
 
-/// The PRs of the world, and the admin of the repository.
 pub struct Prs {
     pub mergeable: u64,
     pub conflicting: u64,
@@ -172,8 +163,6 @@ pub struct Prs {
     pub admin: String,
 }
 
-/// Plays the contract suite through the recording proxy, then writes the
-/// recording. Writes nothing when the suite fails.
 pub async fn record(
     app: &GithubApp,
     config: &GithubConfig,
@@ -283,9 +272,6 @@ async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Re
     .into())
 }
 
-/// A proxy on the paths of a GitHub Enterprise Server, so that `GithubApp`
-/// reaches it by its address. It forwards each call to GitHub, returns the
-/// answer as is, and keeps it without the token of the installation.
 struct Proxy {
     url: String,
     exchanges: Arc<Mutex<Vec<Exchange>>>,

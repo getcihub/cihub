@@ -380,12 +380,10 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
         .unwrap();
     assert_eq!(snapshots[0], SNAPSHOT_EVERY);
 
-    // The log read back from its last snapshot is the log in memory.
     let before = projections(&mut tx).await;
     let loaded = QueueLog::load(&mut tx, queue()).await.unwrap();
     assert_eq!(loaded, w.log);
 
-    // The replay of the whole log writes the same rows and snapshots.
     let rebuilt = rebuild(&mut tx, queue(), w.now).await.unwrap();
     assert_eq!(rebuilt, w.log);
     assert_eq!(projections(&mut tx).await, before);
@@ -715,7 +713,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
 
-    // What each PR is, and what the queue must say of it.
     let ready = |_: &Sim, _: u64, _: &str| {};
     let failing = |sim: &Sim, _: u64, head: &str| {
         sim.report_check(&repo(), head, check(REQUIRED, false))
@@ -733,7 +730,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             sim.change_pr(&repo(), n, change).unwrap();
         }
     };
-    // The rules name the check that blocks the PR (`DECISIONS.md` D158).
     let failing_ci = vec![
         BlockReason::FailingRequiredCheck {
             check: REQUIRED.into(),
@@ -749,8 +745,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
         (Box::new(ready), ItemState::Pending, vec![]),
-        // The required check failed: with `branch_protection_injection:
-        // both`, the queue names it (`DECISIONS.md` D147).
         (Box::new(failing), ItemState::NotReady, failing_ci.clone()),
         (Box::new(failing), ItemState::NotReady, failing_ci),
         (
@@ -814,7 +808,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             .unwrap();
         want.insert(number, (*state, blocks.clone()));
     }
-    // Two PRs by the label, ready.
     for n in 19..=20 {
         let (number, head) = open_pr(&sim, &root, n);
         sim.report_check(&repo(), &head, check(REQUIRED, true))
@@ -829,7 +822,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         .unwrap();
         want.insert(number, (ItemState::Pending, vec![]));
     }
-    // A command of an account that cannot write submits nothing.
     let (refused, _) = open_pr(&sim, &root, 21);
     sim.comment(&repo(), refused, &bob(), "/cihub merge")
         .unwrap();
@@ -846,8 +838,6 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
-    // An admitted item may be in test already: the queue reads the head of
-    // its target (`DECISIONS.md` D127) and fills its window.
     let testing = rows.iter().filter(|r| r.1 == "testing").count();
     assert!(testing <= 2, "{testing} items in test");
     let got: BTreeMap<u64, (ItemState, Vec<BlockReason>)> = rows
@@ -877,14 +867,12 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     assert_eq!(reasons, expected);
     drop(tx);
 
-    // The replay of the log gives the same items.
     let mut tx = begin_system(&pool).await.unwrap();
     let before = projections(&mut tx).await;
     rebuild(&mut tx, queue(), clock()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
 
-    // The connection loses its access: the queue pauses (DECISIONS.md D103).
     sim.set_access("1", false);
     q.deliver().await;
     q.settle().await;
@@ -933,7 +921,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         };
         store_delivery(&mut tx, &stored).await.unwrap();
     }
-    // A fact given back by a job, and the push of the target.
     let fact = Event {
         id: EventId::from_ulid(Ulid(500)),
         org_id: org(),
@@ -973,7 +960,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let before = counts(pool.clone()).await;
     assert_eq!(before, (0, 0, 1, 1, true));
 
-    // The process stops before the commit: the transaction rolls back.
     let mut tx = begin_reconciliation(&pool, queue()).await.unwrap().unwrap();
     reconciler
         .reconcile_in(&mut tx, queue(), clock())
@@ -982,7 +968,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     drop(tx);
     assert_eq!(counts(pool.clone()).await, before);
 
-    // The next reconciliation does the whole work once.
     reconciler.reconcile(&pool, queue(), &clock).await.unwrap();
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
@@ -994,7 +979,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         .fetch_all(&mut *tx)
         .await
         .unwrap();
-    // The head of the target is known: the queue reads its file there.
     assert_eq!(
         keys,
         [
@@ -1116,7 +1100,6 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         cancel.clone(),
     ));
 
-    // The pause reaches the table at once, without the period of the writer.
     let mut paused_until = None;
     for _ in 0..200 {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -1134,8 +1117,6 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
     worker.await.unwrap().unwrap();
     writer.await.unwrap();
 
-    // The read waits for its retry, and no job of the connection goes out
-    // before the reset; after it, the jobs go out again.
     let mut tx = begin_system(&pool).await.unwrap();
     let (state, error): (String, String) =
         sqlx::query_as("SELECT state::text, last_error FROM jobs")
@@ -1224,8 +1205,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
-    // The PRs are opened first, so that their numbers are 1 to 10: the draft
-    // PRs of the queue come after them.
     let mut heads: HashMap<String, u64> = HashMap::new();
     for n in 1..=10 {
         let path = format!("f{n}.txt");
@@ -1242,16 +1221,12 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .unwrap();
         heads.insert(head, n);
     }
-    // One submission at a time: the queue order is the order of the PRs.
     for n in 1..=10 {
         sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
 
-    // The CI of the simulator: each round, the CI reports on the runs in
-    // progress, and the merge job merges what they prove; the silent PR never
-    // reports, and its runs time out when the clock moves.
     let mut rounds = 0;
     loop {
         q.deliver().await;
@@ -1308,8 +1283,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
 
     let runs = test_runs(&mut tx).await;
     let pr_of = |sha: &String| heads[sha];
-    // An assembled run has its required statuses from the file, and its
-    // test commit holds the change of every head merged in it.
     for (_, test_sha, _, _, head_shas, _, required, source, ..) in &runs {
         let Some(test_sha) = test_sha else {
             continue;
@@ -1325,7 +1298,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             assert!(file.is_some(), "{path} is not in {test_sha}");
         }
     }
-    // The run that proved a merged PR tested it on top of merged PRs only.
     let merged: BTreeSet<i64> = summary
         .iter()
         .filter(|(_, state, _)| *state == "merged")
@@ -1348,7 +1320,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         );
         assert_eq!(run.5, vec![*n]);
     }
-    // The conflict names the PR ahead that the member conflicts with.
     let conflicts: Vec<&RunRow> = runs
         .iter()
         .filter(|r| r.3.as_deref() == Some("start_test_run_merge_conflict"))
@@ -1364,8 +1335,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .unwrap()
         )
     );
-    // The silent PR timed out twice: its run, then the retry of the failure
-    // budget; a run restarted behind a failed PR was interrupted before.
     let silent: Vec<&str> = runs
         .iter()
         .filter(|r| r.5 == vec![i64::try_from(SILENT).unwrap()])
@@ -1378,8 +1347,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .all(|s| matches!(*s, "timed_out" | "interrupted")),
         "{silent:?}"
     );
-    // The PRs behind a failed PR restarted without it: at least the PR behind
-    // the silent one, tested on top of it until its timeout.
     let restarts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events
          WHERE type = 'item.transitioned' AND payload->>'reason' = $1",
@@ -1389,9 +1356,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     .await
     .unwrap();
     assert!(restarts >= 1, "{restarts} restarts");
-    // Every report on a test SHA is kept, with the required ones marked: the
-    // red CI of the two failing PRs, at least twice each (the budget retries
-    // once, and a group restarted behind a failed PR starts a new budget).
     let reports: Vec<(Vec<i64>, String, String)> = sqlx::query_as(
         "SELECT t.tested_pr_numbers, t.status::text, c.conclusion::text
          FROM check_observations c JOIN test_runs t ON t.id = c.run_id
@@ -1416,7 +1380,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     assert!(passed >= 6, "{reports:?}");
     drop(tx);
 
-    // The branches of every run are gone and its draft PR is closed.
     for (_, _, _, _, _, _, _, _, _, test_branch, draft) in &runs {
         assert_eq!(sim.branch(&repo(), test_branch), None, "{test_branch}");
         let temp = temp_branch(test_branch).unwrap();
@@ -1431,8 +1394,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         }
     }
 
-    // A report that comes after the end of a run is stored without a fact.
-    // The push of the last merge comes first.
     q.deliver().await;
     q.settle().await;
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1464,7 +1425,6 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         .unwrap();
     assert_eq!(events_after, events_before);
 
-    // The replay of the log gives the same projections, late report included.
     let before = projections(&mut tx).await;
     rebuild(&mut tx, queue(), q.clock.now()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
@@ -1488,8 +1448,6 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
         sim.comment(&repo(), number, &alice(), "/cihub merge")
             .unwrap();
     };
-    // The first PR meets the protection; the second, submitted after it,
-    // assembles.
     submit(1);
     sim.fail(Fault {
         call: Some("set_branch"),
@@ -1538,7 +1496,6 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     assert_eq!((test_sha.is_some(), status.as_str()), (true, "succeeded"));
     assert_eq!(required, &[REQUIRED.to_owned()]);
     assert_eq!(source.as_deref(), Some("branch_protection"));
-    // Both runs ended: the failed one and the successful one are cleaned.
     let cleaned: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM jobs WHERE type = 'cleanup_test_branch' AND state = 'done'",
     )
@@ -1611,8 +1568,6 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
         ]
     );
 
-    // The label comes: the small PR enters the queue, the large one waits for
-    // its files.
     for number in [small, large] {
         sim.add_label(&repo(), number, "ready", JobClass::Interactive)
             .await
@@ -1732,8 +1687,6 @@ priority_rules:
     );
     let main = two_queues(&pool, &mut q, &config).await;
 
-    // The branch of the PR, whether its CI passed and it is approved, its
-    // labels and its command.
     let cases: [(&str, bool, &[&str], &str); 5] = [
         ("hotfix/login", false, &[], "/cihub merge"),
         ("pr-2", true, &[], "/cihub merge"),
@@ -1846,7 +1799,6 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         };
         store_delivery(&mut tx, &stored).await.unwrap();
     }
-    // A merge of the queue `main` waits for its worker.
     let merge = Job {
         idempotency_key: "merge_pr:in-flight:1".into(),
         job_type: "merge_pr".into(),
@@ -1879,7 +1831,6 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         .unwrap();
     assert_eq!(state(pool.clone()).await, (1, 0), "the push waits");
 
-    // The merge ends: the next pass gives the push to both queues.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query(
         "UPDATE jobs SET state = 'done', finished_at = now()
@@ -2015,7 +1966,6 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
         "no read point came due"
     );
 
-    // The same delivery passed again requests nothing more.
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query("UPDATE webhook_inbox SET processed_at = NULL WHERE delivery_id = $1")
         .bind(&delivery)
@@ -2277,7 +2227,6 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
         .unwrap();
     q.deliver().await;
     q.settle().await;
-    // A second PR opened on the old head of `main`, which moved since.
     let (behind, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
@@ -2374,8 +2323,6 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         merged[0].starts_with("✅ **Merged** into `main` by the queue"),
         "{merged:?}"
     );
-    // The history keeps the whole life of the item (`DECISIONS.md` D244) and
-    // the merged commit (`DECISIONS.md` D245).
     for row in [
         "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
         "✅ Merged: the queue merged the PR without a test branch, as ",
@@ -2394,10 +2341,8 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         testing[0].starts_with("🧪 **Testing** · position 1 in the queue for `main`"),
         "{testing:?}"
     );
-    // The draft PR of the test, never the name of its branch (`DECISIONS.md` D174).
     assert!(testing[0].contains(" in #"), "{testing:?}");
     assert!(!testing[0].contains("cihub-merge/"), "{testing:?}");
-    // The history keeps where the CI ran (`DECISIONS.md` D245).
     assert!(
         testing[0].contains("| 🧪 Test branch ready: the CI runs in #"),
         "{testing:?}"
@@ -2454,7 +2399,6 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         .unwrap();
     q.deliver().await;
     q.settle().await;
-    // The item goes back to `pending`, then into a new run at once.
     let mut tx = begin_system(&pool).await.unwrap();
     let restarts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events WHERE payload->>'reason' = 'tests_restarted_by_user'",
@@ -2482,7 +2426,6 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         item(pool.clone()).await,
         ("cancelled".into(), "user_requested".into())
     );
-    // The refused command of bob gets no acknowledgement (`DECISIONS.md` D166).
     assert_eq!(
         sim.acknowledged_comments(&repo(), number),
         ["/cihub merge", "/cihub restart", "/cihub cancel"]
@@ -2732,7 +2675,6 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .collect();
     assert_eq!(actions, ["queue.resync", "queue.state_requested"]);
 
-    // The typed client reads the same API (`DECISIONS.md` D161).
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
@@ -2835,7 +2777,6 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         "submitted again"
     );
 
-    // Bob cannot write: his check gets a refusal.
     let (second, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
@@ -2852,7 +2793,6 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         .count();
     assert_eq!(refused, 1);
 
-    // A box in a comment of someone else submits nothing.
     let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
     sim.comment(&repo(), third, &alice(), "- [ ] <!-- cihub:submit --> mine")
         .unwrap();
@@ -2950,7 +2890,6 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         (Some(valid.clone()), Some(main.clone()), None)
     );
 
-    // A file that is not valid keeps the last valid one, with the error.
     let broken_file = file("    window: { floor: 30 }\n");
     let broken = sim
         .commit(&repo(), &main, &[(".cihub.yaml", Some(&broken_file))])
@@ -2966,8 +2905,6 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         "{error}"
     );
 
-    // A new mode: the queue records it, and switches at once without a live
-    // item.
     let parallel_file = file("    strategy: parallel\n");
     let parallel = sim
         .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
@@ -3037,12 +2974,9 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     assert!(w.log.seq < SNAPSHOT_EVERY, "no snapshot by count");
     let today = clock();
 
-    // No snapshot covers the events of May: the partition stays.
     run_maintenance(&pool, today).await.unwrap();
     assert!(partition_exists(&pool, "events_2026_05").await);
 
-    // The pass of the scheduler wakes the queue, whose reconciliation keeps a
-    // snapshot; then the partition goes.
     assert_eq!(wake_uncovered(&pool, today).await.unwrap(), 1);
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
@@ -3055,7 +2989,6 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     run_maintenance(&pool, today).await.unwrap();
     assert!(!partition_exists(&pool, "events_2026_05").await);
 
-    // The queue loads from its snapshot, and its log goes on after it.
     let mut tx = begin_system(&pool).await.unwrap();
     let snapshot: i64 = sqlx::query_scalar("SELECT max(seq) FROM queue_snapshots")
         .fetch_one(&mut *tx)
@@ -3080,7 +3013,6 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     log.write(&mut tx, vec![pushed], today).await.unwrap();
     assert_eq!(log.seq, snapshot + 1);
 
-    // The whole log is gone: a replay refuses to start from nothing.
     let err = rebuild(&mut tx, queue(), today).await.unwrap_err();
     assert!(matches!(err, MergeQueueError::LogGap { .. }), "{err:?}");
 }
@@ -3148,8 +3080,6 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
-    // The PRs are opened first, so that their numbers are 1 and 2; then one
-    // submission at a time, so that the queue order is their order.
     for n in 1..=2 {
         assert_eq!(open_green_pr(&sim, &main, n), n);
     }
@@ -3225,7 +3155,6 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     }
     let runs = q.runs_in_progress().await;
     let first = runs.iter().find(|r| r.2 == [1]).unwrap().1.clone();
-    // Someone merges PR 1 by hand; the queue does not hear of it yet.
     let by_hand = cihub_scm::PrMerge {
         number: 1,
         head_sha: sim
@@ -3250,7 +3179,6 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
         current_items(&pool).await[0],
         (1, "merged".into(), "manual_merge".into())
     );
-    // PR 2 restarts on top of the new target, then merges.
     for _ in 0..3 {
         for (_, test_sha, prs) in q.runs_in_progress().await {
             if prs == [2] {
@@ -3300,7 +3228,6 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
         .unwrap();
     drop(tx);
 
-    // The test branch disappears: the read of the checks creates it again.
     sim.delete_branch(&repo(), &test_branch, JobClass::Repair)
         .await
         .unwrap();

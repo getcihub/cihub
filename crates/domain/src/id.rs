@@ -22,8 +22,6 @@ macro_rules! id_type {
             const PREFIX: &'static str = $prefix;
 
             /// Generates a new ULID from the system clock and random bytes.
-            /// Pure code receives identifiers instead: `clippy.toml` forbids
-            /// this call without a local `#[expect]`.
             #[expect(
                 clippy::disallowed_methods,
                 reason = "the one place that makes identifiers from the clock and randomness"
@@ -281,7 +279,6 @@ mod tests {
             assert_eq!(encode(typ, ulid(ulid_text)), text);
             assert_eq!(parse(typ, text), Ok(ulid(ulid_text)));
         }
-        // From the Go package tests.
         assert_eq!(
             parse("project", "project_0625rt7r8y5fkq9t94zq05msqqmckjv7"),
             Ok(ulid("01GHE6HY27HBWXTEJ97XR1D6DX"))
@@ -290,7 +287,6 @@ mod tests {
 
     #[test]
     fn checksum_is_crc32_ieee() {
-        // Standard check value of CRC-32/ISO-HDLC for "123456789".
         assert_eq!(crc32(b"123456789".iter().copied()), 0xcbf4_3926);
     }
 
@@ -324,7 +320,6 @@ mod tests {
                 "org_0627ank54ajth78mw4353dqpw5dvt5kq",
                 IdParseError::InvalidChecksum,
             ),
-            // Same bytes, type changed by hand: the checksum no longer matches.
             (
                 "item_0627ank54ajth78mw4353dqpw5dvt5kp",
                 IdParseError::InvalidChecksum,

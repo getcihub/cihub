@@ -70,7 +70,6 @@ use ulid::Ulid;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-/// Every call of the example is a person waiting at the terminal.
 const CLASS: JobClass = JobClass::Interactive;
 
 const USAGE: &str = "usage: github installations
@@ -161,8 +160,6 @@ async fn run(args: Vec<String>) -> Result<()> {
     }
 }
 
-/// A repository for the calls. The example knows no identifier of CIHub:
-/// the adapter reads only the installation, the owner and the name.
 fn repo_ref(installation: &str, repo: &str) -> Result<RepoRef> {
     let (namespace, name) = repo
         .split_once('/')
@@ -285,9 +282,6 @@ async fn branch_roundtrip(app: &GithubApp, repo: &RepoRef, from: &str) -> Result
     Ok(())
 }
 
-/// The installations of the App, to find the one to give to the other
-/// commands. The only call outside the `Scm` trait: it authenticates as the
-/// App, not as an installation.
 async fn installations(config: &GithubConfig) -> Result<()> {
     let key = AppKey::from_pem(&config.private_key)?;
     let jwt = key.jwt(&config.app_id, now())?;
@@ -308,8 +302,6 @@ async fn installations(config: &GithubConfig) -> Result<()> {
     Ok(())
 }
 
-/// The addresses of the REST and GraphQL APIs of a GitHub, as `GithubApp`
-/// reaches them.
 fn api_urls(github_url: &str) -> (String, String) {
     let url = github_url.trim_end_matches('/');
     if url == "https://github.com" {

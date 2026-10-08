@@ -6,19 +6,12 @@ use time::{Duration, OffsetDateTime};
 use crate::PlatformError;
 use crate::wake::notify;
 
-/// The channel that says a job is waiting.
 pub(crate) const JOB_CHANNEL: &str = "cihub_jobs";
 
-/// A worker holds a job this long; past it, another worker takes it back.
 pub const JOB_LOCK: Duration = Duration::seconds(60);
 
-/// A connection has at most this many jobs in progress
-/// (`docs/RELIABILITY.md`).
 pub const JOBS_PER_CONNECTION: i64 = 100;
 
-/// After this many attempts, a job that fails goes to `dead`. The backoff of
-/// these attempts covers the 15 minutes that an assembly waits
-/// (`DECISIONS.md` D133).
 pub const MAX_ATTEMPTS: i32 = 11;
 
 /// The wait before the next attempt: 2, 4, 8… seconds, at most 5 minutes.
@@ -27,8 +20,6 @@ pub fn backoff(attempts: i32) -> Duration {
     Duration::seconds(2_i64.pow(exponent)).min(Duration::minutes(5))
 }
 
-/// The hour of `now` in the key of a periodic job (`20260910T09`), so that
-/// the schedulers that request it in the same hour ask for one job.
 pub(crate) fn hour_window(now: OffsetDateTime) -> String {
     format!(
         "{:04}{:02}{:02}T{:02}",
@@ -39,17 +30,12 @@ pub(crate) fn hour_window(now: OffsetDateTime) -> String {
     )
 }
 
-/// A job as the roles request it, and as a worker receives it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Job {
-    /// `<type>:<subject>:<version>` (`DECISIONS.md` D60).
     pub idempotency_key: String,
-    /// The executor that runs the job.
     pub job_type: String,
     pub class: JobClass,
-    /// `None` for a job of the system.
     pub org_id: Option<OrgId>,
-    /// The connection whose quota and budget the job uses, with its instance.
     pub connection: Option<(ScmInstanceId, ConnectionId)>,
     pub queue_id: Option<QueueId>,
     pub payload: Value,
@@ -126,13 +112,6 @@ pub async fn claim_jobs(
     now: OffsetDateTime,
     limit: i64,
 ) -> Result<Vec<Job>, PlatformError> {
-    // The quota counts the jobs in progress before the claim, so two workers
-    // that claim at the same time can pass it by a few jobs: it shares the
-    // workers between connections, it does not protect an invariant. The
-    // candidates are more than `limit`, so that a connection at its quota
-    // does not hide the jobs of the others. Only the chosen jobs are locked:
-    // a lock on every candidate would hide from a concurrent worker the
-    // candidates that this claim does not take.
     let rows: Vec<JobRow> = sqlx::query_as(
         "WITH in_progress AS (
              SELECT connection_id, count(*) AS n FROM jobs
@@ -244,12 +223,9 @@ pub async fn complete_job(
     Ok(done.rows_affected() == 1)
 }
 
-/// What a worker does with a job that failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Retry {
-    /// Try again after [`backoff`], or give up after [`MAX_ATTEMPTS`].
     Later,
-    /// A retry cannot fix the error.
     Never,
 }
 

@@ -6,21 +6,15 @@ use time::OffsetDateTime;
 use crate::PlatformError;
 use crate::wake::{notify, wake_for_delivery};
 
-/// The channel that says a delivery waits for its routing.
 pub(crate) const INBOX_CHANNEL: &str = "cihub_inbox";
 
-/// A webhook delivery as the ingestion receives it: stored as is, before any
-/// decision.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delivery {
     pub scm_instance_id: ScmInstanceId,
-    /// The identifier that the SCM gives to the delivery; a copy has the same.
     pub delivery_id: String,
-    /// `None` while the ingestion cannot route the delivery.
     pub org_id: Option<OrgId>,
     pub connection_id: Option<ConnectionId>,
     pub queue_id: Option<QueueId>,
-    /// The kind of event, as the SCM names it (`pull_request`).
     pub event: String,
     pub action: Option<String>,
     pub payload: Value,

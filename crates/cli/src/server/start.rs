@@ -15,17 +15,11 @@ use tracing::{Instrument, info, info_span};
 
 use super::{Github, health, notifier, scheduler, web, worker};
 
-/// A role of the process: a part of its loops, named in the logs
-/// (`DECISIONS.md` D91, D170).
 #[derive(Clone, Copy)]
 enum Role {
-    /// The public address: API, webhooks, dashboard.
     Web,
-    /// The reconciliation loop of the queues.
     Scheduler,
-    /// The execution of the jobs of the modules.
     Worker,
-    /// The delivery of the events of the log (`DECISIONS.md` D213).
     Notifier,
 }
 
@@ -42,11 +36,9 @@ impl Role {
     }
 }
 
-/// What the roles of a process share.
 #[derive(Clone)]
 pub(super) struct Shared {
     pub pool: PgPool,
-    /// A name unique to this process, which owns its jobs and leases.
     pub process: String,
     pub http_addr: SocketAddr,
     pub github: Github,
@@ -83,7 +75,6 @@ pub(super) async fn run(
     result
 }
 
-/// Runs the loops of `role` until cancellation.
 async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
     info!("role started");
     match role {
@@ -105,8 +96,6 @@ fn process_name() -> String {
     format!("cihub-{}", id.to_string().to_lowercase())
 }
 
-/// Cancels every task on `SIGTERM`, on `SIGINT`, or when one task stops on its
-/// own, then waits for all of them. Returns the first error.
 async fn supervise(
     mut tasks: JoinSet<anyhow::Result<()>>,
     cancel: &CancellationToken,

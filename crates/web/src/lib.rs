@@ -32,11 +32,8 @@ use tracing::{Instrument, info, info_span, warn};
 /// GitHub sends deliveries of at most 25 MB.
 const MAX_DELIVERY_BYTES: usize = 25 * 1024 * 1024;
 
-/// A delivery not stored within this time is refused: the SCM sees a failure,
-/// and the sweep asks for it again (`DECISIONS.md` D88).
 const ACK_WITHIN: Duration = Duration::from_secs(2);
 
-/// The webhooks of the GitHub App of the instance.
 pub struct GithubWebhooks {
     pub scm_instance_id: ScmInstanceId,
     pub secret: SecretString,
@@ -51,8 +48,6 @@ struct Webhooks {
 
 pub use api::REQUESTS_PER_MINUTE;
 
-/// The routes of the public address: the webhooks of the GitHub App, and the
-/// API with the routes of `modules`.
 pub fn router(
     pool: PgPool,
     now: fn() -> OffsetDateTime,
@@ -71,8 +66,6 @@ pub fn router(
         .nest(API_PREFIX, api::router(pool, now, modules))
 }
 
-/// Serves `router` on `listener` until `cancel`.
-///
 /// # Errors
 ///
 /// The server fails.
@@ -128,8 +121,6 @@ async fn github_webhook(
     .await
 }
 
-/// Stores `received` without routing it (`DECISIONS.md` D84): only the system
-/// context sees it until the routing loop routes it.
 async fn store(webhooks: &Webhooks, received: ReceivedDelivery) -> Result<bool, PlatformError> {
     let delivery = Delivery {
         scm_instance_id: webhooks.github.scm_instance_id,

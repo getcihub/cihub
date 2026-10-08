@@ -349,7 +349,6 @@ impl World {
                 .map(|r| r.id)
                 .collect();
             for run_id in &runs {
-                // A report may end the runs above it.
                 let Some(run) = self.snapshot.runs.get(run_id) else {
                     continue;
                 };
@@ -376,7 +375,6 @@ impl World {
             if self.snapshot.items.values().all(|i| i.state.is_terminal()) {
                 break;
             }
-            // A batch that is not full waits for the clock.
             if runs.is_empty() {
                 self.advance(1);
             }

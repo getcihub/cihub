@@ -45,7 +45,6 @@ pub enum ErrorCode {
 }
 
 impl fmt::Display for ErrorCode {
-    /// The name of the JSON, so that a message and the API never disagree.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match serde_json::to_value(self) {
             Ok(Value::String(name)) => f.write_str(&name),
@@ -332,7 +331,6 @@ pub struct TestRun {
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
     pub conflict_culprit: Option<ConflictCulprit>,
     pub checks: Vec<RunCheck>,
-    /// `all` or the list of targets (lot 13); `None` before it.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
     pub impacted_targets: Option<Value>,
     pub dependents: Vec<Dependent>,

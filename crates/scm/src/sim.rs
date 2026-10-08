@@ -57,8 +57,6 @@ pub struct WebhookFaults {
     pub reorder: bool,
 }
 
-/// A step of splitmix64: deterministic, without the randomness of the
-/// system (`DECISIONS.md` D16).
 fn splitmix(seed: &mut u64) -> u64 {
     *seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     let mut z = *seed;
@@ -118,7 +116,6 @@ struct Commit {
 #[derive(Debug)]
 struct Pr {
     head_branch: String,
-    /// The head when the head branch is gone.
     last_head: String,
     base_branch: String,
     state: PrState,
@@ -128,10 +125,8 @@ struct Pr {
     labels: BTreeSet<String>,
     review_decision: ReviewDecision,
     reviews: Reviews,
-    /// The path of each unresolved review thread.
     unresolved_threads: Vec<String>,
     author: ScmUser,
-    /// A value that a test forces, in place of the computed one.
     mergeability: Option<Mergeability>,
     merged_sha: Option<String>,
 }
@@ -165,19 +160,14 @@ struct State {
     next_sha: u64,
     next_comment: u64,
     repos: BTreeMap<String, Repo>,
-    /// The account of each connection, by the identifier of the connection.
     accounts: BTreeMap<String, ScmAccount>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
     calls: Vec<SimCall>,
     deliveries: Vec<ScmDelivery>,
-    /// Each attempt taken, with the identifier of its delivery: the attempt
-    /// `n` is at `n - 1`.
     attempts: Vec<(String, ScmDelivery)>,
-    /// The attempts asked again, sent at the next take.
     redelivered: Vec<usize>,
-    /// The number of new deliveries taken.
     delivered: u64,
 }
 
@@ -597,7 +587,6 @@ impl Sim {
             deliveries.push(delivery);
         }
         if faults.reorder {
-            // Fisher-Yates, with the generator of the faults.
             for i in (1..deliveries.len()).rev() {
                 let j = usize::try_from(faults.next() % (i as u64 + 1)).unwrap_or(i);
                 deliveries.swap(i, j);
@@ -606,8 +595,6 @@ impl Sim {
         deliveries
     }
 
-    /// Runs a call of the trait on the whole instance: records it and applies
-    /// the faults.
     fn instance_call<T: Send + 'static>(
         &self,
         name: &'static str,
@@ -624,8 +611,6 @@ impl Sim {
         Box::pin(std::future::ready(result))
     }
 
-    /// Runs a call of the trait: records it, applies the faults and the
-    /// access of the connection, then runs `run` on the repository.
     fn call<T: Send + 'static>(
         &self,
         name: &'static str,
@@ -693,7 +678,6 @@ impl State {
     }
 }
 
-/// A repository and the counters of the simulator, during a call.
 struct Ctx<'a> {
     repo_external_id: String,
     repo: &'a mut Repo,
@@ -747,7 +731,6 @@ impl Ctx<'_> {
         self.pr_event(number, None, false);
     }
 
-    /// The PR became ready for review (`DECISIONS.md` D163).
     fn pr_opened(&mut self, number: u64) {
         self.pr_event(number, None, true);
     }
@@ -845,8 +828,6 @@ impl Ctx<'_> {
         Ok(id)
     }
 
-    /// Merges the commit `theirs` into the branch `branch` for a PR merge:
-    /// the new commit has the parents that `method` gives.
     fn land(
         &mut self,
         branch: &str,
@@ -880,8 +861,6 @@ impl Ctx<'_> {
 }
 
 impl Repo {
-    /// Adds a commit and returns it. `next_sha` is the counter of the
-    /// simulator, so that no two repositories share a commit.
     fn new_commit(&mut self, next_sha: &mut u64, parents: Vec<String>, tree: Tree) -> String {
         *next_sha += 1;
         let sha = format!("{next_sha:040x}");
@@ -931,8 +910,6 @@ impl Repo {
         self.ancestors(sha).contains(ancestor)
     }
 
-    /// A common ancestor of `a` and `b` that no other common ancestor
-    /// descends from.
     fn merge_base(&self, a: &str, b: &str) -> Option<String> {
         let common: BTreeSet<String> = self
             .ancestors(a)
@@ -949,8 +926,6 @@ impl Repo {
             .cloned()
     }
 
-    /// The three-way merge of the trees of `ours` and `theirs`, or `None`
-    /// when a file changed differently on both sides.
     fn merged_tree(&self, ours: &str, theirs: &str) -> Result<Option<Tree>, ScmError> {
         let empty = Tree::new();
         let base = match self.merge_base(ours, theirs) {
@@ -1016,9 +991,6 @@ impl Repo {
         })
     }
 
-    /// The paths that the PR changes, from the merge base of `head` with its
-    /// base branch, with `true` for a path that the head deletes. Without a
-    /// merge base, nothing is a change.
     fn changes(&self, pr: &Pr, head: &str) -> Result<BTreeMap<String, bool>, ScmError> {
         let base = self.branch_head(&pr.base_branch)?;
         let (base_tree, head_tree) = match self.merge_base(&base, head) {
@@ -1055,7 +1027,6 @@ impl Repo {
             base_branch: pr.base_branch.clone(),
             head_branch: pr.head_branch.clone(),
             from_fork: false,
-            // The simulator has no clock: every PR is opened at the epoch.
             created_at: OffsetDateTime::UNIX_EPOCH,
             draft: pr.draft,
             title: pr.title.clone(),
@@ -1456,7 +1427,6 @@ impl Scm for Sim {
         })
     }
 
-    /// Every attempt taken: the simulator has no clock.
     fn recent_deliveries(
         &self,
         _since: OffsetDateTime,
@@ -1502,7 +1472,6 @@ impl Scm for Sim {
         })
     }
 
-    /// The simulator has no rule that restricts the updates of a branch.
     fn check_setup<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -1573,8 +1542,6 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
     let main = sim.commit(repo, &root, &[("a.txt", Some("y\n"))])?;
     sim.push(repo, "main", &main, &author)?;
 
-    // As `prepare-pr` on GitHub, the mergeable PR starts from the head of
-    // `main`.
     let feature = sim.commit(repo, &main, &[("b.txt", Some("b\n"))])?;
     sim.push(repo, "feature", &feature, &author)?;
     let mergeable_pr = sim.open_pr(repo, "feature", "main", &author)?;
@@ -1866,7 +1833,6 @@ mod tests {
         assert!((40..100).contains(&some.len()), "{}", some.len());
     }
 
-    /// The answers of 200 reads of a simulator that fails as `faults` says.
     async fn outcomes(
         repo: &RepoRef,
         faults: RandomFaults,

@@ -47,8 +47,6 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The budgets that changed in the GitHub App, as `scm_connections` keeps
-/// them: the rate limit with the smallest share left (`DECISIONS.md` D77).
 fn connection_budgets(app: &GithubApp) -> Vec<(ConnectionId, ConnectionBudget)> {
     app.take_changed_budgets()
         .into_iter()

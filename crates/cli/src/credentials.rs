@@ -13,7 +13,6 @@ pub(crate) struct Credentials {
 }
 
 impl Credentials {
-    /// The credentials of the environment, else of the file.
     pub(crate) fn load() -> anyhow::Result<Self> {
         let (url, token) = (
             std::env::var("CIHUB_URL").ok(),
@@ -40,7 +39,6 @@ impl Credentials {
         })
     }
 
-    /// Writes the file, readable by its owner only, and returns its path.
     pub(crate) fn save(&self) -> anyhow::Result<PathBuf> {
         let path = path()?;
         if let Some(dir) = path.parent() {

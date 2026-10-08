@@ -155,7 +155,6 @@ impl Lifecycle for ItemState {
         use ItemState as S;
         match (from, to) {
             (None, S::NotReady) => &[R::Submitted],
-            // A submission that the queue refuses (`DECISIONS.md` D151).
             (None, S::Cancelled) => &[R::QueueDraining, R::QueueSwitchingModes],
             (Some(S::NotReady), S::Pending) => &[R::MergeItemNowReady],
             (Some(S::Pending), S::Testing) => &[R::TestRunStarted],

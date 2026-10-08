@@ -16,41 +16,28 @@ use tracing::{Instrument, error, info, info_span, warn};
 use crate::jobs::JOB_CHANNEL;
 use crate::{Job, PlatformError, QueueWakeup, Retry, claim_jobs, complete_job, fail_job};
 
-/// A worker without a notification looks for due jobs this often: a retry
-/// after its backoff sends no notification.
 pub const JOB_POLL: Duration = Duration::from_secs(5);
 
-/// A worker claims at most this many jobs at a time and runs them together.
 pub(crate) const JOBS_PER_CLAIM: i64 = 16;
 
-/// A worker stops an executor after this long and retries its job, so that
-/// the lock of the job ([`JOB_LOCK`](crate::JOB_LOCK)) does not expire while
-/// the executor runs and another worker does not run the job at the same
-/// time. An executor must accept to stop at any `.await`.
 pub(crate) const JOB_TIMEOUT: Duration = Duration::from_secs(50);
 
-/// What an executor answers for a job (`DECISIONS.md` D66).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     Done,
-    /// Try again after the backoff, with the error for the operator.
     Retry(String),
-    /// A retry cannot fix the error.
     Failed(String),
 }
 
 type ExecutorFuture = Pin<Box<dyn Future<Output = Outcome> + Send>>;
 type Executor = Box<dyn Fn(PgPool, Job, OffsetDateTime) -> ExecutorFuture + Send + Sync>;
 
-/// The registry of the worker: the executor of each job type.
 #[derive(Default)]
 pub struct Executors {
     by_type: HashMap<&'static str, Executor>,
 }
 
 impl Executors {
-    /// Runs the jobs of `job_type` with `run`, which receives the pool, the
-    /// job and the time of the claim.
     pub fn register<F, Fut>(&mut self, job_type: &'static str, run: F)
     where
         F: Fn(PgPool, Job, OffsetDateTime) -> Fut + Send + Sync + 'static,
@@ -142,9 +129,6 @@ async fn claim(
     Ok(jobs)
 }
 
-/// Records the outcome of a job and writes one line for it. A result that
-/// cannot be recorded is logged: the lock of the job expires and another
-/// worker runs it again.
 async fn record(pool: &PgPool, key: &str, worker: &str, now: OffsetDateTime, outcome: &Outcome) {
     let state = match store_outcome(pool, key, worker, now, outcome).await {
         Ok(state) => state,

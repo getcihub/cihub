@@ -8,19 +8,13 @@ use cihub_domain::{ConnectionMode, JobClass};
 use cihub_scm::ScmError;
 use time::{Duration, OffsetDateTime};
 
-/// Under this share of its budget, a connection is `throttled`.
 const THROTTLE_BELOW: f64 = 0.2;
-/// A `throttled` connection is `normal` again after this long above this share.
 const RECOVER_ABOVE: f64 = 0.4;
 const RECOVER_AFTER: Duration = Duration::minutes(5);
-/// After this many failures in a row, a connection is `scm_unavailable`.
 const FAILURES_TO_UNAVAILABLE: u32 = 3;
-/// A `scm_unavailable` connection lets one call through this often.
 const PROBE_EVERY: Duration = Duration::seconds(30);
-/// The wait after a secondary rate limit without `retry-after`.
 pub const SECONDARY_WAIT: Duration = Duration::minutes(1);
 
-/// One rate limit of the SCM, such as the REST or the GraphQL one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rate {
     pub limit: u32,
@@ -37,25 +31,19 @@ impl Rate {
     }
 }
 
-/// What a call tells the budget.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Observation {
-    /// The SCM answered, with this rate limit when the answer gives one.
     Answered {
         resource: String,
         rate: Option<Rate>,
     },
-    /// The rate limit is spent until `until`; `secondary` for a limit of
-    /// the SCM on bursts.
     RateLimited {
         until: OffsetDateTime,
         secondary: bool,
     },
-    /// No answer, or a server error.
     Failed,
 }
 
-/// The budget of one connection, in the memory of a process.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Budget {
     pub rates: BTreeMap<String, Rate>,
@@ -82,10 +70,6 @@ impl Default for Budget {
 }
 
 impl Budget {
-    /// Whether a call of `class` may go out at `now`. A `throttled`
-    /// connection keeps its budget for the classes before `speculate`; a
-    /// `scm_unavailable` connection lets one probe through every 30 s.
-    ///
     /// # Errors
     ///
     /// The error that the call returns in place of an answer.
@@ -111,7 +95,6 @@ impl Budget {
         Ok(())
     }
 
-    /// Records what a call observed at `now`.
     pub fn observe(&mut self, observation: Observation, now: OffsetDateTime) {
         match observation {
             Observation::Answered { resource, rate } => {
@@ -147,7 +130,6 @@ impl Budget {
         }
     }
 
-    /// The rate limit with the smallest share left.
     pub fn lowest(&self) -> Option<Rate> {
         self.rates
             .values()

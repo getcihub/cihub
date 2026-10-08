@@ -48,8 +48,6 @@ fn a_direct_merge_lands_without_a_test_branch() {
     let mut w = direct();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
-    // The first item waits for its direct merge; no group forms meanwhile
-    // (`DECISIONS.md` D153).
     assert_eq!(w.state(1), Some(ItemState::Pending));
     assert!(w.snapshot.groups.is_empty());
     let merges = w.reconcile().desired.merges;
@@ -58,8 +56,6 @@ fn a_direct_merge_lands_without_a_test_branch() {
     assert_eq!(merges[0].tested_sha, head(1, 0));
     assert_eq!(w.merge_all(), 1);
     assert!(decided_with(&w, Reason::MergeGraphDirectMerge));
-    // The next item is first now: its direct merge cannot happen, so it goes
-    // through the tests.
     let item = w.item(2).unwrap().id;
     w.fact(
         Actor::Bot,
@@ -105,8 +101,6 @@ fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     let old = w.item(1).unwrap().id;
-    // The job that reads the PR sees the push: it submits the new head, then
-    // gives the observation (`DECISIONS.md` D152).
     w.submit_only(1, 1, Priority::MEDIUM);
     assert_eq!(
         w.snapshot.current_item(1).map(|i| i.id),
@@ -158,7 +152,6 @@ fn a_draining_queue_refuses_new_submissions() {
     };
     assert_eq!(refused(&w), 1);
     assert!(decided_with(&w, Reason::QueueDraining));
-    // A new command on a PR in flight changes nothing (D151).
     w.submit(1, Priority::MEDIUM);
     assert_eq!(refused(&w), 1);
     assert_eq!(w.snapshot.current_item(1).map(|i| i.id), Some(live));
@@ -180,8 +173,6 @@ fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
     );
     w.observe(1, |_| {});
     assert_eq!(w.state(1), Some(ItemState::Testing));
-    // An admitted item no longer depends on its conditions (`DECISIONS.md`
-    // D142).
     w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert_replays(&w);
@@ -509,7 +500,6 @@ fn a_pr_merged_outside_the_queue_is_a_manual_merge() {
         })
         .collect();
     assert!(reasons.contains(&(ItemState::Merged, Reason::ManualMerge)));
-    // The successor was tested on top of the head of PR 1, not on what landed.
     assert!(reasons.contains(&(
         ItemState::Pending,
         Reason::PrerequisiteMergeItemManuallyMerged
@@ -522,7 +512,6 @@ fn a_blocked_pr_stays_not_ready() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.observe(1, |p| p.mergeability = Mergeability::Conflict);
-    // Admitted on the mergeable observation, the item keeps its place.
     assert_eq!(w.state(1), Some(ItemState::Testing));
     w.submit(2, Priority::MEDIUM);
     w.observe(2, |p| p.mergeability = Mergeability::Behind);
@@ -550,7 +539,6 @@ fn pause_stops_decisions_and_keeps_submissions() {
     let control = |c| EventKind::QueueControlRequested { control: c };
     w.fact(Actor::System, control(QueueControl::Pause));
     assert_eq!(w.snapshot.state, QueueState::Paused);
-    // A submission waits for the end of the pause.
     assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
     assert_eq!(w.state(2), None, "no item in pause");
     w.assemble_all();
@@ -574,7 +562,6 @@ fn pause_stops_decisions_and_keeps_submissions() {
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
     w.fact(Actor::System, control(QueueControl::Drain));
     assert_eq!(w.snapshot.state, QueueState::Draining);
-    // A submission in drain gets a refused item (`DECISIONS.md` D151).
     assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
     assert!(decided_with(&w, Reason::QueueDraining));
     w.fact(Actor::System, EventKind::AccessLost);
@@ -773,21 +760,14 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
         point: at(1),
     };
     assert_eq!(plan.desired.observe, vec![read]);
-    // The read of the target head, 5 minutes after its observation, comes
-    // before the next read point of the PR.
     assert!(plan.wake_at < Some(at(7)), "{:?}", plan.wake_at);
-    // A read that changes nothing is not in the log: the read stays due at
-    // the same point, so that the job of this point is the same.
     w.observe(1, |p| p.mergeability = Mergeability::Behind);
     assert_eq!(w.reconcile().desired.observe, vec![read]);
 
-    // An older item is read every 15 minutes.
     w.advance(60);
     let plan = w.reconcile();
     assert_eq!(plan.desired.observe[0].point, at(60));
 
-    // A read that changes something comes after the point: nothing is due.
-    // A mergeability that the SCM has not computed is read every minute.
     w.observe(1, |p| p.mergeability = Mergeability::Unknown);
     let plan = w.reconcile();
     assert!(plan.desired.observe.is_empty());
@@ -830,7 +810,6 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
         point: started + time::Duration::minutes(10),
     };
     assert_eq!(plan.desired.check_reads, vec![read.clone()]);
-    // A report moves the points: nothing is due until 10 minutes after it.
     w.fact(
         Actor::System,
         EventKind::CheckObserved {
@@ -874,7 +853,6 @@ fn a_busy_queue_reads_its_target_head_every_5_minutes() {
     let timeout = time::Duration::minutes(i64::from(w.settings.testing_timeout_minutes.value));
     assert!(plan.wake_at < Some(w.now + timeout));
 
-    // Without a known head, the head is read every minute.
     let mut w = World::new(w.settings.clone());
     w.snapshot.target = cihub_mq_core::TargetBranch::default();
     w.initial = w.snapshot.clone();

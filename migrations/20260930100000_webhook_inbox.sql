@@ -1,17 +1,3 @@
--- The inbox of the webhook deliveries (DECISIONS.md D58). The ingestion stores a
--- delivery before any decision; a copy of a delivery changes nothing. A
--- delivery identifier comes from the SCM, so it is unique within its instance
--- only (D46).
---
--- The ingestion fills what it knows: the organization, the connection and the
--- queue stay empty for a delivery it cannot route yet (an installation of an
--- unknown account), which only the system context sees.
---
--- The routing of the deliveries (D84 to D86): the web role stores a delivery
--- without routing it; a loop translates it, finds its connection and its
--- queue, then sets `routed_at`. A delivery whose connection is unknown is
--- routed without an organization: only the system context sees it.
-
 CREATE TABLE webhook_inbox (
     scm_instance_id text        NOT NULL REFERENCES scm_instances (id),
     delivery_id     text        NOT NULL,
@@ -24,7 +10,6 @@ CREATE TABLE webhook_inbox (
     received_at     timestamptz NOT NULL,
     routed_at       timestamptz,
     processed_at    timestamptz,
-    -- Why the processing failed, for the operator.
     error           text,
     PRIMARY KEY (scm_instance_id, delivery_id),
     FOREIGN KEY (org_id, scm_instance_id, connection_id)
