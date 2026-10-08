@@ -130,7 +130,9 @@ pub async fn claim_jobs(
     // that claim at the same time can pass it by a few jobs: it shares the
     // workers between connections, it does not protect an invariant. The
     // candidates are more than `limit`, so that a connection at its quota
-    // does not hide the jobs of the others.
+    // does not hide the jobs of the others. Only the chosen jobs are locked:
+    // a lock on every candidate would hide from a concurrent worker the
+    // candidates that this claim does not take.
     let rows: Vec<JobRow> = sqlx::query_as(
         "WITH in_progress AS (
              SELECT connection_id, count(*) AS n FROM jobs
@@ -146,8 +148,7 @@ pub async fn claim_jobs(
                )
              ORDER BY class, run_after, idempotency_key
              LIMIT $4 * 10
-             FOR UPDATE SKIP LOCKED
-         ), chosen AS (
+         ), eligible AS (
              SELECT c.idempotency_key FROM (
                  SELECT idempotency_key, connection_id, class, run_after,
                         row_number() OVER (
@@ -156,8 +157,16 @@ pub async fn claim_jobs(
                  FROM candidates
              ) c LEFT JOIN in_progress p USING (connection_id)
              WHERE c.connection_id IS NULL OR c.rank + coalesce(p.n, 0) <= $5
-             ORDER BY c.class, c.run_after, c.idempotency_key
+         ), chosen AS (
+             -- The state is checked again on the locked row: a concurrent
+             -- worker can claim a candidate after the snapshot of this query.
+             SELECT idempotency_key FROM jobs
+             WHERE idempotency_key IN (SELECT idempotency_key FROM eligible)
+               AND ((state = 'queued' AND run_after <= $2)
+                    OR (state = 'running' AND locked_until <= $2))
+             ORDER BY class, run_after, idempotency_key
              LIMIT $4
+             FOR UPDATE SKIP LOCKED
          ), claimed AS (
              UPDATE jobs SET state = 'running', locked_by = $1, locked_until = $3,
                              attempts = jobs.attempts + 1

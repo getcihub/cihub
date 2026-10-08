@@ -336,7 +336,17 @@ async fn two_workers_at_the_same_time_never_share_a_job(pool: PgPool) {
     for key in &keys {
         enqueue(&pool, &job(key, JobClass::Speculate), at(0)).await;
     }
-    let (a, b) = tokio::join!(claim(&pool, "a", at(1), 20), claim(&pool, "b", at(1), 20));
+    // The claim of `b` runs while the transaction of `a` is still open: the
+    // worst overlap, every time.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let a: Vec<String> = claim_jobs(&mut tx, "a", at(1), 20)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|job| job.idempotency_key)
+        .collect();
+    let b = claim(&pool, "b", at(1), 20).await;
+    tx.commit().await.unwrap();
     assert_eq!(a.len() + b.len(), 30, "{a:?} {b:?}");
     let mut all = [a, b].concat();
     all.sort_unstable();
