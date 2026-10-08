@@ -18,7 +18,7 @@ use cihub_domain::{
 use cihub_mq_core::plan;
 use cihub_platform::{
     Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, enqueue_job,
-    mark_dirty, mark_processed, pending_deliveries, release_leases, schedule_tick,
+    mark_dirty, mark_processed, pending_deliveries, release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
@@ -1110,8 +1110,15 @@ pub(crate) async fn run_scheduler(
         if i64::try_from(queues.len()).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
             continue;
         }
+        let wait = match next_wait(&pool, clock()).await {
+            Ok(wait) => wait,
+            Err(err) => {
+                warn!(error = &err as &dyn Error, "next tick not read");
+                TICK
+            }
+        };
         wakeup
-            .wait_or_pause(TICK, &cancel, "queue notifications lost")
+            .wait_or_pause(wait, &cancel, "queue notifications lost")
             .await;
     }
     let mut tx = begin_system(&pool).await.map_err(MergeQueueError::Store)?;
@@ -1119,6 +1126,18 @@ pub(crate) async fn run_scheduler(
         .await
         .map_err(MergeQueueError::Platform)?;
     tx.commit().await.map_err(MergeQueueError::Query)
+}
+
+async fn next_wait(
+    pool: &PgPool,
+    now: OffsetDateTime,
+) -> Result<std::time::Duration, MergeQueueError> {
+    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let wait = until_next_tick(&mut tx, now)
+        .await
+        .map_err(MergeQueueError::Platform)?;
+    tx.commit().await.map_err(MergeQueueError::Query)?;
+    Ok(wait)
 }
 
 async fn leases(

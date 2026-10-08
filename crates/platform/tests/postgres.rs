@@ -9,11 +9,12 @@ use cihub_domain::{
 };
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
-    MAX_ATTEMPTS, Outcome, PlatformError, QueueWakeup, Retry, Wake, acquire_leases, backoff,
-    begin_reconciliation, bootstrap, claim_jobs, complete_job, enqueue_job, fail_job, lock_queue,
-    maintenance_job, mark_processed, pending_deliveries, record_budgets, release_leases,
-    request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
-    run_sweep, run_sync_repos, run_worker, schedule_tick, store_delivery, sync_repos_job,
+    MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
+    backoff, begin_reconciliation, bootstrap, claim_jobs, complete_job, enqueue_job, fail_job,
+    lock_queue, maintenance_job, mark_processed, pending_deliveries, record_budgets,
+    release_leases, request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance,
+    run_router, run_sweep, run_sync_repos, run_worker, schedule_tick, store_delivery,
+    sync_repos_job, until_next_tick,
 };
 use cihub_scm::sim::Sim;
 use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
@@ -580,6 +581,22 @@ async fn the_tick_finds_a_queue_whose_notification_was_lost(pool: PgPool) {
     tx.commit().await.unwrap();
     assert_eq!(wakeup.wait(SHORT_TICK, &cancel).await.unwrap(), Wake::Tick);
     assert!(acquire(&pool, "a", at(0)).await.contains(&queue(3)));
+}
+
+/// A scheduler waits until the next tick that is not due, within its bounds
+/// (`DECISIONS.md` D225): queue 2 has a tick at `at(0)`.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_scheduler_waits_until_the_next_tick(pool: PgPool) {
+    seed(&pool).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    for (now, wait) in [
+        (at(-10), std::time::Duration::from_secs(10)),
+        (at(-100), TICK),
+        (at(0), TICK),
+        (at(-1) + Duration::milliseconds(999), MIN_WAIT),
+    ] {
+        assert_eq!(until_next_tick(&mut tx, now).await.unwrap(), wait, "{now}");
+    }
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
