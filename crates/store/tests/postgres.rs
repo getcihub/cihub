@@ -63,12 +63,11 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 18] = [
+const TENANT_TABLES: [&str; 17] = [
     "orgs",
     "scm_connections",
     "repos",
     "queues",
-    "queue_leases",
     "webhook_inbox",
     "jobs",
     "api_tokens",
@@ -103,8 +102,6 @@ fn rows(org: OrgId, n: u8) -> String {
                      'name', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
              VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main');
-         INSERT INTO queue_leases (queue_id, org_id, owner, expires_at)
-             VALUES ('{queue}', '{org}', 'scheduler', '2026-09-15T00:00:00Z');
          INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
              VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
