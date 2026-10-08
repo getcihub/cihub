@@ -4,7 +4,6 @@
   "pull-request-title-pattern": "chore(release):${component} ${version}",
   "packages": {
     ".": {
-      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "release-type": "simple",
       "bump-minor-pre-major": true,
