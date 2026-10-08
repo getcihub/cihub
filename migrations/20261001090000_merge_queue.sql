@@ -153,6 +153,8 @@ CREATE TABLE test_runs (
 
 CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
+-- The history of a PR finds its runs (DECISIONS.md D245).
+CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
 
 -- The state of a queue after the event `seq` of its log, every 500 events: a
 -- reconciliation applies only the events after the last snapshot.
