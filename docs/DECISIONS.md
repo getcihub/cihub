@@ -62,7 +62,8 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D18** The CI follows the organization of `home-operations/external-dns-unifi-webhook`: one job per `mise`
   task, a `Workflow Lint` job (`actionlint`, `zizmor`), and a `Build Success` job that gathers them and serves as
   the required status. Each action is pinned by the SHA of its commit, with the version as a comment
-  (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`).
+  (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`). _Superseded by D233 for the list of the
+  jobs._
 - **D19** Versions are published by release-please (`release-please-config.json`,
   `.release-please-manifest.json`), from commit titles in the Conventional Commits format. Type `simple`: the
   `rust` type does not handle a workspace whose root has no `[package]`. release-please updates
@@ -819,6 +820,10 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 
+- **D233** Supersedes D18 for the list of the jobs: `ci.yml` has two jobs that do the work, for the two runners
+  of `cihub-runner`, and `Build Success`. `Rust Lint` runs `mise run lint`, `mise run lint-workflows`, then
+  `mise run cover`; `Rust Test` runs the unit tests, then the tests against Postgres, in one job that shares one
+  build. `Build Success` stays the required status, and each action stays pinned by its SHA.
 - **D241** Extends D173 and D210: the members of a batch that is not full and waits for more PRs show, in their
   comment under the state line, when the batch closes: `Batch of 2 PRs: it waits for more PRs until 10:40 UTC, or
   until it has 3.` (the members now, the time when its oldest member has waited `batching.max_wait_minutes`, and
