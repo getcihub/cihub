@@ -21,13 +21,24 @@ concurrency:
 permissions:
   contents: read
 
+# The pod of a job is new for each run: incremental state and full debug
+# information are work that no one reads.
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+# The jobs run on cihub-runner, a self-hosted runner set in Kubernetes mode,
+# without a Docker daemon. The image of the runner cannot link Rust (no C
+# library headers), so the Rust jobs run in the rust image.
 jobs:
   rust-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Rust Lint
-    runs-on: ubuntu-26.04
+    runs-on: cihub-runner
+    container:
+      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
     permissions:
       contents: read
     steps:
@@ -49,7 +60,9 @@ jobs:
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Rust Test
-    runs-on: ubuntu-26.04
+    runs-on: cihub-runner
+    container:
+      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
     permissions:
       contents: read
     steps:
@@ -66,14 +79,28 @@ jobs:
       - name: Run unit tests
         run: mise run test
 
+      - name: Check coverage of the pure crates
+        run: mise run cover
+
   rust-test-integration:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Rust Integration Test
-    runs-on: ubuntu-26.04
+    runs-on: cihub-runner
+    container:
+      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
+    # Postgres runs in the pod of the job, on 127.0.0.1 as in compose.yaml.
+    services:
+      postgres:
+        image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
+        env:
+          POSTGRES_PASSWORD: postgres
     permissions:
       contents: read
+    env:
+      # The tests share one Postgres and the node runs other workloads.
+      NEXTEST_TEST_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,38 +111,27 @@ jobs:
         uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
         with:
           install_args: --locked
+
+      - name: Setup Postgres
+        env:
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          apt-get -qq update
+          apt-get -qq install -y --no-install-recommends postgresql-client
+          timeout 60 sh -c 'until pg_isready --quiet; do sleep 1; done'
+          psql --quiet --set ON_ERROR_STOP=1 --file postgres-setup.sql
 
       - name: Run tests against Postgres
-        run: mise run test-integration
-
-  rust-cover:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Rust Coverage
-    runs-on: ubuntu-26.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-        with:
-          install_args: --locked
-
-      - name: Check coverage of the pure crates
-        run: mise run cover
+        run: mise run --skip-deps test-integration
 
   workflow-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Workflow Lint
-    runs-on: ubuntu-26.04
+    runs-on: cihub-runner
     permissions:
       contents: read
     steps:
@@ -141,9 +157,8 @@ jobs:
       - rust-lint
       - rust-test
       - rust-test-integration
-      - rust-cover
       - workflow-lint
-    runs-on: ubuntu-26.04
+    runs-on: cihub-runner
     permissions: {}
     steps:
       # cancelled counts as failed: a required job that never reached a

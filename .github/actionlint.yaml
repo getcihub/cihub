@@ -1,3 +1,6 @@
+self-hosted-runner:
+  labels:
+    - cihub-runner
 # actionlint 1.7.12 does not know the ubuntu-26.04 runner label yet.
 paths:
   .github/workflows/**/*.{yml,yaml}:
