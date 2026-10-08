@@ -24,7 +24,7 @@ use cihub_platform::{
     ConnectionBudget, Delivery, Executors, Job, begin_reconciliation, claim_jobs, enqueue_job,
     find_route, mark_dirty, run_budget_writer, run_maintenance, run_worker, store_delivery,
 };
-use cihub_scm::sim::{Fault, PrChange, Sim};
+use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
 use cihub_scm::{ConnectionRef, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError, ScmUser};
 use cihub_store::{begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
@@ -1642,16 +1642,12 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D148: with two queues on `main`, a PR enters the first queue
-/// whose conditions it meets, or the one that its command names, with the
-/// priority of the first rule that it meets unless the command gives one.
-/// A push on `main` reaches both queues (D135).
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
-    let mut q = SimQueue::new(pool.clone()).await;
-    let sim = q.sim.clone();
+/// A queue `hotfix` on `main` next to the queue `main` of the seed, both
+/// set by `config` once the queues read the head of `main`, which the
+/// function returns.
+async fn two_queues(pool: &PgPool, q: &mut SimQueue, config: &str) -> String {
     let hotfix = QueueId::from_ulid(Ulid(30));
-    let mut tx = begin_system(&pool).await.unwrap();
+    let mut tx = begin_system(pool).await.unwrap();
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
          SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
@@ -1662,24 +1658,10 @@ async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    let config = "version: 1
-queues:
-  - name: hotfix
-    branch: main
-    queue_conditions:
-      - label = hotfix
-  - name: main
-    branch: main
-priority_rules:
-  - name: urgent
-    conditions:
-      - label = urgent
-    priority: urgent
-";
-    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    let main = target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
     q.deliver().await;
     q.settle().await;
-    let mut tx = begin_system(&pool).await.unwrap();
+    let mut tx = begin_system(pool).await.unwrap();
     let read: Vec<Option<String>> =
         sqlx::query_scalar("SELECT config_sha FROM queues ORDER BY name")
             .fetch_all(&mut *tx)
@@ -1691,29 +1673,13 @@ priority_rules:
         [Some(main.clone()), Some(main.clone())],
         "both queues read the push"
     );
+    main
+}
 
-    let cases: [(&[&str], &str); 5] = [
-        (&["hotfix"], "/cihub merge"),
-        (&[], "/cihub merge"),
-        (&["urgent"], "/cihub merge"),
-        (&[], "/cihub merge --queue=hotfix"),
-        (&["urgent"], "/cihub merge --priority=low"),
-    ];
-    for (n, (labels, command)) in (1..).zip(cases) {
-        let path = format!("f{n}.txt");
-        let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
-        sim.report_check(&repo(), &head, check(REQUIRED, true))
-            .unwrap();
-        for label in labels {
-            sim.add_label(&repo(), number, label, JobClass::Interactive)
-                .await
-                .unwrap();
-        }
-        sim.comment(&repo(), number, &alice(), command).unwrap();
-    }
-    q.deliver().await;
-    q.settle().await;
-    let mut tx = begin_system(&pool).await.unwrap();
+/// The queue, the priority and whether the item left `not_ready`, of the
+/// current item of each PR.
+async fn routed_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
+    let mut tx = begin_system(pool).await.unwrap();
     let items: Vec<(i64, String, i16, String)> = sqlx::query_as(
         "SELECT i.pr_number, q.name, i.priority_value, i.state::text
          FROM queue_items i JOIN queues q ON q.id = i.queue_id
@@ -1723,21 +1689,120 @@ priority_rules:
     .await
     .unwrap();
     drop(tx);
-    let admitted = |state: &str| state != "not_ready";
-    let got: Vec<(i64, &str, i16, bool)> = items
-        .iter()
-        .map(|(n, queue, priority, state)| (*n, queue.as_str(), *priority, admitted(state)))
-        .collect();
+    items
+        .into_iter()
+        .map(|(n, queue, priority, state)| (n, queue, priority, state != "not_ready"))
+        .collect()
+}
+
+/// `DECISIONS.md` D148 and D232: with two queues on `main`, a PR enters the
+/// first queue whose `route_conditions` it meets, or the one that its command
+/// names, with the priority of the first rule that it meets unless the
+/// command gives one. A `hotfix/` PR whose CI still runs enters `hotfix` and
+/// waits there for its `queue_conditions`. A push on `main` reaches both
+/// queues (D135).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1
+queues:
+  - name: hotfix
+    branch: main
+    strategy: sequential
+    route_conditions:
+      - head ~= ^hotfix/
+    queue_conditions:
+      - check-success = {REQUIRED}
+      - \"#approved-reviews-by >= 1\"
+  - name: main
+    branch: main
+    strategy: batched
+    batching: {{ size: 5, max_wait_minutes: 1 }}
+    queue_conditions:
+      - check-success = {REQUIRED}
+      - \"#approved-reviews-by >= 1\"
+priority_rules:
+  - name: urgent
+    conditions:
+      - label = urgent
+    priority: urgent
+"
+    );
+    let main = two_queues(&pool, &mut q, &config).await;
+
+    // The branch of the PR, whether its CI passed and it is approved, its
+    // labels and its command.
+    let cases: [(&str, bool, &[&str], &str); 5] = [
+        ("hotfix/login", false, &[], "/cihub merge"),
+        ("pr-2", true, &[], "/cihub merge"),
+        ("pr-3", true, &["urgent"], "/cihub merge"),
+        ("pr-4", true, &[], "/cihub merge --queue=hotfix"),
+        ("pr-5", true, &["urgent"], "/cihub merge --priority=low"),
+    ];
+    for (n, (branch, green, labels, command)) in (1..).zip(cases) {
+        let path = format!("f{n}.txt");
+        let head = sim.commit(&repo(), &main, &[(&path, Some("x"))]).unwrap();
+        sim.push(&repo(), branch, &head, &bob()).unwrap();
+        let number = sim.open_pr(&repo(), branch, "main", &bob()).unwrap();
+        if green {
+            sim.report_check(&repo(), &head, check(REQUIRED, true))
+                .unwrap();
+            let reviews = Reviews {
+                approved_by: BTreeSet::from([alice().login]),
+                ..Reviews::default()
+            };
+            sim.set_reviews(&repo(), number, reviews).unwrap();
+        }
+        for label in labels {
+            sim.add_label(&repo(), number, label, JobClass::Interactive)
+                .await
+                .unwrap();
+        }
+        sim.comment(&repo(), number, &alice(), command).unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
     assert_eq!(
-        got,
+        routed_items(&pool).await,
         [
-            (1, "hotfix", 100, true),
-            (2, "main", 100, true),
-            (3, "main", 0, true),
-            (4, "hotfix", 100, false),
-            (5, "main", 200, true),
+            (1, "hotfix".into(), 100, false),
+            (2, "main".into(), 100, true),
+            (3, "main".into(), 0, true),
+            (4, "hotfix".into(), 100, true),
+            (5, "main".into(), 200, true),
         ]
     );
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D232: a PR that the `route_conditions` of no queue of its
+/// branch take enters the first queue of the branch.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_that_no_queue_routes_enters_the_first_queue(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = "version: 1
+queues:
+  - name: hotfix
+    branch: main
+    route_conditions:
+      - head ~= ^hotfix/
+  - name: main
+    branch: main
+    route_conditions:
+      - label = main
+";
+    let main = two_queues(&pool, &mut q, config).await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(routed_items(&pool).await, [(1, "hotfix".into(), 100, true)]);
     q.stop().await;
 }
 
@@ -2158,7 +2223,7 @@ async fn a_command_creates_the_queues_that_the_file_names(pool: PgPool) {
 queues:
   - name: hotfix
     branch: main
-    queue_conditions:
+    route_conditions:
       - label = hotfix
   - name: fast
     branch: main

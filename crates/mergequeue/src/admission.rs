@@ -1,7 +1,8 @@
 //! The `queue_conditions` of a queue (`DECISIONS.md` D142): the jobs that read
 //! a PR evaluate them, and give the conditions that the PR does not meet in
 //! its `pr.observed`. The core sees the result, not the conditions: they
-//! need the logins, which the log does not keep (D42).
+//! need the logins, which the log does not keep (D42). Also the
+//! `route_conditions` that `submit_pr` reads to choose the queue (D232).
 
 use std::time::Duration;
 
@@ -28,6 +29,30 @@ fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Condit
         .and_then(|config| config.queue(&target.target_branch, &target.name))
         .map(|queue| queue.queue_conditions.clone())
         .unwrap_or_default()
+}
+
+/// Whether the `route_conditions` of the entry of the queue of `target` in
+/// `config`, its last valid file, send `pr` to that queue: a queue without
+/// them takes every PR (`DECISIONS.md` D232). The files and the review
+/// threads are read only when a condition uses them (D143).
+pub(crate) async fn routes_to(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    config: Option<&RepoConfig>,
+    pr: &PrSnapshot,
+    reading: &Reading<'_>,
+) -> Result<bool, Failure> {
+    let Some(conditions) = config
+        .and_then(|config| config.queue(&target.target_branch, &target.name))
+        .map(|queue| &queue.route_conditions)
+        .filter(|conditions| !conditions.0.is_empty())
+    else {
+        return Ok(true);
+    };
+    let ctx = loaded_context(scm, target, pr, reading, |a| conditions.uses(a)).await?;
+    conditions
+        .eval(&ctx)
+        .map_err(|err| Failure::Never(err.to_string()))
 }
 
 /// The context of the conditions for `pr`, before its admission: the PR is
