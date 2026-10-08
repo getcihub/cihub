@@ -732,7 +732,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   refused command quotes the command (`> /cihub restart`) and gives the cause after `Refused:`. The commit status
   does not change. Still no checkbox for `restart` or `cancel`: a click has no confirmation, both affect the PRs
   behind, and the comment of an item under test is often rewritten. A separate evolution, outside the plan of a
-  lot. _Extended by D174._
+  lot. _Extended by D174._ _Extended by D241._
 - **D174** Extends D173: the comment of CIHub on the PR names no test branch and no run identifier. It says
   where the test runs, as a link: the draft PR of the run (`Tested on top of #5 in #42.`), or its test commit with
   `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
@@ -745,7 +745,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D210** The size of a batch is not adaptive: a batch takes the consecutive waiting items that can join it
   (`docs/ALGORITHMS.md`, "Batching"), up to `batching.size`, and starts when it is full or when its oldest member
   has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12) _Extended by
-  D224._
+  D224._ _Extended by D241._
 - **D211** An inferred failure never evicts a PR. With `bisection_skip_redundant_tests`, a half that a bisection
   proves failed without a run is split again when it has several items; a half of a single PR is tested, and
   the PR is evicted only after its own failed run and its failure budget. A confirmed failure of a batch or of a
@@ -824,6 +824,15 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   of `cihub-runner`, and `Build Success`. `Rust Lint` runs `mise run lint`, `mise run lint-workflows`, then
   `mise run cover`; `Rust Test` runs the unit tests, then the tests against Postgres, in one job that shares one
   build. `Build Success` stays the required status, and each action stays pinned by its SHA.
+- **D241** Extends D173 and D210: the members of a batch that is not full and waits for more PRs show, in their
+  comment under the state line, when the batch closes: `Batch of 2 PRs: it waits for more PRs until 10:40 UTC, or
+  until it has 3.` (the members now, the time when its oldest member has waited `batching.max_wait_minutes`, and
+  `batching.size`). The time is absolute, in UTC, `HH:MM`, with the seconds dropped: the batch closes during the
+  minute shown. No relative delay, since the comment is not rewritten every minute (principle VII), and no time
+  zone setting. The sentence says when the batch closes, never when its test starts: a closed batch still waits
+  for room in the window. The items behind the batch and the other states show no time, and the commit status
+  does not change. `Surface` gains `batch_wait`, set by `plan` for these members only. A separate evolution,
+  outside the plan of a lot.
 
 ## Open questions
 

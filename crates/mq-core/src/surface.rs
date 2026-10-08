@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 
 use cihub_domain::{BlockReason, Item, ItemId, ItemState, Reason};
+use time::OffsetDateTime;
 
 use crate::Snapshot;
 
@@ -30,6 +31,20 @@ pub struct Surface {
     pub block_reasons: Vec<BlockReason>,
     /// The labels that the PR carries, as last observed.
     pub labels: BTreeSet<String>,
+    /// The batch that waits for more PRs, for its members only
+    /// (`DECISIONS.md` D241).
+    pub batch_wait: Option<BatchWait>,
+}
+
+/// A batch that is not full and waits for more PRs (`DECISIONS.md` D210).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BatchWait {
+    /// The number of its members now.
+    pub members: usize,
+    /// When it stops waiting for more PRs: its oldest member has then waited
+    /// `batching.max_wait_minutes`. Not when its test starts: a closed batch
+    /// still waits for room in the window.
+    pub closes_at: OffsetDateTime,
 }
 
 /// The surface of `item` in `s`.
@@ -69,5 +84,6 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
             .get(&item.pr_number)
             .map(|pr| pr.value.labels.clone())
             .unwrap_or_default(),
+        batch_wait: None,
     }
 }
