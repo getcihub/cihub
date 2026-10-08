@@ -98,7 +98,7 @@ mise run sim               # fault_injection on 1,000 seeds (long; the CI runs i
 mise run load              # cost, time and useless assemblies of `batched` on a simulated day (long)
 ```
 
-The CI runs one task per job (`.github/workflows/ci.yml`); `Build Success` is the required status.
+The CI runs these tasks in one job, `Build Success` (`.github/workflows/ci.yml`), which is the required status.
 
 ## Map of the documents
 
