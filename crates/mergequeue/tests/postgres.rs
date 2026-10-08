@@ -11,8 +11,7 @@ use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability,
     OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, ScmAccountId, ScmInstanceId, SubmittedVia, UserId,
-    temp_branch,
+    ReviewDecision, RunId, RunStatus, ScmInstanceId, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -96,10 +95,9 @@ async fn seed(pool: &PgPool) {
          INSERT INTO users (id, scm_instance_id, external_id, login)
              VALUES ('{user}', '{instance}', '3', 'octocat');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('{connection}', '{org}', '{instance}', '1', 'github_app', '1');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
                             name, default_branch)
              VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app',
@@ -109,7 +107,6 @@ async fn seed(pool: &PgPool) {
         instance = instance(),
         user = user(),
         org = org(),
-        account = ScmAccountId::from_ulid(Ulid(13)),
         connection = connection(),
         repo = RepoId::from_ulid(Ulid(12)),
         queue = queue(),
@@ -3374,11 +3371,9 @@ impl Chaos {
         let mut tx = begin_system(&chaos.pool).await.unwrap();
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
-             INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-                 VALUES ('{account}', '{org}', '{instance}', 'account-{seed}', 'acme-{seed}');
-             INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,
+             INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
                                           external_id)
-                 VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app',
+                 VALUES ('{connection}', '{org}', '{instance}', 'account-{seed}', 'github_app',
                          '{connection_external_id}');
              INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id,
                                 namespace, name, default_branch)
@@ -3387,7 +3382,6 @@ impl Chaos {
              INSERT INTO queues (id, org_id, repo_id, target_branch, name)
                  VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');",
             org = chaos.org(),
-            account = ScmAccountId::from_ulid(chaos.id(4)),
             instance = instance(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,

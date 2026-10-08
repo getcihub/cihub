@@ -85,8 +85,6 @@ id_type!(
     EventId => "event",
     /// An SCM instance: github.com, a GitHub Enterprise Server.
     ScmInstanceId => "scminstance",
-    /// An account of an SCM instance linked to an organization.
-    ScmAccountId => "scmaccount",
     /// How CIHub reaches the repositories of an SCM account.
     ConnectionId => "connection",
     /// A user account of an SCM instance, global.

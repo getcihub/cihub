@@ -43,7 +43,7 @@ pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
     ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
-    RepoId, RunId, ScmAccountId, ScmInstanceId, UserId,
+    RepoId, RunId, ScmInstanceId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};

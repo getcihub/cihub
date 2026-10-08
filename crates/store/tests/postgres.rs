@@ -63,9 +63,8 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 19] = [
+const TENANT_TABLES: [&str; 18] = [
     "orgs",
-    "scm_accounts",
     "scm_connections",
     "repos",
     "queues",
@@ -95,10 +94,9 @@ fn rows(org: OrgId, n: u8) -> String {
     let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('scmaccount-{n}', '{org}', '{GITHUB}', '{n}', 'account-{n}');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('connection-{n}', '{org}', '{GITHUB}', 'scmaccount-{n}', 'github_app', '{n}');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('connection-{n}', '{org}', '{GITHUB}', '{n}', 'github_app', '{n}');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
                             name, default_branch)
              VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',

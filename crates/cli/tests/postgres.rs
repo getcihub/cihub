@@ -9,9 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
-use cihub_domain::{
-    ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId, ScmAccountId, ScmInstanceId,
-};
+use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId, ScmInstanceId};
 use ring::hmac;
 use secrecy::ExposeSecret;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -261,7 +259,6 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
 async fn two_queues(pool: &PgPool) -> String {
     let org = OrgId::from_ulid(Ulid(1));
     let instance = ScmInstanceId::from_ulid(Ulid(2));
-    let account = ScmAccountId::from_ulid(Ulid(3));
     let connection = ConnectionId::from_ulid(Ulid(4));
     let repo = RepoId::from_ulid(Ulid(5));
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
@@ -269,10 +266,9 @@ async fn two_queues(pool: &PgPool) -> String {
         "INSERT INTO scm_instances (id, kind, base_url)
              VALUES ('{instance}', 'github', 'https://github.com');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('{connection}', '{org}', '{instance}', '1', 'github_app', '1');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
                             name, default_branch)
              VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app', 'main');

@@ -47,24 +47,11 @@ CREATE TABLE orgs (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE scm_accounts (
-    id              text        PRIMARY KEY,
-    org_id          text        NOT NULL REFERENCES orgs (id),
-    scm_instance_id text        NOT NULL REFERENCES scm_instances (id),
-    external_id     text        NOT NULL,
-    path            text        NOT NULL,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (scm_instance_id, external_id),
-    UNIQUE (org_id, scm_instance_id, id)
-);
-
-CREATE INDEX scm_accounts_org_id ON scm_accounts (org_id);
-
 CREATE TABLE scm_connections (
     id                   text            PRIMARY KEY,
     org_id               text            NOT NULL REFERENCES orgs (id),
     scm_instance_id      text            NOT NULL,
-    scm_account_id       text            NOT NULL,
+    account_external_id  text            NOT NULL,
     kind                 connection_kind NOT NULL,
     external_id          text            NOT NULL,
     suspended_at         timestamptz,
@@ -77,9 +64,8 @@ CREATE TABLE scm_connections (
     consecutive_failures integer         NOT NULL DEFAULT 0,
     created_at           timestamptz     NOT NULL DEFAULT now(),
     UNIQUE (scm_instance_id, kind, external_id),
-    UNIQUE (org_id, scm_instance_id, id),
-    FOREIGN KEY (org_id, scm_instance_id, scm_account_id)
-        REFERENCES scm_accounts (org_id, scm_instance_id, id)
+    UNIQUE (scm_instance_id, account_external_id),
+    UNIQUE (org_id, scm_instance_id, id)
 );
 
 CREATE INDEX scm_connections_org_id ON scm_connections (org_id);
@@ -139,7 +125,6 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_log_org_id_occurred_at ON audit_log (org_id, occurred_at);
 
 SELECT cihub_tenant_table('orgs');
-SELECT cihub_tenant_table('scm_accounts');
 SELECT cihub_tenant_table('scm_connections');
 SELECT cihub_tenant_table('repos');
 SELECT cihub_tenant_table('api_tokens');
