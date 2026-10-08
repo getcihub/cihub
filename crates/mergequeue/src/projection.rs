@@ -4,10 +4,11 @@
 //! (`UPDATE … WHERE state = $from`), and its row count is checked.
 
 use cihub_domain::{
-    CheckObservation, CheckReport, Event, EventKind, Item, ItemId, ItemState, Mergeability, OrgId,
-    QueueId, Reason, RunStatus,
+    CheckObservation, CheckReport, Event, EventKind, EventType, Item, ItemId, ItemState,
+    Mergeability, OrgId, QueueId, Reason, RunStatus,
 };
 use cihub_mq_core::Snapshot;
+use cihub_store::event_kind;
 use sqlx::PgConnection;
 use sqlx::postgres::PgQueryResult;
 use time::OffsetDateTime;
@@ -349,7 +350,6 @@ async fn refused_item(
     let Some(payload) = payload else {
         return Ok(None);
     };
-    let kind = serde_json::json!({ "type": "item.submitted", "payload": payload });
     let EventKind::ItemSubmitted {
         pr_number,
         head_sha,
@@ -358,7 +358,8 @@ async fn refused_item(
         direct,
         submitted_via,
         ..
-    } = serde_json::from_value(kind).map_err(MergeQueueError::Snapshot)?
+    } = event_kind(EventType::ItemSubmitted.as_str(), &payload)
+        .map_err(MergeQueueError::Snapshot)?
     else {
         return Ok(None);
     };
