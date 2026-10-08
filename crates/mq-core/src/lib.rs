@@ -18,4 +18,4 @@ pub use plan::{CheckRead, Desired, Head, Merge, Plan, PlanError, Read, TestBranc
 pub use snapshot::{
     Observed, PrObservation, Request, Snapshot, Subject, TargetBranch, TargetsUpload,
 };
-pub use surface::Surface;
+pub use surface::{BatchWait, Surface};

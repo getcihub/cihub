@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{BlockReason, ConnectionId, ItemState, JobClass, OrgId, RepoId, ScmInstanceId};
-use cihub_mq_core::Surface;
+use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
 use cihub_store::{PgPool, begin_system};
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, UtcOffset};
 use tracing::info;
 
 use crate::MergeQueueError;
@@ -94,7 +94,7 @@ pub(crate) fn render(surface: &Surface, settings: &QueueSettings, target_branch:
     let comment = settings
         .comments_enabled
         .value
-        .then(|| comment(surface, target_branch, settings.commands_enabled.value));
+        .then(|| comment(surface, settings, target_branch));
     let (add_labels, remove_labels) = labels(surface, settings.state_labels_enabled.value);
     Rendered {
         sha: surface.head_sha.clone(),
@@ -183,8 +183,12 @@ fn block_text(reason: &BlockReason) -> String {
 
 /// The comment of the queue on the PR, in Markdown (`DECISIONS.md` D173): the
 /// state line, its details, then the commands in small print.
-fn comment(surface: &Surface, target_branch: &str, commands: bool) -> String {
+fn comment(surface: &Surface, settings: &QueueSettings, target_branch: &str) -> String {
+    let commands = settings.commands_enabled.value;
     let mut blocks = vec![state_line(surface, target_branch)];
+    if let Some(wait) = &surface.batch_wait {
+        blocks.push(batch_wait_line(wait, settings.batching_size.value));
+    }
     if surface.state == ItemState::NotReady && !surface.block_reasons.is_empty() {
         let reasons: Vec<String> = surface
             .block_reasons
@@ -276,6 +280,21 @@ fn state_line(surface: &Surface, target_branch: &str) -> String {
         ItemState::Failed => format!("❌ **Failed** · {}", surface.reason.describe()),
         ItemState::Cancelled => format!("⚪ **Cancelled** · {}", surface.reason.describe()),
     }
+}
+
+/// When the batch stops waiting for more PRs, never when its test starts: a
+/// closed batch still waits for room in the window (`DECISIONS.md` D241). An
+/// absolute time does not go stale between two edits of the comment; the
+/// seconds are dropped, so the batch closes during the minute shown.
+fn batch_wait_line(wait: &BatchWait, size: u32) -> String {
+    let prs = if wait.members == 1 { "PR" } else { "PRs" };
+    let at = wait.closes_at.to_offset(UtcOffset::UTC);
+    format!(
+        "Batch of {} {prs}: it waits for more PRs until {:02}:{:02} UTC, or until it has {size}.",
+        wait.members,
+        at.hour(),
+        at.minute()
+    )
 }
 
 fn capitalized(text: &str) -> String {
@@ -576,6 +595,7 @@ mod tests {
             failing_checks: Vec::new(),
             block_reasons: Vec::new(),
             labels: BTreeSet::new(),
+            batch_wait: None,
         }
     }
 
@@ -676,6 +696,42 @@ mod tests {
         for (surface, want) in cases {
             let comment = render(&surface, &defaults, "main").comment.unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
+        }
+    }
+
+    /// `DECISIONS.md` D241.
+    #[test]
+    fn a_waiting_batch_says_when_it_closes() {
+        let closes_at = time::Date::from_calendar_date(2026, time::Month::October, 8)
+            .unwrap()
+            .with_hms(12, 40, 59)
+            .unwrap()
+            .assume_offset(UtcOffset::from_hms(2, 0, 0).unwrap());
+        let size_3 = settings(|l| l.batching_size = Some(Setting::new(3)));
+        let cases = [
+            (
+                2,
+                "🕓 **Queued** · position 1 in the queue for `main`\n\n\
+                 Batch of 2 PRs: it waits for more PRs until 10:40 UTC, or until it has 3.\n\n\
+                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+            ),
+            (
+                1,
+                "🕓 **Queued** · position 1 in the queue for `main`\n\n\
+                 Batch of 1 PR: it waits for more PRs until 10:40 UTC, or until it has 3.\n\n\
+                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+            ),
+        ];
+        for (members, want) in cases {
+            let mut queued = surface(ItemState::Pending);
+            queued.position = Some(1);
+            queued.predecessors = Vec::new();
+            queued.test_sha = None;
+            queued.batch_wait = Some(BatchWait { members, closes_at });
+            let rendered = render(&queued, &size_3, "main");
+            assert_eq!(rendered.comment.unwrap(), want, "{members}");
+            let status = rendered.status.unwrap().description;
+            assert_eq!(status, "Queued, position 1", "the status does not change");
         }
     }
 
