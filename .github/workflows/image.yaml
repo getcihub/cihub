@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/getcihub/cihub-server
+  IMAGE: ghcr.io/nlecoy/cihub
 
 jobs:
   build-amd64:

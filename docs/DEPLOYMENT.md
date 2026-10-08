@@ -100,7 +100,7 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 
 ## Image
 
-`Dockerfile`, at the root, builds the `cihub-server` image in two stages: compilation on
+`Dockerfile`, at the root, builds the `cihub` image in two stages: compilation on
 `rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
 `gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
 comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
@@ -111,10 +111,13 @@ probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root c
 the runtime image provides: the binary does not embed a list of certificates (`DECISIONS.md` D81). The
 `release` profile of `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) is used for this image.
 
-`.github/workflows/image.yaml` publishes the image to `ghcr.io/getcihub/cihub-server` at each release
-(`DECISIONS.md` D19), with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. One job
-per architecture (`linux/amd64` on `ubuntu-26.04`, `linux/arm64` on `ubuntu-26.04-arm`) builds the image on a
-native runner and pushes it by its digest; a last job joins the two digests in a manifest.
+`.github/workflows/image.yaml` publishes the image to `ghcr.io/nlecoy/cihub` at each release
+(`DECISIONS.md` D19), with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image
+is for `linux/amd64` only, the architecture of the one node of `cihub-runner`. The job runs on `cihub-runner`, which
+has no Docker daemon: buildx (driver `kubernetes`) starts a rootless BuildKit pod in the `buildkit` namespace of the
+cluster, with the ServiceAccount of the runner, and removes it at the end of the job. In `nlecoy/home-ops`, the
+`buildkit` namespace allows privileged pods (BuildKit rootless needs the `Unconfined` seccomp profile), and a `Role`
+there lets the ServiceAccount of the runner manage the BuildKit deployment.
 
 ## Installation with Docker Compose
 
@@ -189,8 +192,8 @@ pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` a
 tools with `mise install --locked`. Each action and each image is pinned by its SHA or its digest, with the version
 as a comment or a tag.
 
-The jobs of `ci.yml` and `sim.yaml` run on `cihub-runner`, a self-hosted runner set (Actions Runner Controller in
-Kubernetes mode), which has no Docker daemon. Its image cannot link Rust (no C library headers), so the Rust jobs
+The jobs of `ci.yml`, `sim.yaml` and `image.yaml` run on `cihub-runner`, a self-hosted runner set (Actions Runner
+Controller in Kubernetes mode), which has no Docker daemon. Its image cannot link Rust (no C library headers), so the Rust jobs
 run in the `rust` image. The pod of a job is new for each run, so `ci.yml` turns off incremental compilation
 (`CARGO_INCREMENTAL=0`) and keeps only the line numbers of the debug information
 (`CARGO_PROFILE_DEV_DEBUG=line-tables-only`). The two runners of the runner set share one node: two builds at once

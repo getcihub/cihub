@@ -10,7 +10,7 @@
 name: cihub
 
 x-cihub: &cihub
-  image: ${CIHUB_IMAGE:-ghcr.io/getcihub/cihub-server:latest}
+  image: ${CIHUB_IMAGE:-ghcr.io/nlecoy/cihub:latest}
   environment:
     CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DB_PASSWORD:?set CIHUB_DB_PASSWORD in deploy/.env}@postgres:5432/cihub
     CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
