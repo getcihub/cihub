@@ -562,7 +562,8 @@ async fn submissions(
                 i.priority_value AS priority, i.no_batch, i.force_enqueued AS direct,
                 i.submitted_via::text AS via, i.submitted_by, i.pr_author_id AS author_id
          FROM queue_items i LEFT JOIN users u ON u.id = i.submitted_by
-         WHERE i.queue_id = $1 AND i.is_current AND i.concluded_at IS NULL
+         WHERE i.queue_id = $1 AND i.is_current
+           AND i.state NOT IN ('merged', 'failed', 'cancelled')
            AND i.pr_number = ANY($2)",
     )
     .bind(queue.to_string())

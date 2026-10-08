@@ -7,10 +7,9 @@ use std::path::Path;
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
-    EventId, EventKind, EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState,
-    MembershipRole, Mergeability, ModuleName, OrgId, Permission, Priority, QueueId, QueueMode,
-    QueueState, Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia,
-    UserId,
+    EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState,
+    MembershipRole, ModuleName, OrgId, Permission, Priority, QueueId, QueueMode, QueueState,
+    Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -127,15 +126,13 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{org}', 'mergequeue', '2026-09-15T00:00:00Z');
          INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id, state,
                                   state_reason, state_changed_at, priority_value, no_batch,
-                                  force_enqueued, submitted_via, submitted_at, mergeability,
-                                  block_reasons, is_current)
+                                  force_enqueued, submitted_via, submitted_at, block_reasons,
+                                  is_current)
              VALUES ('item-{n}', '{org}', '{queue}', 1, 'abc', 'user-1', 'not_ready', 'submitted',
                      '2026-09-15T00:00:00Z', 100, false, false, 'comment',
-                     '2026-09-15T00:00:00Z', 'unknown', '[]', true);
-         INSERT INTO test_groups (id, org_id, queue_id, kind, item_ids, predecessor_ids, base_sha,
-                                  seq, state, state_reason, created_at)
-             VALUES ('group-{n}', '{org}', '{queue}', 'single', '{{item-{n}}}', '{{}}', 'abc', 2,
-                     'testing', 'test_run_started', '2026-09-15T00:00:00Z');
+                     '2026-09-15T00:00:00Z', '[]', true);
+         INSERT INTO test_groups (id, org_id, queue_id, item_ids, predecessor_ids, state)
+             VALUES ('group-{n}', '{org}', '{queue}', '{{item-{n}}}', '{{}}', 'testing');
          INSERT INTO test_runs (id, org_id, queue_id, group_id, attempt, test_branch, status,
                                 status_reason, required_statuses, started_at,
                                 failure_causing_statuses, base_sha, head_shas,
@@ -333,13 +330,11 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("event_type", values::<EventType>()),
-        ("group_kind", values::<GroupKind>()),
         ("group_state", values::<GroupState>()),
         ("item_state", values::<ItemState>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
         ("membership_role", values::<MembershipRole>()),
-        ("mergeability", values::<Mergeability>()),
         ("module_name", values::<ModuleName>()),
         ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),

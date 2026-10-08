@@ -838,7 +838,8 @@ async fn route_pr_change(
     }
     let live: Option<String> = sqlx::query_scalar(
         "SELECT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
-         WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current AND i.concluded_at IS NULL",
+         WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current
+           AND i.state NOT IN ('merged', 'failed', 'cancelled')",
     )
     .bind(repo.to_string())
     .bind(i64::try_from(change.number).unwrap_or(i64::MAX))
@@ -887,7 +888,7 @@ async fn read_waiting_prs(
     let items: Vec<(String, i64)> = sqlx::query_as(
         "SELECT i.queue_id, i.pr_number FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_head_sha = $2
-           AND i.is_current AND i.concluded_at IS NULL AND i.state = 'not_ready'
+           AND i.is_current AND i.state = 'not_ready'
          ORDER BY i.queue_id, i.pr_number",
     )
     .bind(repo.to_string())
@@ -1042,7 +1043,7 @@ pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
         "SELECT q.id FROM queues q
          JOIN org_modules m ON m.org_id = q.org_id AND m.module = $1::module_name
          WHERE EXISTS (SELECT 1 FROM queue_items i
-                       WHERE i.queue_id = q.id AND i.concluded_at IS NULL)
+                       WHERE i.queue_id = q.id AND i.state NOT IN ('merged', 'failed', 'cancelled'))
          ORDER BY q.id",
     )
     .bind(cihub_domain::ModuleName::Mergequeue.as_str())

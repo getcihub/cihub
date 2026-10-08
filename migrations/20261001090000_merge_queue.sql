@@ -6,12 +6,10 @@ CREATE TYPE item_state AS ENUM (
 CREATE TYPE group_state AS ENUM (
     'testing', 'pending_failure', 'tests_passed', 'merged', 'failed', 'bisected', 'dissolved'
 );
-CREATE TYPE group_kind AS ENUM ('single', 'batch', 'bisection');
 CREATE TYPE run_status AS ENUM (
     'assembling', 'in_progress', 'succeeded', 'failed', 'interrupted', 'cancelled', 'timed_out'
 );
 CREATE TYPE submitted_via AS ENUM ('comment', 'label', 'api', 'ui', 'cli');
-CREATE TYPE mergeability AS ENUM ('mergeable', 'behind', 'conflict', 'blocked', 'unknown');
 CREATE TYPE required_statuses_source AS ENUM ('repo_config', 'branch_protection');
 CREATE TYPE reason AS ENUM (
     'submitted', 'merge_item_now_ready', 'test_run_started', 'failure_budget_retry',
@@ -54,7 +52,6 @@ CREATE TABLE queue_items (
     state              item_state    NOT NULL,
     state_reason       reason        NOT NULL,
     state_changed_at   timestamptz   NOT NULL,
-    seq                bigint,
     position           bigint,
     priority_value     smallint      NOT NULL,
     no_batch           boolean       NOT NULL,
@@ -63,14 +60,11 @@ CREATE TABLE queue_items (
     submitted_via      submitted_via NOT NULL,
     sender_permission  permission,
     submitted_at       timestamptz   NOT NULL,
-    mergeability       mergeability  NOT NULL,
     block_reasons      jsonb         NOT NULL,
     group_id           text,
     is_current         boolean       NOT NULL,
     verified_by_run_id text,
     merged_sha         text,
-    concluded_at       timestamptz,
-    UNIQUE (org_id, id),
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
 
@@ -83,21 +77,14 @@ CREATE TABLE test_groups (
     id              text        PRIMARY KEY,
     org_id          text        NOT NULL REFERENCES orgs (id),
     queue_id        text        NOT NULL,
-    kind            group_kind  NOT NULL,
     item_ids        text[]      NOT NULL,
-    parent_group_id text,
     predecessor_ids text[]      NOT NULL,
-    base_sha        text        NOT NULL,
-    seq             bigint      NOT NULL,
     state           group_state NOT NULL,
-    state_reason    reason      NOT NULL,
-    created_at      timestamptz NOT NULL,
-    concluded_at    timestamptz,
     UNIQUE (org_id, id),
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
 
-CREATE INDEX test_groups_queue_id ON test_groups (queue_id, seq);
+CREATE INDEX test_groups_queue_id ON test_groups (queue_id);
 
 CREATE TABLE test_runs (
     id                       text                     PRIMARY KEY,

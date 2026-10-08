@@ -403,8 +403,8 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     assert_eq!(w.log.seq, seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
-    let item: (String, String, i64, Option<i64>, String, Option<String>) = sqlx::query_as(
-        "SELECT state::text, state_reason::text, seq, position, pr_author_id, submitted_by
+    let item: (String, String, Option<i64>, String, Option<String>) = sqlx::query_as(
+        "SELECT state::text, state_reason::text, position, pr_author_id, submitted_by
          FROM queue_items WHERE queue_id = $1",
     )
     .bind(queue().to_string())
@@ -413,10 +413,9 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     .unwrap();
     assert_eq!(item.0, ItemState::Testing.as_str());
     assert_eq!(item.1, "test_run_started");
-    assert!(item.2 > 0);
-    assert!(item.3.is_some());
-    assert_eq!(item.4, user().to_string());
-    assert_eq!(item.5, Some(user().to_string()));
+    assert!(item.2.is_some());
+    assert_eq!(item.3, user().to_string());
+    assert_eq!(item.4, Some(user().to_string()));
 }
 
 /// The clock of the loops of a [`SimQueue`]: the fixed time of [`clock`],
@@ -2049,17 +2048,15 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     let mut tx = begin_system(&pool).await.unwrap();
-    let items: Vec<(String, String, bool, bool)> = sqlx::query_as(
-        "SELECT state::text, state_reason::text, is_current, concluded_at IS NOT NULL
-         FROM queue_items",
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .unwrap();
+    let items: Vec<(String, String, bool)> =
+        sqlx::query_as("SELECT state::text, state_reason::text, is_current FROM queue_items")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
     drop(tx);
     assert_eq!(
         items,
-        [("cancelled".into(), "queue_draining".into(), false, true)]
+        [("cancelled".into(), "queue_draining".into(), false)]
     );
     q.stop().await;
 }
@@ -3797,11 +3794,12 @@ async fn fault_injection_batched(pool: PgPool) {
     .await;
     // The file applied: the seeds formed batches and bisected some.
     let mut tx = begin_system(&pool).await.unwrap();
-    let kinds: Vec<String> =
-        sqlx::query_scalar("SELECT DISTINCT kind::text FROM test_groups ORDER BY 1")
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap();
+    let kinds: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT payload->>'kind' FROM events WHERE type = 'group.formed' ORDER BY 1",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
     assert!(
         kinds.contains(&"batch".to_owned()) && kinds.contains(&"bisection".to_owned()),
         "{kinds:?}"

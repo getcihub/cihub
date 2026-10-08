@@ -146,7 +146,7 @@ impl QueueLog {
         event: &Event,
         now: OffsetDateTime,
     ) -> Result<(), MergeQueueError> {
-        project(conn, self.seq, event, &self.snapshot).await?;
+        project(conn, event, &self.snapshot).await?;
         if self.seq % SNAPSHOT_EVERY == 0 {
             self.keep_snapshot(conn, now).await?;
         }
