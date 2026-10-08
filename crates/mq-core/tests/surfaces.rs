@@ -4,12 +4,14 @@
 
 mod common;
 
+use cihub_config::Setting;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState,
     Mergeability, Priority, Reason, RequiredStatusesSource,
 };
-use cihub_mq_core::Surface;
+use cihub_mq_core::{BatchWait, Surface};
 use common::{REQUIRED, World, head, settings, window};
+use time::Duration;
 
 fn shown(surfaces: &[Surface]) -> Vec<(u64, ItemState, Option<usize>, Vec<u64>)> {
     surfaces
@@ -33,6 +35,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
         ]
     );
     assert_eq!(last[0].head_sha, head(1, 0));
+    assert!(last.iter().all(|s| s.batch_wait.is_none()));
     assert!(last[0].test_sha.is_some());
     assert!(last[0].failing_checks.is_empty());
 
@@ -134,4 +137,51 @@ fn an_item_in_test_shows_the_draft_pr_of_its_run() {
     let last = w.surfaces.last().unwrap();
     assert_eq!(last[0].state, ItemState::Testing);
     assert_eq!(last[0].draft_pr_number, Some(42));
+}
+
+/// The members of the batch that waits, and only them, show when it closes
+/// (`DECISIONS.md` D241).
+#[test]
+fn the_members_of_a_waiting_batch_show_when_it_closes() {
+    let mut w = World::new(settings(|l| {
+        window(1)(l);
+        l.batching_enabled = Some(Setting::new(true));
+        l.batching_size = Some(Setting::new(3));
+        l.batching_max_wait_minutes = Some(Setting::new(5));
+    }));
+    let waits = |w: &World| -> Vec<(u64, Option<BatchWait>)> {
+        w.surfaces
+            .last()
+            .unwrap()
+            .iter()
+            .map(|s| (s.pr_number, s.batch_wait))
+            .collect()
+    };
+    for pr in 1..=3 {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    assert_eq!(
+        w.state(1),
+        Some(ItemState::Testing),
+        "a full batch waits for nothing"
+    );
+    assert_eq!(waits(&w), [(1, None), (2, None), (3, None)]);
+
+    // The window has no room: the batch behind still says when it closes,
+    // not when its test starts.
+    w.submit(4, Priority::MEDIUM);
+    let closes_at = w.item(4).unwrap().admitted_at.unwrap() + Duration::minutes(5);
+    let wait = |members| Some(BatchWait { members, closes_at });
+    assert_eq!(waits(&w)[3], (4, wait(1)));
+    w.submit(5, Priority::MEDIUM);
+    assert_eq!(
+        waits(&w),
+        [(1, None), (2, None), (3, None), (4, wait(2)), (5, wait(2))]
+    );
+
+    // Closed, the batch waits for room in the window and shows no time.
+    w.now = closes_at;
+    w.reconcile();
+    assert_eq!(w.state(4), Some(ItemState::Pending));
+    assert!(waits(&w).iter().all(|(_, wait)| wait.is_none()));
 }
