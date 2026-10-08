@@ -62,7 +62,8 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D18** The CI follows the organization of `home-operations/external-dns-unifi-webhook`: one job per `mise`
   task, a `Workflow Lint` job (`actionlint`, `zizmor`), and a `Build Success` job that gathers them and serves as
   the required status. Each action is pinned by the SHA of its commit, with the version as a comment
-  (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`).
+  (`actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`). _Superseded by D233 for the list of the
+  jobs._
 - **D19** Versions are published by release-please (`release-please-config.json`,
   `.release-please-manifest.json`), from commit titles in the Conventional Commits format. Type `simple`: the
   `rust` type does not handle a workspace whose root has no `[package]`. release-please updates
@@ -816,6 +817,13 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   otherwise the first queue of the branch. `queue_conditions` no longer route: they only admit, and the item
   waits in `not_ready` in its queue until they pass. `route_conditions` is not allowed in `defaults`. The routing
   reads the PR once, at the submission; an item still never changes queue.
+
+**October 8, 2026, validated by Nicolas Lecoy.**
+
+- **D233** Supersedes D18 for the list of the jobs: `ci.yml` has two jobs that do the work, for the two runners
+  of `cihub-runner`, and `Build Success`. `Rust Lint` runs `mise run lint`, `mise run lint-workflows`, then
+  `mise run cover`; `Rust Test` runs the unit tests, then the tests against Postgres, in one job that shares one
+  build. `Build Success` stays the required status, and each action stays pinned by its SHA.
 
 ## Open questions
 

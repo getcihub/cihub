@@ -55,38 +55,21 @@ jobs:
       - name: Run linters
         run: mise run lint
 
+      - name: Lint workflows
+        run: mise run lint-workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # In this job rather than in Rust Test, so that the two jobs take about
+      # the same time on the two runners of cihub-runner (DECISIONS.md D233).
+      - name: Check coverage of the pure crates
+        run: mise run cover
+
   rust-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Rust Test
-    runs-on: cihub-runner
-    container:
-      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-        with:
-          install_args: --locked
-
-      - name: Run unit tests
-        run: mise run test
-
-      - name: Check coverage of the pure crates
-        run: mise run cover
-
-  rust-test-integration:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Rust Integration Test
     runs-on: cihub-runner
     container:
       image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
@@ -98,9 +81,6 @@ jobs:
           POSTGRES_PASSWORD: postgres
     permissions:
       contents: read
-    env:
-      # The tests share one Postgres and the node runs other workloads.
-      NEXTEST_TEST_THREADS: "4"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,32 +103,16 @@ jobs:
           timeout 60 sh -c 'until pg_isready --quiet; do sleep 1; done'
           psql --quiet --set ON_ERROR_STOP=1 --file postgres-setup.sql
 
+      # nextest builds every test binary of the workspace, then filters: the
+      # tests against Postgres reuse the build of the unit tests.
+      - name: Run unit tests
+        run: mise run test
+
       - name: Run tests against Postgres
         run: mise run --skip-deps test-integration
-
-  workflow-lint:
-    if: >-
-      ${{ !(startsWith(github.head_ref, 'release-please--')
-      && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Workflow Lint
-    runs-on: cihub-runner
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
-        with:
-          install_args: --locked
-
-      - name: Lint workflows
-        run: mise run lint-workflows
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The tests share one Postgres and the node runs other workloads.
+          NEXTEST_TEST_THREADS: "4"
 
   status:
     if: ${{ !cancelled() }}
@@ -156,8 +120,6 @@ jobs:
     needs:
       - rust-lint
       - rust-test
-      - rust-test-integration
-      - workflow-lint
     runs-on: cihub-runner
     permissions: {}
     steps:
