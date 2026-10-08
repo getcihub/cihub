@@ -2,6 +2,7 @@ version: 1
 queues:
   - name: main
     branch: main
+    strategy: batched
     queue_conditions:
       - -draft
       - -label = do-not-merge
