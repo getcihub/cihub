@@ -1,4 +1,4 @@
-//! Random queues: submissions, successes, failures, cancellations, pushes on
+//! Random queues, with or without batches: submissions, successes, failures, cancellations, pushes on
 //! the PRs and on the target. After each step, `plan` reaches a fixed point
 //! and `check` finds nothing (the world asserts both); at the end, the replay
 //! of the log gives the same snapshot, also from a snapshot read back from
@@ -162,12 +162,21 @@ proptest! {
         actions in prop::collection::vec(action(), 1..60),
         window in 1..4_u32,
         retries in 0..2_u32,
+        batch in prop::option::of(2..4_u32),
+        depth in 0..3_u32,
+        optimistic in any::<bool>(),
         split in 0.0..1.0_f64,
     ) {
         let mut w = World::new(settings(|l| {
             l.window_floor = Some(Setting::new(window));
             l.window_ceiling = Some(Setting::new(window));
             l.failure_budget_retries = Some(Setting::new(retries));
+            l.pending_failure_depth = Some(Setting::new(depth));
+            l.optimistic_merging = Some(Setting::new(optimistic));
+            l.batching_enabled = Some(Setting::new(batch.is_some()));
+            if let Some(size) = batch {
+                l.batching_size = Some(Setting::new(size));
+            }
         }));
         for action in &actions {
             step(&mut w, action);

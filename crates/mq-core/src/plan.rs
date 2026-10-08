@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use cihub_config::QueueSettings;
 use cihub_domain::{
     Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
-    GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability, PrState,
-    QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus, TestGroup, TestRun,
-    test_branch,
+    GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability,
+    OptimizationMode, PrState, QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus,
+    TestGroup, TestRun, test_branch,
 };
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -197,9 +197,12 @@ const RULES: &[Rule] = &[
     group_follows_run,
     group_follows_members,
     members_follow_group,
+    // After the members took the state of their group.
+    optimistic,
     runs_follow_group,
     pending_failure,
     validity,
+    bisection,
     readiness,
     admission,
     formation,
@@ -599,6 +602,13 @@ fn group_follows_run(
             let reason = run.failure_reason;
             let (to, reason) = match (run.status, reason) {
                 (RunStatus::Succeeded, _) => (GroupState::TestsPassed, Reason::TestRunPassed),
+                // A member of the group conflicts: the bisection finds which
+                // one (`DECISIONS.md` D218).
+                (RunStatus::Failed, Some(r @ Reason::StartTestRunMergeConflict))
+                    if group.item_ids.len() > 1 =>
+                {
+                    (GroupState::PendingFailure, r)
+                }
                 (RunStatus::Failed | RunStatus::TimedOut, Some(r))
                     if GroupState::allowed_reasons(
                         Some(GroupState::Testing),
@@ -625,6 +635,75 @@ fn group_follows_run(
         })
 }
 
+/// With `optimistic_merging`, a run that passes proves the groups that it
+/// tested as predecessors: a group still in `testing` passes with it
+/// (`passed_by_optimization`), and its run stops; a group in
+/// `pending_failure` is released (`successor_test_run_passed`). Their members
+/// record that run. A group in bisection is not proved this way: its halves
+/// are. A group that is evicted still restarts the groups behind
+/// it (`DECISIONS.md` D209).
+fn optimistic(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    _: OffsetDateTime,
+    _: &mut IdGen,
+) -> Option<Step> {
+    if !settings.optimistic_merging.value {
+        return None;
+    }
+    s.live_groups()
+        .filter(|g| g.state == GroupState::TestsPassed)
+        .find_map(|proof| {
+            let run = s
+                .latest_run(proof.id)
+                .filter(|r| r.status == RunStatus::Succeeded)?;
+            let proved = |g: &&TestGroup| {
+                let mut live = g
+                    .item_ids
+                    .iter()
+                    .filter_map(|id| s.items.get(id))
+                    .filter(|i| !i.state.is_terminal())
+                    .peekable();
+                live.peek().is_some() && live.all(|i| proof.predecessor_ids.contains(&i.id))
+            };
+            let group = s
+                .live_groups()
+                .filter(|g| matches!(g.state, GroupState::Testing | GroupState::PendingFailure))
+                // A group in bisection waits for its halves, which can pass
+                // in this way.
+                .filter(|g| children(s, g).next().is_none())
+                .find(proved)?;
+            let reason = if group.state == GroupState::Testing {
+                Reason::PassedByOptimization
+            } else {
+                Reason::SuccessorTestRunPassed
+            };
+            let mut kinds = vec![group_to(group, GroupState::TestsPassed, reason)];
+            kinds.extend(
+                group
+                    .item_ids
+                    .iter()
+                    .filter_map(|id| s.items.get(id))
+                    .filter(|i| i.group_id == Some(group.id) && !i.state.is_terminal())
+                    .map(|i| {
+                        item_to_with(
+                            i,
+                            ItemState::TestsPassed,
+                            reason,
+                            ItemExtras {
+                                verified_by_run_id: Some(run.id),
+                                ..ItemExtras::default()
+                            },
+                        )
+                    }),
+            );
+            Some(Step {
+                cause: s.cause(Subject::Run(run.id)),
+                kinds,
+            })
+        })
+}
+
 /// A group concludes, or is given up, when one of its members leaves it.
 fn group_follows_members(
     s: &Snapshot,
@@ -633,11 +712,17 @@ fn group_follows_members(
     _: &mut IdGen,
 ) -> Option<Step> {
     s.live_groups().find_map(|group| {
+        // A bisection moved some members to its children: they follow them.
+        let bisecting = children(s, group).next().is_some();
         let members: Vec<&Item> = group
             .item_ids
             .iter()
             .filter_map(|id| s.items.get(id))
+            .filter(|i| !bisecting || i.group_id == Some(group.id))
             .collect();
+        if members.is_empty() {
+            return None;
+        }
         let merged_by_queue =
             |i: &Item| i.state == ItemState::Merged && i.state_reason != Reason::ManualMerge;
         if members.iter().all(|i| merged_by_queue(i)) {
@@ -654,10 +739,14 @@ fn group_follows_members(
         } else {
             GroupState::Dissolved
         };
-        Step::one(
-            s.cause(Subject::Item(left.id)),
-            group_to(group, to, left.state_reason),
-        )
+        // The other members of a batch restart: their run tested the code of
+        // the member that left (`DECISIONS.md` D217).
+        let reason = if members.len() > 1 && left.state.is_terminal() {
+            Reason::BatchMemberLeft
+        } else {
+            left.state_reason
+        };
+        Step::one(s.cause(Subject::Item(left.id)), group_to(group, to, reason))
     })
 }
 
@@ -726,9 +815,10 @@ fn runs_follow_group(
         })
 }
 
-/// At depth 0, a group in failure whose predecessors all merged is the
-/// culprit: the failure budget restarts it when the window has room, then
-/// it fails, and the window closes by half.
+/// At depth 0, a group of one PR in failure whose predecessors all merged is
+/// the culprit: the failure budget restarts it when the window (or the
+/// bisection pool) has room, then it fails, and the window closes by half,
+/// once per failure: a bisection already closed it.
 fn pending_failure(
     s: &Snapshot,
     settings: &QueueSettings,
@@ -736,20 +826,20 @@ fn pending_failure(
     ids: &mut IdGen,
 ) -> Option<Step> {
     s.live_groups()
-        .filter(|g| g.state == GroupState::PendingFailure)
+        .filter(|g| g.state == GroupState::PendingFailure && g.item_ids.len() == 1)
         .find_map(|group| {
-            let all_merged = group.predecessor_ids.iter().all(|id| {
-                s.items
-                    .get(id)
-                    .is_some_and(|i| i.state == ItemState::Merged)
-            });
-            if !all_merged {
+            if !predecessors_merged(s, group) || successors_testing(s, settings, group) {
                 return None;
             }
             let run = s.latest_run(group.id)?;
             let cause = s.cause(Subject::Group(group.id));
             if run.attempt <= settings.failure_budget_retries.value {
-                if !window_has_room(s, settings) {
+                let room = if group.kind == GroupKind::Bisection {
+                    bisection_has_room(s, settings)
+                } else {
+                    window_has_room(s, settings)
+                };
+                if !room {
                     return None;
                 }
                 let first_pr = s.items.get(group.item_ids.first()?)?.pr_number;
@@ -769,9 +859,218 @@ fn pending_failure(
                 });
             }
             let mut kinds = vec![group_to(group, GroupState::Failed, run.failure_reason?)];
-            kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+            if group.kind != GroupKind::Bisection {
+                kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+            }
             Some(Step { cause, kinds })
         })
+}
+
+fn predecessors_merged(s: &Snapshot, group: &TestGroup) -> bool {
+    group.predecessor_ids.iter().all(|id| {
+        s.items
+            .get(id)
+            .is_some_and(|i| i.state == ItemState::Merged)
+    })
+}
+
+/// With `pending_failure_depth: N > 0`, a group in failure also waits for the
+/// runs of the first `N` groups behind it whose runs test its members: their
+/// runs only, not their final state, so that no two groups wait for each
+/// other. The successors are read again at each reconciliation, so that a
+/// group formed after the failure counts.
+fn successors_testing(s: &Snapshot, settings: &QueueSettings, group: &TestGroup) -> bool {
+    let depth = usize::try_from(settings.pending_failure_depth.value).unwrap_or(usize::MAX);
+    if depth == 0 {
+        return false;
+    }
+    let position = |g: &TestGroup| {
+        g.item_ids
+            .iter()
+            .filter_map(|id| s.items.get(id))
+            .filter_map(|i| i.position)
+            .min()
+    };
+    let mut successors: Vec<&TestGroup> = s
+        .live_groups()
+        .filter(|g| {
+            g.predecessor_ids
+                .iter()
+                .any(|id| group.item_ids.contains(id))
+        })
+        .collect();
+    successors.sort_by_key(|g| position(g));
+    successors
+        .into_iter()
+        .take(depth)
+        .any(|g| s.live_run(g.id).is_some())
+}
+
+/// The halves that the bisection of a group formed.
+fn children<'a>(s: &'a Snapshot, group: &TestGroup) -> impl Iterator<Item = &'a TestGroup> {
+    let id = group.id;
+    s.groups
+        .values()
+        .filter(move |g| g.parent_group_id == Some(id))
+}
+
+/// The members still in a group, in queue order: a bisection moves the
+/// tested half to a child.
+fn waiting<'a>(s: &'a Snapshot, group: &TestGroup) -> Vec<&'a Item> {
+    let mut items: Vec<&Item> = group
+        .item_ids
+        .iter()
+        .filter_map(|id| s.items.get(id))
+        .filter(|i| i.group_id == Some(group.id) && !i.state.is_terminal())
+        .collect();
+    items.sort_by_key(|i| i.position);
+    items
+}
+
+/// A group of several PRs in failure whose predecessors all merged is
+/// bisected at once, without the failure budget (`DECISIONS.md` D211): the
+/// first half is tested in a child group, the other half waits in the group.
+/// When the child passes, the other half holds the failure: it is split in
+/// turn, and a half of one PR is tested alone, because an inferred failure
+/// never evicts a PR (D211); with `optimization_mode: off`, it goes back to
+/// the queue instead. When the child fails or is given up, the other half
+/// goes back to the queue. The first split closes the window by half.
+fn bisection(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    _: OffsetDateTime,
+    ids: &mut IdGen,
+) -> Option<Step> {
+    s.live_groups()
+        .filter(|g| {
+            g.state == GroupState::PendingFailure
+                && g.item_ids.len() > 1
+                && predecessors_merged(s, g)
+        })
+        .filter(|g| children(s, g).next().is_some() || !successors_testing(s, settings, g))
+        .find_map(|group| {
+            let cause = s.cause(Subject::Group(group.id));
+            let waiting = waiting(s, group);
+            if waiting.is_empty() {
+                return Step::one(
+                    cause,
+                    group_to(group, GroupState::Bisected, Reason::BisectionRequired),
+                );
+            }
+            let children: Vec<&TestGroup> = children(s, group).collect();
+            if children.iter().any(|c| c.state == GroupState::Testing) {
+                return None;
+            }
+            let passed = !children.is_empty()
+                && children
+                    .iter()
+                    .all(|c| matches!(c.state, GroupState::TestsPassed | GroupState::Merged));
+            let reason = if passed {
+                Reason::BisectionTestRunPassed
+            } else {
+                Reason::BisectionRequired
+            };
+            let skip =
+                settings.optimization_mode.value == OptimizationMode::BisectionSkipRedundantTests;
+            if !children.is_empty() && (!passed || !skip) {
+                let mut kinds: Vec<EventKind> = waiting
+                    .iter()
+                    .map(|i| item_to(i, ItemState::Pending, reason))
+                    .collect();
+                kinds.push(group_to(
+                    group,
+                    GroupState::Bisected,
+                    Reason::BisectionRequired,
+                ));
+                return Some(Step { cause, kinds });
+            }
+            let mut kinds = split(s, settings, ids, group, &waiting, reason)?;
+            if children.is_empty() {
+                // The groups behind test the failure: they go back to the
+                // queue until the bisection ends (`DECISIONS.md` D221).
+                kinds.extend(
+                    s.live_groups()
+                        .filter(|g| g.id != group.id)
+                        .filter(|g| {
+                            g.predecessor_ids
+                                .iter()
+                                .any(|id| group.item_ids.contains(id))
+                        })
+                        .map(|g| {
+                            group_to(
+                                g,
+                                GroupState::Dissolved,
+                                Reason::PrerequisiteMergeItemFailed,
+                            )
+                        }),
+                );
+                if group.kind == GroupKind::Batch {
+                    kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+                }
+            }
+            Some(Step { cause, kinds })
+        })
+}
+
+/// Cuts `waiting` in two halves, the first rounded up, and tests each one in
+/// a new child group of `parent`, at the same time while the bisection pool
+/// has room (`DECISIONS.md` D220): the second half is tested on top of the
+/// first. A half that finds no room waits in `parent`.
+fn split(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    ids: &mut IdGen,
+    parent: &TestGroup,
+    waiting: &[&Item],
+    reason: Reason,
+) -> Option<Vec<EventKind>> {
+    let room = bisection_room(s, settings);
+    if room == 0 {
+        return None;
+    }
+    let base = &s.target.head.as_ref()?.value;
+    let order = s.queue_order();
+    let (first_half, second_half) = waiting.split_at(waiting.len().div_ceil(2));
+    let mut kinds = Vec::new();
+    for half in [first_half, second_half]
+        .into_iter()
+        .filter(|h| !h.is_empty())
+        .take(room)
+    {
+        let first = half.first()?;
+        let index = order.iter().position(|i| i.id == first.id)?;
+        let group = TestGroup {
+            id: GroupId::from_ulid(ids.next()),
+            org_id: s.org_id,
+            queue_id: s.queue_id,
+            kind: GroupKind::Bisection,
+            state: GroupState::Testing,
+            state_reason: Reason::TestRunStarted,
+            item_ids: half.iter().map(|i| i.id).collect(),
+            parent_group_id: Some(parent.id),
+            predecessor_ids: predecessors(s, &order, index),
+            base_sha: base.clone(),
+        };
+        kinds.extend(half.iter().map(|i| item_to(i, ItemState::Pending, reason)));
+        let run = new_run(
+            &group,
+            first.pr_number,
+            1,
+            Reason::TestRunStarted,
+            settings,
+            ids,
+        );
+        kinds.push(EventKind::GroupFormed {
+            group_id: group.id,
+            kind: group.kind,
+            item_ids: group.item_ids,
+            predecessor_ids: group.predecessor_ids,
+            base_sha: group.base_sha,
+            parent_group_id: group.parent_group_id,
+        });
+        kinds.push(run);
+    }
+    Some(kinds)
 }
 
 /// A run stays valid only while the predecessors of its group and its base
@@ -779,8 +1078,11 @@ fn pending_failure(
 fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -> Option<Step> {
     let order = s.queue_order();
     s.live_groups().find_map(|group| {
-        let first = group.item_ids.first()?;
-        let index = order.iter().position(|i| i.id == *first)?;
+        // The members ahead in a batch may have merged already.
+        let index = group
+            .item_ids
+            .iter()
+            .find_map(|id| order.iter().position(|i| i.id == *id))?;
         let cited: Vec<&Item> = group
             .predecessor_ids
             .iter()
@@ -942,12 +1244,12 @@ fn admission(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) 
     Step::one(cause, kind)
 }
 
-/// Forms a `single` group for the first pending item whose predecessors are
-/// all in groups, while the window has room.
+/// Forms the next group, while the window has room: a `single` group, or a
+/// batch with batching enabled.
 fn formation(
     s: &Snapshot,
     settings: &QueueSettings,
-    _: OffsetDateTime,
+    now: OffsetDateTime,
     ids: &mut IdGen,
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
@@ -957,36 +1259,36 @@ fn formation(
         return None;
     }
     let order = s.queue_order();
-    let (index, item) = order.iter().enumerate().find(|(index, item)| {
-        item.state == ItemState::Pending
-            && predecessors(s, &order, *index).iter().all(|id| {
-                s.items
-                    .get(id)
-                    .is_some_and(|p| p.state != ItemState::Pending)
-            })
-    })?;
+    let Next::Form { index, members } = next_group(s, &order, settings, now)? else {
+        return None;
+    };
+    let first = members.first()?;
     let group = TestGroup {
         id: GroupId::from_ulid(ids.next()),
         org_id: s.org_id,
         queue_id: s.queue_id,
-        kind: GroupKind::Single,
+        kind: if members.len() > 1 {
+            GroupKind::Batch
+        } else {
+            GroupKind::Single
+        },
         state: GroupState::Testing,
         state_reason: Reason::TestRunStarted,
-        item_ids: vec![item.id],
+        item_ids: members.iter().map(|i| i.id).collect(),
         parent_group_id: None,
         predecessor_ids: predecessors(s, &order, index),
         base_sha: base.clone(),
     };
     let run = new_run(
         &group,
-        item.pr_number,
+        first.pr_number,
         1,
         Reason::TestRunStarted,
         settings,
         ids,
     );
     Some(Step {
-        cause: s.cause(Subject::Item(item.id)),
+        cause: s.cause(Subject::Item(first.id)),
         kinds: vec![
             EventKind::GroupFormed {
                 group_id: group.id,
@@ -999,6 +1301,80 @@ fn formation(
             run,
         ],
     })
+}
+
+/// The item is in a group of several PRs that failed, or in one of its halves:
+/// no group forms on top of it until the bisection ends (`DECISIONS.md` D221).
+fn in_bisection(s: &Snapshot, item: &Item) -> bool {
+    item.group_id
+        .and_then(|g| s.groups.get(&g))
+        .is_some_and(|g| {
+            !g.state.is_terminal()
+                && (g.kind == GroupKind::Bisection
+                    || (g.state == GroupState::PendingFailure && g.item_ids.len() > 1))
+        })
+}
+
+/// The next group of the queue, or the end of the wait of its batch.
+enum Next<'a> {
+    Form {
+        index: usize,
+        members: Vec<&'a Item>,
+    },
+    Wait(OffsetDateTime),
+}
+
+/// The first pending item whose predecessors are all in groups, at `index`
+/// in `order`. With batching, the pending items that follow it join it, up to
+/// `batching.size`, until an item that is not pending or is `no_batch`. A
+/// batch that is not full waits until its oldest member has waited
+/// `batching.max_wait_minutes` in the queue (`DECISIONS.md` D210), unless the
+/// item right behind it is `no_batch`: the batch cannot grow, and that item
+/// would wait for nothing (D224).
+fn next_group<'a>(
+    s: &Snapshot,
+    order: &[&'a Item],
+    settings: &QueueSettings,
+    now: OffsetDateTime,
+) -> Option<Next<'a>> {
+    let index = order.iter().enumerate().position(|(index, item)| {
+        item.state == ItemState::Pending
+            && predecessors(s, order, index).iter().all(|id| {
+                s.items
+                    .get(id)
+                    .is_some_and(|p| p.state != ItemState::Pending && !in_bisection(s, p))
+            })
+    })?;
+    let first = order[index];
+    if !settings.batching_enabled.value || first.no_batch {
+        return Some(Next::Form {
+            index,
+            members: vec![first],
+        });
+    }
+    let size = usize::try_from(settings.batching_size.value).unwrap_or(usize::MAX);
+    let members: Vec<&Item> = order[index..]
+        .iter()
+        .take_while(|i| i.state == ItemState::Pending && !i.no_batch)
+        .take(size)
+        .copied()
+        .collect();
+    let closed = order
+        .get(index + members.len())
+        .is_some_and(|i| i.state == ItemState::Pending && i.no_batch);
+    if closed {
+        return Some(Next::Form { index, members });
+    }
+    let wait = Duration::minutes(i64::from(settings.batching_max_wait_minutes.value));
+    let ready = members
+        .iter()
+        .filter_map(|i| i.admitted_at)
+        .min()
+        .map(|t| t + wait);
+    match ready {
+        Some(ready) if members.len() < size && now < ready => Some(Next::Wait(ready)),
+        _ => Some(Next::Form { index, members }),
+    }
 }
 
 /// The speculation window: the floor until its first change.
@@ -1022,6 +1398,21 @@ fn window_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
         .filter(|g| g.kind != GroupKind::Bisection && s.live_run(g.id).is_some())
         .count();
     running < usize::try_from(window).unwrap_or(usize::MAX)
+}
+
+/// The bisection runs draw from their own pool, `bisection_concurrency`.
+fn bisection_room(s: &Snapshot, settings: &QueueSettings) -> usize {
+    let running = s
+        .live_groups()
+        .filter(|g| g.kind == GroupKind::Bisection && s.live_run(g.id).is_some())
+        .count();
+    usize::try_from(settings.bisection_concurrency.value)
+        .unwrap_or(usize::MAX)
+        .saturating_sub(running)
+}
+
+fn bisection_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
+    bisection_room(s, settings) > 0
 }
 
 /// The item that the queue merges directly, without a test branch
@@ -1169,8 +1560,8 @@ fn floor_to_minute(t: OffsetDateTime) -> OffsetDateTime {
     t - Duration::seconds(i64::from(t.second())) - Duration::nanoseconds(i64::from(t.nanosecond()))
 }
 
-/// The earliest of the next read points, the not-ready timeouts and the run
-/// timeouts.
+/// The earliest of the next read points, the not-ready timeouts, the run
+/// timeouts and the end of the wait of a batch.
 fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Option<OffsetDateTime> {
     let not_ready = Duration::hours(i64::from(settings.not_ready_timeout_hours.value));
     let testing = Duration::minutes(i64::from(settings.testing_timeout_minutes.value));
@@ -1181,7 +1572,16 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
         [r.started_at + testing, next_read]
     });
     let target = target_points(s, now).map(|(_, next)| next);
-    reads.chain(timeouts).chain(runs).chain(target).min()
+    let batch = match next_group(s, &s.queue_order(), settings, now) {
+        Some(Next::Wait(until)) => Some(until),
+        _ => None,
+    };
+    reads
+        .chain(timeouts)
+        .chain(runs)
+        .chain(target)
+        .chain(batch)
+        .min()
 }
 
 fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desired {

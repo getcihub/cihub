@@ -208,7 +208,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   Lot 5 in `cihub-mergequeue`, with the reconciliation. Lot 3 delivers its parts in `cihub-platform`.
 - **D65** Supersedes D44: the outbox, the subscriptions and the criterion "an event and its outbox entry are
   written in the same transaction" move to Lot 11, the first lot that consumes them (outgoing webhooks,
-  ClickHouse).
+  ClickHouse). _Superseded by D213._
 - **D66** An executor is the code of a job type; the worker has a registry, from job type to its executor. An
   executor answers: done, to redo later (with the error), or definitive failure (with the error). Job types and
   their executors are neutral: an executor calls the SCM through the `Scm` trait (Lot 4), according to the
@@ -736,6 +736,76 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
   the run, with the details URL of the status (D156).
 
+**October 6, 2026, validated by Nicolas Lecoy.**
+
+- **D209** (Q3) Optimistic merge keeps the strict rule only: when a predecessor is evicted, the downstream groups
+  restart, because their tests included code that will not land. No lenient option. (Lot 12)
+- **D210** The size of a batch is not adaptive: a batch takes the consecutive waiting items that can join it
+  (`docs/ALGORITHMS.md`, "Batching"), up to `batching.size`, and starts when it is full or when its oldest member
+  has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12) _Extended by
+  D224._
+- **D211** An inferred failure never evicts a PR. With `bisection_skip_redundant_tests`, a half that a bisection
+  proves failed without a run is split again when it has several items; a half of a single PR is tested, and
+  the PR is evicted only after its own failed run and its failure budget. A confirmed failure of a batch or of a
+  half of several items is bisected at once, without a restart by the budget: the failure budget
+  (`failure_budget.retries`) applies to the groups of a single PR. (Lot 12)
+- **D212** The throughput bar of `GOAL.md` and the exit criterion of lot 12 measure correctness and cost, not
+  latency: on a simulated CI without a limit of runners, a batch waits and does not lower the time in queue.
+  Correctness: `fault_injection` passes with the `batched` strategy, and a planted failure is isolated in at most
+  log2(batch size) runs, counted after the confirmed failure of the batch. Cost, on a fixed scenario of the
+  simulator (Poisson arrivals of 20 PRs per hour, a CI of 20 minutes per run, 10% of broken PRs, 2% of flaky
+  failures, 8 simulated hours, fixed seeds): `batched` uses at least 30% fewer runs per merged PR than
+  `pipelined`, with a p50 time in queue at most 25% above that of `pipelined`. The useless assemblies after the
+  closing of the PR at the head (taken over from lot 7) are counted on this scenario and asserted by a test; lot
+  12 removes them only when they exceed 5% of the assemblies. (Lot 12) _Superseded by D223._
+- **D213** Supersedes D65: CIHub has no outbox table; the log `events` is the outbox. A consumer of the events
+  (an outgoing webhook endpoint, the analytics) keeps a cursor per queue, the last `seq` it handled, and reads
+  the events of the queue after it; `seq` has no gap and follows the order of the commits, because only the
+  owner of the lease of the queue writes its log (D100). A consumer advances its cursor in the transaction of
+  its effect, or after the acknowledgment of a remote one. No second write in the transaction of the event. Lot
+  11 creates the cursor table in its final shape. (Lot 11)
+- **D214** The two bars of phase 1 measured by hand, the CIHub repository merging through CIHub for 2 weeks
+  without a red merge and an outside person merging a first PR in less than 30 minutes, are measured before the
+  first published version (Lot 15). They do not gate phase 2: phase 1 is done. (Lot 15)
+- **D215** Extends D212: the cost criterion of lot 12 runs in the simulated world of the tests of `cihub-mq-core`
+  (pure, fixed seeds, as D141); `fault_injection` carries the correctness criterion. (Lot 12)
+- **D216** Extends D211: the reason `test_run_failed_by_optimization` stays, for a group only: a half that a
+  bisection proves failed without a run. No item reaches `failed` with it. (Lot 12) _Superseded by D219._
+- **D217** The reason `batch_member_left` ("a PR of the same batch left the queue"): when a member of a batch
+  leaves the queue (failed, cancelled, merged outside the queue), the batch dissolves with this reason, and the
+  other members go back to `pending` with it, because their run tested its code. The member that left keeps its
+  own reason. (Lot 12)
+- **D218** A merge conflict at the assembly of a group of several PRs (`start_test_run_merge_conflict`) does
+  not fail its members: the group goes to `pending_failure` with this reason, and the bisection finds the PR that
+  conflicts; a group of one PR still fails at once. The transitions `testing → pending_failure` of items and
+  groups accept this reason. A configuration error at the assembly fails the members of any group, as for one
+  PR. (Lot 12)
+- **D219** Supersedes D216: the reason `test_run_failed_by_optimization` is removed from the closed vocabulary
+  and from the Postgres enum. The bisection never proves a group failed without a run: a half that holds the
+  failure is split, and its PRs are tested (D211). (Lot 12)
+- **D220** The bisection tests the two halves of a failed group at the same time, the second on top of the
+  first, while the `bisection_concurrency` pool has room; a half that finds no room waits in the failed group,
+  and the sequential rules of D211 apply to it. As Mergify, which splits a failed batch into parts tested in
+  parallel. (Lot 12)
+- **D221** When a group of several PRs starts its bisection, the live groups whose predecessors include its
+  PRs are given up (`prerequisite_merge_item_failed`) and their PRs go back to the queue; no group forms on top
+  of a PR in a failed group of several PRs or in one of its halves until the bisection ends. As Mergify, which
+  cancels the batches behind a failed batch. (Lot 12)
+- **D222** The `batched` strategy forms batches of at most 4 PRs (was 8), the default of Trunk. (Lot 12)
+- **D223** Supersedes the bars of D212, and keeps its scenario. The simulated CI has no limit of runners, so a
+  batch saves runs but cannot save time: the time bar only limits the delay. Cost: `batched` uses at least 30%
+  fewer runs per merged PR than `pipelined`. Time: the p50 time in queue of `batched` is at most 1.5 times that
+  of `pipelined`. Bisection: a planted failure is isolated in at most log2(batch size) rounds of runs, counted
+  after the confirmed failure of the batch, since the two halves of a round run at once (D220). The test of the
+  scenario takes about 90 seconds: it runs in its own task, `mise run load`, not in `mise run check`. (Lot 12)
+
+**October 7, 2026, validated by Nicolas Lecoy.**
+
+- **D224** Extends D210: a batch that is not full also starts at once when the item right behind it in the queue
+  is `no_batch`: it cannot grow, and the `no_batch` item, which keeps its place, would wait for it. The items
+  behind the `no_batch` item still wait for their batch. Seen on a manual test, where a batch of one PR waited
+  `max_wait_minutes` for nothing. (Lot 12)
+
 ## Open questions
 
 Each question carries an identifier; `docs/LOTS.md` indicates the lot that needs the answer. A settled question
@@ -743,8 +813,6 @@ becomes a decision above and leaves this list.
 
 - **Q1** The reason `tests_restarted_flake_suspected` (`docs/FLAKY_TESTS.md`) is not in the closed vocabulary.
   _(Lot 14)_
-- **Q3** Optimistic merge after the eviction of a predecessor: strict rule (restart the downstream) by default,
-  the lenient one remaining an option. _(Lot 12)_
 - **Q7** OpenTelemetry semantic conventions for tests: follow the proposal of the CI/CD group, or freeze
   `cihub.*` attributes as long as it is not stable. _(Lot 14)_
 - **Q8** Switch-over threshold to ClickHouse: volume from which the documentation recommends it. _(Lot 15)_

@@ -22,6 +22,8 @@ closed_enum! {
         PrerequisiteMergeItemCancelled,
         /// A predecessor was merged outside the queue.
         PrerequisiteMergeItemManuallyMerged,
+        /// Another member of the batch left the queue; the run tested its code.
+        BatchMemberLeft,
         /// A user asked to restart the tests.
         TestsRestartedByUser,
         /// An API request asked to restart the tests.
@@ -86,8 +88,6 @@ closed_enum! {
         TestRunRequiredStatusFailed,
         /// The run lasted longer than `testing_timeout_minutes`.
         TestRunTimeout,
-        /// A bisection proved the failure without a run.
-        TestRunFailedByOptimization,
         /// The SCM refused the merge of the PR.
         MergeRejected,
         /// The SCM refused the direct merge of the PR.
@@ -137,6 +137,7 @@ impl Reason {
             Self::PrerequisiteMergeItemManuallyMerged => {
                 "a PR ahead in the queue was merged outside the queue"
             }
+            Self::BatchMemberLeft => "a PR of the same batch left the queue",
             Self::TestsRestartedByUser => "a user restarted the tests",
             Self::TestsRestartedByApiRequest => "an API request restarted the tests",
             Self::SkipTheLineInterrupted => "an urgent PR went to the front of the queue",
@@ -179,9 +180,6 @@ impl Reason {
             }
             Self::TestRunRequiredStatusFailed => "a required check failed",
             Self::TestRunTimeout => "the tests took longer than the time limit",
-            Self::TestRunFailedByOptimization => {
-                "the bisection found the failure without another run"
-            }
             Self::MergeRejected => "the merge of the PR was refused",
             Self::DirectMergeRejected => "the direct merge of the PR was refused",
             Self::MergeRateLimitExceeded => {

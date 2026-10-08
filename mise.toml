@@ -38,10 +38,14 @@ depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
 [tasks.sim]
-description = "Run the fault injection test on 1 000 seeds (DECISIONS.md D129)"
+description = "Run the fault injection tests, default and batched, on 1 000 seeds (DECISIONS.md D129)"
 depends = ["db"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
+
+[tasks.load]
+description = "Compare batched and pipelined on the simulated load, and count the useless assemblies (DECISIONS.md D212, D223)"
+run = "cargo nextest run -p cihub-mq-core -E 'binary(load)' --run-ignored only"
 
 [tasks.lint-workflows]
 description = "Lint the GitHub workflows with actionlint and zizmor"

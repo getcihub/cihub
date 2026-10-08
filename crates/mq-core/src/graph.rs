@@ -131,6 +131,7 @@ mod tests {
             verified_by_run_id: None,
             merged_sha: None,
             submitted_at: time::OffsetDateTime::UNIX_EPOCH,
+            admitted_at: None,
             direct_merge_tried: false,
         }
     }

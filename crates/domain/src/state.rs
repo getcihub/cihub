@@ -31,7 +31,7 @@ closed_enum! {
         Merged,
         /// The group is at fault.
         Failed,
-        /// The failed batch was split into two bisection groups.
+        /// The bisection of the group ended: its members left to its halves.
         Bisected,
         /// The queue gave up the group: a member left or a predecessor changed.
         Dissolved,

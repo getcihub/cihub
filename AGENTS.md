@@ -95,6 +95,7 @@ mise run test-integration  # Postgres from compose.yaml, then the tests/postgres
 mise run cover             # coverage of the pure crates, 90% at least
 mise run dev               # migrations, then cihub server start locally with the four roles
 mise run sim               # fault_injection on 1,000 seeds (long; the CI runs it at night)
+mise run load              # cost, time and useless assemblies of `batched` on a simulated day (long)
 ```
 
 The CI runs one task per job (`.github/workflows/ci.yml`); `Build Success` is the required status.

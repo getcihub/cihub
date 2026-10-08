@@ -11,7 +11,7 @@ flowchart LR
   DIFF --> JOBS[Jobs by class<br/>interactive > merge > speculate > repair]
   JOBS -->|budget per connection| GH
   REP[Repair loop<br/>periodic re-reads] --> IN
-  CELL -->|events| OUT[Outbox]
+  CELL -->|events| OUT[Log cursors]
   OUT --> RM[Read model<br/>API, UI, analytics, webhooks]
 ```
 
@@ -27,7 +27,7 @@ Design rules on which the rest of the specification rests:
 - **Scheduled SCM budget.** Each connection has a token bucket fed by the rate limit headers, and each job a class: `interactive` (commands, statuses, comments), `merge`, `speculate` (test branches), `repair` (re-reads). When the budget drops, speculation is reduced first, merge last; nothing is lost, everything is deferred.
 - **Repair loop.** Independently of webhooks, each queue periodically re-reads what matters (live PRs, checks of the runs in progress, head of the target branch, existence of the test refs) at an adaptive interval of 30 s to 10 min depending on activity, and injects what it observes into the inbox. A lost webhook costs at most one interval.
 - **Explicit degraded modes.** Per connection: `normal`, `throttled` (low budget: no new speculation), `scm_unavailable` (nothing goes out, everything accumulates, the repair loop tests the recovery), `paused` (human decision). The mode is visible in the interface and the API, with its cause.
-- **Transport on Postgres.** Inbox, jobs and outbox are Postgres tables, read and written by the functions of `cihub-platform` in the caller's transaction (`DECISIONS.md` D62): a delivery is marked processed together with the facts it establishes, an event is written together with its outbox entry (Lot 11, D65). No broker in v1 (D63).
+- **Transport on Postgres.** Inbox and jobs are Postgres tables, read and written by the functions of `cihub-platform` in the caller's transaction (`DECISIONS.md` D62): a delivery is marked processed together with the facts it establishes. The log `events` is the outbox: a consumer reads it from its cursor per queue (Lot 11, D213). No broker in v1 (D63).
 - **Isolation between organizations.** Row level security, quotas per organization on the inbox and the jobs, and fair scheduling of the workers: a noisy organization slows down its own queues, not those of others.
 
 What scales, and how:
@@ -91,7 +91,7 @@ web/                     dashboard, embedded by the web role (Lot 10)
 | `cihub-flaky-core` | Detection signals, `stable` / `suspect` / `flaky` / `broken` classification, `case_key` (pure)                                                                         | `domain`                                                         | 14  | target |
 | `cihub-store`      | Postgres pool, transactions of an organization or of the system (RLS), tenancy, log and partitions, API tokens, locks, leases, embedded migrations, test of the Postgres enums | `domain`                                                         | 2   | exists |
 | `cihub-telemetry`  | Logs (`DECISIONS.md` D13), then OpenTelemetry traces and Prometheus registry                                                                                              | —                                                                | 2   | exists |
-| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance (`DECISIONS.md` D62, D66, D67, D84 to D88); bootstrap of an organization and reading of the repositories of its connections (D154, D155); `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), outbox (Lot 11)  | `domain`, `store`, `scm` (`DECISIONS.md` D53)                       | 3–5 | exists |
+| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance (`DECISIONS.md` D62, D66, D67, D84 to D88); bootstrap of an organization and reading of the repositories of its connections (D154, D155); `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), log cursors (Lot 11) | `domain`, `store`, `scm` (`DECISIONS.md` D53)                       | 3–5 | exists |
 | `cihub-scm`        | `Scm` trait, normalized SCM types, call priority classes; GitHub simulator with fault injection, `sim` feature (`DECISIONS.md` D73) | `domain`                                                         | 4   | exists |
 | `cihub-github`     | App auth, installation tokens, REST and GraphQL client, budget per connection, degraded modes, HMAC verification and translation of webhooks into facts             | `scm`, `domain`                                                  | 4   | exists |
 | `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage, `DECISIONS.md` D82 to D84, D91); token authentication, rate limit, `/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9, D159); then sessions, CSRF and dashboard (Lot 10) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
@@ -138,7 +138,7 @@ library crates.
 | `web`       | HTTP server: API, webhooks, OTLP, dashboard     | `cihub-web`         |
 | `scheduler` | reconciliation loop of the queues               | `cihub-mergequeue`      |
 | `worker`    | execution of the modules' jobs                  | `cihub-platform`        |
-| `notifier`  | dispatch of the outbox (Lot 11, D65)            | `cihub-platform`        |
+| `notifier`  | dispatch of the log (Lot 11, D213)              | `cihub-platform`        |
 
 `main` reads the configuration, starts the logs and the Postgres pool, checks that the schema is up to date, then starts one
 `tokio` task per role in a `JoinSet`, with a single `CancellationToken`. On `SIGTERM`, it cancels the token:
@@ -161,7 +161,7 @@ configuration file, behind a load balancer. Each role shares its work between th
 | `web`       | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received by another replica |
 | `scheduler` | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
 | `worker`    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
-| `notifier`  | Same principle on the outbox                                                                                                    |
+| `notifier`  | Same principle on the log                                                                                                       |
 
 The limits: a queue is processed by only one replica at a time, to keep the order, so adding
 replicas increases the number of queues processed in parallel, not the speed of one queue; beyond a certain

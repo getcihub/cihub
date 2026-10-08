@@ -132,7 +132,7 @@ fn strategy_layer(strategy: Strategy) -> Layer {
     let (mode, floor, ceiling, batch_size, depth, optimistic) = match strategy {
         Strategy::Sequential => (QueueMode::Single, 1, 1, None, 0, false),
         Strategy::Pipelined => (QueueMode::Single, 2, 20, None, 0, false),
-        Strategy::Batched => (QueueMode::Single, 2, 20, Some(8), 1, true),
+        Strategy::Batched => (QueueMode::Single, 2, 20, Some(4), 1, true),
         Strategy::Parallel => (QueueMode::Parallel, 2, 20, Some(4), 1, true),
     };
     Layer {
@@ -334,7 +334,7 @@ mod tests {
                 settings.batching_enabled.value,
                 settings.batching_size.value
             ),
-            (true, 8)
+            (true, 4)
         );
         assert_eq!(settings.batching_size.source, Source::Strategy);
         assert_eq!(settings.testing_timeout_minutes.source, Source::Default);

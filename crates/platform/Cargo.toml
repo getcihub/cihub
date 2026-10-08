@@ -1,6 +1,6 @@
 [package]
 name = "cihub-platform"
-description = "CIHub internal transport: queue leases, inbox, jobs and outbox on Postgres"
+description = "CIHub internal transport: queue leases, inbox and jobs on Postgres"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -19,8 +19,8 @@ rewrites.
 
 | Phase                       | Lots            | Scope                                                                                                                                                                                                                                                                                                                                                             | Exit criterion                                                                                                                                                                |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following the README  |
-| 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | Queue time p50 reduced by 40 % on a synthetic load of 20 PRs per hour; bisection isolates a planted failure in ≤ log2(batch) runs                                            |
+| 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following the README; measured in lot 15 (`DECISIONS.md` D214) |
+| 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined` (`DECISIONS.md` D212); bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
 | 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, Helm chart, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                              | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
@@ -44,7 +44,7 @@ configuration checker, in phase 1).
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
-| 12  | `batched` strategy                                     | 2     | 9          | Q3        | to do                                    |
+| 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, Helm, hardening                     | 4     | 11, 13     | Q8        | to do                                    |
@@ -201,10 +201,10 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 ### Lot 11: analytics, metrics and outgoing webhooks
 
 - **Content**: `AnalyticsStore` trait and its Postgres implementation (`cihub-analytics`, `an_*` tables); the
-  `notifier` role; the outbox and its subscriptions, written with their event in the same transaction
-  (`DECISIONS.md` D65); `/metrics` on the internal address; Health view; `GET /api/v1/metrics`; Standard Webhooks
+  `notifier` role; the subscriptions and their cursors on the log `events`, which is the outbox
+  (`DECISIONS.md` D213); `/metrics` on the internal address; Health view; `GET /api/v1/metrics`; Standard Webhooks
   outgoing webhooks with the CIHub vocabulary (`DECISIONS.md` D139); `/orgs/{org}/webhooks` endpoints.
-- **Exit criterion**: an event and its outbox entry are written in the same transaction; the fact tables rebuilt
+- **Exit criterion**: a consumer advances its cursor in the transaction of its effect; the fact tables rebuilt
   from `events` equal those written continuously;
   each webhook type is emitted exactly once per transition, signed, and retried after a failure; `rate()`
   works on the exposed counters.
@@ -212,10 +212,79 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 ### Lot 12: `batched` strategy
 
 - **Content**: batch formation, `no_batch`, maximum wait; bisection with a cache of the results and a
-  `bisection_concurrency` pool; `pending_failure_depth > 0`; optimistic merge (Q3); `batched` strategy. Taken over
-  from lot 7: measure the useless assemblies after the closing of the PR at the head.
-- **Exit criterion**: criterion of phase 2 on a synthetic load of the simulator: p50 reduced by
-  40 % at 20 PRs per hour against `pipelined`, and a planted failure isolated in ≤ log2(batch size) runs.
+  `bisection_concurrency` pool; `pending_failure_depth > 0`; optimistic merge with the strict rule
+  (`DECISIONS.md` D209); an inferred failure never evicts a PR (D211); `batched` strategy; a load model in the
+  simulator (arrivals, CI duration, broken and flaky PRs). Taken over from lot 7: measure the useless assemblies
+  after the closing of the PR at the head, and remove them above 5 % (D212).
+- **Exit criterion** (`DECISIONS.md` D212, D223): `fault_injection` passes with `batched`; a planted failure is
+  isolated in ≤ log2(batch size) rounds of runs after the confirmed failure of the batch; on the fixed scenario
+  of D212, `batched` uses at least 30 % fewer runs per merged PR than `pipelined`, with a p50 time in queue at
+  most 1.5 times as long (`mise run load`).
+- **Tracking**:
+  - Steps: 1. batch formation; 2. bisection (cache, D211, D216, `bisection_concurrency` pool); 3.
+    `pending_failure_depth > 0`; 4. optimistic merge (D209); 5. load model and cost criterion in `cihub-mq-core`
+    (D212, D215); 6. useless assemblies; 7. `fault_injection` with `batched`, exit criteria.
+  - Done (October 6, 2026): step 1. `plan` forms a batch from the first pending item whose predecessors are in
+    groups and the pending items that follow it, up to `batching.size`, until a `no_batch` item; a batch that is
+    not full waits until its oldest member has waited `batching.max_wait_minutes` since its admission
+    (`Item.admitted_at`, set by `apply` from the admission), and `wake_at` gives the end of the wait. A batch
+    takes one slot of the window. A member that leaves dissolves the batch, and the others restart with
+    `batch_member_left` (D217); `validity` finds a batch by its first member still in the
+    queue, so that a push on the target restarts the members left after a partial merge. Tests: scenarios in
+    `tests/batching.rs`, batches in the property test.
+  - Done (October 6, 2026): step 2. The `bisection` rule of `plan` bisects a group of several PRs in failure
+    whose predecessors merged, at once (D211): the first half is tested in a child group of kind `bisection`,
+    from the `bisection_concurrency` pool; the other half waits in the group, in `pending_failure`. A child
+    that passes makes the other half split in turn, down to one PR tested alone (D211); with
+    `optimization_mode: off`, that half goes back to the queue. A child that fails or is given up sends the
+    other half back to the queue. The first split of a batch closes the window by half, and the failure of a
+    bisection group does not close it again. `evict` keeps a finished half while its parent is live; `check`
+    accepts a member in a group in bisection and in its half. The budget restart of a bisection group draws
+    from the bisection pool. Tests: five scenarios in `tests/batching.rs` (culprit last, culprit first,
+    flaky failure, `optimization_mode: off`, full pool); the CI of the world (`World::drain`) moves the clock
+    when a round has no run.
+  - Done (October 6, 2026, D218): a merge conflict at the assembly of a group of several PRs sends it to
+    `pending_failure`, and the bisection finds the PR that conflicts. Test: a conflict in a batch evicts
+    only its PR.
+  - Done (October 6, 2026, D219): the reason `test_run_failed_by_optimization` is removed.
+  - Done (October 6, 2026): step 3. With `pending_failure_depth: N > 0`, a group in failure whose predecessors
+    merged waits for the runs of the first `N` live groups behind it whose predecessors include its members,
+    before its failure budget, its failure or its first split; a group without such a successor does not
+    wait. A successor that passes releases nothing yet: that is step 4. Tests: `tests/failure_depth.rs`, and
+    a depth of 0 to 2 in the property test.
+  - Done (October 6, 2026): step 4. With `optimistic_merging`, the `optimistic` rule of `plan` takes a group
+    that passed by its own run, and gives `tests_passed` to each live group whose live members are all in its
+    predecessors: `passed_by_optimization` from `testing` (its run is interrupted), `successor_test_run_passed`
+    from `pending_failure`; the members record the run of the successor. A group in bisection is not proved:
+    its halves are. An evicted group still restarts the groups behind it (D209). `evict` keeps a run that a
+    live item cites as its proof. Tests: `tests/optimistic.rs`, and the option in the property test.
+  - Done (October 6, 2026): step 5. `tests/load.rs` plays the scenario of D212 in the world of `cihub-mq-core` (D215):
+    exponential arrivals, a CI of 20 minutes, broken and flaky PRs, three fixed seeds, `pipelined` against
+    `batched`. Measured (October 6, 2026): runs per merged PR 4.18 against 1.69 (−60 %, the bar of −30 %
+    holds); p50 time in queue 465 minutes against 881 (+89 %, the bar of +25 % fails). The test fails
+    until a decision on the algorithm, the scenario or the bar. After D220 (halves at once), D221 (groups
+    behind given up) and D222 (batches of 4): runs per merged PR 4.18 against 1.09 (−74 %); p50 465 minutes
+    against 657 (+41 %). With 3 % of broken PRs instead of 10 %: 1.91 against 0.58 runs, p50 76 against 129
+    minutes (+70 %). D223 sets the time bar at 1.5 times: the test passes (1.41), in `mise run load`.
+  - Done (October 6, 2026): step 7. `fault_injection_batched` plays the fault injection test of lot 7 with
+    `strategy: batched` and checks that the seeds formed batches and bisections; it passes on 200 seeds, and
+    `fault_injection` too. In the CI of both tests, a red PR fails every run that tests its head, as a member
+    or as a predecessor: before, only its own run failed, and a run on top of it could prove it by optimistic
+    merge. `mise run sim` plays both tests. `a_planted_failure_is_isolated_in_log2_rounds` checks the
+    bisection for each batch size from 2 to 8 and each place of the failure (D223).
+  - Done (October 6, 2026): step 6. `useless_assemblies_after_a_close_stay_under_5_percent` plays the load of
+    D212 where 5 % of the PRs close up to an hour after their submission. An assembly is useless when its run
+    stops without a result because a PR that it tested closed (`prerequisite_merge_item_cancelled`,
+    `batch_member_left`); the run of the closed PR alone does not count. Measured: `pipelined` 2 out of 1,765
+    assemblies, `batched` 0 out of 454: under 5 %, so nothing to remove. Limit: an assembly is instant in the
+    simulated world, so the measure is a floor.
+  - Done (October 7, 2026, D224), after a manual test on `getsyncr/contracts`: a batch that is not full starts
+    at once when the item right behind it is `no_batch`. Test: `a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it`.
+  - Closed on October 6, 2026 by the project lead: the exit criteria pass (`mise run load`, `mise run sim`, the
+    bisection test).
+  - Later, outside the lot (asked by the project lead on October 6, 2026, not done): a nightly CI job for
+    `mise run sim` and `mise run load`. No workflow runs them today, although `AGENTS.md` says that the CI runs
+    `sim` at night.
 
 ---
 
@@ -247,7 +316,8 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 
 - **Content**: ClickHouse implementation of `AnalyticsStore` (Q8); Helm chart, with the migration `Job` as a
   `pre-install` and `pre-upgrade` hook (`DECISIONS.md` D14); load test at the order of magnitude of the standard
-  instance; chaos exercise on staging; API compatibility policy and first published version.
+  instance; chaos exercise on staging; the two bars of phase 1 measured by hand (`DECISIONS.md` D214); API
+  compatibility policy and first published version.
 - **Exit criterion**: an instance holds 1,000 PRs per day with ClickHouse enabled; the migration from Postgres to
   ClickHouse is a copy without any change to the application code.
 

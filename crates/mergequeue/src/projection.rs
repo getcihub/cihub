@@ -382,6 +382,7 @@ async fn refused_item(
         verified_by_run_id: None,
         merged_sha: None,
         submitted_at: event.occurred_at,
+        admitted_at: None,
         direct_merge_tried: false,
     }))
 }
