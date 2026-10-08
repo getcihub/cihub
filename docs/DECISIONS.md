@@ -69,7 +69,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `rust` type does not handle a workspace whose root has no `[package]`. release-please updates
   `[workspace.package].version` in `Cargo.toml`, the versions of the `cihub-*` crates in `Cargo.lock` and
   `CHANGELOG.md`; tags are `vX.Y.Z`. The workflow uses the project's bot GitHub App (secrets `BOT_CLIENT_ID` and
-  `BOT_APP_PRIVATE_KEY`). The image and its publication workflow arrive in Lot 9.
+  `BOT_APP_PRIVATE_KEY`). The image and its publication workflow arrive in Lot 9. _Extended by D243._
 - **D20** Extends D16: the identifier constructors (`OrgId::new()` and the others) are also forbidden by
   `disallowed-methods`; they carry the local exception and have no `impl Default`. Tests use fixed identifiers
   (`OrgId::from_ulid(Ulid(1))`).
@@ -570,7 +570,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   The status has no details URL before Lot 10 (no public address since D92); the comment has no restart
   checkbox: it says to write `/cihub restart` for an item under test, and names the test branch without a link;
   for an ended item, it shows the submission checkbox of D163. A single job at a time writes the comment of a PR
-  (advisory lock). _Extended by D173._
+  (advisory lock). _Extended by D173._ _Extended by D244._
 - **D157** The `/cihub cancel` and `/cihub restart` commands require `write` and go through the connection
   deliveries pass, like `merge` (D108). The `pr_command:<delivery_id>:1` job (class `interactive`) checks the
   permission, finds the live item of the PR and deposits `item.cancel_requested` or `item.restart_requested` in
@@ -732,7 +732,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   refused command quotes the command (`> /cihub restart`) and gives the cause after `Refused:`. The commit status
   does not change. Still no checkbox for `restart` or `cancel`: a click has no confirmation, both affect the PRs
   behind, and the comment of an item under test is often rewritten. A separate evolution, outside the plan of a
-  lot. _Extended by D174._ _Extended by D241._
+  lot. _Extended by D174._ _Extended by D241._ _Extended by D244._
 - **D174** Extends D173: the comment of CIHub on the PR names no test branch and no run identifier. It says
   where the test runs, as a link: the draft PR of the run (`Tested on top of #5 in #42.`), or its test commit with
   `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
@@ -839,6 +839,25 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   free for another run. `CI` replaces `Build Success` as the required status, in the `queue_conditions` and the
   `merge_conditions` of `.cihub.yaml`. The `main` queue admits a PR whose `CI` is `success` or `skipped`, as
   `ci.yml` skips it on the release-please PR; the test branch of the queue still runs it in full.
+- **D243** Extends D19: the image is `ghcr.io/nlecoy/cihub`, in the namespace of the current repository, until the
+  repository moves to `getcihub`. It is for `linux/amd64` only, the architecture of the one node of
+  `cihub-runner`; no `linux/arm64` image and no manifest for now. `image.yaml` runs on `cihub-runner`: buildx,
+  with the `kubernetes` driver, starts a rootless BuildKit pod in the `buildkit` namespace of the cluster, so the
+  `Dockerfile` stays the only definition of the image. `nlecoy/home-ops` gives this namespace the `privileged` Pod
+  Security level and lets the ServiceAccount of the runner manage the BuildKit deployment there.
+- **D244** Extends D156 and D173: the comment of CIHub on the PR shows the history of the PR in the queue, in a
+  folded `<details>` block (`History (N)`) between the details and the commands. The history is a projection of
+  the log: the events `item.submitted`, `item.transitioned`, `item.readiness_changed`, `item.cancel_requested`,
+  `item.restart_requested` and `merge.failed` of every item of the PR in the queue, in the order of the log. A row
+  gives the time, absolute in UTC (`YYYY-MM-DD HH:MM`), and the event, with the sentence of its reason
+  (`Reason::describe`). Two consecutive rows with the same text give one row. The comment shows the last 20 rows,
+  then the number of older rows. The events of the groups and runs are not in the history. A row whose actor is a
+  user names that user by login in a code span (`` `@login` ``), so that the comment mentions and notifies no
+  one; the `users` table gives the login (D42), which a user actor always has. The system and the bot are not
+  named. `converge_surfaces` reads the events of the surfaces of the queue in one query, from their items (a new
+  index `queue_items (queue_id, pr_number)` over all the items). No new setting:
+  `comments_enabled` covers the history. The state line and the commit status do not change. A separate
+  evolution, outside the plan of a lot.
 
 ## Open questions
 

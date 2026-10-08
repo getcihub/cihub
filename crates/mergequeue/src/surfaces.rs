@@ -3,16 +3,20 @@
 //! reconciliation renders the surfaces of `plan` into `pr_surfaces`; the job
 //! `publish_surfaces` makes the SCM show the last rendering.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{BlockReason, ConnectionId, ItemState, JobClass, OrgId, RepoId, ScmInstanceId};
+use cihub_domain::{
+    BlockReason, ConnectionId, EventKind, EventType, ItemState, JobClass, OrgId, Reason, RepoId,
+    ScmInstanceId,
+};
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::PgConnection;
 use time::{OffsetDateTime, UtcOffset};
@@ -30,6 +34,20 @@ pub(crate) const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "ci
 
 /// A commit status of the SCM is at most this long.
 const DESCRIPTION_LIMIT: usize = 140;
+
+/// The events that the history of a PR shows (`DECISIONS.md` D244): the
+/// events of its items, never those of the groups and the runs.
+const HISTORY_EVENTS: [EventType; 6] = [
+    EventType::ItemSubmitted,
+    EventType::ItemTransitioned,
+    EventType::ItemReadinessChanged,
+    EventType::ItemCancelRequested,
+    EventType::ItemRestartRequested,
+    EventType::MergeFailed,
+];
+
+/// The comment shows the last rows of the history, then counts the others.
+const HISTORY_ROWS: usize = 20;
 
 /// What a PR must show, as the SCM writes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,8 +103,14 @@ pub(crate) fn queue_status(
     }
 }
 
-/// Renders `surface` with the settings of its queue.
-pub(crate) fn render(surface: &Surface, settings: &QueueSettings, target_branch: &str) -> Rendered {
+/// Renders `surface` with the settings of its queue and the logged `history`
+/// of its PR.
+pub(crate) fn render(
+    surface: &Surface,
+    settings: &QueueSettings,
+    target_branch: &str,
+    history: &[HistoryEvent],
+) -> Rendered {
     let status = settings.status_check_enabled.value.then(|| RenderedStatus {
         state: status_state(surface.state),
         description: truncate(&description(surface)),
@@ -94,7 +118,7 @@ pub(crate) fn render(surface: &Surface, settings: &QueueSettings, target_branch:
     let comment = settings
         .comments_enabled
         .value
-        .then(|| comment(surface, settings, target_branch));
+        .then(|| comment(surface, settings, target_branch, history));
     let (add_labels, remove_labels) = labels(surface, settings.state_labels_enabled.value);
     Rendered {
         sha: surface.head_sha.clone(),
@@ -182,8 +206,14 @@ fn block_text(reason: &BlockReason) -> String {
 }
 
 /// The comment of the queue on the PR, in Markdown (`DECISIONS.md` D173): the
-/// state line, its details, then the commands in small print.
-fn comment(surface: &Surface, settings: &QueueSettings, target_branch: &str) -> String {
+/// state line, its details, the history (`DECISIONS.md` D244), then the
+/// commands in small print.
+fn comment(
+    surface: &Surface,
+    settings: &QueueSettings,
+    target_branch: &str,
+    history: &[HistoryEvent],
+) -> String {
     let commands = settings.commands_enabled.value;
     let mut blocks = vec![state_line(surface, target_branch)];
     if let Some(wait) = &surface.batch_wait {
@@ -231,6 +261,7 @@ fn comment(surface: &Surface, settings: &QueueSettings, target_branch: &str) -> 
     if !details.is_empty() {
         blocks.push(details.join("\n"));
     }
+    blocks.extend(history_block(history));
     // Only an item in test can restart (`DECISIONS.md` D157).
     let mut notes = Vec::new();
     match surface.state {
@@ -266,20 +297,135 @@ fn state_line(surface: &Surface, target_branch: &str) -> String {
         Some(position) => format!("position {position} {queue}"),
         None => queue,
     };
+    let (icon, label) = state_mark(surface.state);
     match surface.state {
         ItemState::NotReady => {
-            format!("⏳ **Waiting** · not in the queue for `{target_branch}` yet")
+            format!("{icon} **{label}** · not in the queue for `{target_branch}` yet")
         }
-        ItemState::Pending => format!("🕓 **Queued** · {at}"),
-        ItemState::Testing => format!("🧪 **Testing** · {at}"),
+        ItemState::Pending | ItemState::Testing => format!("{icon} **{label}** · {at}"),
         ItemState::PendingFailure => {
-            "⚠️ **Tests failed** · waiting for the PRs ahead before it fails".to_owned()
+            format!("{icon} **{label}** · waiting for the PRs ahead before it fails")
         }
-        ItemState::TestsPassed => format!("🚀 **Tests passed** · merging into `{target_branch}`"),
-        ItemState::Merged => format!("✅ **Merged** into `{target_branch}` by the queue"),
-        ItemState::Failed => format!("❌ **Failed** · {}", surface.reason.describe()),
-        ItemState::Cancelled => format!("⚪ **Cancelled** · {}", surface.reason.describe()),
+        ItemState::TestsPassed => format!("{icon} **{label}** · merging into `{target_branch}`"),
+        ItemState::Merged => format!("{icon} **{label}** into `{target_branch}` by the queue"),
+        ItemState::Failed | ItemState::Cancelled => {
+            format!("{icon} **{label}** · {}", surface.reason.describe())
+        }
     }
+}
+
+/// The icon and the label of a state, in the comment and in its history.
+fn state_mark(state: ItemState) -> (&'static str, &'static str) {
+    match state {
+        ItemState::NotReady => ("⏳", "Waiting"),
+        ItemState::Pending => ("🕓", "Queued"),
+        ItemState::Testing => ("🧪", "Testing"),
+        ItemState::PendingFailure => ("⚠️", "Tests failed"),
+        ItemState::TestsPassed => ("🚀", "Tests passed"),
+        ItemState::Merged => ("✅", "Merged"),
+        ItemState::Failed => ("❌", "Failed"),
+        ItemState::Cancelled => ("⚪", "Cancelled"),
+    }
+}
+
+/// An event of the log of a PR, as its history reads it.
+#[derive(Debug)]
+pub(crate) struct HistoryEvent {
+    pub occurred_at: OffsetDateTime,
+    pub kind: EventKind,
+    /// The login of the user who acted; `None` for the system and the bot.
+    pub login: Option<String>,
+}
+
+/// The history of a PR as a folded table (`DECISIONS.md` D244), `None` without
+/// a row. Two consecutive events with the same text are one row; the comment
+/// shows the last rows and counts the older ones.
+fn history_block(events: &[HistoryEvent]) -> Option<String> {
+    let mut rows: Vec<(&HistoryEvent, String)> = events
+        .iter()
+        .filter_map(|event| Some((event, event_text(event)?)))
+        .collect();
+    rows.dedup_by(|later, kept| later.1 == kept.1);
+    if rows.is_empty() {
+        return None;
+    }
+    let total = rows.len();
+    let older = total.saturating_sub(HISTORY_ROWS);
+    // GitHub renders the table only with a blank line after `</summary>` and
+    // before `</details>`.
+    let mut block = format!("<details><summary>History ({total})</summary>\n\n");
+    match older {
+        0 => {}
+        1 => block.push_str("1 older event.\n\n"),
+        n => {
+            let _ = write!(block, "{n} older events.\n\n");
+        }
+    }
+    block.push_str("| Time (UTC) | Event |\n| --- | --- |\n");
+    for (event, text) in rows.iter().skip(older) {
+        let _ = writeln!(
+            block,
+            "| {} | {} |",
+            utc_minute(event.occurred_at),
+            cell(text)
+        );
+    }
+    block.push_str("\n</details>");
+    Some(block)
+}
+
+/// The sentence of a row, `None` for an event that the history does not show.
+fn event_text(event: &HistoryEvent) -> Option<String> {
+    let by = by_text(event.login.as_deref());
+    match &event.kind {
+        EventKind::ItemSubmitted { .. } => Some(format!("📥 Submitted{by}")),
+        EventKind::ItemTransitioned { to, reason, .. } => Some(transition_text(*to, *reason)),
+        EventKind::ItemReadinessChanged { block_reasons, .. } => {
+            Some(readiness_text(block_reasons))
+        }
+        EventKind::ItemCancelRequested { .. } => Some(format!("🛑 Cancel requested{by}")),
+        EventKind::ItemRestartRequested { .. } => Some(format!("🔁 Restart requested{by}")),
+        EventKind::MergeFailed { error, .. } => Some(format!("❌ Merge failed: `{error}`")),
+        _ => None,
+    }
+}
+
+/// A mention notifies its user: the code span names the user without it
+/// (`DECISIONS.md` D244).
+fn by_text(login: Option<&str>) -> String {
+    login.map_or_else(String::new, |login| format!(" by `@{login}`"))
+}
+
+fn transition_text(to: ItemState, reason: Reason) -> String {
+    let (icon, label) = state_mark(to);
+    format!("{icon} {label}: {}", reason.describe())
+}
+
+fn readiness_text(block_reasons: &[BlockReason]) -> String {
+    if block_reasons.is_empty() {
+        return "✅ Nothing blocks the PR".to_owned();
+    }
+    let reasons: Vec<String> = block_reasons.iter().map(block_text).collect();
+    format!("⏳ Waiting: {}", reasons.join("; "))
+}
+
+/// `YYYY-MM-DD HH:MM` in UTC: an absolute time does not go stale between two
+/// edits of the comment.
+fn utc_minute(at: OffsetDateTime) -> String {
+    let at = at.to_offset(UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        at.year(),
+        u8::from(at.month()),
+        at.day(),
+        at.hour(),
+        at.minute()
+    )
+}
+
+/// A check name or a condition can hold `|`, and a newline ends a row.
+fn cell(text: &str) -> String {
+    text.replace('|', "\\|").replace(['\r', '\n'], " ")
 }
 
 /// When the batch stops waiting for more PRs, never when its test starts: a
@@ -350,16 +496,26 @@ pub(crate) async fn converge_surfaces(
     settings: &QueueSettings,
     surfaces: &[Surface],
 ) -> Result<Vec<Job>, MergeQueueError> {
+    let numbers: Vec<i64> = surfaces
+        .iter()
+        .map(|surface| i64::try_from(surface.pr_number).unwrap_or(i64::MAX))
+        .collect();
+    // Without a comment, the history has no use (`DECISIONS.md` D244).
+    let histories = if settings.comments_enabled.value {
+        read_histories(conn, target, &numbers).await?
+    } else {
+        BTreeMap::new()
+    };
     let known: Vec<(i64, String)> =
         sqlx::query_as("SELECT pr_number, desired_hash FROM pr_surfaces WHERE queue_id = $1")
             .bind(target.queue_id.to_string())
             .fetch_all(&mut *conn)
             .await
             .map_err(MergeQueueError::Query)?;
-    for surface in surfaces {
-        let rendered = render(surface, settings, &target.target_branch);
+    for (surface, number) in surfaces.iter().zip(numbers) {
+        let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
+        let rendered = render(surface, settings, &target.target_branch, history);
         let desired_hash = hash(&rendered);
-        let number = i64::try_from(surface.pr_number).unwrap_or(i64::MAX);
         if known
             .iter()
             .any(|(n, h)| *n == number && *h == desired_hash)
@@ -395,6 +551,59 @@ pub(crate) async fn converge_surfaces(
         .into_iter()
         .map(|(number, hash)| publish_job(target, number, &hash))
         .collect())
+}
+
+/// An event of the history, as `read_histories` selects it: its PR, id, type,
+/// payload and time, and the login of the user who caused it.
+type HistoryRow = (i64, String, String, Value, OffsetDateTime, Option<String>);
+
+/// The events of the history of the PRs `numbers` of the queue, by PR, in the
+/// order of the log (`DECISIONS.md` D244). All the items of a PR count, not
+/// only the current one. The reading starts from these items: their events
+/// come through `events.item_id`. A submission has no item; the transition
+/// that creates an item names it in `cause_id`.
+async fn read_histories(
+    conn: &mut PgConnection,
+    target: &QueueTarget,
+    numbers: &[i64],
+) -> Result<BTreeMap<i64, Vec<HistoryEvent>>, MergeQueueError> {
+    let types: Vec<&str> = HISTORY_EVENTS.into_iter().map(EventType::as_str).collect();
+    let rows: Vec<HistoryRow> = sqlx::query_as(
+        "SELECT pr_number, id, type, payload, occurred_at, login FROM (
+             SELECT i.pr_number, e.seq, e.id, e.type::text AS type, e.payload, e.occurred_at, u.login
+             FROM queue_items i
+             JOIN events e ON e.item_id = i.id
+                          AND e.type = ANY($2::event_type[])
+             LEFT JOIN users u ON u.id = e.actor_user_id
+             WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
+             UNION ALL
+             SELECT i.pr_number, s.seq, s.id, s.type::text, s.payload, s.occurred_at, u.login
+             FROM queue_items i
+             JOIN events t ON t.item_id = i.id
+                          AND t.type = 'item.transitioned' AND t.payload->>'from' IS NULL
+             JOIN events s ON s.id = t.cause_id AND s.type = 'item.submitted'
+             LEFT JOIN users u ON u.id = s.actor_user_id
+             WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
+         ) history
+         ORDER BY seq",
+    )
+    .bind(target.queue_id.to_string())
+    .bind(&types)
+    .bind(numbers)
+    .fetch_all(conn)
+    .await
+    .map_err(MergeQueueError::Query)?;
+    let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
+    for (number, id, kind, payload, occurred_at, login) in rows {
+        let kind = serde_json::from_value(json!({ "type": kind, "payload": payload }))
+            .map_err(|source| MergeQueueError::ReadEvent { id, source })?;
+        histories.entry(number).or_default().push(HistoryEvent {
+            occurred_at,
+            kind,
+            login,
+        });
+    }
+    Ok(histories)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -576,7 +785,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_domain::{ItemId, Reason};
+    use cihub_domain::{ItemId, JobError, Mergeability, Priority, Reason, SubmittedVia, UserId};
     use ulid::Ulid;
 
     use super::*;
@@ -617,7 +826,7 @@ mod tests {
             (ItemState::Cancelled, StatusState::Error),
         ];
         for (state, want) in cases {
-            let rendered = render(&surface(state), &defaults, "main");
+            let rendered = render(&surface(state), &defaults, "main", &[]);
             assert_eq!(rendered.status.unwrap().state, want, "{state:?}");
             assert_eq!(rendered.sha, "abc");
         }
@@ -694,7 +903,7 @@ mod tests {
         ];
         let defaults = settings(|_| {});
         for (surface, want) in cases {
-            let comment = render(&surface, &defaults, "main").comment.unwrap();
+            let comment = render(&surface, &defaults, "main", &[]).comment.unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
         }
     }
@@ -728,7 +937,7 @@ mod tests {
             queued.predecessors = Vec::new();
             queued.test_sha = None;
             queued.batch_wait = Some(BatchWait { members, closes_at });
-            let rendered = render(&queued, &size_3, "main");
+            let rendered = render(&queued, &size_3, "main", &[]);
             assert_eq!(rendered.comment.unwrap(), want, "{members}");
             let status = rendered.status.unwrap().description;
             assert_eq!(status, "Queued, position 1", "the status does not change");
@@ -739,7 +948,7 @@ mod tests {
     fn without_commands_the_comment_names_none() {
         let off = settings(|l| l.commands_enabled = Some(Setting::new(false)));
         for state in [ItemState::Testing, ItemState::Failed] {
-            let comment = render(&surface(state), &off, "main").comment.unwrap();
+            let comment = render(&surface(state), &off, "main", &[]).comment.unwrap();
             assert!(!comment.contains("/cihub"), "{comment}");
             assert!(!comment.contains(SUBMIT_BOX), "{comment}");
         }
@@ -749,7 +958,7 @@ mod tests {
     fn a_failure_shows_the_sentence_of_its_reason() {
         let mut failed = surface(ItemState::Failed);
         failed.reason = Reason::PrPushedTo;
-        let rendered = render(&failed, &settings(|_| {}), "main");
+        let rendered = render(&failed, &settings(|_| {}), "main", &[]);
         let want = "Failed: the PR received a new commit after its submission";
         assert_eq!(rendered.status.unwrap().description, want);
         let comment = rendered.comment.unwrap();
@@ -766,7 +975,7 @@ mod tests {
             l.status_check_enabled = Some(Setting::new(false));
             l.comments_enabled = Some(Setting::new(false));
         });
-        let rendered = render(&surface(ItemState::Pending), &off, "main");
+        let rendered = render(&surface(ItemState::Pending), &off, "main", &[]);
         assert_eq!((rendered.status, rendered.comment), (None, None));
     }
 
@@ -776,10 +985,13 @@ mod tests {
         let on = settings(|l| l.state_labels_enabled = Some(Setting::new(true)));
         let mut testing = surface(ItemState::Testing);
         let labels = |rendered: Rendered| (rendered.add_labels, rendered.remove_labels);
-        assert_eq!(labels(render(&testing, &off, "main")), (vec![], vec![]));
+        assert_eq!(
+            labels(render(&testing, &off, "main", &[])),
+            (vec![], vec![])
+        );
         let others = |labels: &[&str]| labels.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            labels(render(&testing, &on, "main")),
+            labels(render(&testing, &on, "main", &[])),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -787,7 +999,7 @@ mod tests {
         );
         testing.labels = BTreeSet::from(["cihub:queued".to_owned(), "bug".to_owned()]);
         assert_eq!(
-            labels(render(&testing, &off, "main")),
+            labels(render(&testing, &off, "main", &[])),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -796,7 +1008,7 @@ mod tests {
         let mut merged = surface(ItemState::Merged);
         merged.labels = BTreeSet::from(["cihub:testing".to_owned()]);
         assert_eq!(
-            labels(render(&merged, &off, "main")),
+            labels(render(&merged, &off, "main", &[])),
             (vec![], others(&STATE_LABELS))
         );
     }
@@ -807,12 +1019,297 @@ mod tests {
         blocked.block_reasons = vec![BlockReason::QueueConditionsUnmet {
             conditions: vec!["x".repeat(200)],
         }];
-        let rendered = render(&blocked, &settings(|_| {}), "main");
+        let rendered = render(&blocked, &settings(|_| {}), "main", &[]);
         let description = rendered.status.clone().unwrap().description;
         assert_eq!(description.chars().count(), DESCRIPTION_LIMIT);
-        let other = render(&surface(ItemState::Pending), &settings(|_| {}), "main");
+        let other = render(&surface(ItemState::Pending), &settings(|_| {}), "main", &[]);
         assert_ne!(hash(&rendered), hash(&other));
         assert_eq!(hash(&rendered), hash(&rendered.clone()));
+    }
+
+    fn at(day: u8, hour: u8, minute: u8) -> OffsetDateTime {
+        time::Date::from_calendar_date(2026, time::Month::October, day)
+            .unwrap()
+            .with_hms(hour, minute, 30)
+            .unwrap()
+            .assume_utc()
+    }
+
+    fn logged(kind: EventKind, login: Option<&str>, occurred_at: OffsetDateTime) -> HistoryEvent {
+        HistoryEvent {
+            occurred_at,
+            kind,
+            login: login.map(str::to_owned),
+        }
+    }
+
+    fn submitted() -> EventKind {
+        EventKind::ItemSubmitted {
+            pr_number: 7,
+            head_sha: "abc".into(),
+            priority: Priority::MEDIUM,
+            no_batch: false,
+            direct: false,
+            submitted_via: SubmittedVia::Comment,
+            author_id: UserId::from_ulid(Ulid(1)),
+            additions: 1,
+            deletions: 1,
+            changed_files: 1,
+            sender_permission: None,
+        }
+    }
+
+    fn transitioned(to: ItemState, reason: Reason) -> EventKind {
+        EventKind::ItemTransitioned {
+            item_id: ItemId::from_ulid(Ulid(1)),
+            from: None,
+            to,
+            reason,
+            position: None,
+            verified_by_run_id: None,
+            merged_sha: None,
+        }
+    }
+
+    fn readiness(block_reasons: Vec<BlockReason>) -> EventKind {
+        EventKind::ItemReadinessChanged {
+            item_id: ItemId::from_ulid(Ulid(1)),
+            mergeability: Mergeability::Mergeable,
+            block_reasons,
+        }
+    }
+
+    /// The text of the rows of a history, without its frame.
+    fn rows_of(history: &[HistoryEvent]) -> Vec<String> {
+        let block = history_block(history).unwrap();
+        block
+            .lines()
+            .filter(|line| line.starts_with("| 2026"))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// `DECISIONS.md` D244.
+    #[test]
+    fn each_event_kind_gives_its_row() {
+        let item_id = ItemId::from_ulid(Ulid(1));
+        let cases = [
+            (
+                submitted(),
+                Some("nlecoy"),
+                "| 2026-10-07 14:03 | 📥 Submitted by `@nlecoy` |",
+            ),
+            (submitted(), None, "| 2026-10-07 14:03 | 📥 Submitted |"),
+            (
+                transitioned(ItemState::Testing, Reason::TestRunStarted),
+                None,
+                "| 2026-10-07 14:03 | 🧪 Testing: a test run started |",
+            ),
+            (
+                transitioned(ItemState::Failed, Reason::PrPushedTo),
+                None,
+                "| 2026-10-07 14:03 | ❌ Failed: the PR received a new commit after its submission |",
+            ),
+            (
+                readiness(vec![BlockReason::ReviewRequired { have: 1, need: 2 }]),
+                None,
+                "| 2026-10-07 14:03 | ⏳ Waiting: 1 of 2 required approvals |",
+            ),
+            (
+                readiness(vec![BlockReason::ChangesRequested, BlockReason::BehindBase]),
+                None,
+                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes; the branch is behind its base |",
+            ),
+            (
+                readiness(Vec::new()),
+                None,
+                "| 2026-10-07 14:03 | ✅ Nothing blocks the PR |",
+            ),
+            (
+                EventKind::ItemCancelRequested {
+                    item_id,
+                    by_admin: false,
+                },
+                Some("jdupont"),
+                "| 2026-10-07 14:03 | 🛑 Cancel requested by `@jdupont` |",
+            ),
+            (
+                EventKind::ItemRestartRequested {
+                    item_id,
+                    by_api: false,
+                },
+                None,
+                "| 2026-10-07 14:03 | 🔁 Restart requested |",
+            ),
+            (
+                EventKind::MergeFailed {
+                    item_id,
+                    direct: false,
+                    error: JobError::MergeRejected,
+                },
+                None,
+                "| 2026-10-07 14:03 | ❌ Merge failed: `merge_rejected` |",
+            ),
+        ];
+        for (kind, actor, want) in cases {
+            let rows = rows_of(&[logged(kind.clone(), actor, at(7, 14, 3))]);
+            assert_eq!(rows, [want], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn an_event_of_a_group_or_a_run_has_no_row() {
+        let event = logged(
+            EventKind::QueueWindowChanged {
+                before: 1,
+                after: 2,
+            },
+            None,
+            at(7, 14, 3),
+        );
+        assert_eq!(history_block(&[event]), None);
+        assert_eq!(history_block(&[]), None);
+    }
+
+    #[test]
+    fn consecutive_identical_rows_give_one_row() {
+        let blocked = || readiness(vec![BlockReason::ChangesRequested]);
+        let history = [
+            logged(blocked(), None, at(7, 14, 3)),
+            logged(blocked(), None, at(7, 14, 4)),
+            logged(readiness(Vec::new()), None, at(7, 14, 5)),
+            logged(blocked(), None, at(7, 14, 6)),
+        ];
+        assert_eq!(
+            rows_of(&history),
+            [
+                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes |",
+                "| 2026-10-07 14:05 | ✅ Nothing blocks the PR |",
+                "| 2026-10-07 14:06 | ⏳ Waiting: a review asks for changes |",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_history_shows_the_last_rows_and_counts_the_older_ones() {
+        let history = |count: u8| -> Vec<HistoryEvent> {
+            (0..count)
+                .map(|n| {
+                    let kind = EventKind::ItemRestartRequested {
+                        item_id: ItemId::from_ulid(Ulid(u128::from(n))),
+                        by_api: false,
+                    };
+                    logged(kind, Some(&format!("user{n}")), at(7, 10, n))
+                })
+                .collect()
+        };
+        // The count, the line of the older rows, and the first row shown.
+        let cases = [
+            (3, None, "user0"),
+            (20, None, "user0"),
+            (21, Some("1 older event.\n\n"), "user1"),
+            (25, Some("5 older events.\n\n"), "user5"),
+        ];
+        for (count, older, first) in cases {
+            let events = history(count);
+            let block = history_block(&events).unwrap();
+            let head = format!("<details><summary>History ({count})</summary>\n\n");
+            let table = "| Time (UTC) | Event |";
+            assert!(block.starts_with(&format!("{head}{}{table}", older.unwrap_or(""))));
+            assert!(block.ends_with("\n\n</details>"), "{block}");
+            let rows = rows_of(&events);
+            assert_eq!(rows.len(), usize::from(count).min(HISTORY_ROWS), "{count}");
+            assert!(rows[0].ends_with(&format!("by `@{first}` |")), "{rows:?}");
+        }
+    }
+
+    #[test]
+    fn the_history_covers_the_items_of_the_pr_in_the_order_of_the_log() {
+        let other = |item| EventKind::ItemTransitioned {
+            item_id: ItemId::from_ulid(Ulid(item)),
+            from: None,
+            to: ItemState::Pending,
+            reason: Reason::MergeItemNowReady,
+            position: None,
+            verified_by_run_id: None,
+            merged_sha: None,
+        };
+        let history = [
+            logged(other(1), None, at(7, 14, 3)),
+            logged(
+                transitioned(ItemState::Failed, Reason::PrPushedTo),
+                None,
+                at(7, 14, 4),
+            ),
+            logged(other(2), None, at(8, 9, 0)),
+        ];
+        assert_eq!(rows_of(&history).len(), 3);
+        assert!(rows_of(&history)[2].starts_with("| 2026-10-08 09:00 |"));
+    }
+
+    #[test]
+    fn a_pipe_or_a_newline_does_not_break_the_table() {
+        let blocked = readiness(vec![
+            BlockReason::FailingRequiredCheck {
+                check: "build | lint".into(),
+            },
+            BlockReason::QueueConditionsUnmet {
+                conditions: vec!["a\nb".into()],
+            },
+        ]);
+        let rows = rows_of(&[logged(blocked, None, at(7, 14, 3))]);
+        assert_eq!(
+            rows,
+            [
+                "| 2026-10-07 14:03 | ⏳ Waiting: the required check `build \\| lint` failed; the queue conditions `a b` are not met |"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_history_sits_between_the_details_and_the_commands() {
+        let history = [logged(submitted(), Some("nlecoy"), at(7, 14, 3))];
+        let comment = render(
+            &surface(ItemState::Testing),
+            &settings(|_| {}),
+            "main",
+            &history,
+        )
+        .comment
+        .unwrap();
+        let want = "🧪 **Testing** · position 2 in the queue for `main`\n\n\
+                    Tested on top of #5 in def456.\n\n\
+                    <details><summary>History (1)</summary>\n\n\
+                    | Time (UTC) | Event |\n| --- | --- |\n\
+                    | 2026-10-07 14:03 | 📥 Submitted by `@nlecoy` |\n\n\
+                    </details>\n\n\
+                    <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
+        assert_eq!(comment, want);
+        let rendered = render(
+            &surface(ItemState::Testing),
+            &settings(|_| {}),
+            "main",
+            &history,
+        );
+        let again = render(
+            &surface(ItemState::Testing),
+            &settings(|_| {}),
+            "main",
+            &history,
+        );
+        assert_eq!(hash(&rendered), hash(&again), "same events, same hash");
+        let bare = render(&surface(ItemState::Testing), &settings(|_| {}), "main", &[]);
+        assert_ne!(hash(&rendered), hash(&bare));
+    }
+
+    #[test]
+    fn without_comments_the_history_shows_nowhere() {
+        let off = settings(|l| l.comments_enabled = Some(Setting::new(false)));
+        let history = [logged(submitted(), Some("nlecoy"), at(7, 14, 3))];
+        let rendered = render(&surface(ItemState::Testing), &off, "main", &history);
+        assert_eq!(rendered.comment, None);
+        let status = rendered.status.unwrap().description;
+        assert_eq!(status, "Testing, position 2", "the status does not change");
     }
 }
 

@@ -2374,6 +2374,10 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         merged[0].starts_with("✅ **Merged** into `main` by the queue"),
         "{merged:?}"
     );
+    // The history keeps the whole life of the item (`DECISIONS.md` D244).
+    for row in ["📥 Submitted by `@alice` |", "✅ Merged: "] {
+        assert!(merged[0].contains(row), "{row}: {merged:?}");
+    }
     assert_eq!(
         status(first_head).await,
         Some(Some(CheckConclusion::Success))
@@ -2474,6 +2478,52 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         sim.acknowledged_comments(&repo(), number),
         ["/cihub merge", "/cihub restart", "/cihub cancel"]
     );
+    q.stop().await;
+}
+
+/// The comment shows the history of the PR in the queue (`DECISIONS.md` D244):
+/// the login of a user who sent a command is in a code span, and the rendering
+/// in `pr_surfaces` is the one that the SCM shows.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    for command in ["/cihub merge", "/cihub restart"] {
+        sim.comment(&repo(), number, &alice(), command).unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let desired: String =
+        sqlx::query_scalar("SELECT desired->>'comment' FROM pr_surfaces WHERE pr_number = 1")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+    assert!(desired.contains("<details><summary>History ("), "{desired}");
+    for row in [
+        "📥 Submitted by `@alice` |",
+        "🔁 Restart requested by `@alice` |",
+        "🕓 Queued: a user restarted the tests |",
+    ] {
+        assert!(desired.contains(row), "{row}: {desired}");
+    }
+    let shown: Vec<String> = sim
+        .comments(&repo(), number)
+        .into_iter()
+        .filter(|body| is_status_comment(body))
+        .collect();
+    assert_eq!(shown, [desired], "the SCM shows the last rendering");
     q.stop().await;
 }
 
