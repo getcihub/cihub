@@ -155,7 +155,7 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
     }
 }
 
-async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
+async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
     let org = OrgId::from_ulid(Ulid(7));
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
@@ -173,7 +173,7 @@ async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
     .await
     .unwrap();
     let secret = new_api_token_secret().unwrap();
-    let id = ApiTokenId::from_ulid(Ulid(u128::try_from(scopes.len()).unwrap() + 10));
+    let id = ApiTokenId::from_ulid(Ulid(number));
     let new = NewApiToken {
         id,
         org_id: org,
@@ -189,8 +189,8 @@ async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let addr = start(&pool).await;
-    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
-    let writer = token(&pool, &[ApiScope::PrsWrite, ApiScope::TargetsWrite]).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
 
     let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
     assert_eq!(anonymous.status, 401);
@@ -230,7 +230,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
     let addr = start(&pool).await;
-    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
             call(&addr, "GET", "/api/v1/repos", Some(&reader))

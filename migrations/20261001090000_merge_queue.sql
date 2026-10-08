@@ -8,7 +8,7 @@ CREATE TYPE group_state AS ENUM (
 CREATE TYPE run_status AS ENUM (
     'assembling', 'in_progress', 'succeeded', 'failed', 'interrupted', 'cancelled', 'timed_out'
 );
-CREATE TYPE submitted_via AS ENUM ('comment', 'label', 'api', 'ui', 'cli');
+CREATE TYPE submitted_via AS ENUM ('comment', 'label', 'api');
 CREATE TYPE required_statuses_source AS ENUM ('repo_config', 'branch_protection');
 CREATE TYPE reason AS ENUM (
     'submitted', 'merge_item_now_ready', 'test_run_started', 'failure_budget_retry',
@@ -21,7 +21,7 @@ CREATE TYPE reason AS ENUM (
     'merge_graph_direct_merge', 'manual_merge', 'user_requested', 'admin_requested', 'pr_closed',
     'pr_pushed_to', 'pr_base_branch_changed', 'pr_converted_to_draft', 'label_removed',
     'not_ready_timeout_expired', 'start_test_run_invalid_event', 'start_test_run_merge_conflict',
-    'start_test_run_config_not_found', 'start_test_run_config_parsing_failure',
+    'start_test_run_config_parsing_failure',
     'start_test_run_config_bad_version', 'start_test_run_config_missing_required_statuses',
     'start_test_run_config_bad_required_statuses', 'start_test_run_no_required_statuses',
     'start_test_run_retry_exhausted', 'start_test_run_draft_prs_not_allowed',

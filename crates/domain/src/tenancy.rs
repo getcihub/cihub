@@ -11,9 +11,6 @@ closed_enum! {
     pub enum ConnectionKind {
         /// An installation of the App of the queue.
         GithubApp,
-        /// An installation of the opt-in `cihub-sudo` App, used only to merge
-        /// forced items.
-        GithubSudoApp,
     }
 }
 
@@ -47,14 +44,6 @@ closed_enum! {
         #[serde(rename = "prs:write")]
         #[strum(serialize = "prs:write")]
         PrsWrite,
-        /// Upload the impacted targets of a PR; the only scope of a CI token.
-        #[serde(rename = "targets:write")]
-        #[strum(serialize = "targets:write")]
-        TargetsWrite,
-        /// Read the metrics of the queues.
-        #[serde(rename = "metrics:read")]
-        #[strum(serialize = "metrics:read")]
-        MetricsRead,
     }
 }
 
@@ -65,12 +54,12 @@ mod tests {
     #[test]
     fn scopes_keep_their_colon() {
         assert_eq!(ApiScope::QueuesRead.as_str(), "queues:read");
-        assert_eq!("targets:write".parse(), Ok(ApiScope::TargetsWrite));
+        assert_eq!("prs:write".parse(), Ok(ApiScope::PrsWrite));
         assert_eq!(
-            serde_json::to_string(&ApiScope::MetricsRead).unwrap(),
-            r#""metrics:read""#
+            serde_json::to_string(&ApiScope::QueuesWrite).unwrap(),
+            r#""queues:write""#
         );
-        assert_eq!(ConnectionKind::GithubSudoApp.to_string(), "github_sudo_app");
+        assert_eq!(ConnectionKind::GithubApp.to_string(), "github_app");
         assert_eq!(ScmKind::Github.as_str(), "github");
     }
 }

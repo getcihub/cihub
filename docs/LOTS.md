@@ -102,7 +102,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   - Done (October 2, 2026, D154, D155): step 1. `cihub-server admin bootstrap --installation <id>` reads the account
     of the installation, creates the organization (slug: the login of the account), its account and its connection,
     requests `sync_repos` and shows once a `bootstrap` token with
-    the five scopes; on an installation already bootstrapped, it creates only a new token. The
+    every scope; on an installation already bootstrapped, it creates only a new token. The
     `Scm` trait gains `installation` and `list_repos` (GitHub and simulator, contract suite). The `sync_repos` job
     creates and updates `repos` without deleting any and without taking the repository of another organization; it is
     requested by the routing of each `installation_repositories` delivery (key of the delivery), and by the bootstrap

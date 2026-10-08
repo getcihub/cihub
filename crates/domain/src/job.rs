@@ -6,8 +6,6 @@ closed_enum! {
         InvalidEvent,
         /// Assembly: a merge into the test branch returned 409.
         MergeConflict,
-        /// Assembly: the target branch has no configuration file.
-        ConfigNotFound,
         /// Assembly: the configuration file is not valid.
         ConfigParsingFailure,
         /// Assembly: the configuration file has an unknown `version`.

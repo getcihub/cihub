@@ -113,7 +113,7 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('job-{n}', 'test', 'repair', '{org}', '{{}}', '2026-09-15T00:00:00Z',
                      '2026-09-15T00:00:00Z');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
-             VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
+             VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{prs:write}}');
          INSERT INTO audit_log (id, org_id, action, target)
              VALUES ('audit-{n}', '{org}', 'queue.paused', 'queue-{n}');
          INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, payload, occurred_at)
@@ -532,7 +532,7 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
 
     let secret = new_api_token_secret().unwrap();
     assert!(secret.expose_secret().starts_with("cht_"));
-    let scopes = [ApiScope::QueuesRead, ApiScope::TargetsWrite];
+    let scopes = [ApiScope::QueuesRead, ApiScope::PrsWrite];
     let token = NewApiToken {
         id: ApiTokenId::from_ulid(Ulid(1)),
         org_id: org(1),

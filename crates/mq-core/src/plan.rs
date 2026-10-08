@@ -288,7 +288,6 @@ fn new_run(
 const fn assembly_reason(error: JobError) -> Reason {
     match error {
         JobError::MergeConflict => Reason::StartTestRunMergeConflict,
-        JobError::ConfigNotFound => Reason::StartTestRunConfigNotFound,
         JobError::ConfigParsingFailure => Reason::StartTestRunConfigParsingFailure,
         JobError::ConfigBadVersion => Reason::StartTestRunConfigBadVersion,
         JobError::ConfigMissingRequiredStatuses => {

@@ -1056,7 +1056,7 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
         .unwrap()
         .unwrap();
     assert_eq!(grant.org_id, first.org_id);
-    assert_eq!(grant.scopes.len(), 5, "{:?}", grant.scopes);
+    assert_eq!(grant.scopes.len(), 3, "{:?}", grant.scopes);
     assert!(grant.scopes.contains(&ApiScope::QueuesWrite));
     let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
     assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));

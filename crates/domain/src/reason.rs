@@ -66,8 +66,6 @@ closed_enum! {
         StartTestRunInvalidEvent,
         /// A merge into the test branch returned 409.
         StartTestRunMergeConflict,
-        /// The target branch has no configuration file.
-        StartTestRunConfigNotFound,
         /// The configuration file is not valid.
         StartTestRunConfigParsingFailure,
         /// The configuration file has an unknown `version`.
@@ -161,7 +159,6 @@ impl Reason {
             Self::StartTestRunMergeConflict => {
                 "the PR conflicts with the target branch or with a PR ahead of it"
             }
-            Self::StartTestRunConfigNotFound => "the target branch has no configuration file",
             Self::StartTestRunConfigParsingFailure => "the configuration file is not valid",
             Self::StartTestRunConfigBadVersion => "the configuration file has an unknown version",
             Self::StartTestRunConfigMissingRequiredStatuses => {
