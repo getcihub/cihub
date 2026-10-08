@@ -2375,7 +2375,10 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         "{merged:?}"
     );
     // The history keeps the whole life of the item (`DECISIONS.md` D244).
-    for row in ["📥 Submitted by `@alice` |", "✅ Merged: "] {
+    for row in [
+        "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
+        "✅ Merged: ",
+    ] {
         assert!(merged[0].contains(row), "{row}: {merged:?}");
     }
     assert_eq!(
@@ -2512,9 +2515,8 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     drop(tx);
     assert!(desired.contains("<details><summary>History ("), "{desired}");
     for row in [
-        "📥 Submitted by `@alice` |",
-        "🔁 Restart requested by `@alice` |",
-        "🕓 Queued: a user restarted the tests |",
+        "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
+        "🕓 Queued: a user restarted the tests | `@alice` |",
     ] {
         assert!(desired.contains(row), "{row}: {desired}");
     }
@@ -2524,6 +2526,52 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
         .filter(|body| is_status_comment(body))
         .collect();
     assert_eq!(shown, [desired], "the SCM shows the last rendering");
+    q.stop().await;
+}
+
+/// The history covers every item of the PR, in the order of the log
+/// (`DECISIONS.md` D244): a PR cancelled then submitted again shows both.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    for command in ["/cihub merge", "/cihub cancel", "/cihub merge"] {
+        sim.comment(&repo(), number, &alice(), command).unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: i64 = sqlx::query_scalar("SELECT count(*) FROM queue_items WHERE pr_number = 1")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    let desired: String =
+        sqlx::query_scalar("SELECT desired->>'comment' FROM pr_surfaces WHERE pr_number = 1")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+    assert_eq!(items, 2);
+    let submitted = "⏳ Waiting: the PR was submitted to the queue | `@alice` |";
+    let cancelled = "⚪ Cancelled: a user asked for it | `@alice` |";
+    let rows: Vec<&str> = desired
+        .lines()
+        .filter(|line| line.contains(submitted) || line.contains(cancelled))
+        .collect();
+    assert_eq!(rows.len(), 3, "{desired}");
+    assert!(rows[0].contains(submitted), "{desired}");
+    assert!(rows[1].contains(cancelled), "{desired}");
+    assert!(rows[2].contains(submitted), "{desired}");
     q.stop().await;
 }
 

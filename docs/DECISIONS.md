@@ -847,17 +847,20 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   Security level and lets the ServiceAccount of the runner manage the BuildKit deployment there.
 - **D244** Extends D156 and D173: the comment of CIHub on the PR shows the history of the PR in the queue, in a
   folded `<details>` block (`History (N)`) between the details and the commands. The history is a projection of
-  the log: the events `item.submitted`, `item.transitioned`, `item.readiness_changed`, `item.cancel_requested`,
-  `item.restart_requested` and `merge.failed` of every item of the PR in the queue, in the order of the log. A row
-  gives the time, absolute in UTC (`YYYY-MM-DD HH:MM`), and the event, with the sentence of its reason
-  (`Reason::describe`). Two consecutive rows with the same text give one row. The comment shows the last 20 rows,
-  then the number of older rows. The events of the groups and runs are not in the history. A row whose actor is a
-  user names that user by login in a code span (`` `@login` ``), so that the comment mentions and notifies no
-  one; the `users` table gives the login (D42), which a user actor always has. The system and the bot are not
-  named. `converge_surfaces` reads the events of the surfaces of the queue in one query, from their items (a new
-  index `queue_items (queue_id, pr_number)` over all the items). No new setting:
-  `comments_enabled` covers the history. The state line and the commit status do not change. A separate
-  evolution, outside the plan of a lot.
+  the log: the decisions `item.transitioned` and `item.readiness_changed` of every item of the PR in the queue,
+  in the order of the log. A request (`item.submitted`, `item.cancel_requested`, `item.restart_requested`) and a
+  report (`merge.failed`) are not rows: the decision that answers them says what happened. The table has three
+  columns: the time, absolute in UTC (`YYYY-MM-DD HH:MM`); the event, with the sentence of its reason
+  (`Reason::describe`); and `By`, the user whose request caused the decision (the actor of its `cause_id`), by
+  login in a code span (`` `@login` ``), so that the comment mentions and notifies no one. The `users` table gives
+  the login (D42), which a user actor always has. `By` is empty when the system or the bot acted. Two
+  consecutive rows with the same event and the same user give one row. The comment shows the last 20 rows, then
+  the number of older rows. The events of the groups and runs are not in the history. An `events` partition that
+  the `maintenance` job deletes (D106) takes its rows with it: a PR in the queue for more than 90 days shows a
+  partial history. `converge_surfaces` reads the events of the surfaces of the queue in one query, from their
+  items (a new index `queue_items (queue_id, pr_number)` over all the items). No new setting: `comments_enabled`
+  covers the history. The state line and the commit status do not change. A separate evolution, outside the plan
+  of a lot.
 
 ## Open questions
 

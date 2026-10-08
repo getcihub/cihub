@@ -14,7 +14,7 @@ use cihub_domain::{
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
-use cihub_store::{PgPool, begin_system};
+use cihub_store::{PgPool, begin_system, event_kind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -36,15 +36,10 @@ pub(crate) const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "ci
 const DESCRIPTION_LIMIT: usize = 140;
 
 /// The events that the history of a PR shows (`DECISIONS.md` D244): the
-/// events of its items, never those of the groups and the runs.
-const HISTORY_EVENTS: [EventType; 6] = [
-    EventType::ItemSubmitted,
-    EventType::ItemTransitioned,
-    EventType::ItemReadinessChanged,
-    EventType::ItemCancelRequested,
-    EventType::ItemRestartRequested,
-    EventType::MergeFailed,
-];
+/// decisions on its items. A request of a user is not a row: the decision that
+/// answers it names the user.
+const HISTORY_EVENTS: [EventType; 2] =
+    [EventType::ItemTransitioned, EventType::ItemReadinessChanged];
 
 /// The comment shows the last rows of the history, then counts the others.
 const HISTORY_ROWS: usize = 20;
@@ -333,19 +328,20 @@ fn state_mark(state: ItemState) -> (&'static str, &'static str) {
 pub(crate) struct HistoryEvent {
     pub occurred_at: OffsetDateTime,
     pub kind: EventKind,
-    /// The login of the user who acted; `None` for the system and the bot.
+    /// The login of the user whose request caused the event; `None` for the
+    /// system and the bot.
     pub login: Option<String>,
 }
 
 /// The history of a PR as a folded table (`DECISIONS.md` D244), `None` without
-/// a row. Two consecutive events with the same text are one row; the comment
-/// shows the last rows and counts the older ones.
+/// a row. Two consecutive events with the same text and the same user are one
+/// row; the comment shows the last rows and counts the older ones.
 fn history_block(events: &[HistoryEvent]) -> Option<String> {
     let mut rows: Vec<(&HistoryEvent, String)> = events
         .iter()
-        .filter_map(|event| Some((event, event_text(event)?)))
+        .filter_map(|event| Some((event, event_text(&event.kind)?)))
         .collect();
-    rows.dedup_by(|later, kept| later.1 == kept.1);
+    rows.dedup_by(|later, kept| later.1 == kept.1 && later.0.login == kept.0.login);
     if rows.is_empty() {
         return None;
     }
@@ -356,18 +352,19 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
     let mut block = format!("<details><summary>History ({total})</summary>\n\n");
     match older {
         0 => {}
-        1 => block.push_str("1 older event.\n\n"),
+        1 => block.push_str("1 older row.\n\n"),
         n => {
-            let _ = write!(block, "{n} older events.\n\n");
+            let _ = write!(block, "{n} older rows.\n\n");
         }
     }
-    block.push_str("| Time (UTC) | Event |\n| --- | --- |\n");
+    block.push_str("| Time (UTC) | Event | By |\n| --- | --- | --- |\n");
     for (event, text) in rows.iter().skip(older) {
         let _ = writeln!(
             block,
-            "| {} | {} |",
+            "| {} | {} | {} |",
             utc_minute(event.occurred_at),
-            cell(text)
+            cell(text),
+            by_cell(event.login.as_deref())
         );
     }
     block.push_str("\n</details>");
@@ -375,25 +372,20 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
 }
 
 /// The sentence of a row, `None` for an event that the history does not show.
-fn event_text(event: &HistoryEvent) -> Option<String> {
-    let by = by_text(event.login.as_deref());
-    match &event.kind {
-        EventKind::ItemSubmitted { .. } => Some(format!("📥 Submitted{by}")),
+fn event_text(kind: &EventKind) -> Option<String> {
+    match kind {
         EventKind::ItemTransitioned { to, reason, .. } => Some(transition_text(*to, *reason)),
         EventKind::ItemReadinessChanged { block_reasons, .. } => {
             Some(readiness_text(block_reasons))
         }
-        EventKind::ItemCancelRequested { .. } => Some(format!("🛑 Cancel requested{by}")),
-        EventKind::ItemRestartRequested { .. } => Some(format!("🔁 Restart requested{by}")),
-        EventKind::MergeFailed { error, .. } => Some(format!("❌ Merge failed: `{error}`")),
         _ => None,
     }
 }
 
 /// A mention notifies its user: the code span names the user without it
 /// (`DECISIONS.md` D244).
-fn by_text(login: Option<&str>) -> String {
-    login.map_or_else(String::new, |login| format!(" by `@{login}`"))
+fn by_cell(login: Option<&str>) -> String {
+    login.map_or_else(String::new, |login| format!("`@{login}`"))
 }
 
 fn transition_text(to: ItemState, reason: Reason) -> String {
@@ -554,14 +546,14 @@ pub(crate) async fn converge_surfaces(
 }
 
 /// An event of the history, as `read_histories` selects it: its PR, id, type,
-/// payload and time, and the login of the user who caused it.
+/// payload and time, and the login of the user whose request caused it.
 type HistoryRow = (i64, String, String, Value, OffsetDateTime, Option<String>);
 
 /// The events of the history of the PRs `numbers` of the queue, by PR, in the
 /// order of the log (`DECISIONS.md` D244). All the items of a PR count, not
 /// only the current one. The reading starts from these items: their events
-/// come through `events.item_id`. A submission has no item; the transition
-/// that creates an item names it in `cause_id`.
+/// come through `events.item_id`. A decision has the system as actor; the
+/// user is the actor of its cause.
 async fn read_histories(
     conn: &mut PgConnection,
     target: &QueueTarget,
@@ -569,23 +561,13 @@ async fn read_histories(
 ) -> Result<BTreeMap<i64, Vec<HistoryEvent>>, MergeQueueError> {
     let types: Vec<&str> = HISTORY_EVENTS.into_iter().map(EventType::as_str).collect();
     let rows: Vec<HistoryRow> = sqlx::query_as(
-        "SELECT pr_number, id, type, payload, occurred_at, login FROM (
-             SELECT i.pr_number, e.seq, e.id, e.type::text AS type, e.payload, e.occurred_at, u.login
-             FROM queue_items i
-             JOIN events e ON e.item_id = i.id
-                          AND e.type = ANY($2::event_type[])
-             LEFT JOIN users u ON u.id = e.actor_user_id
-             WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
-             UNION ALL
-             SELECT i.pr_number, s.seq, s.id, s.type::text, s.payload, s.occurred_at, u.login
-             FROM queue_items i
-             JOIN events t ON t.item_id = i.id
-                          AND t.type = 'item.transitioned' AND t.payload->>'from' IS NULL
-             JOIN events s ON s.id = t.cause_id AND s.type = 'item.submitted'
-             LEFT JOIN users u ON u.id = s.actor_user_id
-             WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
-         ) history
-         ORDER BY seq",
+        "SELECT i.pr_number, e.id, e.type::text, e.payload, e.occurred_at, u.login
+         FROM queue_items i
+         JOIN events e ON e.item_id = i.id AND e.type = ANY($2::event_type[])
+         LEFT JOIN events c ON c.id = e.cause_id
+         LEFT JOIN users u ON u.id = c.actor_user_id
+         WHERE i.queue_id = $1 AND i.pr_number = ANY($3)
+         ORDER BY e.seq",
     )
     .bind(target.queue_id.to_string())
     .bind(&types)
@@ -595,7 +577,7 @@ async fn read_histories(
     .map_err(MergeQueueError::Query)?;
     let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
     for (number, id, kind, payload, occurred_at, login) in rows {
-        let kind = serde_json::from_value(json!({ "type": kind, "payload": payload }))
+        let kind = event_kind(&kind, &payload)
             .map_err(|source| MergeQueueError::ReadEvent { id, source })?;
         histories.entry(number).or_default().push(HistoryEvent {
             occurred_at,
@@ -785,7 +767,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_domain::{ItemId, JobError, Mergeability, Priority, Reason, SubmittedVia, UserId};
+    use cihub_domain::{ItemId, JobError, Mergeability, Reason};
     use ulid::Ulid;
 
     use super::*;
@@ -1043,22 +1025,6 @@ mod tests {
         }
     }
 
-    fn submitted() -> EventKind {
-        EventKind::ItemSubmitted {
-            pr_number: 7,
-            head_sha: "abc".into(),
-            priority: Priority::MEDIUM,
-            no_batch: false,
-            direct: false,
-            submitted_via: SubmittedVia::Comment,
-            author_id: UserId::from_ulid(Ulid(1)),
-            additions: 1,
-            deletions: 1,
-            changed_files: 1,
-            sender_permission: None,
-        }
-    }
-
     fn transitioned(to: ItemState, reason: Reason) -> EventKind {
         EventKind::ItemTransitioned {
             item_id: ItemId::from_ulid(Ulid(1)),
@@ -1091,64 +1057,37 @@ mod tests {
 
     /// `DECISIONS.md` D244.
     #[test]
-    fn each_event_kind_gives_its_row() {
-        let item_id = ItemId::from_ulid(Ulid(1));
+    fn each_decision_gives_its_row() {
         let cases = [
             (
-                submitted(),
+                transitioned(ItemState::NotReady, Reason::Submitted),
                 Some("nlecoy"),
-                "| 2026-10-07 14:03 | 📥 Submitted by `@nlecoy` |",
+                "| 2026-10-07 14:03 | ⏳ Waiting: the PR was submitted to the queue | `@nlecoy` |",
             ),
-            (submitted(), None, "| 2026-10-07 14:03 | 📥 Submitted |"),
             (
                 transitioned(ItemState::Testing, Reason::TestRunStarted),
                 None,
-                "| 2026-10-07 14:03 | 🧪 Testing: a test run started |",
+                "| 2026-10-07 14:03 | 🧪 Testing: a test run started |  |",
             ),
             (
                 transitioned(ItemState::Failed, Reason::PrPushedTo),
                 None,
-                "| 2026-10-07 14:03 | ❌ Failed: the PR received a new commit after its submission |",
+                "| 2026-10-07 14:03 | ❌ Failed: the PR received a new commit after its submission |  |",
             ),
             (
                 readiness(vec![BlockReason::ReviewRequired { have: 1, need: 2 }]),
                 None,
-                "| 2026-10-07 14:03 | ⏳ Waiting: 1 of 2 required approvals |",
+                "| 2026-10-07 14:03 | ⏳ Waiting: 1 of 2 required approvals |  |",
             ),
             (
                 readiness(vec![BlockReason::ChangesRequested, BlockReason::BehindBase]),
                 None,
-                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes; the branch is behind its base |",
+                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes; the branch is behind its base |  |",
             ),
             (
                 readiness(Vec::new()),
                 None,
-                "| 2026-10-07 14:03 | ✅ Nothing blocks the PR |",
-            ),
-            (
-                EventKind::ItemCancelRequested {
-                    item_id,
-                    by_admin: false,
-                },
-                Some("jdupont"),
-                "| 2026-10-07 14:03 | 🛑 Cancel requested by `@jdupont` |",
-            ),
-            (
-                EventKind::ItemRestartRequested {
-                    item_id,
-                    by_api: false,
-                },
-                None,
-                "| 2026-10-07 14:03 | 🔁 Restart requested |",
-            ),
-            (
-                EventKind::MergeFailed {
-                    item_id,
-                    direct: false,
-                    error: JobError::MergeRejected,
-                },
-                None,
-                "| 2026-10-07 14:03 | ❌ Merge failed: `merge_rejected` |",
+                "| 2026-10-07 14:03 | ✅ Nothing blocks the PR |  |",
             ),
         ];
         for (kind, actor, want) in cases {
@@ -1158,34 +1097,50 @@ mod tests {
     }
 
     #[test]
-    fn an_event_of_a_group_or_a_run_has_no_row() {
-        let event = logged(
+    fn a_request_or_an_event_of_the_queue_has_no_row() {
+        let item_id = ItemId::from_ulid(Ulid(1));
+        let kinds = [
+            EventKind::ItemRestartRequested {
+                item_id,
+                by_api: false,
+            },
+            EventKind::MergeFailed {
+                item_id,
+                direct: false,
+                error: JobError::MergeRejected,
+            },
             EventKind::QueueWindowChanged {
                 before: 1,
                 after: 2,
             },
-            None,
-            at(7, 14, 3),
-        );
-        assert_eq!(history_block(&[event]), None);
+        ];
+        for kind in kinds {
+            let event = logged(kind.clone(), Some("nlecoy"), at(7, 14, 3));
+            assert_eq!(history_block(&[event]), None, "{kind:?}");
+        }
         assert_eq!(history_block(&[]), None);
     }
 
     #[test]
     fn consecutive_identical_rows_give_one_row() {
         let blocked = || readiness(vec![BlockReason::ChangesRequested]);
+        let restarted = || transitioned(ItemState::Pending, Reason::TestsRestartedByUser);
         let history = [
             logged(blocked(), None, at(7, 14, 3)),
             logged(blocked(), None, at(7, 14, 4)),
             logged(readiness(Vec::new()), None, at(7, 14, 5)),
             logged(blocked(), None, at(7, 14, 6)),
+            logged(restarted(), Some("alice"), at(7, 14, 7)),
+            logged(restarted(), Some("bob"), at(7, 14, 8)),
         ];
         assert_eq!(
             rows_of(&history),
             [
-                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes |",
-                "| 2026-10-07 14:05 | ✅ Nothing blocks the PR |",
-                "| 2026-10-07 14:06 | ⏳ Waiting: a review asks for changes |",
+                "| 2026-10-07 14:03 | ⏳ Waiting: a review asks for changes |  |",
+                "| 2026-10-07 14:05 | ✅ Nothing blocks the PR |  |",
+                "| 2026-10-07 14:06 | ⏳ Waiting: a review asks for changes |  |",
+                "| 2026-10-07 14:07 | 🕓 Queued: a user restarted the tests | `@alice` |",
+                "| 2026-10-07 14:08 | 🕓 Queued: a user restarted the tests | `@bob` |",
             ]
         );
     }
@@ -1195,10 +1150,7 @@ mod tests {
         let history = |count: u8| -> Vec<HistoryEvent> {
             (0..count)
                 .map(|n| {
-                    let kind = EventKind::ItemRestartRequested {
-                        item_id: ItemId::from_ulid(Ulid(u128::from(n))),
-                        by_api: false,
-                    };
+                    let kind = transitioned(ItemState::Pending, Reason::TestsRestartedByUser);
                     logged(kind, Some(&format!("user{n}")), at(7, 10, n))
                 })
                 .collect()
@@ -1207,44 +1159,20 @@ mod tests {
         let cases = [
             (3, None, "user0"),
             (20, None, "user0"),
-            (21, Some("1 older event.\n\n"), "user1"),
-            (25, Some("5 older events.\n\n"), "user5"),
+            (21, Some("1 older row.\n\n"), "user1"),
+            (25, Some("5 older rows.\n\n"), "user5"),
         ];
         for (count, older, first) in cases {
             let events = history(count);
             let block = history_block(&events).unwrap();
             let head = format!("<details><summary>History ({count})</summary>\n\n");
-            let table = "| Time (UTC) | Event |";
+            let table = "| Time (UTC) | Event | By |";
             assert!(block.starts_with(&format!("{head}{}{table}", older.unwrap_or(""))));
             assert!(block.ends_with("\n\n</details>"), "{block}");
             let rows = rows_of(&events);
             assert_eq!(rows.len(), usize::from(count).min(HISTORY_ROWS), "{count}");
-            assert!(rows[0].ends_with(&format!("by `@{first}` |")), "{rows:?}");
+            assert!(rows[0].ends_with(&format!("| `@{first}` |")), "{rows:?}");
         }
-    }
-
-    #[test]
-    fn the_history_covers_the_items_of_the_pr_in_the_order_of_the_log() {
-        let other = |item| EventKind::ItemTransitioned {
-            item_id: ItemId::from_ulid(Ulid(item)),
-            from: None,
-            to: ItemState::Pending,
-            reason: Reason::MergeItemNowReady,
-            position: None,
-            verified_by_run_id: None,
-            merged_sha: None,
-        };
-        let history = [
-            logged(other(1), None, at(7, 14, 3)),
-            logged(
-                transitioned(ItemState::Failed, Reason::PrPushedTo),
-                None,
-                at(7, 14, 4),
-            ),
-            logged(other(2), None, at(8, 9, 0)),
-        ];
-        assert_eq!(rows_of(&history).len(), 3);
-        assert!(rows_of(&history)[2].starts_with("| 2026-10-08 09:00 |"));
     }
 
     #[test]
@@ -1261,43 +1189,32 @@ mod tests {
         assert_eq!(
             rows,
             [
-                "| 2026-10-07 14:03 | ⏳ Waiting: the required check `build \\| lint` failed; the queue conditions `a b` are not met |"
+                "| 2026-10-07 14:03 | ⏳ Waiting: the required check `build \\| lint` failed; the queue conditions `a b` are not met |  |"
             ]
         );
     }
 
     #[test]
     fn the_history_sits_between_the_details_and_the_commands() {
-        let history = [logged(submitted(), Some("nlecoy"), at(7, 14, 3))];
-        let comment = render(
-            &surface(ItemState::Testing),
-            &settings(|_| {}),
-            "main",
-            &history,
-        )
-        .comment
-        .unwrap();
-        let want = "🧪 **Testing** · position 2 in the queue for `main`\n\n\
-                    Tested on top of #5 in def456.\n\n\
-                    <details><summary>History (1)</summary>\n\n\
-                    | Time (UTC) | Event |\n| --- | --- |\n\
-                    | 2026-10-07 14:03 | 📥 Submitted by `@nlecoy` |\n\n\
-                    </details>\n\n\
-                    <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
-        assert_eq!(comment, want);
+        let history = [logged(
+            transitioned(ItemState::NotReady, Reason::Submitted),
+            Some("nlecoy"),
+            at(7, 14, 3),
+        )];
         let rendered = render(
             &surface(ItemState::Testing),
             &settings(|_| {}),
             "main",
             &history,
         );
-        let again = render(
-            &surface(ItemState::Testing),
-            &settings(|_| {}),
-            "main",
-            &history,
-        );
-        assert_eq!(hash(&rendered), hash(&again), "same events, same hash");
+        let want = "🧪 **Testing** · position 2 in the queue for `main`\n\n\
+                    Tested on top of #5 in def456.\n\n\
+                    <details><summary>History (1)</summary>\n\n\
+                    | Time (UTC) | Event | By |\n| --- | --- | --- |\n\
+                    | 2026-10-07 14:03 | ⏳ Waiting: the PR was submitted to the queue | `@nlecoy` |\n\n\
+                    </details>\n\n\
+                    <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
+        assert_eq!(rendered.comment.as_deref(), Some(want));
         let bare = render(&surface(ItemState::Testing), &settings(|_| {}), "main", &[]);
         assert_ne!(hash(&rendered), hash(&bare));
     }
@@ -1305,7 +1222,11 @@ mod tests {
     #[test]
     fn without_comments_the_history_shows_nowhere() {
         let off = settings(|l| l.comments_enabled = Some(Setting::new(false)));
-        let history = [logged(submitted(), Some("nlecoy"), at(7, 14, 3))];
+        let history = [logged(
+            transitioned(ItemState::NotReady, Reason::Submitted),
+            Some("nlecoy"),
+            at(7, 14, 3),
+        )];
         let rendered = render(&surface(ItemState::Testing), &off, "main", &history);
         assert_eq!(rendered.comment, None);
         let status = rendered.status.unwrap().description;

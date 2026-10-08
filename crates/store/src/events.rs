@@ -54,6 +54,16 @@ pub async fn append_events(
     Ok(seqs)
 }
 
+/// Reads the columns `type` and `payload` of a row of `events` as the kind of
+/// its event: the inverse of `columns`.
+///
+/// # Errors
+///
+/// The columns do not match an event of `cihub-domain`.
+pub fn event_kind(kind: &str, payload: &Value) -> Result<EventKind, serde_json::Error> {
+    serde_json::from_value(json!({ "type": kind, "payload": payload }))
+}
+
 /// The payload of `event` and its user, as `events` and `queue_inbox` store
 /// them.
 fn columns(event: &Event) -> Result<(Value, Option<String>), StoreError> {
@@ -119,7 +129,7 @@ fn decode(
         },
         (other, _) => return Err(format!("unknown actor `{other}`").into()),
     };
-    let kind: EventKind = serde_json::from_value(json!({ "type": kind, "payload": payload }))?;
+    let kind = event_kind(&kind, &payload)?;
     let event = Event {
         id: id.parse::<EventId>()?,
         org_id: org_id.parse::<OrgId>()?,
