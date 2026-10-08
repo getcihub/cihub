@@ -21,7 +21,7 @@ use crate::apply::apply_seen;
 use crate::graph::{insertion_index, position_at, predecessors, renumber};
 use crate::ids::IdGen;
 use crate::snapshot::{PrObservation, Request, Subject};
-use crate::surface::{Surface, surface};
+use crate::surface::{BatchWait, Surface, surface};
 use crate::{ApplyError, Snapshot};
 
 /// The decisions of one reconciliation and the state that the SCM must reach.
@@ -176,7 +176,7 @@ pub fn plan(
         }
     }
     let mut desired = desired(&state, settings, now);
-    desired.surfaces = surfaces(&state, concluded);
+    desired.surfaces = surfaces(&state, settings, now, concluded);
     Ok(Plan {
         decisions,
         desired,
@@ -1315,13 +1315,16 @@ fn in_bisection(s: &Snapshot, item: &Item) -> bool {
         })
 }
 
-/// The next group of the queue, or the end of the wait of its batch.
+/// The next group of the queue, or its batch that waits until `until`.
 enum Next<'a> {
     Form {
         index: usize,
         members: Vec<&'a Item>,
     },
-    Wait(OffsetDateTime),
+    Wait {
+        members: Vec<&'a Item>,
+        until: OffsetDateTime,
+    },
 }
 
 /// The first pending item whose predecessors are all in groups, at `index`
@@ -1372,7 +1375,10 @@ fn next_group<'a>(
         .min()
         .map(|t| t + wait);
     match ready {
-        Some(ready) if members.len() < size && now < ready => Some(Next::Wait(ready)),
+        Some(ready) if members.len() < size && now < ready => Some(Next::Wait {
+            members,
+            until: ready,
+        }),
         _ => Some(Next::Form { index, members }),
     }
 }
@@ -1573,7 +1579,7 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
     });
     let target = target_points(s, now).map(|(_, next)| next);
     let batch = match next_group(s, &s.queue_order(), settings, now) {
-        Some(Next::Wait(until)) => Some(until),
+        Some(Next::Wait { until, .. }) => Some(until),
         _ => None,
     };
     reads
@@ -1660,14 +1666,33 @@ fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desir
 }
 
 /// The surface of each PR: its live item, else the last item that this
-/// reconciliation concluded.
-fn surfaces(s: &Snapshot, concluded: Vec<Surface>) -> Vec<Surface> {
+/// reconciliation concluded. The members of the batch that waits show when it
+/// closes (`DECISIONS.md` D241), with the time that `wake_at` uses.
+fn surfaces(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    now: OffsetDateTime,
+    concluded: Vec<Surface>,
+) -> Vec<Surface> {
     let mut by_pr: BTreeMap<u64, Surface> = concluded
         .into_iter()
         .map(|surface| (surface.pr_number, surface))
         .collect();
+    let waiting = match next_group(s, &s.queue_order(), settings, now) {
+        Some(Next::Wait { members, until }) => Some((members, until)),
+        _ => None,
+    };
     for item in live_items(s) {
-        by_pr.insert(item.pr_number, surface(s, item));
+        let mut surface = surface(s, item);
+        if let Some((members, until)) = &waiting
+            && members.iter().any(|m| m.id == item.id)
+        {
+            surface.batch_wait = Some(BatchWait {
+                members: members.len(),
+                closes_at: *until,
+            });
+        }
+        by_pr.insert(item.pr_number, surface);
     }
     by_pr.into_values().collect()
 }
