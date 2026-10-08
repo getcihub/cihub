@@ -93,6 +93,8 @@ CREATE TABLE queue_items (
 
 -- A PR has at most one live item; its history stays.
 CREATE UNIQUE INDEX queue_items_current ON queue_items (queue_id, pr_number) WHERE is_current;
+-- The history of a PR on its comment reads all its items (DECISIONS.md D244).
+CREATE INDEX queue_items_pr ON queue_items (queue_id, pr_number);
 CREATE INDEX queue_items_order ON queue_items (queue_id, position)
     WHERE is_current AND state NOT IN ('merged', 'failed', 'cancelled');
 

@@ -84,6 +84,12 @@ pub enum MergeQueueError {
     Projection(cihub_domain::EventId),
     #[error("cannot serialize or read a snapshot")]
     Snapshot(#[source] serde_json::Error),
+    #[error("event {id} does not match the events of cihub-domain")]
+    ReadEvent {
+        id: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 /// Reads `text`, a column of the row `row`, as an identifier of
