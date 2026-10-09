@@ -1,12 +1,4 @@
 closed_enum! {
-    /// The product of an SCM instance.
-    pub enum ScmKind {
-        /// github.com or GitHub Enterprise Server.
-        Github,
-    }
-}
-
-closed_enum! {
     /// How CIHub reaches the repositories of an SCM account.
     pub enum ConnectionKind {
         /// An installation of the App of the queue.
@@ -60,6 +52,5 @@ mod tests {
             r#""queues:write""#
         );
         assert_eq!(ConnectionKind::GithubApp.to_string(), "github_app");
-        assert_eq!(ScmKind::Github.as_str(), "github");
     }
 }

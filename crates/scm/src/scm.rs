@@ -17,7 +17,7 @@ pub type ScmFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ScmError>> + S
 /// A read of PRs asks for this many PRs at most.
 pub const MAX_PRS_PER_READ: usize = 50;
 
-/// The calls of CIHub to an SCM instance (`DECISIONS.md` D76). Each call names
+/// The calls of CIHub to its SCM (`DECISIONS.md` D76). Each call names
 /// its repository, and so its connection, and its class, which decides what
 /// the budget of the connection lets through. A write whose result already
 /// exists succeeds without a change, so that a job can run twice (principle
@@ -223,7 +223,7 @@ pub trait Scm: Send + Sync {
     fn close_pr<'a>(&'a self, repo: &'a RepoRef, number: u64, class: JobClass)
     -> ScmFuture<'a, ()>;
 
-    /// The webhook deliveries that the instance sent to CIHub since `since`,
+    /// The webhook deliveries that the SCM sent to CIHub since `since`,
     /// each attempt once, for every connection (`DECISIONS.md` D88). No
     /// connection makes the call, so no budget of a connection applies.
     fn recent_deliveries(
@@ -232,7 +232,7 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'_, Vec<RecentDelivery>>;
 
-    /// Asks the instance to send the attempt `attempt_id` of a delivery again.
+    /// Asks the SCM to send the attempt `attempt_id` of a delivery again.
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
 
     /// The account that the connection `external_id` serves

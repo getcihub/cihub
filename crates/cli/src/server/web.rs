@@ -25,7 +25,6 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     info!(http_addr = %listener.local_addr()?, "public address served");
     let modules = vec![merge_queue(&pool, &github, &process).api];
     let webhooks = GithubWebhooks {
-        scm_instance_id: github.scm_instance_id,
         secret: github.webhook_secret,
     };
     let router = cihub_web::router(pool.clone(), now, webhooks, modules);

@@ -43,7 +43,7 @@ pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
     ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
-    RepoId, RunId, ScmInstanceId, UserId,
+    RepoId, RunId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
@@ -57,5 +57,5 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, ScmKind};
+pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode};
 pub use transition::{Lifecycle, TransitionError, check_transition};

@@ -4,10 +4,8 @@
 
 use std::fmt::Write;
 
-use cihub_domain::{ApiScope, ApiTokenId, OrgId, ScmInstanceId, ScmKind};
-use cihub_store::{
-    NewApiToken, begin_system, create_api_token, ensure_scm_instance, new_api_token_secret,
-};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId};
+use cihub_store::{NewApiToken, begin_system, create_api_token, new_api_token_secret};
 use cihub_web::GithubWebhooks;
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
@@ -25,18 +23,8 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap()
 }
 
-fn instance() -> ScmInstanceId {
-    ScmInstanceId::from_ulid(Ulid(1))
-}
-
 async fn start(pool: &PgPool) -> String {
-    let mut tx = begin_system(pool).await.unwrap();
-    ensure_scm_instance(&mut tx, instance(), ScmKind::Github, "https://github.com")
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
     let github = GithubWebhooks {
-        scm_instance_id: instance(),
         secret: SecretString::from(SECRET),
     };
     let router = cihub_web::router(pool.clone(), now, github, Vec::new());
@@ -160,13 +148,10 @@ async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme') ON CONFLICT DO NOTHING;
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('c', '{org}', '{i}', '1', 'github_app', '1') ON CONFLICT DO NOTHING;
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
-                            default_branch)
-             VALUES ('r', '{org}', '{i}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;",
-        i = instance(),
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('c', '{org}', '1', 'github_app', '1') ON CONFLICT DO NOTHING;
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('r', '{org}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;"
     )))
     .execute(&mut *tx)
     .await

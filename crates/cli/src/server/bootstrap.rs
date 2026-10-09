@@ -20,7 +20,6 @@ pub(super) async fn run(pool: &PgPool, github: &Github, installation: &str) -> a
     } = cihub_platform::bootstrap(
         pool,
         github.app.as_ref(),
-        github.scm_instance_id,
         ConnectionKind::GithubApp,
         installation,
         now(),

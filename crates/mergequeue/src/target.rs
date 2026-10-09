@@ -1,5 +1,5 @@
 use cihub_config::{Layer, QueueSettings, RepoConfig};
-use cihub_domain::{OrgId, QueueId, RepoId, ScmInstanceId};
+use cihub_domain::{OrgId, QueueId, RepoId};
 use cihub_scm::{ConnectionRef, RepoRef};
 use sqlx::PgConnection;
 
@@ -10,7 +10,6 @@ use crate::{MergeQueueError, parse_id};
 pub(crate) struct RepoTarget {
     pub repo_id: RepoId,
     pub org_id: OrgId,
-    pub scm_instance_id: ScmInstanceId,
     pub repo: RepoRef,
 }
 
@@ -19,7 +18,6 @@ pub(crate) struct RepoTarget {
 pub(crate) struct QueueTarget {
     pub queue_id: QueueId,
     pub org_id: OrgId,
-    pub scm_instance_id: ScmInstanceId,
     pub repo_id: RepoId,
     pub repo: RepoRef,
     pub target_branch: String,
@@ -43,11 +41,11 @@ type Row = (
     String,
     String,
     String,
-    String,
 );
 
 /// The columns of [`Row`]: the queue, its repository and its connection.
-const COLUMNS: &str = "q.id, q.org_id, q.target_branch, q.name, q.config_text, q.config_sha, r.id, r.scm_instance_id, r.external_id,
+const COLUMNS: &str =
+    "q.id, q.org_id, q.target_branch, q.name, q.config_text, q.config_sha, r.id, r.external_id,
     r.namespace, r.name, c.id, c.external_id
     FROM queues q
     JOIN repos r ON r.id = q.repo_id
@@ -62,7 +60,6 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         config_text,
         config_sha,
         repo,
-        instance,
         external_id,
         namespace,
         name,
@@ -72,7 +69,6 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
     Ok(QueueTarget {
         queue_id: parse_id(&queue, &queue)?,
         org_id: parse_id(&org, &queue)?,
-        scm_instance_id: parse_id(&instance, &queue)?,
         repo_id: parse_id(&repo, &queue)?,
         repo: RepoRef {
             connection: ConnectionRef {
@@ -228,22 +224,20 @@ impl RepoTarget {
         conn: &mut PgConnection,
         repo: RepoId,
     ) -> Result<Self, MergeQueueError> {
-        type RepoRow = (String, String, String, String, String, String, String);
+        type RepoRow = (String, String, String, String, String, String);
         let row: Option<RepoRow> = sqlx::query_as(
-            "SELECT r.org_id, r.scm_instance_id, r.external_id, r.namespace, r.name, c.id,
-                    c.external_id
+            "SELECT r.org_id, r.external_id, r.namespace, r.name, c.id, c.external_id
              FROM repos r JOIN scm_connections c ON c.id = r.connection_id
              WHERE r.id = $1",
         )
         .bind(repo.to_string())
         .fetch_optional(conn)
         .await?;
-        let (org, instance, external_id, namespace, name, connection, cext) =
+        let (org, external_id, namespace, name, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
         Ok(Self {
             repo_id: repo,
             org_id: parse_id(&org, repo)?,
-            scm_instance_id: parse_id(&instance, repo)?,
             repo: RepoRef {
                 connection: ConnectionRef {
                     id: parse_id(&connection, repo)?,
@@ -264,7 +258,6 @@ pub(crate) fn test_target() -> QueueTarget {
     QueueTarget {
         queue_id: QueueId::from_ulid(Ulid(2)),
         org_id: OrgId::from_ulid(Ulid(1)),
-        scm_instance_id: ScmInstanceId::from_ulid(Ulid(3)),
         repo: RepoRef {
             connection: ConnectionRef {
                 id: cihub_domain::ConnectionId::from_ulid(Ulid(4)),

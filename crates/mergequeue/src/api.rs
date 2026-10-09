@@ -476,8 +476,7 @@ async fn submit(
         comment_id: None,
     };
     let cause = format!("api-{}", new_event_id());
-    let connection = (target.scm_instance_id, target.repo.connection.id);
-    let job: Job = jobs::submit(grant.org_id, connection, &cause, &payload);
+    let job: Job = jobs::submit(grant.org_id, target.repo.connection.id, &cause, &payload);
     let now = (state.clock)();
     enqueue_job(&mut tx, &job, now, now).await?;
     tx.commit().await?;

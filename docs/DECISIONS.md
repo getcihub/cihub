@@ -155,12 +155,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 **September 30, 2026, validated by Nicolas Lecoy.**
 
 - **D46** The data model depends on no SCM, like the log (D23). An SCM identifier is an `external_id` column in
-  `text`, unique within its SCM instance only: each uniqueness key carries `scm_instance_id`.
+  `text`, unique within its SCM instance only: each uniqueness key carries `scm_instance_id`. _Extended by D246._
 - **D47** Table `scm_instances` (`id`, `kind`, `base_url` unique): github.com or a GitHub Enterprise Server. It is
   global, without `org_id` or row level security, because organizations share an instance. Closed value `ScmKind`
   (`github`); identifier type `scminstance`. The migration creates no instance: the setup wizard creates it
   (Lot 4), because a GitHub App belongs to a single instance.
-  _Extended by D92: `cihub-server` creates it at startup, from the App configuration (D79)._
+  _Extended by D92: `cihub-server` creates it at startup, from the App configuration (D79)._ _Superseded by D246._
 - **D48** `orgs` no longer has an SCM-specific column or a `settings` column. Table `scm_accounts` (`id`,
   `org_id`, `scm_instance_id`, `external_id`, `path`), unique (`scm_instance_id`, `external_id`): the SCM account
   (a GitHub organization) attached to an organization, which can have several. Identifier type `scmaccount`.
@@ -174,7 +174,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D51** Extends D39 and D42: a `users` row is a user account of an SCM instance (`scm_instance_id`,
   `external_id`, `login`), unique (`scm_instance_id`, `external_id`). The accounts of one person are separate
   rows, without a link; a table of persons can group them later without changing the log, which points to the
-  account that acted.
+  account that acted. _Extended by D246._
 - **D52** Extends D12: `compose.yaml` adds a one-shot service `postgres-setup`, which brings the `cihub` role and
   the `cihub` database to the desired state at each startup (creation if they are missing, then `ALTER`). It
   replaces the initialization script, which ran only on an empty volume. `mise run db` starts Postgres then runs
@@ -293,6 +293,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   recent deliveries and redeliver a delivery. A `sweep_deliveries` job of class `repair`, requested by each
   scheduler replica every 5 minutes with the key of the window
   (`sweep_deliveries:<scm_instance_id>-<YYYYMMDDTHHMM>:1`), redelivers the deliveries absent from the inbox.
+  _Extended by D246._
 - **D89** The wizard (`/setup`) responds only when no App is configured; the server therefore starts without the
   GitHub variables. It links the return from GitHub to the browser that started the flow by a random `state`
   parameter, kept in an `HttpOnly` and `SameSite=Lax` cookie, and refuses a return whose `state` differs. The
@@ -871,6 +872,16 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `test_runs` gains the GIN index `test_runs (tested_pr_numbers)`, which finds the runs of a PR. An expression
   index on `payload->>'run_id'` does not do: Postgres ignores the statistics of the expression of a partial index
   and reads the whole partition. The failing checks of a failed run are not in the history.
+
+**October 9, 2026, validated by Nicolas Lecoy.**
+
+- **D246** A deployment serves a single SCM instance, the one of its configuration; a GitHub Enterprise Server is
+  served by its own deployment. There is no `scm_instances` table, no `scm_instance_id` column, no `ScmInstanceId`
+  and no `ScmKind`: an SCM identifier (`external_id`) is unique within the deployment. `repos` is unique by
+  `external_id`, `users` by `external_id`, `scm_connections` by (`kind`, `external_id`) and by
+  `account_external_id`, `webhook_inbox` by `delivery_id`; `jobs`, `repos` and `webhook_inbox` reference a
+  connection by (`org_id`, `connection_id`). The key of `sweep_deliveries` names only its window. Supersedes D47
+  and the "within its SCM instance" part of D46; extends D51 and D88.
 
 ## Open questions
 

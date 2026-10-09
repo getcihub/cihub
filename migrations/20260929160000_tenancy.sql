@@ -29,17 +29,9 @@ BEGIN
 END
 $$;
 
-CREATE TYPE scm_kind AS ENUM ('github');
 CREATE TYPE connection_kind AS ENUM ('github_app');
 CREATE TYPE connection_mode AS ENUM ('normal', 'throttled', 'scm_unavailable', 'paused');
 CREATE TYPE api_scope AS ENUM ('queues:read', 'queues:write', 'prs:write');
-
-CREATE TABLE scm_instances (
-    id         text        PRIMARY KEY,
-    kind       scm_kind    NOT NULL,
-    base_url   text        NOT NULL UNIQUE,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
 
 CREATE TABLE orgs (
     id         text        PRIMARY KEY,
@@ -50,7 +42,6 @@ CREATE TABLE orgs (
 CREATE TABLE scm_connections (
     id                   text            PRIMARY KEY,
     org_id               text            NOT NULL REFERENCES orgs (id),
-    scm_instance_id      text            NOT NULL REFERENCES scm_instances (id),
     account_external_id  text            NOT NULL,
     kind                 connection_kind NOT NULL,
     external_id          text            NOT NULL,
@@ -63,38 +54,33 @@ CREATE TABLE scm_connections (
     paused_until         timestamptz,
     consecutive_failures integer         NOT NULL DEFAULT 0,
     created_at           timestamptz     NOT NULL DEFAULT now(),
-    UNIQUE (scm_instance_id, kind, external_id),
-    UNIQUE (scm_instance_id, account_external_id),
-    UNIQUE (org_id, scm_instance_id, id)
+    UNIQUE (kind, external_id),
+    UNIQUE (account_external_id),
+    UNIQUE (org_id, id)
 );
 
 CREATE INDEX scm_connections_org_id ON scm_connections (org_id);
 
 CREATE TABLE repos (
-    id              text        PRIMARY KEY,
-    org_id          text        NOT NULL REFERENCES orgs (id),
-    scm_instance_id text        NOT NULL,
-    connection_id   text        NOT NULL,
-    external_id     text        NOT NULL,
-    namespace       text        NOT NULL,
-    name            text        NOT NULL,
-    default_branch  text        NOT NULL,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (scm_instance_id, external_id),
+    id             text        PRIMARY KEY,
+    org_id         text        NOT NULL REFERENCES orgs (id),
+    connection_id  text        NOT NULL,
+    external_id    text        NOT NULL UNIQUE,
+    namespace      text        NOT NULL,
+    name           text        NOT NULL,
+    default_branch text        NOT NULL,
+    created_at     timestamptz NOT NULL DEFAULT now(),
     UNIQUE (org_id, id),
-    FOREIGN KEY (org_id, scm_instance_id, connection_id)
-        REFERENCES scm_connections (org_id, scm_instance_id, id)
+    FOREIGN KEY (org_id, connection_id) REFERENCES scm_connections (org_id, id)
 );
 
 CREATE INDEX repos_org_id ON repos (org_id);
 
 CREATE TABLE users (
-    id              text        PRIMARY KEY,
-    scm_instance_id text        NOT NULL REFERENCES scm_instances (id),
-    external_id     text        NOT NULL,
-    login           text        NOT NULL,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (scm_instance_id, external_id)
+    id          text        PRIMARY KEY,
+    external_id text        NOT NULL UNIQUE,
+    login       text        NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE api_tokens (

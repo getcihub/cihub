@@ -1,4 +1,4 @@
-use cihub_domain::{ConnectionId, JobClass, JobState, OrgId, QueueId, ScmInstanceId};
+use cihub_domain::{ConnectionId, JobClass, JobState, OrgId, QueueId};
 use serde_json::Value;
 use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
@@ -36,7 +36,7 @@ pub struct Job {
     pub job_type: String,
     pub class: JobClass,
     pub org_id: Option<OrgId>,
-    pub connection: Option<(ScmInstanceId, ConnectionId)>,
+    pub connection: Option<ConnectionId>,
     pub queue_id: Option<QueueId>,
     pub payload: Value,
     /// Attempts started, this one included once claimed.
@@ -57,19 +57,17 @@ pub async fn enqueue_job(
     run_after: OffsetDateTime,
     now: OffsetDateTime,
 ) -> Result<bool, PlatformError> {
-    let (instance, connection) = job.connection.unzip();
     let done = sqlx::query(
-        "INSERT INTO jobs (idempotency_key, type, class, org_id, scm_instance_id, connection_id,
-                           queue_id, payload, run_after, created_at)
-         VALUES ($1, $2, $3::job_class, $4, $5, $6, $7, $8, $9, $10)
+        "INSERT INTO jobs (idempotency_key, type, class, org_id, connection_id, queue_id, payload,
+                           run_after, created_at)
+         VALUES ($1, $2, $3::job_class, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (idempotency_key) DO NOTHING",
     )
     .bind(&job.idempotency_key)
     .bind(&job.job_type)
     .bind(job.class.as_str())
     .bind(job.org_id.map(|id| id.to_string()))
-    .bind(instance.map(|id| id.to_string()))
-    .bind(connection.map(|id| id.to_string()))
+    .bind(job.connection.map(|id| id.to_string()))
     .bind(job.queue_id.map(|id| id.to_string()))
     .bind(&job.payload)
     .bind(run_after)
@@ -88,7 +86,6 @@ type JobRow = (
     String,
     String,
     String,
-    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -152,8 +149,8 @@ pub async fn claim_jobs(
              FROM chosen WHERE jobs.idempotency_key = chosen.idempotency_key
              RETURNING jobs.*
          )
-         SELECT idempotency_key, type, class::text, org_id, scm_instance_id, connection_id,
-                queue_id, payload, attempts
+         SELECT idempotency_key, type, class::text, org_id, connection_id, queue_id, payload,
+                attempts
          FROM claimed ORDER BY class, run_after, idempotency_key",
     )
     .bind(worker)
@@ -168,17 +165,8 @@ pub async fn claim_jobs(
 }
 
 fn decode(
-    (key, job_type, class, org_id, instance, connection, queue_id, payload, attempts): JobRow,
+    (key, job_type, class, org_id, connection, queue_id, payload, attempts): JobRow,
 ) -> Result<Job, PlatformError> {
-    let connection = match (instance, connection) {
-        (Some(instance), Some(connection)) => Some((
-            instance.parse().map_err(PlatformError::read("job", &key))?,
-            connection
-                .parse()
-                .map_err(PlatformError::read("job", &key))?,
-        )),
-        _ => None,
-    };
     Ok(Job {
         job_type,
         class: class.parse().map_err(PlatformError::read("job", &key))?,
@@ -186,7 +174,10 @@ fn decode(
             .map(|id| id.parse())
             .transpose()
             .map_err(PlatformError::read("job", &key))?,
-        connection,
+        connection: connection
+            .map(|id| id.parse())
+            .transpose()
+            .map_err(PlatformError::read("job", &key))?,
         queue_id: queue_id
             .map(|id| id.parse())
             .transpose()

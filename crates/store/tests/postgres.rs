@@ -9,12 +9,12 @@ use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
     EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState, OrgId,
     Permission, Priority, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
-    RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
+    RunStatus, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
-    create_api_token, create_event_partitions, ensure_scm_instance, load_events, migrate,
-    missing_migrations, new_api_token_secret,
+    create_api_token, create_event_partitions, load_events, migrate, missing_migrations,
+    new_api_token_secret,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
@@ -86,23 +86,19 @@ fn september() -> Date {
     Date::from_calendar_date(2026, Month::September, 15).unwrap()
 }
 
-const GITHUB: &str = "scminstance-1";
-
 fn rows(org: OrgId, n: u8) -> String {
     let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('connection-{n}', '{org}', '{GITHUB}', '{n}', 'github_app', '{n}');
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
-                            name, default_branch)
-             VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
-                     'name', 'main');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('connection-{n}', '{org}', '{n}', 'github_app', '{n}');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                            default_branch)
+             VALUES ('repo-{n}', '{org}', 'connection-{n}', '{n}', 'account-{n}', 'name', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name, snapshot_seq, snapshot)
              VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main', 1, '{{}}');
-         INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
-             VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
+         INSERT INTO webhook_inbox (delivery_id, org_id, event, payload, received_at)
+             VALUES ('delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
              VALUES ('job-{n}', 'test', 'repair', '{org}', '{{}}', '2026-09-15T00:00:00Z',
                      '2026-09-15T00:00:00Z');
@@ -142,15 +138,10 @@ fn rows(org: OrgId, n: u8) -> String {
 }
 
 async fn seed_global(conn: &mut PgConnection) {
-    sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO scm_instances (id, kind, base_url)
-             VALUES ('{GITHUB}', 'github', 'https://github.com');
-         INSERT INTO users (id, scm_instance_id, external_id, login)
-             VALUES ('user-1', '{GITHUB}', '1', 'octocat');"
-    )))
-    .execute(conn)
-    .await
-    .unwrap();
+    sqlx::raw_sql("INSERT INTO users (id, external_id, login) VALUES ('user-1', '1', 'octocat')")
+        .execute(conn)
+        .await
+        .unwrap();
 }
 
 async fn seed(pool: &PgPool) {
@@ -222,7 +213,6 @@ async fn a_transaction_without_context_sees_nothing(pool: PgPool) {
     for table in TENANT_TABLES {
         assert_eq!(count(&mut tx, table).await, 0, "{table}");
     }
-    assert_eq!(count(&mut tx, "scm_instances").await, 1);
     assert_eq!(count(&mut tx, "users").await, 1);
 }
 
@@ -251,26 +241,15 @@ async fn a_committed_context_does_not_stay_on_the_connection(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn an_external_id_is_unique_within_its_instance_only(pool: PgPool) {
+async fn an_external_id_is_unique(pool: PgPool) {
     let mut tx = begin_system(&pool).await.unwrap();
     seed_global(&mut tx).await;
-    sqlx::raw_sql(
-        "INSERT INTO scm_instances (id, kind, base_url)
-             VALUES ('scminstance-2', 'github', 'https://github.example.com');
-         INSERT INTO users (id, scm_instance_id, external_id, login)
-             VALUES ('user-2', 'scminstance-2', '1', 'octocat');",
-    )
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    let err = sqlx::query(
-        "INSERT INTO users (id, scm_instance_id, external_id, login)
-             VALUES ('user-3', $1, '1', 'other')",
-    )
-    .bind(GITHUB)
-    .execute(&mut *tx)
-    .await
-    .unwrap_err();
+
+    let err =
+        sqlx::query("INSERT INTO users (id, external_id, login) VALUES ('user-2', '1', 'other')")
+            .execute(&mut *tx)
+            .await
+            .unwrap_err();
     assert_eq!(err.as_database_error().unwrap().code().unwrap(), "23505");
 }
 
@@ -330,7 +309,6 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
             values::<RequiredStatusesSource>(),
         ),
         ("run_status", values::<RunStatus>()),
-        ("scm_kind", values::<ScmKind>()),
         ("submitted_via", values::<SubmittedVia>()),
     ];
     let names: Vec<String> = sqlx::query_scalar(
@@ -375,14 +353,11 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     seed(&pool).await;
     let user_id = UserId::from_ulid(Ulid(7));
     let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query(
-        "INSERT INTO users (id, scm_instance_id, external_id, login) VALUES ($1, $2, '7', 'hubot')",
-    )
-    .bind(user_id.to_string())
-    .bind(GITHUB)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
          VALUES ($1, $2, 'repo-1', 'next', 'next')",
@@ -565,24 +540,4 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
     assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
     let malformed = SecretString::from("Bearer cht_");
     assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn an_scm_instance_is_created_once_per_address(pool: PgPool) {
-    let (first, second) = (
-        ScmInstanceId::from_ulid(Ulid(1)),
-        ScmInstanceId::from_ulid(Ulid(2)),
-    );
-    let mut tx = begin_system(&pool).await.unwrap();
-    let github = "https://github.com";
-    let created = ensure_scm_instance(&mut tx, first, ScmKind::Github, github)
-        .await
-        .unwrap();
-    let again = ensure_scm_instance(&mut tx, second, ScmKind::Github, github)
-        .await
-        .unwrap();
-    let other = ensure_scm_instance(&mut tx, second, ScmKind::Github, "https://ghe.example.com")
-        .await
-        .unwrap();
-    assert_eq!((created, again, other), (first, first, second));
 }
