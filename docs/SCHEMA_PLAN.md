@@ -136,8 +136,7 @@ API response, which this change keeps as it is.
 - `scm_connections` gains `UNIQUE (org_id, id)`, like `repos` and `queues`. `jobs` and `webhook_inbox` then
   reference `(org_id, connection_id)` and **`jobs.scm_instance_id` is dropped** with its `CHECK`; `Job.connection`
   becomes `Option<ConnectionId>` (nine construction sites in `mergequeue`, one decode in `platform/src/jobs.rs`).
-  `repos.scm_instance_id` stays: `UNIQUE (scm_instance_id, external_id)` is the identity of a repository.
-  `webhook_inbox.scm_instance_id` stays: it is in the primary key with `delivery_id`.
+  `repos.scm_instance_id` and `webhook_inbox.scm_instance_id` are gone with D246.
 - `created_at … DEFAULT now()` on `orgs`, `scm_connections`, `repos`, `api_tokens`, `audit_log` and `queues`
   is a second clock next to the one the code passes as a parameter (D16, D20). Remove the defaults and bind the
   time, as the other tables do.
