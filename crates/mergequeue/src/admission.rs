@@ -246,7 +246,6 @@ mod tests {
             now: OffsetDateTime::UNIX_EPOCH,
         };
         let mut pr = test_pr(Mergeability::Blocked, ReviewDecision::Approved, checks);
-
         pr.labels.insert("ready".to_owned());
 
         let config = target.config().unwrap();

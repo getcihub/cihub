@@ -24,7 +24,6 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         ..
     } = shared;
     let mut executors = Executors::default();
-
     executors.register(MAINTENANCE, execute_maintenance);
     (merge_queue(&pool, &github, &process).executors)(&mut executors);
     let scm: Arc<dyn Scm> = github.app.clone();

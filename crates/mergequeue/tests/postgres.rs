@@ -546,7 +546,6 @@ impl SimQueue {
         );
 
         let mut executors = Executors::default();
-
         (module.executors)(&mut executors);
 
         let kind = ConnectionKind::GithubApp;
@@ -614,7 +613,6 @@ impl SimQueue {
             expires_at: None,
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
-
         cihub_store::create_api_token(&mut tx, &token, &secret)
             .await
             .unwrap();
@@ -1348,7 +1346,6 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         Arc::new(clock),
     );
     let mut executors = Executors::default();
-
     (module.executors)(&mut executors);
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -2486,7 +2483,6 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
         },
     };
     let mut tx = begin_system(&pool).await.unwrap();
-
     cihub_store::deposit_fact(&mut tx, &drain, q.clock.now())
         .await
         .unwrap();
@@ -3563,7 +3559,6 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
         time::Time::from_hms(10, 0, 0).unwrap(),
     );
     let mut w = World::at(pool.clone(), may).await;
-
     w.submit(1).await;
     assert!(w.log.seq < SNAPSHOT_EVERY, "no snapshot by count");
 
@@ -4078,7 +4073,6 @@ impl Chaos {
             self.clock.shared(),
         );
         let mut executors = Executors::default();
-
         (module.executors)(&mut executors);
 
         let cancel = CancellationToken::new();

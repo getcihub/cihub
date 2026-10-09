@@ -57,7 +57,6 @@ mod tests {
         ));
 
         let other = SecretString::from("another secret".to_owned());
-
         assert!(!verify_signature(&other, b"Hello, World!", Some(SIGNATURE)));
         assert!(!verify_signature(&secret(), b"Hello, World!", None));
         assert!(!verify_signature(

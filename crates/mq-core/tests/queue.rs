@@ -493,7 +493,6 @@ fn a_merge_conflict_fails_the_item() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let run = w.run(1).unwrap();
-
     w.fail_assembly(run, JobError::MergeConflict);
 
     assert_eq!(w.state(1), None);
@@ -615,7 +614,6 @@ fn pause_stops_decisions_and_keeps_submissions() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let control = |c| EventKind::QueueControlRequested { control: c };
-
     w.fact(Actor::System, control(QueueControl::Pause));
     assert_eq!(w.snapshot.state, QueueState::Paused);
     assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
@@ -810,7 +808,6 @@ fn check_finds_a_damaged_snapshot() {
     let mut s = w.snapshot.clone();
     s.target.valid_bases.clear();
     let item_id = w.item(1).unwrap().id;
-
     assert!(check(&s, &w.settings).contains(&Violation::PassedOnStaleBase { item_id }));
 }
 
@@ -826,7 +823,6 @@ fn a_not_ready_item_times_out() {
     let mut w = world();
     submit_behind(&mut w, 1);
     let timeout = i64::from(w.settings.not_ready_timeout_hours.value) * 60;
-
     w.advance(timeout - 1);
     assert_eq!(w.state(1), Some(ItemState::NotReady));
 

@@ -327,7 +327,6 @@ async fn a_permission_is_kept_five_minutes() {
         login: "alice".into(),
     };
     let read = || app.permission(&repo, &alice, JobClass::Interactive);
-
     assert_eq!(read().await.unwrap(), Permission::Write);
     *clock.lock().unwrap() = now + Duration::minutes(4);
 

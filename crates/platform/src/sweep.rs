@@ -123,7 +123,6 @@ mod tests {
                 .unwrap()
         };
         let key = |minute| sweep_job(at(minute)).idempotency_key;
-
         assert_eq!(key(5), key(9));
         assert_ne!(key(9), key(10));
         assert_eq!(key(7), "sweep_deliveries:20260910T0005:1");

@@ -121,7 +121,6 @@ mod tests {
     #[test]
     fn a_key_that_is_not_an_rsa_pem_block_is_refused() {
         let read = |text: &str| AppKey::from_pem(&SecretString::from(text.to_owned()));
-
         assert!(matches!(read("not a key"), Err(KeyError::NotPem)));
         let label = read("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----");
 

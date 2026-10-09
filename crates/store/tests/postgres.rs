@@ -421,7 +421,6 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let log = vec![submitted, created, lost];
 
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
-
     assert_eq!(append_events(&mut tx, &log[..2]).await.unwrap(), [1, 2]);
     assert_eq!(append_events(&mut tx, &log[2..]).await.unwrap(), [3]);
     tx.commit().await.unwrap();
@@ -443,7 +442,6 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
             .await
             .unwrap();
     let item = Some(ItemId::from_ulid(Ulid(1)).to_string());
-
     assert_eq!(rows, [(1, None), (2, item), (3, None)]);
 
     let mut tx = begin_org(&pool, org(2)).await.unwrap();
@@ -530,7 +528,6 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         expires_at: Some(at(3600)),
     };
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
-
     create_api_token(&mut tx, &token, &secret).await.unwrap();
     tx.commit().await.unwrap();
 

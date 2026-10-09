@@ -100,7 +100,6 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
     };
 
     let missing = cihub_store::missing_migrations(&MIGRATOR, pool).await?;
-
     if !missing.is_empty() {
         bail!("the database misses the migrations {missing:?}: run `cihub server migrate`");
     }

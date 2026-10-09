@@ -209,7 +209,6 @@ async fn an_unrouted_delivery_is_seen_by_the_system_only(pool: PgPool) {
         ..delivery("d2", 0)
     };
     let mut tx = begin_system(&pool).await.unwrap();
-
     assert!(store_delivery(&mut tx, &orphan).await.is_err());
 }
 
