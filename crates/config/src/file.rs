@@ -81,9 +81,11 @@ impl RepoConfig {
             .map(defaults_layer)
             .transpose()?
             .unwrap_or_default();
+
         QueueSettings::resolve(&Layer::default(), &defaults)?;
         let mut names = HashSet::new();
         let mut queues = Vec::with_capacity(file.queues.len());
+
         for raw in file.queues {
             let (queue, name_at) = queue(raw, text)?;
             if !names.insert(queue.name.clone()) {
@@ -95,11 +97,13 @@ impl RepoConfig {
             QueueSettings::resolve(&queue.settings, &defaults)?;
             queues.push(queue);
         }
+
         let priority_rules = file
             .priority_rules
             .into_iter()
             .map(|rule| priority_rule(rule, text))
             .collect::<Result<_, _>>()?;
+
         Ok(Self {
             defaults,
             queues,
@@ -303,6 +307,7 @@ fn queue(
         merge_conditions: merge_conditions(&list(raw.merge_conditions.take()), text)?,
         settings: layer(raw)?,
     };
+
     Ok((queue, name_at))
 }
 
@@ -499,6 +504,7 @@ impl<'de> Visitor<'de> for RawExprVisitor {
         let Some(key) = map.next_key::<String>()? else {
             return Err(de::Error::invalid_length(0, &self));
         };
+
         let block: fn(_) -> _ = match key.as_str() {
             "and" => Expr::And,
             "or" => Expr::Or,
@@ -506,9 +512,11 @@ impl<'de> Visitor<'de> for RawExprVisitor {
             _ => return Err(de::Error::unknown_field(&key, &["and", "or", "not"])),
         };
         let list = map.next_value()?;
+
         if map.next_key::<String>()?.is_some() {
             return Err(de::Error::custom("a condition block has exactly one key"));
         }
+
         Ok(RawExpr::Block(block, list))
     }
 }
@@ -580,6 +588,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         let [main, hotfix] = &config.queues[..] else {
             panic!("expected two queues");
         };
+
         assert_eq!(
             (main.name.as_str(), hotfix.name.as_str()),
             ("main", "hotfix")
@@ -609,6 +618,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             review_decision: cihub_domain::ReviewDecision::Approved,
             ..Context::default()
         };
+
         assert_eq!(main.queue_conditions.eval(&ctx), Ok(false));
     }
 
@@ -655,6 +665,7 @@ queues:
 ";
         let config = RepoConfig::parse(text).unwrap();
         let main = config.settings("main", "main").unwrap();
+
         assert_eq!(main.strategy.value, Strategy::Sequential);
         assert_eq!(main.testing_timeout_minutes.value, 60);
         let hotfix = config.settings("main", "hotfix").unwrap();
@@ -679,6 +690,7 @@ queues:
         let config = RepoConfig::parse(&queue("    testing_concurrency: 3\n")).unwrap();
         let settings =
             QueueSettings::resolve(&config.queues[0].settings, &config.defaults).unwrap();
+
         assert_eq!(
             (settings.window_floor.value, settings.window_ceiling.value),
             (3, 3)
@@ -688,6 +700,7 @@ queues:
         let e = error(&queue(
             "    window: { floor: 2 }\n    testing_concurrency: 3\n",
         ));
+
         assert_eq!(e.position, Some(at(6, 26)));
         assert!(e.message.contains("cannot both be set"));
     }
@@ -736,6 +749,7 @@ queues:
         let e = error(&queue(
             "    queue_conditions:\n      - or:\n          - label = a\n          - draft = true\n",
         ));
+
         assert_eq!(e.position, Some(at(8, 19)));
     }
 
