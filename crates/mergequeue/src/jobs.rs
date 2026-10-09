@@ -774,13 +774,80 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
     }
 }
 
+async fn find_pull_request(
+    scm: &dyn Scm,
+    repo: &RepoTarget,
+    pr_number: u64,
+    class: JobClass,
+) -> Result<Option<PrSnapshot>, Failure> {
+    match scm.pull_request(&repo.repo, pr_number, class).await {
+        Ok(pr) => Ok(Some(pr)),
+        Err(ScmError::NotFound(_)) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+async fn queues_of_pr(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    repo: &RepoTarget,
+    pr: &PrSnapshot,
+    request: &SubmitPr,
+    class: JobClass,
+) -> Result<Vec<QueueTarget>, Failure> {
+    let default_branch = default_branch_of(pool, repo.repo_id).await?;
+    let queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
+
+    // A label is a setting of a queue: only a command creates one.
+    if !queues.is_empty() || request.via != SubmittedVia::Comment {
+        return Ok(queues);
+    }
+
+    create_queues(pool, scm, repo, &pr.base_branch, &default_branch, class).await?;
+    open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await
+}
+
+async fn submission_priority(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    config: Option<&RepoConfig>,
+    pr: &PrSnapshot,
+    request: &SubmitPr,
+    reading: &Reading<'_>,
+) -> Result<Priority, Failure> {
+    if let Some(priority) = request.priority {
+        return Ok(priority);
+    }
+
+    let rule = rule_priority(scm, target, config, pr, reading).await?;
+    Ok(rule.unwrap_or(Priority::MEDIUM))
+}
+
+async fn submission_accounts(
+    pool: &PgPool,
+    target: &QueueTarget,
+    pr: &PrSnapshot,
+    request: &SubmitPr,
+) -> Result<(UserId, Actor), Failure> {
+    // The accounts come in their own transaction: the one that gives the
+    // facts back waits for the reconciliation of the queue, which may need
+    // the same rows of `users`.
+    let mut tx = begin_system(pool).await?;
+    let author_id = user_of(&mut tx, target.scm_instance_id, &pr.author).await?;
+    let actor = match &request.requested_by {
+        Some(account) => Actor::User {
+            user_id: user_of(&mut tx, target.scm_instance_id, &account.into()).await?,
+        },
+        None => Actor::System,
+    };
+    tx.commit().await?;
+
+    Ok((author_id, actor))
+}
+
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused command gets a comment
 /// that says why (`DECISIONS.md` D157); a refused label gets none.
-#[expect(
-    clippy::too_many_lines,
-    reason = "the checks of a submission read in their order, each refusal with its answer"
-)]
 pub(crate) async fn submit_pr(
     pool: &PgPool,
     scm: &dyn Scm,
@@ -806,26 +873,11 @@ pub(crate) async fn submit_pr(
         )
         .await;
     };
-    let pr = match scm.pull_request(&repo.repo, pr_number, job.class).await {
-        Ok(pr) => pr,
-        Err(ScmError::NotFound(_)) => return Ok(()),
-        Err(err) => return Err(err.into()),
+    let Some(pr) = find_pull_request(scm, &repo, pr_number, job.class).await? else {
+        return Ok(());
     };
-    let default_branch = default_branch_of(pool, repo.repo_id).await?;
-    let mut queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
-    // A label is a setting of a queue: only a command creates one.
-    if queues.is_empty() && request.via == SubmittedVia::Comment {
-        create_queues(
-            pool,
-            scm,
-            &repo,
-            &pr.base_branch,
-            &default_branch,
-            job.class,
-        )
-        .await?;
-        queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
-    }
+
+    let queues = queues_of_pr(pool, scm, &repo, &pr, &request, job.class).await?;
     let Some(first) = queues.first() else {
         info!(
             pr_number,
@@ -868,24 +920,10 @@ pub(crate) async fn submit_pr(
         .await;
     }
     let unmet = unmet_conditions(scm, target, config.as_ref(), &pr, &reading).await?;
-    let priority = match request.priority {
-        Some(priority) => priority,
-        None => rule_priority(scm, target, config.as_ref(), &pr, &reading)
-            .await?
-            .unwrap_or(Priority::MEDIUM),
-    };
-    // The accounts come in their own transaction: the one that gives the
-    // facts back waits for the reconciliation of the queue, which may need
-    // the same rows of `users`.
-    let mut tx = begin_system(pool).await?;
-    let author_id = user_of(&mut tx, target.scm_instance_id, &pr.author).await?;
-    let actor = match &request.requested_by {
-        Some(account) => Actor::User {
-            user_id: user_of(&mut tx, target.scm_instance_id, &account.into()).await?,
-        },
-        None => Actor::System,
-    };
-    tx.commit().await?;
+    let priority =
+        submission_priority(scm, target, config.as_ref(), &pr, &request, &reading).await?;
+    let (author_id, actor) = submission_accounts(pool, target, &pr, &request).await?;
+
     let submitted = EventKind::ItemSubmitted {
         pr_number,
         head_sha: pr.head_sha.clone(),

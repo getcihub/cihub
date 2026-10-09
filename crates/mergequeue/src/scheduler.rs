@@ -1021,46 +1021,24 @@ pub(crate) async fn run_scheduler(
     let mut next_cover = clock();
     while !cancel.is_cancelled() {
         let now = clock();
-        if now >= next_cover {
-            next_cover = now + COVER_EVERY;
-            match wake_uncovered(&pool, now).await {
-                Ok(0) => {}
-                Ok(queues) => info!(queues, "queues woken for their snapshot"),
-                Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
-            }
-        }
+        cover_if_due(&pool, now, &mut next_cover).await;
+
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
                 error = &err as &dyn Error,
                 "deliveries of the connections not given"
             );
         }
-        let queues = match leases(&pool, &owner, now).await {
-            Ok(queues) => queues,
-            Err(err) => {
-                warn!(error = &err as &dyn Error, "leases not taken");
-                Vec::new()
-            }
-        };
-        for queue in &queues {
-            let span = info_span!("reconcile", org_id = tracing::field::Empty, queue_id = %queue);
-            let done = reconciler
-                .reconcile(&pool, *queue, &clock)
-                .instrument(span.clone());
-            if let Err(err) = done.await {
-                span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));
-            }
-        }
-        if i64::try_from(queues.len()).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
+
+        let leased_queues = reconcile_leased_queues(&pool, &owner, &reconciler, now, &clock).await;
+        if i64::try_from(leased_queues).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
             continue;
         }
-        let wait = match next_wait(&pool, clock()).await {
-            Ok(wait) => wait,
-            Err(err) => {
-                warn!(error = &err as &dyn Error, "next tick not read");
-                TICK
-            }
-        };
+
+        let wait = next_wait(&pool, clock()).await.unwrap_or_else(|err| {
+            warn!(error = &err as &dyn Error, "next tick not read");
+            TICK
+        });
         wakeup
             .wait_or_pause(wait, &cancel, "queue notifications lost")
             .await;
@@ -1068,6 +1046,47 @@ pub(crate) async fn run_scheduler(
     let mut tx = begin_system(&pool).await?;
     release_leases(&mut tx, &owner).await?;
     Ok(tx.commit().await?)
+}
+
+async fn cover_if_due(pool: &PgPool, now: OffsetDateTime, next_cover: &mut OffsetDateTime) {
+    if now < *next_cover {
+        return;
+    }
+
+    *next_cover = now + COVER_EVERY;
+    match wake_uncovered(pool, now).await {
+        Ok(0) => {}
+        Ok(queues) => info!(queues, "queues woken for their snapshot"),
+        Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
+    }
+}
+
+async fn reconcile_leased_queues(
+    pool: &PgPool,
+    owner: &str,
+    reconciler: &Reconciler,
+    now: OffsetDateTime,
+    clock: &(impl Fn() -> OffsetDateTime + Send + Sync),
+) -> usize {
+    let queues = match leases(pool, owner, now).await {
+        Ok(queues) => queues,
+        Err(err) => {
+            warn!(error = &err as &dyn Error, "leases not taken");
+            Vec::new()
+        }
+    };
+
+    for queue in &queues {
+        let span = info_span!("reconcile", org_id = tracing::field::Empty, queue_id = %queue);
+        let done = reconciler
+            .reconcile(pool, *queue, clock)
+            .instrument(span.clone());
+        if let Err(err) = done.await {
+            span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));
+        }
+    }
+
+    queues.len()
 }
 
 async fn next_wait(
