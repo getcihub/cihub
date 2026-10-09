@@ -23,6 +23,8 @@ procedure is in [`docs/GITHUB.md`](docs/GITHUB.md); in short:
   optional.
 - **Events**: Pull request, Pull request review, Issue comment, Push, Check run, Check suite, Status, Branch
   protection rule, Repository.
+- **Where can this GitHub App be installed?**: *Only on this account*. Keep the App private: any account that
+  installs a public App gets an organization in your CIHub.
 - After the creation, note the **App ID** and generate a **private key** (`.pem` file).
 
 ### 2. Configure and start
@@ -41,15 +43,15 @@ starts `cihub server start` on port 8080. Put your HTTPS reverse proxy in front 
 
 ### 3. Install the App and start your organization
 
-Install the App on the repositories to serve (*Install App* on the page of the App). The identifier of the
-installation is the last part of the URL of its settings page (`.../installations/<id>`). Then:
+Install the App on the repositories to serve (*Install App* on the page of the App). CIHub creates the
+organization of the account (its slug is the login of the account) and reads its repositories by itself. To use
+the API or the CLI, create a token:
 
 ```sh
-docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
+docker compose -f deploy/compose.yaml run --rm cihub-server server token create --org <login of the account>
 ```
 
-The command creates the organization in CIHub, reads its repositories, and prints an API token **once**: keep it
-in a secret store.
+The command prints an API token **once**: keep it in a secret store.
 
 ### 4. Protect the target branch
 

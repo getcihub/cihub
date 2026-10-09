@@ -2,7 +2,7 @@
 //! and writes in REST. Each value of GitHub becomes a neutral value here
 //! (`docs/GITHUB.md`, `DECISIONS.md` D23, D78).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use cihub_domain::{
@@ -11,8 +11,8 @@ use cihub_domain::{
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
-    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmRepo,
-    ScmUser, SetupFinding, StatusUpdate,
+    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
+    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
@@ -330,6 +330,35 @@ impl GraphqlPr {
             deletions: self.deletions,
             changed_files: self.changed_files,
         })
+    }
+}
+
+#[derive(Deserialize)]
+struct Installation {
+    id: u64,
+    account: Account,
+    #[serde(default)]
+    permissions: BTreeMap<String, String>,
+    suspended_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Account {
+    id: u64,
+    login: String,
+}
+
+impl Installation {
+    fn into_neutral(self) -> ScmInstallation {
+        ScmInstallation {
+            external_id: self.id.to_string(),
+            account: ScmAccount {
+                external_id: self.account.id.to_string(),
+                path: self.account.login,
+            },
+            permissions: self.permissions,
+            is_suspended: self.suspended_at.is_some(),
+        }
     }
 }
 
@@ -1278,27 +1307,30 @@ impl Scm for GithubApp {
         &'a self,
         external_id: &'a str,
         _class: JobClass,
-    ) -> ScmFuture<'a, ScmAccount> {
+    ) -> ScmFuture<'a, Option<ScmInstallation>> {
         Box::pin(async move {
-            #[derive(Deserialize)]
-            struct Installation {
-                account: Account,
-            }
-            #[derive(Deserialize)]
-            struct Account {
-                id: u64,
-                login: String,
-            }
             let path = format!("/app/installations/{}", encode(external_id));
             let (answer, _) = self.send_as_app(Method::GET, &path).await?;
             if answer.status == StatusCode::NOT_FOUND {
-                return Err(ScmError::NotFound(format!("installation {external_id}")));
+                return Ok(None);
             }
-            let Installation { account } = expect(answer, &[StatusCode::OK])?.json()?;
-            Ok(ScmAccount {
-                external_id: account.id.to_string(),
-                path: account.login,
-            })
+
+            let installation: Installation = expect(answer, &[StatusCode::OK])?.json()?;
+            Ok(Some(installation.into_neutral()))
+        })
+    }
+
+    fn installations(&self, _class: JobClass) -> ScmFuture<'_, Vec<ScmInstallation>> {
+        Box::pin(async move {
+            let mut path = Some("/app/installations?per_page=100".to_owned());
+            let mut installations = Vec::new();
+            while let Some(page) = path.take() {
+                let (answer, next) = self.send_as_app(Method::GET, &page).await?;
+                let listed: Vec<Installation> = expect(answer, &[StatusCode::OK])?.json()?;
+                installations.extend(listed.into_iter().map(Installation::into_neutral));
+                path = next;
+            }
+            Ok(installations)
         })
     }
 

@@ -21,7 +21,7 @@ use cihub_platform::{
     mark_dirty, mark_processed, pending_deliveries, release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
-use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
+use cihub_store::{PgPool, begin_system, mark_facts_processed, pending_facts};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
@@ -358,10 +358,6 @@ impl Work<'_> {
                     },
                 ));
             }
-            ScmEvent::AccessLost => facts.push(self.fact(Actor::System, EventKind::AccessLost)),
-            ScmEvent::AccessRestored => {
-                facts.push(self.fact(Actor::System, EventKind::AccessRestored));
-            }
             ScmEvent::CheckChanged {
                 sha,
                 branches,
@@ -375,7 +371,7 @@ impl Work<'_> {
             | ScmEvent::SubmitBoxChecked { .. }
             | ScmEvent::RulesChanged { .. }
             | ScmEvent::RepoChanged { .. }
-            | ScmEvent::ConnectionCreated { .. }
+            | ScmEvent::ConnectionChanged
             | ScmEvent::ReposChanged { .. }
             | ScmEvent::Ignored => {}
         }
@@ -470,13 +466,11 @@ struct ConnectionDelivery {
     delivery_id: String,
     org_id: OrgId,
     connection: ConnectionId,
-    received_at: OffsetDateTime,
 }
 
 /// Reads the deliveries of a connection without a queue (`DECISIONS.md` D103),
-/// and returns their number. A lost or restored access goes to each queue of
-/// the connection; a `merge` command requests its submission, whose job finds
-/// the queue by the base branch of the PR; a concluded check on the head of a
+/// and returns their number. A `merge` command requests its submission, whose
+/// job finds the queue by the base branch of the PR; a concluded check on the head of a
 /// `not_ready` item asks its queue to read the PR. A delivery that no queue
 /// uses is marked processed.
 ///
@@ -488,10 +482,10 @@ pub async fn pass_connection_deliveries(
     reconciler: &Reconciler,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
-    type Row = (String, String, String, String, Value, OffsetDateTime);
+    type Row = (String, String, String, String, Value);
     let mut tx = begin_system(pool).await?;
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT delivery_id, org_id, connection_id, event, payload, received_at
+        "SELECT delivery_id, org_id, connection_id, event, payload
          FROM webhook_inbox
          WHERE routed_at IS NOT NULL AND processed_at IS NULL AND queue_id IS NULL
            AND connection_id IS NOT NULL
@@ -503,12 +497,11 @@ pub async fn pass_connection_deliveries(
     .fetch_all(&mut *tx)
     .await?;
     let count = rows.len();
-    for (delivery_id, org_id, connection, event, payload, received_at) in rows {
+    for (delivery_id, org_id, connection, event, payload) in rows {
         let delivery = ConnectionDelivery {
             org_id: parse_id(&org_id, &delivery_id)?,
             connection: parse_id(&connection, &delivery_id)?,
             delivery_id: delivery_id.clone(),
-            received_at,
         };
         let error = match (reconciler.translate)(&event, &payload) {
             Ok(read) => {
@@ -534,12 +527,6 @@ async fn pass_delivery(
     now: OffsetDateTime,
 ) -> Result<bool, MergeQueueError> {
     match event {
-        ScmEvent::AccessLost => {
-            give_to_queues(conn, delivery, EventKind::AccessLost, now).await?;
-        }
-        ScmEvent::AccessRestored => {
-            give_to_queues(conn, delivery, EventKind::AccessRestored, now).await?;
-        }
         ScmEvent::PrChanged {
             repo_external_id,
             number,
@@ -667,38 +654,6 @@ async fn pass_comment(
             json!(request),
         );
         enqueue_job(conn, &job, now, now).await?;
-    }
-    Ok(())
-}
-
-/// Deposits the fact `kind` of `delivery` in the inbox of each queue of its
-/// connection, and marks them dirty.
-async fn give_to_queues(
-    conn: &mut PgConnection,
-    delivery: &ConnectionDelivery,
-    kind: EventKind,
-    now: OffsetDateTime,
-) -> Result<(), MergeQueueError> {
-    let queues: Vec<String> = sqlx::query_scalar(
-        "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.connection_id = $1 ORDER BY q.id",
-    )
-    .bind(delivery.connection.to_string())
-    .fetch_all(&mut *conn)
-    .await?;
-    for queue in queues {
-        let queue_id: QueueId = parse_id(&queue, &queue)?;
-        let fact = Event {
-            id: new_event_id(),
-            org_id: delivery.org_id,
-            queue_id,
-            actor: Actor::System,
-            occurred_at: delivery.received_at,
-            cause_id: None,
-            kind: kind.clone(),
-        };
-        deposit_fact(conn, &fact, now).await?;
-        mark_dirty(conn, queue_id).await?;
     }
     Ok(())
 }

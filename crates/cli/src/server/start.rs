@@ -6,14 +6,15 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, anyhow};
-use cihub_store::PgPool;
+use cihub_platform::request_installations_sync_at_start;
+use cihub_store::{PgPool, begin_system};
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span};
 
-use super::{Github, health, notifier, scheduler, web, worker};
+use super::{Github, health, notifier, now, scheduler, web, worker};
 
 #[derive(Clone, Copy)]
 enum Role {
@@ -55,6 +56,11 @@ pub(super) async fn run(
         .await
         .with_context(|| format!("cannot listen on {internal_addr}"))?;
     info!(internal_addr = %listener.local_addr()?, "server started");
+
+    let mut tx = begin_system(&pool).await?;
+    request_installations_sync_at_start(&mut tx, now()).await?;
+    tx.commit().await?;
+    info!("sync of the installations requested");
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();

@@ -168,7 +168,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `suspended_at`, `claimed_at`), unique (`scm_instance_id`, `kind`, `external_id`): the means by which CIHub
   reaches the repositories of an account. It replaces `installations`. Closed value `ConnectionKind`
   (`github_app`, `github_sudo_app`) instead of `AppKind`; identifier type `connection` instead of
-  `installation`. The budget, the quotas and the degraded modes are per connection.
+  `installation`. The budget, the quotas and the degraded modes are per connection. _Extended by D247._
 - **D50** `repos`: `scm_instance_id`, `connection_id`, `external_id`, `namespace`, `name`, `default_branch`,
   unique (`scm_instance_id`, `external_id`).
 - **D51** Extends D39 and D42: a `users` row is a user account of an SCM instance (`scm_instance_id`,
@@ -286,7 +286,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   test branch). Lot 5 reads the deliveries of its queue and those of its connection without a queue.
 - **D86** A delivery whose connection is not known (`installation.created` before any organization) stays
   unrouted, visible from the system context only. Lot 4 creates no `orgs`, `scm_connections` or `repos` row from
-  a webhook; its tests create these rows directly.
+  a webhook; its tests create these rows directly. _Superseded by D247._
 - **D87** The configuration checker moves to Lot 9, with the API, the known repositories and a method of the
   `Scm` trait that reads the rulesets.
 - **D88** Extends D76: the `Scm` trait gains two methods at the instance level, without a connection: read the
@@ -544,7 +544,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   account and its connection from the installation, requests the synchronization of the repositories, and shows
   only once an API token of the organization. No admin command creates a queue: queues are created by
   `POST /api/v1/repos/{owner}/{name}/queues` or by `cihub queue create`, which is added to the CLI commands. No
-  MCP server in Lot 9. Extends D138. _Extended by D168._ _Extended by D172._
+  MCP server in Lot 9. Extends D138. _Extended by D168._ _Extended by D172._ _Extended by D248._
 - **D155** Extends D154 and D86. The `Scm` trait gains two methods: `installation`, at the instance level, which
   returns the account of an installation (identifier and login), and `list_repos`, which returns the repositories
   of a connection. `bootstrap` gives the organization the login of the account as slug, enables the `mergequeue`
@@ -553,7 +553,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `repair`) creates and updates `repos`; it deletes no repository. As for `refresh_prs` (D101), its key names its
   cause: an `installation_repositories` delivery requests `sync_repos:<connection_id>-<delivery_id>:1`, and
   `bootstrap` and the hourly request of each scheduler replica request
-  `sync_repos:<connection_id>-<YYYYMMDDTHH>:1`. The recorded GitHub responses (D90) are recorded again.
+  `sync_repos:<connection_id>-<YYYYMMDDTHH>:1`. The recorded GitHub responses (D90) are recorded again. _Extended by D247._ _Extended by D248._
 - **D156** The PR surfaces (Lot 9). `Desired` gains `surfaces`: for each live item and each item that the
   reconciliation ends (`plan` keeps it before `apply` evicts it), its state, its reason, its position, the
   numbers of its predecessors, its test branch, its failing checks, its block reasons and the labels of the PR.
@@ -675,7 +675,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `github.private_key_file` and `github.webhook_secret`. The variable of a key is `CIHUB_` followed by its path
   in capitals, with `_` as separator; the precedence is variable, then file, then default; an unknown key or an
   invalid value stops the process. `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`. `cihub queue targets upload`
-  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._ _Extended by D170._ _Extended by D172._
+  replaces `cihub targets upload` (Lot 13). The PR commands `/cihub merge|cancel|restart` do not change. _Extended by D169._ _Extended by D170._ _Extended by D172._ _Extended by D248._
 - **D169** Extends D168. The `cihub` binary is given by `cihub-cli` (`crates/cli/`, the former `crates/server/`):
   it defines every command, one file per command, and starts the components. The HTTP endpoints stay in
   `cihub-web`, whose name follows the `web` role. No crate per role: `cihub-cli` has one file per role
@@ -882,6 +882,27 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `account_external_id`, `webhook_inbox` by `delivery_id`; `jobs`, `repos` and `webhook_inbox` reference a
   connection by (`org_id`, `connection_id`). The key of `sweep_deliveries` names only its window. Supersedes D47
   and the "within its SCM instance" part of D46; extends D51 and D88.
+- **D247** CIHub keeps its connections in step with the installations of its App, read on the SCM, which stays the
+  source of truth; a webhook is only a signal to read it again. A sync of an installation reads its account, its
+  permissions and whether it is suspended, and converges `scm_connections`: an installation that CIHub does not
+  know becomes an organization (slug = login of the account), its connection and the read of its repositories,
+  without an API token; when another organization already has the slug, the sync fails and creates nothing. A
+  suspended or deleted installation sets `suspended_at` and gives `access.lost` to the queues of its connection; an
+  installation active again clears it and gives `access.restored`. The full sync (every installation of the App,
+  `sync_installations:<cause>:1`, class `repair`) runs when the server starts (cause: the start instant) and every
+  24 hours (cause: the day). One installation is synced (`sync_installation:<installation>-<cause>:1`): with the
+  delivery as cause and the class `interactive`, at each `installation` delivery, whatever its action
+  (`new_permissions_accepted` included), and at each delivery of an installation that CIHub does not know; with
+  the hour as cause and the class `repair`, at each delivery of a connection whose `synced_at` is older than 1
+  hour, and when the read of its repositories answers that the access is lost or the installation is not found.
+  The router marks processed an `installation` delivery and a delivery of an installation that CIHub does not
+  know. `scm_connections` gains
+  `synced_at` and `permissions jsonb` (permission name → access level). The `Scm` trait gains `installations()`,
+  and `installation()` returns the installation, or nothing when the SCM does not know it. Supersedes D86 and the
+  onboarding with `state` of `docs/GITHUB.md`; extends D49 and D155.
+- **D248** `cihub server bootstrap --installation <id>` is replaced by `cihub server token create --org <slug>`: it
+  creates an API token named `token` with every scope for an existing organization, audits it (`token.created`)
+  and shows it once; it creates no organization. Supersedes the bootstrap command of D154, D155 and D168.
 
 ## Open questions
 

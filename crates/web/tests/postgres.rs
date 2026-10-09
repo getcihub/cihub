@@ -148,8 +148,9 @@ async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme') ON CONFLICT DO NOTHING;
-         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
-             VALUES ('c', '{org}', '1', 'github_app', '1') ON CONFLICT DO NOTHING;
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('c', '{org}', '1', 'github_app', '1', now(), '{{}}') ON CONFLICT DO NOTHING;
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('r', '{org}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;"
     )))

@@ -31,7 +31,7 @@ fn unknown_command_stops_the_start() {
     refuses(&[], &database);
     refuses(&["server"], &database);
     refuses(&["server", "start", "web"], &database);
-    refuses(&["server", "bootstrap"], &database);
+    refuses(&["server", "token", "create"], &database);
     refuses(&["queue"], &database);
     refuses(&["queue", "drain", "--repo", "acme"], &database);
 }

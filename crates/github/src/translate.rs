@@ -96,16 +96,7 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
         "repository" => ScmEvent::RepoChanged {
             repo_external_id: read.id("/repository/id")?,
         },
-        "installation" => match action {
-            "created" => ScmEvent::ConnectionCreated {
-                account_external_id: read.id("/installation/account/id")?,
-                account_path: read.text("/installation/account/login")?,
-                claim: None,
-            },
-            "deleted" | "suspend" => ScmEvent::AccessLost,
-            "unsuspend" => ScmEvent::AccessRestored,
-            _ => ScmEvent::Ignored,
-        },
+        "installation" => ScmEvent::ConnectionChanged,
         "installation_repositories" => ScmEvent::ReposChanged {
             added: read.ids("/repositories_added")?,
             removed: read.ids("/repositories_removed")?,
@@ -486,28 +477,18 @@ mod tests {
                 "installation": { "id": 42, "account": { "id": 9, "login": "acme" } },
             })
         };
-        assert_eq!(
-            event("installation", &installation("created")),
-            ScmEvent::ConnectionCreated {
-                account_external_id: "9".into(),
-                account_path: "acme".into(),
-                claim: None,
-            }
-        );
-        for action in ["deleted", "suspend"] {
+        for action in [
+            "created",
+            "deleted",
+            "suspend",
+            "unsuspend",
+            "new_permissions_accepted",
+        ] {
             assert_eq!(
                 event("installation", &installation(action)),
-                ScmEvent::AccessLost
+                ScmEvent::ConnectionChanged
             );
         }
-        assert_eq!(
-            event("installation", &installation("unsuspend")),
-            ScmEvent::AccessRestored
-        );
-        assert_eq!(
-            event("installation", &installation("new_permissions_accepted")),
-            ScmEvent::Ignored
-        );
         let repos = json!({
             "action": "added",
             "installation": { "id": 42 },

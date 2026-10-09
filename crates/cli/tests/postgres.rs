@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId};
 use ring::hmac;
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::{AssertSqlSafe, PgPool};
 use ulid::Ulid;
 
@@ -260,8 +260,9 @@ async fn two_queues(pool: &PgPool) -> String {
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '1', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{connection}', '{org}', '1', 'github_app', '1', now(), '{{}}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
@@ -329,4 +330,48 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
     let stdout = String::from_utf8_lossy(&status.stdout);
     assert_eq!(stdout, "queue `main` on `main`: running\n");
     stop(child);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
+    two_queues(&pool).await;
+    let create = |slug: &str| {
+        command(&pool)
+            .args(["server", "token", "create", "--org", slug])
+            .stdout(Stdio::piped())
+            .output()
+            .unwrap()
+    };
+
+    let created = create("acme");
+    assert!(created.status.success(), "{}", created.status);
+    let stdout = String::from_utf8(created.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 1, "{stdout}");
+    let token = SecretString::from(lines[0]);
+    let now = time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+    let grant = cihub_store::authenticate(&pool, &token, now)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(grant.org_id, OrgId::from_ulid(Ulid(1)));
+    for scope in [
+        ApiScope::QueuesRead,
+        ApiScope::QueuesWrite,
+        ApiScope::PrsWrite,
+    ] {
+        assert!(grant.scopes.contains(&scope), "{:?}", grant.scopes);
+    }
+    let mut tx = cihub_store::begin_system(&pool).await.unwrap();
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'token.created'")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+    assert_eq!(audited, 1);
+
+    let unknown = create("missing");
+    assert!(!unknown.status.success());
+    assert!(unknown.stdout.is_empty());
 }

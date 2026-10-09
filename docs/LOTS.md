@@ -97,16 +97,17 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   them; the CIHub repository moves to its own queue; an outside person follows the README and merges a first
   PR in less than 30 minutes (criterion of phase 1, measured by hand).
 - **Tracking**:
-  - Steps: 1. bootstrap of an organization (Q14); 2. PR surfaces; 3. API v1; 4. client and CLI;
+  - Steps: 1. start of an organization (Q14); 2. PR surfaces; 3. API v1; 4. client and CLI;
     5. configuration checker; 6. image, installation `docker compose` and README; 7. exit criteria.
-  - Done (October 2, 2026, D154, D155): step 1. `cihub-server admin bootstrap --installation <id>` reads the account
+  - Done (October 2, 2026, D154, D155): step 1. An admin command reads the account
     of the installation, creates the organization (slug: the login of the account), its account and its connection,
-    requests `sync_repos` and shows once a `bootstrap` token with
-    every scope; on an installation already bootstrapped, it creates only a new token. The
+    requests `sync_repos` and shows once a token with
+    every scope; on an installation already known, it creates only a new token. Replaced on October 9, 2026 by the
+    sync of the installations (D247) and `cihub server token create --org <slug>` (D248). The
     `Scm` trait gains `installation` and `list_repos` (GitHub and simulator, contract suite). The `sync_repos` job
     creates and updates `repos` without deleting any and without taking the repository of another organization; it is
-    requested by the routing of each `installation_repositories` delivery (key of the delivery), and by the bootstrap
-    and each scheduler replica (key of the hour). Tests: against Postgres, the bootstrap and its rerun, the reading of
+    requested by the routing of each `installation_repositories` delivery (key of the delivery), and by the admin
+    command and each scheduler replica (key of the hour). Tests: against Postgres, the admin command and its rerun, the reading of
     the repositories, the hourly request and the routing; the two GitHub routes on hand-written responses.
   - Done (October 2, 2026): the GitHub responses are recorded again (D155, 64 exchanges, with the installation and
     its repositories), with the `cihub` ruleset put back in recording mode for the duration of the recording;
@@ -126,7 +127,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     `problem+json` error, `ApiGrant` and the extractors; the `Module` contract gains `ModuleApi` (routes and document).
     `cihub-web` authenticates `/api/v1` by token, limits each token to 600 requests per minute and per replica,
     serves `/repos`, `/orgs/{org}/audit` and `/api/v1/openapi.json` (without token). `cihub-mergequeue` serves the
-    queue routes of D160; `audit_log` gains `actor_token_id`, and `bootstrap` audits its token. Tests: against
+    queue routes of D160; `audit_log` gains `actor_token_id`, and the admin command audits its token. Tests: against
     Postgres, the authentication, the scopes, the limit and the document; and end to end on the simulator, a
     submission through the API, the item, its timeline, its run, the graph, restart, cancellation, pause, new
     queue, resync and audit log.
@@ -155,7 +156,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
   - Done (October 3, 2026, D168, D169): one binary, `cihub`. `cihub-cli` (`crates/cli/`, the former
     `crates/server/`) gives it, with `clap`: one file per command and one per role; the HTTP endpoints stay in
     `cihub-web`. The former client-only `cihub-cli` crate is removed. Groups `login`, `queue` (`--repo`, `--queue`; with two queues and no `--queue`, the command refuses and
-    lists the names) and `server` (`start`, `migrate`, `bootstrap --installation <id>`, `--config
+    lists the names) and `server` (`start`, `migrate`, the admin command of step 1, `--config
     <file>`). `CIHUB_ROLES` is removed and `CIHUB_LOG` becomes `CIHUB_LOG_FILTER`; the YAML file of the server has one
     key per variable. Image: entry point `cihub`, default command `server start`. Tests: table tests of the
     configuration (file only, variables only, a variable over the file, unknown key, wrong type, missing database,

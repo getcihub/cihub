@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use crate::{
     ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
-    ScmAccount, ScmError, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ScmError, ScmInstallation, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -235,14 +235,18 @@ pub trait Scm: Send + Sync {
     /// Asks the SCM to send the attempt `attempt_id` of a delivery again.
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
 
-    /// The account that the connection `external_id` serves
-    /// (`DECISIONS.md` D155). No connection of CIHub exists yet, so no budget of
-    /// a connection applies.
+    /// The installation `external_id`, or `None` when the SCM does not know
+    /// it (`DECISIONS.md` D155, D247). No connection of CIHub may exist yet,
+    /// so no budget of a connection applies.
     fn installation<'a>(
         &'a self,
         external_id: &'a str,
         class: JobClass,
-    ) -> ScmFuture<'a, ScmAccount>;
+    ) -> ScmFuture<'a, Option<ScmInstallation>>;
+
+    /// Every installation of the App, suspended ones included
+    /// (`DECISIONS.md` D247).
+    fn installations(&self, class: JobClass) -> ScmFuture<'_, Vec<ScmInstallation>>;
 
     /// What the configuration of `branch` misses for the queue, in the order
     /// of [`SetupFinding`] (`DECISIONS.md` D162).
