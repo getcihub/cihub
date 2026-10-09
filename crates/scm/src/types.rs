@@ -128,6 +128,9 @@ pub struct RecentDelivery {
     pub delivery_id: String,
     /// The identifier of this attempt, to ask for the delivery again.
     pub attempt_id: String,
+    /// Whether CIHub answered this attempt with a 2xx status code, which it
+    /// does only once it stores the delivery (`DECISIONS.md` D249).
+    pub is_delivered: bool,
 }
 
 /// The account of the SCM that a connection serves: an organization or a

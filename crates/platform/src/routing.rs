@@ -44,7 +44,7 @@ pub(crate) async fn unrouted_deliveries(
     let rows: Vec<DeliveryRow> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, queue_id, event, payload, received_at
          FROM webhook_inbox
-         WHERE routed_at IS NULL
+         WHERE connection_id IS NULL
          ORDER BY received_at, delivery_id
          LIMIT $1
          FOR UPDATE SKIP LOCKED",
@@ -61,7 +61,8 @@ pub(crate) async fn unrouted_deliveries(
 /// by the test branch that names its run (`DECISIONS.md` D85). A delivery
 /// without a known connection, and a change of the installation of a
 /// connection, are processed at once: the sync of the installation reads the
-/// SCM again (`DECISIONS.md` D247).
+/// SCM again (`DECISIONS.md` D247), and the router deletes the delivery
+/// (`DECISIONS.md` D249).
 ///
 /// # Errors
 ///
@@ -190,25 +191,32 @@ pub(crate) async fn route_delivery(
     conn: &mut PgConnection,
     delivery_id: &str,
     route: Route,
-    now: OffsetDateTime,
 ) -> Result<bool, PlatformError> {
+    if route.processed {
+        let done = sqlx::query(
+            "DELETE FROM webhook_inbox WHERE delivery_id = $1 AND connection_id IS NULL",
+        )
+        .bind(delivery_id)
+        .execute(&mut *conn)
+        .await
+        .map_err(PlatformError::Query)?;
+        return Ok(done.rows_affected() == 1);
+    }
+
     let done = sqlx::query(
         "UPDATE webhook_inbox
-         SET org_id = $2, connection_id = $3, queue_id = $4, routed_at = $5,
-             processed_at = CASE WHEN $6 THEN $5 END
-         WHERE delivery_id = $1 AND routed_at IS NULL",
+         SET org_id = $2, connection_id = $3, queue_id = $4
+         WHERE delivery_id = $1 AND connection_id IS NULL",
     )
     .bind(delivery_id)
     .bind(route.org_id.map(|id| id.to_string()))
     .bind(route.connection_id.map(|id| id.to_string()))
     .bind(route.queue_id.map(|id| id.to_string()))
-    .bind(now)
-    .bind(route.processed)
     .execute(&mut *conn)
     .await
     .map_err(PlatformError::Query)?;
     let routed = done.rows_affected() == 1;
-    if routed && !route.processed && route.org_id.is_some() {
+    if routed {
         wake_for_delivery(conn, route.queue_id).await?;
     }
     Ok(routed)
@@ -217,7 +225,7 @@ pub(crate) async fn route_delivery(
 /// Routes the deliveries that wait, [`ROUTES_PER_PASS`] per transaction,
 /// then waits for [`INBOX_CHANNEL`] or `idle_wait`, until cancellation. `translate`
 /// reads a delivery of the SCM (`DECISIONS.md` D84); a delivery that it cannot
-/// read is routed as processed, with a warning.
+/// read is deleted, with a warning.
 ///
 /// # Errors
 ///
@@ -277,7 +285,7 @@ where
             None => processed_route(),
         };
 
-        let routed = route_delivery(&mut tx, delivery_id, route, now).await?;
+        let routed = route_delivery(&mut tx, delivery_id, route).await?;
         if let (true, Some(read)) = (routed, &read) {
             request_reads(&mut tx, read, route, delivery_id, now).await?;
         }
