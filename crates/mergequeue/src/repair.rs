@@ -99,9 +99,11 @@ pub(crate) async fn read_checks(
     let request: RefreshChecks = read_payload(job)?;
     let target = target_of(pool, job).await?;
     let state = crate::assembly::run_state(pool, request.run_id).await?;
+
     if state.map(|(status, _)| status) != Some(RunStatus::InProgress) {
         return Ok(());
     }
+
     let repo = &target.repo;
     if scm
         .branch_head(repo, &request.test_branch, job.class)
@@ -118,6 +120,7 @@ pub(crate) async fn read_checks(
         )
         .await?;
     }
+
     let checks = scm.checks(repo, &request.test_sha, job.class).await?;
     let facts = checks
         .into_iter()
@@ -131,6 +134,7 @@ pub(crate) async fn read_checks(
             )
         })
         .collect();
+
     give_back_facts(pool, &target, facts, now).await
 }
 
@@ -146,21 +150,26 @@ pub(crate) async fn read_target(
     let target = target_of(pool, job).await?;
     let mut tx = begin_system(pool).await?;
     let merging = merge_in_flight(&mut tx, target.queue_id).await?;
+
     tx.commit().await?;
+
     if merging {
         return Ok(());
     }
+
     let Some(after) = scm
         .branch_head(&target.repo, &target.target_branch, job.class)
         .await?
     else {
         return Ok(());
     };
+
     let fact = EventKind::TargetPushed {
         before: None,
         after,
         sender_id: None,
     };
+
     give_back_facts(pool, &target, vec![(Actor::System, fact)], now).await
 }
 
@@ -189,6 +198,7 @@ pub async fn resync(
         .map(|i| i.pr_number)
         .collect();
     let mut jobs = refresh_reads(&target, &subject, JobClass::Interactive, &prs);
+
     for run in snapshot.runs.values() {
         if run.status != RunStatus::InProgress {
             continue;
@@ -209,15 +219,19 @@ pub async fn resync(
             JobClass::Interactive,
         ));
     }
+
     jobs.push(refresh_target_job(&target, &subject, JobClass::Interactive));
+
     let mut requested = 0;
     for job in &jobs {
         if enqueue_job(&mut tx, job, now, now).await? {
             requested += 1;
         }
     }
+
     tx.commit().await?;
     info!(%queue, jobs = requested, "queue resync requested");
+
     Ok(requested)
 }
 
@@ -239,11 +253,13 @@ mod tests {
             point,
         };
         let checks = refresh_checks(&target, &read);
+
         assert_eq!(
             checks.idempotency_key,
             format!("refresh_checks:{run_id}-20260921T1413:1")
         );
         assert_eq!(checks.class, JobClass::Repair);
+
         let head = refresh_target(&target, point);
         assert_eq!(
             head.idempotency_key,

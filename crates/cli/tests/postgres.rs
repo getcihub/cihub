@@ -82,9 +82,11 @@ fn post(addr: &str, path: &str, headers: &[(&str, &str)], body: &str) -> Option<
         body.len()
     )
     .ok()?;
+
     for (name, value) in headers {
         write!(stream, "{name}: {value}\r\n").ok()?;
     }
+
     write!(stream, "\r\n{body}").ok()?;
     let mut response = String::new();
     stream.read_to_string(&mut response).ok()?;
@@ -152,6 +154,7 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
     let addr = free_addr();
     let child = start(&pool, &addr);
     let mut done: Vec<String> = Vec::new();
+
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
         done = sqlx::query_scalar(
@@ -160,13 +163,17 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
         tx.rollback().await.unwrap();
         if !done.is_empty() {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+
     stop(child);
+
     assert_eq!(done.len(), 1, "{done:?}");
     assert!(done[0].starts_with("maintenance:"), "{done:?}");
     let partitions: i64 =
@@ -174,6 +181,7 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
+
     assert_eq!(partitions, 2);
 }
 
@@ -186,6 +194,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
         .unwrap();
+
     wait_for(&internal, "/readyz");
     let body = r#"{"zen":"Keep it logically awesome."}"#;
     let tag = hmac::sign(
@@ -205,6 +214,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         ("X-Hub-Signature-256", signature.as_str()),
     ];
     let mut status = None;
+
     for _ in 0..100 {
         status = post(&public, "/webhooks/github", &headers, body);
         if status.is_some() {
@@ -212,6 +222,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         }
         sleep(Duration::from_millis(50));
     }
+
     assert_eq!(status.as_deref(), Some("HTTP/1.1 202 Accepted"));
     let mut waiting = None;
     for _ in 0..100 {
@@ -220,6 +231,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
         tx.rollback().await.unwrap();
         waiting = Some(count);
         if count == 0 {
@@ -228,7 +240,9 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
 
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+
     stop(child);
+
     assert_eq!(waiting, Some(0), "the router deletes the ping");
 }
 
@@ -239,6 +253,7 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
         .stderr(Stdio::piped())
         .output()
         .unwrap();
+
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("GitHub is not configured"), "{stderr}");
@@ -256,6 +271,7 @@ async fn two_queues(pool: &PgPool) -> String {
     let connection = ConnectionId::from_ulid(Ulid(4));
     let repo = RepoId::from_ulid(Ulid(5));
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
+
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
@@ -284,9 +300,11 @@ async fn two_queues(pool: &PgPool) -> String {
         ],
         expires_at: None,
     };
+
     cihub_store::create_api_token(&mut tx, &token, &secret)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
     secret.expose_secret().to_owned()
 }
@@ -301,6 +319,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
         .unwrap();
+
     wait_for(&public, "/api/v1/openapi.json");
     let cihub = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_cihub"))
@@ -313,6 +332,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
             .unwrap()
     };
     let refused = cihub(&["drain"]);
+
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(
@@ -322,10 +342,12 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
     );
     let drained = cihub(&["drain", "--queue", "hotfix"]);
     let stdout = String::from_utf8_lossy(&drained.stdout);
+
     assert!(drained.status.success(), "{stdout}");
     assert_eq!(stdout, "queue `hotfix`: \"draining\" asked\n");
     let status = cihub(&["status", "--queue", "main"]);
     let stdout = String::from_utf8_lossy(&status.stdout);
+
     assert_eq!(stdout, "queue `main` on `main`: running\n");
     stop(child);
 }
@@ -342,9 +364,11 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
     };
 
     let created = create("acme");
+
     assert!(created.status.success(), "{}", created.status);
     let stdout = String::from_utf8(created.stdout).unwrap();
     let lines: Vec<&str> = stdout.lines().collect();
+
     assert_eq!(lines.len(), 1, "{stdout}");
     let token = SecretString::from(lines[0]);
     let now = time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
@@ -352,6 +376,7 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
+
     assert_eq!(grant.org_id, OrgId::from_ulid(Ulid(1)));
     for scope in [
         ApiScope::QueuesRead,
@@ -360,13 +385,16 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
     ] {
         assert!(grant.scopes.contains(&scope), "{:?}", grant.scopes);
     }
+
     let mut tx = cihub_store::begin_system(&pool).await.unwrap();
     let audited: i64 =
         sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'token.created'")
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
+
     assert_eq!(audited, 1);
 
     let unknown = create("missing");

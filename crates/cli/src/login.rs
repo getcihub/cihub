@@ -36,11 +36,13 @@ pub(crate) async fn run(out: &mut impl Write, args: LoginArgs) -> anyhow::Result
         .await
         .context("the token does not open the API")?;
     let path = Credentials { url, token }.save()?;
+
     writeln!(
         out,
         "logged in: {} repositories, credentials in {}",
         repos.repos.len(),
         path.display()
     )?;
+
     Ok(())
 }

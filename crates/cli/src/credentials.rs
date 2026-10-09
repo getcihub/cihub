@@ -18,12 +18,14 @@ impl Credentials {
             std::env::var("CIHUB_URL").ok(),
             std::env::var("CIHUB_TOKEN").ok(),
         );
+
         if let (Some(url), Some(token)) = (&url, &token) {
             return Ok(Self {
                 url: url.clone(),
                 token: token.clone(),
             });
         }
+
         let path = path()?;
         let text = std::fs::read_to_string(&path).with_context(|| {
             format!(
@@ -33,6 +35,7 @@ impl Credentials {
         })?;
         let saved: Self = serde_json::from_str(&text)
             .with_context(|| format!("{} is not valid", path.display()))?;
+
         Ok(Self {
             url: url.unwrap_or(saved.url),
             token: token.unwrap_or(saved.token),
@@ -45,6 +48,7 @@ impl Credentials {
             std::fs::create_dir_all(dir)
                 .with_context(|| format!("cannot create {}", dir.display()))?;
         }
+
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -52,6 +56,7 @@ impl Credentials {
         let mut file = options
             .open(&path)
             .with_context(|| format!("cannot write {}", path.display()))?;
+
         std::io::Write::write_all(&mut file, serde_json::to_string_pretty(self)?.as_bytes())?;
         Ok(path)
     }

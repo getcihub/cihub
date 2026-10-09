@@ -45,6 +45,7 @@ pub fn receive(
     if !verify_signature(secret, body, header("x-hub-signature-256")) {
         return Err(WebhookError::Signature);
     }
+
     let delivery_id = header("x-github-delivery")
         .filter(|id| !id.is_empty())
         .ok_or(WebhookError::MissingHeader("X-GitHub-Delivery"))?;
@@ -80,9 +81,11 @@ mod tests {
             "x-hub-signature-256",
             HeaderValue::from_str(&format!("sha256={hex}")).unwrap(),
         );
+
         for (name, value) in pairs {
             headers.insert(*name, HeaderValue::from_str(value).unwrap());
         }
+
         headers
     }
 
@@ -99,6 +102,7 @@ mod tests {
             ],
         );
         let delivery = receive(&SecretString::from("s"), &headers, BODY).unwrap();
+
         assert_eq!(delivery.delivery_id, "d1");
         assert_eq!(delivery.event, "pull_request");
         assert_eq!(delivery.payload["number"], 1);
@@ -119,21 +123,26 @@ mod tests {
     fn a_delivery_needs_its_headers_and_a_json_payload() {
         let secret = SecretString::from("s");
         let no_id = signed("s", BODY, &[("x-github-event", "ping")]);
+
         assert!(matches!(
             receive(&secret, &no_id, BODY),
             Err(WebhookError::MissingHeader("X-GitHub-Delivery"))
         ));
+
         let no_event = signed("s", BODY, &[("x-github-delivery", "d1")]);
+
         assert!(matches!(
             receive(&secret, &no_event, BODY),
             Err(WebhookError::MissingHeader("X-GitHub-Event"))
         ));
+
         let text = b"not json";
         let headers = signed(
             "s",
             text,
             &[("x-github-delivery", "d1"), ("x-github-event", "ping")],
         );
+
         assert!(matches!(
             receive(&secret, &headers, text),
             Err(WebhookError::Payload(_))

@@ -457,6 +457,7 @@ impl GithubApp {
         if needs_paid_plan(&answer) {
             return Ok(Vec::new());
         }
+
         expect(answer, &[StatusCode::OK])?.json()
     }
 
@@ -547,6 +548,7 @@ impl GithubApp {
         let answer = self.graphql(connection, class, query, variables).await?;
         let answer = expect(answer, &[StatusCode::OK])?;
         let GraphqlAnswer { data, errors } = answer.json()?;
+
         for error in &errors {
             match error.kind.as_deref() {
                 Some("NOT_FOUND") => {}
@@ -554,6 +556,7 @@ impl GithubApp {
                 _ => return Err(ScmError::Protocol(error.message.clone())),
             }
         }
+
         data.ok_or_else(|| ScmError::Protocol("GraphQL answer without data".into()))
     }
 
@@ -569,13 +572,16 @@ impl GithubApp {
                 numbers.len()
             )));
         }
+
         if numbers.is_empty() {
             return Ok(Vec::new());
         }
+
         let mut fields = String::new();
         for (i, number) in numbers.iter().enumerate() {
             let _ = writeln!(fields, "p{i}: pullRequest(number: {number}) {{ ...pr }}");
         }
+
         let query = format!(
             "query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}{CHECKS_FRAGMENT}{PR_FIELDS}"
         );
@@ -594,6 +600,7 @@ impl GithubApp {
             };
             prs.push(decode(pr)?);
         }
+
         Ok(prs)
     }
 
@@ -619,15 +626,18 @@ impl GithubApp {
         struct Ref {
             object: Object,
         }
+
         #[derive(Deserialize)]
         struct Object {
             sha: String,
         }
+
         let rest = format!("/git/ref/heads/{}", encode(branch));
         let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
         if answer.status == StatusCode::NOT_FOUND {
             return Ok(None);
         }
+
         let answer = expect(answer, &[StatusCode::OK])?;
         Ok(Some(answer.json::<Ref>()?.object.sha))
     }
@@ -648,6 +658,7 @@ impl GithubApp {
         if answer.status == StatusCode::OK {
             return Ok(());
         }
+
         if answer.status == StatusCode::UNPROCESSABLE_ENTITY
             && answer.message().contains("does not exist")
         {
@@ -658,6 +669,7 @@ impl GithubApp {
             expect(created, &[StatusCode::CREATED])?;
             return Ok(());
         }
+
         Err(unexpected(&answer))
     }
 }
@@ -699,6 +711,7 @@ impl Scm for GithubApp {
             struct Commit {
                 status_check_rollup: Option<Rollup>,
             }
+
             let variables = json!({ "owner": repo.namespace, "name": repo.name, "sha": sha });
             let query = format!("{CHECKS_QUERY}{CHECKS_FRAGMENT}");
             let data = self
@@ -727,6 +740,7 @@ impl Scm for GithubApp {
                 #[serde(default)]
                 parameters: Value,
             }
+
             #[derive(Deserialize)]
             struct Protection {
                 #[serde(default)]
@@ -734,6 +748,7 @@ impl Scm for GithubApp {
                 #[serde(default)]
                 contexts: Vec<String>,
             }
+
             let mut required = RequiredChecks::default();
             let rest = format!("/rules/branches/{}", encode(branch));
             let rules = self.rest(repo, class, Method::GET, &rest, None).await?;
@@ -746,16 +761,19 @@ impl Scm for GithubApp {
                 if rule.kind != "required_status_checks" {
                     continue;
                 }
+
                 let checks = rule.parameters["required_status_checks"].as_array();
                 for check in checks.into_iter().flatten() {
                     if let Some(context) = check["context"].as_str() {
                         required.names.insert(context.to_owned());
                     }
                 }
+
                 required.up_to_date |= rule.parameters["strict_required_status_checks_policy"]
                     .as_bool()
                     .unwrap_or(false);
             }
+
             let rest = format!(
                 "/branches/{}/protection/required_status_checks",
                 encode(branch)
@@ -766,6 +784,7 @@ impl Scm for GithubApp {
                 required.names.extend(protection.contexts);
                 required.up_to_date |= protection.strict;
             }
+
             Ok(required)
         })
     }
@@ -792,6 +811,7 @@ impl Scm for GithubApp {
             if answer.status == StatusCode::NOT_FOUND {
                 return Ok(None);
             }
+
             let answer = expect(answer, &[StatusCode::OK])?;
             String::from_utf8(answer.body)
                 .map(Some)
@@ -810,6 +830,7 @@ impl Scm for GithubApp {
             struct Answer {
                 permission: String,
             }
+
             let key = (
                 repo.connection.id,
                 format!("{}/{}", repo.namespace, repo.name),
@@ -818,6 +839,7 @@ impl Scm for GithubApp {
             if let Some(permission) = self.kept_permission(&key) {
                 return Ok(permission);
             }
+
             let rest = format!("/collaborators/{}/permission", encode(&user.login));
             let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
             let permission = if answer.status == StatusCode::NOT_FOUND {
@@ -832,6 +854,7 @@ impl Scm for GithubApp {
                 }
             };
             self.keep_permission(key, permission);
+
             Ok(permission)
         })
     }
@@ -848,6 +871,7 @@ impl Scm for GithubApp {
             struct Comparison {
                 status: String,
             }
+
             let rest = format!(
                 "/compare/{}...{}?per_page=1",
                 encode(ancestor),
@@ -859,6 +883,7 @@ impl Scm for GithubApp {
                     "commit {ancestor} or {descendant}"
                 )));
             }
+
             let status = expect(answer, &[StatusCode::OK])?
                 .json::<Comparison>()?
                 .status;
@@ -884,11 +909,13 @@ impl Scm for GithubApp {
                     .rest_json(repo, class, Method::GET, &rest, None, StatusCode::OK)
                     .await?;
                 let last = files.len() < 100;
+
                 paths.extend(files.into_iter().map(|file| file.filename));
                 if last {
                     break;
                 }
             }
+
             Ok(paths)
         })
     }
@@ -906,6 +933,7 @@ impl Scm for GithubApp {
                 is_resolved: bool,
                 path: String,
             }
+
             let variables = json!({ "owner": repo.namespace, "name": repo.name, "number": number });
             let data = self
                 .query(&repo.connection, class, THREADS_QUERY, variables)
@@ -994,6 +1022,7 @@ impl Scm for GithubApp {
             struct Merged {
                 sha: String,
             }
+
             let method = match merge.method {
                 MergeMethod::Squash => "squash",
                 MergeMethod::MergeCommit => "merge",
@@ -1005,9 +1034,11 @@ impl Scm for GithubApp {
                     {
                         return Ok(merged.oid);
                     }
+
                     if pr.head_ref_oid != merge.head_sha {
                         return Err(ScmError::HeadChanged);
                     }
+
                     // GitHub marks the PR merged once its head is in the base.
                     return match self
                         .move_branch(repo, &pr.base_ref_name, &merge.tested_sha, false, class)
@@ -1051,6 +1082,7 @@ impl Scm for GithubApp {
                     {
                         return Ok(merged.oid);
                     }
+
                     let message = answer.message();
                     if message.contains("in progress") {
                         Err(ScmError::MergeInProgress)
@@ -1208,6 +1240,7 @@ impl Scm for GithubApp {
             struct Pull {
                 number: u64,
             }
+
             let rest = format!(
                 "/pulls?state=open&head={}:{}&base={}",
                 encode(&repo.namespace),
@@ -1220,6 +1253,7 @@ impl Scm for GithubApp {
             if let Some(pull) = open.first() {
                 return Ok(pull.number);
             }
+
             let body =
                 json!({ "title": title, "head": head, "base": base, "body": body, "draft": true });
             let opened: Pull = self
@@ -1270,6 +1304,7 @@ impl Scm for GithubApp {
                 delivered_at: String,
                 status_code: u16,
             }
+
             let mut path = Some("/app/hook/deliveries?per_page=100".to_owned());
             let mut recent = Vec::new();
             while let Some(page) = path.take() {
@@ -1283,16 +1318,19 @@ impl Scm for GithubApp {
                         older = true;
                         break;
                     }
+
                     recent.push(RecentDelivery {
                         delivery_id: attempt.guid,
                         attempt_id: attempt.id.to_string(),
                         is_delivered: (200..300).contains(&attempt.status_code),
                     });
                 }
+
                 if !older {
                     path = next;
                 }
             }
+
             Ok(recent)
         })
     }
@@ -1332,6 +1370,7 @@ impl Scm for GithubApp {
                 installations.extend(listed.into_iter().map(Installation::into_neutral));
                 path = next;
             }
+
             Ok(installations)
         })
     }
@@ -1348,12 +1387,14 @@ impl Scm for GithubApp {
                 #[serde(default)]
                 bypass_actors: Vec<Exemption>,
             }
+
             #[derive(Deserialize)]
             struct Exemption {
                 actor_id: Option<u64>,
                 actor_type: String,
                 bypass_mode: String,
             }
+
             let mut findings = Vec::new();
             let rules = self.branch_rules(repo, branch, class).await?;
             let updates: BTreeSet<u64> = rules
@@ -1364,6 +1405,7 @@ impl Scm for GithubApp {
             if updates.is_empty() {
                 findings.push(SetupFinding::UpdateRestrictionMissing);
             }
+
             for id in updates {
                 let rest = format!("/rulesets/{id}");
                 let ruleset: Ruleset = self
@@ -1379,6 +1421,7 @@ impl Scm for GithubApp {
                     break;
                 }
             }
+
             for test_branch in ["cihub-temp/check/1", "cihub-merge/check/1"] {
                 if !self
                     .branch_rules(repo, test_branch, class)
@@ -1389,9 +1432,11 @@ impl Scm for GithubApp {
                     break;
                 }
             }
+
             if self.required_checks(repo, branch, class).await?.up_to_date {
                 findings.push(SetupFinding::UpToDateRequired);
             }
+
             Ok(findings)
         })
     }
@@ -1407,6 +1452,7 @@ impl Scm for GithubApp {
                 total_count: usize,
                 repositories: Vec<Repository>,
             }
+
             #[derive(Deserialize)]
             struct Repository {
                 id: u64,
@@ -1414,10 +1460,12 @@ impl Scm for GithubApp {
                 owner: Owner,
                 default_branch: String,
             }
+
             #[derive(Deserialize)]
             struct Owner {
                 login: String,
             }
+
             let mut repos = Vec::new();
             for page in 1.. {
                 let answer = self
@@ -1435,16 +1483,19 @@ impl Scm for GithubApp {
                     repositories,
                 } = expect(answer, &[StatusCode::OK])?.json()?;
                 let last = repositories.is_empty();
+
                 repos.extend(repositories.into_iter().map(|repo| ScmRepo {
                     external_id: repo.id.to_string(),
                     namespace: repo.owner.login,
                     name: repo.name,
                     default_branch: repo.default_branch,
                 }));
+
                 if last || repos.len() >= total_count {
                     break;
                 }
             }
+
             Ok(repos)
         })
     }
@@ -1515,12 +1566,14 @@ mod tests {
         let ScmError::Forbidden(message) = missing else {
             panic!("{missing:?}");
         };
+
         assert!(
             message.starts_with("the GitHub App lacks a permission"),
             "{message}"
         );
         assert!(message.ends_with("HTTP 403 Forbidden: Resource not accessible by integration"));
         let rules = unexpected(&answer("Protected branch update failed"));
+
         assert_eq!(
             rules,
             ScmError::Forbidden("HTTP 403 Forbidden: Protected branch update failed".into())
@@ -1535,12 +1588,14 @@ mod tests {
         };
         let upgrade =
             "Upgrade to GitHub Pro or make this repository public to enable this feature.";
+
         assert!(needs_paid_plan(&answer(StatusCode::FORBIDDEN, upgrade)));
         assert!(!needs_paid_plan(&answer(StatusCode::OK, upgrade)));
         let other = answer(
             StatusCode::FORBIDDEN,
             "Resource not accessible by integration",
         );
+
         assert!(!needs_paid_plan(&other));
     }
 

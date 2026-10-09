@@ -64,6 +64,7 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
                 .collect()
         })
         .unwrap_or_default();
+
     Surface {
         pr_number: item.pr_number,
         head_sha: item.head_sha.clone(),

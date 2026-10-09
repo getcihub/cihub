@@ -220,6 +220,7 @@ mod tests {
 
         ctx.sender = Some("bob".into());
         ctx.sender_permission = Some(Permission::Write);
+
         assert!(holds("sender-permission >= write", &ctx));
         assert!(!holds("sender-permission >= admin", &ctx));
     }
@@ -267,6 +268,7 @@ mod tests {
                 condition("label = ready"),
             ]),
         ]);
+
         assert_eq!(list.eval(&ctx), Ok(true));
         assert!(list.uses(Attribute::Author));
         assert!(!list.uses(Attribute::Files));
@@ -274,6 +276,7 @@ mod tests {
             condition("label = ready"),
             condition("draft"),
         ])]);
+
         assert_eq!(and.eval(&ctx), Ok(false));
         assert_eq!(Conditions::default().eval(&ctx), Ok(true));
     }

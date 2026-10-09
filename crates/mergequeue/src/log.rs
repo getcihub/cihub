@@ -52,6 +52,7 @@ impl QueueLog {
                 uncovered_since: None,
             },
         };
+
         for (seq, event) in load_events(conn, queue, log.seq).await? {
             if seq != log.seq + 1 {
                 return Err(MergeQueueError::LogGap {
@@ -63,6 +64,7 @@ impl QueueLog {
             log.seq = seq;
             log.uncovered_since.get_or_insert(event.occurred_at);
         }
+
         Ok(log)
     }
 
@@ -159,6 +161,7 @@ impl QueueLog {
         }
 
         self.uncovered_since = None;
+
         Ok(())
     }
 }
@@ -174,6 +177,7 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
             .await?;
     let (org_id, target_branch) = row.ok_or(MergeQueueError::UnknownQueue(queue))?;
     let org_id: OrgId = parse_id(&org_id, queue)?;
+
     Ok(Snapshot::new(
         org_id,
         queue,
@@ -203,9 +207,11 @@ pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog
     .bind(queue.to_string())
     .fetch_one(&mut *conn)
     .await?;
+
     if first.is_some_and(|seq| seq != 1) || (first.is_none() && has_snapshot) {
         return Err(MergeQueueError::LogGap { queue, after: 0 });
     }
+
     for statement in [
         "DELETE FROM test_runs WHERE queue_id = $1",
         "DELETE FROM test_groups WHERE queue_id = $1",
@@ -218,16 +224,19 @@ pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog
             .execute(&mut *conn)
             .await?;
     }
+
     let mut log = QueueLog {
         snapshot: empty(conn, queue).await?,
         seq: 0,
         uncovered_since: None,
     };
+
     for (seq, event) in load_events(conn, queue, 0).await? {
         log.replay(&event)?;
         log.seq = seq;
         log.uncovered_since.get_or_insert(event.occurred_at);
         log.after_applied(conn, &event).await?;
     }
+
     Ok(log)
 }

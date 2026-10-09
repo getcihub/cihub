@@ -106,10 +106,12 @@ fn draft_pr_body(
         numbers(predecessors)
     };
     let _ = writeln!(body, "- On top of: {on_top}");
+
     body.push_str(
         "\nCIHub opened this pull request for the CI and closes it when the run ends. \
          Do not merge, review or edit it.\n",
     );
+
     body
 }
 
@@ -195,14 +197,17 @@ pub(crate) async fn required_statuses(
             (names, source)
         }
     };
+
     for check in merge_checks {
         if !names.contains(&check) {
             names.push(check);
         }
     }
+
     if names.is_empty() {
         return Err(JobError::NoRequiredStatuses.into());
     }
+
     Ok((names, source))
 }
 
@@ -276,6 +281,7 @@ impl Assembly<'_> {
                 return Err(Step::GiveUp(JobError::InvalidEvent, None));
             }
         };
+
         Ok(Assembled {
             test_sha,
             draft_pr_number,
@@ -302,9 +308,11 @@ impl Assembly<'_> {
         let repo = &self.target.repo;
         let request = self.request;
         let temp = temp_branch(&request.test_branch).ok_or(JobError::InvalidEvent)?;
+
         self.scm
             .set_branch(repo, &temp, &request.base_sha, true, self.class)
             .await?;
+
         let mut current = request.base_sha.clone();
         for head in &request.predecessors {
             match self.merge(&temp, head).await? {
@@ -318,6 +326,7 @@ impl Assembly<'_> {
                 }
             }
         }
+
         for head in &request.members {
             match self.merge(&temp, head).await? {
                 MergeIntoRef::Merged { sha } => current = sha,
@@ -335,10 +344,13 @@ impl Assembly<'_> {
                 }
             }
         }
+
         self.scm
             .set_branch(repo, &request.test_branch, &current, false, self.class)
             .await?;
+
         self.scm.delete_branch(repo, &temp, self.class).await?;
+
         Ok(current)
     }
 
@@ -360,12 +372,15 @@ impl Assembly<'_> {
         if request.predecessors.is_empty() {
             return Ok(ConflictCulprit::BaseBranch);
         }
+
         self.scm
             .set_branch(&self.target.repo, temp, &request.base_sha, true, self.class)
             .await?;
+
         if self.merge(temp, member).await? == MergeIntoRef::Conflict {
             return Ok(ConflictCulprit::BaseBranch);
         }
+
         for head in &request.predecessors {
             if self.merge(temp, head).await? == MergeIntoRef::Conflict {
                 return Ok(ConflictCulprit::QueuePr {
@@ -373,6 +388,7 @@ impl Assembly<'_> {
                 });
             }
         }
+
         Ok(ConflictCulprit::BaseBranch)
     }
 
@@ -401,6 +417,7 @@ impl Assembly<'_> {
                 self.class,
             )
             .await;
+
         match opened {
             Ok(number) => Ok(number),
             Err(ScmError::Validation(message)) if message.to_lowercase().contains("draft") => {
@@ -478,6 +495,7 @@ fn assembly_failed(
     if error == JobError::RetryExhausted {
         warn!(%run_id, "assembly gave up after its attempts");
     }
+
     info!(%run_id, error = error.as_str(), "test branch not assembled");
 
     Ok(EventKind::TestBranchAssemblyFailed {
@@ -499,10 +517,12 @@ pub(crate) async fn assemble_run(
     let run_id = request.run_id;
     let target = target_of(pool, job).await?;
     let settings = &target.settings()?;
+
     let Some((RunStatus::Assembling, started_at)) = run_state(pool, run_id).await? else {
         info!(%run_id, "run no longer waits for its test branch");
         return Ok(());
     };
+
     let assembly = Assembly {
         scm,
         settings,
@@ -545,26 +565,35 @@ pub(crate) async fn cleanup_run(
     .bind(request.run_id.to_string())
     .fetch_optional(&mut *tx)
     .await?;
+
     tx.commit().await?;
+
     let Some((test_branch, draft_pr_number, status)) = run else {
         return Ok(());
     };
+
     let status = status
         .parse::<RunStatus>()
         .map_err(|err| Failure::Never(error_chain(&err)))?;
+
     if !status.is_terminal() {
         info!(run_id = %request.run_id, "run still live: nothing to clean");
         return Ok(());
     }
+
     let repo = &target.repo;
     if let Some(number) = draft_pr_number.and_then(|n| u64::try_from(n).ok()) {
         scm.close_pr(repo, number, job.class).await?;
     }
+
     scm.delete_branch(repo, &test_branch, job.class).await?;
+
     if let Some(temp) = temp_branch(&test_branch) {
         scm.delete_branch(repo, &temp, job.class).await?;
     }
+
     info!(run_id = %request.run_id, "test branch cleaned");
+
     Ok(())
 }
 
@@ -586,6 +615,7 @@ mod tests {
         let retry = |step, attempts, elapsed| give_up(step, attempts, elapsed).is_ok();
         let transient = || Step::Transient("422".into());
         let passing = || Step::Passing("502".into());
+
         assert!(retry(transient(), ASSEMBLY_ATTEMPTS - 1, minutes(1)));
         assert!(!retry(transient(), ASSEMBLY_ATTEMPTS, minutes(1)));
         // Server errors and stops do not count, until the wait ends.
@@ -602,10 +632,12 @@ mod tests {
             give_up(Step::GiveUp(JobError::MergeConflict, None), 1, minutes(0)),
             Err((JobError::MergeConflict, None))
         );
+
         // The backoff of the jobs covers the wait before `dead`.
         let covered: i64 = (1..MAX_ATTEMPTS)
             .map(|n| cihub_platform::backoff(n).whole_seconds())
             .sum();
+
         assert!(covered >= ASSEMBLY_WAIT.whole_seconds(), "{covered} s");
     }
 
@@ -626,13 +658,16 @@ mod tests {
             }],
         };
         let assemble = assemble(&target(), &branch);
+
         assert_eq!(
             assemble.idempotency_key,
             format!("assemble_test_branch:{run_id}:1")
         );
         assert_eq!(assemble.class, JobClass::Speculate);
+
         let request: AssembleTestBranch = serde_json::from_value(assemble.payload).unwrap();
         assert_eq!(request.members[0].pr_number, 12);
+
         let cleanup = cleanup(&target(), run_id);
         assert_eq!(
             cleanup.idempotency_key,
@@ -645,6 +680,7 @@ mod tests {
     fn the_draft_pr_names_the_run_and_the_prs() {
         let run_id = RunId::from_ulid(Ulid(7));
         assert_eq!(draft_pr_title(&[12], "main"), "CIHub: test #12 on main");
+
         let body = draft_pr_body(run_id, "main", "abc", &[10, 11], &[12]);
         assert_eq!(
             body,
@@ -657,6 +693,7 @@ mod tests {
                  Do not merge, review or edit it.\n"
             )
         );
+
         let alone = draft_pr_body(run_id, "main", "abc", &[], &[12]);
         assert!(alone.contains("- On top of: nothing\n"));
     }
@@ -732,7 +769,9 @@ mod tests {
             names: BTreeSet::from(["ci".to_owned()]),
             up_to_date: false,
         };
+
         sim.set_rules(&target.repo, "main", rules).unwrap();
+
         (sim, target, main)
     }
 
@@ -791,16 +830,19 @@ mod tests {
         let first = request(&main, vec![p1], vec![m]);
         let defaults = settings(|_| {});
         let assembled = build(&sim, &defaults, &target, &first).await.unwrap();
+
         assert_eq!(
             sim.branch(&target.repo, &first.test_branch),
             Some(assembled.test_sha.clone())
         );
+
         let temp = temp_branch(&first.test_branch).unwrap();
         assert_eq!(
             sim.branch(&target.repo, &temp),
             None,
             "the temporary branch is gone"
         );
+
         for path in ["f1.txt", "f2.txt"] {
             let file = sim
                 .file(&target.repo, &assembled.test_sha, path, JobClass::Speculate)
@@ -808,28 +850,34 @@ mod tests {
                 .unwrap();
             assert!(file.is_some(), "{path}");
         }
+
         assert_eq!(assembled.required_statuses, vec!["ci".to_owned()]);
         assert_eq!(
             assembled.required_statuses_source,
             RequiredStatusesSource::BranchProtection
         );
+
         let draft = assembled.draft_pr_number.unwrap();
         let pr = sim
             .pull_request(&target.repo, draft, JobClass::Speculate)
             .await
             .unwrap();
+
         assert!(pr.draft);
         assert_eq!(pr.base_branch, "main");
+
         // A second build finds the branch and the draft PR, and changes nothing.
         let again = build(&sim, &defaults, &target, &first).await.unwrap();
         assert_eq!(again.test_sha, assembled.test_sha);
         assert_eq!(again.draft_pr_number, Some(draft));
+
         // The trigger `push` opens no PR.
         let push = settings(|l| l.trigger = Some(Setting::new(Trigger::Push)));
         let m = head(&sim, &target, &main, 3, &[("f3.txt", Some("3"))]);
         let pushed = build(&sim, &push, &target, &request(&main, vec![], vec![m]))
             .await
             .unwrap();
+
         assert_eq!(pushed.draft_pr_number, None);
     }
 
@@ -842,7 +890,9 @@ mod tests {
         let main = sim
             .commit(&target.repo, &root, &[("a.txt", Some("y"))])
             .unwrap();
+
         sim.push(&target.repo, "main", &main, &bot()).unwrap();
+
         let base = build(&sim, &settings, &target, &request(&main, vec![], vec![m])).await;
         assert_eq!(
             base,
@@ -851,12 +901,14 @@ mod tests {
                 Some(ConflictCulprit::BaseBranch)
             ))
         );
+
         // The member conflicts with the second of its predecessors.
         let p1 = head(&sim, &target, &main, 2, &[("f.txt", Some("f"))]);
         let p2 = head(&sim, &target, &main, 3, &[("shared.txt", Some("3"))]);
         let m = head(&sim, &target, &main, 4, &[("shared.txt", Some("4"))]);
         let request_m = request(&main, vec![p1, p2.clone()], vec![m]);
         let culprit = build(&sim, &settings, &target, &request_m).await;
+
         assert_eq!(
             culprit,
             Err(Step::GiveUp(
@@ -864,6 +916,7 @@ mod tests {
                 Some(ConflictCulprit::QueuePr { pr_number: 3 })
             ))
         );
+
         // Two predecessors conflict with each other: the run of the second
         // one decides, this run waits.
         let p3 = head(&sim, &target, &main, 5, &[("shared.txt", Some("5"))]);
@@ -875,14 +928,17 @@ mod tests {
             &request(&main, vec![p2, p3], vec![m]),
         )
         .await;
+
         assert!(
             matches!(waits, Err(Step::Wait(ref text)) if text.contains("#5")),
             "{waits:?}"
         );
+
         // A member whose head is already in the target has nothing to test
         // (`DECISIONS.md` D130).
         let merged = head(&sim, &target, &main, 7, &[("h.txt", Some("h"))]);
         sim.push(&target.repo, "main", &merged.sha, &bot()).unwrap();
+
         let contained = build(
             &sim,
             &settings,
@@ -890,6 +946,7 @@ mod tests {
             &request(&merged.sha, vec![], vec![merged.clone()]),
         )
         .await;
+
         assert_eq!(
             contained,
             Err(Step::GiveUp(
@@ -908,43 +965,52 @@ mod tests {
             vec![],
             vec![head(&sim, &target, &main, 1, &[("f1.txt", Some("1"))])],
         );
+
         sim.fail(Fault {
             call: Some("set_branch"),
             error: ScmError::Forbidden("Protected branch update failed".into()),
             times: 1,
         });
+
         assert_eq!(
             build(&sim, &settings, &target, &forbidden).await,
             Err(Step::GiveUp(JobError::PermissionsBlockTestBranch, None))
         );
+
         let down = request(
             &main,
             vec![],
             vec![head(&sim, &target, &main, 2, &[("f2.txt", Some("2"))])],
         );
+
         sim.fail(Fault {
             call: Some("merge_into_branch"),
             error: ScmError::Unavailable("502".into()),
             times: 1,
         });
+
         assert!(matches!(
             build(&sim, &settings, &target, &down).await,
             Err(Step::Passing(_))
         ));
+
         sim.fail(Fault {
             call: Some("merge_into_branch"),
             error: ScmError::Validation("422".into()),
             times: 1,
         });
+
         assert!(matches!(
             build(&sim, &settings, &target, &down).await,
             Err(Step::Transient(_))
         ));
+
         let no_drafts = request(
             &main,
             vec![],
             vec![head(&sim, &target, &main, 3, &[("f3.txt", Some("3"))])],
         );
+
         sim.fail(Fault {
             call: Some("open_draft_pr"),
             error: ScmError::Validation(
@@ -952,6 +1018,7 @@ mod tests {
             ),
             times: 1,
         });
+
         assert_eq!(
             build(&sim, &settings, &target, &no_drafts).await,
             Err(Step::GiveUp(JobError::DraftPrsNotAllowed, None))
@@ -979,15 +1046,18 @@ mod tests {
         )
         .await
         .unwrap();
+
         assert_eq!(built.required_statuses, vec!["build".to_owned()]);
         assert_eq!(
             built.required_statuses_source,
             RequiredStatusesSource::RepoConfig
         );
+
         // Both names of the file: neither one wins.
         let both = sim
             .commit(&target.repo, &with_file, &[(".cihub.yml", Some(config))])
             .unwrap();
+
         assert_eq!(
             build(
                 &sim,
@@ -998,9 +1068,11 @@ mod tests {
             .await,
             Err(Step::GiveUp(JobError::ConfigParsingFailure, None))
         );
+
         // Without a file, the rules; without a rule, no source gives a status.
         sim.set_rules(&target.repo, "main", RequiredChecks::default())
             .unwrap();
+
         assert_eq!(
             build(
                 &sim,
@@ -1070,6 +1142,7 @@ mod tests {
                 Err(Step::GiveUp(JobError::NoRequiredStatuses, None)),
             ),
         ];
+
         for (body, want) in cases {
             let (base, member) = built(body);
             let got = build(&sim, &defaults, &target, &request(&base, vec![], member)).await;

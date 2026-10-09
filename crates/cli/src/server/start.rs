@@ -55,6 +55,7 @@ pub(super) async fn run(
     let listener = TcpListener::bind(internal_addr)
         .await
         .with_context(|| format!("cannot listen on {internal_addr}"))?;
+
     info!(internal_addr = %listener.local_addr()?, "server started");
 
     let mut tx = begin_system(&pool).await?;
@@ -64,6 +65,7 @@ pub(super) async fn run(
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
+
     tasks.spawn(health::serve(listener, pool.clone(), cancel.clone()));
     let shared = Shared {
         pool,
@@ -72,10 +74,12 @@ pub(super) async fn run(
         github,
         cancel: cancel.clone(),
     };
+
     for role in Role::ALL {
         let span = info_span!("role", role = role.as_str());
         tasks.spawn(run_role(role, shared.clone()).instrument(span));
     }
+
     let result = supervise(tasks, &cancel).await;
     info!("server stopped");
     result
@@ -109,6 +113,7 @@ async fn supervise(
     let mut terminate = signal(SignalKind::terminate()).context("cannot watch SIGTERM")?;
     let mut interrupt = signal(SignalKind::interrupt()).context("cannot watch SIGINT")?;
     let mut first_error = None;
+
     loop {
         tokio::select! {
             _ = terminate.recv(), if !cancel.is_cancelled() => {
@@ -134,5 +139,6 @@ async fn supervise(
             }
         }
     }
+
     first_error.map_or(Ok(()), Err)
 }

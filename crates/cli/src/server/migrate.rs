@@ -11,6 +11,7 @@ pub(super) async fn run(pool: &PgPool) -> anyhow::Result<()> {
     for version in &applied {
         info!(version, "migration applied");
     }
+
     info!(applied = applied.len(), "migrations done");
     cihub_store::create_event_partitions(pool, now().date()).await?;
     info!("event partitions ready");

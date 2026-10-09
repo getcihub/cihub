@@ -29,6 +29,7 @@ pub(crate) async fn project(
     let at = event.occurred_at;
     let mismatch = || MergeQueueError::Projection(event.id);
     let number = |n: u64| i64::try_from(n).map_err(|_| mismatch());
+
     match &event.kind {
         EventKind::ItemTransitioned {
             item_id,
@@ -297,6 +298,7 @@ pub(crate) async fn project(
         | EventKind::AccessRestored
         | EventKind::QueueWindowChanged { .. } => {}
     }
+
     Ok(())
 }
 
@@ -316,9 +318,11 @@ async fn refused_item(
     .bind(event.cause_id.map(|id| id.to_string()))
     .fetch_optional(&mut *conn)
     .await?;
+
     let Some(payload) = payload else {
         return Ok(None);
     };
+
     let EventKind::ItemSubmitted {
         pr_number,
         head_sha,
@@ -332,6 +336,7 @@ async fn refused_item(
     else {
         return Ok(None);
     };
+
     Ok(Some(Item {
         id: item_id,
         org_id: event.org_id,
@@ -375,6 +380,7 @@ async fn create_item(
         .execute(&mut *conn)
         .await?;
     }
+
     let blocks = serde_json::to_value(&item.block_reasons).map_err(MergeQueueError::Snapshot)?;
     let done = sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
@@ -404,6 +410,7 @@ async fn create_item(
     .bind(item.is_current)
     .execute(conn)
     .await;
+
     one_row(done, event)
 }
 
@@ -458,6 +465,7 @@ pub(crate) async fn record_late_check(
     .bind(test_sha)
     .fetch_optional(&mut *conn)
     .await?;
+
     let Some((run_id, required)) = run else {
         return Ok(());
     };
@@ -472,6 +480,7 @@ pub(crate) async fn record_late_check(
         details_url: check.details_url.clone(),
         observed_at: at,
     };
+
     upsert_check(conn, &observation).await?;
 
     Ok(())

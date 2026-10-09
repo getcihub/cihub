@@ -95,6 +95,7 @@ fn step(w: &mut World, action: &Action) {
                 } else {
                     CheckConclusion::Failure
                 };
+
                 w.report_run(run, conclusion);
             }
         }
@@ -104,6 +105,7 @@ fn step(w: &mut World, action: &Action) {
         Action::Cancel(k) => {
             if let Some(pr) = pick(&live_prs(w), k) {
                 let item_id = w.item(pr).unwrap().id;
+
                 w.fact(
                     Actor::System,
                     EventKind::ItemCancelRequested {
@@ -129,6 +131,7 @@ fn step(w: &mut World, action: &Action) {
         Action::Restart(k) => {
             if let Some(pr) = pick(&live_prs(w), k) {
                 let item_id = w.item(pr).unwrap().id;
+
                 w.fact(
                     Actor::System,
                     EventKind::ItemRestartRequested {
@@ -146,9 +149,11 @@ fn step(w: &mut World, action: &Action) {
         Action::Advance(minutes) => w.advance(minutes),
         Action::Drive => {
             w.assemble_all();
+
             for run in runs(w, RunStatus::InProgress) {
                 w.report_run(run, CheckConclusion::Success);
             }
+
             w.merge_all();
         }
     }
@@ -178,6 +183,7 @@ proptest! {
                 l.batching_size = Some(Setting::new(size));
             }
         }));
+
         for action in &actions {
             step(&mut w, action);
         }
@@ -194,11 +200,14 @@ proptest! {
         for event in &w.log[..middle] {
             apply(&mut snapshot, event).unwrap();
         }
+
         let json = serde_json::to_value(&snapshot).unwrap();
         let mut snapshot: Snapshot = serde_json::from_value(json).unwrap();
+
         for event in &w.log[middle..] {
             prop_assert_eq!(apply(&mut snapshot, event), Ok(Outcome::Applied));
         }
+
         prop_assert_eq!(snapshot, w.snapshot);
     }
 }

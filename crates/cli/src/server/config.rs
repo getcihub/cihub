@@ -77,6 +77,7 @@ impl Config {
         else {
             bail!("{} is required", names("database.url"));
         };
+
         let log_format = match sources.get("log.format") {
             None => LogFormat::Json,
             Some(format) => match format.value.as_str() {
@@ -91,6 +92,7 @@ impl Config {
                 format!("{} `{}` is not a valid filter", filter.origin, filter.value)
             })?,
         };
+
         Ok(Self {
             internal_addr,
             http_addr,
@@ -186,6 +188,7 @@ fn github_app(
     else {
         return Ok(None);
     };
+
     let app = names("github.app_id");
     let private_key = match (
         sources.get("github.private_key"),
@@ -206,9 +209,11 @@ fn github_app(
     else {
         bail!("{app} needs {}", names("github.webhook_secret"));
     };
+
     let url = sources
         .get("github.url")
         .map_or_else(|| DEFAULT_GITHUB_URL.to_owned(), |url| url.value);
+
     Ok(Some(GithubApp {
         config: GithubConfig {
             url: url.trim_end_matches('/').to_owned(),
@@ -285,6 +290,7 @@ github:
   webhook_secret: secret
 ";
         let config = load(Some(file), &[]).unwrap();
+
         assert_eq!(
             config.database_url.expose_secret(),
             "postgres://cihub@db/cihub"
@@ -395,6 +401,7 @@ github:
                 "{err}"
             );
         }
+
         let app = load(
             Some("github:\n  private_key: key\n  webhook_secret: s\n"),
             &app,
@@ -402,6 +409,7 @@ github:
         .unwrap()
         .github
         .unwrap();
+
         assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
         assert_eq!(app.config.app_id, "123");
     }

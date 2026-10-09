@@ -90,6 +90,7 @@ async fn seed(pool: &PgPool) {
     )
     .await
     .unwrap();
+
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO users (id, external_id, login) VALUES ('{user}', '3', 'octocat');
@@ -111,6 +112,7 @@ async fn seed(pool: &PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
 }
 
@@ -134,13 +136,16 @@ impl World {
     async fn at(pool: PgPool, start: OffsetDateTime) -> Self {
         seed(&pool).await;
         create_event_partitions(&pool, start.date()).await.unwrap();
+
         let layer = Layer {
             failure_budget_retries: Some(Setting::new(0)),
             ..Layer::default()
         };
         let mut tx = begin_system(&pool).await.unwrap();
         let log = QueueLog::load(&mut tx, queue()).await.unwrap();
+
         tx.commit().await.unwrap();
+
         let mut world = Self {
             pool,
             log,
@@ -149,7 +154,9 @@ impl World {
             facts: 0,
             target: 0,
         };
+
         world.push_target(Actor::System, None).await;
+
         world
     }
 
@@ -158,6 +165,7 @@ impl World {
     async fn fact(&mut self, actor: Actor, kind: EventKind) -> Vec<Event> {
         self.facts += 1;
         self.now += Duration::seconds(1);
+
         let ms = u64::try_from(self.now.unix_timestamp_nanos() / 1_000_000).unwrap();
         let event = Event {
             id: EventId::from_ulid(Ulid::from_parts(ms, u128::from(self.facts))),
@@ -171,8 +179,10 @@ impl World {
         let mut tx = begin_system(&self.pool).await.unwrap();
         let mut written = self.log.write(&mut tx, vec![event]).await.unwrap();
         let plan = plan(&self.log.snapshot, &self.settings, self.now).unwrap();
+
         written.extend(self.log.write(&mut tx, plan.decisions).await.unwrap());
         tx.commit().await.unwrap();
+
         written
     }
 
@@ -338,6 +348,7 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
         w.report_all(conclusion).await;
         w.merge_all().await;
     }
+
     assert!(w.log.seq > SNAPSHOT_EVERY, "{} events only", w.log.seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -349,6 +360,7 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(
         states,
         [
@@ -357,6 +369,7 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
             ("merged".into(), 85)
         ]
     );
+
     let last_snapshot = w.log.seq / SNAPSHOT_EVERY * SNAPSHOT_EVERY;
     let snapshot_seq: Option<i64> =
         sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
@@ -364,21 +377,25 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     assert_eq!(snapshot_seq, Some(last_snapshot));
 
     let before = projections(&mut tx).await;
     let loaded = QueueLog::load(&mut tx, queue()).await.unwrap();
+
     assert_eq!(loaded, w.log);
 
     let rebuilt = rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(rebuilt, w.log);
     assert_eq!(projections(&mut tx).await, before);
+
     let snapshot_seq_after_rebuild: Option<i64> =
         sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
             .bind(queue().to_string())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     assert_eq!(snapshot_seq_after_rebuild, Some(last_snapshot));
 }
 
@@ -386,6 +403,7 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
 async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     let mut w = World::new(pool.clone()).await;
     w.submit(1).await;
+
     let seq = w.log.seq;
     assert!(w.observe(1, PrState::Open).await.is_empty());
     assert_eq!(w.log.seq, seq);
@@ -399,6 +417,7 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(item.0, ItemState::Testing.as_str());
     assert_eq!(item.1, "test_run_started");
     assert!(item.2.is_some());
@@ -505,13 +524,16 @@ fn router_translate(
 impl SimQueue {
     async fn new(pool: PgPool) -> Self {
         seed(&pool).await;
+
         let sim = Arc::new(Sim::new());
         let account = ScmAccount {
             external_id: "1".into(),
             path: "acme".into(),
         };
+
         sim.add_installation("1", account, &[("contents", "write")]);
         sim.take_deliveries();
+
         let clock = TestClock::new();
         let deliveries = Arc::new(Mutex::new(HashMap::new()));
         let scm: Arc<dyn Scm> = sim.clone();
@@ -525,12 +547,15 @@ impl SimQueue {
 
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
+
         let kind = ConnectionKind::GithubApp;
         executors.register(SYNC_REPOS, sync_repos_executor(scm.clone()));
+
         executors.register(
             SYNC_INSTALLATION,
             sync_installation_executor(scm.clone(), kind),
         );
+
         executors.register(SYNC_INSTALLATIONS, sync_installations_executor(scm, kind));
 
         let cancel = CancellationToken::new();
@@ -558,6 +583,7 @@ impl SimQueue {
             tokio::spawn(async move { router.await.unwrap() }),
             tokio::spawn(async move { scheduler.await.unwrap() }),
         ];
+
         Self {
             pool,
             sim,
@@ -590,7 +616,9 @@ impl SimQueue {
         cihub_store::create_api_token(&mut tx, &token, &secret)
             .await
             .unwrap();
+
         tx.commit().await.unwrap();
+
         let webhooks = cihub_web::GithubWebhooks {
             secret: SecretString::from("unused"),
         };
@@ -599,7 +627,9 @@ impl SimQueue {
         let router = cihub_web::router(self.pool.clone(), fixed, webhooks, vec![api]);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
+
         tokio::spawn(cihub_web::serve(listener, router, self.cancel.clone()));
+
         (addr, secret.expose_secret().to_owned())
     }
 
@@ -641,7 +671,9 @@ impl SimQueue {
             received_at: self.clock.now(),
         };
         let stored = store_delivery(&mut tx, &again).await.unwrap();
+
         tx.commit().await.unwrap();
+
         stored
     }
 
@@ -680,6 +712,7 @@ impl SimQueue {
 
             events.push(event);
         }
+
         events
     }
 
@@ -696,6 +729,7 @@ impl SimQueue {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
+
         (log, jobs)
     }
 
@@ -722,6 +756,7 @@ impl SimQueue {
     async fn request(&self, job: &Job) {
         let mut tx = begin_system(&self.pool).await.unwrap();
         let now = self.clock.now();
+
         enqueue_job(&mut tx, job, now, now).await.unwrap();
         tx.commit().await.unwrap();
     }
@@ -741,6 +776,7 @@ impl SimQueue {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
         (state, facts)
     }
 
@@ -787,6 +823,7 @@ impl SimQueue {
             }
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
+
         let mut tx = begin_system(&self.pool).await.unwrap();
         let left: Vec<(String, String)> = sqlx::query_as(
             "SELECT 'delivery', delivery_id FROM webhook_inbox
@@ -798,6 +835,7 @@ impl SimQueue {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
         panic!("the queue did not settle: {left:?}");
     }
 
@@ -817,7 +855,9 @@ fn open_pr(sim: &Sim, root: &str, n: u64) -> (u64, String) {
     let branch = format!("pr-{n}");
     let path = format!("f{n}.txt");
     let head = sim.commit(&repo(), root, &[(&path, Some("x"))]).unwrap();
+
     sim.push(&repo(), &branch, &head, &bob()).unwrap();
+
     (sim.open_pr(&repo(), &branch, "main", &bob()).unwrap(), head)
 }
 
@@ -850,7 +890,9 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         names: BTreeSet::from([REQUIRED.to_owned(), own]),
         up_to_date: false,
     };
+
     sim.set_rules(&repo(), "main", rules).unwrap();
+
     sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
 
@@ -940,6 +982,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         ),
     ];
     let mut want = BTreeMap::new();
+
     for (n, (setup, state, blocks)) in (1..).zip(&cases) {
         let (number, head) = open_pr(&sim, &root, n);
         sim.report_check(&repo(), &head, check(REQUIRED, true))
@@ -949,6 +992,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             .unwrap();
         want.insert(number, (*state, blocks.clone()));
     }
+
     for n in 19..=20 {
         let (number, head) = open_pr(&sim, &root, n);
         sim.report_check(&repo(), &head, check(REQUIRED, true))
@@ -963,6 +1007,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         .unwrap();
         want.insert(number, (ItemState::Pending, vec![]));
     }
+
     let (refused, _) = open_pr(&sim, &root, 21);
     sim.comment(&repo(), refused, &bob(), "/cihub merge")
         .unwrap();
@@ -980,7 +1025,9 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     .await
     .unwrap();
     let testing = rows.iter().filter(|r| r.1 == "testing").count();
+
     assert!(testing <= 2, "{testing} items in test");
+
     let got: BTreeMap<u64, (ItemState, Vec<BlockReason>)> = rows
         .iter()
         .map(|(n, state, blocks, _)| {
@@ -992,9 +1039,12 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             (u64::try_from(*n).unwrap(), (state, blocks))
         })
         .collect();
+
     assert_eq!(got, want);
+
     let vias: Vec<&str> = rows.iter().map(|r| r.3.as_str()).collect();
     assert_eq!(vias.iter().filter(|v| **v == "label").count(), 2);
+
     let reasons: Vec<String> =
         sqlx::query_scalar("SELECT DISTINCT state_reason::text FROM queue_items ORDER BY 1")
             .fetch_all(&mut *tx)
@@ -1005,11 +1055,13 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     } else {
         &["merge_item_now_ready", "submitted", "test_run_started"]
     };
+
     assert_eq!(reasons, expected);
     drop(tx);
 
     let mut tx = begin_system(&pool).await.unwrap();
     let before = projections(&mut tx).await;
+
     rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
@@ -1025,8 +1077,10 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
 async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool) {
     let mut q = SimQueue::new(pool).await;
     let sim = q.sim.clone();
+
     sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
     sim.take_deliveries();
+
     let lost = || "access.lost".to_owned();
     let restored = || "access.restored".to_owned();
 
@@ -1038,6 +1092,7 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
     sim.set_access("1", true);
     q.send().await;
     q.settle().await;
+
     assert_eq!(
         q.access().await,
         ("running".into(), vec![lost(), restored()])
@@ -1045,35 +1100,44 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
 
     sim.set_access("1", false);
     sim.take_deliveries();
+
     let mut tx = begin_system(&q.pool).await.unwrap();
     request_installations_sync(&mut tx, q.clock.now())
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
     q.settle().await;
+
     let expected = vec![lost(), restored(), lost()];
     assert_eq!(q.access().await, ("paused".into(), expected));
 
     sim.set_access("1", true);
     sim.take_deliveries();
+
     let mut tx = begin_system(&q.pool).await.unwrap();
     request_installations_sync_at_start(&mut tx, q.clock.now())
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
     q.settle().await;
+
     let expected = vec![lost(), restored(), lost(), restored()];
     assert_eq!(q.access().await, ("running".into(), expected));
 
     sim.set_access("1", false);
     sim.take_deliveries();
+
     q.request(&sync_repos_job(
         org(),
         connection(),
         "after-the-lost-webhook",
     ))
     .await;
+
     q.settle().await;
+
     let expected = vec![lost(), restored(), lost(), restored(), lost()];
     assert_eq!(q.access().await, ("paused".into(), expected));
     q.stop().await;
@@ -1082,11 +1146,14 @@ async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool) {
     seed(&pool).await;
+
     let sim = Sim::new();
     let deliveries = Arc::new(Mutex::new(HashMap::new()));
     let root = sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
     let (number, _) = open_pr(&sim, &root, 1);
+
     sim.take_deliveries();
+
     sim.add_label(
         &repo(),
         number,
@@ -1095,6 +1162,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     )
     .await
     .unwrap();
+
     let mut tx = begin_system(&pool).await.unwrap();
     for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
         let id = format!("delivery-{n}");
@@ -1111,6 +1179,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         };
         store_delivery(&mut tx, &stored).await.unwrap();
     }
+
     let fact = Event {
         id: EventId::from_ulid(Ulid(500)),
         org_id: org(),
@@ -1124,9 +1193,11 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
             sender_id: Some(user()),
         },
     };
+
     cihub_store::deposit_fact(&mut tx, &fact, clock())
         .await
         .unwrap();
+
     cihub_platform::mark_dirty(&mut tx, queue()).await.unwrap();
     tx.commit().await.unwrap();
 
@@ -1148,6 +1219,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         counts
     };
     let before = counts(pool.clone()).await;
+
     assert_eq!(before, (0, 0, 1, 1, true));
 
     let mut tx = begin_reconciliation(&pool, queue()).await.unwrap().unwrap();
@@ -1155,20 +1227,24 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         .reconcile_in(&mut tx, queue(), clock())
         .await
         .unwrap();
+
     drop(tx);
     assert_eq!(counts(pool.clone()).await, before);
 
     reconciler.reconcile(&pool, queue(), &clock).await.unwrap();
+
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
         (1, 2, 0, 0, false)
     );
+
     let mut tx = begin_system(&pool).await.unwrap();
     let keys: Vec<String> = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
     assert_eq!(
         keys,
         [
@@ -1183,6 +1259,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
 async fn rate_limited_github(reset: OffsetDateTime) -> String {
     use axum::body::Body;
     use axum::http::{Response, StatusCode, Uri};
+
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let router = axum::Router::new().fallback(move |uri: Uri| async move {
@@ -1205,7 +1282,9 @@ async fn rate_limited_github(reset: OffsetDateTime) -> String {
             .body(Body::from(r#"{"message":"API rate limit exceeded"}"#))
             .unwrap()
     });
+
     tokio::spawn(async move { axum::serve(listener, router).await });
+
     url
 }
 
@@ -1249,6 +1328,7 @@ fn read_job(n: u64) -> Job {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: PgPool) {
     seed(&pool).await;
+
     let now = clock();
     let reset = now + Duration::minutes(15);
     let config = GithubConfig {
@@ -1291,6 +1371,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
     ));
 
     let mut paused_until = None;
+
     for _ in 0..200 {
         let mut tx = begin_system(&pool).await.unwrap();
         paused_until = sqlx::query_scalar("SELECT paused_until FROM scm_connections")
@@ -1302,6 +1383,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         }
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
+
     assert_eq!(paused_until, Some(reset));
     cancel.cancel();
     worker.await.unwrap().unwrap();
@@ -1313,15 +1395,18 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     assert_eq!(state, "queued");
     assert!(error.contains("rate limit"), "{error}");
     enqueue_job(&mut tx, &read_job(2), now, now).await.unwrap();
+
     assert!(
         claim_jobs(&mut tx, "worker", reset - Duration::seconds(1), 10)
             .await
             .unwrap()
             .is_empty()
     );
+
     let after = claim_jobs(&mut tx, "worker", reset, 10).await.unwrap();
     assert_eq!(after.len(), 2);
 }
@@ -1330,7 +1415,9 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
 fn open_pr_with(sim: &Sim, parent: &str, n: u64, files: &[(&str, Option<&str>)]) -> (u64, String) {
     let branch = format!("pr-{n}");
     let head = sim.commit(&repo(), parent, files).unwrap();
+
     sim.push(&repo(), &branch, &head, &bob()).unwrap();
+
     (sim.open_pr(&repo(), &branch, "main", &bob()).unwrap(), head)
 }
 
@@ -1341,14 +1428,19 @@ fn target_repo(sim: &Sim, files: &[(&str, &str)]) -> String {
     let main = sim
         .commit(&repo(), &root, &[("README.md", Some("cihub"))])
         .unwrap();
+
     sim.push(&repo(), "main", &main, &alice()).unwrap();
+
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned()]),
         up_to_date: false,
     };
+
     sim.set_rules(&repo(), "main", rules).unwrap();
+
     sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
+
     main
 }
 
@@ -1391,6 +1483,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     const FAILING: [u64; 2] = [3, 8];
     const CONFLICTING: u64 = 6;
     const SILENT: u64 = 9;
+
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
@@ -1398,6 +1491,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
     let mut heads: HashMap<String, u64> = HashMap::new();
+
     for n in 1..=10 {
         let path = format!("f{n}.txt");
         let mut files = vec![(path.as_str(), Some("x"))];
@@ -1413,6 +1507,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .unwrap();
         heads.insert(head, n);
     }
+
     for n in 1..=10 {
         sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
         q.deliver().await;
@@ -1457,6 +1552,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         .iter()
         .map(|(n, state, reason, _)| (*n, state.as_str(), reason.as_str()))
         .collect();
+
     assert_eq!(
         summary,
         [
@@ -1475,6 +1571,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
 
     let runs = test_runs(&mut tx).await;
     let pr_of = |sha: &String| heads[sha];
+
     for (_, test_sha, _, _, head_shas, _, required, source, ..) in &runs {
         let Some(test_sha) = test_sha else {
             continue;
@@ -1490,11 +1587,13 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             assert!(file.is_some(), "{path} is not in {test_sha}");
         }
     }
+
     let merged: BTreeSet<i64> = summary
         .iter()
         .filter(|(_, state, _)| *state == "merged")
         .map(|(n, ..)| *n)
         .collect();
+
     for (n, _, _, verified) in &items {
         if !merged.contains(n) {
             continue;
@@ -1512,10 +1611,12 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
         );
         assert_eq!(run.5, vec![*n]);
     }
+
     let conflicts: Vec<&RunRow> = runs
         .iter()
         .filter(|r| r.3.as_deref() == Some("start_test_run_merge_conflict"))
         .collect();
+
     assert_eq!(conflicts.len(), 1);
     assert_eq!(conflicts[0].5, vec![i64::try_from(CONFLICTING).unwrap()]);
     assert_eq!(
@@ -1527,11 +1628,13 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .unwrap()
         )
     );
+
     let silent: Vec<&str> = runs
         .iter()
         .filter(|r| r.5 == vec![i64::try_from(SILENT).unwrap()])
         .map(|r| r.2.as_str())
         .collect();
+
     assert_eq!(silent.iter().filter(|s| **s == "timed_out").count(), 2);
     assert!(
         silent
@@ -1539,6 +1642,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
             .all(|s| matches!(*s, "timed_out" | "interrupted")),
         "{silent:?}"
     );
+
     let restarts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events
          WHERE type = 'item.transitioned' AND payload->>'reason' = $1",
@@ -1547,7 +1651,9 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert!(restarts >= 1, "{restarts} restarts");
+
     let reports: Vec<(Vec<i64>, String, String)> = sqlx::query_as(
         "SELECT t.tested_pr_numbers, t.status::text, c.conclusion::text
          FROM check_observations c JOIN test_runs t ON t.id = c.run_id
@@ -1559,15 +1665,18 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     .await
     .unwrap();
     let mut failures: BTreeMap<&[i64], usize> = BTreeMap::new();
+
     for (prs, status, conclusion) in &reports {
         if conclusion == "failure" {
             assert_eq!(status, "failed", "{prs:?}");
             *failures.entry(prs.as_slice()).or_default() += 1;
         }
     }
+
     let failing: Vec<&[i64]> = failures.keys().copied().collect();
     assert_eq!(failing, [&[3][..], &[8][..]]);
     assert!(failures.values().all(|n| *n >= 2), "{failures:?}");
+
     let passed = reports.iter().filter(|r| r.2 == "success").count();
     assert!(passed >= 6, "{reports:?}");
     drop(tx);
@@ -1588,20 +1697,27 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
 
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let events_before: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     drop(tx);
+
     let proved = items[0].3.as_ref().unwrap();
     let run = runs.iter().find(|r| r.0 == *proved).unwrap();
     let test_sha = run.1.as_ref().unwrap();
+
     q.clock.advance(1);
+
     sim.report_check(&repo(), test_sha, check("late", true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let late: (String, bool) = sqlx::query_as(
         "SELECT conclusion::text, required FROM check_observations WHERE run_id = $1 AND name = 'late'",
@@ -1610,11 +1726,14 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(late, ("success".into(), false));
+
     let events_after: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     assert_eq!(events_after, events_before);
 
     let before = projections(&mut tx).await;
@@ -1640,20 +1759,25 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
         sim.comment(&repo(), number, &alice(), "/cihub merge")
             .unwrap();
     };
+
     submit(1);
+
     sim.fail(Fault {
         call: Some("set_branch"),
         error: ScmError::Forbidden("Protected branch update failed".into()),
         times: 1,
     });
+
     q.deliver().await;
     q.settle().await;
     submit(2);
     q.deliver().await;
     q.settle().await;
+
     let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
     sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
 
@@ -1665,6 +1789,7 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(
         items,
         [
@@ -1676,24 +1801,29 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
             (2, "merged".into(), "merge_graph_merge".into()),
         ]
     );
+
     let runs = test_runs(&mut tx).await;
     assert_eq!(runs.len(), 2);
+
     let (_, test_sha, status, reason, ..) = &runs[0];
     assert_eq!((test_sha.as_deref(), status.as_str()), (None, "failed"));
     assert_eq!(
         reason.as_deref(),
         Some("start_test_run_permissions_block_test_branch")
     );
+
     let (_, test_sha, status, _, _, _, required, source, ..) = &runs[1];
     assert_eq!((test_sha.is_some(), status.as_str()), (true, "succeeded"));
     assert_eq!(required, &[REQUIRED.to_owned()]);
     assert_eq!(source.as_deref(), Some("branch_protection"));
+
     let cleaned: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM jobs WHERE type = 'cleanup_test_branch' AND state = 'done'",
     )
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(cleaned, 2);
     drop(tx);
     q.stop().await;
@@ -1723,8 +1853,10 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (small, small_head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     let (large, large_head) = open_pr_with(
         &sim,
@@ -1732,16 +1864,20 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
         2,
         &[("f2.txt", Some("x")), ("g2.txt", Some("x"))],
     );
+
     for (number, head) in [(small, &small_head), (large, &large_head)] {
         sim.report_check(&repo(), head, check(REQUIRED, true))
             .unwrap();
         sim.comment(&repo(), number, &alice(), "/cihub merge")
             .unwrap();
     }
+
     q.deliver().await;
     q.settle().await;
+
     let unmet = |conditions: &[&str]| serde_json::json!([{ "kind": "queue_conditions_unmet", "conditions": conditions }]);
     let write = Some("write".to_owned());
+
     assert_eq!(
         admissions(&pool).await,
         [
@@ -1765,8 +1901,10 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
             .await
             .unwrap();
     }
+
     q.deliver().await;
     q.settle().await;
+
     let states = admissions(&pool).await;
     assert_eq!(states[0].0, 1);
     assert_ne!(states[0].1, "not_ready", "{states:?}");
@@ -1775,17 +1913,20 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
         states[1],
         (2, "not_ready".into(), unmet(&["#files <= 1"]), write)
     );
+
     let reads = sim
         .calls()
         .iter()
         .filter(|call| call.name == "pr_files")
         .count();
+
     assert!(reads >= 2, "{reads}");
     assert!(
         !sim.calls()
             .iter()
             .any(|call| call.name == "unresolved_threads")
     );
+
     q.stop().await;
 }
 
@@ -1795,6 +1936,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
 async fn two_queues(pool: &PgPool, q: &mut SimQueue, config: &str) -> String {
     let hotfix = QueueId::from_ulid(Ulid(30));
     let mut tx = begin_system(pool).await.unwrap();
+
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
          SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
@@ -1804,22 +1946,28 @@ async fn two_queues(pool: &PgPool, q: &mut SimQueue, config: &str) -> String {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
+
     let main = target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(pool).await.unwrap();
     let read: Vec<Option<String>> =
         sqlx::query_scalar("SELECT config_sha FROM queues ORDER BY name")
             .fetch_all(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
+
     assert_eq!(
         read,
         [Some(main.clone()), Some(main.clone())],
         "both queues read the push"
     );
+
     main
 }
 
@@ -1835,7 +1983,9 @@ async fn routed_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     drop(tx);
+
     items
         .into_iter()
         .map(|(n, queue, priority, state)| (n, queue, priority, state != "not_ready"))
@@ -1886,6 +2036,7 @@ priority_rules:
         ("pr-4", true, &[], "/cihub merge --queue=hotfix"),
         ("pr-5", true, &["urgent"], "/cihub merge --priority=low"),
     ];
+
     for (n, (branch, green, labels, command)) in (1..).zip(cases) {
         let path = format!("f{n}.txt");
         let head = sim.commit(&repo(), &main, &[(&path, Some("x"))]).unwrap();
@@ -1907,8 +2058,10 @@ priority_rules:
         }
         sim.comment(&repo(), number, &alice(), command).unwrap();
     }
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         routed_items(&pool).await,
         [
@@ -1919,6 +2072,7 @@ priority_rules:
             (5, "main".into(), 200, true),
         ]
     );
+
     q.stop().await;
 }
 
@@ -1941,10 +2095,13 @@ queues:
 ";
     let main = two_queues(&pool, &mut q, config).await;
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(routed_items(&pool).await, [(1, "hotfix".into(), 100, true)]);
@@ -1956,8 +2113,10 @@ queues:
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     seed(&pool).await;
+
     let hotfix = QueueId::from_ulid(Ulid(30));
     let mut tx = begin_system(&pool).await.unwrap();
+
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
          SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
@@ -1967,11 +2126,14 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     let sim = Sim::new();
     let root = sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
     let head = sim.commit(&repo(), &root, &[("b.txt", Some("b"))]).unwrap();
+
     sim.take_deliveries();
     sim.push(&repo(), "main", &head, &alice()).unwrap();
+
     let deliveries = Arc::new(Mutex::new(HashMap::new()));
     for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
         let id = format!("push-{n}");
@@ -1989,6 +2151,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         };
         store_delivery(&mut tx, &stored).await.unwrap();
     }
+
     let merge = Job {
         idempotency_key: "merge_pr:in-flight:1".into(),
         job_type: "merge_pr".into(),
@@ -1999,10 +2162,13 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         payload: serde_json::json!({}),
         attempts: 0,
     };
+
     enqueue_job(&mut tx, &merge, clock() + Duration::hours(1), clock())
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
+
     let reconciler = Reconciler {
         translate: translate(&deliveries),
     };
@@ -2016,9 +2182,11 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         .await
         .unwrap()
     };
+
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
         .await
         .unwrap();
+
     assert_eq!(state(pool.clone()).await, (1, 0), "the push waits");
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -2029,10 +2197,13 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
+
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
         .await
         .unwrap();
+
     assert_eq!(state(pool.clone()).await, (0, 2));
 }
 
@@ -2046,23 +2217,32 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    resubmit_on_push: true\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge --priority=high")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let pushed = sim
         .commit(&repo(), &head, &[("f1.txt", Some("y"))])
         .unwrap();
+
     sim.push(&repo(), "pr-1", &pushed, &bob()).unwrap();
+
     sim.report_check(&repo(), &pushed, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let items: Vec<(String, String, String, i16, bool)> = sqlx::query_as(
         "SELECT pr_head_sha, state::text, state_reason::text, priority_value, is_current
@@ -2072,6 +2252,7 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     drop(tx);
     assert_eq!(items.len(), 2, "{items:?}");
     assert_eq!(
@@ -2125,14 +2306,18 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(item_state(&pool, number).await, "not_ready");
+
     let before = refresh_keys(&pool).await;
 
     sim.report_check(&repo(), &head, running(REQUIRED)).unwrap();
@@ -2143,9 +2328,12 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
+
     let delivery = format!("delivery-{}", q.sent);
     q.settle().await;
+
     let mut after = before.clone();
     after.push(format!("refresh_prs:{}-{delivery}:1", queue()));
     after.sort();
@@ -2157,12 +2345,15 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     );
 
     assert!(q.deliver_again(&delivery).await);
+
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
     };
+
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
         .await
         .unwrap();
+
     q.settle().await;
     assert_eq!(refresh_keys(&pool).await, after);
     q.stop().await;
@@ -2177,14 +2368,17 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     q.deliver().await;
     q.settle().await;
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     let submitted = q.deliver_and_process_again().await;
     assert!(
         submitted
@@ -2205,6 +2399,7 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
     sim.report_check(&repo(), &test_sha, running(REQUIRED))
         .unwrap();
+
     let reported = q.deliver_and_process_again().await;
     assert!(
         reported
@@ -2215,7 +2410,9 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
 
     sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
         .unwrap();
+
     q.deliver_and_process_again().await;
+
     let merged = q.deliver_and_process_again().await;
     assert!(
         merged
@@ -2233,23 +2430,30 @@ async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     let (_, other) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     q.deliver().await;
     q.settle().await;
     assert_eq!(item_state(&pool, number).await, "testing", "admitted");
+
     let before = refresh_keys(&pool).await;
 
     sim.report_check(&repo(), &head, check("lint", false))
         .unwrap();
+
     sim.report_check(&repo(), &other, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(refresh_keys(&pool).await, before);
@@ -2263,8 +2467,10 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     q.deliver().await;
     q.settle().await;
+
     let drain = Event {
         id: EventId::from_ulid(Ulid(700)),
         org_id: org(),
@@ -2280,27 +2486,35 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     cihub_store::deposit_fact(&mut tx, &drain, q.clock.now())
         .await
         .unwrap();
+
     mark_dirty(&mut tx, queue()).await.unwrap();
     tx.commit().await.unwrap();
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let items: Vec<(String, String, bool)> =
         sqlx::query_as("SELECT state::text, state_reason::text, is_current FROM queue_items")
             .fetch_all(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
+
     assert_eq!(
         items,
         [("cancelled".into(), "queue_draining".into(), false)]
     );
+
     q.stop().await;
 }
 
@@ -2326,7 +2540,9 @@ async fn queues_and_items(
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     drop(tx);
+
     (queues, items)
 }
 
@@ -2349,13 +2565,18 @@ async fn without_queue(pool: &PgPool) {
 async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     without_queue(&pool).await;
+
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     sim.push(&repo(), "release", &main, &alice()).unwrap();
+
     let fix = sim
         .commit(&repo(), &main, &[("fix.txt", Some("x"))])
         .unwrap();
+
     sim.push(&repo(), "fix", &fix, &bob()).unwrap();
+
     let release_pr = sim.open_pr(&repo(), "fix", "release", &bob()).unwrap();
     q.deliver().await;
     q.settle().await;
@@ -2363,24 +2584,31 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     let (labelled, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.add_label(&repo(), labelled, "ready-to-merge", JobClass::Interactive)
         .await
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(queues_and_items(&pool).await, (Vec::new(), Vec::new()));
 
     sim.comment(&repo(), labelled, &alice(), "/cihub merge")
         .unwrap();
+
     let (other, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), other, &alice(), "/cihub merge")
         .unwrap();
+
     sim.comment(&repo(), release_pr, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         queues_and_items(&pool).await,
         (
@@ -2391,6 +2619,7 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
             ]
         )
     );
+
     let refused = sim.comments(&repo(), release_pr);
     assert!(
         refused
@@ -2398,6 +2627,7 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
             .any(|body| body.contains("no queue serves the branch `release`")),
         "{refused:?}"
     );
+
     q.stop().await;
 }
 
@@ -2408,6 +2638,7 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
 async fn a_command_creates_the_queues_that_the_file_names(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     without_queue(&pool).await;
+
     let sim = q.sim.clone();
     let config = "version: 1
 queues:
@@ -2419,8 +2650,10 @@ queues:
     branch: main
 ";
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+
     q.deliver().await;
     q.settle().await;
+
     for (n, labels) in [(1, &["hotfix"][..]), (2, &[][..])] {
         let path = format!("f{n}.txt");
         let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
@@ -2434,8 +2667,10 @@ queues:
         sim.comment(&repo(), number, &alice(), "/cihub merge")
             .unwrap();
     }
+
     q.deliver().await;
     q.settle().await;
+
     let queue = |name: &str| (name.to_owned(), "main".to_owned(), true, Some(main.clone()));
     assert_eq!(
         queues_and_items(&pool).await,
@@ -2444,6 +2679,7 @@ queues:
             vec![(1, "hotfix".into()), (2, "fast".into())]
         )
     );
+
     q.stop().await;
 }
 
@@ -2458,22 +2694,30 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (up_to_date, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), up_to_date, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let (behind, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), behind, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let items: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT pr_number, state::text, state_reason::text FROM queue_items
@@ -2486,7 +2730,9 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
     drop(tx);
+
     assert_eq!(
         items[0],
         (1, "merged".into(), "merge_graph_direct_merge".into())
@@ -2508,20 +2754,27 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n    state_labels_enabled: true\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (first, first_head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &first_head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), first, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let (second, second_head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &second_head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), second, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
 
@@ -2558,17 +2811,20 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
         }
     };
     let merged = shown(first);
+
     assert_eq!(merged.len(), 1, "one comment, edited in place: {merged:?}");
     assert!(
         merged[0].starts_with("✅ **Merged** into `main` by the queue"),
         "{merged:?}"
     );
+
     for row in [
         "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
         "✅ Merged: the queue merged the PR without a test branch, as ",
     ] {
         assert!(merged[0].contains(row), "{row}: {merged:?}");
     }
+
     assert_eq!(
         status(first_head).await,
         Some(Some(CheckConclusion::Success))
@@ -2603,15 +2859,20 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let item = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
         sqlx::query_as::<_, (String, String)>(
@@ -2621,24 +2882,30 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         .await
         .unwrap()
     };
+
     assert_eq!(item(pool.clone()).await.0, "testing");
 
     sim.comment(&repo(), number, &bob(), "/cihub cancel")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone()).await.0, "testing", "bob cannot write");
+
     let refusals: Vec<String> = sim
         .comments(&repo(), number)
         .into_iter()
         .filter(|body| body.contains("needs the write permission"))
         .collect();
+
     assert_eq!(refusals.len(), 1, "{refusals:?}");
 
     sim.comment(&repo(), number, &alice(), "/cihub restart")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let restarts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events WHERE payload->>'reason' = 'tests_restarted_by_user'",
@@ -2650,7 +2917,9 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     drop(tx);
+
     assert!(
         restarts > 0,
         "the decisions of the restart carry its reason"
@@ -2660,8 +2929,10 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
 
     sim.comment(&repo(), number, &alice(), "/cihub cancel")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         item(pool.clone()).await,
         ("cancelled".into(), "user_requested".into())
@@ -2670,6 +2941,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
         sim.acknowledged_comments(&repo(), number),
         ["/cihub merge", "/cihub restart", "/cihub cancel"]
     );
+
     q.stop().await;
 }
 
@@ -2684,11 +2956,14 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     for command in ["/cihub merge", "/cihub restart"] {
         sim.comment(&repo(), number, &alice(), command).unwrap();
         q.deliver().await;
@@ -2701,19 +2976,23 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
     assert!(desired.contains("<details><summary>History ("), "{desired}");
+
     for row in [
         "⏳ Waiting: the PR was submitted to the queue | `@alice` |",
         "🕓 Queued: a user restarted the tests | `@alice` |",
     ] {
         assert!(desired.contains(row), "{row}: {desired}");
     }
+
     let shown: Vec<String> = sim
         .comments(&repo(), number)
         .into_iter()
         .filter(|body| is_status_comment(body))
         .collect();
+
     assert_eq!(shown, [desired], "the SCM shows the last rendering");
     q.stop().await;
 }
@@ -2728,11 +3007,14 @@ async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     for command in ["/cihub merge", "/cihub cancel", "/cihub merge"] {
         sim.comment(&repo(), number, &alice(), command).unwrap();
         q.deliver().await;
@@ -2749,14 +3031,17 @@ async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
     assert_eq!(items, 2);
+
     let submitted = "⏳ Waiting: the PR was submitted to the queue | `@alice` |";
     let cancelled = "⚪ Cancelled: a user asked for it | `@alice` |";
     let rows: Vec<&str> = desired
         .lines()
         .filter(|line| line.contains(submitted) || line.contains(cancelled))
         .collect();
+
     assert_eq!(rows.len(), 3, "{desired}");
     assert!(rows[0].contains(submitted), "{desired}");
     assert!(rows[1].contains(cancelled), "{desired}");
@@ -2774,6 +3059,7 @@ async fn call(
     body: Option<serde_json::Value>,
 ) -> (u16, serde_json::Value) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     let body = body.map(|b| b.to_string()).unwrap_or_default();
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let request = format!(
@@ -2782,11 +3068,15 @@ async fn call(
          Content-Length: {}\r\n\r\n{body}",
         body.len()
     );
+
     stream.write_all(request.as_bytes()).await.unwrap();
+
     let mut response = String::new();
     stream.read_to_string(&mut response).await.unwrap();
+
     let (head, body) = response.split_once("\r\n\r\n").unwrap();
     let status = head.split(' ').nth(1).unwrap().parse().unwrap();
+
     (
         status,
         serde_json::from_str(body).unwrap_or(serde_json::Value::Null),
@@ -2804,8 +3094,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let (addr, token) = q.serve_api().await;
     let queue = queue().to_string();
     let call = |method: &'static str, path: String, body: Option<serde_json::Value>| {
@@ -2814,16 +3106,20 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     };
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let submitted = call(
         "POST",
         format!("/queues/{queue}/items"),
         Some(serde_json::json!({ "pr_number": number, "priority": "high" })),
     )
     .await;
+
     assert_eq!(submitted, (202, serde_json::json!({ "accepted": true })));
     q.settle().await;
 
@@ -2831,6 +3127,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(status, 200, "{listed}");
     assert_eq!(listed["items"][0]["state"], "testing");
     assert_eq!(listed["items"][0]["priority"], 10);
+
     let item_id = listed["items"][0]["id"].as_str().unwrap().to_owned();
     let (_, pr) = call(
         "GET",
@@ -2838,19 +3135,25 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         None,
     )
     .await;
+
     assert_eq!(pr["item"]["id"], item_id.as_str());
     assert_eq!(pr["timeline"][0]["type"], "item.transitioned");
+
     let (_, batch) = call(
         "POST",
         format!("/queues/{queue}/prs:batchGet"),
         Some(serde_json::json!({ "pr_numbers": [number, 999] })),
     )
     .await;
+
     assert_eq!(batch["not_found"], serde_json::json!([999]));
+
     let (_, graph) = call("GET", format!("/queues/{queue}/graph"), None).await;
     assert_eq!(graph["nodes"][0]["pr_number"], number);
+
     let (run_id, _, _) = q.runs_in_progress().await.remove(0);
     let (status, run) = call("GET", format!("/test-runs/{run_id}"), None).await;
+
     assert_eq!(status, 200, "{run}");
     assert_eq!(run["tested_pr_numbers"], serde_json::json!([number]));
     assert_eq!(run["status"], "in_progress");
@@ -2858,9 +3161,11 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let restart = call("POST", format!("/items/{item_id}/restart"), None).await;
     assert_eq!(restart.0, 202);
     q.settle().await;
+
     let cancel = call("POST", format!("/items/{item_id}/cancel"), None).await;
     assert_eq!(cancel.0, 202);
     q.settle().await;
+
     let (_, pr) = call("GET", format!("/queues/{queue}/prs/{number}"), None).await;
     assert_eq!(pr["item"]["state"], "cancelled");
     assert_eq!(pr["item"]["state_reason"], "admin_requested");
@@ -2868,6 +3173,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         pr["item"]["state_description"],
         "an administrator asked for it"
     );
+
     let (status, again) = call("POST", format!("/items/{item_id}/cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),
@@ -2880,8 +3186,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         Some(serde_json::json!({ "state": "paused" })),
     )
     .await;
+
     assert_eq!(paused.0, 202);
     q.settle().await;
+
     let (_, read) = call("GET", format!("/queues/{queue}"), None).await;
     assert_eq!(read["state"], "paused");
 
@@ -2893,6 +3201,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
             .0,
         202
     );
+
     let (status, missing) = call("GET", "/queues/queue_unknown".into(), None).await;
     assert_eq!(
         (status, &missing["code"]),
@@ -2913,21 +3222,26 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .iter()
         .map(|entry| entry["action"].as_str().unwrap())
         .collect();
+
     assert_eq!(actions, ["queue.resync", "queue.state_requested"]);
 
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
     let queues = client.queues("acme", "app").await.unwrap().queues;
+
     assert_eq!(queues.len(), 1);
+
     let item = client.pr(&queue, number, true).await.unwrap();
     assert_eq!(item.item.state, ItemState::Cancelled);
     assert!(!item.timeline.unwrap().is_empty());
+
     let refused = client.restart(&item_id).await.unwrap_err();
     assert!(
         matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::InvalidState),
         "{refused}"
     );
+
     q.stop().await;
 }
 
@@ -2944,8 +3258,10 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
     q.deliver().await;
     q.settle().await;
+
     let shown = |number: u64| {
         sim.comments(&repo(), number)
             .into_iter()
@@ -2965,10 +3281,13 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     };
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let welcome = shown(number);
     assert_eq!(welcome.len(), 1, "{welcome:?}");
     assert!(
@@ -2984,6 +3303,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone(), 1).await.as_deref(), Some("testing"));
+
     let testing = shown(number);
     assert_eq!(
         testing.len(),
@@ -3001,6 +3321,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
 
     sim.comment(&repo(), number, &alice(), "/cihub cancel")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone(), 1).await.as_deref(), Some("cancelled"));
@@ -3008,9 +3329,11 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         shown(number)[0].contains("- [ ] <!-- cihub:submit -->"),
         "the box comes back"
     );
+
     sim.check_submit_box(&repo(), number, &alice()).unwrap();
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         item(pool.clone(), 1).await.as_deref(),
         Some("testing"),
@@ -3020,22 +3343,26 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     let (second, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     sim.check_submit_box(&repo(), second, &bob()).unwrap();
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone(), 2).await, None);
+
     let refused = sim
         .comments(&repo(), second)
         .into_iter()
         .filter(|body| body.contains("needs the write permission"))
         .count();
+
     assert_eq!(refused, 1);
 
     let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
     sim.comment(&repo(), third, &alice(), "- [ ] <!-- cihub:submit --> mine")
         .unwrap();
+
     sim.check_submit_box(&repo(), third, &alice()).unwrap();
     q.deliver().await;
     q.settle().await;
@@ -3057,8 +3384,10 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
         "    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n"
     ));
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &strict)]);
+
     q.deliver().await;
     q.settle().await;
+
     let loose = file("    required_statuses: [lint]\n");
     let (number, head) = open_pr_with(
         &sim,
@@ -3066,18 +3395,24 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
         1,
         &[("f1.txt", Some("x")), (".cihub.yaml", Some(&loose))],
     );
+
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     sim.report_check(&repo(), &head, check("lint", true))
         .unwrap();
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let unmet = serde_json::json!([{
         "kind": "queue_conditions_unmet", "conditions": ["label = ready"]
     }]);
     let states = admissions(&pool).await;
+
     assert_eq!(
         (states[0].1.as_str(), &states[0].2),
         ("not_ready", &unmet),
@@ -3087,12 +3422,16 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     sim.add_label(&repo(), number, "ready", JobClass::Interactive)
         .await
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let runs = test_runs(&mut tx).await;
+
     drop(tx);
     assert_eq!(runs.len(), 1);
+
     let (_, _, _, _, _, _, required, source, ..) = &runs[0];
     assert_eq!(
         required,
@@ -3123,8 +3462,10 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
     let valid = file("    branch_prefix: ship\n");
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &valid)]);
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         config_of(&pool).await,
         (Some(valid.clone()), Some(main.clone()), None)
@@ -3134,11 +3475,14 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
     let broken = sim
         .commit(&repo(), &main, &[(".cihub.yaml", Some(&broken_file))])
         .unwrap();
+
     sim.push(&repo(), "main", &broken, &alice()).unwrap();
     q.deliver().await;
     q.settle().await;
+
     let (text, sha, error) = config_of(&pool).await;
     assert_eq!((text, sha), (Some(valid), Some(broken.clone())));
+
     let error = error.unwrap();
     assert!(
         error.contains("window.floor (30) is greater than window.ceiling (20)"),
@@ -3149,13 +3493,16 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
     let parallel = sim
         .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
         .unwrap();
+
     sim.push(&repo(), "main", &parallel, &alice()).unwrap();
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         config_of(&pool).await,
         (Some(parallel_file), Some(parallel), None)
     );
+
     let mut tx = begin_system(&pool).await.unwrap();
     let events: Vec<(String, serde_json::Value)> = sqlx::query_as(
         "SELECT type::text, payload FROM events WHERE type::text LIKE 'queue.%' ORDER BY seq",
@@ -3167,6 +3514,7 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         .iter()
         .map(|(kind, payload)| (kind.as_str(), payload))
         .collect();
+
     assert_eq!(
         events,
         [
@@ -3188,6 +3536,7 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
             ),
         ]
     );
+
     drop(tx);
     q.stop().await;
 }
@@ -3212,19 +3561,23 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     let mut w = World::at(pool.clone(), may).await;
     w.submit(1).await;
     assert!(w.log.seq < SNAPSHOT_EVERY, "no snapshot by count");
+
     let today = clock();
 
     run_maintenance(&pool, today).await.unwrap();
     assert!(partition_exists(&pool, "events_2026_05").await);
 
     assert_eq!(wake_uncovered(&pool, today).await.unwrap(), 1);
+
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
     };
+
     reconciler
         .reconcile(&pool, queue(), &|| today)
         .await
         .unwrap();
+
     assert_eq!(wake_uncovered(&pool, today).await.unwrap(), 0);
     run_maintenance(&pool, today).await.unwrap();
     assert!(!partition_exists(&pool, "events_2026_05").await);
@@ -3236,8 +3589,10 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
         .await
         .unwrap();
     let mut log = QueueLog::load(&mut tx, queue()).await.unwrap();
+
     assert_eq!(log.seq, snapshot);
     assert_eq!(log.uncovered_since, None);
+
     let pushed = Event {
         id: EventId::from_ulid(Ulid(900)),
         org_id: org(),
@@ -3251,6 +3606,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
             sender_id: Some(user()),
         },
     };
+
     log.write(&mut tx, vec![pushed]).await.unwrap();
     assert_eq!(log.seq, snapshot + 1);
 
@@ -3270,18 +3626,21 @@ async fn the_live_queues_are_woken_at_start(pool: PgPool) {
             .unwrap();
         tx.commit().await.unwrap();
     }
+
     let mut w = World::new(pool.clone()).await;
     asleep(&pool).await;
     assert_eq!(cihub_mergequeue::wake_live_queues(&pool).await.unwrap(), 0);
     w.submit(1).await;
     asleep(&pool).await;
     assert_eq!(cihub_mergequeue::wake_live_queues(&pool).await.unwrap(), 1);
+
     let mut tx = begin_system(&pool).await.unwrap();
     let dirty: bool = sqlx::query_scalar("SELECT dirty FROM queues WHERE id = $1")
         .bind(queue().to_string())
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     assert!(dirty);
 }
 
@@ -3302,8 +3661,10 @@ async fn current_items(pool: &PgPool) -> Vec<(i64, String, String)> {
 fn open_green_pr(sim: &Sim, main: &str, n: u64) -> u64 {
     let path = format!("f{n}.txt");
     let (number, head) = open_pr_with(sim, main, n, &[(&path, Some("x"))]);
+
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
     number
 }
 
@@ -3321,16 +3682,20 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     for n in 1..=2 {
         assert_eq!(open_green_pr(&sim, &main, n), n);
     }
+
     for n in 1..=2 {
         sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
+
     let runs = q.runs_in_progress().await;
     assert_eq!(runs.len(), 2, "{runs:?}");
+
     let test_sha = |pr: u64| {
         runs.iter()
             .find(|(_, _, prs)| prs.last() == Some(&pr))
@@ -3343,8 +3708,10 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
         error: ScmError::Unavailable("502".into()),
         times: 2,
     });
+
     sim.report_check(&repo(), &test_sha(1), check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
     q.deliver().await;
@@ -3356,10 +3723,13 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
         error: ScmError::HeadChanged,
         times: 1,
     });
+
     sim.report_check(&repo(), &test_sha(2), check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         current_items(&pool).await,
         [
@@ -3367,6 +3737,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
             (2, "failed".into(), "pr_updated_at_merge_time".into()),
         ]
     );
+
     let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
     assert_eq!(merges, 4, "two errors and a merge, then a changed head");
     assert!(
@@ -3375,6 +3746,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
             .filter(|c| c.name == "merge_pr")
             .all(|c| c.class == JobClass::Merge)
     );
+
     q.stop().await;
 }
 
@@ -3386,14 +3758,17 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     for n in 1..=2 {
         assert_eq!(open_green_pr(&sim, &main, n), n);
     }
+
     for n in 1..=2 {
         sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
+
     let runs = q.runs_in_progress().await;
     let first = runs.iter().find(|r| r.2 == [1]).unwrap().1.clone();
     let by_hand = cihub_scm::PrMerge {
@@ -3408,18 +3783,24 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
         title: "merged by hand".into(),
         message: String::new(),
     };
+
     sim.merge_pr(&repo(), &by_hand, JobClass::Interactive)
         .await
         .unwrap();
+
     sim.take_deliveries();
+
     sim.report_check(&repo(), &first, check(REQUIRED, true))
         .unwrap();
+
     q.deliver().await;
     q.settle().await;
+
     assert_eq!(
         current_items(&pool).await[0],
         (1, "merged".into(), "manual_merge".into())
     );
+
     for _ in 0..3 {
         for (_, test_sha, prs) in q.runs_in_progress().await {
             if prs == [2] {
@@ -3430,10 +3811,12 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
         q.deliver().await;
         q.settle().await;
     }
+
     assert_eq!(
         current_items(&pool).await[1],
         (2, "merged".into(), "merge_graph_merge".into())
     );
+
     let mut tx = begin_system(&pool).await.unwrap();
     let restarted: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events WHERE type = 'item.transitioned'
@@ -3442,8 +3825,10 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(restarted, 1);
     drop(tx);
+
     let merges = sim.calls().iter().filter(|c| c.name == "merge_pr").count();
     assert_eq!(merges, 2, "the merge by hand and the merge of PR 2");
     q.stop().await;
@@ -3457,9 +3842,11 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
+
     submit_new_pr(&sim, &main, 1);
     q.deliver().await;
     q.settle().await;
+
     let (run_id, test_sha, _) = q.runs_in_progress().await.remove(0);
     let mut tx = begin_system(&pool).await.unwrap();
     let test_branch: String = sqlx::query_scalar("SELECT test_branch FROM test_runs WHERE id = $1")
@@ -3467,11 +3854,13 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     drop(tx);
 
     sim.delete_branch(&repo(), &test_branch, JobClass::Repair)
         .await
         .unwrap();
+
     sim.take_deliveries();
     q.clock.advance(10);
     q.wake().await;
@@ -3481,6 +3870,7 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     // The report of the CI is lost: the next read of the checks finds it.
     sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
         .unwrap();
+
     sim.take_deliveries();
     q.settle().await;
     assert_eq!(current_items(&pool).await[0].1, "testing");
@@ -3498,14 +3888,17 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     assert_eq!(current_items(&pool).await[1].1, "testing");
+
     let pushed = sim
         .commit(&repo(), &head, &[("other.txt", Some("o"))])
         .unwrap();
+
     sim.push(&repo(), "main", &pushed, &bob()).unwrap();
     sim.take_deliveries();
     q.clock.advance(5);
     q.wake().await;
     q.settle().await;
+
     let mut tx = begin_system(&pool).await.unwrap();
     let read: (String, Option<String>) = sqlx::query_as(
         "SELECT payload->>'after', payload->>'sender_id' FROM events
@@ -3514,7 +3907,9 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(read, (pushed, None));
+
     let restarted: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM events
          WHERE type = 'item.transitioned' AND payload->>'reason' = 'manual_push_to_target_branch'",
@@ -3522,17 +3917,20 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     .fetch_one(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(restarted, 1);
     drop(tx);
 
     // A resync asks for every read once per minute.
     let now = q.clock.now();
     let requested = cihub_mergequeue::resync(&pool, queue(), now).await.unwrap();
+
     assert!(requested >= 2, "{requested} jobs");
     assert_eq!(
         cihub_mergequeue::resync(&pool, queue(), now).await.unwrap(),
         0
     );
+
     q.settle().await;
     q.stop().await;
 }
@@ -3547,6 +3945,7 @@ impl Rng {
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+
         z ^ (z >> 31)
     }
 
@@ -3620,6 +4019,7 @@ impl Chaos {
         };
         let repo = chaos.repo();
         let mut tx = begin_system(&chaos.pool).await.unwrap();
+
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
              INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
@@ -3644,8 +4044,10 @@ impl Chaos {
         .execute(&mut *tx)
         .await
         .unwrap();
+
         tx.commit().await.unwrap();
         chaos.start().await;
+
         chaos
     }
 
@@ -3653,12 +4055,15 @@ impl Chaos {
     /// a new process.
     async fn start(&mut self) {
         self.generation += 1;
+
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(8)
             .connect_with(self.pool.connect_options().as_ref().clone())
             .await
             .unwrap();
+
         self.process = Some(pool.clone());
+
         let scm: Arc<dyn Scm> = self.sim.clone();
         let module = cihub_mergequeue::module(
             pool.clone(),
@@ -3669,6 +4074,7 @@ impl Chaos {
         );
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
+
         let cancel = CancellationToken::new();
         let clock = self.clock.clone();
         let worker = run_worker(
@@ -3680,6 +4086,7 @@ impl Chaos {
             cancel.clone(),
         );
         let scheduler = (module.scheduler)(cancel);
+
         self.loops = vec![
             tokio::spawn(async move { worker.await.unwrap() }),
             tokio::spawn(async move { scheduler.await.unwrap() }),
@@ -3726,12 +4133,14 @@ impl Chaos {
             }
             taken.push((id, delivery));
         }
+
         if faults {
             for i in (1..taken.len()).rev() {
                 let j = usize::try_from(self.rng.next() % (i as u64 + 1)).unwrap();
                 taken.swap(i, j);
             }
         }
+
         let mut tx = begin_system(&self.pool).await.unwrap();
         for (id, delivery) in taken {
             let route = find_route(&mut tx, &delivery).await.unwrap();
@@ -3747,6 +4156,7 @@ impl Chaos {
             };
             store_delivery(&mut tx, &stored).await.unwrap();
         }
+
         tx.commit().await.unwrap();
     }
 
@@ -3815,7 +4225,9 @@ impl Chaos {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
         drop(tx);
+
         let reconciler = Reconciler {
             translate: translate(&self.deliveries),
         };
@@ -3823,6 +4235,7 @@ impl Chaos {
             .reconcile(&self.pool, self.queue(), &|| self.clock.now())
             .await
             .map_err(|err| cihub_platform::error_chain(&err));
+
         panic!(
             "seed {}: the queue did not settle at {}: {left:?}; a reconciliation gives {direct:?}",
             self.seed,
@@ -3867,17 +4280,23 @@ impl Chaos {
         let repo = self.repo();
         let sim = self.sim.clone();
         let mut files = vec![("a.txt", "a")];
+
         files.extend(self.config.map(|config| (".cihub.yaml", config)));
+
         let root = sim.add_repo(&repo, "main", &files);
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
             up_to_date: false,
         };
+
         sim.set_rules(&repo, "main", rules).unwrap();
+
         sim.set_permission(&repo, &alice(), Permission::Write)
             .unwrap();
+
         let mut red = BTreeSet::new();
         let mut red_heads = BTreeSet::new();
+
         for n in 1..=CHAOS_PRS {
             let branch = format!("pr-{n}");
             let path = format!("f{n}.txt");
@@ -3893,15 +4312,18 @@ impl Chaos {
             sim.comment(&repo, number, &alice(), "/cihub merge")
                 .unwrap();
         }
+
         // The submissions arrive whole: a lost comment is the sweep of lot 4.
         self.deliver(false).await;
         self.settle().await;
+
         sim.fail_at_random(Some(cihub_scm::sim::RandomFaults {
             seed: self.seed,
             unavailable_percent: 1,
             rate_limited_percent: 1,
             rate_limited_until: self.clock.now() + Duration::minutes(1),
         }));
+
         let mut reported: BTreeSet<String> = BTreeSet::new();
         for round in 0.. {
             assert!(
@@ -3941,6 +4363,7 @@ impl Chaos {
                 self.wake().await;
             }
         }
+
         sim.fail_at_random(None);
         self.deliver(false).await;
         self.settle().await;
@@ -3955,6 +4378,7 @@ impl Chaos {
         let seed = self.seed;
         let items = self.items().await;
         let mut merged: Vec<(i64, i64, i64)> = Vec::new();
+
         for (pr, state, reason, position, merged_at) in &items {
             if red.contains(pr) {
                 assert_eq!(
@@ -3971,6 +4395,7 @@ impl Chaos {
                 merged.push((merged_at.unwrap(), position.unwrap(), *pr));
             }
         }
+
         let mut tx = begin_system(&self.pool).await.unwrap();
         let decisions: Vec<(i64, i64)> = sqlx::query_as(
             "SELECT i.pr_number, count(*) FROM events e JOIN queue_items i ON i.id = e.item_id
@@ -3981,10 +4406,12 @@ impl Chaos {
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
         assert!(
             decisions.iter().all(|(_, count)| *count == 1),
             "seed {seed}: {decisions:?}"
         );
+
         for (_, _, pr) in &merged {
             let pr = self
                 .sim
@@ -3993,12 +4420,15 @@ impl Chaos {
                 .unwrap();
             assert_eq!(pr.state, PrState::Merged, "seed {seed}: PR {}", pr.number);
         }
+
         merged.sort_unstable();
+
         let positions: Vec<i64> = merged.iter().map(|m| m.1).collect();
         assert!(
             positions.is_sorted(),
             "seed {seed}: merged out of order {merged:?}"
         );
+
         let before = projections(&mut tx).await;
         rebuild(&mut tx, self.queue()).await.unwrap();
         assert_eq!(projections(&mut tx).await, before, "seed {seed}");
@@ -4025,6 +4455,7 @@ async fn fault_injection_batched(pool: PgPool) {
         Some("version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n"),
     )
     .await;
+
     // The file applied: the seeds formed batches and bisected some.
     let mut tx = begin_system(&pool).await.unwrap();
     let kinds: Vec<String> = sqlx::query_scalar(
@@ -4033,6 +4464,7 @@ async fn fault_injection_batched(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     assert!(
         kinds.contains(&"batch".to_owned()) && kinds.contains(&"bisection".to_owned()),
         "{kinds:?}"
@@ -4044,12 +4476,14 @@ async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
         .ok()
         .and_then(|seeds| seeds.parse().ok())
         .unwrap_or(10);
+
     create_event_partitions(
         &pool,
         Date::from_calendar_date(2026, Month::October, 1).unwrap(),
     )
     .await
     .unwrap();
+
     let clock = TestClock::new();
     for seed in 0..seeds {
         let mut chaos = Chaos::new(pool.clone(), seed, clock.clone(), config).await;

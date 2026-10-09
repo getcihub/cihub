@@ -63,6 +63,7 @@ fn splitmix(seed: &mut u64) -> u64 {
     let mut z = *seed;
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+
     z ^ (z >> 31)
 }
 
@@ -235,6 +236,7 @@ impl Sim {
             added
                 .branches
                 .insert(default_branch.to_owned(), sha.clone());
+
             sha
         })
     }
@@ -310,17 +312,20 @@ impl Sim {
         self.with_repo(&repo.external_id, |ctx| {
             let pr = ctx.repo.pr_mut(number)?;
             let ready = matches!(change, PrChange::Draft(false)) && pr.draft;
+
             match change {
                 PrChange::Draft(draft) => pr.draft = draft,
                 PrChange::Review(decision) => pr.review_decision = decision,
                 PrChange::Mergeability(mergeability) => pr.mergeability = mergeability,
                 PrChange::Close => pr.state = PrState::Closed,
             }
+
             if ready {
                 ctx.pr_opened(number);
             } else {
                 ctx.pr_changed(number);
             }
+
             Ok(())
         })
     }
@@ -372,6 +377,7 @@ impl Sim {
                 comment_external_id,
                 sender: user.clone(),
             });
+
             Ok(())
         })
     }
@@ -515,6 +521,7 @@ impl Sim {
             let Some(installation) = state.installations.get_mut(connection_external_id) else {
                 return;
             };
+
             installation.permissions = permission_levels(permissions);
             state.connection_changed(connection_external_id);
         });
@@ -527,6 +534,7 @@ impl Sim {
             if state.installations.remove(connection_external_id).is_none() {
                 return;
             }
+
             state.lost.insert(connection_external_id.to_owned());
             state.connection_changed(connection_external_id);
         });
@@ -626,6 +634,7 @@ impl Sim {
                 deliveries.swap(i, j);
             }
         }
+
         deliveries
     }
 
@@ -724,12 +733,15 @@ impl State {
         else {
             return self.random.as_mut().and_then(RandomFaults::draw);
         };
+
         let fault = &mut self.faults[index];
         let error = fault.error.clone();
+
         fault.times = fault.times.saturating_sub(1);
         if fault.times == 0 {
             self.faults.remove(index);
         }
+
         Some(error)
     }
 
@@ -782,6 +794,7 @@ impl Ctx<'_> {
         if before.as_deref() == sha {
             return;
         }
+
         self.emit(ScmEvent::Pushed {
             repo_external_id: self.repo_external_id.clone(),
             branch: branch.to_owned(),
@@ -789,6 +802,7 @@ impl Ctx<'_> {
             after: sha.map(str::to_owned),
             sender: sender.clone(),
         });
+
         let changed: Vec<u64> = self
             .repo
             .prs
@@ -815,6 +829,7 @@ impl Ctx<'_> {
         let Some(pr) = self.repo.prs.get(&number) else {
             return;
         };
+
         let base_branch = pr.base_branch.clone();
         self.emit(ScmEvent::PrChanged {
             repo_external_id: self.repo_external_id.clone(),
@@ -855,11 +870,13 @@ impl Ctx<'_> {
                 merged_sha: None,
             },
         );
+
         if draft {
             self.pr_changed(number);
         } else {
             self.pr_opened(number);
         }
+
         Ok(number)
     }
 
@@ -894,6 +911,7 @@ impl Ctx<'_> {
         self.repo
             .comments
             .insert(id.clone(), (number, body.to_owned()));
+
         self.emit(ScmEvent::Commented {
             repo_external_id: self.repo_external_id.clone(),
             number,
@@ -901,6 +919,7 @@ impl Ctx<'_> {
             author: author.clone(),
             body: body.to_owned(),
         });
+
         Ok(id)
     }
 
@@ -979,6 +998,7 @@ impl Repo {
             }
             seen.insert(sha);
         }
+
         seen
     }
 
@@ -1028,6 +1048,7 @@ impl Repo {
                 merged.insert(path.clone(), content.clone());
             }
         }
+
         Ok(Some(merged))
     }
 
@@ -1042,14 +1063,17 @@ impl Repo {
         if let Some(forced) = pr.mergeability {
             return Ok(forced);
         }
+
         let base = self.branch_head(&pr.base_branch)?;
         if self.merged_tree(&base, head)?.is_none() {
             return Ok(Mergeability::Conflict);
         }
+
         let rules = self.rules.get(&pr.base_branch).cloned().unwrap_or_default();
         if rules.up_to_date && !self.is_ancestor(&base, head) {
             return Ok(Mergeability::Behind);
         }
+
         let checks = self.checks.get(head).map(Vec::as_slice).unwrap_or_default();
         let checks_pass = rules.names.iter().all(|name| {
             checks.iter().any(|check| {
@@ -1266,6 +1290,7 @@ impl Scm for Sim {
             {
                 return Err(ScmError::Validation("not a fast forward".into()));
             }
+
             ctx.move_branch(&branch, Some(&sha), &bot());
             Ok(())
         })
@@ -1299,11 +1324,14 @@ impl Scm for Sim {
             if ctx.repo.is_ancestor(&sha, &ours) {
                 return Ok(MergeIntoRef::AlreadyContained);
             }
+
             let Some(tree) = ctx.repo.merged_tree(&ours, &sha)? else {
                 return Ok(MergeIntoRef::Conflict);
             };
+
             let merged = ctx.new_commit(vec![ours, sha], tree);
             ctx.move_branch(&branch, Some(&merged), &bot());
+
             Ok(MergeIntoRef::Merged { sha: merged })
         })
     }
@@ -1321,14 +1349,17 @@ impl Scm for Sim {
             if let Some(merged) = &pr.merged_sha {
                 return Ok(merged.clone());
             }
+
             if pr.state != PrState::Open {
                 return Err(ScmError::MergeRejected("PR closed".into()));
             }
+
             let pr = &ctx.repo.prs[&number];
             let head = ctx.repo.head(pr);
             if head != expected {
                 return Err(ScmError::HeadChanged);
             }
+
             match ctx.repo.mergeability(pr, &head)? {
                 Mergeability::Mergeable => {}
                 Mergeability::Behind => {
@@ -1336,6 +1367,7 @@ impl Scm for Sim {
                 }
                 other => return Err(ScmError::MergeRejected(format!("PR {other}"))),
             }
+
             let base = pr.base_branch.clone();
             let theirs = if method == MergeMethod::FastForward {
                 &tested
@@ -1348,6 +1380,7 @@ impl Scm for Sim {
             pr.last_head = head;
             pr.merged_sha = Some(merged.clone());
             ctx.pr_changed(number);
+
             Ok(merged)
         })
     }
@@ -1381,6 +1414,7 @@ impl Scm for Sim {
             if !unchanged {
                 ctx.report(&status.sha, check);
             }
+
             Ok(())
         })
     }
@@ -1428,6 +1462,7 @@ impl Scm for Sim {
             if !ctx.repo.comments.contains_key(&comment_id) {
                 return Err(ScmError::NotFound(format!("comment {comment_id}")));
             }
+
             ctx.repo.acknowledged.insert(comment_id);
             Ok(())
         })
@@ -1573,6 +1608,7 @@ impl Scm for Sim {
             {
                 findings.push(SetupFinding::UpToDateRequired);
             }
+
             Ok(findings)
         })
     }
@@ -1633,6 +1669,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         mergeable_pr,
         PrChange::Review(ReviewDecision::Approved),
     )?;
+
     let reviews = Reviews {
         approved_by: BTreeSet::from(["reviewer".to_owned()]),
         ..Reviews::default()
@@ -1670,6 +1707,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         account,
         &[("contents", "write"), ("metadata", "read")],
     );
+
     sim.take_deliveries();
     let fixture = Fixture {
         base_branch: "main".into(),
@@ -1731,19 +1769,24 @@ mod tests {
             error: ScmError::RateLimited { until },
             times: 2,
         });
+
         let number = fixture.mergeable_pr;
         let branch = sim.branch_head(&repo, "main", JobClass::Repair).await;
+
         assert!(branch.unwrap().is_some(), "another method is not failed");
         for _ in 0..2 {
             let failed = sim.pull_request(&repo, number, JobClass::Merge).await;
             assert_eq!(failed, Err(ScmError::RateLimited { until }));
         }
+
         assert!(
             sim.pull_request(&repo, number, JobClass::Merge)
                 .await
                 .is_ok()
         );
+
         let calls = sim.calls();
+
         assert_eq!(calls.len(), 4);
         assert_eq!(
             calls[0],
@@ -1760,17 +1803,22 @@ mod tests {
         let (sim, _) = contract_world(&repo).unwrap();
         sim.set_access("100", false);
         let lost = sim.branch_head(&repo, "main", JobClass::Repair).await;
+
         assert!(matches!(lost, Err(ScmError::AccessLost(_))), "{lost:?}");
         let suspended = sim.installation("100", JobClass::Repair).await.unwrap();
+
         assert!(suspended.is_some_and(|installation| installation.is_suspended));
 
         sim.set_access("100", true);
+
         assert!(
             sim.branch_head(&repo, "main", JobClass::Repair)
                 .await
                 .is_ok()
         );
+
         let events: Vec<ScmEvent> = sim.take_deliveries().into_iter().map(|d| d.event).collect();
+
         assert_eq!(
             events,
             [ScmEvent::ConnectionChanged, ScmEvent::ConnectionChanged]
@@ -1786,14 +1834,18 @@ mod tests {
         let installation = sim.installation("100", JobClass::Repair).await.unwrap();
         let permissions = installation.map(|installation| installation.permissions);
         let expected = BTreeMap::from([("contents".to_owned(), "read".to_owned())]);
+
         assert_eq!(permissions, Some(expected));
 
         sim.remove_installation("100");
+
         assert_eq!(sim.installation("100", JobClass::Repair).await, Ok(None));
         assert_eq!(sim.installations(JobClass::Repair).await, Ok(Vec::new()));
         let lost = sim.branch_head(&repo, "main", JobClass::Repair).await;
+
         assert!(matches!(lost, Err(ScmError::AccessLost(_))), "{lost:?}");
         let events: Vec<ScmEvent> = sim.take_deliveries().into_iter().map(|d| d.event).collect();
+
         assert_eq!(
             events,
             [ScmEvent::ConnectionChanged, ScmEvent::ConnectionChanged]
@@ -1811,6 +1863,7 @@ mod tests {
         let number = sim.open_pr(&repo, "topic", "main", &author).unwrap();
         sim.report_check(&repo, &head, success("ci")).unwrap();
         let events: Vec<ScmEvent> = sim.take_deliveries().into_iter().map(|d| d.event).collect();
+
         assert_eq!(
             events,
             [
@@ -1855,12 +1908,14 @@ mod tests {
                 .unwrap()
                 .mergeability
         };
+
         assert_eq!(read().await, Mergeability::Mergeable);
         let rules = RequiredChecks {
             names: BTreeSet::new(),
             up_to_date: true,
         };
         sim.set_rules(&repo, "main", rules).unwrap();
+
         assert_eq!(read().await, Mergeability::Behind);
         sim.change_pr(
             &repo,
@@ -1868,6 +1923,7 @@ mod tests {
             PrChange::Mergeability(Some(Mergeability::Unknown)),
         )
         .unwrap();
+
         assert_eq!(read().await, Mergeability::Unknown);
     }
 
@@ -1878,6 +1934,7 @@ mod tests {
         for n in 0..count {
             sim.push(&repo, &format!("b{n}"), &root, &bot()).unwrap();
         }
+
         sim
     }
 
@@ -1891,6 +1948,7 @@ mod tests {
             reorder: false,
         };
         let sent = deliveries(3).take_deliveries();
+
         assert_eq!(sim.take_deliveries_with(lose_all), []);
         let since = OffsetDateTime::UNIX_EPOCH;
         let recent = sim
@@ -1898,14 +1956,17 @@ mod tests {
             .await
             .unwrap();
         let ids: Vec<_> = recent.iter().map(|r| r.delivery_id.as_str()).collect();
+
         assert_eq!(ids, ["sim-1", "sim-2", "sim-3"]);
         assert!(recent.iter().all(|r| !r.is_delivered));
         sim.redeliver("2", JobClass::Repair).await.unwrap();
+
         assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
         let recent = sim
             .recent_deliveries(since, JobClass::Repair)
             .await
             .unwrap();
+
         assert_eq!(
             recent[3],
             RecentDelivery {
@@ -1914,7 +1975,9 @@ mod tests {
                 is_delivered: true,
             }
         );
+
         let missing = sim.redeliver("9", JobClass::Repair).await;
+
         assert!(matches!(missing, Err(ScmError::NotFound(_))));
     }
 
@@ -1927,27 +1990,34 @@ mod tests {
             reorder,
         };
         let clean = deliveries(20).take_deliveries();
+
         assert_eq!(clean.len(), 20);
         assert!(
             deliveries(20)
                 .take_deliveries_with(&mut faults(100, 0, false))
                 .is_empty()
         );
+
         let twice = deliveries(20).take_deliveries_with(&mut faults(0, 100, false));
+
         assert_eq!(twice.len(), 40);
         assert_eq!(twice[0], twice[1]);
 
         let shuffled = deliveries(20).take_deliveries_with(&mut faults(0, 0, true));
+
         assert_ne!(shuffled, clean);
         let mut sorted = shuffled.clone();
         sorted.sort_by_key(|d| format!("{d:?}"));
         let mut expected = clean.clone();
         expected.sort_by_key(|d| format!("{d:?}"));
+
         assert_eq!(sorted, expected, "a reorder keeps every delivery");
         let again = deliveries(20).take_deliveries_with(&mut faults(0, 0, true));
+
         assert_eq!(again, shuffled, "the same seed gives the same order");
 
         let some = deliveries(100).take_deliveries_with(&mut faults(30, 0, false));
+
         assert!((40..100).contains(&some.len()), "{}", some.len());
     }
 
@@ -1962,6 +2032,7 @@ mod tests {
         for _ in 0..200 {
             outcomes.push(sim.branch_head(repo, "main", JobClass::Repair).await);
         }
+
         outcomes
     }
 
@@ -1978,11 +2049,13 @@ mod tests {
             rate_limited_until: until,
         };
         let first = outcomes(&repo, random(3)).await;
+
         assert_eq!(
             first,
             outcomes(&repo, random(3)).await,
             "the same seed fails the same calls"
         );
+
         let unavailable = first
             .iter()
             .filter(|o| matches!(o, Err(ScmError::Unavailable(_))))
@@ -1991,6 +2064,7 @@ mod tests {
             .iter()
             .filter(|o| *o == &Err(ScmError::RateLimited { until }))
             .count();
+
         assert!((20..60).contains(&unavailable), "{unavailable}");
         assert!((5..40).contains(&limited), "{limited}");
 
@@ -1999,18 +2073,22 @@ mod tests {
             rate_limited_percent: 0,
             ..random(1)
         }));
+
         sim.fail(Fault {
             call: None,
             error: ScmError::HeadChanged,
             times: 1,
         });
+
         let given = sim.branch_head(&repo, "main", JobClass::Repair).await;
+
         assert_eq!(given, Err(ScmError::HeadChanged));
         assert!(
             sim.branch_head(&repo, "main", JobClass::Repair)
                 .await
                 .is_ok()
         );
+
         sim.fail_at_random(None);
     }
 }

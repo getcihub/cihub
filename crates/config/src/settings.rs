@@ -160,13 +160,16 @@ impl QueueSettings {
         for layer in [queue, defaults] {
             layer.validate()?;
         }
+
         let mut sources = vec![(Source::File, queue), (Source::File, defaults)];
         let strategy_layer = strategy_layer(Self::merge(&sources).strategy.value);
+
         sources.push((Source::Strategy, &strategy_layer));
         let mut settings = Self::merge(&sources);
         if settings.bisection_concurrency.source == Source::Default {
             settings.bisection_concurrency.value = settings.window_ceiling.value;
         }
+
         settings.check()?;
         Ok(settings)
     }
@@ -182,12 +185,14 @@ impl QueueSettings {
                 ),
             ));
         }
+
         if self.trigger.value == Trigger::Inplace {
             return Err(ConfigError::parsing(
                 self.trigger.at,
                 "trigger `inplace` is not available yet".to_owned(),
             ));
         }
+
         if self.merge_method.value == MergeMethod::FastForward
             && self.strategy.value != Strategy::Sequential
         {
@@ -199,6 +204,7 @@ impl QueueSettings {
                 ),
             ));
         }
+
         Ok(())
     }
 }
@@ -243,6 +249,7 @@ impl Layer {
         ] {
             in_range(setting.as_ref(), name, range)?;
         }
+
         if let Some(label) = &self.enqueue_label
             && label.value.trim().is_empty()
         {
@@ -251,6 +258,7 @@ impl Layer {
                 "label_commands.enqueue_label must not be empty",
             ));
         }
+
         if let Some(prefix) = &self.branch_prefix
             && (prefix.value.is_empty()
                 || prefix
@@ -265,6 +273,7 @@ impl Layer {
                 ),
             ));
         }
+
         if let Some(Setting {
             value: Some(names),
             at,
@@ -286,6 +295,7 @@ impl Layer {
                 });
             }
         }
+
         Ok(())
     }
 }
@@ -325,6 +335,7 @@ mod tests {
             ..Layer::default()
         };
         let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
+
         assert_eq!(settings.strategy.source, Source::File);
         assert_eq!(
             (
@@ -350,6 +361,7 @@ mod tests {
             ..Layer::default()
         };
         let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
+
         assert_eq!(settings.testing_timeout_minutes.value, 90);
         assert_eq!(settings.testing_timeout_minutes.source, Source::File);
         assert_eq!(settings.window_ceiling.source, Source::File);
@@ -366,6 +378,7 @@ mod tests {
             ..Layer::default()
         };
         let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
+
         assert_eq!(error.position, Some(at(4)));
         assert_eq!(
             error.message,
@@ -380,6 +393,7 @@ mod tests {
             ..Layer::default()
         };
         let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
+
         assert_eq!(error.position, Some(at(7)));
         assert_eq!(error.message, "trigger `inplace` is not available yet");
 
@@ -393,6 +407,7 @@ mod tests {
         };
         let error = QueueSettings::resolve(&fast_forward(Strategy::Pipelined), &Layer::default())
             .unwrap_err();
+
         assert_eq!(error.position, Some(at(8)));
         assert_eq!(
             error.message,
@@ -400,6 +415,7 @@ mod tests {
         );
         let settings =
             QueueSettings::resolve(&fast_forward(Strategy::Sequential), &Layer::default()).unwrap();
+
         assert_eq!(settings.merge_method.value, MergeMethod::FastForward);
     }
 
@@ -410,6 +426,7 @@ mod tests {
             ..Layer::default()
         };
         let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
+
         assert_eq!(error.message, "batching.size is 50, out of range 2–20");
         assert_eq!(error.position, None);
 
@@ -418,6 +435,7 @@ mod tests {
             ..Layer::default()
         };
         let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
+
         assert_eq!(error.kind, ConfigErrorKind::BadRequiredStatuses);
     }
 }

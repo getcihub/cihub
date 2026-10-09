@@ -205,12 +205,14 @@ impl QueueTarget {
                     .collect()
             })
             .unwrap_or_default();
+
         queues.sort_by_key(|queue| {
             order
                 .iter()
                 .position(|name| *name == queue.name)
                 .unwrap_or(usize::MAX)
         });
+
         Ok(queues)
     }
 }
@@ -235,6 +237,7 @@ impl RepoTarget {
         .await?;
         let (org, external_id, namespace, name, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
+
         Ok(Self {
             repo_id: repo,
             org_id: parse_id(&org, repo)?,

@@ -87,12 +87,14 @@ pub async fn send(request: reqwest::RequestBuilder, body: Option<Value>) -> Resu
             .header("Content-Type", "application/json")
             .body(body.to_string());
     }
+
     let response = request.send().await?;
     let status = response.status();
     let body: Value = serde_json::from_slice(&response.bytes().await?).unwrap_or_default();
     if !status.is_success() {
         return Err(format!("GitHub answered {status}: {body}").into());
     }
+
     Ok(body)
 }
 
@@ -104,9 +106,11 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         .ok_or("no branch main")?;
     app.set_branch(repo, CONFLICTING_BRANCH, &head, false, CLASS)
         .await?;
+
     let conflict = "cihub-contract/conflict.txt";
     rest.put_file(CONFLICTING_BRANCH, conflict, "conflicting\n")
         .await?;
+
     rest.put_file(BASE, conflict, "base\n").await?;
     rest.put_file(BASE, FILE.0, FILE.1).await?;
     let conflicting = rest
@@ -118,8 +122,10 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         .ok_or("no branch main")?;
     app.set_branch(repo, DRAFT_BRANCH, &head, false, CLASS)
         .await?;
+
     rest.put_file(DRAFT_BRANCH, "cihub-contract/draft.txt", "draft\n")
         .await?;
+
     let draft = app
         .open_draft_pr(repo, DRAFT_BRANCH, BASE, "cihub contract: draft", "", CLASS)
         .await?;
@@ -128,6 +134,7 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         "now add a ruleset on `main`: require the status `{REQUIRED}` (branches up to date \
          not required) and one approval, then run `prepare-pr`"
     );
+
     Ok(())
 }
 
@@ -142,6 +149,7 @@ pub async fn prepare_pr(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) 
     app.set_branch(repo, &branch, &head, false, CLASS).await?;
     rest.put_file(&branch, &format!("cihub-contract/pr-{stamp}.txt"), "pr\n")
         .await?;
+
     let number = rest.open_pr(&branch, "cihub contract: mergeable").await?;
     let pr = app.pull_request(repo, number, CLASS).await?;
     let status = StatusUpdate {
@@ -153,6 +161,7 @@ pub async fn prepare_pr(app: &GithubApp, config: &GithubConfig, repo: &RepoRef) 
     };
     app.set_status(repo, &status, CLASS).await?;
     println!("mergeable PR: {number}\napprove it on GitHub, then run `record`");
+
     Ok(())
 }
 
@@ -204,6 +213,7 @@ pub async fn record(
     for exchange in &mut exchanges {
         keep_only_repo(exchange, repo);
     }
+
     let cassette = Cassette {
         recorded_at: recorded_at.unix_timestamp(),
         world,
@@ -214,6 +224,7 @@ pub async fn record(
         "{} exchanges written in {RECORDING}",
         cassette.exchanges.len()
     );
+
     Ok(())
 }
 
@@ -223,9 +234,11 @@ fn keep_only_repo(exchange: &mut Exchange, repo: &RepoRef) {
     if !exchange.path.starts_with("/installation/repositories") {
         return;
     }
+
     let Some(Value::Object(page)) = exchange.body.as_mut() else {
         return;
     };
+
     let full_name = format!("{}/{}", repo.namespace, repo.name);
     if let Some(Value::Array(repositories)) = page.get_mut("repositories") {
         repositories.retain(|listed| listed["full_name"] == full_name.as_str());
@@ -252,9 +265,11 @@ async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Re
         if read.len() == numbers.len() && known && approved {
             return Ok(());
         }
+
         last = read;
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
+
     let states: Vec<String> = last
         .iter()
         .map(|pr| {
@@ -299,6 +314,7 @@ impl Proxy {
         let url = format!("http://{}", listener.local_addr()?);
         let router = Router::new().fallback(forward).with_state(upstream);
         tokio::spawn(async move { axum::serve(listener, router).await });
+
         Ok(Self { url, exchanges })
     }
 }
@@ -320,6 +336,7 @@ async fn forward(
     let Ok(forwarded) = reqwest::Method::from_bytes(method.as_str().as_bytes()) else {
         return failure(format!("method {method}"));
     };
+
     let mut request = upstream.http.request(forwarded, url).body(body.to_vec());
     for name in [
         "authorization",
@@ -331,6 +348,7 @@ async fn forward(
             request = request.header(name, value);
         }
     }
+
     let response = match request.send().await {
         Ok(response) => response,
         Err(err) => return failure(err.to_string()),
@@ -353,6 +371,7 @@ async fn forward(
     {
         *token = Value::from(RECORDED_TOKEN);
     }
+
     let text = match recorded_body {
         None if !answer.is_empty() => Some(String::from_utf8_lossy(&answer).into_owned()),
         _ => None,
@@ -371,10 +390,12 @@ async fn forward(
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(exchange);
+
     let mut builder = Response::builder().status(status);
     for (name, value) in kept {
         builder = builder.header(name, value);
     }
+
     builder
         .body(Body::from(answer))
         .unwrap_or_else(|err| failure(err.to_string()))

@@ -95,6 +95,7 @@ pub(crate) fn apply_seen(
             event_queue: event.queue_id,
         });
     }
+
     let mut next = snapshot.clone();
     let outcome = if event.kind.event_type().is_decision() {
         apply_decision(&mut next, event)?;
@@ -108,6 +109,7 @@ pub(crate) fn apply_seen(
     } else {
         apply_fact(&mut next, event)
     };
+
     if outcome == Outcome::Applied {
         next.events_applied += 1;
         *snapshot = next;
@@ -119,6 +121,7 @@ fn request(snapshot: &mut Snapshot, event: &Event, request: Request) -> Outcome 
     if snapshot.requests.values().any(|r| *r == request) {
         return Outcome::Ignored;
     }
+
     snapshot.requests.insert(event.id, request);
     if request_possible(snapshot, &snapshot.requests[&event.id]) {
         Outcome::Applied
@@ -151,9 +154,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 .requests
                 .values()
                 .any(|r| matches!(r, Request::Submit { pr_number: n, .. } if n == pr_number));
+
             if pending {
                 return Outcome::Ignored;
             }
+
             request(
                 snapshot,
                 event,
@@ -172,9 +177,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 .requests
                 .values()
                 .any(|r| matches!(r, Request::Cancel { item_id: i, .. } if i == item_id));
+
             if pending {
                 return Outcome::Ignored;
             }
+
             request(
                 snapshot,
                 event,
@@ -189,9 +196,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 .requests
                 .values()
                 .any(|r| matches!(r, Request::Restart { item_id: i, .. } if i == item_id));
+
             if pending {
                 return Outcome::Ignored;
             }
+
             request(
                 snapshot,
                 event,
@@ -217,6 +226,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             if !tracks_pr(snapshot, *pr_number) {
                 return Outcome::Ignored;
             }
+
             let value = PrObservation {
                 state: *state,
                 head_sha: head_sha.clone(),
@@ -229,9 +239,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 unmet_conditions: unmet_conditions.clone(),
                 required_checks: required_checks.clone(),
             };
+
             if observe(snapshot.prs.get_mut(pr_number), &value) {
                 return Outcome::Ignored;
             }
+
             snapshot.prs.insert(
                 *pr_number,
                 Observed {
@@ -240,6 +252,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                     observed_at: event.occurred_at,
                 },
             );
+
             Outcome::Applied
         }
         EventKind::TargetPushed { before, after, .. } => {
@@ -253,16 +266,19 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             else {
                 return Outcome::Ignored;
             };
+
             let run_id = run.id;
             let required = run.required_statuses.contains(&check.name);
             let checks = snapshot.checks.entry(run_id).or_default();
             let key = (check.name.clone(), check.kind);
+
             let same = checks.get(&key).is_some_and(|o| {
                 o.value.conclusion == check.conclusion && o.value.details_url == check.details_url
             });
             if same {
                 return Outcome::Ignored;
             }
+
             let observation = CheckObservation {
                 org_id: snapshot.org_id,
                 run_id,
@@ -273,6 +289,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 details_url: check.details_url.clone(),
                 observed_at: event.occurred_at,
             };
+
             checks.insert(
                 key,
                 Observed {
@@ -281,6 +298,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                     observed_at: event.occurred_at,
                 },
             );
+
             Outcome::Applied
         }
         EventKind::TargetsReceived {
@@ -291,13 +309,16 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             if !tracks_pr(snapshot, *pr_number) {
                 return Outcome::Ignored;
             }
+
             let value = TargetsUpload {
                 head_sha: head_sha.clone(),
                 targets: targets.clone(),
             };
+
             if observe(snapshot.targets.get_mut(pr_number), &value) {
                 return Outcome::Ignored;
             }
+
             snapshot.targets.insert(
                 *pr_number,
                 Observed {
@@ -306,6 +327,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                     observed_at: event.occurred_at,
                 },
             );
+
             Outcome::Applied
         }
         EventKind::TestBranchAssembled {
@@ -394,6 +416,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             if snapshot.requested_mode == *after {
                 return Outcome::Ignored;
             }
+
             snapshot.requested_mode = *after;
             Outcome::Applied
         }
@@ -430,30 +453,37 @@ fn target_pushed(
     let target = &mut snapshot.target;
     let head = target.head.as_ref().map(|h| h.value.as_str());
     let past = |sha: &str| target.recent_heads.iter().any(|h| h == sha);
+
     if head == Some(after) || past(after) || before.is_some_and(|b| Some(b) != head && past(b)) {
         return Outcome::Ignored;
     }
+
     let own = event.actor == Actor::Bot || target.own_shas.remove(after);
+
     if let Some(old) = target.head.take() {
         target.recent_heads.push_back(old.value);
         if target.recent_heads.len() > RECENT_HEADS {
             target.recent_heads.pop_front();
         }
     }
+
     target.head = Some(Observed {
         value: after.to_owned(),
         fact_id: event.id,
         observed_at: event.occurred_at,
     });
+
     if !own {
         target.valid_bases.clear();
     }
+
     target.valid_bases.insert(after.to_owned());
     let used: Vec<String> = snapshot.live_groups().map(|g| g.base_sha.clone()).collect();
     snapshot
         .target
         .valid_bases
         .retain(|b| b == after || used.contains(b));
+
     Outcome::Applied
 }
 
@@ -471,6 +501,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             ..
         } => {
             check_transition(None, *to, *reason)?;
+
             let submission = event.cause_id.and_then(|c| snapshot.requests.get(&c));
             let Some(Request::Submit {
                 pr_number,
@@ -483,6 +514,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             else {
                 return Err(ApplyError::NoSubmission { event_id: event.id });
             };
+
             let is_current = !to.is_terminal();
             if is_current {
                 for item in snapshot.items.values_mut() {
@@ -491,6 +523,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     }
                 }
             }
+
             snapshot.items.insert(
                 *item_id,
                 Item {
@@ -517,6 +550,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     direct_merge_tried: false,
                 },
             );
+
             set_cause(snapshot, Subject::Item(*item_id), event);
         }
         EventKind::ItemTransitioned {
@@ -532,6 +566,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 .items
                 .get_mut(item_id)
                 .ok_or(ApplyError::UnknownItem(*item_id))?;
+
             if item.state != *from {
                 return Err(ApplyError::ItemStateMismatch {
                     item_id: *item_id,
@@ -539,7 +574,9 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     actual: item.state,
                 });
             }
+
             check_transition(Some(*from), *to, *reason)?;
+
             if *from == ItemState::NotReady && *to == ItemState::Pending {
                 item.admitted_at.get_or_insert(event.occurred_at);
             }
@@ -558,6 +595,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 item.group_id = None;
                 item.verified_by_run_id = None;
             }
+
             set_cause(snapshot, Subject::Item(*item_id), event);
         }
         EventKind::ItemReadinessChanged {
@@ -569,14 +607,17 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 .items
                 .get_mut(item_id)
                 .ok_or(ApplyError::UnknownItem(*item_id))?;
+
             item.mergeability = *mergeability;
             item.block_reasons.clone_from(block_reasons);
+
             set_cause(snapshot, Subject::Item(*item_id), event);
         }
         EventKind::QueueRenumbered { positions } => {
             if let Some(unknown) = positions.keys().find(|i| !snapshot.items.contains_key(i)) {
                 return Err(ApplyError::UnknownItem(*unknown));
             }
+
             for (item_id, position) in positions {
                 if let Some(item) = snapshot.items.get_mut(item_id) {
                     item.position = Some(*position);
@@ -594,6 +635,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             if snapshot.groups.contains_key(group_id) {
                 return Err(ApplyError::GroupExists(*group_id));
             }
+
             if let Some(unknown) = item_ids
                 .iter()
                 .chain(predecessor_ids)
@@ -601,11 +643,13 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             {
                 return Err(ApplyError::UnknownItem(*unknown));
             }
+
             for item_id in item_ids {
                 if let Some(item) = snapshot.items.get_mut(item_id) {
                     item.group_id = Some(*group_id);
                 }
             }
+
             snapshot.groups.insert(
                 *group_id,
                 TestGroup {
@@ -621,6 +665,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     base_sha: base_sha.clone(),
                 },
             );
+
             set_cause(snapshot, Subject::Group(*group_id), event);
         }
         EventKind::GroupTransitioned {
@@ -633,6 +678,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 .groups
                 .get_mut(group_id)
                 .ok_or(ApplyError::UnknownGroup(*group_id))?;
+
             if group.state != *from {
                 return Err(ApplyError::GroupStateMismatch {
                     group_id: *group_id,
@@ -640,9 +686,11 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     actual: group.state,
                 });
             }
+
             check_transition(Some(*from), *to, *reason)?;
             group.state = *to;
             group.state_reason = *reason;
+
             set_cause(snapshot, Subject::Group(*group_id), event);
         }
         EventKind::RunTransitioned {
@@ -656,14 +704,17 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             failure_causing_statuses,
         } => {
             check_transition(*from, *to, *reason)?;
+
             match from {
                 None => {
                     if snapshot.runs.contains_key(run_id) {
                         return Err(ApplyError::RunExists(*run_id));
                     }
+
                     if !snapshot.groups.contains_key(group_id) {
                         return Err(ApplyError::UnknownGroup(*group_id));
                     }
+
                     snapshot.runs.insert(
                         *run_id,
                         TestRun {
@@ -691,6 +742,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                         .runs
                         .get_mut(run_id)
                         .ok_or(ApplyError::UnknownRun(*run_id))?;
+
                     if run.status != *from {
                         return Err(ApplyError::RunStatusMismatch {
                             run_id: *run_id,
@@ -698,6 +750,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                             actual: run.status,
                         });
                     }
+
                     run.status = *to;
                     if to.is_terminal() {
                         run.ended_at = Some(event.occurred_at);
@@ -709,6 +762,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     }
                 }
             }
+
             set_cause(snapshot, Subject::Run(*run_id), event);
         }
         EventKind::QueueTransitioned { from, to, reason } => {
@@ -718,7 +772,9 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     actual: snapshot.state,
                 });
             }
+
             check_transition(Some(*from), *to, *reason)?;
+
             snapshot.state = *to;
             if *reason == Reason::ModeSwitchCompleted {
                 snapshot.mode = snapshot.requested_mode;
@@ -751,6 +807,7 @@ fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
             .get(run_id)
             .is_some_and(|r| r.status == RunStatus::Assembling)
     };
+
     match request {
         Request::Submit {
             pr_number,
@@ -800,6 +857,7 @@ fn prune_requests(snapshot: &mut Snapshot) {
         .filter(|(_, r)| !request_possible(snapshot, r))
         .map(|(id, _)| *id)
         .collect();
+
     for id in impossible {
         snapshot.requests.remove(&id);
     }
@@ -829,21 +887,25 @@ fn evict(snapshot: &mut Snapshot) {
         })
         .map(|g| g.id)
         .collect();
+
     for group_id in finished_groups {
         snapshot.groups.remove(&group_id);
         snapshot.causes.remove(&Subject::Group(group_id));
+
         let runs: Vec<RunId> = snapshot
             .runs
             .values()
             .filter(|r| r.group_id == group_id)
             .map(|r| r.id)
             .collect();
+
         for run_id in runs {
             snapshot.runs.remove(&run_id);
             snapshot.checks.remove(&run_id);
             snapshot.causes.remove(&Subject::Run(run_id));
         }
     }
+
     let cited: Vec<ItemId> = snapshot
         .groups
         .values()
@@ -856,10 +918,12 @@ fn evict(snapshot: &mut Snapshot) {
         .filter(|i| i.state.is_terminal() && !cited.contains(&i.id))
         .map(|i| i.id)
         .collect();
+
     for item_id in finished_items {
         snapshot.items.remove(&item_id);
         snapshot.causes.remove(&Subject::Item(item_id));
     }
+
     let tracked: Vec<u64> = snapshot
         .prs
         .keys()
@@ -867,6 +931,7 @@ fn evict(snapshot: &mut Snapshot) {
         .copied()
         .filter(|pr| !tracks_pr(snapshot, *pr))
         .collect();
+
     for pr in tracked {
         snapshot.prs.remove(&pr);
         snapshot.targets.remove(&pr);

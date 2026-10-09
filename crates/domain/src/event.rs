@@ -414,6 +414,7 @@ mod tests {
             after: 3,
         };
         let json = serde_json::to_value(&kind).unwrap();
+
         assert_eq!(json["type"], kind.event_type().as_str());
         assert_eq!(json["payload"]["after"], 3);
         assert_eq!(
@@ -438,6 +439,7 @@ mod tests {
             item_id,
             merged_sha: "abc".into(),
         };
+
         assert_eq!(merged.subjects().item_id, Some(item_id));
         let run = EventKind::RunTransitioned {
             run_id,
@@ -449,6 +451,7 @@ mod tests {
             test_branch: "cihub/run".into(),
             failure_causing_statuses: vec![],
         };
+
         assert_eq!(
             run.subjects(),
             Subjects {

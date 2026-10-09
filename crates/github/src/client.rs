@@ -109,8 +109,10 @@ impl Budgets {
     ) -> bool {
         let budget = self.all.entry(connection).or_default();
         let before = (budget.mode, budget.paused_until);
+
         budget.observe(observation, now);
         self.changed.insert(connection);
+
         before != (budget.mode, budget.paused_until)
     }
 
@@ -150,6 +152,7 @@ impl GithubApp {
         if kept.len() >= PERMISSIONS_KEPT {
             kept.retain(|_, (_, until)| *until > now);
         }
+
         kept.insert(key, (permission, now + PERMISSION_TTL));
     }
 
@@ -248,6 +251,7 @@ impl GithubApp {
         if let (_, Some(error)) = classify(&answer, &headers, now) {
             return Err(error);
         }
+
         let next = headers
             .get("link")
             .and_then(|link| link.to_str().ok())
@@ -288,6 +292,7 @@ impl GithubApp {
                 .header(CONTENT_TYPE, "application/json")
                 .body(body.to_string());
         }
+
         let answer = fetch(builder).await;
         let now = (self.clock)();
         let (status, headers, body) = match answer {
@@ -303,6 +308,7 @@ impl GithubApp {
         if status == StatusCode::UNAUTHORIZED {
             self.forget_token(&request.connection.external_id);
         }
+
         match error {
             Some(error) => Err(error),
             None => Ok(answer),
@@ -328,6 +334,7 @@ impl GithubApp {
             },
             now,
         );
+
         ScmError::RateLimited { until }
     }
 
@@ -342,6 +349,7 @@ impl GithubApp {
             token: String,
             expires_at: String,
         }
+
         let installation = &connection.external_id;
         let now = (self.clock)();
         {
@@ -352,6 +360,7 @@ impl GithubApp {
                 return Ok(token.clone());
             }
         }
+
         let path = format!("/app/installations/{installation}/access_tokens");
         let (status, _, body) = fetch(self.as_app(Method::POST, &path, now)?).await?;
         let answer = Answer { status, body };
@@ -365,12 +374,14 @@ impl GithubApp {
             }
             _ => return Err(ScmError::Protocol(answer.message())),
         }
+
         let token: Token = answer.json()?;
         let expires_at = OffsetDateTime::parse(&token.expires_at, &Rfc3339)
             .map_err(|err| ScmError::Protocol(err.to_string()))?;
         let token = SecretString::from(token.token);
         let mut tokens = self.tokens.lock().unwrap_or_else(PoisonError::into_inner);
         tokens.insert(installation.clone(), (token.clone(), expires_at));
+
         Ok(token)
     }
 }
@@ -423,6 +434,7 @@ fn classify(
             Some(ScmError::Unavailable(answer.message())),
         );
     }
+
     if status == StatusCode::FORBIDDEN || status == StatusCode::TOO_MANY_REQUESTS {
         let limited = if header("x-ratelimit-remaining") == Some(0) {
             Some((reset_at.unwrap_or(now + SECONDARY_WAIT), false))
@@ -440,6 +452,7 @@ fn classify(
             );
         }
     }
+
     let rate = match (
         header("x-ratelimit-limit"),
         header("x-ratelimit-remaining"),
@@ -512,9 +525,11 @@ mod tests {
     fn a_secondary_limit_waits_for_retry_after_or_a_minute() {
         let retry = headers(&[("x-ratelimit-remaining", "12"), ("retry-after", "30")]);
         let (_, error) = classify(&answer(403, "slow down"), &retry, at(0));
+
         assert_eq!(error, Some(ScmError::RateLimited { until: at(30) }));
         let message = answer(403, "You have exceeded a secondary rate limit");
         let (observation, _) = classify(&message, &headers(&[]), at(0));
+
         assert_eq!(
             observation,
             Observation::RateLimited {
@@ -560,6 +575,7 @@ mod tests {
             resource: "core".into(),
             rate: None,
         };
+
         assert!(!budgets.observe(connection, answered.clone(), at(0)));
         assert_eq!(budgets.take_changed().len(), 1);
         assert!(budgets.take_changed().is_empty());
@@ -567,9 +583,11 @@ mod tests {
             until: at(60),
             secondary: false,
         };
+
         assert!(budgets.observe(connection, limited.clone(), at(1)));
         assert!(!budgets.observe(connection, limited, at(2)));
         let changed = budgets.take_changed();
+
         assert_eq!(changed[0].1.paused_until, Some(at(60)));
         assert!(!budgets.observe(connection, Observation::Failed, at(3)));
         assert!(!budgets.observe(connection, Observation::Failed, at(4)));
@@ -586,6 +604,7 @@ mod tests {
             ("x-ratelimit-resource", "graphql"),
         ]);
         let (observation, error) = classify(&answer(200, ""), &rate, at(0));
+
         assert_eq!(error, None);
         assert_eq!(
             observation,

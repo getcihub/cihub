@@ -249,9 +249,11 @@ mod tests {
     fn a_delivery_names_its_installation() {
         let payload = json!({ "zen": "Design for failure.", "installation": { "id": 42 } });
         let delivery = translate("ping", &payload).unwrap();
+
         assert_eq!(delivery.connection_external_id.as_deref(), Some("42"));
         assert_eq!(delivery.event, ScmEvent::Ignored);
         let none = translate("ping", &json!({})).unwrap();
+
         assert_eq!(none.connection_external_id, None);
     }
 
@@ -270,6 +272,7 @@ mod tests {
             label_added: label_added.map(str::to_owned),
             opened,
         };
+
         assert_eq!(
             event("pull_request", &payload),
             changed(Some("ready"), false)
@@ -345,6 +348,7 @@ mod tests {
             })
         };
         let on_pr = json!({ "url": "https://api.github.com/repos/o/r/pulls/12" });
+
         assert_eq!(
             event("issue_comment", &comment("created", on_pr.clone())),
             ScmEvent::Commented {
@@ -392,6 +396,7 @@ mod tests {
             },
         };
         let (before, after) = (Some("b".repeat(40)), Some("a".repeat(40)));
+
         assert_eq!(
             event("push", &push("refs/heads/main", false, false)),
             pushed(before.clone(), after.clone())
@@ -459,6 +464,7 @@ mod tests {
     fn rules_repositories_and_installations() {
         let repo = json!({ "action": "edited", "repository": { "id": 7 } });
         let id = || "7".to_owned();
+
         assert_eq!(
             event("branch_protection_rule", &repo),
             ScmEvent::RulesChanged {
@@ -471,6 +477,7 @@ mod tests {
                 repo_external_id: id()
             }
         );
+
         let installation = |action: &str| {
             json!({
                 "action": action,
@@ -489,12 +496,14 @@ mod tests {
                 ScmEvent::ConnectionChanged
             );
         }
+
         let repos = json!({
             "action": "added",
             "installation": { "id": 42 },
             "repositories_added": [{ "id": 7 }, { "id": 8 }],
             "repositories_removed": [],
         });
+
         assert_eq!(
             event("installation_repositories", &repos),
             ScmEvent::ReposChanged {

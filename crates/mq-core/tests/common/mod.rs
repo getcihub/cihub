@@ -88,6 +88,7 @@ impl World {
             facts: 0,
             target: 0,
         };
+
         world.push_target(Actor::System);
         world
     }
@@ -97,6 +98,7 @@ impl World {
         self.facts += 1;
         self.now += Duration::seconds(1);
         let ms = u64::try_from(self.now.unix_timestamp_nanos() / 1_000_000).unwrap();
+
         let event = Event {
             id: EventId::from_ulid(Ulid::from_parts(ms, self.facts)),
             org_id: self.snapshot.org_id,
@@ -106,10 +108,12 @@ impl World {
             cause_id: None,
             kind,
         };
+
         let outcome = apply(&mut self.snapshot, &event).unwrap();
         if outcome == Outcome::Applied {
             self.log.push(event);
         }
+
         self.reconcile();
         outcome
     }
@@ -117,14 +121,17 @@ impl World {
     /// Runs `plan`, applies its decisions, and checks the snapshot.
     pub fn reconcile(&mut self) -> Plan {
         let plan = plan(&self.snapshot, &self.settings, self.now).unwrap();
+
         for event in &plan.decisions {
             assert_eq!(apply(&mut self.snapshot, event), Ok(Outcome::Applied));
             self.log.push(event.clone());
         }
+
         self.surfaces.push(plan.desired.surfaces.clone());
         let again = cihub_mq_core::plan(&self.snapshot, &self.settings, self.now).unwrap();
         assert!(again.decisions.is_empty(), "no fixed point: {again:#?}");
         assert_eq!(check(&self.snapshot, &self.settings), vec![]);
+
         plan
     }
 
@@ -203,6 +210,7 @@ impl World {
             required_checks: Vec::new(),
             checks: Vec::new(),
         };
+
         edit(&mut pr);
         self.fact(
             Actor::System,
@@ -256,6 +264,7 @@ impl World {
             .filter(|r| r.status == RunStatus::Assembling)
             .map(|r| r.id)
             .collect();
+
         for run_id in runs {
             self.assemble(run_id);
         }
@@ -310,6 +319,7 @@ impl World {
     pub fn merge_all(&mut self) -> usize {
         let merges = self.reconcile().desired.merges;
         let mut count = 0;
+
         for merge in &merges {
             self.target += 1;
             let sha = format!("target-{}", self.target);
@@ -320,11 +330,13 @@ impl World {
                     merged_sha: sha.clone(),
                 },
             );
+
             if outcome == Outcome::Applied {
                 count += 1;
                 self.push_target_to(Actor::Bot, sha);
             }
         }
+
         count
     }
 
@@ -348,13 +360,16 @@ impl World {
                 .filter(|r| r.status == RunStatus::InProgress)
                 .map(|r| r.id)
                 .collect();
+
             for run_id in &runs {
                 let Some(run) = self.snapshot.runs.get(run_id) else {
                     continue;
                 };
+
                 if run.status != RunStatus::InProgress {
                     continue;
                 }
+
                 let group = &self.snapshot.groups[&run.group_id];
                 let tested: Vec<u64> = group
                     .predecessor_ids
@@ -363,14 +378,17 @@ impl World {
                     .filter_map(|id| self.snapshot.items.get(id))
                     .map(|item| item.pr_number)
                     .collect();
+
                 count += 1;
                 let conclusion = if fails(count, &tested) {
                     CheckConclusion::Failure
                 } else {
                     CheckConclusion::Success
                 };
+
                 self.report_run(*run_id, conclusion);
             }
+
             self.merge_all();
             if self.snapshot.items.values().all(|i| i.state.is_terminal()) {
                 break;
@@ -379,6 +397,7 @@ impl World {
                 self.advance(1);
             }
         }
+
         assert!(
             self.snapshot.items.values().all(|i| i.state.is_terminal()),
             "the queue did not drain"
@@ -389,6 +408,7 @@ impl World {
     pub fn ended(&self) -> std::collections::BTreeMap<u64, ItemState> {
         let mut prs = std::collections::BTreeMap::new();
         let mut items = std::collections::BTreeMap::new();
+
         for event in &self.log {
             match &event.kind {
                 EventKind::ItemSubmitted { pr_number, .. } => {
@@ -406,6 +426,7 @@ impl World {
                 _ => {}
             }
         }
+
         let mut ended = std::collections::BTreeMap::new();
         for event in &self.log {
             if let EventKind::ItemTransitioned { item_id, to, .. } = &event.kind
@@ -415,6 +436,7 @@ impl World {
                 ended.insert(*pr, *to);
             }
         }
+
         ended
     }
 

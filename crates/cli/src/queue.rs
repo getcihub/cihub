@@ -65,6 +65,7 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
     let queues = client.queues(&owner, &name).await?.queues;
     let queue = pick_queue(queues, args.queue.as_deref(), &format!("{owner}/{name}"))?;
     let id = &queue.id;
+
     match args.command {
         QueueCommand::Merge {
             pr,
@@ -104,6 +105,7 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
             set_state(out, &client, &queue, RequestedQueueState::Draining).await?;
         }
     }
+
     Ok(())
 }
 
@@ -133,19 +135,23 @@ async fn status(
         }
         return Ok(());
     };
+
     let item = client.pr(&queue.id, pr, false).await?.item;
     let position = item
         .position
         .map(|p| format!(", position {p}"))
         .unwrap_or_default();
+
     writeln!(
         out,
         "#{pr}: {} ({}){position}",
         item.state, item.state_description
     )?;
+
     for reason in &item.block_reasons {
         writeln!(out, "  blocked: {}", serde_json::to_string(reason)?)?;
     }
+
     Ok(())
 }
 
@@ -158,12 +164,15 @@ async fn graph(out: &mut impl Write, client: &Client, queue: &Queue) -> anyhow::
             .find(|n| n.item_id == item_id)
             .map_or_else(|| item_id.to_owned(), |n| format!("#{}", n.pr_number))
     };
+
     for node in &graph.nodes {
         writeln!(out, "#{} {}", node.pr_number, node.state)?;
     }
+
     for edge in &graph.edges {
         writeln!(out, "{} -> {}", pr(&edge.from), pr(&edge.to))?;
     }
+
     Ok(())
 }
 

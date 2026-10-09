@@ -139,6 +139,7 @@ pub async fn run_sync_installations(
         .map_err(PlatformError::Scm)?;
 
     let mut slug_taken = None;
+
     for installation in &installations {
         let synced = converge_installation(
             pool,
@@ -155,6 +156,7 @@ pub async fn run_sync_installations(
         .iter()
         .map(|installation| &installation.external_id)
         .collect();
+
     for external_id in unlisted_connections(pool, kind, &listed).await? {
         converge_installation(pool, kind, &external_id, None, now).await?;
     }
@@ -221,6 +223,7 @@ async fn converge_installation(
 
     let connection = known_connection(&mut tx, kind, external_id).await?;
     let is_active = installation.is_some_and(|installation| !installation.is_suspended);
+
     match (connection, installation) {
         (Some(connection), _) => {
             update_connection(&mut tx, &connection, installation, now).await?;
@@ -274,6 +277,7 @@ async fn onboard(
             .fetch_one(&mut *conn)
             .await
             .map_err(PlatformError::Query)?;
+
     if is_slug_taken {
         return Err(PlatformError::SlugTaken {
             slug: slug.clone(),
@@ -283,6 +287,7 @@ async fn onboard(
 
     let (org_id, connection_id) = create_organization(conn, kind, installation, now).await?;
     let job = sync_repos_job(org_id, connection_id, &hour_window(now));
+
     enqueue_job(conn, &job, now, now).await?;
 
     info!(
@@ -291,6 +296,7 @@ async fn onboard(
         installation = installation.external_id,
         "organization created"
     );
+
     Ok(())
 }
 
@@ -367,6 +373,7 @@ async fn update_connection(
     .execute(&mut *conn)
     .await
     .map_err(PlatformError::Query)?;
+
     if changed.rows_affected() != 1 {
         return Ok(());
     }
@@ -376,12 +383,14 @@ async fn update_connection(
     } else {
         EventKind::AccessRestored
     };
+
     info!(
         org_id = %connection.org_id,
         connection_id = %connection.id,
         suspended = is_suspended,
         "connection access changed"
     );
+
     give_to_queues(conn, connection, &kind, now).await
 }
 
@@ -420,9 +429,11 @@ async fn give_to_queues(
             cause_id: None,
             kind: kind.clone(),
         };
+
         deposit_fact(conn, &fact, now)
             .await
             .map_err(PlatformError::Store)?;
+
         mark_dirty(conn, queue_id).await?;
     }
     Ok(())
@@ -476,6 +487,7 @@ mod tests {
     fn a_sync_names_its_installation_and_its_cause() {
         let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
         let job = sync_installation_job("7", "d-1", JobClass::Interactive);
+
         assert_eq!(job.idempotency_key, "sync_installation:7-d-1:1");
         assert_eq!(job.payload, json!({ "installation": "7" }));
         assert_eq!(

@@ -87,6 +87,7 @@ async fn main() {
             eprintln!("  caused by: {err}");
             source = err.source();
         }
+
         std::process::exit(1);
     }
 }
@@ -154,6 +155,7 @@ async fn run(args: Vec<String>) -> Result<()> {
             for (_, budget) in app.take_changed_budgets() {
                 println!("\nbudget: {budget:#?}");
             }
+
             Ok(())
         }
         _ => Err(USAGE.into()),
@@ -244,11 +246,13 @@ async fn command_on(app: &GithubApp, repo: &RepoRef, command: &str, args: &[&str
             for _ in 0..2 {
                 app.add_label(repo, pr, label, CLASS).await?;
             }
+
             let labels = app.pull_request(repo, pr, CLASS).await?.labels;
             show("labels after add_label twice", &labels);
             for _ in 0..2 {
                 app.remove_label(repo, pr, label, CLASS).await?;
             }
+
             let labels = app.pull_request(repo, pr, CLASS).await?.labels;
             show("labels after remove_label twice", &labels);
         }
@@ -268,17 +272,21 @@ async fn branch_roundtrip(app: &GithubApp, repo: &RepoRef, from: &str) -> Result
     for _ in 0..2 {
         app.set_branch(repo, BRANCH, &head, false, CLASS).await?;
     }
+
     show(
         "after set_branch twice",
         &app.branch_head(repo, BRANCH, CLASS).await?,
     );
+
     for _ in 0..2 {
         app.delete_branch(repo, BRANCH, CLASS).await?;
     }
+
     show(
         "after delete_branch twice",
         &app.branch_head(repo, BRANCH, CLASS).await?,
     );
+
     Ok(())
 }
 
@@ -299,6 +307,7 @@ async fn installations(config: &GithubConfig) -> Result<()> {
             installation["repository_selection"]
         );
     }
+
     Ok(())
 }
 

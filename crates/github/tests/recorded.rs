@@ -110,15 +110,19 @@ async fn a_rate_limit_pauses_the_connection_until_its_reset() {
     let repo = repo("7", "acme", "app");
 
     let read = app.branch_head(&repo, "main", JobClass::Merge).await;
+
     assert_eq!(read, Err(ScmError::RateLimited { until: reset }));
     tokio::time::timeout(StdDuration::from_secs(1), urgent.notified())
         .await
         .expect("a pause is written at once");
+
     let changed = app.take_changed_budgets();
+
     assert_eq!(changed.len(), 1);
     assert_eq!(changed[0].0, connection());
     assert_eq!(changed[0].1.paused_until, Some(reset));
     let again = app.branch_head(&repo, "main", JobClass::Interactive).await;
+
     assert_eq!(again, Err(ScmError::RateLimited { until: reset }));
     replay.finish();
 }
@@ -183,10 +187,12 @@ async fn the_recent_deliveries_stop_at_the_first_older_attempt() {
         attempt_id: attempt_id.into(),
         is_delivered,
     };
+
     assert_eq!(
         recent,
         [attempt("g2", "3", true), attempt("g1", "2", false)]
     );
+
     app.redeliver("2", JobClass::Repair).await.unwrap();
     replay.finish();
 }
@@ -223,6 +229,7 @@ async fn acknowledging_a_comment_twice_is_one_reaction() {
             .await
             .unwrap();
     }
+
     replay.finish();
 }
 
@@ -269,8 +276,10 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
     let app = app(&replay.url, now);
 
     let installation = app.installation("7", JobClass::Interactive).await.unwrap();
+
     assert_eq!(installation, Some(acme_installation()));
     let unknown = app.installation("8", JobClass::Interactive).await;
+
     assert_eq!(unknown, Ok(None));
 
     let connection = repo("7", "acme", "app").connection;
@@ -281,6 +290,7 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
         name: name.into(),
         default_branch: branch.into(),
     };
+
     assert_eq!(
         repos,
         [
@@ -289,6 +299,7 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
             listed("3", "docs", "main"),
         ]
     );
+
     replay.finish();
 }
 
@@ -318,8 +329,10 @@ async fn a_permission_is_kept_five_minutes() {
     let read = || app.permission(&repo, &alice, JobClass::Interactive);
     assert_eq!(read().await.unwrap(), Permission::Write);
     *clock.lock().unwrap() = now + Duration::minutes(4);
+
     assert_eq!(read().await.unwrap(), Permission::Write, "kept");
     *clock.lock().unwrap() = now + Duration::minutes(5);
+
     assert_eq!(read().await.unwrap(), Permission::Read, "read again");
     replay.finish();
 }
@@ -378,6 +391,7 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
         .check_setup(&repo("7", "acme", "app"), "main", JobClass::Interactive)
         .await
         .unwrap();
+
     assert_eq!(
         findings,
         [
@@ -385,6 +399,7 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
             SetupFinding::UpToDateRequired
         ]
     );
+
     replay.finish();
 }
 
@@ -449,6 +464,7 @@ async fn a_stacked_pr_merges_through_the_asynchronous_endpoint() {
     for _ in 0..5 {
         results.push(app.merge_pr(&repo, &merge, JobClass::Merge).await);
     }
+
     assert!(
         matches!(results[0], Err(ScmError::MergeInProgress)),
         "{results:?}"
@@ -466,6 +482,7 @@ async fn a_stacked_pr_merges_through_the_asynchronous_endpoint() {
         matches!(&results[4], Err(ScmError::MergeRejected(m)) if m.contains("closed")),
         "{results:?}"
     );
+
     replay.finish();
 }
 
@@ -520,6 +537,7 @@ async fn the_installations_of_the_app_come_from_every_page() {
         permissions: BTreeMap::new(),
         is_suspended: true,
     };
+
     assert_eq!(installations, [acme_installation(), globex]);
 
     replay.finish();

@@ -37,6 +37,7 @@ mod tests {
     fn a_test_branch_names_its_run_and_its_temporary_branch() {
         let run_id = RunId::from_ulid(Ulid(7));
         let branch = test_branch("cihub", 12, run_id);
+
         assert_eq!(branch, format!("cihub-merge/pr-12/{run_id}"));
         assert_eq!(run_of_test_branch(&branch), Some(run_id));
         assert_eq!(

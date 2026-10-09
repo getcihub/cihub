@@ -113,6 +113,7 @@ fn render(
         .value
         .then(|| comment(surface, settings, target_branch, history));
     let (add_labels, remove_labels) = labels(surface, settings.state_labels_enabled.value);
+
     Rendered {
         sha: surface.head_sha.clone(),
         status,
@@ -168,8 +169,10 @@ fn truncate(text: &str) -> String {
     if text.chars().count() <= DESCRIPTION_LIMIT {
         return text.to_owned();
     }
+
     let mut short: String = text.chars().take(DESCRIPTION_LIMIT - 1).collect();
     short.push('…');
+
     short
 }
 
@@ -209,9 +212,11 @@ fn comment(
 ) -> String {
     let commands = settings.commands_enabled.value;
     let mut blocks = vec![state_line(surface, target_branch)];
+
     if let Some(wait) = &surface.batch_wait {
         blocks.push(batch_wait_line(wait, settings.batching_size.value));
     }
+
     if surface.state == ItemState::NotReady && !surface.block_reasons.is_empty() {
         let reasons: Vec<String> = surface
             .block_reasons
@@ -220,8 +225,10 @@ fn comment(
             .collect();
         blocks.push(reasons.join("\n"));
     }
+
     let queued = !surface.state.is_terminal() && surface.state != ItemState::NotReady;
     let mut details = Vec::new();
+
     if !surface.failing_checks.is_empty() && surface.state != ItemState::Merged {
         let checks: Vec<String> = surface
             .failing_checks
@@ -230,6 +237,7 @@ fn comment(
             .collect();
         details.push(format!("Failing checks: {}", checks.join(", ")));
     }
+
     if queued {
         let prs: Vec<String> = surface
             .predecessors
@@ -251,10 +259,13 @@ fn comment(
             (true, None) => {}
         }
     }
+
     if !details.is_empty() {
         blocks.push(details.join("\n"));
     }
+
     blocks.extend(history_block(history));
+
     // Only an item in test can restart (`DECISIONS.md` D157).
     let mut notes = Vec::new();
     match surface.state {
@@ -277,9 +288,11 @@ fn comment(
         }
         _ => {}
     }
+
     if !notes.is_empty() {
         blocks.push(format!("<sub>{}</sub>", notes.join(" · ")));
     }
+
     blocks.join("\n\n") + "\n"
 }
 
@@ -291,6 +304,7 @@ fn state_line(surface: &Surface, target_branch: &str) -> String {
         None => queue,
     };
     let (icon, label) = state_mark(surface.state);
+
     match surface.state {
         ItemState::NotReady => {
             format!("{icon} **{label}** · not in the queue for `{target_branch}` yet")
@@ -343,15 +357,19 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
         .iter()
         .filter_map(|event| Some((event, event_text(event)?)))
         .collect();
+
     rows.dedup_by(|later, kept| later.1 == kept.1 && later.0.login == kept.0.login);
+
     if rows.is_empty() {
         return None;
     }
+
     let total = rows.len();
     let older = total.saturating_sub(HISTORY_ROWS);
     // GitHub renders the table only with a blank line after `</summary>` and
     // before `</details>`.
     let mut block = format!("<details><summary>History ({total})</summary>\n\n");
+
     match older {
         0 => {}
         1 => block.push_str("1 older row.\n\n"),
@@ -359,7 +377,9 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
             let _ = write!(block, "{n} older rows.\n\n");
         }
     }
+
     block.push_str("| Time (UTC) | Event | By |\n| --- | --- | --- |\n");
+
     for (event, text) in rows.iter().skip(older) {
         let _ = writeln!(
             block,
@@ -369,7 +389,9 @@ fn history_block(events: &[HistoryEvent]) -> Option<String> {
             by_cell(event.login.as_deref())
         );
     }
+
     block.push_str("\n</details>");
+
     Some(block)
 }
 
@@ -432,12 +454,15 @@ fn test_branch_text(
         Some(number) => format!("🧪 Test branch ready: the CI runs in #{number}"),
         None => format!("🧪 Test branch ready: the CI runs on {test_sha}"),
     };
+
     if !with.is_empty() {
         let _ = write!(text, ", with {}", prs(with));
     }
+
     if !on_top_of.is_empty() {
         let _ = write!(text, ", on top of {}", prs(on_top_of));
     }
+
     text
 }
 
@@ -499,9 +524,11 @@ fn labels(surface: &Surface, enabled: bool) -> (Vec<String>, Vec<String>) {
         .into_iter()
         .filter(|label| surface.labels.contains(*label))
         .collect();
+
     if !enabled && carried.is_empty() {
         return (Vec::new(), Vec::new());
     }
+
     let wanted = match surface.state {
         ItemState::NotReady | ItemState::Pending => Some(STATE_LABELS[0]),
         ItemState::Testing | ItemState::PendingFailure | ItemState::TestsPassed => {
@@ -520,6 +547,7 @@ fn labels(surface: &Surface, enabled: bool) -> (Vec<String>, Vec<String>) {
         .filter(|label| Some(*label) != wanted)
         .map(str::to_owned)
         .collect();
+
     (add, remove)
 }
 
@@ -551,6 +579,7 @@ pub(crate) async fn converge_surfaces(
             .bind(target.queue_id.to_string())
             .fetch_all(&mut *conn)
             .await?;
+
     for (surface, number) in surfaces.iter().zip(numbers) {
         let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
         let rendered = render(surface, settings, &target.target_branch, history);
@@ -576,6 +605,7 @@ pub(crate) async fn converge_surfaces(
         .execute(&mut *conn)
         .await?;
     }
+
     let unpublished: Vec<(i64, String)> = sqlx::query_as(
         "SELECT pr_number, desired_hash FROM pr_surfaces
          WHERE queue_id = $1 AND published_hash IS DISTINCT FROM desired_hash
@@ -584,6 +614,7 @@ pub(crate) async fn converge_surfaces(
     .bind(target.queue_id.to_string())
     .fetch_all(&mut *conn)
     .await?;
+
     Ok(unpublished
         .into_iter()
         .map(|(number, hash)| publish_job(target, number, &hash))
@@ -648,6 +679,7 @@ async fn read_histories(
     .fetch_all(conn)
     .await?;
     let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
+
     for (number, id, kind, payload, occurred_at, login, tested_with, tested_on_top_of) in rows {
         let kind = event_kind(&kind, &payload)
             .map_err(|source| MergeQueueError::ReadEvent { id, source })?;
@@ -659,6 +691,7 @@ async fn read_histories(
             tested_on_top_of,
         });
     }
+
     Ok(histories)
 }
 
@@ -697,7 +730,9 @@ pub(crate) async fn publish(
     let request: PublishSurfaces = read_payload(job)?;
     let target = target_of(pool, job).await?;
     let mut lock = begin_system(pool).await?;
+
     lock_comment(&mut lock, target.repo_id, request.pr_number).await?;
+
     let row: Option<SurfaceRow> = sqlx::query_as(
         "SELECT s.desired, s.desired_hash, s.published_hash, c.comment_external_id
          FROM pr_surfaces s
@@ -709,17 +744,21 @@ pub(crate) async fn publish(
     .bind(target.repo_id.to_string())
     .fetch_optional(&mut *lock)
     .await?;
+
     let Some((desired, desired_hash, published, comment_id)) = row else {
         return Ok(());
     };
+
     if published.as_deref() == Some(desired_hash.as_str()) {
         return Ok(());
     }
+
     let rendered: Rendered =
         serde_json::from_value(desired).map_err(|err| Failure::Never(err.to_string()))?;
     let number = u64::try_from(request.pr_number).unwrap_or_default();
     let repo = &target.repo;
     let class = job.class;
+
     if let Some(status) = &rendered.status {
         let update = queue_status(
             &target.target_branch,
@@ -729,18 +768,22 @@ pub(crate) async fn publish(
         );
         scm.set_status(repo, &update, class).await?;
     }
+
     for label in &rendered.add_labels {
         scm.add_label(repo, number, label, class).await?;
     }
+
     for label in &rendered.remove_labels {
         scm.remove_label(repo, number, label, class).await?;
     }
+
     // The comment comes last, just before the commit that keeps its
     // identifier: a stop between them gives a second comment.
     if let Some(body) = &rendered.comment {
         let id = publish_comment(scm, &target, number, body, comment_id, class).await?;
         keep_comment(&mut lock, &target, request.pr_number, &id).await?;
     }
+
     sqlx::query(
         "UPDATE pr_surfaces SET published_hash = $3 WHERE queue_id = $1 AND pr_number = $2",
     )
@@ -749,12 +792,15 @@ pub(crate) async fn publish(
     .bind(&desired_hash)
     .execute(&mut *lock)
     .await?;
+
     lock.commit().await?;
+
     info!(
         pr_number = number,
         hash = desired_hash,
         "surfaces published"
     );
+
     Ok(())
 }
 
@@ -897,15 +943,20 @@ mod tests {
                 status: "in progress".into(),
             },
         ];
+
         let mut testing = surface(ItemState::Testing);
         testing.draft_pr_number = Some(42);
+
         let mut retrying = surface(ItemState::PendingFailure);
         retrying.failing_checks = vec!["build".into()];
+
         let mut failed = surface(ItemState::Failed);
         failed.reason = Reason::TestRunRequiredStatusFailed;
         failed.failing_checks = vec!["build".into(), "lint".into()];
+
         let mut cancelled = surface(ItemState::Cancelled);
         cancelled.reason = Reason::PrPushedTo;
+
         let cases = [
             (
                 blocked,
@@ -957,6 +1008,7 @@ mod tests {
             ),
         ];
         let defaults = settings(|_| {});
+
         for (surface, want) in cases {
             let comment = render(&surface, &defaults, "main", &[]).comment.unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
@@ -986,6 +1038,7 @@ mod tests {
                  <sub>`/cihub cancel` to leave the queue</sub>\n",
             ),
         ];
+
         for (members, want) in cases {
             let mut queued = surface(ItemState::Pending);
             queued.position = Some(1);
@@ -1013,9 +1066,12 @@ mod tests {
     fn a_failure_shows_the_sentence_of_its_reason() {
         let mut failed = surface(ItemState::Failed);
         failed.reason = Reason::PrPushedTo;
+
         let rendered = render(&failed, &settings(|_| {}), "main", &[]);
         let want = "Failed: the PR received a new commit after its submission";
+
         assert_eq!(rendered.status.unwrap().description, want);
+
         let comment = rendered.comment.unwrap();
         assert!(
             comment
@@ -1040,10 +1096,12 @@ mod tests {
         let on = settings(|l| l.state_labels_enabled = Some(Setting::new(true)));
         let mut testing = surface(ItemState::Testing);
         let labels = |rendered: Rendered| (rendered.add_labels, rendered.remove_labels);
+
         assert_eq!(
             labels(render(&testing, &off, "main", &[])),
             (vec![], vec![])
         );
+
         let others = |labels: &[&str]| labels.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>();
         assert_eq!(
             labels(render(&testing, &on, "main", &[])),
@@ -1052,7 +1110,9 @@ mod tests {
                 others(&["cihub:queued", "cihub:failed"])
             )
         );
+
         testing.labels = BTreeSet::from(["cihub:queued".to_owned(), "bug".to_owned()]);
+
         assert_eq!(
             labels(render(&testing, &off, "main", &[])),
             (
@@ -1060,8 +1120,10 @@ mod tests {
                 others(&["cihub:queued", "cihub:failed"])
             )
         );
+
         let mut merged = surface(ItemState::Merged);
         merged.labels = BTreeSet::from(["cihub:testing".to_owned()]);
+
         assert_eq!(
             labels(render(&merged, &off, "main", &[])),
             (vec![], others(&STATE_LABELS))
@@ -1074,9 +1136,12 @@ mod tests {
         blocked.block_reasons = vec![BlockReason::QueueConditionsUnmet {
             conditions: vec!["x".repeat(200)],
         }];
+
         let rendered = render(&blocked, &settings(|_| {}), "main", &[]);
         let description = rendered.status.clone().unwrap().description;
+
         assert_eq!(description.chars().count(), DESCRIPTION_LIMIT);
+
         let other = render(&surface(ItemState::Pending), &settings(|_| {}), "main", &[]);
         assert_ne!(hash(&rendered), hash(&other));
         assert_eq!(hash(&rendered), hash(&rendered.clone()));
@@ -1246,10 +1311,12 @@ mod tests {
                 after: 2,
             },
         ];
+
         for kind in kinds {
             let event = logged(kind.clone(), Some("nlecoy"), at(7, 14, 3));
             assert_eq!(history_block(&[event]), None, "{kind:?}");
         }
+
         assert_eq!(history_block(&[]), None);
     }
 
@@ -1265,6 +1332,7 @@ mod tests {
             logged(restarted(), Some("alice"), at(7, 14, 7)),
             logged(restarted(), Some("bob"), at(7, 14, 8)),
         ];
+
         assert_eq!(
             rows_of(&history),
             [
@@ -1348,6 +1416,7 @@ mod tests {
                     <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
         assert_eq!(rendered.comment.as_deref(), Some(want));
         let bare = render(&surface(ItemState::Testing), &settings(|_| {}), "main", &[]);
+
         assert_ne!(hash(&rendered), hash(&bare));
     }
 
@@ -1360,7 +1429,9 @@ mod tests {
             at(7, 14, 3),
         )];
         let rendered = render(&surface(ItemState::Testing), &off, "main", &history);
+
         assert_eq!(rendered.comment, None);
+
         let status = rendered.status.unwrap().description;
         assert_eq!(status, "Testing, position 2", "the status does not change");
     }
@@ -1401,15 +1472,19 @@ pub(crate) async fn post_welcome(
     let mut lock = begin_system(pool).await?;
     let queues =
         QueueTarget::queues_of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
+
     let Some(target) = queues.into_iter().next() else {
         return Ok(());
     };
+
     let settings = target.settings()?;
     if !(settings.comments_enabled.value && settings.commands_enabled.value) {
         return Ok(());
     }
+
     let number = i64::try_from(request.pr_number).unwrap_or(i64::MAX);
     lock_comment(&mut lock, target.repo_id, number).await?;
+
     let known: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM pr_comments WHERE repo_id = $1 AND pr_number = $2)",
     )
@@ -1417,15 +1492,19 @@ pub(crate) async fn post_welcome(
     .bind(number)
     .fetch_one(&mut *lock)
     .await?;
+
     if known {
         return Ok(());
     }
+
     let body = welcome(&target.target_branch);
     let id = scm
         .create_comment(&target.repo, request.pr_number, &body, job.class)
         .await?;
+
     keep_comment(&mut lock, &target, number, &id).await?;
     lock.commit().await?;
     info!(pr_number = request.pr_number, "welcome comment posted");
+
     Ok(())
 }

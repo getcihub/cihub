@@ -78,10 +78,12 @@ pub async fn run_budget_writer(
             _ = every.tick() => {}
             () = urgent.notified() => {}
         }
+
         pending.extend(changed());
         if pending.is_empty() {
             continue;
         }
+
         let budgets: Vec<_> = pending.iter().map(|(id, b)| (*id, b.clone())).collect();
         match write(&pool, &budgets).await {
             Ok(()) => pending.clear(),

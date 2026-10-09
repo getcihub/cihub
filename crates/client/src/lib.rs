@@ -62,19 +62,23 @@ impl Client {
             .http
             .request(method, format!("{}{path}", self.base))
             .bearer_auth(self.token.expose_secret());
+
         if let Some(body) = body {
             let text = serde_json::to_string(body).map_err(ClientError::Encode)?;
             request = request
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(text);
         }
+
         let response = request.send().await.map_err(ClientError::Http)?;
         let status = response.status();
         let text = response.text().await.map_err(ClientError::Http)?;
+
         if status.is_success() {
             return serde_json::from_str(&text)
                 .map_err(|_| ClientError::Unexpected { status, body: text });
         }
+
         Err(match serde_json::from_str::<Problem>(&text) {
             Ok(problem) => ClientError::Api(problem),
             Err(_) => ClientError::Unexpected { status, body: text },

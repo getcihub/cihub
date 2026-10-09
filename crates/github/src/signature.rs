@@ -12,6 +12,7 @@ pub fn verify_signature(secret: &SecretString, body: &[u8], header: Option<&str>
     else {
         return false;
     };
+
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.expose_secret().as_bytes());
     hmac::verify(&key, body, &tag).is_ok()
 }
@@ -54,6 +55,7 @@ mod tests {
             b"Hello, World?",
             Some(SIGNATURE)
         ));
+
         let other = SecretString::from("another secret".to_owned());
         assert!(!verify_signature(&other, b"Hello, World!", Some(SIGNATURE)));
         assert!(!verify_signature(&secret(), b"Hello, World!", None));

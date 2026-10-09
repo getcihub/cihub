@@ -74,6 +74,7 @@ pub async fn find_route(
     if delivery.event == ScmEvent::Ignored {
         return Ok(processed_route());
     }
+
     let Some(external_id) = &delivery.connection_external_id else {
         return Ok(processed_route());
     };
@@ -112,6 +113,7 @@ pub async fn find_route(
         }
         _ => None,
     };
+
     Ok(Route {
         org_id: Some(
             org_id
@@ -216,9 +218,11 @@ pub(crate) async fn route_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let routed = done.rows_affected() == 1;
+
     if routed {
         wake_for_delivery(conn, route.queue_id).await?;
     }
+
     Ok(routed)
 }
 
@@ -267,6 +271,7 @@ where
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
     let deliveries = unrouted_deliveries(&mut tx, ROUTES_PER_PASS).await?;
     let count = i64::try_from(deliveries.len()).unwrap_or(i64::MAX);
+
     for delivery in deliveries {
         let delivery_id = delivery.delivery_id.as_str();
         let read = match translate(&delivery.event, &delivery.payload) {
@@ -286,6 +291,7 @@ where
         };
 
         let routed = route_delivery(&mut tx, delivery_id, route).await?;
+
         if let (true, Some(read)) = (routed, &read) {
             request_reads(&mut tx, read, route, delivery_id, now).await?;
         }
@@ -298,6 +304,7 @@ where
             "delivery routed"
         );
     }
+
     tx.commit().await.map_err(PlatformError::Query)?;
     Ok(count)
 }
@@ -319,9 +326,11 @@ async fn request_reads(
     let Some(external_id) = &delivery.connection_external_id else {
         return Ok(());
     };
+
     let Some((cause, class)) = installation_sync(delivery, &route, delivery_id, now) else {
         return Ok(());
     };
+
     request_installation_sync(conn, external_id, &cause, class, now).await?;
     Ok(())
 }

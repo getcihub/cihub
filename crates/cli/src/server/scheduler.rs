@@ -32,6 +32,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let maintenance = request_hourly(&pool, &cancel);
     let sweep = request_sweep_regularly(&pool, &cancel);
     let (queues, (), ()) = tokio::join!(queues, maintenance, sweep);
+
     queues.map_err(|err| anyhow!(err).context("the scheduler of the queues stopped"))
 }
 
