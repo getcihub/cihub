@@ -19,8 +19,8 @@ use cihub_domain::{ConnectionId, JobClass, MergeMethod, Permission};
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_scm::contract;
 use cihub_scm::{
-    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmRepo, ScmUser,
-    SetupFinding,
+    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmInstallation,
+    ScmRepo, ScmUser, SetupFinding,
 };
 use secrecy::SecretString;
 use serde_json::json;
@@ -231,7 +231,12 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
             "GET",
             "/app/installations/7",
             200,
-            json!({ "id": 7, "account": { "id": 70, "login": "acme" } }),
+            json!({
+                "id": 7,
+                "account": { "id": 70, "login": "acme" },
+                "permissions": { "contents": "write", "metadata": "read" },
+                "suspended_at": null,
+            }),
         ),
         answer(
             "GET",
@@ -259,16 +264,10 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
     let replay = Replay::start(exchanges).await;
     let app = app(&replay.url, now);
 
-    let account = app.installation("7", JobClass::Interactive).await.unwrap();
-    assert_eq!(
-        account,
-        ScmAccount {
-            external_id: "70".into(),
-            path: "acme".into(),
-        }
-    );
+    let installation = app.installation("7", JobClass::Interactive).await.unwrap();
+    assert_eq!(installation, Some(acme_installation()));
     let unknown = app.installation("8", JobClass::Interactive).await;
-    assert!(matches!(unknown, Err(ScmError::NotFound(_))), "{unknown:?}");
+    assert_eq!(unknown, Ok(None));
 
     let connection = repo("7", "acme", "app").connection;
     let repos = app.list_repos(&connection, JobClass::Repair).await.unwrap();
@@ -463,5 +462,61 @@ async fn a_stacked_pr_merges_through_the_asynchronous_endpoint() {
         matches!(&results[4], Err(ScmError::MergeRejected(m)) if m.contains("closed")),
         "{results:?}"
     );
+    replay.finish();
+}
+
+fn acme_installation() -> ScmInstallation {
+    ScmInstallation {
+        external_id: "7".into(),
+        account: ScmAccount {
+            external_id: "70".into(),
+            path: "acme".into(),
+        },
+        permissions: BTreeMap::from([
+            ("contents".to_owned(), "write".to_owned()),
+            ("metadata".to_owned(), "read".to_owned()),
+        ]),
+        is_suspended: false,
+    }
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: a
+/// recording of D90 has one page of installations only.
+#[tokio::test]
+async fn the_installations_of_the_app_come_from_every_page() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let first = "/app/installations?per_page=100";
+    let second = "/app/installations?per_page=100&page=2";
+    let acme = json!({
+        "id": 7,
+        "account": { "id": 70, "login": "acme" },
+        "permissions": { "contents": "write", "metadata": "read" },
+        "suspended_at": null,
+    });
+    let globex = json!({
+        "id": 9,
+        "account": { "id": 90, "login": "globex" },
+        "permissions": {},
+        "suspended_at": "2026-09-01T10:00:00Z",
+    });
+    let exchanges = vec![
+        page(first, json!([acme]), Some(second)),
+        page(second, json!([globex]), None),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let installations = app.installations(JobClass::Repair).await.unwrap();
+    let globex = ScmInstallation {
+        external_id: "9".into(),
+        account: ScmAccount {
+            external_id: "90".into(),
+            path: "globex".into(),
+        },
+        permissions: BTreeMap::new(),
+        is_suspended: true,
+    };
+    assert_eq!(installations, [acme_installation(), globex]);
+
     replay.finish();
 }

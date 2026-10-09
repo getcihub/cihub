@@ -9,9 +9,9 @@ use std::sync::{Arc, Mutex};
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
-    ConflictCulprit, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability,
-    OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, SubmittedVia, UserId, temp_branch,
+    ConflictCulprit, ConnectionId, ConnectionKind, Event, EventId, EventKind, ItemState, JobClass,
+    Mergeability, OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId,
+    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -20,11 +20,16 @@ use cihub_mergequeue::{
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
-    ConnectionBudget, Delivery, Executors, Job, begin_reconciliation, claim_jobs, enqueue_job,
-    find_route, mark_dirty, run_budget_writer, run_maintenance, run_worker, store_delivery,
+    ConnectionBudget, Delivery, Executors, Job, SYNC_INSTALLATION, SYNC_INSTALLATIONS, SYNC_REPOS,
+    begin_reconciliation, claim_jobs, enqueue_job, find_route, mark_dirty,
+    request_installations_sync, request_installations_sync_at_start, run_budget_writer,
+    run_maintenance, run_router, run_worker, store_delivery, sync_installation_executor,
+    sync_installations_executor, sync_repos_executor, sync_repos_job,
 };
 use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
-use cihub_scm::{ConnectionRef, RepoRef, RequiredChecks, Scm, ScmDelivery, ScmError, ScmUser};
+use cihub_scm::{
+    ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmUser,
+};
 use cihub_store::{begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
@@ -88,8 +93,9 @@ async fn seed(pool: &PgPool) {
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO users (id, external_id, login) VALUES ('{user}', '3', 'octocat');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '1', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{connection}', '{org}', '1', 'github_app', '1', '{synced_at}', '{{}}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
@@ -99,6 +105,7 @@ async fn seed(pool: &PgPool) {
         connection = connection(),
         repo = RepoId::from_ulid(Ulid(12)),
         queue = queue(),
+        synced_at = clock(),
     )))
     .execute(&mut *tx)
     .await
@@ -479,22 +486,52 @@ fn translate(deliveries: &Arc<Mutex<HashMap<String, ScmDelivery>>>) -> Translate
     })
 }
 
+fn router_translate(
+    deliveries: &Arc<Mutex<HashMap<String, ScmDelivery>>>,
+) -> impl Fn(&str, &Value) -> Result<ScmDelivery, std::fmt::Error> + Send + Sync + 'static {
+    let deliveries = deliveries.clone();
+    move |_, payload| {
+        let id = payload["id"].as_str().unwrap_or_default();
+        deliveries
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or(std::fmt::Error)
+    }
+}
+
 impl SimQueue {
     async fn new(pool: PgPool) -> Self {
         seed(&pool).await;
         let sim = Arc::new(Sim::new());
+        let account = ScmAccount {
+            external_id: "1".into(),
+            path: "acme".into(),
+        };
+        sim.add_installation("1", account, &[("contents", "write")]);
+        sim.take_deliveries();
         let clock = TestClock::new();
         let deliveries = Arc::new(Mutex::new(HashMap::new()));
         let scm: Arc<dyn Scm> = sim.clone();
         let module = cihub_mergequeue::module(
             pool.clone(),
-            scm,
+            scm.clone(),
             translate(&deliveries),
             "scheduler".into(),
             clock.shared(),
         );
+
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
+        let kind = ConnectionKind::GithubApp;
+        executors.register(SYNC_REPOS, sync_repos_executor(scm.clone()));
+        executors.register(
+            SYNC_INSTALLATION,
+            sync_installation_executor(scm.clone(), kind),
+        );
+        executors.register(SYNC_INSTALLATIONS, sync_installations_executor(scm, kind));
+
         let cancel = CancellationToken::new();
         let worker_clock = clock.clone();
         let worker = run_worker(
@@ -505,10 +542,19 @@ impl SimQueue {
             std::time::Duration::from_millis(50),
             cancel.clone(),
         );
+        let router_clock = clock.clone();
+        let router = run_router(
+            pool.clone(),
+            router_translate(&deliveries),
+            move || router_clock.now(),
+            std::time::Duration::from_millis(50),
+            cancel.clone(),
+        );
         let scheduler = (module.scheduler)(cancel.clone());
         let api = Some(module.api);
         let loops = vec![
             tokio::spawn(async move { worker.await.unwrap() }),
+            tokio::spawn(async move { router.await.unwrap() }),
             tokio::spawn(async move { scheduler.await.unwrap() }),
         ];
         Self {
@@ -576,6 +622,51 @@ impl SimQueue {
             store_delivery(&mut tx, &stored).await.unwrap();
         }
         tx.commit().await.unwrap();
+    }
+
+    async fn send(&mut self) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        for delivery in self.sim.take_deliveries() {
+            self.sent += 1;
+            let id = format!("delivery-{}", self.sent);
+            self.deliveries.lock().unwrap().insert(id.clone(), delivery);
+            let stored = Delivery {
+                delivery_id: id.clone(),
+                org_id: None,
+                connection_id: None,
+                queue_id: None,
+                event: "sim".into(),
+                payload: serde_json::json!({ "id": id }),
+                received_at: self.clock.now(),
+            };
+            store_delivery(&mut tx, &stored).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+
+    async fn request(&self, job: &Job) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let now = self.clock.now();
+        enqueue_job(&mut tx, job, now, now).await.unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    async fn access(&self) -> (String, Vec<String>) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let state: String = sqlx::query_scalar("SELECT state::text FROM queues WHERE id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let facts = sqlx::query_scalar(
+            "SELECT type::text FROM events
+             WHERE queue_id = $1 AND type IN ('access.lost', 'access.restored') ORDER BY seq",
+        )
+        .bind(queue().to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        (state, facts)
     }
 
     /// Wakes the queue, as a change would: after a move of the clock.
@@ -849,16 +940,67 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     drop(tx);
 
     sim.set_access("1", false);
-    q.deliver().await;
+    q.send().await;
     q.settle().await;
-    let mut tx = begin_system(&pool).await.unwrap();
-    let state: String = sqlx::query_scalar("SELECT state::text FROM queues WHERE id = $1")
-        .bind(queue().to_string())
-        .fetch_one(&mut *tx)
+    assert_eq!(q.access().await.0, "paused");
+    q.stop().await;
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_lost_access_pauses_the_queue_with_or_without_its_webhook(pool: PgPool) {
+    let mut q = SimQueue::new(pool).await;
+    let sim = q.sim.clone();
+    sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
+    sim.take_deliveries();
+    let lost = || "access.lost".to_owned();
+    let restored = || "access.restored".to_owned();
+
+    sim.set_access("1", false);
+    q.send().await;
+    q.settle().await;
+    assert_eq!(q.access().await, ("paused".into(), vec![lost()]));
+
+    sim.set_access("1", true);
+    q.send().await;
+    q.settle().await;
+    assert_eq!(
+        q.access().await,
+        ("running".into(), vec![lost(), restored()])
+    );
+
+    sim.set_access("1", false);
+    sim.take_deliveries();
+    let mut tx = begin_system(&q.pool).await.unwrap();
+    request_installations_sync(&mut tx, q.clock.now())
         .await
         .unwrap();
-    assert_eq!(state, "paused");
-    drop(tx);
+    tx.commit().await.unwrap();
+    q.settle().await;
+    let expected = vec![lost(), restored(), lost()];
+    assert_eq!(q.access().await, ("paused".into(), expected));
+
+    sim.set_access("1", true);
+    sim.take_deliveries();
+    let mut tx = begin_system(&q.pool).await.unwrap();
+    request_installations_sync_at_start(&mut tx, q.clock.now())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    q.settle().await;
+    let expected = vec![lost(), restored(), lost(), restored()];
+    assert_eq!(q.access().await, ("running".into(), expected));
+
+    sim.set_access("1", false);
+    sim.take_deliveries();
+    q.request(&sync_repos_job(
+        org(),
+        connection(),
+        "after-the-lost-webhook",
+    ))
+    .await;
+    q.settle().await;
+    let expected = vec![lost(), restored(), lost(), restored(), lost()];
+    assert_eq!(q.access().await, ("paused".into(), expected));
     q.stop().await;
 }
 
@@ -3353,9 +3495,10 @@ impl Chaos {
         let mut tx = begin_system(&chaos.pool).await.unwrap();
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
-             INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                          synced_at, permissions)
                  VALUES ('{connection}', '{org}', 'account-{seed}', 'github_app',
-                         '{connection_external_id}');
+                         '{connection_external_id}', '{synced_at}', '{{}}');
              INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
@@ -3369,6 +3512,7 @@ impl Chaos {
             repo_external_id = repo.external_id,
             name = repo.name,
             queue = chaos.queue(),
+            synced_at = chaos.clock.now(),
         )))
         .execute(&mut *tx)
         .await

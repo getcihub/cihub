@@ -90,8 +90,9 @@ fn rows(org: OrgId, n: u8) -> String {
     let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
-         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
-             VALUES ('connection-{n}', '{org}', '{n}', 'github_app', '{n}');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('connection-{n}', '{org}', '{n}', 'github_app', '{n}', now(), '{{}}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('repo-{n}', '{org}', 'connection-{n}', '{n}', 'account-{n}', 'name', 'main');

@@ -1,16 +1,16 @@
 //! `cihub server`: starts and administers an instance, with a direct access to
-//! Postgres (`DECISIONS.md` D168, D169). One file per command (`start`,
-//! `migrate`, `bootstrap`) and one per role (`web`, `scheduler`, `worker`,
+//! Postgres (`DECISIONS.md` D168, D169, D248). One file per command (`start`,
+//! `migrate`, `token`) and one per role (`web`, `scheduler`, `worker`,
 //! `notifier`). A role holds no queue logic: it starts loops whose code lives
 //! in the library crates.
 
-mod bootstrap;
 mod config;
 mod health;
 mod migrate;
 mod notifier;
 mod scheduler;
 mod start;
+mod token;
 mod web;
 mod worker;
 
@@ -47,12 +47,18 @@ enum ServerCommand {
     Start,
     /// Applies the migrations, creates the partitions, then stops.
     Migrate,
-    /// Creates the organization of an installation of the GitHub App and
-    /// shows a `bootstrap` token once.
-    Bootstrap {
-        /// The identifier of the installation.
+    /// Manages the API tokens of an organization.
+    #[command(subcommand)]
+    Token(TokenCommand),
+}
+
+#[derive(Subcommand)]
+enum TokenCommand {
+    /// Creates an API token with every scope and shows it once.
+    Create {
+        /// The slug of the organization.
         #[arg(long)]
-        installation: String,
+        org: String,
     },
 }
 
@@ -69,10 +75,7 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
     cihub_store::check_role(&pool).await?;
     match args.command {
         ServerCommand::Migrate => migrate::run(&pool).await,
-        ServerCommand::Bootstrap { installation } => {
-            let github = start_github(&pool, github).await?;
-            bootstrap::run(&pool, &github, &installation).await
-        }
+        ServerCommand::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
         ServerCommand::Start => {
             let github = start_github(&pool, github).await?;
             start::run(internal_addr, http_addr, pool, github).await

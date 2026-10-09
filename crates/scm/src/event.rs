@@ -71,22 +71,15 @@ pub enum ScmEvent {
     RulesChanged { repo_external_id: String },
     /// The repository was renamed or deleted.
     RepoChanged { repo_external_id: String },
-    /// The connection was created on the SCM. `claim` is the value that
-    /// links it to an organization, when the installation flow gives one.
-    ConnectionCreated {
-        account_external_id: String,
-        account_path: String,
-        claim: Option<String>,
-    },
+    /// The installation of the connection changed on the SCM: created,
+    /// deleted, suspended, active again or with new permissions. CIHub reads
+    /// the installation again (`DECISIONS.md` D247).
+    ConnectionChanged,
     /// The connection gained or lost repositories.
     ReposChanged {
         added: Vec<String>,
         removed: Vec<String>,
     },
-    /// The connection is suspended or deleted.
-    AccessLost,
-    /// The connection is active again.
-    AccessRestored,
     /// A delivery that CIHub does not use.
     Ignored,
 }
