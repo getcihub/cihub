@@ -27,7 +27,7 @@ use crate::target::QueueTarget;
 pub(crate) const PUBLISH_SURFACES: &str = "publish_surfaces";
 
 /// The labels that say the state of an item (`docs/GITHUB.md`).
-pub(crate) const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "cihub:failed"];
+const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "cihub:failed"];
 
 /// A commit status of the SCM is at most this long.
 const DESCRIPTION_LIMIT: usize = 140;
@@ -44,7 +44,7 @@ const HISTORY_ROWS: usize = 20;
 
 /// What a PR must show, as the SCM writes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Rendered {
+struct Rendered {
     /// The head that carries the status.
     pub sha: String,
     pub status: Option<RenderedStatus>,
@@ -54,14 +54,14 @@ pub(crate) struct Rendered {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RenderedStatus {
+struct RenderedStatus {
     pub state: StatusState,
     pub description: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum StatusState {
+enum StatusState {
     Pending,
     Success,
     Failure,
@@ -80,7 +80,7 @@ impl From<StatusState> for CommitStatus {
 }
 
 /// The status of the queue on `sha`.
-pub(crate) fn queue_status(
+fn queue_status(
     target_branch: &str,
     sha: &str,
     state: StatusState,
@@ -98,7 +98,7 @@ pub(crate) fn queue_status(
 
 /// Renders `surface` with the settings of its queue and the logged `history`
 /// of its PR.
-pub(crate) fn render(
+fn render(
     surface: &Surface,
     settings: &QueueSettings,
     target_branch: &str,
@@ -123,7 +123,7 @@ pub(crate) fn render(
 }
 
 /// The hash of a rendering: a new one asks for a new publication.
-pub(crate) fn hash(rendered: &Rendered) -> String {
+fn hash(rendered: &Rendered) -> String {
     let bytes = serde_json::to_vec(rendered).unwrap_or_default();
     let digest = Sha256::digest(bytes);
     digest.iter().take(8).fold(String::new(), |mut hex, byte| {
@@ -323,7 +323,7 @@ fn state_mark(state: ItemState) -> (&'static str, &'static str) {
 
 /// An event of the log of a PR, as its history reads it.
 #[derive(Debug)]
-pub(crate) struct HistoryEvent {
+struct HistoryEvent {
     pub occurred_at: OffsetDateTime,
     pub kind: EventKind,
     /// The login of the user whose request caused the event; `None` for the
@@ -1380,7 +1380,7 @@ pub(crate) struct WelcomePr {
 
 /// The comment that welcomes a PR on a branch of a queue, with its
 /// submission box.
-pub(crate) fn welcome(target_branch: &str) -> String {
+fn welcome(target_branch: &str) -> String {
     format!(
         "CIHub manages merges into `{target_branch}`.\n\n\
          - [ ] {SUBMIT_BOX} Add this PR to the merge queue\n\n\

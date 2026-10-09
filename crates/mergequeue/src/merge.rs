@@ -28,17 +28,17 @@ pub(crate) const MERGE_PR: &str = "merge_pr";
 
 /// After this many attempts, a merge that still fails on a passing error
 /// gives up (`DECISIONS.md` D123): with the backoff of the jobs, about a minute.
-pub(crate) const MERGE_ATTEMPTS: i32 = 6;
+const MERGE_ATTEMPTS: i32 = 6;
 
 // A retry must end in a fact before the job goes `dead`.
 const _: () = assert!(MERGE_ATTEMPTS < MAX_ATTEMPTS);
 
 /// A merge waits for the end of a rate limit at most this long.
-pub(crate) const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
+const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
 
 /// The merge of one item, as the plan describes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct MergePr {
+struct MergePr {
     pub item_id: ItemId,
     /// The run that proved the item: an item proved again by another run
     /// has another job. `None` for a direct merge (`DECISIONS.md` D153).
@@ -65,12 +65,7 @@ pub(crate) fn merge_job(target: &QueueTarget, merge: &Merge) -> Job {
 
 /// The title of the merge commit: the `merge-commit-title:` line of the
 /// description, or the title of the PR as `merge_commit_title` says.
-pub(crate) fn merge_commit_title(
-    title: &str,
-    body: &str,
-    number: u64,
-    setting: MergeCommitTitle,
-) -> String {
+fn merge_commit_title(title: &str, body: &str, number: u64, setting: MergeCommitTitle) -> String {
     let line = body.lines().find_map(|line| {
         line.trim()
             .strip_prefix("merge-commit-title:")

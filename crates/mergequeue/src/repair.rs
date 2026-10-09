@@ -28,7 +28,7 @@ pub(crate) const REFRESH_CHECKS: &str = "refresh_checks";
 pub(crate) const REFRESH_TARGET: &str = "refresh_target";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RefreshChecks {
+struct RefreshChecks {
     pub run_id: RunId,
     pub test_sha: String,
     pub test_branch: String,

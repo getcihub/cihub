@@ -47,14 +47,14 @@ pub type Translate =
     Arc<dyn Fn(&str, &Value) -> Result<ScmDelivery, Box<dyn Error + Send + Sync>> + Send + Sync>;
 
 /// A pass takes at most this many leases.
-pub(crate) const LEASES_PER_PASS: i64 = 50;
+const LEASES_PER_PASS: i64 = 50;
 
 /// A reconciliation reads at most this many deliveries and facts; the rest
 /// waits for the next one, which the queue, still dirty, asks for at once.
-pub(crate) const INBOX_PER_RECONCILIATION: i64 = 200;
+const INBOX_PER_RECONCILIATION: i64 = 200;
 
 /// A pass over the deliveries of the connections reads at most this many.
-pub(crate) const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
+const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
 
 /// What a reconciliation needs besides the queue.
 #[derive(Clone)]
@@ -878,7 +878,7 @@ async fn request_submission(
 }
 
 /// The scheduler looks for the queues to cover this often (`DECISIONS.md` D106).
-pub(crate) const COVER_EVERY: time::Duration = time::Duration::hours(1);
+const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
 /// Marks dirty the queues whose oldest event after their last snapshot is
 /// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that

@@ -31,7 +31,7 @@ pub(crate) const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
 /// After this many attempts, an assembly that the SCM still refuses as not
 /// valid (422) gives up with `start_test_run_retry_exhausted` (`DECISIONS.md`
 /// D133).
-pub(crate) const ASSEMBLY_ATTEMPTS: i32 = 5;
+const ASSEMBLY_ATTEMPTS: i32 = 5;
 
 /// An assembly that meets another passing error (5xx, 429, a stop) tries
 /// again until this long after the start of its run (`DECISIONS.md` D133).
@@ -39,7 +39,7 @@ pub const ASSEMBLY_WAIT: Duration = Duration::minutes(15);
 
 /// The test branch that a run needs, as the plan describes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AssembleTestBranch {
+struct AssembleTestBranch {
     pub run_id: RunId,
     pub test_branch: String,
     pub base_sha: String,
@@ -48,7 +48,7 @@ pub(crate) struct AssembleTestBranch {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct CleanupTestBranch {
+struct CleanupTestBranch {
     pub run_id: RunId,
 }
 
@@ -84,13 +84,13 @@ pub(crate) fn cleanup(target: &QueueTarget, run_id: RunId) -> Job {
 }
 
 /// The title of the draft PR of a run (`docs/CI.md`).
-pub(crate) fn draft_pr_title(members: &[u64], target_branch: &str) -> String {
+fn draft_pr_title(members: &[u64], target_branch: &str) -> String {
     format!("CIHub: test {} on {target_branch}", numbers(members))
 }
 
 /// The body of the draft PR of a run (`docs/CI.md`): the run, its base and
 /// the PRs it tests, each on its own line.
-pub(crate) fn draft_pr_body(
+fn draft_pr_body(
     run_id: RunId,
     target_branch: &str,
     base_sha: &str,
@@ -128,7 +128,7 @@ fn numbers(prs: &[u64]) -> String {
 /// # Errors
 ///
 /// The file is not valid, or it gives an empty list.
-pub(crate) fn required_statuses_of_file(
+fn required_statuses_of_file(
     text: &str,
     branch: &str,
     name: &str,
