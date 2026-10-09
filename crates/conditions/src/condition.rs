@@ -298,6 +298,7 @@ impl<'a> Cursor<'a> {
         if self.at_end() {
             return Err(self.error(self.pos, ParseErrorKind::Empty));
         }
+
         let negated = self.eat('-');
         let count_at = self.pos;
         let count = self.eat('#');
@@ -311,6 +312,7 @@ impl<'a> Cursor<'a> {
         let attribute = Attribute::from_name(name).ok_or_else(|| {
             self.error(name_at, ParseErrorKind::UnknownAttribute(name.to_owned()))
         })?;
+
         self.pos += name_len;
         let kind = attribute.kind();
         if count && kind != Kind::List {
@@ -328,9 +330,11 @@ impl<'a> Cursor<'a> {
             }
             return Ok((negated, Test::Flag(attribute)));
         };
+
         if kind == Kind::Bool {
             return Err(self.error(op_at, ParseErrorKind::OperatorOnBoolean(attribute)));
         }
+
         if !allows(kind, count, op) {
             return Err(self.error(
                 op_at,
@@ -372,6 +376,7 @@ impl<'a> Cursor<'a> {
                 value: number.ok_or_else(|| invalid(error))?,
             }
         };
+
         Ok((negated, test))
     }
 
@@ -395,8 +400,10 @@ impl<'a> Cursor<'a> {
             self.pos = self.s.len();
             return Ok(value.to_owned());
         }
+
         let mut value = String::new();
         let mut chars = self.rest().char_indices();
+
         loop {
             match chars.next() {
                 None => return Err(self.error(start, ParseErrorKind::UnterminatedQuote)),
@@ -414,10 +421,12 @@ impl<'a> Cursor<'a> {
                 Some((_, c)) => value.push(c),
             }
         }
+
         self.skip_whitespace();
         if !self.at_end() {
             return Err(self.error(self.pos, ParseErrorKind::TrailingCharacters));
         }
+
         Ok(value)
     }
 }
@@ -559,9 +568,11 @@ mod tests {
                 },
             ),
         ];
+
         for (s, column, kind) in cases {
             assert_eq!(error(s), ParseError { column, kind }, "{s}");
         }
+
         assert!(matches!(error("title ~= (").kind, K::InvalidRegex(_)));
         assert!(matches!(error("files *= a[").kind, K::InvalidGlob(_)));
     }
