@@ -28,7 +28,8 @@ use cihub_platform::{
 };
 use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmUser,
+    ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent,
+    ScmUser,
 };
 use cihub_store::{begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
@@ -624,6 +625,80 @@ impl SimQueue {
         tx.commit().await.unwrap();
     }
 
+    /// Stores the delivery `id` again, routed as the web role does, and
+    /// returns `false` when the inbox still has it.
+    async fn deliver_again(&self, id: &str) -> bool {
+        let delivery = self.deliveries.lock().unwrap()[id].clone();
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let route = find_route(&mut tx, &delivery).await.unwrap();
+        let again = Delivery {
+            delivery_id: id.to_owned(),
+            org_id: route.org_id,
+            connection_id: route.connection_id,
+            queue_id: route.queue_id,
+            event: "sim".into(),
+            payload: serde_json::json!({ "id": id }),
+            received_at: self.clock.now(),
+        };
+        let stored = store_delivery(&mut tx, &again).await.unwrap();
+        tx.commit().await.unwrap();
+        stored
+    }
+
+    /// Delivers the deliveries of the simulator, then processes each one
+    /// again, one at a time (`DECISIONS.md` D249): the log of the queue and
+    /// the jobs stay the same, except for a PR opened, which is in the queue
+    /// now and asks one read of the PR, keyed by the delivery, and the
+    /// `pr.observed` facts of that read. Returns the events of the deliveries.
+    async fn deliver_and_process_again(&mut self) -> Vec<ScmEvent> {
+        let first = self.sent + 1;
+        self.deliver().await;
+        self.settle().await;
+
+        let mut events = Vec::new();
+        for n in first..=self.sent {
+            let id = format!("delivery-{n}");
+            let event = self.deliveries.lock().unwrap()[&id].event.clone();
+            let (log, mut jobs) = self.log_and_jobs().await;
+            assert!(self.deliver_again(&id).await, "{id}");
+            self.settle().await;
+            let (log_again, jobs_again) = self.log_and_jobs().await;
+
+            let is_opened_pr = matches!(event, ScmEvent::PrChanged { opened: true, .. });
+            if is_opened_pr {
+                jobs.push(format!("refresh_prs:{}-{id}:1", queue()));
+                jobs.sort();
+            }
+            assert_eq!(jobs_again, jobs, "{id}");
+            assert_eq!(log_again[..log.len()], log[..], "{id}");
+            let added = &log_again[log.len()..];
+            assert_eq!(!added.is_empty(), is_opened_pr, "{id}: {added:?}");
+            assert!(
+                added.iter().all(|(_, kind)| kind == "pr.observed"),
+                "{id}: {added:?}"
+            );
+
+            events.push(event);
+        }
+        events
+    }
+
+    /// The types of the events of the queue in order, and the keys of the jobs.
+    async fn log_and_jobs(&self) -> (Vec<(i64, String)>, Vec<String>) {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        let log =
+            sqlx::query_as("SELECT seq, type::text FROM events WHERE queue_id = $1 ORDER BY seq")
+                .bind(queue().to_string())
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap();
+        let jobs = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+        (log, jobs)
+    }
+
     async fn send(&mut self) {
         let mut tx = begin_system(&self.pool).await.unwrap();
         for delivery in self.sim.take_deliveries() {
@@ -699,8 +774,8 @@ impl SimQueue {
         for _ in 0..800 {
             let mut tx = begin_system(&self.pool).await.unwrap();
             let busy: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM webhook_inbox WHERE processed_at IS NULL)
-                     OR EXISTS (SELECT 1 FROM queue_inbox WHERE processed_at IS NULL)
+                "SELECT EXISTS (SELECT 1 FROM webhook_inbox)
+                     OR EXISTS (SELECT 1 FROM queue_inbox)
                      OR EXISTS (SELECT 1 FROM jobs WHERE state IN ('queued', 'running'))
                      OR EXISTS (SELECT 1 FROM queues WHERE dirty)",
             )
@@ -714,8 +789,8 @@ impl SimQueue {
         }
         let mut tx = begin_system(&self.pool).await.unwrap();
         let left: Vec<(String, String)> = sqlx::query_as(
-            "SELECT 'delivery', delivery_id FROM webhook_inbox WHERE processed_at IS NULL
-             UNION ALL SELECT 'fact', type::text FROM queue_inbox WHERE processed_at IS NULL
+            "SELECT 'delivery', delivery_id FROM webhook_inbox
+             UNION ALL SELECT 'fact', type::text FROM queue_inbox
              UNION ALL SELECT 'job', idempotency_key || ' ' || state::text || ' '
                           || coalesce(last_error, '') FROM jobs WHERE state IN ('queued', 'running')
              UNION ALL SELECT 'dirty', id FROM queues WHERE dirty",
@@ -1063,8 +1138,8 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         let counts: (i64, i64, i64, i64, bool) = sqlx::query_as(
             "SELECT (SELECT count(*) FROM events),
                     (SELECT count(*) FROM jobs),
-                    (SELECT count(*) FROM webhook_inbox WHERE processed_at IS NULL),
-                    (SELECT count(*) FROM queue_inbox WHERE processed_at IS NULL),
+                    (SELECT count(*) FROM webhook_inbox),
+                    (SELECT count(*) FROM queue_inbox),
                     (SELECT dirty FROM queues)",
         )
         .fetch_one(&mut *tx)
@@ -1934,7 +2009,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
         sqlx::query_as::<_, (i64, i64)>(
-            "SELECT (SELECT count(*) FROM webhook_inbox WHERE processed_at IS NULL),
+            "SELECT (SELECT count(*) FROM webhook_inbox),
                     (SELECT count(*) FROM jobs WHERE type = 'refresh_target')",
         )
         .fetch_one(&mut *tx)
@@ -2081,13 +2156,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
         "no read point came due"
     );
 
-    let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query("UPDATE webhook_inbox SET processed_at = NULL WHERE delivery_id = $1")
-        .bind(&delivery)
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    tx.commit().await.unwrap();
+    assert!(q.deliver_again(&delivery).await);
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
     };
@@ -2096,6 +2165,64 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
         .unwrap();
     q.settle().await;
     assert_eq!(refresh_keys(&pool).await, after);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D249: a delivery stored and processed again once the inbox
+/// deleted it writes no wrong fact and asks no job twice: the change of a PR,
+/// a `/cihub merge` command, a check on the head of a PR and on the test SHA
+/// of a live run, and the push and the change of the PR that merge it.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    let submitted = q.deliver_and_process_again().await;
+    assert!(
+        submitted
+            .iter()
+            .any(|event| matches!(event, ScmEvent::PrChanged { opened: true, .. }))
+    );
+    assert!(
+        submitted
+            .iter()
+            .any(|event| matches!(event, ScmEvent::Commented { .. }))
+    );
+    assert!(
+        submitted
+            .iter()
+            .any(|event| matches!(event, ScmEvent::CheckChanged { sha, .. } if *sha == head))
+    );
+
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+    sim.report_check(&repo(), &test_sha, running(REQUIRED))
+        .unwrap();
+    let reported = q.deliver_and_process_again().await;
+    assert!(
+        reported
+            .iter()
+            .any(|event| matches!(event, ScmEvent::CheckChanged { sha, .. } if *sha == test_sha))
+    );
+    assert_eq!(item_state(&pool, number).await, "testing");
+
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+        .unwrap();
+    q.deliver_and_process_again().await;
+    let merged = q.deliver_and_process_again().await;
+    assert!(
+        merged
+            .iter()
+            .any(|event| matches!(event, ScmEvent::Pushed { branch, .. } if branch == "main"))
+    );
+    assert_eq!(item_state(&pool, number).await, "merged");
     q.stop().await;
 }
 
@@ -3633,15 +3760,14 @@ impl Chaos {
             let mut tx = begin_system(&self.pool).await.unwrap();
             let (busy, next_job, deliveries): (bool, Option<OffsetDateTime>, bool) =
                 sqlx::query_as(
-                    "SELECT EXISTS (SELECT 1 FROM queue_inbox
-                                    WHERE queue_id = $3 AND processed_at IS NULL)
+                    "SELECT EXISTS (SELECT 1 FROM queue_inbox WHERE queue_id = $3)
                          OR EXISTS (SELECT 1 FROM jobs WHERE org_id = $2 AND state = 'running')
                          OR EXISTS (SELECT 1 FROM jobs
                                     WHERE org_id = $2 AND state = 'queued' AND run_after <= $1)
                          OR EXISTS (SELECT 1 FROM queues WHERE id = $3 AND dirty),
                      (SELECT min(run_after) FROM jobs WHERE org_id = $2 AND state = 'queued'),
                      EXISTS (SELECT 1 FROM webhook_inbox
-                             WHERE org_id = $2 AND processed_at IS NULL)",
+                             WHERE org_id = $2)",
                 )
                 .bind(now)
                 .bind(self.org().to_string())
@@ -3677,13 +3803,12 @@ impl Chaos {
     async fn not_settled(&self) -> ! {
         let mut tx = begin_system(&self.pool).await.unwrap();
         let left: Vec<(String, String)> = sqlx::query_as(
-            "SELECT 'fact', type::text FROM queue_inbox WHERE queue_id = $2 AND processed_at IS NULL
+            "SELECT 'fact', type::text FROM queue_inbox WHERE queue_id = $2
              UNION ALL SELECT 'job', idempotency_key || ' ' || state::text || ' ' || run_after::text
                           || ' ' || coalesce(last_error, '')
                  FROM jobs WHERE org_id = $1 AND state IN ('queued', 'running')
              UNION ALL SELECT 'dirty', id FROM queues WHERE id = $2 AND dirty
-             UNION ALL SELECT 'delivery', delivery_id FROM webhook_inbox
-                 WHERE org_id = $1 AND processed_at IS NULL",
+             UNION ALL SELECT 'delivery', delivery_id FROM webhook_inbox WHERE org_id = $1",
         )
         .bind(self.org().to_string())
         .bind(self.queue().to_string())

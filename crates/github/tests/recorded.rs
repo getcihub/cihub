@@ -151,14 +151,14 @@ async fn the_recent_deliveries_stop_at_the_first_older_attempt() {
         page(
             first,
             json!([
-                { "id": 3, "guid": "g2", "delivered_at": ago(1) },
-                { "id": 2, "guid": "g1", "delivered_at": ago(2) },
+                { "id": 3, "guid": "g2", "delivered_at": ago(1), "status_code": 202 },
+                { "id": 2, "guid": "g1", "delivered_at": ago(2), "status_code": 503 },
             ]),
             Some(second),
         ),
         page(
             second,
-            json!([{ "id": 1, "guid": "g0", "delivered_at": ago(20) }]),
+            json!([{ "id": 1, "guid": "g0", "delivered_at": ago(20), "status_code": 202 }]),
             Some("/app/hook/deliveries?per_page=100&cursor=c3"),
         ),
         Exchange {
@@ -178,11 +178,15 @@ async fn the_recent_deliveries_stop_at_the_first_older_attempt() {
         .recent_deliveries(since, JobClass::Repair)
         .await
         .unwrap();
-    let attempt = |delivery_id: &str, attempt_id: &str| RecentDelivery {
+    let attempt = |delivery_id: &str, attempt_id: &str, is_delivered| RecentDelivery {
         delivery_id: delivery_id.into(),
         attempt_id: attempt_id.into(),
+        is_delivered,
     };
-    assert_eq!(recent, [attempt("g2", "3"), attempt("g1", "2")]);
+    assert_eq!(
+        recent,
+        [attempt("g2", "3", true), attempt("g1", "2", false)]
+    );
     app.redeliver("2", JobClass::Repair).await.unwrap();
     replay.finish();
 }

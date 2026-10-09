@@ -28,7 +28,7 @@ pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{
     SYNC_REPOS, request_repo_syncs, run_sync_repos, sync_repos_executor, sync_repos_job,
 };
-pub use inbox::{Delivery, mark_processed, pending_deliveries, store_delivery};
+pub use inbox::{Delivery, delete_delivery, pending_deliveries, store_delivery};
 pub use installations::{
     SYNC_INSTALLATION, SYNC_INSTALLATIONS, request_installations_sync,
     request_installations_sync_at_start, run_sync_installation, run_sync_installations,

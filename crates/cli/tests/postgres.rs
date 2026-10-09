@@ -213,25 +213,23 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         sleep(Duration::from_millis(50));
     }
     assert_eq!(status.as_deref(), Some("HTTP/1.1 202 Accepted"));
-    let mut stored = None;
+    let mut waiting = None;
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
-        let row: (String, bool) =
-            sqlx::query_as("SELECT event, processed_at IS NOT NULL FROM webhook_inbox")
-                .fetch_one(&mut *tx)
-                .await
-                .unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM webhook_inbox")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
         tx.rollback().await.unwrap();
-        let done = row.1;
-        stored = Some(row);
-        if done {
+        waiting = Some(count);
+        if count == 0 {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     stop(child);
-    let (event, processed) = stored.unwrap();
-    assert_eq!((event.as_str(), processed), ("ping", true));
+    assert_eq!(waiting, Some(0), "the router deletes the ping");
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
