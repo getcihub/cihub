@@ -1,6 +1,6 @@
 //! The `Scm` trait on GitHub: reads in GraphQL, where one query reads 50 PRs,
 //! and writes in REST. Each value of GitHub becomes a neutral value here
-//! (`docs/GITHUB.md`, `DECISIONS.md` D23, D78).
+//! (`specs/GITHUB.md`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
@@ -189,7 +189,7 @@ fn pr_state(state: &str) -> Result<PrState, ScmError> {
     }
 }
 
-/// `docs/GITHUB.md`: `UNSTABLE` (a check that is not required failed) and
+/// `specs/GITHUB.md`: `UNSTABLE` (a check that is not required failed) and
 /// `HAS_HOOKS` admit the PR, as the branch protection of GitHub does.
 fn mergeability(mergeable: &str, status: &str) -> Mergeability {
     if mergeable == "CONFLICTING" {
@@ -387,7 +387,7 @@ fn unexpected(answer: &Answer) -> ScmError {
         // or when the installation does not cover the repository.
         StatusCode::FORBIDDEN if message.contains("not accessible by integration") => {
             ScmError::Forbidden(format!(
-                "the GitHub App lacks a permission for this call (docs/GITHUB.md), or its \
+                "the GitHub App lacks a permission for this call (specs/GITHUB.md), or its \
                  installation does not cover the repository: {message}"
             ))
         }
@@ -410,6 +410,38 @@ fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
     } else {
         Err(unexpected(&answer))
     }
+}
+
+#[derive(Deserialize)]
+struct DeliveryAttempt {
+    id: u64,
+    guid: String,
+    delivered_at: String,
+    status_code: u16,
+}
+
+/// The attempts of a page delivered at `since` or later, and whether the page
+/// reaches an older one: the pages after it hold only older attempts.
+fn recent_attempts(
+    attempts: Vec<DeliveryAttempt>,
+    since: OffsetDateTime,
+) -> Result<(Vec<RecentDelivery>, bool), ScmError> {
+    let mut recent = Vec::new();
+    for attempt in attempts {
+        let at = OffsetDateTime::parse(&attempt.delivered_at, &Rfc3339)
+            .map_err(|err| ScmError::Protocol(err.to_string()))?;
+        if at < since {
+            return Ok((recent, true));
+        }
+
+        recent.push(RecentDelivery {
+            delivery_id: attempt.guid,
+            attempt_id: attempt.id.to_string(),
+            is_delivered: (200..300).contains(&attempt.status_code),
+        });
+    }
+
+    Ok((recent, false))
 }
 
 #[derive(Deserialize)]
@@ -763,11 +795,11 @@ impl Scm for GithubApp {
                 }
 
                 let checks = rule.parameters["required_status_checks"].as_array();
-                for check in checks.into_iter().flatten() {
-                    if let Some(context) = check["context"].as_str() {
-                        required.names.insert(context.to_owned());
-                    }
-                }
+                let contexts = checks
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|check| check["context"].as_str());
+                required.names.extend(contexts.map(str::to_owned));
 
                 required.up_to_date |= rule.parameters["strict_required_status_checks_policy"]
                     .as_bool()
@@ -1297,36 +1329,15 @@ impl Scm for GithubApp {
         _class: JobClass,
     ) -> ScmFuture<'_, Vec<RecentDelivery>> {
         Box::pin(async move {
-            #[derive(Deserialize)]
-            struct Attempt {
-                id: u64,
-                guid: String,
-                delivered_at: String,
-                status_code: u16,
-            }
-
             let mut path = Some("/app/hook/deliveries?per_page=100".to_owned());
             let mut recent = Vec::new();
             while let Some(page) = path.take() {
                 let (answer, next) = self.send_as_app(Method::GET, &page).await?;
-                let attempts: Vec<Attempt> = expect(answer, &[StatusCode::OK])?.json()?;
-                let mut older = false;
-                for attempt in attempts {
-                    let at = OffsetDateTime::parse(&attempt.delivered_at, &Rfc3339)
-                        .map_err(|err| ScmError::Protocol(err.to_string()))?;
-                    if at < since {
-                        older = true;
-                        break;
-                    }
+                let attempts: Vec<DeliveryAttempt> = expect(answer, &[StatusCode::OK])?.json()?;
+                let (page_recent, has_older) = recent_attempts(attempts, since)?;
+                recent.extend(page_recent);
 
-                    recent.push(RecentDelivery {
-                        delivery_id: attempt.guid,
-                        attempt_id: attempt.id.to_string(),
-                        is_delivered: (200..300).contains(&attempt.status_code),
-                    });
-                }
-
-                if !older {
+                if !has_older {
                     path = next;
                 }
             }

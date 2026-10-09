@@ -13,7 +13,7 @@
 "shellcheck" = "0.11.0"
 "zizmor" = "1.30.1"
 
-# The development Postgres of compose.yaml (DECISIONS.md D12): the tests use
+# The development Postgres of compose.yaml: the tests use
 # DATABASE_URL, cihub server uses CIHUB_DATABASE_URL.
 [hooks]
 postinstall = "lefthook install"
@@ -27,11 +27,12 @@ description = "Format the Rust code"
 run = "cargo fmt --all"
 
 [tasks.lint]
-description = "Check formatting, clippy lints and dependency rules"
+description = "Check formatting, clippy lints, dependency rules and the rules of AGENTS.md"
 run = [
   "cargo fmt --all --check",
   "cargo clippy --workspace --all-targets -- -D warnings",
   "cargo deny check",
+  "scripts/lint-rules.sh",
 ]
 
 [tasks.test]
@@ -44,13 +45,13 @@ depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
 [tasks.sim]
-description = "Run the fault injection tests, default and batched, on 1 000 seeds (DECISIONS.md D129)"
+description = "Run the fault injection tests, default and batched, on 1 000 seeds"
 depends = ["db"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
 
 [tasks.load]
-description = "Compare batched and pipelined on the simulated load, and count the useless assemblies (DECISIONS.md D212, D223)"
+description = "Compare batched and pipelined on the simulated load, and count the useless assemblies"
 run = "cargo nextest run -p cihub-mq-core -E 'binary(load)' --run-ignored only"
 
 [tasks.lint-workflows]
@@ -58,7 +59,7 @@ description = "Lint the GitHub workflows with actionlint and zizmor"
 run = ["actionlint", "zizmor .github/workflows"]
 
 [tasks.helm-lint]
-description = "Lint the Helm chart (DECISIONS.md D251)"
+description = "Lint the Helm chart"
 run = "helm lint charts/cihub --values charts/cihub/ci/lint-values.yaml"
 
 # helm-unittest is a Helm plugin, which mise cannot install: the task installs
@@ -90,7 +91,7 @@ run = [
 ]
 
 [tasks.smoke]
-description = "Install the chart with two replicas in a kind cluster against a CloudNativePG Postgres, then check it (needs docker; DECISIONS.md D251)"
+description = "Install the chart with two replicas in a kind cluster against a CloudNativePG Postgres, then check it (needs docker)"
 run = "scripts/smoke.sh"
 
 [tasks.cover]

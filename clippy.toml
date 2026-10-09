@@ -1,4 +1,7 @@
 doc-valid-idents = ["CIHub", ".."]
+# Counts every block from the item, `impl` included: the code is at 5 today.
+# Lower it as the code gets flatter.
+excessive-nesting-threshold = 5
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 
