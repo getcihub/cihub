@@ -411,7 +411,7 @@ async fn create_item(
 /// newer than the one stored.
 /// The same rows come from a fact of the log and from a late report (D118),
 /// so a replay of the log keeps the late reports.
-pub(crate) async fn upsert_check(
+async fn upsert_check(
     conn: &mut PgConnection,
     check: &CheckObservation,
 ) -> Result<(), MergeQueueError> {

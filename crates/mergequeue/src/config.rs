@@ -20,7 +20,7 @@ use crate::target::QueueTarget;
 pub(crate) const LOAD_CONFIG: &str = "load_config";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct LoadConfig {
+struct LoadConfig {
     pub sha: String,
 }
 
