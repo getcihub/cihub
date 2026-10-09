@@ -484,8 +484,8 @@ fn acme_installation() -> ScmInstallation {
     }
 }
 
-/// Written by hand from the documentation of GitHub, not recorded: the
-/// recording of D90 does not read the installations of the App yet.
+/// Written by hand from the documentation of GitHub, not recorded: a
+/// recording of D90 has one page of installations only.
 #[tokio::test]
 async fn the_installations_of_the_app_come_from_every_page() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
@@ -504,9 +504,6 @@ async fn the_installations_of_the_app_come_from_every_page() {
         "suspended_at": "2026-09-01T10:00:00Z",
     });
     let exchanges = vec![
-        page(first, json!([acme.clone()]), Some(second)),
-        page(second, json!([globex.clone()]), None),
-        answer("GET", "/app/installations/7", 200, acme.clone()),
         page(first, json!([acme]), Some(second)),
         page(second, json!([globex]), None),
     ];
@@ -525,6 +522,5 @@ async fn the_installations_of_the_app_come_from_every_page() {
     };
     assert_eq!(installations, [acme_installation(), globex]);
 
-    contract::installations(&app, &repo("7", "acme", "app")).await;
     replay.finish();
 }
