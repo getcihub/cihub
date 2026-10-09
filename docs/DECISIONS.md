@@ -913,6 +913,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   stores the delivery; it no longer reads `webhook_inbox`. A delivery processed again writes no wrong fact and asks
   each of its jobs at most once, since their keys carry its identifier; a change of a PR processed again after its
   PR entered the queue asks one more read of that PR. Extends D67, D84, D88 and D100.
+- **D250** Code is written for a human reader, and `AGENTS.md` carries the rule ("Readability"): a function
+  separates its steps with one blank line (load, check, decide, act, return), and a guard clause is followed by a
+  blank line; a name says what the thing is in the domain, without abbreviation, and a boolean reads as a
+  question; a function has at most two levels of nesting; a comment says a constraint or a reason, never what the
+  code does. No tool enforces it: `cargo fmt` does not add blank lines. The existing code gets the blank lines in
+  one pass that adds only blank lines; names, nesting and comments follow crate by crate.
 
 ## Open questions
 
