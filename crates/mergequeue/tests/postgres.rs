@@ -2518,6 +2518,68 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.stop().await;
 }
 
+/// `DECISIONS.md` D253: a command on a PR that is merged, closed or a draft
+/// is refused with its reason, and gives no item.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    for n in 1..=3 {
+        assert_eq!(open_green_pr(&sim, &main, n), n);
+    }
+
+    let by_hand = cihub_scm::PrMerge {
+        number: 1,
+        head_sha: sim
+            .pull_request(&repo(), 1, JobClass::Repair)
+            .await
+            .unwrap()
+            .head_sha,
+        tested_sha: String::new(),
+        method: cihub_domain::MergeMethod::Squash,
+        title: "merged by hand".into(),
+        message: String::new(),
+    };
+    sim.merge_pr(&repo(), &by_hand, JobClass::Interactive)
+        .await
+        .unwrap();
+    sim.change_pr(&repo(), 2, PrChange::Close).unwrap();
+    sim.change_pr(&repo(), 3, PrChange::Draft(true)).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    for n in 1..=3 {
+        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let (items,): (i64,) = sqlx::query_as("SELECT count(*) FROM queue_items")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+    drop(tx);
+
+    assert_eq!(items, 0);
+    for (n, state) in [(1, "merged"), (2, "closed"), (3, "a draft")] {
+        let comments = sim.comments(&repo(), n);
+        let refusal = format!("Refused: this PR is {state}.");
+        assert!(
+            comments.iter().any(|body| body.contains(&refusal)),
+            "PR {n}: {comments:?}"
+        );
+    }
+
+    q.stop().await;
+}
+
 /// The queues of the repository, as (name, target branch, whether it keeps
 /// a file, config SHA), and the queue of each current item.
 async fn queues_and_items(

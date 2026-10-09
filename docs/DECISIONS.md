@@ -346,7 +346,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   (`refresh_prs:<queue_id>-<YYYYMMDDTHHMM>:1`, class `repair`). _Extended by D170._
 - **D102** The `submit_pr` job (class `interactive`, key `submit_pr:<delivery_id>:1`) submits a PR after a command
   or a label: it checks the permission of the author of a command (`write`, `admin` for `--direct`), reads the
-  PR and deposits `item.submitted` and `pr.observed` in `queue_inbox`.
+  PR and deposits `item.submitted` and `pr.observed` in `queue_inbox`. _Extended by D253._
 - **D103** A scheduler pass reads the deliveries of a connection without a queue (access lost or restored),
   deposits their fact in the `queue_inbox` of each queue of the connection, marks these queues and marks the
   delivery processed, in one transaction. _Extended by D170._
@@ -579,7 +579,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `queue_inbox` (reasons `user_requested`, `tests_restarted_by_user`). `cihub-github` keeps the permission of a
   user on a repository 5 minutes in memory, per connection. A refused command receives a comment from the job
   that says why: permission too low, commands disabled, no queue for the branch, or no live item.
-  _Extended by D166._ _Extended by D173._
+  _Extended by D166._ _Extended by D173._ _Extended by D253._
 - **D158** (D112) `pr.observed` gains `required_checks`, the checks that the rules of the branch require, without
   the queue status (D105). For a `blocked` PR, `plan` gives `failing_required_check { check }` for a failing
   required check, `awaiting_required_check { check, status }` for a required check that has not finished, and
@@ -919,6 +919,10 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   question; a function has at most two levels of nesting; a comment says a constraint or a reason, never what the
   code does. No tool enforces it: `cargo fmt` does not add blank lines. The existing code gets the blank lines in
   one pass that adds only blank lines; names, nesting and comments follow crate by crate.
+- **D253** Only an open PR that is not a draft can enter a queue. The `submit_pr` job reads the PR, then refuses a
+  PR that is merged, closed or a draft before it looks for its queue: it deposits no fact and creates no queue,
+  and a command or a checkbox receives `Refused: this PR is merged.` (`closed`, `a draft`). The rule applies to
+  every submission: comment, checkbox and label. Extends D102 and D157.
 
 ## Open questions
 
