@@ -81,10 +81,9 @@ const CANCELLED: [Reason; 7] = [
     R::LabelRemoved,
 ];
 const NOT_READY_CANCELLED: [Reason; 8] = concat(&[&[R::NotReadyTimeoutExpired], &CANCELLED]);
-const START_TEST_RUN: [Reason; 11] = [
+const START_TEST_RUN: [Reason; 10] = [
     R::StartTestRunInvalidEvent,
     R::StartTestRunMergeConflict,
-    R::StartTestRunConfigNotFound,
     R::StartTestRunConfigParsingFailure,
     R::StartTestRunConfigBadVersion,
     R::StartTestRunConfigMissingRequiredStatuses,

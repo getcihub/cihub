@@ -5,7 +5,6 @@ CREATE TABLE webhook_inbox (
     connection_id   text,
     queue_id        text,
     event           text        NOT NULL,
-    action          text,
     payload         jsonb       NOT NULL,
     received_at     timestamptz NOT NULL,
     routed_at       timestamptz,

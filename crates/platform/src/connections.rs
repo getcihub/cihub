@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use cihub_domain::{
-    ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, ModuleName, OrgId,
-    RepoId, ScmAccountId, ScmInstanceId,
+    ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, OrgId, RepoId,
+    ScmInstanceId,
 };
 use cihub_scm::{ConnectionRef, Scm, ScmAccount, ScmError};
 use cihub_store::{NewApiToken, PgPool, begin_system, create_api_token, new_api_token_secret};
@@ -31,9 +31,8 @@ pub struct Bootstrapped {
 
 /// Starts an organization from the connection `external_id` of the SCM
 /// `instance` (`DECISIONS.md` D154, D155): the organization, named by the
-/// account of the connection, its account, the connection and the merge
-/// queue module, then a request to read its repositories and a new API token
-/// with every scope. On a connection already known, creates only the token,
+/// account of the connection, and the connection, then a request to read its
+/// repositories and a new API token with every scope. On a connection already known, creates only the token,
 /// so that an operator gets an organization back. The read has the key of the
 /// hour: a second bootstrap in the same hour asks for no other read.
 ///
@@ -91,7 +90,6 @@ pub async fn bootstrap(
         org_id,
         name: BOOTSTRAP_TOKEN,
         scopes: &scopes,
-        created_by: None,
         expires_at: None,
     };
     create_api_token(&mut tx, &new, &token)
@@ -133,10 +131,9 @@ async fn create_organization(
 ) -> Result<(OrgId, ConnectionId), PlatformError> {
     #[expect(
         clippy::disallowed_methods,
-        reason = "the bootstrap creates the organization, its account and its connection"
+        reason = "the bootstrap creates the organization and its connection"
     )]
-    let (org_id, account_id, connection_id) =
-        (OrgId::new(), ScmAccountId::new(), ConnectionId::new());
+    let (org_id, connection_id) = (OrgId::new(), ConnectionId::new());
     sqlx::query("INSERT INTO orgs (id, slug, created_at) VALUES ($1, $2, $3)")
         .bind(org_id.to_string())
         .bind(&account.path)
@@ -145,38 +142,16 @@ async fn create_organization(
         .await
         .map_err(PlatformError::Query)?;
     sqlx::query(
-        "INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(account_id.to_string())
-    .bind(org_id.to_string())
-    .bind(instance.to_string())
-    .bind(&account.external_id)
-    .bind(&account.path)
-    .bind(now)
-    .execute(&mut *conn)
-    .await
-    .map_err(PlatformError::Query)?;
-    sqlx::query(
-        "INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,
-                                      external_id, claimed_at, created_at)
-         VALUES ($1, $2, $3, $4, $5::connection_kind, $6, $7, $7)",
+        "INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id, created_at)
+         VALUES ($1, $2, $3, $4, $5::connection_kind, $6, $7)",
     )
     .bind(connection_id.to_string())
     .bind(org_id.to_string())
     .bind(instance.to_string())
-    .bind(account_id.to_string())
+    .bind(&account.external_id)
     .bind(kind.as_str())
     .bind(external_id)
-    .bind(now)
-    .execute(&mut *conn)
-    .await
-    .map_err(PlatformError::Query)?;
-    sqlx::query(
-        "INSERT INTO org_modules (org_id, module, enabled_at) VALUES ($1, $2::module_name, $3)",
-    )
-    .bind(org_id.to_string())
-    .bind(ModuleName::Mergequeue.as_str())
     .bind(now)
     .execute(&mut *conn)
     .await

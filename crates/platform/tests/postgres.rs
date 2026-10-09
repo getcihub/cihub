@@ -54,10 +54,9 @@ async fn seed(pool: &PgPool) {
              ('{i1}', 'github', 'https://github.com'),
              ('{i2}', 'github', 'https://github.example.com');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'org');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('a', '{org}', '{i1}', '1', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('{c}', '{org}', '{i1}', 'a', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('{c}', '{org}', '{i1}', '1', 'github_app', '1');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('r', '{org}', '{i1}', '{c}', '1', 'acme', 'app', 'main');
@@ -133,7 +132,6 @@ fn delivery(id: &str, received: i64) -> Delivery {
         connection_id: Some(connection()),
         queue_id: Some(queue(1)),
         event: "pull_request".to_owned(),
-        action: Some("opened".to_owned()),
         payload: json!({ "number": 12 }),
         received_at: at(received),
     }
@@ -825,7 +823,6 @@ fn unrouted(id: &str, event: &str, payload: serde_json::Value) -> Delivery {
         connection_id: None,
         queue_id: None,
         event: event.to_owned(),
-        action: None,
         payload,
         ..delivery(id, 0)
     }
@@ -1009,16 +1006,14 @@ async fn sync_jobs(pool: &PgPool) -> Vec<String> {
     .unwrap()
 }
 
-type OrgRow = (String, String, String, String, bool, bool);
+type OrgRow = (String, String, String);
 
 async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT o.slug, a.external_id, a.path, c.external_id, c.claimed_at IS NOT NULL,
-                EXISTS (SELECT 1 FROM org_modules m WHERE m.org_id = o.id AND m.module = 'mergequeue')
+        "SELECT o.slug, c.account_external_id, c.external_id
          FROM orgs o
-         JOIN scm_accounts a ON a.org_id = o.id
-         JOIN scm_connections c ON c.scm_account_id = a.id
+         JOIN scm_connections c ON c.org_id = o.id
          ORDER BY o.slug",
     )
     .fetch_all(&mut *tx)
@@ -1041,29 +1036,15 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
         .await
         .unwrap();
     assert!(first.created);
-    let globex = (
-        "globex".to_owned(),
-        "70".to_owned(),
-        "globex".to_owned(),
-        "7".to_owned(),
-        true,
-        true,
-    );
-    let acme = (
-        "org".to_owned(),
-        "1".to_owned(),
-        "acme".to_owned(),
-        "1".to_owned(),
-        false,
-        false,
-    );
+    let globex = ("globex".to_owned(), "70".to_owned(), "7".to_owned());
+    let acme = ("org".to_owned(), "1".to_owned(), "1".to_owned());
     assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);
     let grant = authenticate(&pool, &first.token, at(0))
         .await
         .unwrap()
         .unwrap();
     assert_eq!(grant.org_id, first.org_id);
-    assert_eq!(grant.scopes.len(), 5, "{:?}", grant.scopes);
+    assert_eq!(grant.scopes.len(), 3, "{:?}", grant.scopes);
     assert!(grant.scopes.contains(&ApiScope::QueuesWrite));
     let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
     assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
@@ -1131,10 +1112,9 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('other', 'other');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('b', 'other', '{i1}', '2', 'other');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('c2', 'other', '{i1}', 'b', 'github_app', '2');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('c2', 'other', '{i1}', '2', 'github_app', '2');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('r4', 'other', '{i1}', 'c2', '4', 'other', 'kept', 'main');",

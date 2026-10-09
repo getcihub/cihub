@@ -31,7 +31,7 @@ pub async fn append_events(
              SELECT $1, $2, $3,
                     greatest(
                         (SELECT coalesce(max(seq), 0) FROM events WHERE queue_id = $3),
-                        (SELECT coalesce(max(seq), 0) FROM queue_snapshots WHERE queue_id = $3)
+                        (SELECT coalesce(snapshot_seq, 0) FROM queues WHERE id = $3)
                     ) + 1,
                     $4::event_type, $5::actor_kind, $6, $7, $8, $9, $10, $11
              RETURNING seq",

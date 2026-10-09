@@ -22,7 +22,7 @@ Design rules on which the rest of the specification rests:
 - **Event log per queue, source of truth.** The log contains facts (what was observed) and decisions (what the queue chose); the state tables (`queue_items`, `test_groups`, `test_runs`) are projections, rebuildable by replay with the pure function `apply`, which never calls `plan` (`DECISIONS.md` D5); a snapshot is taken every 500 events to bound the loading time. A queue can be replayed up to a given instant to understand a decision, or replayed entirely after a projection bug.
 - **Deterministic reconciler.** `plan(state, now) → plan` has no I/O, knows neither Postgres nor GitHub, and is tested by tables and by properties. The same input always gives the same plan.
 - **Convergence, not driving.** The plan describes a desired state ("the ref `cihub-merge/pr-12/…` must exist at the commit composed of A, B, C"), never a sequence of calls. Each job checks the real state before acting and has no effect if the state is already reached.
-- **Lease per queue.** A table `queue_leases` (owner, heartbeat, expiry at 15 s) designates the instance that processes a queue; any instance can take over an expired lease. The queues of one organization are preferably grouped on one instance to share the GitHub cache, without this being a constraint.
+- **Lease per queue.** The columns `lease_owner` and `lease_expires_at` of `queues` (expiry at 15 s) designate the instance that processes a queue; any instance can take over an expired lease. The queues of one organization are preferably grouped on one instance to share the GitHub cache, without this being a constraint.
 - **Partitioned inbox, unconditional acknowledgment.** The ingestion never fails for lack of processing: it stores and acknowledges in under 2 s, even if Postgres is slow (bounded local in-memory queue with replay). Order is guaranteed per queue, not globally.
 - **Scheduled SCM budget.** Each connection has a token bucket fed by the rate limit headers, and each job a class: `interactive` (commands, statuses, comments), `merge`, `speculate` (test branches), `repair` (re-reads). When the budget drops, speculation is reduced first, merge last; nothing is lost, everything is deferred.
 - **Repair loop.** Independently of webhooks, each queue periodically re-reads what matters (live PRs, checks of the runs in progress, head of the target branch, existence of the test refs) at an adaptive interval of 30 s to 10 min depending on activity, and injects what it observes into the inbox. A lost webhook costs at most one interval.
@@ -111,7 +111,7 @@ Three rules structure the split, and each one is checked in CI rather than left 
   tests in a few seconds.
 - **The modules do not know each other.** `cihub-mergequeue` and `cihub-flakytests` do not depend on each
   other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-cli` knows
-  them both. The `Module` contract of `cihub-platform` exposes the module name, its routes, its job
+  them both. The `Module` contract of `cihub-platform` exposes its routes, its job
   executors and its event subscriptions; there is no dynamic loading.
 - **A single version per external dependency.** All versions are in `[workspace.dependencies]`
   (`DECISIONS.md` D2); edition, license and `rust-version` come from `[workspace.package]`, the lints from
@@ -171,7 +171,7 @@ number of replicas, the SCM budget of the connection is what limits; Postgres is
 ## The scheduler
 
 The scheduler process is the one to understand in order to reason about correctness. Each replica runs
-a loop: take or renew the `queue_leases` leases on the queues that have pending work
+a loop: take or renew the leases (`lease_owner` and `lease_expires_at` of `queues`) on the queues that have pending work
 (`queues.dirty = true` or a due tick), then, for each held queue, open a transaction, take
 `pg_try_advisory_xact_lock`, run the reconciliation and reset `dirty` to false. The lease assigns a queue to a
 replica; the transaction-level advisory lock guarantees that only one reconciliation applies at a time, including

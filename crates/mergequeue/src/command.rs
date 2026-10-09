@@ -2,21 +2,17 @@
 //! `/cihub merge`, which `submit_pr` runs, and `/cihub cancel` and
 //! `/cihub restart`, which the job `pr_command` runs (`DECISIONS.md` D157).
 
-use cihub_domain::{
-    Actor, ConnectionId, EventKind, ItemId, ItemState, OrgId, Permission, Priority, QueueId,
-    RepoId, ScmInstanceId,
-};
+use cihub_domain::{Actor, EventKind, ItemId, ItemState, Permission, Priority, QueueId, RepoId};
 use cihub_platform::Job;
 use cihub_scm::{Scm, ScmUser};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use time::OffsetDateTime;
 use tracing::info;
 
 use crate::jobs::{
-    Account, Failure, acknowledge, connection_job, give_back_facts, load_repo, load_target,
-    read_payload, reply, user_of,
+    Account, Failure, acknowledge, give_back_facts, load_repo, load_target, read_payload, reply,
+    user_of,
 };
 
 /// The type of the job that runs `/cihub cancel` and `/cihub restart`.
@@ -32,7 +28,7 @@ pub(crate) enum PrCommand {
 
 /// `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
 /// [--direct] [--queue=<name>]`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Merge {
     /// `None` leaves the priority to the `priority_rules` (`DECISIONS.md` D148).
     pub priority: Option<Priority>,
@@ -60,31 +56,26 @@ pub(crate) fn parse_command(body: &str) -> Option<PrCommand> {
 }
 
 fn parse_merge<'a>(words: impl Iterator<Item = &'a str>) -> Option<Merge> {
-    let mut merge = Merge {
-        priority: None,
-        no_batch: false,
-        direct: false,
-        queue: None,
-    };
+    let mut merge = Merge::default();
+
     for word in words {
-        match word {
-            "--no-batch" => merge.no_batch = true,
-            "--direct" => merge.direct = true,
-            _ => {
-                if let Some(name) = word.strip_prefix("--queue=") {
-                    if name.is_empty() {
-                        return None;
-                    }
-                    merge.queue = Some(name.to_owned());
-                    continue;
-                }
-                let value = word.strip_prefix("--priority=")?;
-                let priority =
-                    Priority::from_name(value).or_else(|| value.parse().ok().map(Priority))?;
-                merge.priority = Some(priority);
+        if word == "--no-batch" {
+            merge.no_batch = true;
+        } else if word == "--direct" {
+            merge.direct = true;
+        } else if let Some(name) = word.strip_prefix("--queue=") {
+            if name.is_empty() {
+                return None;
             }
+            merge.queue = Some(name.to_owned());
+        } else {
+            let value = word.strip_prefix("--priority=")?;
+            let priority =
+                Priority::from_name(value).or_else(|| value.parse().ok().map(Priority))?;
+            merge.priority = Some(priority);
         }
     }
+
     Some(merge)
 }
 
@@ -114,17 +105,6 @@ pub(crate) struct PrCommandRequest {
     pub command: ItemCommand,
     /// The comment of the command (`DECISIONS.md` D166).
     pub comment_id: String,
-}
-
-/// The job of `request` after the delivery `delivery_id` (`DECISIONS.md`
-/// D157).
-pub(crate) fn pr_command_job(
-    org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
-    delivery_id: &str,
-    request: &PrCommandRequest,
-) -> Job {
-    connection_job(org_id, connection, delivery_id, PR_COMMAND, json!(request))
 }
 
 /// Checks the permission of the author, finds the live item of the PR, and

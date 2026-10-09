@@ -16,7 +16,6 @@ pub struct ReceivedDelivery {
     pub delivery_id: String,
     /// `X-GitHub-Event`, such as `pull_request`.
     pub event: String,
-    pub action: Option<String>,
     pub payload: Value,
 }
 
@@ -53,11 +52,9 @@ pub fn receive(
         .filter(|event| !event.is_empty())
         .ok_or(WebhookError::MissingHeader("X-GitHub-Event"))?;
     let payload: Value = serde_json::from_slice(body).map_err(WebhookError::Payload)?;
-    let action = payload["action"].as_str().map(str::to_owned);
     Ok(ReceivedDelivery {
         delivery_id: delivery_id.to_owned(),
         event: event.to_owned(),
-        action,
         payload,
     })
 }
@@ -104,7 +101,6 @@ mod tests {
         let delivery = receive(&SecretString::from("s"), &headers, BODY).unwrap();
         assert_eq!(delivery.delivery_id, "d1");
         assert_eq!(delivery.event, "pull_request");
-        assert_eq!(delivery.action.as_deref(), Some("opened"));
         assert_eq!(delivery.payload["number"], 1);
     }
 

@@ -11,8 +11,7 @@ use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability,
     OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, ScmAccountId, ScmInstanceId, SubmittedVia, UserId,
-    temp_branch,
+    ReviewDecision, RunId, RunStatus, ScmInstanceId, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -96,12 +95,9 @@ async fn seed(pool: &PgPool) {
          INSERT INTO users (id, scm_instance_id, external_id, login)
              VALUES ('{user}', '{instance}', '3', 'octocat');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO org_modules (org_id, module, enabled_at)
-             VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('{account}', '{org}', '{instance}', '1', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('{connection}', '{org}', '{instance}', '1', 'github_app', '1');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
                             name, default_branch)
              VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app',
@@ -111,7 +107,6 @@ async fn seed(pool: &PgPool) {
         instance = instance(),
         user = user(),
         org = org(),
-        account = ScmAccountId::from_ulid(Ulid(13)),
         connection = connection(),
         repo = RepoId::from_ulid(Ulid(12)),
         queue = queue(),
@@ -177,18 +172,9 @@ impl World {
             kind,
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
-        let mut written = self
-            .log
-            .write(&mut tx, vec![event], self.now)
-            .await
-            .unwrap();
+        let mut written = self.log.write(&mut tx, vec![event]).await.unwrap();
         let plan = plan(&self.log.snapshot, &self.settings, self.now).unwrap();
-        written.extend(
-            self.log
-                .write(&mut tx, plan.decisions, self.now)
-                .await
-                .unwrap(),
-        );
+        written.extend(self.log.write(&mut tx, plan.decisions).await.unwrap());
         tx.commit().await.unwrap();
         written
     }
@@ -374,24 +360,29 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
             ("merged".into(), 85)
         ]
     );
-    let snapshots: Vec<i64> = sqlx::query_scalar("SELECT seq FROM queue_snapshots ORDER BY seq")
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap();
-    assert_eq!(snapshots[0], SNAPSHOT_EVERY);
+    let last_snapshot = w.log.seq / SNAPSHOT_EVERY * SNAPSHOT_EVERY;
+    let snapshot_seq: Option<i64> =
+        sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(snapshot_seq, Some(last_snapshot));
 
     let before = projections(&mut tx).await;
     let loaded = QueueLog::load(&mut tx, queue()).await.unwrap();
     assert_eq!(loaded, w.log);
 
-    let rebuilt = rebuild(&mut tx, queue(), w.now).await.unwrap();
+    let rebuilt = rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(rebuilt, w.log);
     assert_eq!(projections(&mut tx).await, before);
-    let again: Vec<i64> = sqlx::query_scalar("SELECT seq FROM queue_snapshots ORDER BY seq")
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap();
-    assert_eq!(again, snapshots);
+    let snapshot_seq_after_rebuild: Option<i64> =
+        sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(snapshot_seq_after_rebuild, Some(last_snapshot));
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -403,8 +394,8 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     assert_eq!(w.log.seq, seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
-    let item: (String, String, i64, Option<i64>, String, Option<String>) = sqlx::query_as(
-        "SELECT state::text, state_reason::text, seq, position, pr_author_id, submitted_by
+    let item: (String, String, Option<i64>, String, Option<String>) = sqlx::query_as(
+        "SELECT state::text, state_reason::text, position, pr_author_id, submitted_by
          FROM queue_items WHERE queue_id = $1",
     )
     .bind(queue().to_string())
@@ -413,10 +404,9 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     .unwrap();
     assert_eq!(item.0, ItemState::Testing.as_str());
     assert_eq!(item.1, "test_run_started");
-    assert!(item.2 > 0);
-    assert!(item.3.is_some());
-    assert_eq!(item.4, user().to_string());
-    assert_eq!(item.5, Some(user().to_string()));
+    assert!(item.2.is_some());
+    assert_eq!(item.3, user().to_string());
+    assert_eq!(item.4, Some(user().to_string()));
 }
 
 /// The clock of the loops of a [`SimQueue`]: the fixed time of [`clock`],
@@ -558,7 +548,6 @@ impl SimQueue {
             org_id: org(),
             name: "test",
             scopes: &scopes,
-            created_by: None,
             expires_at: None,
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
@@ -594,7 +583,6 @@ impl SimQueue {
                 connection_id: route.connection_id,
                 queue_id: route.queue_id,
                 event: "sim".into(),
-                action: None,
                 payload: serde_json::json!({ "id": id }),
                 received_at: self.clock.now(),
             };
@@ -869,7 +857,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
 
     let mut tx = begin_system(&pool).await.unwrap();
     let before = projections(&mut tx).await;
-    rebuild(&mut tx, queue(), clock()).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
 
@@ -915,7 +903,6 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
             connection_id: route.connection_id,
             queue_id: route.queue_id,
             event: "sim".into(),
-            action: None,
             payload: serde_json::json!({ "id": id }),
             received_at: clock(),
         };
@@ -1179,7 +1166,9 @@ type RunRow = (
 
 async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
     sqlx::query_as(
-        "SELECT id, test_sha, status::text, failure_reason::text, head_shas, tested_pr_numbers,
+        "SELECT id, test_sha, status::text,
+                CASE WHEN status IN ('failed', 'timed_out') THEN status_reason::text END,
+                head_shas, tested_pr_numbers,
                 required_statuses, required_statuses_source::text, conflict_culprit, test_branch,
                 draft_pr_number
          FROM test_runs ORDER BY started_at, id",
@@ -1426,7 +1415,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     assert_eq!(events_after, events_before);
 
     let before = projections(&mut tx).await;
-    rebuild(&mut tx, queue(), q.clock.now()).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
     q.stop().await;
@@ -1793,7 +1782,6 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
             connection_id: route.connection_id,
             queue_id: None,
             event: "sim".into(),
-            action: None,
             payload: serde_json::json!({ "id": id }),
             received_at: clock(),
         };
@@ -2049,17 +2037,15 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     let mut tx = begin_system(&pool).await.unwrap();
-    let items: Vec<(String, String, bool, bool)> = sqlx::query_as(
-        "SELECT state::text, state_reason::text, is_current, concluded_at IS NOT NULL
-         FROM queue_items",
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .unwrap();
+    let items: Vec<(String, String, bool)> =
+        sqlx::query_as("SELECT state::text, state_reason::text, is_current FROM queue_items")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
     drop(tx);
     assert_eq!(
         items,
-        [("cancelled".into(), "queue_draining".into(), false, true)]
+        [("cancelled".into(), "queue_draining".into(), false)]
     );
     q.stop().await;
 }
@@ -2990,7 +2976,8 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     assert!(!partition_exists(&pool, "events_2026_05").await);
 
     let mut tx = begin_system(&pool).await.unwrap();
-    let snapshot: i64 = sqlx::query_scalar("SELECT max(seq) FROM queue_snapshots")
+    let snapshot: i64 = sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+        .bind(queue().to_string())
         .fetch_one(&mut *tx)
         .await
         .unwrap();
@@ -3010,10 +2997,10 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
             sender_id: Some(user()),
         },
     };
-    log.write(&mut tx, vec![pushed], today).await.unwrap();
+    log.write(&mut tx, vec![pushed]).await.unwrap();
     assert_eq!(log.seq, snapshot + 1);
 
-    let err = rebuild(&mut tx, queue(), today).await.unwrap_err();
+    let err = rebuild(&mut tx, queue()).await.unwrap_err();
     assert!(matches!(err, MergeQueueError::LogGap { .. }), "{err:?}");
 }
 
@@ -3381,13 +3368,9 @@ impl Chaos {
         let mut tx = begin_system(&chaos.pool).await.unwrap();
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
-             INSERT INTO org_modules (org_id, module, enabled_at)
-                 VALUES ('{org}', 'mergequeue', '2026-10-01T00:00:00Z');
-             INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-                 VALUES ('{account}', '{org}', '{instance}', 'account-{seed}', 'acme-{seed}');
-             INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind,
+             INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
                                           external_id)
-                 VALUES ('{connection}', '{org}', '{instance}', '{account}', 'github_app',
+                 VALUES ('{connection}', '{org}', '{instance}', 'account-{seed}', 'github_app',
                          '{connection_external_id}');
              INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id,
                                 namespace, name, default_branch)
@@ -3396,7 +3379,6 @@ impl Chaos {
              INSERT INTO queues (id, org_id, repo_id, target_branch, name)
                  VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');",
             org = chaos.org(),
-            account = ScmAccountId::from_ulid(chaos.id(4)),
             instance = instance(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,
@@ -3507,7 +3489,6 @@ impl Chaos {
                 connection_id: route.connection_id,
                 queue_id: route.queue_id,
                 event: "sim".into(),
-                action: None,
                 payload: serde_json::json!({ "id": id }),
                 received_at: self.clock.now(),
             };
@@ -3768,9 +3749,7 @@ impl Chaos {
             "seed {seed}: merged out of order {merged:?}"
         );
         let before = projections(&mut tx).await;
-        rebuild(&mut tx, self.queue(), self.clock.now())
-            .await
-            .unwrap();
+        rebuild(&mut tx, self.queue()).await.unwrap();
         assert_eq!(projections(&mut tx).await, before, "seed {seed}");
     }
 }
@@ -3797,11 +3776,12 @@ async fn fault_injection_batched(pool: PgPool) {
     .await;
     // The file applied: the seeds formed batches and bisected some.
     let mut tx = begin_system(&pool).await.unwrap();
-    let kinds: Vec<String> =
-        sqlx::query_scalar("SELECT DISTINCT kind::text FROM test_groups ORDER BY 1")
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap();
+    let kinds: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT payload->>'kind' FROM events WHERE type = 'group.formed' ORDER BY 1",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
     assert!(
         kinds.contains(&"batch".to_owned()) && kinds.contains(&"bisection".to_owned()),
         "{kinds:?}"

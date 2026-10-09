@@ -15,15 +15,14 @@ use time::OffsetDateTime;
 
 use crate::{MergeQueueError, parse_id};
 
-/// Writes the change of `event`, the event `seq` of its log; `after` is the
-/// snapshot once `event` is applied.
+/// Writes the change of `event`; `after` is the snapshot once `event` is
+/// applied.
 #[allow(
     clippy::too_many_lines,
     reason = "one arm per event, each short and independent"
 )]
 pub(crate) async fn project(
     conn: &mut PgConnection,
-    seq: i64,
     event: &Event,
     after: &Snapshot,
 ) -> Result<(), MergeQueueError> {
@@ -64,9 +63,7 @@ pub(crate) async fn project(
                      verified_by_run_id = CASE WHEN $3 = 'pending' THEN NULL
                                                ELSE coalesce($7, verified_by_run_id) END,
                      group_id = CASE WHEN $3 = 'pending' THEN NULL ELSE group_id END,
-                     merged_sha = coalesce($8, merged_sha),
-                     seq = CASE WHEN $2 = 'not_ready' AND $3 = 'pending' THEN $9 ELSE seq END,
-                     concluded_at = CASE WHEN $10 THEN $5 END
+                     merged_sha = coalesce($8, merged_sha)
                  WHERE id = $1 AND state = $2::item_state",
             )
             .bind(item_id.to_string())
@@ -77,27 +74,21 @@ pub(crate) async fn project(
             .bind(position)
             .bind(verified_by_run_id.map(|id| id.to_string()))
             .bind(merged_sha)
-            .bind(seq)
-            .bind(to.is_terminal())
             .execute(&mut *conn)
             .await;
             one_row(done, event)?;
         }
         EventKind::ItemReadinessChanged {
             item_id,
-            mergeability,
             block_reasons,
+            ..
         } => {
             let blocks = serde_json::to_value(block_reasons).map_err(MergeQueueError::Snapshot)?;
-            let done = sqlx::query(
-                "UPDATE queue_items SET mergeability = $2::mergeability, block_reasons = $3
-                 WHERE id = $1",
-            )
-            .bind(item_id.to_string())
-            .bind(mergeability.as_str())
-            .bind(blocks)
-            .execute(&mut *conn)
-            .await;
+            let done = sqlx::query("UPDATE queue_items SET block_reasons = $2 WHERE id = $1")
+                .bind(item_id.to_string())
+                .bind(blocks)
+                .execute(&mut *conn)
+                .await;
             one_row(done, event)?;
         }
         EventKind::QueueRenumbered { positions } => {
@@ -112,59 +103,40 @@ pub(crate) async fn project(
         }
         EventKind::GroupFormed {
             group_id,
-            kind,
             item_ids,
             predecessor_ids,
-            base_sha,
-            parent_group_id,
+            ..
         } => {
             let ids = |ids: &[cihub_domain::ItemId]| -> Vec<String> {
                 ids.iter().map(ToString::to_string).collect()
             };
             sqlx::query(
-                "INSERT INTO test_groups (id, org_id, queue_id, kind, item_ids, parent_group_id,
-                                          predecessor_ids, base_sha, seq, state, state_reason,
-                                          created_at)
-                 VALUES ($1, $2, $3, $4::group_kind, $5, $6, $7, $8, $9, 'testing',
-                         'test_run_started', $10)",
+                "INSERT INTO test_groups (id, org_id, queue_id, item_ids, predecessor_ids, state)
+                 VALUES ($1, $2, $3, $4, $5, 'testing')",
             )
             .bind(group_id.to_string())
             .bind(event.org_id.to_string())
             .bind(event.queue_id.to_string())
-            .bind(kind.as_str())
             .bind(ids(item_ids))
-            .bind(parent_group_id.map(|id| id.to_string()))
             .bind(ids(predecessor_ids))
-            .bind(base_sha)
-            .bind(seq)
-            .bind(at)
             .execute(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
             sqlx::query("UPDATE queue_items SET group_id = $1 WHERE id = ANY($2)")
                 .bind(group_id.to_string())
                 .bind(ids(item_ids))
                 .execute(&mut *conn)
-                .await
-                .map_err(MergeQueueError::Query)?;
+                .await?;
         }
         EventKind::GroupTransitioned {
-            group_id,
-            from,
-            to,
-            reason,
+            group_id, from, to, ..
         } => {
             let done = sqlx::query(
-                "UPDATE test_groups SET state = $3::group_state, state_reason = $4::reason,
-                                        concluded_at = CASE WHEN $6 THEN $5 END
+                "UPDATE test_groups SET state = $3::group_state
                  WHERE id = $1 AND state = $2::group_state",
             )
             .bind(group_id.to_string())
             .bind(from.as_str())
             .bind(to.as_str())
-            .bind(reason.as_str())
-            .bind(at)
-            .bind(to.is_terminal())
             .execute(&mut *conn)
             .await;
             one_row(done, event)?;
@@ -215,8 +187,7 @@ pub(crate) async fn project(
             .bind(head_shas)
             .bind(tested)
             .execute(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
         }
         EventKind::RunTransitioned {
             run_id,
@@ -231,7 +202,6 @@ pub(crate) async fn project(
                 "UPDATE test_runs SET
                      status = $3::run_status, status_reason = $4::reason,
                      ended_at = CASE WHEN $6 THEN $5 ELSE ended_at END,
-                     failure_reason = CASE WHEN $7 THEN $4::reason ELSE failure_reason END,
                      failure_causing_statuses = CASE WHEN $7 THEN $8
                                                      ELSE failure_causing_statuses END
                  WHERE id = $1 AND status = $2::run_status",
@@ -345,8 +315,7 @@ async fn refused_item(
     .bind(event.queue_id.to_string())
     .bind(event.cause_id.map(|id| id.to_string()))
     .fetch_optional(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let Some(payload) = payload else {
         return Ok(None);
     };
@@ -404,22 +373,19 @@ async fn create_item(
         .bind(event.queue_id.to_string())
         .bind(pr_number)
         .execute(&mut *conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
     }
     let blocks = serde_json::to_value(&item.block_reasons).map_err(MergeQueueError::Snapshot)?;
     let done = sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value,
                                   no_batch, force_enqueued, submitted_by, submitted_via,
-                                  submitted_at, mergeability, block_reasons, is_current,
-                                  sender_permission, concluded_at)
+                                  submitted_at, block_reasons, is_current, sender_permission)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
                 $10, $11, s.actor_user_id, $12::submitted_via, s.occurred_at,
-                $13::mergeability, $14, $16, (s.payload->>'sender_permission')::permission,
-                CASE WHEN $17 THEN $8 END
+                $13, $15, (s.payload->>'sender_permission')::permission
          FROM events s
-         WHERE s.queue_id = $3 AND s.id = $15 AND s.type = 'item.submitted'",
+         WHERE s.queue_id = $3 AND s.id = $14 AND s.type = 'item.submitted'",
     )
     .bind(item.id.to_string())
     .bind(event.org_id.to_string())
@@ -433,18 +399,16 @@ async fn create_item(
     .bind(item.no_batch)
     .bind(item.force_enqueued)
     .bind(item.submitted_via.as_str())
-    .bind(item.mergeability.as_str())
     .bind(blocks)
     .bind(event.cause_id.map(|id| id.to_string()))
     .bind(item.is_current)
-    .bind(item.state.is_terminal())
     .execute(conn)
     .await;
     one_row(done, event)
 }
 
 /// Writes the last report of a check on the test SHA of its run, when it is
-/// newer than the one stored, and the time of the last report of the run.
+/// newer than the one stored.
 /// The same rows come from a fact of the log and from a late report (D118),
 /// so a replay of the log keeps the late reports.
 pub(crate) async fn upsert_check(
@@ -468,24 +432,15 @@ pub(crate) async fn upsert_check(
     .bind(check.conclusion.map(cihub_domain::CheckConclusion::as_str))
     .bind(&check.details_url)
     .bind(check.observed_at)
-    .execute(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
-    sqlx::query(
-        "UPDATE test_runs
-         SET last_report_at = (SELECT max(observed_at) FROM check_observations WHERE run_id = $1)
-         WHERE id = $1",
-    )
-    .bind(check.run_id.to_string())
     .execute(conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
+
     Ok(())
 }
 
 /// Stores a report on the test SHA of a run of `queue` that is no longer
-/// live, without a fact in the log (`DECISIONS.md` D118). Returns `false` when
-/// no run of the queue has this test SHA.
+/// live, without a fact in the log (`DECISIONS.md` D118). Does nothing when no
+/// run of the queue has this test SHA.
 pub(crate) async fn record_late_check(
     conn: &mut PgConnection,
     org_id: OrgId,
@@ -493,7 +448,7 @@ pub(crate) async fn record_late_check(
     test_sha: &str,
     check: &CheckReport,
     at: OffsetDateTime,
-) -> Result<bool, MergeQueueError> {
+) -> Result<(), MergeQueueError> {
     let run: Option<(String, Vec<String>)> = sqlx::query_as(
         "SELECT id, required_statuses FROM test_runs
          WHERE queue_id = $1 AND test_sha = $2
@@ -502,11 +457,11 @@ pub(crate) async fn record_late_check(
     .bind(queue.to_string())
     .bind(test_sha)
     .fetch_optional(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let Some((run_id, required)) = run else {
-        return Ok(false);
+        return Ok(());
     };
+
     let observation = CheckObservation {
         org_id,
         run_id: parse_id(&run_id, &run_id)?,
@@ -518,7 +473,8 @@ pub(crate) async fn record_late_check(
         observed_at: at,
     };
     upsert_check(conn, &observation).await?;
-    Ok(true)
+
+    Ok(())
 }
 
 fn one_row(done: Result<PgQueryResult, sqlx::Error>, event: &Event) -> Result<(), MergeQueueError> {

@@ -16,7 +16,6 @@ pub struct Delivery {
     pub connection_id: Option<ConnectionId>,
     pub queue_id: Option<QueueId>,
     pub event: String,
-    pub action: Option<String>,
     pub payload: Value,
     pub received_at: OffsetDateTime,
 }
@@ -38,8 +37,8 @@ pub async fn store_delivery(
 ) -> Result<bool, PlatformError> {
     let done = sqlx::query(
         "INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, connection_id, queue_id,
-                                    event, action, payload, received_at, routed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $3 IS NULL THEN NULL ELSE $9 END)
+                                    event, payload, received_at, routed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $3 IS NULL THEN NULL ELSE $8 END)
          ON CONFLICT (scm_instance_id, delivery_id) DO NOTHING",
     )
     .bind(delivery.scm_instance_id.to_string())
@@ -48,7 +47,6 @@ pub async fn store_delivery(
     .bind(delivery.connection_id.map(|id| id.to_string()))
     .bind(delivery.queue_id.map(|id| id.to_string()))
     .bind(&delivery.event)
-    .bind(&delivery.action)
     .bind(&delivery.payload)
     .bind(delivery.received_at)
     .execute(&mut *conn)
@@ -70,7 +68,6 @@ pub(crate) type DeliveryRow = (
     Option<String>,
     Option<String>,
     String,
-    Option<String>,
     Value,
     OffsetDateTime,
 );
@@ -87,8 +84,8 @@ pub async fn pending_deliveries(
     limit: i64,
 ) -> Result<Vec<Delivery>, PlatformError> {
     let rows: Vec<DeliveryRow> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, action,
-                payload, received_at
+        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, payload,
+                received_at
          FROM webhook_inbox
          WHERE queue_id = $1 AND processed_at IS NULL
          ORDER BY received_at, delivery_id
@@ -110,7 +107,6 @@ pub(crate) fn decode(
         connection_id,
         queue_id,
         event,
-        action,
         payload,
         received_at,
     ): DeliveryRow,
@@ -126,7 +122,6 @@ pub(crate) fn decode(
         queue_id: queue_id.map(|id| id.parse()).transpose().map_err(read())?,
         delivery_id: delivery_id.clone(),
         event,
-        action,
         payload,
         received_at,
     })

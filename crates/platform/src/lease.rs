@@ -20,20 +20,18 @@ pub async fn acquire_leases(
     now: OffsetDateTime,
     limit: i64,
 ) -> Result<Vec<QueueId>, PlatformError> {
-    // Two owners that insert the same queue at the same time conflict on the
-    // key: the `WHERE` of `DO UPDATE` reads the row of the winner, so the
-    // other one gets nothing.
     let ids: Vec<String> = sqlx::query_scalar(
-        "INSERT INTO queue_leases (queue_id, org_id, owner, expires_at)
-         SELECT q.id, q.org_id, $1, $3
-         FROM queues q LEFT JOIN queue_leases l ON l.queue_id = q.id
-         WHERE (q.dirty OR q.next_tick_at <= $2)
-           AND (l.queue_id IS NULL OR l.owner = $1 OR l.expires_at <= $2)
-         ORDER BY q.dirty DESC, q.next_tick_at NULLS LAST, q.id
-         LIMIT $4
-         ON CONFLICT (queue_id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at
-             WHERE queue_leases.owner = excluded.owner OR queue_leases.expires_at <= $2
-         RETURNING queue_id",
+        "WITH leased AS (
+             UPDATE queues SET lease_owner = $1, lease_expires_at = $3
+             WHERE id IN (
+                 SELECT id FROM queues
+                 WHERE (dirty OR next_tick_at <= $2)
+                   AND (lease_owner IS NULL OR lease_owner = $1 OR lease_expires_at <= $2)
+                 ORDER BY dirty DESC, next_tick_at NULLS LAST, id
+                 LIMIT $4
+                 FOR UPDATE SKIP LOCKED)
+             RETURNING id, dirty, next_tick_at)
+         SELECT id FROM leased ORDER BY dirty DESC, next_tick_at NULLS LAST, id",
     )
     .bind(owner)
     .bind(now)
@@ -42,6 +40,7 @@ pub async fn acquire_leases(
     .fetch_all(conn)
     .await
     .map_err(PlatformError::Query)?;
+
     ids.into_iter()
         .map(|id| id.parse().map_err(PlatformError::read("queue", &id)))
         .collect()
@@ -54,11 +53,13 @@ pub async fn acquire_leases(
 ///
 /// Postgres fails.
 pub async fn release_leases(conn: &mut PgConnection, owner: &str) -> Result<u64, PlatformError> {
-    let done = sqlx::query("DELETE FROM queue_leases WHERE owner = $1")
-        .bind(owner)
-        .execute(conn)
-        .await
-        .map_err(PlatformError::Query)?;
+    let done = sqlx::query(
+        "UPDATE queues SET lease_owner = NULL, lease_expires_at = NULL WHERE lease_owner = $1",
+    )
+    .bind(owner)
+    .execute(conn)
+    .await
+    .map_err(PlatformError::Query)?;
     Ok(done.rows_affected())
 }
 

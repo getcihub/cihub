@@ -22,23 +22,23 @@ use cihub_platform::{
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
-use crate::command::{
-    ItemCommand, Merge, PrCommand, PrCommandRequest, parse_command, pr_command_job,
-};
+use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
 use crate::config::load_config;
-use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
+use crate::jobs::{
+    SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
+};
 use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
-use crate::surfaces::{WelcomePr, converge_surfaces, welcome_job};
+use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, QueueLog, parse_id};
 
@@ -77,17 +77,14 @@ impl Reconciler {
         queue: QueueId,
         clock: &(dyn Fn() -> OffsetDateTime + Sync),
     ) -> Result<(), MergeQueueError> {
-        let Some(mut tx) = begin_reconciliation(pool, queue)
-            .await
-            .map_err(MergeQueueError::Platform)?
-        else {
+        let Some(mut tx) = begin_reconciliation(pool, queue).await? else {
             return Ok(());
         };
         // Read once the queue is taken: a change that marked it dirty before
         // is seen at a time no earlier than the change.
         let now = clock();
         self.reconcile_in(&mut tx, queue, now).await?;
-        tx.commit().await.map_err(MergeQueueError::Query)
+        Ok(tx.commit().await?)
     }
 
     /// The work of a reconciliation of `queue`, in the transaction of `conn`
@@ -104,28 +101,17 @@ impl Reconciler {
     ) -> Result<(), MergeQueueError> {
         let target = QueueTarget::load(conn, queue).await?;
         tracing::Span::current().record("org_id", tracing::field::display(target.org_id));
-        if !target.enabled {
-            return schedule_tick(conn, queue, None)
-                .await
-                .map_err(MergeQueueError::Platform);
-        }
         let settings = target.settings()?;
         let mut log = QueueLog::load(conn, queue).await?;
         // The facts that the jobs gave back come first: a check reported on
         // a test branch needs the assembly fact of its run.
-        let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION)
-            .await
-            .map_err(MergeQueueError::Store)?;
+        let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
-        let mut written = log.write(conn, given, now).await?.len();
-        mark_facts_processed(conn, &given_ids, now)
-            .await
-            .map_err(MergeQueueError::Store)?;
+        let mut written = log.write(conn, given).await?.len();
+        mark_facts_processed(conn, &given_ids, now).await?;
         let mut facts = Vec::new();
         let mut jobs = Vec::new();
-        let deliveries = pending_deliveries(conn, queue, INBOX_PER_RECONCILIATION)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        let deliveries = pending_deliveries(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let mut deferred = 0;
         for delivery in &deliveries {
             let (processed, error) = match (self.translate)(&delivery.event, &delivery.payload) {
@@ -152,8 +138,7 @@ impl Reconciler {
                 now,
                 error.as_deref(),
             )
-            .await
-            .map_err(MergeQueueError::Platform)?;
+            .await?;
         }
         let requested_mode = log.snapshot.requested_mode;
         if settings.mode.value != requested_mode {
@@ -170,10 +155,10 @@ impl Reconciler {
                 },
             });
         }
-        written += log.write(conn, facts, now).await?.len();
-        let plan = plan(&log.snapshot, &settings, now).map_err(MergeQueueError::Plan)?;
+        written += log.write(conn, facts).await?.len();
+        let plan = plan(&log.snapshot, &settings, now)?;
         let ended = ended_runs(&plan.decisions);
-        let decisions = log.write(conn, plan.decisions, now).await?.len();
+        let decisions = log.write(conn, plan.decisions).await?.len();
         let converge = Converge {
             target: &target,
             settings: &settings,
@@ -183,9 +168,7 @@ impl Reconciler {
         };
         let requested = self.request_jobs(conn, &converge, jobs, now).await?;
         log.cover(conn, now).await?;
-        schedule_tick(conn, queue, plan.wake_at)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        schedule_tick(conn, queue, plan.wake_at).await?;
         if written + decisions + requested + deferred > 0 {
             info!(
                 deliveries = deliveries.len(),
@@ -254,10 +237,7 @@ impl Reconciler {
             .map(|run_id| (cleanup(target, *run_id), now + keep));
         let mut requested = 0;
         for (job, run_after) in jobs.iter().map(|job| (job.clone(), now)).chain(cleanups) {
-            if enqueue_job(conn, &job, run_after, now)
-                .await
-                .map_err(MergeQueueError::Platform)?
-            {
+            if enqueue_job(conn, &job, run_after, now).await? {
                 requested += 1;
             }
         }
@@ -335,7 +315,7 @@ impl Work<'_> {
                     && self.settings.commands_enabled.value
                 {
                     let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
-                    jobs.push(welcome(
+                    jobs.push(welcome_job(
                         self.target.org_id,
                         connection,
                         delivery_id,
@@ -458,6 +438,7 @@ impl Work<'_> {
             self.delivery.received_at,
         )
         .await?;
+
         Ok(true)
     }
 
@@ -477,7 +458,7 @@ impl Work<'_> {
 
 /// The welcome of the PR `pr_number` of `repo_id`, opened on `base_branch`,
 /// after the delivery `delivery_id` (`DECISIONS.md` D163).
-fn welcome(
+fn welcome_job(
     org_id: OrgId,
     connection: (ScmInstanceId, ConnectionId),
     delivery_id: &str,
@@ -490,7 +471,7 @@ fn welcome(
         pr_number,
         base_branch,
     };
-    welcome_job(org_id, connection, delivery_id, &request)
+    connection_job(org_id, connection, delivery_id, WELCOME_PR, json!(request))
 }
 
 /// A delivery of a connection without a queue.
@@ -526,7 +507,7 @@ pub async fn pass_connection_deliveries(
         Value,
         OffsetDateTime,
     );
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let mut tx = begin_system(pool).await?;
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT scm_instance_id, delivery_id, org_id, connection_id, event, payload, received_at
          FROM webhook_inbox
@@ -538,8 +519,7 @@ pub async fn pass_connection_deliveries(
     )
     .bind(CONNECTION_DELIVERIES_PER_PASS)
     .fetch_all(&mut *tx)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let count = rows.len();
     for (instance, delivery_id, org_id, connection, event, payload, received_at) in rows {
         let delivery = ConnectionDelivery {
@@ -565,10 +545,9 @@ pub async fn pass_connection_deliveries(
             now,
             error.as_deref(),
         )
-        .await
-        .map_err(MergeQueueError::Platform)?;
+        .await?;
     }
-    tx.commit().await.map_err(MergeQueueError::Query)?;
+    tx.commit().await?;
     Ok(count)
 }
 
@@ -621,12 +600,7 @@ async fn pass_delivery(
                     number,
                     comment_external_id: None,
                     author: &sender,
-                    merge: Merge {
-                        priority: None,
-                        no_batch: false,
-                        direct: false,
-                        queue: None,
-                    },
+                    merge: Merge::default(),
                 };
                 request_submission(conn, delivery, &command, now).await?;
             }
@@ -712,10 +686,14 @@ async fn pass_comment(
             comment_id: comment.external_id.to_owned(),
         };
         let connection = (delivery.instance, delivery.connection);
-        let job = pr_command_job(delivery.org_id, connection, &delivery.delivery_id, &request);
-        enqueue_job(conn, &job, now, now)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        let job = connection_job(
+            delivery.org_id,
+            connection,
+            &delivery.delivery_id,
+            PR_COMMAND,
+            json!(request),
+        );
+        enqueue_job(conn, &job, now, now).await?;
     }
     Ok(())
 }
@@ -734,8 +712,7 @@ async fn give_to_queues(
     )
     .bind(delivery.connection.to_string())
     .fetch_all(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     for queue in queues {
         let queue_id: QueueId = parse_id(&queue, &queue)?;
         let fact = Event {
@@ -747,12 +724,8 @@ async fn give_to_queues(
             cause_id: None,
             kind: kind.clone(),
         };
-        deposit_fact(conn, &fact, now)
-            .await
-            .map_err(MergeQueueError::Store)?;
-        mark_dirty(conn, queue_id)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        deposit_fact(conn, &fact, now).await?;
+        mark_dirty(conn, queue_id).await?;
     }
     Ok(())
 }
@@ -798,8 +771,7 @@ async fn repo_of(
             .bind(delivery.connection.to_string())
             .bind(external_id)
             .fetch_optional(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
     repo.map(|id| parse_id(&id, &id)).transpose()
 }
 
@@ -818,13 +790,12 @@ async fn route_pr_change(
     // The welcome job checks the settings of the first active queue of the
     // branch (`DECISIONS.md` D163).
     if change.opened
-        && QueueTarget::queues_of_branch(conn, repo, change.base_branch)
+        && !QueueTarget::queues_of_branch(conn, repo, change.base_branch)
             .await?
-            .iter()
-            .any(|queue| queue.enabled)
+            .is_empty()
     {
         let connection = (delivery.instance, delivery.connection);
-        let job = welcome(
+        let job = welcome_job(
             delivery.org_id,
             connection,
             &delivery.delivery_id,
@@ -832,19 +803,17 @@ async fn route_pr_change(
             change.number,
             change.base_branch.to_owned(),
         );
-        enqueue_job(conn, &job, now, now)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        enqueue_job(conn, &job, now, now).await?;
     }
     let live: Option<String> = sqlx::query_scalar(
         "SELECT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
-         WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current AND i.concluded_at IS NULL",
+         WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current
+           AND i.state NOT IN ('merged', 'failed', 'cancelled')",
     )
     .bind(repo.to_string())
     .bind(i64::try_from(change.number).unwrap_or(i64::MAX))
     .fetch_optional(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let job = if let Some(queue) = live {
         let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
         refresh_after(&target, &delivery.delivery_id, vec![change.number])
@@ -853,7 +822,7 @@ async fn route_pr_change(
             return Ok(());
         };
         let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
-        let wanted = queues.iter().filter(|queue| queue.enabled).any(|queue| {
+        let wanted = queues.iter().any(|queue| {
             queue.settings().is_ok_and(|settings| {
                 settings.label_commands_enabled.value && settings.enqueue_label.value == label
             })
@@ -865,9 +834,7 @@ async fn route_pr_change(
         let connection = (delivery.instance, delivery.connection);
         submit(delivery.org_id, connection, &delivery.delivery_id, &request)
     };
-    enqueue_job(conn, &job, now, now)
-        .await
-        .map_err(MergeQueueError::Platform)?;
+    enqueue_job(conn, &job, now, now).await?;
     Ok(())
 }
 
@@ -887,14 +854,13 @@ async fn read_waiting_prs(
     let items: Vec<(String, i64)> = sqlx::query_as(
         "SELECT i.queue_id, i.pr_number FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_head_sha = $2
-           AND i.is_current AND i.concluded_at IS NULL AND i.state = 'not_ready'
+           AND i.is_current AND i.state = 'not_ready'
          ORDER BY i.queue_id, i.pr_number",
     )
     .bind(repo.to_string())
     .bind(sha)
     .fetch_all(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let mut prs_by_queue: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for (queue, number) in items {
         prs_by_queue
@@ -905,9 +871,7 @@ async fn read_waiting_prs(
     for (queue, prs) in prs_by_queue {
         let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
         let job = refresh_after(&target, &delivery.delivery_id, prs);
-        enqueue_job(conn, &job, now, now)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        enqueue_job(conn, &job, now, now).await?;
     }
     Ok(())
 }
@@ -926,11 +890,7 @@ async fn read_heads(
     let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
         return Ok(true);
     };
-    let queues: Vec<QueueTarget> = QueueTarget::queues_of_branch(conn, repo, branch)
-        .await?
-        .into_iter()
-        .filter(|queue| queue.enabled)
-        .collect();
+    let queues = QueueTarget::queues_of_branch(conn, repo, branch).await?;
     for queue in &queues {
         if merge_in_flight(conn, queue.queue_id).await? {
             return Ok(false);
@@ -938,9 +898,7 @@ async fn read_heads(
     }
     for queue in &queues {
         let job = refresh_target_after(queue, &delivery.delivery_id);
-        enqueue_job(conn, &job, now, now)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        enqueue_job(conn, &job, now, now).await?;
     }
     Ok(true)
 }
@@ -980,37 +938,31 @@ async fn request_submission(
     };
     let connection = (delivery.instance, delivery.connection);
     let job = submit(delivery.org_id, connection, &delivery.delivery_id, &request);
-    enqueue_job(conn, &job, now, now)
-        .await
-        .map_err(MergeQueueError::Platform)?;
+    enqueue_job(conn, &job, now, now).await?;
     Ok(())
 }
 
 /// The scheduler looks for the queues to cover this often (`DECISIONS.md` D106).
 pub(crate) const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
-/// Marks dirty the queues of the organizations with the module whose oldest
-/// event after their last snapshot is older than [`COVER_AFTER`]: their
-/// reconciliation keeps a snapshot, so that the old partitions of `events`
-/// can go. Returns their number.
+/// Marks dirty the queues whose oldest event after their last snapshot is
+/// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that
+/// the old partitions of `events` can go. Returns their number.
 ///
 /// # Errors
 ///
 /// Postgres fails.
 pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize, MergeQueueError> {
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let mut tx = begin_system(pool).await?;
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT e.queue_id FROM events e
-         JOIN org_modules m ON m.org_id = e.org_id AND m.module = $2::module_name
          WHERE e.occurred_at <= $1
            AND e.seq > coalesce(
-               (SELECT max(s.seq) FROM queue_snapshots s WHERE s.queue_id = e.queue_id), 0)",
+               (SELECT q.snapshot_seq FROM queues q WHERE q.id = e.queue_id), 0)",
     )
     .bind(now - COVER_AFTER)
-    .bind(cihub_domain::ModuleName::Mergequeue.as_str())
     .fetch_all(&mut *tx)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     mark_queues_dirty(tx, &queues).await
 }
 
@@ -1021,34 +973,28 @@ async fn mark_queues_dirty(
     queues: &[String],
 ) -> Result<usize, MergeQueueError> {
     for queue in queues {
-        mark_dirty(&mut tx, parse_id(queue, queue)?)
-            .await
-            .map_err(MergeQueueError::Platform)?;
+        mark_dirty(&mut tx, parse_id(queue, queue)?).await?;
     }
-    tx.commit().await.map_err(MergeQueueError::Query)?;
+    tx.commit().await?;
     Ok(queues.len())
 }
 
-/// Marks dirty the queues that have a live item, in the organizations with
-/// the module (`DECISIONS.md` D131): a plan of an older version may have asked
-/// for no wake-up. Returns their number.
+/// Marks dirty the queues that have a live item (`DECISIONS.md` D131): a plan
+/// of an older version may have asked for no wake-up. Returns their number.
 ///
 /// # Errors
 ///
 /// Postgres fails.
 pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let mut tx = begin_system(pool).await?;
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT q.id FROM queues q
-         JOIN org_modules m ON m.org_id = q.org_id AND m.module = $1::module_name
          WHERE EXISTS (SELECT 1 FROM queue_items i
-                       WHERE i.queue_id = q.id AND i.concluded_at IS NULL)
+                       WHERE i.queue_id = q.id AND i.state NOT IN ('merged', 'failed', 'cancelled'))
          ORDER BY q.id",
     )
-    .bind(cihub_domain::ModuleName::Mergequeue.as_str())
     .fetch_all(&mut *tx)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     mark_queues_dirty(tx, &queues).await
 }
 
@@ -1067,9 +1013,7 @@ pub(crate) async fn run_scheduler(
     clock: impl Fn() -> OffsetDateTime + Send + Sync,
     cancel: CancellationToken,
 ) -> Result<(), MergeQueueError> {
-    let mut wakeup = QueueWakeup::listen(&pool)
-        .await
-        .map_err(MergeQueueError::Platform)?;
+    let mut wakeup = QueueWakeup::listen(&pool).await?;
     match wake_live_queues(&pool).await {
         Ok(queues) => info!(queues, "live queues woken at start"),
         Err(err) => warn!(error = &err as &dyn Error, "live queues not woken at start"),
@@ -1077,66 +1021,81 @@ pub(crate) async fn run_scheduler(
     let mut next_cover = clock();
     while !cancel.is_cancelled() {
         let now = clock();
-        if now >= next_cover {
-            next_cover = now + COVER_EVERY;
-            match wake_uncovered(&pool, now).await {
-                Ok(0) => {}
-                Ok(queues) => info!(queues, "queues woken for their snapshot"),
-                Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
-            }
-        }
+        cover_if_due(&pool, now, &mut next_cover).await;
+
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
                 error = &err as &dyn Error,
                 "deliveries of the connections not given"
             );
         }
-        let queues = match leases(&pool, &owner, now).await {
-            Ok(queues) => queues,
-            Err(err) => {
-                warn!(error = &err as &dyn Error, "leases not taken");
-                Vec::new()
-            }
-        };
-        for queue in &queues {
-            let span = info_span!("reconcile", org_id = tracing::field::Empty, queue_id = %queue);
-            let done = reconciler
-                .reconcile(&pool, *queue, &clock)
-                .instrument(span.clone());
-            if let Err(err) = done.await {
-                span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));
-            }
-        }
-        if i64::try_from(queues.len()).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
+
+        let leased_queues = reconcile_leased_queues(&pool, &owner, &reconciler, now, &clock).await;
+        if i64::try_from(leased_queues).unwrap_or(i64::MAX) >= LEASES_PER_PASS {
             continue;
         }
-        let wait = match next_wait(&pool, clock()).await {
-            Ok(wait) => wait,
-            Err(err) => {
-                warn!(error = &err as &dyn Error, "next tick not read");
-                TICK
-            }
-        };
+
+        let wait = next_wait(&pool, clock()).await.unwrap_or_else(|err| {
+            warn!(error = &err as &dyn Error, "next tick not read");
+            TICK
+        });
         wakeup
             .wait_or_pause(wait, &cancel, "queue notifications lost")
             .await;
     }
-    let mut tx = begin_system(&pool).await.map_err(MergeQueueError::Store)?;
-    release_leases(&mut tx, &owner)
-        .await
-        .map_err(MergeQueueError::Platform)?;
-    tx.commit().await.map_err(MergeQueueError::Query)
+    let mut tx = begin_system(&pool).await?;
+    release_leases(&mut tx, &owner).await?;
+    Ok(tx.commit().await?)
+}
+
+async fn cover_if_due(pool: &PgPool, now: OffsetDateTime, next_cover: &mut OffsetDateTime) {
+    if now < *next_cover {
+        return;
+    }
+
+    *next_cover = now + COVER_EVERY;
+    match wake_uncovered(pool, now).await {
+        Ok(0) => {}
+        Ok(queues) => info!(queues, "queues woken for their snapshot"),
+        Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
+    }
+}
+
+async fn reconcile_leased_queues(
+    pool: &PgPool,
+    owner: &str,
+    reconciler: &Reconciler,
+    now: OffsetDateTime,
+    clock: &(impl Fn() -> OffsetDateTime + Send + Sync),
+) -> usize {
+    let queues = match leases(pool, owner, now).await {
+        Ok(queues) => queues,
+        Err(err) => {
+            warn!(error = &err as &dyn Error, "leases not taken");
+            Vec::new()
+        }
+    };
+
+    for queue in &queues {
+        let span = info_span!("reconcile", org_id = tracing::field::Empty, queue_id = %queue);
+        let done = reconciler
+            .reconcile(pool, *queue, clock)
+            .instrument(span.clone());
+        if let Err(err) = done.await {
+            span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));
+        }
+    }
+
+    queues.len()
 }
 
 async fn next_wait(
     pool: &PgPool,
     now: OffsetDateTime,
 ) -> Result<std::time::Duration, MergeQueueError> {
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
-    let wait = until_next_tick(&mut tx, now)
-        .await
-        .map_err(MergeQueueError::Platform)?;
-    tx.commit().await.map_err(MergeQueueError::Query)?;
+    let mut tx = begin_system(pool).await?;
+    let wait = until_next_tick(&mut tx, now).await?;
+    tx.commit().await?;
     Ok(wait)
 }
 
@@ -1145,10 +1104,8 @@ async fn leases(
     owner: &str,
     now: OffsetDateTime,
 ) -> Result<Vec<QueueId>, MergeQueueError> {
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
-    let queues = acquire_leases(&mut tx, owner, now, LEASES_PER_PASS)
-        .await
-        .map_err(MergeQueueError::Platform)?;
-    tx.commit().await.map_err(MergeQueueError::Query)?;
+    let mut tx = begin_system(pool).await?;
+    let queues = acquire_leases(&mut tx, owner, now, LEASES_PER_PASS).await?;
+    tx.commit().await?;
     Ok(queues)
 }
