@@ -112,7 +112,7 @@ impl Reconciler {
             .await
             .map_err(MergeQueueError::Store)?;
         let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
-        let mut written = log.write(conn, given, now).await?.len();
+        let mut written = log.write(conn, given).await?.len();
         mark_facts_processed(conn, &given_ids, now)
             .await
             .map_err(MergeQueueError::Store)?;
@@ -165,10 +165,10 @@ impl Reconciler {
                 },
             });
         }
-        written += log.write(conn, facts, now).await?.len();
+        written += log.write(conn, facts).await?.len();
         let plan = plan(&log.snapshot, &settings, now).map_err(MergeQueueError::Plan)?;
         let ended = ended_runs(&plan.decisions);
-        let decisions = log.write(conn, plan.decisions, now).await?.len();
+        let decisions = log.write(conn, plan.decisions).await?.len();
         let converge = Converge {
             target: &target,
             settings: &settings,
@@ -993,7 +993,7 @@ pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize,
         "SELECT DISTINCT e.queue_id FROM events e
          WHERE e.occurred_at <= $1
            AND e.seq > coalesce(
-               (SELECT max(s.seq) FROM queue_snapshots s WHERE s.queue_id = e.queue_id), 0)",
+               (SELECT q.snapshot_seq FROM queues q WHERE q.id = e.queue_id), 0)",
     )
     .bind(now - COVER_AFTER)
     .fetch_all(&mut *tx)

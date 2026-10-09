@@ -106,16 +106,6 @@ CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
 CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
 
-CREATE TABLE queue_snapshots (
-    org_id     text        NOT NULL,
-    queue_id   text        NOT NULL,
-    seq        bigint      NOT NULL CHECK (seq > 0),
-    payload    jsonb       NOT NULL,
-    created_at timestamptz NOT NULL,
-    PRIMARY KEY (queue_id, seq),
-    FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
-);
-
 CREATE TABLE queue_inbox (
     id            text        PRIMARY KEY,
     org_id        text        NOT NULL REFERENCES orgs (id),
@@ -137,5 +127,4 @@ CREATE INDEX queue_inbox_pending ON queue_inbox (queue_id, arrival)
 SELECT cihub_tenant_table('queue_items');
 SELECT cihub_tenant_table('test_groups');
 SELECT cihub_tenant_table('test_runs');
-SELECT cihub_tenant_table('queue_snapshots');
 SELECT cihub_tenant_table('queue_inbox');

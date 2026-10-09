@@ -63,7 +63,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 17] = [
+const TENANT_TABLES: [&str; 16] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -76,7 +76,6 @@ const TENANT_TABLES: [&str; 17] = [
     "queue_items",
     "test_groups",
     "test_runs",
-    "queue_snapshots",
     "queue_inbox",
     "check_observations",
     "pr_surfaces",
@@ -100,8 +99,8 @@ fn rows(org: OrgId, n: u8) -> String {
                             name, default_branch)
              VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
                      'name', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name, snapshot_seq, snapshot)
+             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main', 1, '{{}}');
          INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
              VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
@@ -132,8 +131,6 @@ fn rows(org: OrgId, n: u8) -> String {
                      'abc', '{{abc}}', '{{1}}');
          INSERT INTO check_observations (org_id, run_id, name, kind, required, observed_at)
              VALUES ('{org}', 'run-{n}', 'ci', 'check', true, '2026-09-15T00:00:00Z');
-         INSERT INTO queue_snapshots (org_id, queue_id, seq, payload, created_at)
-             VALUES ('{org}', '{queue}', 1, '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
              VALUES ('fact-{n}', '{org}', '{queue}', 'system', 'access.lost', 'null',
                      '2026-09-15T00:00:00Z');

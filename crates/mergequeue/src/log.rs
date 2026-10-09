@@ -34,15 +34,14 @@ impl QueueLog {
     /// Postgres fails, the queue does not exist, or the log does not fit its
     /// snapshot.
     pub async fn load(conn: &mut PgConnection, queue: QueueId) -> Result<Self, MergeQueueError> {
-        let last: Option<(i64, serde_json::Value)> = sqlx::query_as(
-            "SELECT seq, payload FROM queue_snapshots WHERE queue_id = $1
-             ORDER BY seq DESC LIMIT 1",
-        )
-        .bind(queue.to_string())
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
-        let mut log = match last {
+        let row: Option<(Option<i64>, Option<serde_json::Value>)> =
+            sqlx::query_as("SELECT snapshot_seq, snapshot FROM queues WHERE id = $1")
+                .bind(queue.to_string())
+                .fetch_optional(&mut *conn)
+                .await
+                .map_err(MergeQueueError::Query)?;
+        let (snapshot_seq, snapshot) = row.ok_or(MergeQueueError::UnknownQueue(queue))?;
+        let mut log = match snapshot_seq.zip(snapshot) {
             Some((seq, payload)) => Self {
                 snapshot: serde_json::from_value(payload).map_err(MergeQueueError::Snapshot)?,
                 seq,
@@ -86,7 +85,7 @@ impl QueueLog {
             .uncovered_since
             .is_some_and(|at| at <= now - COVER_AFTER)
         {
-            self.keep_snapshot(conn, now).await?;
+            self.keep_snapshot(conn).await?;
         }
         Ok(())
     }
@@ -104,7 +103,6 @@ impl QueueLog {
         &mut self,
         conn: &mut PgConnection,
         events: Vec<Event>,
-        now: OffsetDateTime,
     ) -> Result<Vec<Event>, MergeQueueError> {
         let mut written = Vec::new();
         for event in events {
@@ -121,7 +119,7 @@ impl QueueLog {
                 .map_err(MergeQueueError::Store)?;
             self.seq = seqs.first().copied().unwrap_or(self.seq + 1);
             self.uncovered_since.get_or_insert(event.occurred_at);
-            self.after_applied(conn, &event, now).await?;
+            self.after_applied(conn, &event).await?;
             written.push(event);
         }
         Ok(written)
@@ -144,33 +142,29 @@ impl QueueLog {
         &mut self,
         conn: &mut PgConnection,
         event: &Event,
-        now: OffsetDateTime,
     ) -> Result<(), MergeQueueError> {
         project(conn, event, &self.snapshot).await?;
         if self.seq % SNAPSHOT_EVERY == 0 {
-            self.keep_snapshot(conn, now).await?;
+            self.keep_snapshot(conn).await?;
         }
         Ok(())
     }
 
-    async fn keep_snapshot(
-        &mut self,
-        conn: &mut PgConnection,
-        now: OffsetDateTime,
-    ) -> Result<(), MergeQueueError> {
+    async fn keep_snapshot(&mut self, conn: &mut PgConnection) -> Result<(), MergeQueueError> {
         let payload = serde_json::to_value(&self.snapshot).map_err(MergeQueueError::Snapshot)?;
-        sqlx::query(
-            "INSERT INTO queue_snapshots (org_id, queue_id, seq, payload, created_at)
-             VALUES ($1, $2, $3, $4, $5)",
-        )
-        .bind(self.snapshot.org_id.to_string())
-        .bind(self.snapshot.queue_id.to_string())
-        .bind(self.seq)
-        .bind(payload)
-        .bind(now)
-        .execute(conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        let updated =
+            sqlx::query("UPDATE queues SET snapshot_seq = $2, snapshot = $3 WHERE id = $1")
+                .bind(self.snapshot.queue_id.to_string())
+                .bind(self.seq)
+                .bind(payload)
+                .execute(conn)
+                .await
+                .map_err(MergeQueueError::Query)?;
+
+        if updated.rows_affected() != 1 {
+            return Err(MergeQueueError::UnknownQueue(self.snapshot.queue_id));
+        }
+
         self.uncovered_since = None;
         Ok(())
     }
@@ -209,28 +203,24 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
 ///
 /// Postgres fails, the log is not whole, or the log does not replay: an event
 /// that the replay refuses or ignores.
-pub async fn rebuild(
-    conn: &mut PgConnection,
-    queue: QueueId,
-    now: OffsetDateTime,
-) -> Result<QueueLog, MergeQueueError> {
-    let (first, snapshots): (Option<i64>, i64) = sqlx::query_as(
+pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog, MergeQueueError> {
+    let (first, has_snapshot): (Option<i64>, bool) = sqlx::query_as(
         "SELECT (SELECT min(seq) FROM events WHERE queue_id = $1),
-                (SELECT count(*) FROM queue_snapshots WHERE queue_id = $1)",
+                EXISTS (SELECT 1 FROM queues WHERE id = $1 AND snapshot_seq IS NOT NULL)",
     )
     .bind(queue.to_string())
     .fetch_one(&mut *conn)
     .await
     .map_err(MergeQueueError::Query)?;
-    if first.is_some_and(|seq| seq != 1) || (first.is_none() && snapshots > 0) {
+    if first.is_some_and(|seq| seq != 1) || (first.is_none() && has_snapshot) {
         return Err(MergeQueueError::LogGap { queue, after: 0 });
     }
     for statement in [
         "DELETE FROM test_runs WHERE queue_id = $1",
         "DELETE FROM test_groups WHERE queue_id = $1",
         "DELETE FROM queue_items WHERE queue_id = $1",
-        "DELETE FROM queue_snapshots WHERE queue_id = $1",
-        "UPDATE queues SET state = 'running', mode = 'single' WHERE id = $1",
+        "UPDATE queues SET state = 'running', mode = 'single', snapshot_seq = NULL, snapshot = NULL
+         WHERE id = $1",
     ] {
         sqlx::query(statement)
             .bind(queue.to_string())
@@ -250,7 +240,7 @@ pub async fn rebuild(
         log.replay(&event)?;
         log.seq = seq;
         log.uncovered_since.get_or_insert(event.occurred_at);
-        log.after_applied(conn, &event, now).await?;
+        log.after_applied(conn, &event).await?;
     }
     Ok(log)
 }

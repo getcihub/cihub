@@ -116,7 +116,7 @@ async fn drop_old_event_partitions(
             "SELECT EXISTS (
                  SELECT 1 FROM {name} e
                  WHERE e.seq > coalesce(
-                     (SELECT max(s.seq) FROM queue_snapshots s WHERE s.queue_id = e.queue_id), 0))"
+                     (SELECT q.snapshot_seq FROM queues q WHERE q.id = e.queue_id), 0))"
         )))
         .fetch_one(&mut *conn)
         .await

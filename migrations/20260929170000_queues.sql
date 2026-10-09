@@ -13,10 +13,13 @@ CREATE TABLE queues (
     next_tick_at  timestamptz,
     lease_owner   text,
     lease_expires_at timestamptz,
+    snapshot_seq  bigint      CHECK (snapshot_seq > 0),
+    snapshot      jsonb,
     config_text   text,
     config_sha    text,
     config_error  text,
     created_at    timestamptz NOT NULL DEFAULT now(),
+    CHECK ((snapshot_seq IS NULL) = (snapshot IS NULL)),
     UNIQUE (repo_id, name),
     UNIQUE (org_id, id),
     FOREIGN KEY (org_id, repo_id) REFERENCES repos (org_id, id)

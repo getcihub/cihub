@@ -172,18 +172,9 @@ impl World {
             kind,
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
-        let mut written = self
-            .log
-            .write(&mut tx, vec![event], self.now)
-            .await
-            .unwrap();
+        let mut written = self.log.write(&mut tx, vec![event]).await.unwrap();
         let plan = plan(&self.log.snapshot, &self.settings, self.now).unwrap();
-        written.extend(
-            self.log
-                .write(&mut tx, plan.decisions, self.now)
-                .await
-                .unwrap(),
-        );
+        written.extend(self.log.write(&mut tx, plan.decisions).await.unwrap());
         tx.commit().await.unwrap();
         written
     }
@@ -369,24 +360,29 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
             ("merged".into(), 85)
         ]
     );
-    let snapshots: Vec<i64> = sqlx::query_scalar("SELECT seq FROM queue_snapshots ORDER BY seq")
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap();
-    assert_eq!(snapshots[0], SNAPSHOT_EVERY);
+    let last_snapshot = w.log.seq / SNAPSHOT_EVERY * SNAPSHOT_EVERY;
+    let snapshot_seq: Option<i64> =
+        sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(snapshot_seq, Some(last_snapshot));
 
     let before = projections(&mut tx).await;
     let loaded = QueueLog::load(&mut tx, queue()).await.unwrap();
     assert_eq!(loaded, w.log);
 
-    let rebuilt = rebuild(&mut tx, queue(), w.now).await.unwrap();
+    let rebuilt = rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(rebuilt, w.log);
     assert_eq!(projections(&mut tx).await, before);
-    let again: Vec<i64> = sqlx::query_scalar("SELECT seq FROM queue_snapshots ORDER BY seq")
-        .fetch_all(&mut *tx)
-        .await
-        .unwrap();
-    assert_eq!(again, snapshots);
+    let snapshot_seq_after_rebuild: Option<i64> =
+        sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(snapshot_seq_after_rebuild, Some(last_snapshot));
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -861,7 +857,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
 
     let mut tx = begin_system(&pool).await.unwrap();
     let before = projections(&mut tx).await;
-    rebuild(&mut tx, queue(), clock()).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
 
@@ -1419,7 +1415,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     assert_eq!(events_after, events_before);
 
     let before = projections(&mut tx).await;
-    rebuild(&mut tx, queue(), q.clock.now()).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
     assert_eq!(projections(&mut tx).await, before);
     drop(tx);
     q.stop().await;
@@ -2980,7 +2976,8 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     assert!(!partition_exists(&pool, "events_2026_05").await);
 
     let mut tx = begin_system(&pool).await.unwrap();
-    let snapshot: i64 = sqlx::query_scalar("SELECT max(seq) FROM queue_snapshots")
+    let snapshot: i64 = sqlx::query_scalar("SELECT snapshot_seq FROM queues WHERE id = $1")
+        .bind(queue().to_string())
         .fetch_one(&mut *tx)
         .await
         .unwrap();
@@ -3000,10 +2997,10 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
             sender_id: Some(user()),
         },
     };
-    log.write(&mut tx, vec![pushed], today).await.unwrap();
+    log.write(&mut tx, vec![pushed]).await.unwrap();
     assert_eq!(log.seq, snapshot + 1);
 
-    let err = rebuild(&mut tx, queue(), today).await.unwrap_err();
+    let err = rebuild(&mut tx, queue()).await.unwrap_err();
     assert!(matches!(err, MergeQueueError::LogGap { .. }), "{err:?}");
 }
 
@@ -3752,9 +3749,7 @@ impl Chaos {
             "seed {seed}: merged out of order {merged:?}"
         );
         let before = projections(&mut tx).await;
-        rebuild(&mut tx, self.queue(), self.clock.now())
-            .await
-            .unwrap();
+        rebuild(&mut tx, self.queue()).await.unwrap();
         assert_eq!(projections(&mut tx).await, before, "seed {seed}");
     }
 }
