@@ -16,6 +16,7 @@ queues:
     branch: main
     strategy: batched
     batching: { size: 3, max_wait_minutes: 1 }
+    merge_method: merge_commit
     queue_conditions:
       - -draft
       - -label = do-not-merge
