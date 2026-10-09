@@ -155,10 +155,12 @@ fn parse(prefix: &'static str, s: &str) -> Result<Ulid, IdParseError> {
     if s.is_empty() || s.len() > MAX_ID_LEN {
         return Err(IdParseError::InvalidSize);
     }
+
     let (typ, main) = s.split_once('_').ok_or(IdParseError::NoSeparator)?;
     if typ.is_empty() || typ.len() > MAX_TYPE_LEN || !typ.bytes().all(|b| b.is_ascii_alphabetic()) {
         return Err(IdParseError::InvalidType);
     }
+
     if main.len() != MAIN_PART_LEN {
         return Err(IdParseError::InvalidSize);
     }
@@ -184,12 +186,15 @@ fn parse(prefix: &'static str, s: &str) -> Result<Ulid, IdParseError> {
 
     let [bytes @ .., s0, s1, s2, s3] = data;
     let ulid = Ulid::from_bytes(bytes);
+
     if u32::from_be_bytes([s0, s1, s2, s3]) != checksum(typ, ulid) {
         return Err(IdParseError::InvalidChecksum);
     }
+
     if typ != prefix {
         return Err(IdParseError::WrongType { expected: prefix });
     }
+
     Ok(ulid)
 }
 
