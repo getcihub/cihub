@@ -16,6 +16,7 @@ pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTa
     if snapshot.mode == QueueMode::Single {
         return &ALL;
     }
+
     snapshot
         .targets
         .get(&item.pr_number)
@@ -39,9 +40,11 @@ pub(crate) fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -
         .iter()
         .map(|i| targets(snapshot, i))
         .collect();
+
     let mut linked = vec![false; index + 1];
     linked[index] = true;
     let mut frontier = vec![index];
+
     while let Some(k) = frontier.pop() {
         for j in 0..index {
             if !linked[j] && overlap(sets[j], sets[k]) {
@@ -50,6 +53,7 @@ pub(crate) fn predecessors(snapshot: &Snapshot, order: &[&Item], index: usize) -
             }
         }
     }
+
     ahead
         .iter()
         .zip(linked)

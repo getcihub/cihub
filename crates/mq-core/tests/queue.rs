@@ -48,14 +48,17 @@ fn a_direct_merge_lands_without_a_test_branch() {
     let mut w = direct();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     assert_eq!(w.state(1), Some(ItemState::Pending));
     assert!(w.snapshot.groups.is_empty());
+
     let merges = w.reconcile().desired.merges;
     assert_eq!(merges.len(), 1);
     assert_eq!((merges[0].pr_number, merges[0].run_id), (1, None));
     assert_eq!(merges[0].tested_sha, head(1, 0));
     assert_eq!(w.merge_all(), 1);
     assert!(decided_with(&w, Reason::MergeGraphDirectMerge));
+
     let item = w.item(2).unwrap().id;
     w.fact(
         Actor::Bot,
@@ -65,8 +68,10 @@ fn a_direct_merge_lands_without_a_test_branch() {
             error: JobError::DirectMergeUnavailable,
         },
     );
+
     assert_eq!(w.state(2), Some(ItemState::Testing));
     assert!(w.reconcile().desired.merges.is_empty());
+
     assert_replays(&w);
 }
 
@@ -75,6 +80,7 @@ fn no_direct_merge_by_default_or_with_a_live_group() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     assert_eq!(w.state(1), Some(ItemState::Testing), "off by default");
+
     let mut w = direct();
     w.submit(1, Priority::MEDIUM);
     let item = w.item(1).unwrap().id;
@@ -87,6 +93,7 @@ fn no_direct_merge_by_default_or_with_a_live_group() {
         },
     );
     assert_eq!(w.state(1), Some(ItemState::Testing));
+
     w.submit(2, Priority::MEDIUM);
     assert!(
         w.reconcile().desired.merges.is_empty(),
@@ -100,18 +107,22 @@ fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     let old = w.item(1).unwrap().id;
     w.submit_only(1, 1, Priority::MEDIUM);
+
     assert_eq!(
         w.snapshot.current_item(1).map(|i| i.id),
         Some(old),
         "it waits"
     );
+
     w.observe(1, |pr| pr.head_sha = head(1, 1));
     assert!(decided_with(&w, Reason::PrPushedTo));
     let new = w.snapshot.current_item(1).unwrap();
     assert_ne!(new.id, old);
     assert_eq!(new.head_sha, head(1, 1));
+
     let order: Vec<u64> = w
         .snapshot
         .queue_order()
@@ -119,6 +130,7 @@ fn a_new_head_submitted_again_goes_to_the_end_of_the_queue() {
         .map(|i| i.pr_number)
         .collect();
     assert_eq!(order, [2, 1], "the new item enters behind PR 2");
+
     assert_replays(&w);
 }
 
@@ -127,14 +139,17 @@ fn a_draining_queue_refuses_new_submissions() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let live = w.item(1).unwrap().id;
+
     w.fact(
         Actor::System,
         EventKind::QueueControlRequested {
             control: QueueControl::Drain,
         },
     );
+
     assert_eq!(w.snapshot.state, QueueState::Draining);
     w.submit(2, Priority::MEDIUM);
+
     let refused = |w: &World| {
         w.log
             .iter()
@@ -152,9 +167,11 @@ fn a_draining_queue_refuses_new_submissions() {
     };
     assert_eq!(refused(&w), 1);
     assert!(decided_with(&w, Reason::QueueDraining));
+
     w.submit(1, Priority::MEDIUM);
     assert_eq!(refused(&w), 1);
     assert_eq!(w.snapshot.current_item(1).map(|i| i.id), Some(live));
+
     assert_replays(&w);
 }
 
@@ -163,6 +180,7 @@ fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
     let mut w = world();
     w.submit_only(1, 0, Priority::MEDIUM);
     w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
+
     let item = w.item(1).unwrap();
     assert_eq!(item.state, ItemState::NotReady);
     assert_eq!(
@@ -171,10 +189,13 @@ fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
             conditions: vec!["label = ready".into()]
         }]
     );
+
     w.observe(1, |_| {});
     assert_eq!(w.state(1), Some(ItemState::Testing));
+
     w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
     assert_eq!(w.state(1), Some(ItemState::Testing));
+
     assert_replays(&w);
 }
 
@@ -183,14 +204,17 @@ fn two_prs_merge_in_order() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert_eq!(w.state(2), Some(ItemState::Testing));
+
     let branches = w.reconcile().desired.test_branches;
     assert_eq!(branches.len(), 2);
     let second = branches
         .iter()
         .find(|b| !b.predecessors.is_empty())
         .expect("PR 2 is tested on top of PR 1");
+
     let heads = |heads: &[Head]| -> Vec<(u64, String)> {
         heads.iter().map(|h| (h.pr_number, h.sha.clone())).collect()
     };
@@ -206,6 +230,7 @@ fn two_prs_merge_in_order() {
     w.report(2, CheckConclusion::Success);
     assert_eq!(w.state(2), Some(ItemState::TestsPassed));
     assert_eq!(w.merge_all(), 0, "PR 2 waits for PR 1");
+
     w.report(1, CheckConclusion::Success);
     assert_eq!(w.merge_all(), 1);
     assert_eq!(w.merge_all(), 1);
@@ -213,6 +238,7 @@ fn two_prs_merge_in_order() {
         w.snapshot.items.is_empty(),
         "concluded items leave the snapshot"
     );
+
     assert_replays(&w);
 }
 
@@ -221,8 +247,10 @@ fn a_culprit_fails_after_its_budget_and_its_successor_restarts() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     w.assemble_all();
     w.report(1, CheckConclusion::Failure);
+
     let first = w.item(1).unwrap().group_id.unwrap();
     assert_eq!(w.state(1), Some(ItemState::Testing), "the budget retries");
     assert_eq!(reason(&w, 1), Reason::FailureBudgetRetry);
@@ -233,12 +261,14 @@ fn a_culprit_fails_after_its_budget_and_its_successor_restarts() {
     assert!(failed_with(&w, Reason::TestRunRequiredStatusFailed));
     assert_eq!(w.state(1), None, "nothing cites the failed item any more");
     assert_eq!(w.state(2), Some(ItemState::Testing));
+
     let second = w.item(2).unwrap();
     assert!(
         w.snapshot.groups[&second.group_id.unwrap()]
             .predecessor_ids
             .is_empty()
     );
+
     assert_replays(&w);
 }
 
@@ -247,16 +277,21 @@ fn a_failure_behind_a_live_predecessor_waits() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     w.assemble_all();
     w.report(2, CheckConclusion::Failure);
+
     assert_eq!(w.state(2), Some(ItemState::PendingFailure));
+
     w.report(1, CheckConclusion::Success);
     w.merge_all();
+
     assert_eq!(
         w.state(2),
         Some(ItemState::Testing),
         "retry once merged ahead"
     );
+
     assert_replays(&w);
 }
 
@@ -268,9 +303,11 @@ fn a_failed_predecessor_restarts_its_successor() {
     }));
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     w.assemble_all();
     w.report(2, CheckConclusion::Success);
     w.report(1, CheckConclusion::Failure);
+
     assert!(failed_with(&w, Reason::TestRunRequiredStatusFailed));
     assert_eq!(w.state(2), Some(ItemState::Testing));
     assert_eq!(
@@ -287,6 +324,7 @@ fn a_failed_predecessor_restarts_its_successor() {
             .count(),
         1
     );
+
     assert_replays(&w);
 }
 
@@ -295,8 +333,10 @@ fn cancel_ends_the_run_and_restarts_successors() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     let run = w.run(1).unwrap();
     let item = w.item(1).unwrap().id;
+
     w.fact(
         Actor::System,
         EventKind::ItemCancelRequested {
@@ -304,6 +344,7 @@ fn cancel_ends_the_run_and_restarts_successors() {
             by_admin: true,
         },
     );
+
     assert_eq!(w.state(1), None, "the cancelled item left the snapshot");
     assert!(!w.snapshot.runs.contains_key(&run));
     assert_eq!(w.state(2), Some(ItemState::Testing));
@@ -315,11 +356,13 @@ fn cancel_ends_the_run_and_restarts_successors() {
             ..
         }
     )));
+
     let again = EventKind::ItemCancelRequested {
         item_id: item,
         by_admin: false,
     };
     assert_eq!(w.fact(Actor::System, again), Outcome::Ignored);
+
     assert_replays(&w);
 }
 
@@ -338,7 +381,9 @@ fn pr_changes_cancel_the_item() {
     for (edit, want) in cases {
         let mut w = world();
         w.submit(1, Priority::MEDIUM);
+
         w.observe(1, edit);
+
         assert!(transitioned(&w, ItemState::Cancelled, want), "{want}");
         assert_replays(&w);
     }
@@ -349,12 +394,15 @@ fn a_manual_merge_restarts_dependents() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
+
     w.observe(1, |p| p.state = PrState::Merged);
+
     assert!(decided_with(
         &w,
         Reason::PrerequisiteMergeItemManuallyMerged
     ));
     assert_eq!(w.state(2), Some(ItemState::Testing));
+
     assert_replays(&w);
 }
 
@@ -364,10 +412,13 @@ fn an_external_push_restarts_every_group() {
     w.submit(1, Priority::MEDIUM);
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
+
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
+
     w.push_target(Actor::User {
         user_id: cihub_domain::UserId::from_ulid(ulid::Ulid(1)),
     });
+
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert!(w.log.iter().any(|e| matches!(
         e.kind,
@@ -377,6 +428,7 @@ fn an_external_push_restarts_every_group() {
             ..
         }
     )));
+
     assert_replays(&w);
 }
 
@@ -385,11 +437,13 @@ fn a_late_push_changes_nothing() {
     let mut w = world();
     let old = w.snapshot.target.head.clone().unwrap().value;
     w.push_target(Actor::Bot);
+
     assert_eq!(
         w.push_target_to(Actor::System, old),
         Outcome::Ignored,
         "an old head"
     );
+
     let head = w.snapshot.target.head.clone().unwrap().value;
     assert_eq!(w.push_target_to(Actor::System, head), Outcome::Ignored);
 }
@@ -400,15 +454,18 @@ fn urgent_goes_in_front_of_groups_in_test() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     w.submit(3, Priority::URGENT);
+
     let order: Vec<u64> = w
         .snapshot
         .queue_order()
         .iter()
         .map(|i| i.pr_number)
         .collect();
+
     assert_eq!(order, vec![3, 1, 2]);
     assert!(decided_with(&w, Reason::SkipTheLineInterrupted));
     assert_eq!(w.state(3), Some(ItemState::Testing));
+
     assert_replays(&w);
 }
 
@@ -418,13 +475,16 @@ fn high_goes_behind_groups_in_test_and_before_medium() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     w.submit(3, Priority::HIGH);
+
     let order: Vec<u64> = w
         .snapshot
         .queue_order()
         .iter()
         .map(|i| i.pr_number)
         .collect();
+
     assert_eq!(order, vec![1, 3, 2]);
+
     assert_replays(&w);
 }
 
@@ -433,9 +493,12 @@ fn a_merge_conflict_fails_the_item() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let run = w.run(1).unwrap();
+
     w.fail_assembly(run, JobError::MergeConflict);
+
     assert_eq!(w.state(1), None);
     assert!(failed_with(&w, Reason::StartTestRunMergeConflict));
+
     assert_replays(&w);
 }
 
@@ -447,10 +510,12 @@ fn a_silent_check_times_out() {
     }));
     w.submit(1, Priority::MEDIUM);
     w.assemble_all();
+
     w.advance(299);
     assert_eq!(w.state(1), Some(ItemState::Testing));
     w.advance(1);
     assert!(failed_with(&w, Reason::TestRunTimeout));
+
     assert_replays(&w);
 }
 
@@ -460,6 +525,7 @@ fn a_merge_failure_fails_the_item() {
     w.submit(1, Priority::MEDIUM);
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
+
     let item_id = w.item(1).unwrap().id;
     w.fact(
         Actor::System,
@@ -469,6 +535,7 @@ fn a_merge_failure_fails_the_item() {
             error: JobError::HeadChanged,
         },
     );
+
     assert!(failed_with(&w, Reason::PrUpdatedAtMergeTime));
     assert_replays(&w);
 }
@@ -481,7 +548,9 @@ fn a_pr_merged_outside_the_queue_is_a_manual_merge() {
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
     w.report(2, CheckConclusion::Success);
+
     assert_eq!(w.state(2), Some(ItemState::TestsPassed));
+
     let item_id = w.item(1).unwrap().id;
     w.fact(
         Actor::Bot,
@@ -491,6 +560,7 @@ fn a_pr_merged_outside_the_queue_is_a_manual_merge() {
             error: JobError::PrAlreadyMerged,
         },
     );
+
     let reasons: Vec<(ItemState, Reason)> = w
         .log
         .iter()
@@ -499,11 +569,13 @@ fn a_pr_merged_outside_the_queue_is_a_manual_merge() {
             _ => None,
         })
         .collect();
+
     assert!(reasons.contains(&(ItemState::Merged, Reason::ManualMerge)));
     assert!(reasons.contains(&(
         ItemState::Pending,
         Reason::PrerequisiteMergeItemManuallyMerged
     )));
+
     assert_replays(&w);
 }
 
@@ -513,22 +585,28 @@ fn a_blocked_pr_stays_not_ready() {
     w.submit(1, Priority::MEDIUM);
     w.observe(1, |p| p.mergeability = Mergeability::Conflict);
     assert_eq!(w.state(1), Some(ItemState::Testing));
+
     w.submit(2, Priority::MEDIUM);
     w.observe(2, |p| p.mergeability = Mergeability::Behind);
     w.observe(2, |p| p.mergeability = Mergeability::Conflict);
+
     let item = w.item(2).unwrap();
     assert_eq!(item.state, ItemState::Testing);
+
     let mut w = world();
     w.submit_only(5, 0, Priority::MEDIUM);
     w.observe(5, |p| p.mergeability = Mergeability::Behind);
+
     let item = w.item(5).unwrap();
     assert_eq!(item.state, ItemState::NotReady);
     assert_eq!(
         item.block_reasons,
         vec![cihub_domain::BlockReason::BehindBase]
     );
+
     w.observe(5, |_| {});
     assert_eq!(w.state(5), Some(ItemState::Testing));
+
     assert_replays(&w);
 }
 
@@ -537,10 +615,12 @@ fn pause_stops_decisions_and_keeps_submissions() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let control = |c| EventKind::QueueControlRequested { control: c };
+
     w.fact(Actor::System, control(QueueControl::Pause));
     assert_eq!(w.snapshot.state, QueueState::Paused);
     assert_eq!(w.submit(2, Priority::MEDIUM), Outcome::Applied);
     assert_eq!(w.state(2), None, "no item in pause");
+
     w.assemble_all();
     let run = w.run(1).unwrap();
     assert_eq!(
@@ -548,26 +628,33 @@ fn pause_stops_decisions_and_keeps_submissions() {
         RunStatus::Assembling,
         "no decision in pause"
     );
+
     assert_eq!(
         w.fact(Actor::System, control(QueueControl::Pause)),
         Outcome::Ignored
     );
+
     w.fact(Actor::System, control(QueueControl::Resume));
     assert_eq!(
         w.state(2),
         Some(ItemState::Testing),
         "submitted at the resume"
     );
+
     w.report(1, CheckConclusion::Success);
     assert_eq!(w.state(1), Some(ItemState::TestsPassed));
+
     w.fact(Actor::System, control(QueueControl::Drain));
     assert_eq!(w.snapshot.state, QueueState::Draining);
     assert_eq!(w.submit(3, Priority::MEDIUM), Outcome::Applied);
     assert!(decided_with(&w, Reason::QueueDraining));
+
     w.fact(Actor::System, EventKind::AccessLost);
     assert_eq!(w.snapshot.state, QueueState::Paused);
+
     w.fact(Actor::System, EventKind::AccessRestored);
     assert_eq!(w.snapshot.state, QueueState::Running);
+
     assert_replays(&w);
 }
 
@@ -575,6 +662,7 @@ fn pause_stops_decisions_and_keeps_submissions() {
 fn a_mode_change_waits_for_an_empty_queue() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
+
     w.fact(
         Actor::System,
         EventKind::QueueSettingsChanged {
@@ -582,12 +670,16 @@ fn a_mode_change_waits_for_an_empty_queue() {
             after: QueueMode::Parallel,
         },
     );
+
     assert_eq!(w.snapshot.state, QueueState::SwitchingModes);
+
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
     w.merge_all();
+
     assert_eq!(w.snapshot.state, QueueState::Running);
     assert_eq!(w.snapshot.mode, QueueMode::Parallel);
+
     assert_replays(&w);
 }
 
@@ -597,6 +689,7 @@ fn disjoint_targets_are_tested_in_parallel_lanes() {
         window(3)(l);
         l.mode = Some(Setting::new(QueueMode::Parallel));
     }));
+
     for (pr, target) in [(1, "//a"), (2, "//b"), (3, "//a")] {
         w.submit(pr, Priority::MEDIUM);
         w.fact(
@@ -608,13 +701,16 @@ fn disjoint_targets_are_tested_in_parallel_lanes() {
             },
         );
     }
+
     let preds = |w: &World, pr| {
         let group = w.item(pr).unwrap().group_id.unwrap();
         w.snapshot.groups[&group].predecessor_ids.len()
     };
+
     assert_eq!(preds(&w, 1), 0);
     assert_eq!(preds(&w, 2), 0, "PR 2 is in another lane");
     assert_eq!(preds(&w, 3), 1, "PR 3 is behind PR 1");
+
     assert_replays(&w);
 }
 
@@ -624,6 +720,7 @@ fn restart_request_restarts_the_tests() {
     w.submit(1, Priority::MEDIUM);
     let item_id = w.item(1).unwrap().id;
     let first = w.run(1).unwrap();
+
     w.fact(
         Actor::System,
         EventKind::ItemRestartRequested {
@@ -631,6 +728,7 @@ fn restart_request_restarts_the_tests() {
             by_api: true,
         },
     );
+
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert_ne!(w.run(1), Some(first));
     assert!(w.log.iter().any(|e| matches!(
@@ -641,6 +739,7 @@ fn restart_request_restarts_the_tests() {
             ..
         }
     )));
+
     assert_replays(&w);
 }
 
@@ -648,6 +747,7 @@ fn restart_request_restarts_the_tests() {
 fn decisions_cite_their_cause() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
+
     let submitted = w
         .log
         .iter()
@@ -656,6 +756,7 @@ fn decisions_cite_their_cause() {
         .log
         .iter()
         .find(|e| matches!(e.kind, EventKind::ItemTransitioned { from: None, .. }));
+
     assert_eq!(created.unwrap().cause_id, Some(submitted.unwrap().id));
     assert!(w.snapshot.requests.is_empty());
 }
@@ -670,6 +771,7 @@ fn check_finds_a_damaged_snapshot() {
     w.submit(2, Priority::MEDIUM);
     let first = w.item(1).unwrap().clone();
     let second = w.item(2).unwrap().id;
+
     let mut s = w.snapshot.clone();
     s.runs.get_mut(&w.run(1).unwrap()).unwrap().status = RunStatus::Interrupted;
     s.items.get_mut(&second).unwrap().state = ItemState::TestsPassed;
@@ -679,6 +781,7 @@ fn check_finds_a_damaged_snapshot() {
         ..first.clone()
     };
     s.items.insert(copy.id, copy);
+
     let violations = check(&s, &w.settings);
     assert!(violations.contains(&Violation::TestingWithoutRun { item_id: first.id }));
     assert!(violations.contains(&Violation::PassedWithoutRun { item_id: second }));
@@ -703,9 +806,11 @@ fn check_finds_a_damaged_snapshot() {
 
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
+
     let mut s = w.snapshot.clone();
     s.target.valid_bases.clear();
     let item_id = w.item(1).unwrap().id;
+
     assert!(check(&s, &w.settings).contains(&Violation::PassedOnStaleBase { item_id }));
 }
 
@@ -721,10 +826,13 @@ fn a_not_ready_item_times_out() {
     let mut w = world();
     submit_behind(&mut w, 1);
     let timeout = i64::from(w.settings.not_ready_timeout_hours.value) * 60;
+
     w.advance(timeout - 1);
     assert_eq!(w.state(1), Some(ItemState::NotReady));
+
     w.advance(1);
     assert_eq!(w.state(1), None, "a cancelled item leaves the snapshot");
+
     let timed_out = w.log.last().unwrap();
     assert!(matches!(
         timed_out.kind,
@@ -735,6 +843,7 @@ fn a_not_ready_item_times_out() {
         }
     ));
     assert_eq!(timed_out.cause_id, None, "the clock decided");
+
     assert_replays(&w);
 }
 
@@ -742,6 +851,7 @@ fn a_not_ready_item_times_out() {
 fn a_not_ready_pr_is_read_less_and_less_often() {
     let mut w = world();
     submit_behind(&mut w, 1);
+
     let submitted = w.item(1).unwrap().submitted_at;
     let minute = submitted
         .replace_second(0)
@@ -749,18 +859,22 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
         .replace_nanosecond(0)
         .unwrap();
     let at = |minutes| minute + time::Duration::minutes(minutes);
+
     let plan = w.reconcile();
     assert!(plan.desired.observe.is_empty(), "just read");
     assert_eq!(plan.wake_at, Some(at(1)));
 
     w.advance(1);
     let plan = w.reconcile();
+
     let read = Read {
         pr_number: 1,
         point: at(1),
     };
+
     assert_eq!(plan.desired.observe, vec![read]);
     assert!(plan.wake_at < Some(at(7)), "{:?}", plan.wake_at);
+
     w.observe(1, |p| p.mergeability = Mergeability::Behind);
     assert_eq!(w.reconcile().desired.observe, vec![read]);
 
@@ -772,6 +886,7 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
     let plan = w.reconcile();
     assert!(plan.desired.observe.is_empty());
     assert_eq!(plan.wake_at, Some(at(62)));
+
     assert_replays(&w);
 }
 
@@ -780,10 +895,13 @@ fn every_live_pr_is_read_every_15_minutes() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     assert_eq!(w.state(1), Some(ItemState::Testing));
+
     let submitted = w.item(1).unwrap().submitted_at;
     let minute = submitted.replace_second(0).unwrap();
+
     w.advance(30);
     let plan = w.reconcile();
+
     assert_eq!(
         plan.desired.observe,
         vec![Read {
@@ -800,7 +918,9 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
     let run_id = w.run(1).unwrap();
     let started = w.snapshot.runs[&run_id].started_at;
     w.assemble_all();
+
     assert!(w.reconcile().desired.check_reads.is_empty(), "just started");
+
     w.advance(10);
     let plan = w.reconcile();
     let read = CheckRead {
@@ -809,7 +929,9 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
         test_branch: w.snapshot.runs[&run_id].test_branch.clone(),
         point: started + time::Duration::minutes(10),
     };
+
     assert_eq!(plan.desired.check_reads, vec![read.clone()]);
+
     w.fact(
         Actor::System,
         EventKind::CheckObserved {
@@ -822,10 +944,13 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
             },
         },
     );
+
     let reported = w.now;
     assert!(w.reconcile().desired.check_reads.is_empty());
+
     w.advance(25);
     let plan = w.reconcile();
+
     assert_eq!(
         plan.desired.check_reads,
         vec![CheckRead {
@@ -833,6 +958,7 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
             ..read
         }]
     );
+
     assert_replays(&w);
 }
 
@@ -840,16 +966,21 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
 fn a_busy_queue_reads_its_target_head_every_5_minutes() {
     let mut w = world();
     let pushed = w.snapshot.target.head.as_ref().unwrap().observed_at;
+
     w.advance(30);
     let plan = w.reconcile();
+
     assert_eq!(plan.desired.target_read, None, "nothing to do");
     assert_eq!(plan.wake_at, None);
+
     w.submit(1, Priority::MEDIUM);
     let plan = w.reconcile();
+
     assert_eq!(
         plan.desired.target_read,
         Some(pushed + time::Duration::minutes(30))
     );
+
     let timeout = time::Duration::minutes(i64::from(w.settings.testing_timeout_minutes.value));
     assert!(plan.wake_at < Some(w.now + timeout));
 
@@ -858,11 +989,13 @@ fn a_busy_queue_reads_its_target_head_every_5_minutes() {
     w.initial = w.snapshot.clone();
     w.log.clear();
     w.submit(1, Priority::MEDIUM);
+
     let now = w.now;
     let minute = now
         .replace_second(0)
         .unwrap()
         .replace_nanosecond(0)
         .unwrap();
+
     assert_eq!(w.reconcile().desired.target_read, Some(minute));
 }

@@ -23,6 +23,7 @@ fn first_fails(w: &mut World) {
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     w.assemble_all();
     w.report(1, CheckConclusion::Failure);
 }
@@ -40,8 +41,10 @@ fn at_depth_1_the_culprit_waits_for_the_run_of_its_first_successor() {
     let mut w = world(1);
     first_fails(&mut w);
     assert_eq!(w.state(1), Some(ItemState::PendingFailure));
+
     w.report(3, CheckConclusion::Failure);
     assert_eq!(w.state(1), Some(ItemState::PendingFailure));
+
     w.report(2, CheckConclusion::Failure);
     assert_eq!(w.ended().get(&1), Some(&ItemState::Failed));
     assert_eq!(w.state(2), Some(ItemState::Testing));
@@ -54,6 +57,7 @@ fn without_a_successor_the_culprit_does_not_wait() {
     w.submit(1, Priority::MEDIUM);
     w.assemble_all();
     w.report(1, CheckConclusion::Failure);
+
     assert_eq!(w.ended().get(&1), Some(&ItemState::Failed));
     assert_eq!(w.replay(), w.snapshot);
 }

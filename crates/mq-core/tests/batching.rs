@@ -52,13 +52,16 @@ fn assert_replays(w: &World) {
 #[test]
 fn a_full_batch_forms_at_once_and_tests_its_members_in_one_run() {
     let mut w = world(3, 2);
+
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     assert_eq!(groups(&w), vec![(GroupKind::Batch, vec![1, 2, 3])]);
     for pr in 1..=3 {
         assert_eq!(w.state(pr), Some(ItemState::Testing));
     }
+
     let branches = w.reconcile().desired.test_branches;
     assert_eq!(branches.len(), 1);
     let members: Vec<_> = branches[0].members.iter().map(|h| h.sha.clone()).collect();
@@ -71,11 +74,14 @@ fn a_batch_that_is_not_full_waits_for_its_oldest_member() {
     let mut w = world(4, 2);
     w.submit(1, Priority::MEDIUM);
     let admitted = w.item(1).unwrap().admitted_at.unwrap();
+
     w.advance(2);
     w.submit(2, Priority::MEDIUM);
     assert!(w.snapshot.groups.is_empty());
+
     let wake_at = w.reconcile().wake_at.unwrap();
     assert!(wake_at <= admitted + Duration::minutes(5));
+
     w.now = admitted + Duration::minutes(5);
     w.reconcile();
     assert_eq!(groups(&w), vec![(GroupKind::Batch, vec![1, 2])]);
@@ -87,7 +93,9 @@ fn a_lone_item_forms_a_single_group_after_the_wait() {
     let mut w = world(4, 2);
     w.submit(1, Priority::MEDIUM);
     assert!(w.snapshot.groups.is_empty());
+
     w.advance(5);
+
     assert_eq!(groups(&w), vec![(GroupKind::Single, vec![1])]);
     assert_replays(&w);
 }
@@ -97,11 +105,14 @@ fn a_no_batch_item_is_tested_alone_and_cuts_the_series() {
     let mut w = world(4, 4);
     w.submit_no_batch(1);
     assert_eq!(groups(&w), vec![(GroupKind::Single, vec![1])]);
+
     w.submit(2, Priority::MEDIUM);
     w.submit_no_batch(3);
     assert_eq!(groups(&w).len(), 3);
+
     w.submit(4, Priority::MEDIUM);
     assert_eq!(groups(&w).len(), 3);
+
     w.advance(5);
     assert_eq!(
         groups(&w),
@@ -112,6 +123,7 @@ fn a_no_batch_item_is_tested_alone_and_cuts_the_series() {
             (GroupKind::Single, vec![4]),
         ]
     );
+
     assert_replays(&w);
 }
 
@@ -121,6 +133,7 @@ fn a_batch_takes_one_slot_of_the_window() {
     for pr in 1..=4 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     assert_eq!(groups(&w), vec![(GroupKind::Batch, vec![1, 2])]);
     assert_eq!(w.state(3), Some(ItemState::Pending));
     assert_replays(&w);
@@ -132,19 +145,24 @@ fn the_members_of_a_batch_that_passes_merge_in_order() {
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     w.assemble_all();
     w.report(1, CheckConclusion::Success);
+
     for pr in 1..=3 {
         assert_eq!(w.state(pr), Some(ItemState::TestsPassed));
     }
+
     let mut merged = Vec::new();
     while w.reconcile().desired.merges.len() == 1 {
         let next = w.reconcile().desired.merges[0].pr_number;
         assert_eq!(w.merge_all(), 1);
         merged.push(next);
     }
+
     assert_eq!(merged, vec![1, 2, 3]);
     assert!(transitioned(&w, ItemState::Merged, Reason::MergeGraphMerge));
+
     assert_replays(&w);
 }
 
@@ -154,12 +172,14 @@ fn the_other_members_restart_when_a_member_leaves_the_batch() {
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     w.observe(3, |p| p.state = PrState::Closed);
     assert!(transitioned(
         &w,
         ItemState::Pending,
         Reason::BatchMemberLeft
     ));
+
     w.advance(5);
     assert_eq!(groups(&w).last(), Some(&(GroupKind::Batch, vec![1, 2])));
     assert_replays(&w);
@@ -171,8 +191,10 @@ fn a_push_on_the_target_restarts_the_members_left_after_a_partial_merge() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     w.assemble_all();
+
     w.report(1, CheckConclusion::Success);
     assert_eq!(w.merge_all(), 1);
+
     w.push_target(Actor::User {
         user_id: UserId::from_ulid(Ulid(1)),
     });
@@ -205,6 +227,7 @@ fn formed_since(w: &World, start: usize) -> Vec<(GroupKind, Vec<u64>)> {
             })
             .unwrap()
     };
+
     w.log[start..]
         .iter()
         .filter_map(|e| match &e.kind {
@@ -242,6 +265,7 @@ fn a_bisection_isolates_the_last_pr_and_tests_it_alone() {
     let mut w = bisecting(8);
     submit_all(&mut w, 1..=8);
     w.drain(&[8].into());
+
     assert_eq!(
         formed_since(&w, 0),
         vec![
@@ -264,8 +288,10 @@ fn a_bisection_isolates_the_first_pr_and_retests_the_other_half() {
     let mut w = bisecting(4);
     submit_all(&mut w, 1..=4);
     w.drain(&[1].into());
+
     assert_eq!(ended(&w, ItemState::Merged), vec![2, 3, 4]);
     assert_eq!(ended(&w, ItemState::Failed), vec![1]);
+
     let formed = formed_since(&w, 0);
     assert_eq!(formed[1], (GroupKind::Bisection, vec![1, 2]));
     assert!(formed.contains(&(GroupKind::Bisection, vec![1])));
@@ -282,6 +308,7 @@ fn a_flaky_failure_of_a_batch_evicts_no_pr() {
     let mut w = bisecting(4);
     submit_all(&mut w, 1..=4);
     w.drain_with(|run, _| run == 1);
+
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 2, 3, 4]);
     assert!(ended(&w, ItemState::Failed).is_empty());
     assert_replays(&w);
@@ -295,8 +322,10 @@ fn without_the_skip_the_other_half_goes_back_to_the_queue() {
         l.failure_budget_retries = Some(Setting::new(0));
         l.optimization_mode = Some(Setting::new(OptimizationMode::Off));
     }));
+
     submit_all(&mut w, 1..=4);
     w.drain(&[4].into());
+
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 2, 3]);
     assert_eq!(ended(&w, ItemState::Failed), vec![4]);
     assert!(transitioned(
@@ -315,11 +344,13 @@ fn a_full_bisection_pool_waits() {
         l.bisection_concurrency = Some(Setting::new(1));
     }));
     submit_all(&mut w, 1..=4);
+
     w.assemble_all();
     let runs: Vec<_> = w.snapshot.runs.keys().copied().collect();
     for run in runs {
         w.report_run(run, CheckConclusion::Failure);
     }
+
     let bisections = w
         .snapshot
         .groups
@@ -334,6 +365,7 @@ fn a_full_bisection_pool_waits() {
 fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
     let mut w = bisecting(4);
     submit_all(&mut w, 1..=4);
+
     for _ in 0..1_000 {
         let assembling: Vec<_> = w
             .snapshot
@@ -342,6 +374,7 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
             .filter(|r| r.status == RunStatus::Assembling)
             .map(|r| (r.id, r.group_id))
             .collect();
+
         for (run_id, group_id) in assembling {
             let group = &w.snapshot.groups[&group_id];
             let conflicts = group
@@ -349,12 +382,14 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
                 .iter()
                 .chain(&group.item_ids)
                 .any(|id| w.snapshot.items.get(id).is_some_and(|i| i.pr_number == 2));
+
             if conflicts {
                 w.fail_assembly(run_id, JobError::MergeConflict);
             } else {
                 w.assemble(run_id);
             }
         }
+
         let running: Vec<_> = w
             .snapshot
             .runs
@@ -362,15 +397,19 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
             .filter(|r| r.status == RunStatus::InProgress)
             .map(|r| r.id)
             .collect();
+
         for run_id in &running {
             w.report_run(*run_id, CheckConclusion::Success);
         }
+
         w.merge_all();
         if w.snapshot.items.values().all(|i| i.state.is_terminal()) {
             break;
         }
+
         w.advance(1);
     }
+
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 3, 4]);
     assert_eq!(ended(&w, ItemState::Failed), vec![2]);
     assert!(transitioned(
@@ -389,15 +428,18 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
 fn a_planted_failure_is_isolated_in_log2_rounds() {
     for size in 2..=8_u64 {
         let rounds = u64::from(u64::BITS - (size - 1).leading_zeros());
+
         for culprit in 1..=size {
             let mut w = bisecting(u32::try_from(size).unwrap());
             submit_all(&mut w, 1..=size);
             w.drain(&[culprit].into());
+
             let chain: Vec<Vec<u64>> = formed_since(&w, 0)
                 .into_iter()
                 .filter(|(kind, prs)| *kind == GroupKind::Bisection && prs.contains(&culprit))
                 .map(|(_, prs)| prs)
                 .collect();
+
             assert_eq!(chain.last(), Some(&vec![culprit]), "{size} PRs, {culprit}");
             assert!(
                 u64::try_from(chain.len()).unwrap() <= rounds,
@@ -421,14 +463,17 @@ fn a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it() {
     let mut w = world(4, 4);
     w.submit(1, Priority::MEDIUM);
     assert!(w.snapshot.groups.is_empty());
+
     w.submit_no_batch(2);
     assert_eq!(
         groups(&w),
         vec![(GroupKind::Single, vec![1]), (GroupKind::Single, vec![2])]
     );
+
     w.submit(3, Priority::MEDIUM);
     w.submit(4, Priority::MEDIUM);
     assert_eq!(groups(&w).len(), 2);
+
     w.advance(5);
     assert_eq!(groups(&w)[2], (GroupKind::Batch, vec![3, 4]));
     assert_replays(&w);

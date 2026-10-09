@@ -43,8 +43,10 @@ fn the_window_closes_under_failures_then_opens_again() {
         w.submit(pr, Priority::MEDIUM);
     }
     let windows = drain(&mut w, &bad);
+
     assert!(windows.contains(&floor), "{windows:?}");
     assert!(windows.iter().all(|n| (floor..=ceiling).contains(n)));
+
     let ended = |to: ItemState| {
         w.log
             .iter()
@@ -59,6 +61,7 @@ fn the_window_closes_under_failures_then_opens_again() {
         w.submit(pr, Priority::MEDIUM);
     }
     let windows = drain(&mut w, &BTreeSet::new());
+
     assert!(before < ceiling);
     assert_eq!(windows.last(), Some(&ceiling), "{windows:?}");
     assert_eq!(w.replay(), w.snapshot);
@@ -71,11 +74,14 @@ fn the_window_stays_within_new_bounds() {
         w.submit(pr, Priority::MEDIUM);
     }
     drain(&mut w, &BTreeSet::new());
+
     assert_eq!(w.snapshot.window, Some(7));
+
     w.settings = settings(|l| {
         l.window_ceiling = Some(cihub_config::Setting::new(4));
     });
     w.reconcile();
+
     assert_eq!(w.snapshot.window, Some(4));
     assert_eq!(w.replay(), w.snapshot);
 }
