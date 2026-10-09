@@ -32,12 +32,15 @@ fn a_run_that_passes_proves_the_group_ahead_and_stops_its_run() {
     two_runs(&mut w);
     let first = w.run(1).unwrap();
     let second = w.run(2).unwrap();
+
     w.report(2, CheckConclusion::Success);
+
     let item = w.item(1).unwrap();
     assert_eq!(item.state, ItemState::TestsPassed);
     assert_eq!(item.state_reason, Reason::PassedByOptimization);
     assert_eq!(item.verified_by_run_id, Some(second));
     assert_eq!(w.snapshot.runs[&first].status, RunStatus::Interrupted);
+
     assert_eq!(w.merge_all(), 1);
     assert_eq!(w.merge_all(), 1);
     assert_eq!(w.ended().get(&2), Some(&ItemState::Merged));
@@ -48,14 +51,17 @@ fn a_run_that_passes_proves_the_group_ahead_and_stops_its_run() {
 fn a_run_that_passes_releases_the_group_in_failure_ahead() {
     let mut w = world(true);
     two_runs(&mut w);
+
     w.report(1, CheckConclusion::Failure);
     assert_eq!(w.state(1), Some(ItemState::PendingFailure));
+
     w.report(2, CheckConclusion::Success);
     assert!(transitioned(
         &w,
         ItemState::TestsPassed,
         Reason::SuccessorTestRunPassed
     ));
+
     assert_eq!(w.merge_all(), 1);
     assert_eq!(w.merge_all(), 1);
     assert_eq!(w.ended().get(&1), Some(&ItemState::Merged));
@@ -68,7 +74,9 @@ fn a_culprit_is_evicted_and_the_groups_behind_restart_without_it() {
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     w.drain(&[1].into());
+
     let ended = w.ended();
     assert_eq!(ended.get(&1), Some(&ItemState::Failed));
     assert_eq!(ended.get(&2), Some(&ItemState::Merged));
@@ -85,6 +93,7 @@ fn a_culprit_is_evicted_and_the_groups_behind_restart_without_it() {
 fn without_optimistic_merge_a_run_proves_only_its_group() {
     let mut w = world(false);
     two_runs(&mut w);
+
     w.report(2, CheckConclusion::Success);
     assert_eq!(w.state(1), Some(ItemState::Testing));
     assert_eq!(w.replay(), w.snapshot);

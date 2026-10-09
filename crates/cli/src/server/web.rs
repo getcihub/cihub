@@ -22,6 +22,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let listener = TcpListener::bind(http_addr)
         .await
         .with_context(|| format!("cannot listen on {http_addr}"))?;
+
     info!(http_addr = %listener.local_addr()?, "public address served");
     let modules = vec![merge_queue(&pool, &github, &process).api];
     let webhooks = GithubWebhooks {
@@ -44,6 +45,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         .await
         .context("the routing of the deliveries cannot start")
     };
+
     tokio::try_join!(serve, route)?;
     Ok(())
 }

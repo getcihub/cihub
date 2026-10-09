@@ -75,6 +75,12 @@ one of these tools refuses, fix the cause, never the rule. The rest:
 - **Tools**: everything installs with `mise install`; a version change updates `mise.lock`.
 - **Code**: every crate starts with a `//!` comment that says its role and what it does not do; a comment
   explains a constraint or a reason, not what the code does.
+- **Readability** (D250): code is written for a human reader. A function separates its steps with one blank line
+  (load, check, decide, act, return); a guard clause is followed by a blank line; a test separates its setup,
+  its action and its checks. A name says what the thing is in the domain (`docs/DOMAIN.md`), without
+  abbreviation; a boolean reads as a question (`is_mergeable`, `has_conflict`). At most two levels of nesting:
+  early return and `let … else` before an `else` branch. `cargo fmt` does not add these blank lines: the author
+  does.
 
 The agent configuration is in `.agents/`: the skills (`.claude/skills` points there) and the rules per part of the
 code (`.agents/rules/`). Read the rules of a part before you change it:

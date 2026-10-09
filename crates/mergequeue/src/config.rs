@@ -46,12 +46,14 @@ pub(crate) async fn read_config_file(
 ) -> Result<Result<Option<String>, ConfigError>, ScmError> {
     let mut found = Vec::new();
     let mut text = None;
+
     for name in FILE_NAMES {
         if let Some(read) = scm.file(repo, sha, name, class).await? {
             found.push(name);
             text = Some(read);
         }
     }
+
     Ok(find_config_file(found).map(|_| text))
 }
 
@@ -70,10 +72,12 @@ pub(crate) async fn load(
     let head = scm
         .branch_head(&target.repo, &target.target_branch, job.class)
         .await?;
+
     if head.as_deref() != Some(request.sha.as_str()) {
         info!(sha = request.sha, "target moved before its file was read");
         return Ok(());
     }
+
     let read = read_config_file(scm, &target.repo, &request.sha, job.class).await?;
     let checked = read.and_then(|text| match text {
         Some(text) => RepoConfig::parse(&text)
@@ -100,8 +104,10 @@ pub(crate) async fn load(
                 .bind(err.to_string())
         }
     };
+
     query.bind(&request.sha).execute(&mut *tx).await?;
     mark_dirty(&mut tx, target.queue_id).await?;
     tx.commit().await?;
+
     Ok(())
 }

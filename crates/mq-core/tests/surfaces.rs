@@ -26,6 +26,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     w.submit(1, Priority::MEDIUM);
     w.submit(2, Priority::MEDIUM);
     w.assemble_all();
+
     let last = w.surfaces.last().unwrap().clone();
     assert_eq!(
         shown(&last),
@@ -42,6 +43,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     w.report(1, CheckConclusion::Failure);
     w.assemble_all();
     w.report(1, CheckConclusion::Failure);
+
     assert_eq!(w.state(1), None, "the failed item left the snapshot");
     let concluded = w
         .surfaces
@@ -52,6 +54,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     assert_eq!(concluded.reason, Reason::TestRunRequiredStatusFailed);
     assert_eq!(concluded.position, None);
     assert!(!concluded.failing_checks.is_empty());
+
     w.advance(1);
     let next = w.surfaces.last().unwrap();
     assert_eq!(next.iter().map(|s| s.pr_number).collect::<Vec<_>>(), [2]);
@@ -62,6 +65,7 @@ fn a_not_ready_item_shows_why() {
     let mut w = World::new(settings(window(2)));
     w.submit_only(5, 0, Priority::MEDIUM);
     w.observe(5, |pr| pr.mergeability = Mergeability::Conflict);
+
     let last = w.surfaces.last().unwrap();
     assert_eq!(last[0].state, ItemState::NotReady);
     assert_eq!(last[0].position, None);
@@ -79,6 +83,7 @@ fn a_blocked_pr_names_its_required_checks() {
         conclusion,
         details_url: None,
     };
+
     w.observe(5, |pr| {
         pr.mergeability = Mergeability::Blocked;
         pr.required_checks = vec!["build".into(), "lint".into(), "e2e".into(), "unit".into()];
@@ -88,6 +93,7 @@ fn a_blocked_pr_names_its_required_checks() {
             report("unit", Some(CheckConclusion::Success)),
         ];
     });
+
     assert_eq!(
         w.item(5).unwrap().block_reasons,
         [
@@ -104,11 +110,13 @@ fn a_blocked_pr_names_its_required_checks() {
             },
         ]
     );
+
     w.observe(5, |pr| {
         pr.mergeability = Mergeability::Blocked;
         pr.required_checks = vec!["unit".into()];
         pr.checks = vec![report("unit", Some(CheckConclusion::Success))];
     });
+
     assert_eq!(
         w.item(5).unwrap().block_reasons,
         [BlockReason::Undetermined]
@@ -120,6 +128,7 @@ fn an_item_in_test_shows_the_draft_pr_of_its_run() {
     let mut w = World::new(settings(window(2)));
     w.submit(1, Priority::MEDIUM);
     let run_id = w.run(1).unwrap();
+
     w.fact(
         Actor::System,
         EventKind::TestBranchAssembled {
@@ -130,6 +139,7 @@ fn an_item_in_test_shows_the_draft_pr_of_its_run() {
             required_statuses_source: RequiredStatusesSource::RepoConfig,
         },
     );
+
     let last = w.surfaces.last().unwrap();
     assert_eq!(last[0].state, ItemState::Testing);
     assert_eq!(last[0].draft_pr_number, Some(42));
@@ -145,6 +155,7 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
         l.batching_size = Some(Setting::new(3));
         l.batching_max_wait_minutes = Some(Setting::new(5));
     }));
+
     let waits = |w: &World| -> Vec<(u64, Option<BatchWait>)> {
         w.surfaces
             .last()
@@ -153,9 +164,11 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
             .map(|s| (s.pr_number, s.batch_wait))
             .collect()
     };
+
     for pr in 1..=3 {
         w.submit(pr, Priority::MEDIUM);
     }
+
     assert_eq!(
         w.state(1),
         Some(ItemState::Testing),
@@ -167,6 +180,7 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
     let closes_at = w.item(4).unwrap().admitted_at.unwrap() + Duration::minutes(5);
     let wait = |members| Some(BatchWait { members, closes_at });
     assert_eq!(waits(&w)[3], (4, wait(1)));
+
     w.submit(5, Priority::MEDIUM);
     assert_eq!(
         waits(&w),

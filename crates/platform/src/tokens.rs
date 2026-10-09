@@ -30,6 +30,7 @@ pub async fn create_token(
     let Some(org) = org else {
         return Err(PlatformError::UnknownOrganization(slug.to_owned()));
     };
+
     let org_id: OrgId = org
         .parse()
         .map_err(PlatformError::read("organization", &org))?;
@@ -48,6 +49,7 @@ pub async fn create_token(
         scopes: &scopes,
         expires_at: None,
     };
+
     create_api_token(&mut tx, &new, &token)
         .await
         .map_err(PlatformError::Store)?;
@@ -57,6 +59,7 @@ pub async fn create_token(
         reason = "an entry of the audit log has a new identifier"
     )]
     let audit_id = AuditEntryId::new();
+
     sqlx::query(
         "INSERT INTO audit_log (id, org_id, action, target, after, occurred_at)
          VALUES ($1, $2, 'token.created', $3, $4, $5)",

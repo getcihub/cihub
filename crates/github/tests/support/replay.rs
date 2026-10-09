@@ -37,6 +37,7 @@ impl Replay {
             .fallback(answer)
             .with_state(Arc::clone(&calls));
         tokio::spawn(async move { axum::serve(listener, router).await });
+
         Self { url, calls }
     }
 
@@ -70,6 +71,7 @@ async fn answer(
             for (name, value) in &exchange.headers {
                 response = response.header(name, value);
             }
+
             let body = match (&exchange.body, &exchange.text) {
                 (Some(body), _) => body.to_string(),
                 (None, Some(text)) => text.clone(),

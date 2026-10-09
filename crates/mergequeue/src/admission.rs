@@ -124,6 +124,7 @@ pub(crate) async fn unmet_conditions(
         .settings_in(config)?
         .branch_protection_injection
         .value;
+
     if injection == BranchProtectionInjection::Both {
         unmet.extend(
             reading
@@ -134,6 +135,7 @@ pub(crate) async fn unmet_conditions(
                 .map(|name| format!("check-success = {name}")),
         );
     }
+
     Ok(unmet)
 }
 
@@ -148,6 +150,7 @@ async fn file_conditions(
     if conditions.0.is_empty() {
         return Ok(Vec::new());
     }
+
     let ctx = loaded_context(scm, target, pr, reading, |a| conditions.uses(a)).await?;
     conditions
         .unmet(&ctx)
@@ -165,15 +168,18 @@ async fn loaded_context(
 ) -> Result<Context, Failure> {
     let class = reading.class;
     let mut ctx = context(target, pr, reading.sender, reading.now);
+
     if uses(Attribute::Files) {
         ctx.files = Some(scm.pr_files(&target.repo, pr.number, class).await?);
     }
+
     if uses(Attribute::ReviewThreadsUnresolved) {
         ctx.review_threads_unresolved = Some(
             scm.unresolved_threads(&target.repo, pr.number, class)
                 .await?,
         );
     }
+
     Ok(ctx)
 }
 
@@ -189,12 +195,15 @@ pub(crate) async fn rule_priority(
     let Some(config) = config else {
         return Ok(None);
     };
+
     let rules = &config.priority_rules;
     if rules.is_empty() {
         return Ok(None);
     }
+
     let uses = |a| rules.iter().any(|rule| rule.conditions.uses(a));
     let ctx = loaded_context(scm, target, pr, reading, uses).await?;
+
     for rule in rules {
         if rule
             .conditions
@@ -204,6 +213,7 @@ pub(crate) async fn rule_priority(
             return Ok(Some(rule.priority));
         }
     }
+
     Ok(None)
 }
 
@@ -223,6 +233,7 @@ mod tests {
             "version: 1\nqueues:\n  - name: main\n    branch: main\n    \
              branch_protection_injection: {injection}\n    queue_conditions:\n      - label = ready\n      - author = alice\n"
         ));
+
         let rules = RequiredChecks {
             names: BTreeSet::from(["ci".to_owned(), "lint".to_owned(), "own".to_owned()]),
             up_to_date: false,
@@ -236,8 +247,10 @@ mod tests {
         };
         let mut pr = test_pr(Mergeability::Blocked, ReviewDecision::Approved, checks);
         pr.labels.insert("ready".to_owned());
+
         let config = target.config().unwrap();
         let result = unmet_conditions(&Sim::new(), &target, config.as_ref(), &pr, &reading).await;
+
         result.unwrap_or_else(|_| panic!("the conditions evaluate"))
     }
 

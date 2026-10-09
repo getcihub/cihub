@@ -37,6 +37,7 @@ fn parse(url: &str) -> Option<(String, String)> {
     let path = path.trim_end_matches('/').trim_end_matches(".git");
     let (owner, name) = path.rsplit_once('/')?;
     let owner = owner.rsplit('/').next()?;
+
     (!owner.is_empty() && !name.is_empty()).then(|| (owner.to_owned(), name.to_owned()))
 }
 

@@ -144,11 +144,13 @@ pub fn plan(
     let mut decisions = Vec::new();
     let mut concluded = Vec::new();
     let limit = 64 * (snapshot.items.len() + snapshot.requests.len() + snapshot.groups.len() + 1);
+
     while let Some(step) = next_step(&state, settings, now, &mut ids) {
         for kind in step.kinds {
             if decisions.len() >= limit {
                 return Err(PlanError::NoFixedPoint(limit));
             }
+
             let event = Event {
                 id: EventId::from_ulid(ids.next()),
                 org_id: state.org_id,
@@ -158,6 +160,7 @@ pub fn plan(
                 cause_id: step.cause,
                 kind,
             };
+
             if let EventKind::ItemTransitioned { item_id, to, .. } = &event.kind
                 && to.is_terminal()
             {
@@ -170,9 +173,11 @@ pub fn plan(
             } else {
                 apply_seen(&mut state, &event, &mut |_| {})?;
             }
+
             decisions.push(event);
         }
     }
+
     let surfaces = surfaces(&state, settings, now, concluded);
     let desired = desired(&state, settings, now, surfaces);
 
@@ -319,6 +324,7 @@ fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
         QueueState::SwitchingModes => (ItemState::Cancelled, Reason::QueueSwitchingModes),
         QueueState::Running | QueueState::Paused => (ItemState::NotReady, Reason::Submitted),
     };
+
     EventKind::ItemTransitioned {
         item_id: ItemId::from_ulid(ids.next()),
         from: None,
@@ -340,8 +346,10 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
         Request::Control(_) | Request::AccessLost | Request::AccessRestored => true,
         _ => s.state != QueueState::Paused,
     })?;
+
     let item = |item_id: &ItemId| s.items.get(item_id);
     let run = |run_id: &RunId| s.runs.get(run_id);
+
     let kind = match request {
         Request::Submit { .. } => submitted(s, ids),
         Request::Cancel { item_id, by_admin } => {
@@ -469,12 +477,14 @@ fn pr_changes(
         .find_map(|item| {
             let observed = s.prs.get(&item.pr_number)?;
             let pr = &observed.value;
+
             let (to, reason) = if pr.state == PrState::Merged {
                 if merge_ready(s, item)
                     || direct_merge(s, settings).is_some_and(|d| d.id == item.id)
                 {
                     return None;
                 }
+
                 (ItemState::Merged, Reason::ManualMerge)
             } else if pr.state == PrState::Closed {
                 (ItemState::Cancelled, Reason::PrClosed)
@@ -491,6 +501,7 @@ fn pr_changes(
             } else {
                 return None;
             };
+
             Step::one(Some(observed.fact_id), item_to(item, to, reason))
         })
 }
@@ -525,11 +536,13 @@ fn run_conclusion(
         .find_map(|run| {
             let checks = s.checks.get(&run.id);
             let observed = checks.into_iter().flat_map(|c| c.values());
+
             let failing: Vec<_> = observed
                 .clone()
                 .filter(|o| o.value.required)
                 .filter(|o| o.value.conclusion.is_some_and(|c| !c.is_passing()))
                 .collect();
+
             if let Some(first) = failing.first() {
                 let names = failing.iter().map(|o| o.value.name.clone()).collect();
                 return Step::one(
@@ -542,6 +555,7 @@ fn run_conclusion(
                     ),
                 );
             }
+
             let passing: Option<Vec<EventId>> = run
                 .required_statuses
                 .iter()
@@ -555,12 +569,14 @@ fn run_conclusion(
                         .map(|o| o.fact_id)
                 })
                 .collect();
+
             if let Some(facts) = passing {
                 return Step::one(
                     facts.into_iter().max(),
                     run_to(run, RunStatus::Succeeded, Reason::TestRunPassed, Vec::new()),
                 );
             }
+
             (now >= run.started_at + timeout).then(|| Step {
                 cause: None,
                 kinds: vec![run_to(
@@ -586,6 +602,7 @@ fn group_follows_run(
         .find_map(|group| {
             let run = s.latest_run(group.id)?;
             let reason = run.failure_reason;
+
             let (to, reason) = match (run.status, reason) {
                 (RunStatus::Succeeded, _) => (GroupState::TestsPassed, Reason::TestRunPassed),
                 (RunStatus::Failed, Some(r @ Reason::StartTestRunMergeConflict))
@@ -607,11 +624,13 @@ fn group_follows_run(
                 }
                 _ => return None,
             };
+
             let mut kinds = vec![group_to(group, to, reason)];
             if to == GroupState::TestsPassed && group.kind != GroupKind::Bisection {
                 let wider = current_window(s, settings).saturating_add(1);
                 kinds.extend(window_to(s, settings, wider));
             }
+
             Some(Step {
                 cause: s.cause(Subject::Run(run.id)),
                 kinds,
@@ -641,6 +660,7 @@ fn optimistic(
             let run = s
                 .latest_run(proof.id)
                 .filter(|r| r.status == RunStatus::Succeeded)?;
+
             let proved = |g: &&TestGroup| {
                 let mut live = g
                     .item_ids
@@ -650,16 +670,19 @@ fn optimistic(
                     .peekable();
                 live.peek().is_some() && live.all(|i| proof.predecessor_ids.contains(&i.id))
             };
+
             let group = s
                 .live_groups()
                 .filter(|g| matches!(g.state, GroupState::Testing | GroupState::PendingFailure))
                 .filter(|g| children(s, g).next().is_none())
                 .find(proved)?;
+
             let reason = if group.state == GroupState::Testing {
                 Reason::PassedByOptimization
             } else {
                 Reason::SuccessorTestRunPassed
             };
+
             let mut kinds = vec![group_to(group, GroupState::TestsPassed, reason)];
             kinds.extend(
                 group
@@ -679,6 +702,7 @@ fn optimistic(
                         )
                     }),
             );
+
             Some(Step {
                 cause: s.cause(Subject::Run(run.id)),
                 kinds,
@@ -701,9 +725,11 @@ fn group_follows_members(
             .filter_map(|id| s.items.get(id))
             .filter(|i| !bisecting || i.group_id == Some(group.id))
             .collect();
+
         if members.is_empty() {
             return None;
         }
+
         let merged_by_queue =
             |i: &Item| i.state == ItemState::Merged && i.state_reason != Reason::ManualMerge;
         if members.iter().all(|i| merged_by_queue(i)) {
@@ -712,19 +738,23 @@ fn group_follows_members(
                 group_to(group, GroupState::Merged, Reason::MergeGraphMerge),
             );
         }
+
         let left = members.iter().find(|i| {
             !merged_by_queue(i) && (i.state.is_terminal() || i.group_id != Some(group.id))
         })?;
+
         let to = if left.state == ItemState::Failed && group.kind == GroupKind::Single {
             GroupState::Failed
         } else {
             GroupState::Dissolved
         };
+
         let reason = if members.len() > 1 && left.state.is_terminal() {
             Reason::BatchMemberLeft
         } else {
             left.state_reason
         };
+
         Step::one(s.cause(Subject::Item(left.id)), group_to(group, to, reason))
     })
 }
@@ -742,9 +772,11 @@ fn members_follow_group(
         .find_map(|item| {
             let group = s.groups.get(&item.group_id?)?;
             let to = group.state.member_state()?;
+
             if item.state == to {
                 return None;
             }
+
             let verified_by_run_id = (to == ItemState::TestsPassed)
                 .then(|| s.latest_run(group.id).map(|r| r.id))
                 .flatten();
@@ -776,9 +808,11 @@ fn runs_follow_group(
         .find_map(|run| {
             let group = s.groups.get(&run.group_id)?;
             let latest = s.latest_run(group.id).map(|r| r.id);
+
             if group.state == GroupState::Testing && latest == Some(run.id) {
                 return None;
             }
+
             let reason = group.state_reason;
             let to = if RunStatus::allowed_reasons(Some(run.status), RunStatus::Cancelled)
                 .contains(&reason)
@@ -787,6 +821,7 @@ fn runs_follow_group(
             } else {
                 RunStatus::Interrupted
             };
+
             Step::one(
                 s.cause(Subject::Group(group.id)),
                 run_to(run, to, reason, Vec::new()),
@@ -810,17 +845,21 @@ fn pending_failure(
             if !predecessors_merged(s, group) || successors_testing(s, settings, group) {
                 return None;
             }
+
             let run = s.latest_run(group.id)?;
             let cause = s.cause(Subject::Group(group.id));
+
             if run.attempt <= settings.failure_budget_retries.value {
                 let room = if group.kind == GroupKind::Bisection {
                     bisection_room(s, settings) > 0
                 } else {
                     window_has_room(s, settings)
                 };
+
                 if !room {
                     return None;
                 }
+
                 let first_pr = s.items.get(group.item_ids.first()?)?.pr_number;
                 return Some(Step {
                     cause,
@@ -837,10 +876,12 @@ fn pending_failure(
                     ],
                 });
             }
+
             let mut kinds = vec![group_to(group, GroupState::Failed, run.failure_reason?)];
             if group.kind != GroupKind::Bisection {
                 kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
             }
+
             Some(Step { cause, kinds })
         })
 }
@@ -863,6 +904,7 @@ fn successors_testing(s: &Snapshot, settings: &QueueSettings, group: &TestGroup)
     if depth == 0 {
         return false;
     }
+
     let position = |g: &TestGroup| {
         g.item_ids
             .iter()
@@ -870,6 +912,7 @@ fn successors_testing(s: &Snapshot, settings: &QueueSettings, group: &TestGroup)
             .filter_map(|i| i.position)
             .min()
     };
+
     let mut successors: Vec<&TestGroup> = s
         .live_groups()
         .filter(|g| {
@@ -879,6 +922,7 @@ fn successors_testing(s: &Snapshot, settings: &QueueSettings, group: &TestGroup)
         })
         .collect();
     successors.sort_by_key(|g| position(g));
+
     successors
         .into_iter()
         .take(depth)
@@ -930,16 +974,19 @@ fn bisection(
         .find_map(|group| {
             let cause = s.cause(Subject::Group(group.id));
             let waiting = waiting(s, group);
+
             if waiting.is_empty() {
                 return Step::one(
                     cause,
                     group_to(group, GroupState::Bisected, Reason::BisectionRequired),
                 );
             }
+
             let children: Vec<&TestGroup> = children(s, group).collect();
             if children.iter().any(|c| c.state == GroupState::Testing) {
                 return None;
             }
+
             let passed = !children.is_empty()
                 && children
                     .iter()
@@ -949,6 +996,7 @@ fn bisection(
             } else {
                 Reason::BisectionRequired
             };
+
             let skip =
                 settings.optimization_mode.value == OptimizationMode::BisectionSkipRedundantTests;
             if !children.is_empty() && (!passed || !skip) {
@@ -963,6 +1011,7 @@ fn bisection(
                 ));
                 return Some(Step { cause, kinds });
             }
+
             let mut kinds = split(s, settings, ids, group, &waiting, reason)?;
             if children.is_empty() {
                 kinds.extend(
@@ -985,6 +1034,7 @@ fn bisection(
                     kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
                 }
             }
+
             Some(Step { cause, kinds })
         })
 }
@@ -1005,10 +1055,12 @@ fn split(
     if room == 0 {
         return None;
     }
+
     let base = &s.target.head.as_ref()?.value;
     let order = s.queue_order();
     let (first_half, second_half) = waiting.split_at(waiting.len().div_ceil(2));
     let mut kinds = Vec::new();
+
     for half in [first_half, second_half]
         .into_iter()
         .filter(|h| !h.is_empty())
@@ -1017,6 +1069,7 @@ fn split(
         let first = half.first()?;
         let index = order.iter().position(|i| i.id == first.id)?;
         let group_id = GroupId::from_ulid(ids.next());
+
         kinds.extend(half.iter().map(|i| item_to(i, ItemState::Pending, reason)));
         kinds.push(EventKind::GroupFormed {
             group_id,
@@ -1035,6 +1088,7 @@ fn split(
             ids,
         ));
     }
+
     Some(kinds)
 }
 
@@ -1047,6 +1101,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
             .item_ids
             .iter()
             .find_map(|id| order.iter().position(|i| i.id == *id))?;
+
         let cited: Vec<&Item> = group
             .predecessor_ids
             .iter()
@@ -1063,6 +1118,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
             };
             Some((reason, s.cause(Subject::Item(i.id))))
         });
+
         let (reason, cause) = if let Some(left) = left {
             left
         } else if !s.target.valid_bases.contains(&group.base_sha) {
@@ -1080,15 +1136,18 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
                 .into_iter()
                 .filter(|id| !group.item_ids.contains(id))
                 .collect();
+
             if live == expected {
                 return None;
             }
+
             let new = expected.iter().find(|id| !live.contains(id));
             (
                 Reason::SkipTheLineInterrupted,
                 new.and_then(|id| s.cause(Subject::Item(*id))),
             )
         };
+
         Step::one(cause, group_to(group, GroupState::Dissolved, reason))
     })
 }
@@ -1107,6 +1166,7 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         Mergeability::Blocked => blocking_checks(pr),
         Mergeability::Unknown => vec![BlockReason::Undetermined],
     };
+
     let has_targets = s
         .targets
         .get(&item.pr_number)
@@ -1114,11 +1174,13 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
     if s.mode == QueueMode::Parallel && !has_targets && blocks.is_empty() {
         blocks.push(BlockReason::Undetermined);
     }
+
     if !pr.unmet_conditions.is_empty() {
         blocks.push(BlockReason::QueueConditionsUnmet {
             conditions: pr.unmet_conditions.clone(),
         });
     }
+
     blocks
 }
 
@@ -1163,9 +1225,11 @@ fn readiness(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) 
     not_ready_items(s).find_map(|item| {
         let observed = s.prs.get(&item.pr_number)?;
         let blocks = readiness_of(s, item, &observed.value);
+
         if item.mergeability == observed.value.mergeability && item.block_reasons == blocks {
             return None;
         }
+
         Step::one(
             Some(observed.fact_id),
             EventKind::ItemReadinessChanged {
@@ -1182,15 +1246,18 @@ fn admission(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) 
     if s.state != QueueState::Running {
         return None;
     }
+
     let item = not_ready_items(s).find(|i| {
         s.prs
             .get(&i.pr_number)
             .is_some_and(|o| o.value.mergeability == i.mergeability)
             && i.block_reasons.is_empty()
     })?;
+
     let cause = s.prs.get(&item.pr_number).map(|o| o.fact_id);
     let order = s.queue_order();
     let index = insertion_index(&order, item.priority);
+
     let kind = match position_at(&order, index) {
         Some(position) => item_to_with(
             item,
@@ -1217,13 +1284,16 @@ fn formation(
     ids: &mut IdGen,
 ) -> Option<Step> {
     let base = &s.target.head.as_ref()?.value;
+
     if !window_has_room(s, settings) || direct_merge(s, settings).is_some() {
         return None;
     }
+
     let order = s.queue_order();
     let Next::Form { index, members } = next_group(s, &order, settings, now)? else {
         return None;
     };
+
     let first = members.first()?;
     let group_id = GroupId::from_ulid(ids.next());
     let kind = if members.len() > 1 {
@@ -1231,6 +1301,7 @@ fn formation(
     } else {
         GroupKind::Single
     };
+
     let group_formed = EventKind::GroupFormed {
         group_id,
         kind,
@@ -1299,6 +1370,7 @@ fn next_group<'a>(
                     .is_some_and(|p| p.state != ItemState::Pending && !in_bisection(s, p))
             })
     })?;
+
     let first = order[index];
     if !settings.batching_enabled.value || first.no_batch {
         return Some(Next::Form {
@@ -1306,6 +1378,7 @@ fn next_group<'a>(
             members: vec![first],
         });
     }
+
     let size = usize::try_from(settings.batching_size.value).unwrap_or(usize::MAX);
     let members: Vec<&Item> = order[index..]
         .iter()
@@ -1319,12 +1392,14 @@ fn next_group<'a>(
     if closed {
         return Some(Next::Form { index, members });
     }
+
     let wait = Duration::minutes(i64::from(settings.batching_max_wait_minutes.value));
     let ready = members
         .iter()
         .filter_map(|i| i.admitted_at)
         .min()
         .map(|t| t + wait);
+
     match ready {
         Some(ready) if members.len() < size && now < ready => Some(Next::Wait {
             members,
@@ -1379,6 +1454,7 @@ fn direct_merge<'a>(s: &'a Snapshot, settings: &QueueSettings) -> Option<&'a Ite
     {
         return None;
     }
+
     let first = *s.queue_order().first()?;
     (first.state == ItemState::Pending && !first.direct_merge_tried).then_some(first)
 }
@@ -1425,9 +1501,11 @@ fn read_points(item: &Item, now: OffsetDateTime) -> (Option<OffsetDateTime>, Off
     let minute = floor_to_minute(item.submitted_at);
     let at = |minutes: i64| minute + Duration::minutes(minutes);
     let age = (now - minute).whole_minutes().max(0);
+
     if item.mergeability == Mergeability::Unknown {
         return ((age >= 1).then(|| at(age)), at(age + 1));
     }
+
     let last = READ_POINTS
         .iter()
         .rev()
@@ -1438,6 +1516,7 @@ fn read_points(item: &Item, now: OffsetDateTime) -> (Option<OffsetDateTime>, Off
         .find(|&&point| point > age)
         .copied()
         .unwrap_or((age / 15 + 1) * 15);
+
     (last.map(at), at(next))
 }
 
@@ -1447,6 +1526,7 @@ fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
     let (point, _) = read_points(item, now);
     let point = point?;
     let observed = s.prs.get(&item.pr_number).map(|o| o.observed_at);
+
     (observed.is_none_or(|at| at < point)).then_some(Read {
         pr_number: item.pr_number,
         point,
@@ -1470,6 +1550,7 @@ fn grid(
     let step = Duration::minutes(every);
     let steps = ((now - base).whole_minutes() / every).max(0);
     let at = |n: i64| base + step * i32::try_from(n).unwrap_or(i32::MAX);
+
     ((steps >= 1).then(|| at(steps)), at(steps + 1))
 }
 
@@ -1502,9 +1583,11 @@ fn target_points(
     if !busy {
         return None;
     }
+
     if let Some(head) = &s.target.head {
         return Some(grid(head.observed_at, TARGET_READ_EVERY, now));
     }
+
     let minute = floor_to_minute(now);
     Some((Some(minute), minute + Duration::minutes(1)))
 }
@@ -1529,6 +1612,7 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
         Some(Next::Wait { until, .. }) => Some(until),
         _ => None,
     };
+
     reads
         .chain(timeouts)
         .chain(runs)
@@ -1552,6 +1636,7 @@ fn desired(
             })
             .collect()
     };
+
     let test_branches = s
         .runs
         .values()
@@ -1567,6 +1652,7 @@ fn desired(
             })
         })
         .collect();
+
     let merges = if s.state == QueueState::Paused {
         Vec::new()
     } else {
@@ -1592,6 +1678,7 @@ fn desired(
             }))
             .collect()
     };
+
     let observe = live_items(s)
         .filter_map(|item| read_due(s, item, now))
         .collect();
@@ -1606,7 +1693,9 @@ fn desired(
             })
         })
         .collect();
+
     let target_read = target_points(s, now).and_then(|(point, _)| point);
+
     Desired {
         test_branches,
         merges,
@@ -1630,10 +1719,12 @@ fn surfaces(
         .into_iter()
         .map(|surface| (surface.pr_number, surface))
         .collect();
+
     let waiting = match next_group(s, &s.queue_order(), settings, now) {
         Some(Next::Wait { members, until }) => Some((members, until)),
         _ => None,
     };
+
     for item in live_items(s) {
         let mut surface = surface(s, item);
         if let Some((members, until)) = &waiting
@@ -1646,5 +1737,6 @@ fn surfaces(
         }
         by_pr.insert(item.pr_number, surface);
     }
+
     by_pr.into_values().collect()
 }

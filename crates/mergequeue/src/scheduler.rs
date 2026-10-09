@@ -80,10 +80,12 @@ impl Reconciler {
         let Some(mut tx) = begin_reconciliation(pool, queue).await? else {
             return Ok(());
         };
+
         // Read once the queue is taken: a change that marked it dirty before
         // is seen at a time no earlier than the change.
         let now = clock();
         self.reconcile_in(&mut tx, queue, now).await?;
+
         Ok(tx.commit().await?)
     }
 
@@ -101,6 +103,7 @@ impl Reconciler {
     ) -> Result<(), MergeQueueError> {
         let target = QueueTarget::load(conn, queue).await?;
         tracing::Span::current().record("org_id", tracing::field::display(target.org_id));
+
         let settings = target.settings()?;
         let mut log = QueueLog::load(conn, queue).await?;
         // The facts that the jobs gave back come first: a check reported on
@@ -108,11 +111,14 @@ impl Reconciler {
         let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
         let mut written = log.write(conn, given).await?.len();
+
         delete_facts(conn, &given_ids).await?;
+
         let mut facts = Vec::new();
         let mut jobs = Vec::new();
         let deliveries = pending_deliveries(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let mut deferred = 0;
+
         for delivery in &deliveries {
             let processed = match (self.translate)(&delivery.event, &delivery.payload) {
                 Ok(read) => {
@@ -141,6 +147,7 @@ impl Reconciler {
 
             delete_delivery(conn, &delivery.delivery_id).await?;
         }
+
         let requested_mode = log.snapshot.requested_mode;
         if settings.mode.value != requested_mode {
             facts.push(Event {
@@ -156,7 +163,9 @@ impl Reconciler {
                 },
             });
         }
+
         written += log.write(conn, facts).await?.len();
+
         let plan = plan(&log.snapshot, &settings, now)?;
         let ended = ended_runs(&plan.decisions);
         let decisions = log.write(conn, plan.decisions).await?.len();
@@ -168,8 +177,10 @@ impl Reconciler {
             ended: &ended,
         };
         let requested = self.request_jobs(conn, &converge, jobs, now).await?;
+
         log.cover(conn, now).await?;
         schedule_tick(conn, queue, plan.wake_at).await?;
+
         if written + decisions + requested + deferred > 0 {
             info!(
                 deliveries = deliveries.len(),
@@ -180,6 +191,7 @@ impl Reconciler {
                 "queue reconciled"
             );
         }
+
         Ok(())
     }
 
@@ -203,21 +215,27 @@ impl Reconciler {
         {
             jobs.push(load_config(target, &head.value));
         }
+
         for (point, prs) in reads_by_point(&converge.desired.observe) {
             jobs.extend(refresh_at(target, point, &prs));
         }
+
         for read in &converge.desired.check_reads {
             jobs.push(refresh_checks(target, read));
         }
+
         if let Some(point) = converge.desired.target_read {
             jobs.push(refresh_target(target, point));
         }
+
         for merge in &converge.desired.merges {
             jobs.push(merge_job(target, merge));
         }
+
         jobs.extend(
             converge_surfaces(conn, target, converge.settings, &converge.desired.surfaces).await?,
         );
+
         for branch in &converge.desired.test_branches {
             let assembling = converge
                 .log
@@ -229,6 +247,7 @@ impl Reconciler {
                 jobs.push(assemble(target, branch));
             }
         }
+
         let keep = Duration::minutes(i64::from(
             converge.settings.keep_test_branches_minutes.value,
         ));
@@ -237,11 +256,13 @@ impl Reconciler {
             .iter()
             .map(|run_id| (cleanup(target, *run_id), now + keep));
         let mut requested = 0;
+
         for (job, run_after) in jobs.iter().map(|job| (job.clone(), now)).chain(cleanups) {
             if enqueue_job(conn, &job, run_after, now).await? {
                 requested += 1;
             }
         }
+
         Ok(requested)
     }
 }
@@ -303,6 +324,7 @@ impl Work<'_> {
     ) -> Result<bool, MergeQueueError> {
         let delivery_id = self.delivery.delivery_id.as_str();
         let snapshot = &self.log.snapshot;
+
         match event {
             ScmEvent::PrChanged {
                 number,
@@ -383,6 +405,7 @@ impl Work<'_> {
             | ScmEvent::ReposChanged { .. }
             | ScmEvent::Ignored => {}
         }
+
         Ok(true)
     }
 
@@ -403,6 +426,7 @@ impl Work<'_> {
             .runs
             .values()
             .any(|run| !run.status.is_terminal() && run.test_sha.as_deref() == Some(&sha));
+
         if live {
             facts.push(self.fact(
                 Actor::System,
@@ -413,6 +437,7 @@ impl Work<'_> {
             ));
             return Ok(true);
         }
+
         let awaited = branches
             .iter()
             .filter_map(|branch| run_of_test_branch(branch))
@@ -421,9 +446,11 @@ impl Work<'_> {
                     run.status == RunStatus::Assembling && run.test_sha.is_none()
                 })
             });
+
         if awaited {
             return Ok(false);
         }
+
         record_late_check(
             conn,
             self.target.org_id,
@@ -491,6 +518,7 @@ pub async fn pass_connection_deliveries(
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
     type Row = (String, String, String, String, Value);
+
     let mut tx = begin_system(pool).await?;
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, event, payload
@@ -504,6 +532,7 @@ pub async fn pass_connection_deliveries(
     .fetch_all(&mut *tx)
     .await?;
     let count = rows.len();
+
     for (delivery_id, org_id, connection, event, payload) in rows {
         let delivery = ConnectionDelivery {
             org_id: parse_id(&org_id, &delivery_id)?,
@@ -528,7 +557,9 @@ pub async fn pass_connection_deliveries(
 
         delete_delivery(&mut tx, &delivery_id).await?;
     }
+
     tx.commit().await?;
+
     Ok(count)
 }
 
@@ -729,6 +760,7 @@ async fn route_pr_change(
     let Some(repo) = repo_of(conn, delivery, change.repo_external_id).await? else {
         return Ok(());
     };
+
     // The welcome job checks the settings of the first active queue of the
     // branch (`DECISIONS.md` D163).
     if change.opened
@@ -746,6 +778,7 @@ async fn route_pr_change(
         );
         enqueue_job(conn, &job, now, now).await?;
     }
+
     let live: Option<String> = sqlx::query_scalar(
         "SELECT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current
@@ -755,6 +788,7 @@ async fn route_pr_change(
     .bind(i64::try_from(change.number).unwrap_or(i64::MAX))
     .fetch_optional(&mut *conn)
     .await?;
+
     let job = if let Some(queue) = live {
         let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
         refresh_after(&target, &delivery.delivery_id, vec![change.number])
@@ -779,7 +813,9 @@ async fn route_pr_change(
             &request,
         )
     };
+
     enqueue_job(conn, &job, now, now).await?;
+
     Ok(())
 }
 
@@ -796,6 +832,7 @@ async fn read_waiting_prs(
     let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
         return Ok(());
     };
+
     let items: Vec<(String, i64)> = sqlx::query_as(
         "SELECT i.queue_id, i.pr_number FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_head_sha = $2
@@ -807,17 +844,20 @@ async fn read_waiting_prs(
     .fetch_all(&mut *conn)
     .await?;
     let mut prs_by_queue: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+
     for (queue, number) in items {
         prs_by_queue
             .entry(queue)
             .or_default()
             .push(u64::try_from(number).unwrap_or_default());
     }
+
     for (queue, prs) in prs_by_queue {
         let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
         let job = refresh_after(&target, &delivery.delivery_id, prs);
         enqueue_job(conn, &job, now, now).await?;
     }
+
     Ok(())
 }
 
@@ -835,16 +875,19 @@ async fn read_heads(
     let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
         return Ok(true);
     };
+
     let queues = QueueTarget::queues_of_branch(conn, repo, branch).await?;
     for queue in &queues {
         if merge_in_flight(conn, queue.queue_id).await? {
             return Ok(false);
         }
     }
+
     for queue in &queues {
         let job = refresh_target_after(queue, &delivery.delivery_id);
         enqueue_job(conn, &job, now, now).await?;
     }
+
     Ok(true)
 }
 
@@ -869,6 +912,7 @@ async fn request_submission(
     let Some(repo) = repo_of(conn, delivery, command.repo_external_id).await? else {
         return Ok(());
     };
+
     let request = SubmitPr {
         repo_id: repo,
         pr_number: command.number,
@@ -887,7 +931,9 @@ async fn request_submission(
         &delivery.delivery_id,
         &request,
     );
+
     enqueue_job(conn, &job, now, now).await?;
+
     Ok(())
 }
 
@@ -967,6 +1013,7 @@ pub(crate) async fn run_scheduler(
         Ok(queues) => info!(queues, "live queues woken at start"),
         Err(err) => warn!(error = &err as &dyn Error, "live queues not woken at start"),
     }
+
     let mut next_cover = clock();
     while !cancel.is_cancelled() {
         let now = clock();
@@ -992,8 +1039,10 @@ pub(crate) async fn run_scheduler(
             .wait_or_pause(wait, &cancel, "queue notifications lost")
             .await;
     }
+
     let mut tx = begin_system(&pool).await?;
     release_leases(&mut tx, &owner).await?;
+
     Ok(tx.commit().await?)
 }
 
@@ -1044,7 +1093,9 @@ async fn next_wait(
 ) -> Result<std::time::Duration, MergeQueueError> {
     let mut tx = begin_system(pool).await?;
     let wait = until_next_tick(&mut tx, now).await?;
+
     tx.commit().await?;
+
     Ok(wait)
 }
 
@@ -1055,6 +1106,8 @@ async fn leases(
 ) -> Result<Vec<QueueId>, MergeQueueError> {
     let mut tx = begin_system(pool).await?;
     let queues = acquire_leases(&mut tx, owner, now, LEASES_PER_PASS).await?;
+
     tx.commit().await?;
+
     Ok(queues)
 }

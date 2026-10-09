@@ -66,6 +66,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .await
         .unwrap()
         .expect("the SCM knows the installation of the connection");
+
     assert_eq!(
         installation.account.path, repo.namespace,
         "the connection serves the account of the repository"
@@ -77,16 +78,19 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .check_setup(repo, &fixture.base_branch, CLASS)
         .await
         .unwrap();
+
     assert_eq!(
         findings,
         [SetupFinding::UpdateRestrictionMissing],
         "the rules of the base branch do not restrict its updates"
     );
+
     let repos = scm.list_repos(&repo.connection, CLASS).await.unwrap();
     let listed = repos
         .iter()
         .find(|listed| listed.namespace == repo.namespace && listed.name == repo.name)
         .expect("the connection lists the repository");
+
     assert!(!listed.external_id.is_empty());
     assert_eq!(listed.default_branch, fixture.base_branch);
 }
@@ -115,6 +119,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     ];
     let prs = scm.pull_requests(repo, &numbers, CLASS).await.unwrap();
     let found: Vec<u64> = prs.iter().map(|pr| pr.number).collect();
+
     assert_eq!(
         found,
         [
@@ -124,7 +129,9 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         ],
         "a missing PR is absent from a read of PRs"
     );
+
     let (mergeable, conflicting, draft) = (&prs[0], &prs[1], &prs[2]);
+
     assert_eq!(mergeable.state, PrState::Open);
     assert_eq!(mergeable.base_branch, fixture.base_branch);
     assert_eq!(mergeable.mergeability, Mergeability::Mergeable);
@@ -146,24 +153,29 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .pull_request(repo, fixture.mergeable_pr, CLASS)
         .await
         .unwrap();
+
     assert_eq!(
         &one, mergeable,
         "one read gives the same PR as a read of PRs"
     );
+
     let files = scm
         .pr_files(repo, fixture.mergeable_pr, CLASS)
         .await
         .unwrap();
+
     assert_eq!(
         u64::try_from(files.len()).unwrap(),
         mergeable.changed_files,
         "the files of a PR are its changed files"
     );
+
     let base = scm
         .branch_head(repo, &fixture.base_branch, CLASS)
         .await
         .unwrap()
         .expect("the base branch exists");
+
     assert!(
         scm.is_ancestor(repo, &base, &mergeable.head_sha, CLASS)
             .await
@@ -176,29 +188,36 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
             .unwrap(),
         "the base does not contain the PR"
     );
+
     let threads = scm
         .unresolved_threads(repo, fixture.mergeable_pr, CLASS)
         .await
         .unwrap();
+
     assert!(threads.is_empty(), "{threads:?}");
     let missing = scm.pull_request(repo, fixture.missing_pr, CLASS).await;
+
     assert!(matches!(missing, Err(ScmError::NotFound(_))), "{missing:?}");
 
     let required = scm
         .required_checks(repo, &fixture.base_branch, CLASS)
         .await
         .unwrap();
+
     assert_eq!(required, fixture.required);
 
     let (path, content) = &fixture.file;
     let file = scm.file(repo, &fixture.base_branch, path, CLASS).await;
+
     assert_eq!(file.unwrap().as_ref(), Some(content));
     let none = scm
         .file(repo, &fixture.base_branch, "cihub-contract-missing", CLASS)
         .await;
+
     assert_eq!(none.unwrap(), None);
 
     let admin = scm.permission(repo, &fixture.admin, CLASS).await.unwrap();
+
     assert_eq!(admin, Permission::Admin);
 }
 
@@ -209,12 +228,14 @@ async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .await
         .unwrap()
         .expect("the base branch exists");
+
     assert_eq!(scm.branch_head(repo, work, CLASS).await.unwrap(), None);
     for _ in 0..2 {
         scm.set_branch(repo, work, &base, false, CLASS)
             .await
             .unwrap();
     }
+
     assert_eq!(
         scm.branch_head(repo, work, CLASS).await.unwrap().as_ref(),
         Some(&base)
@@ -228,30 +249,37 @@ async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let MergeIntoRef::Merged { sha } = merged else {
         panic!("a new commit merges into a new commit: {merged:?}");
     };
+
     assert_eq!(scm.branch_head(repo, work, CLASS).await.unwrap(), Some(sha));
     let again = scm
         .merge_into_branch(repo, work, &mergeable, "contract merge", CLASS)
         .await
         .unwrap();
+
     assert_eq!(again, MergeIntoRef::AlreadyContained);
     let conflicting = pr_head(scm, repo, fixture.conflicting_pr).await;
     let conflict = scm
         .merge_into_branch(repo, work, &conflicting, "contract conflict", CLASS)
         .await
         .unwrap();
+
     assert_eq!(conflict, MergeIntoRef::Conflict);
 
     let behind = scm.set_branch(repo, work, &base, false, CLASS).await;
+
     assert!(
         matches!(behind, Err(ScmError::Validation(_))),
         "a move back without force is refused: {behind:?}"
     );
+
     scm.set_branch(repo, work, &base, true, CLASS)
         .await
         .unwrap();
+
     for _ in 0..2 {
         scm.delete_branch(repo, work, CLASS).await.unwrap();
     }
+
     assert_eq!(scm.branch_head(repo, work, CLASS).await.unwrap(), None);
 }
 
@@ -267,11 +295,13 @@ async fn statuses_comments_and_labels(scm: &dyn Scm, repo: &RepoRef, fixture: &F
     for _ in 0..2 {
         scm.set_status(repo, &status, CLASS).await.unwrap();
     }
+
     let checks = scm.checks(repo, &head, CLASS).await.unwrap();
     let published: Vec<_> = checks
         .iter()
         .filter(|check| check.name == status.context && check.kind == CheckKind::Status)
         .collect();
+
     assert_eq!(published.len(), 1, "{checks:?}");
     assert_eq!(published[0].conclusion, None);
     let success = StatusUpdate {
@@ -294,14 +324,18 @@ async fn statuses_comments_and_labels(scm: &dyn Scm, repo: &RepoRef, fixture: &F
             .await
             .unwrap();
     }
+
     let labelled = scm.pull_request(repo, number, CLASS).await.unwrap();
+
     assert!(labelled.labels.contains("cihub-contract"));
     for _ in 0..2 {
         scm.remove_label(repo, number, "cihub-contract", CLASS)
             .await
             .unwrap();
     }
+
     let unlabelled = scm.pull_request(repo, number, CLASS).await.unwrap();
+
     assert!(!unlabelled.labels.contains("cihub-contract"));
 }
 
@@ -311,6 +345,7 @@ async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     scm.set_branch(repo, work, &head, true, CLASS)
         .await
         .unwrap();
+
     let base = fixture.base_branch.as_str();
     let number = scm
         .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
@@ -320,17 +355,22 @@ async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
         .await
         .unwrap();
+
     assert_eq!(again, number, "an open draft PR is not opened twice");
     let draft = scm.pull_request(repo, number, CLASS).await.unwrap();
+
     assert!(draft.draft);
     assert_eq!(
         (draft.title.as_str(), draft.body.as_str()),
         ("contract draft", "contract")
     );
+
     for _ in 0..2 {
         scm.close_pr(repo, number, CLASS).await.unwrap();
     }
+
     let closed = scm.pull_request(repo, number, CLASS).await.unwrap();
+
     assert_eq!(closed.state, PrState::Closed);
     scm.delete_branch(repo, work, CLASS).await.unwrap();
 }
@@ -346,20 +386,24 @@ async fn merge(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         message: String::new(),
     };
     let changed = scm.merge_pr(repo, &merge, CLASS).await;
+
     assert_eq!(changed, Err(ScmError::HeadChanged));
     merge.head_sha = head;
     let merged = scm.merge_pr(repo, &merge, CLASS).await.unwrap();
     let again = scm.merge_pr(repo, &merge, CLASS).await.unwrap();
+
     assert_eq!(again, merged, "a merged PR returns its commit");
     let base = scm
         .branch_head(repo, &fixture.base_branch, CLASS)
         .await
         .unwrap();
+
     assert_eq!(base, Some(merged));
     let pr = scm
         .pull_request(repo, fixture.mergeable_pr, CLASS)
         .await
         .unwrap();
+
     assert_eq!(pr.state, PrState::Merged);
 }
 

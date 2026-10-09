@@ -223,6 +223,7 @@ async fn list_queues(
     ApiPath((owner, name)): ApiPath<(String, String)>,
 ) -> Result<axum::Json<QueueList>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let mut tx = begin(&state, &grant).await?;
     let repo = repo_id(&mut tx, &owner, &name).await?;
     let rows: Vec<QueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
@@ -235,6 +236,7 @@ async fn list_queues(
         .into_iter()
         .map(QueueRow::into_queue)
         .collect::<Result<_, _>>()?;
+
     Ok(axum::Json(QueueList { queues }))
 }
 
@@ -272,6 +274,7 @@ async fn update_queue(
     ApiJson(request): ApiJson<UpdateQueue>,
 ) -> Result<(StatusCode, axum::Json<Queue>), ApiError> {
     grant.require(ApiScope::QueuesWrite)?;
+
     let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
     let control = match request.state {
         RequestedQueueState::Running => QueueControl::Resume,
@@ -281,11 +284,15 @@ async fn update_queue(
     let id: QueueId = row.id.parse()?;
     let now = (state.clock)();
     let facts = vec![(Actor::System, EventKind::QueueControlRequested { control })];
+
     give_back(&mut tx, grant.org_id, id, facts, now).await?;
+
     let after = json!({ "state": request.state });
     audit(&mut tx, &grant, "queue.state_requested", &queue_id, after).await?;
+
     let queue = row.into_queue()?;
     tx.commit().await?;
+
     Ok((StatusCode::ACCEPTED, axum::Json(queue)))
 }
 
@@ -307,12 +314,16 @@ async fn queue_action(
     let Some(queue_id) = target.strip_suffix(":resync") else {
         return Err(ApiError::not_found("action"));
     };
+
     grant.require(ApiScope::QueuesWrite)?;
+
     let (mut tx, row) = begin_queue(&state, &grant, queue_id).await?;
     audit(&mut tx, &grant, "queue.resync", queue_id, json!({})).await?;
     tx.commit().await?;
+
     let id: QueueId = row.id.parse()?;
     crate::resync(&state.pool, id, (state.clock)()).await?;
+
     Ok(accepted())
 }
 
@@ -399,10 +410,12 @@ async fn list_items(
     ApiQuery(filter): ApiQuery<ItemFilter>,
 ) -> Result<axum::Json<ItemPage>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let take = filter.take.unwrap_or(50);
     if take == 0 || take > MAX_TAKE {
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
+
     let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let rows: Vec<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM queue_items
@@ -430,6 +443,7 @@ async fn list_items(
     } else {
         None
     };
+
     Ok(axum::Json(ItemPage {
         items: page,
         next_cursor,
@@ -451,6 +465,7 @@ async fn submit(
     ApiJson(request): ApiJson<SubmitPr>,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
     grant.require(ApiScope::PrsWrite)?;
+
     let priority = request
         .priority
         .as_ref()
@@ -478,8 +493,10 @@ async fn submit(
     let cause = format!("api-{}", new_event_id());
     let job: Job = jobs::submit(grant.org_id, target.repo.connection.id, &cause, &payload);
     let now = (state.clock)();
+
     enqueue_job(&mut tx, &job, now, now).await?;
     tx.commit().await?;
+
     Ok(accepted())
 }
 
@@ -504,6 +521,7 @@ async fn get_pr(
     ApiQuery(query): ApiQuery<PrQuery>,
 ) -> Result<axum::Json<PrItem>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let number = i64::try_from(pr_number).map_err(|_| ApiError::not_found("PR"))?;
     let row: Option<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
@@ -520,6 +538,7 @@ async fn get_pr(
         Some(other) => return Err(ApiError::invalid(format!("unknown include `{other}`"))),
         None => None,
     };
+
     Ok(axum::Json(PrItem { item, timeline }))
 }
 
@@ -568,11 +587,13 @@ async fn batch_get(
     ApiJson(request): ApiJson<BatchGet>,
 ) -> Result<axum::Json<BatchGetResponse>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     if request.pr_numbers.len() > MAX_BATCH_GET {
         return Err(ApiError::invalid(format!(
             "at most {MAX_BATCH_GET} PRs in one read"
         )));
     }
+
     let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let numbers: Vec<i64> = request
         .pr_numbers
@@ -595,6 +616,7 @@ async fn batch_get(
         .copied()
         .filter(|n| !found.iter().any(|item| item.pr_number == *n))
         .collect();
+
     Ok(axum::Json(BatchGetResponse {
         items: found,
         not_found,
@@ -616,6 +638,7 @@ async fn graph(
     ApiPath(queue_id): ApiPath<String>,
 ) -> Result<axum::Json<Graph>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
     let rows: Vec<(String, i64, String, Option<i64>)> = sqlx::query_as(
         "SELECT id, pr_number, state::text, position FROM queue_items
@@ -645,6 +668,7 @@ async fn graph(
     .fetch_all(&mut *tx)
     .await?;
     let mut edges = Vec::new();
+
     for (members, predecessors) in groups {
         for to in &members {
             for from in &predecessors {
@@ -655,6 +679,7 @@ async fn graph(
             }
         }
     }
+
     Ok(axum::Json(Graph { nodes, edges }))
 }
 
@@ -679,9 +704,11 @@ async fn give(
     kind: impl FnOnce(ItemId, ItemState) -> Result<EventKind, ApiError>,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
     grant.require(ApiScope::PrsWrite)?;
+
     let mut tx = begin(state, grant).await?;
     let (queue_id, item_id, item_state) = item_of(&mut tx, item).await?;
     let fact = kind(item_id, item_state)?;
+
     give_back(
         &mut tx,
         grant.org_id,
@@ -690,7 +717,9 @@ async fn give(
         (state.clock)(),
     )
     .await?;
+
     tx.commit().await?;
+
     Ok(accepted())
 }
 
@@ -788,6 +817,7 @@ async fn test_run(
     ApiPath(run_id): ApiPath<String>,
 ) -> Result<axum::Json<TestRun>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let _: RunId = run_id.parse().map_err(|_| ApiError::not_found("run"))?;
     let mut tx = begin(&state, &grant).await?;
     let run: RunRow = sqlx::query_as(
@@ -825,6 +855,7 @@ async fn test_run(
     let checks = run_checks(&mut tx, &run_id).await?;
     let dependents = dependents(&mut tx, &run.queue_id, &run_id, &members).await?;
     let unsigned = |n: i64| u64::try_from(n).map_err(ApiError::from);
+
     Ok(axum::Json(TestRun {
         attempt: u32::try_from(run.attempt)?,
         status: run.status.parse()?,
@@ -947,10 +978,13 @@ async fn config_check(
     ApiPath(queue_id): ApiPath<String>,
 ) -> Result<axum::Json<ConfigCheck>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+
     let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
     let id: QueueId = row.id.parse()?;
     let target = QueueTarget::load(&mut tx, id).await?;
+
     tx.commit().await?;
+
     let findings = state
         .scm
         .check_setup(&target.repo, &target.target_branch, JobClass::Interactive)
@@ -966,6 +1000,7 @@ async fn config_check(
             message: finding_text(finding, &target.target_branch),
         })
         .collect();
+
     Ok(axum::Json(ConfigCheck { findings }))
 }
 

@@ -55,6 +55,7 @@ const fn concat<const N: usize>(parts: &[&[Reason]]) -> [Reason; N] {
     let mut out = [Reason::Submitted; N];
     let mut n = 0;
     let mut i = 0;
+
     while i < parts.len() {
         let mut j = 0;
         while j < parts[i].len() {
@@ -64,6 +65,7 @@ const fn concat<const N: usize>(parts: &[&[Reason]]) -> [Reason; N] {
         }
         i += 1;
     }
+
     assert!(n == N, "N is not the total length of the parts");
     out
 }
@@ -495,11 +497,13 @@ mod tests {
             (live, S::Interrupted, &["passed_by_optimization"]),
             (live, S::Cancelled, CANCELLED),
         ];
+
         rows.extend(
             given_up
                 .iter()
                 .map(|names| (live as &[_], S::Interrupted, *names)),
         );
+
         assert_table(&rows);
     }
 

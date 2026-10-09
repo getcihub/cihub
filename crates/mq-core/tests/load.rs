@@ -54,6 +54,7 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
     let mut broken = BTreeSet::new();
     let mut arrivals = Vec::new();
     let mut at = start;
+
     loop {
         let gap = -rng.unit().ln() * 60.0 / PER_HOUR;
         #[expect(clippy::cast_possible_truncation, reason = "a gap of minutes")]
@@ -64,12 +65,14 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
         }
         arrivals.push(at);
     }
+
     let mut flaky = Rng(seed ^ 0xF1A4);
     let mut close_rng = Rng(seed ^ 0xC105);
     let mut closing: Vec<(OffsetDateTime, u64)> = Vec::new();
     let mut next = 0;
     let mut pr = 0;
     let end = start + Duration::hours(HOURS * 40);
+
     while w.now < end {
         while next < arrivals.len() && arrivals[next] <= w.now {
             pr += 1;
@@ -83,18 +86,22 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
             }
             next += 1;
         }
+
         let due: Vec<u64> = closing
             .iter()
             .filter(|(at, _)| *at <= w.now)
             .map(|(_, pr)| *pr)
             .collect();
         closing.retain(|(at, _)| *at > w.now);
+
         for pr in due {
             if w.state(pr).is_some_and(|s| !s.is_terminal()) {
                 w.observe(pr, |p| p.state = PrState::Closed);
             }
         }
+
         w.assemble_all();
+
         let due: Vec<_> = w
             .snapshot
             .runs
@@ -105,13 +112,16 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
             })
             .map(|r| r.id)
             .collect();
+
         for run_id in due {
             let Some(run) = w.snapshot.runs.get(&run_id) else {
                 continue;
             };
+
             if run.status != RunStatus::InProgress {
                 continue;
             }
+
             let group = &w.snapshot.groups[&run.group_id];
             let fails = group
                 .predecessor_ids
@@ -120,22 +130,28 @@ fn play(strategy: Strategy, seed: u64, closed: u64) -> Cost {
                 .filter_map(|id| w.snapshot.items.get(id))
                 .any(|i| broken.contains(&i.pr_number))
                 || flaky.chance(FLAKY);
+
             let conclusion = if fails {
                 CheckConclusion::Failure
             } else {
                 CheckConclusion::Success
             };
+
             w.report_run(run_id, conclusion);
         }
+
         w.merge_all();
+
         if next == arrivals.len()
             && closing.is_empty()
             && w.snapshot.items.values().all(|i| i.state.is_terminal())
         {
             break;
         }
+
         w.advance(1);
     }
+
     assert!(
         w.snapshot.items.values().all(|i| i.state.is_terminal()),
         "{strategy}: the queue did not drain"
@@ -147,6 +163,7 @@ fn cost(w: &World) -> Cost {
     let mut submitted: BTreeMap<_, OffsetDateTime> = BTreeMap::new();
     let mut items = BTreeMap::new();
     let mut cost = Cost::default();
+
     for event in &w.log {
         match &event.kind {
             EventKind::ItemSubmitted { .. } => {
@@ -184,6 +201,7 @@ fn cost(w: &World) -> Cost {
             _ => {}
         }
     }
+
     cost
 }
 
@@ -191,15 +209,18 @@ fn total(strategy: Strategy) -> (f64, i64) {
     let mut runs = 0;
     let mut merged = 0;
     let mut times = Vec::new();
+
     for seed in SEEDS {
         let cost = play(strategy, seed, 0);
         runs += cost.runs;
         merged += cost.merged;
         times.extend(cost.times);
     }
+
     times.sort_unstable();
     #[expect(clippy::cast_precision_loss, reason = "small counts")]
     let per_merge = runs as f64 / merged as f64;
+
     (per_merge, times[times.len() / 2])
 }
 
@@ -208,14 +229,17 @@ fn total(strategy: Strategy) -> (f64, i64) {
 fn batched_costs_fewer_runs_than_pipelined_for_a_close_time_in_queue() {
     let (pipelined_runs, pipelined_p50) = total(Strategy::Pipelined);
     let (batched_runs, batched_p50) = total(Strategy::Batched);
+
     assert!(
         batched_runs <= pipelined_runs * 0.7,
         "runs per merged PR: batched {batched_runs:.2}, pipelined {pipelined_runs:.2}"
     );
+
     #[expect(clippy::cast_precision_loss, reason = "minutes")]
     let limit = pipelined_p50 as f64 * 1.5;
     #[expect(clippy::cast_precision_loss, reason = "minutes")]
     let batched = batched_p50 as f64;
+
     assert!(
         batched <= limit,
         "p50 minutes: batched {batched_p50}, pipelined {pipelined_p50}; runs per merged PR: \
@@ -233,11 +257,13 @@ fn batched_costs_fewer_runs_than_pipelined_for_a_close_time_in_queue() {
 fn useless_assemblies_after_a_close_stay_under_5_percent() {
     for strategy in [Strategy::Pipelined, Strategy::Batched] {
         let (mut assembled, mut useless) = (0, 0);
+
         for seed in SEEDS {
             let cost = play(strategy, seed, CLOSED);
             assembled += cost.assembled;
             useless += cost.useless;
         }
+
         assert!(
             useless * 20 <= assembled,
             "{strategy}: {useless} useless assemblies out of {assembled}"

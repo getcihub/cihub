@@ -263,17 +263,20 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
     if pr.mergeability != Mergeability::Blocked || !required.names.contains(own) {
         return pr.mergeability;
     }
+
     if matches!(
         pr.review_decision,
         ReviewDecision::ChangesRequested | ReviewDecision::ReviewRequired
     ) {
         return Mergeability::Blocked;
     }
+
     let others_pass = required
         .names
         .iter()
         .filter(|name| *name != own)
         .all(|name| check_passed(pr, name));
+
     if others_pass && !check_passed(pr, own) {
         Mergeability::Mergeable
     } else {
@@ -419,7 +422,9 @@ pub(crate) async fn target_of(pool: &PgPool, job: &Job) -> Result<QueueTarget, F
 pub(crate) async fn load_target(pool: &PgPool, queue: QueueId) -> Result<QueueTarget, Failure> {
     let mut tx = begin_system(pool).await?;
     let target = QueueTarget::load(&mut tx, queue).await?;
+
     tx.commit().await?;
+
     Ok(target)
 }
 
@@ -427,7 +432,9 @@ pub(crate) async fn load_target(pool: &PgPool, queue: QueueId) -> Result<QueueTa
 pub(crate) async fn load_repo(pool: &PgPool, repo: RepoId) -> Result<RepoTarget, Failure> {
     let mut tx = begin_system(pool).await?;
     let target = RepoTarget::load(&mut tx, repo).await?;
+
     tx.commit().await?;
+
     Ok(target)
 }
 
@@ -441,6 +448,7 @@ pub(crate) async fn give_back_facts(
     let mut tx = begin_system(pool).await?;
     give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
     tx.commit().await?;
+
     Ok(())
 }
 
@@ -463,10 +471,13 @@ pub(crate) async fn refresh(
     let own = queue_status_context(&target.target_branch);
     let mut tx = begin_system(pool).await?;
     let submissions = submissions(&mut tx, target.queue_id, &request.prs).await?;
+
     tx.commit().await?;
+
     let config = target.config()?;
     let settings = target.settings_in(config.as_ref())?;
     let mut facts = Vec::with_capacity(prs.len());
+
     for pr in &prs {
         // The new submission comes before the observation, which cancels the
         // old item: the queue keeps the observation for the new one.
@@ -492,6 +503,7 @@ pub(crate) async fn refresh(
         let kind = observed(pr, &required, &own, unmet);
         facts.push((Actor::System, kind));
     }
+
     give_back_facts(pool, &target, facts, now).await
 }
 
@@ -585,9 +597,11 @@ fn resubmission(
         && pr.head_sha != submission.head_sha;
     let labelled =
         submission.via != SubmittedVia::Label || pr.labels.contains(&settings.enqueue_label.value);
+
     if !(settings.resubmit_on_push.value && pushed && labelled) {
         return None;
     }
+
     let actor = submission
         .submitted_by
         .map_or(Actor::System, |user_id| Actor::User { user_id });
@@ -604,6 +618,7 @@ fn resubmission(
         changed_files: pr.changed_files,
         sender_permission: submission.sender.permission,
     };
+
     Some((actor, kind))
 }
 
@@ -619,6 +634,7 @@ async fn sender_of(
     let Some(author) = &request.requested_by else {
         return Ok(Some(Sender::default()));
     };
+
     let need = if request.direct {
         Permission::Admin
     } else {
@@ -627,6 +643,7 @@ async fn sender_of(
     let has = scm
         .permission(&repo.repo, &ScmUser::from(author), class)
         .await?;
+
     Ok((has >= need).then(|| Sender {
         login: Some(author.login.clone()),
         permission: Some(has),
@@ -640,7 +657,9 @@ async fn default_branch_of(pool: &PgPool, repo: RepoId) -> Result<String, Failur
         .bind(repo.to_string())
         .fetch_one(&mut *tx)
         .await?;
+
     tx.commit().await?;
+
     Ok(default_branch)
 }
 
@@ -654,13 +673,16 @@ async fn open_queues(
 ) -> Result<Vec<QueueTarget>, Failure> {
     let mut tx = begin_system(pool).await?;
     let queues = QueueTarget::queues_of_branch(&mut tx, repo, branch).await?;
+
     tx.commit().await?;
+
     let mut open = Vec::with_capacity(queues.len());
     for queue in queues {
         if queue.takes_submissions(default_branch)? {
             open.push(queue);
         }
     }
+
     Ok(open)
 }
 
@@ -679,6 +701,7 @@ async fn create_queues(
     let Some(head) = scm.branch_head(&repo.repo, branch, class).await? else {
         return Ok(());
     };
+
     let read = read_config_file(scm, &repo.repo, &head, class).await?;
     let checked = read.and_then(|text| {
         text.map(|text| RepoConfig::parse(&text).map(|config| (text, config)))
@@ -693,14 +716,17 @@ async fn create_queues(
             .collect(),
         _ => Vec::new(),
     };
+
     if names.is_empty() && branch == default_branch {
         names.push(branch.to_owned());
     }
+
     let (text, error) = match checked {
         Ok(found) => (found.map(|(text, _)| text), None),
         Err(err) => (None, Some(err.to_string())),
     };
     let mut tx = begin_system(pool).await?;
+
     for name in names {
         #[expect(
             clippy::disallowed_methods,
@@ -728,7 +754,9 @@ async fn create_queues(
             mark_dirty(&mut tx, id).await?;
         }
     }
+
     tx.commit().await?;
+
     Ok(())
 }
 
@@ -802,6 +830,7 @@ async fn queues_of_pr(
     }
 
     create_queues(pool, scm, repo, &pr.base_branch, &default_branch, class).await?;
+
     open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await
 }
 
@@ -837,6 +866,7 @@ async fn submission_accounts(
         },
         None => Actor::System,
     };
+
     tx.commit().await?;
 
     Ok((author_id, actor))
@@ -862,6 +892,7 @@ pub(crate) async fn submit_pr(
             Ok(())
         }
     };
+
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
         info!(pr_number, "submission refused: permission");
         return refuse(
@@ -870,6 +901,7 @@ pub(crate) async fn submit_pr(
         )
         .await;
     };
+
     let Some(pr) = find_pull_request(scm, &repo, pr_number, job.class).await? else {
         return Ok(());
     };
@@ -887,6 +919,7 @@ pub(crate) async fn submit_pr(
         ))
         .await;
     };
+
     let required = scm
         .required_checks(&first.repo, &first.target_branch, job.class)
         .await?;
@@ -898,6 +931,7 @@ pub(crate) async fn submit_pr(
         class: job.class,
         now,
     };
+
     let Some(target) = route(scm, &queues, &pr, &request, &reading).await? else {
         info!(pr_number, "submission dropped: no queue of that name");
         return refuse(format!(
@@ -907,6 +941,7 @@ pub(crate) async fn submit_pr(
         ))
         .await;
     };
+
     let config = target.config()?;
     if let Some(reason) = refusal(&target.settings_in(config.as_ref())?, &request, &pr) {
         info!(pr_number, reason, "submission dropped");
@@ -916,6 +951,7 @@ pub(crate) async fn submit_pr(
         ))
         .await;
     }
+
     let unmet = unmet_conditions(scm, target, config.as_ref(), &pr, &reading).await?;
     let priority =
         submission_priority(scm, target, config.as_ref(), &pr, &request, &reading).await?;
@@ -938,8 +974,10 @@ pub(crate) async fn submit_pr(
         (actor, submitted),
         (Actor::System, observed(&pr, &required, &own, unmet)),
     ];
+
     give_back_facts(pool, target, facts, now).await?;
     acknowledge(scm, repo_ref, request.comment_id.as_deref(), job.class).await;
+
     Ok(())
 }
 
@@ -954,6 +992,7 @@ mod tests {
     fn a_pr_blocked_only_by_the_queue_status_is_mergeable() {
         let own = queue_status_context("main");
         assert_eq!(own, "CIHub Merge Queue (main)");
+
         let required = RequiredChecks {
             names: BTreeSet::from(["ci".to_owned(), own.clone()]),
             up_to_date: false,
@@ -1001,6 +1040,7 @@ mod tests {
                 Mergeability::Behind,
             ),
         ];
+
         for (n, (pr, required, want)) in cases.into_iter().enumerate() {
             assert_eq!(mergeability(&pr, required, &own), want, "case {n}");
         }
@@ -1011,11 +1051,14 @@ mod tests {
         let target = test_target();
         let queue = target.queue_id;
         let after = refresh_after(&target, "a:b", vec![1]);
+
         assert_eq!(after.idempotency_key, format!("refresh_prs:{queue}-a-b:1"));
         assert_eq!(after.class, JobClass::Interactive);
+
         let point = OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
         let prs: Vec<u64> = (1..=u64::try_from(MAX_PRS_PER_READ + 1).unwrap()).collect();
         let reads = refresh_at(&target, point, &prs);
+
         assert_eq!(reads.len(), 2);
         assert_eq!(
             reads[0].idempotency_key,
@@ -1026,8 +1069,10 @@ mod tests {
             reads[1].idempotency_key,
             format!("refresh_prs:{queue}-20260921T1413-2:1")
         );
+
         let second: RefreshPrs = serde_json::from_value(reads[1].payload.clone()).unwrap();
         assert_eq!(second.prs, vec![prs[MAX_PRS_PER_READ]]);
+
         let request = SubmitPr {
             repo_id: target.repo_id,
             pr_number: 1,
@@ -1040,6 +1085,7 @@ mod tests {
             label: None,
             comment_id: None,
         };
+
         assert_eq!(
             submit(target.org_id, target.repo.connection.id, "d", &request).idempotency_key,
             "submit_pr:d:1"

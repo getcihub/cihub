@@ -133,6 +133,7 @@ async fn store(webhooks: &Webhooks, received: ReceivedDelivery) -> Result<bool, 
         .await
         .map_err(PlatformError::Store)?;
     let stored = store_delivery(&mut tx, &delivery).await?;
+
     tx.commit().await.map_err(PlatformError::Query)?;
     Ok(stored)
 }

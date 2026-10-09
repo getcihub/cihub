@@ -85,20 +85,24 @@ pub async fn run_worker(
                 Vec::new()
             }
         };
+
         if jobs.is_empty() {
             wakeup
                 .wait_or_pause(idle_wait, &cancel, "job notifications lost")
                 .await;
             continue;
         }
+
         let mut running = JoinSet::new();
         for job in jobs {
             let span = info_span!("job", key = job.idempotency_key, job_type = job.job_type);
             let key = job.idempotency_key.clone();
             let outcome = within(JOB_TIMEOUT, executors.run(pool.clone(), job, now));
             let run = outcome.instrument(span.clone());
+
             running.spawn(async move { (key, run.await, span) });
         }
+
         while let Some(joined) = running.join_next().await {
             let Ok((key, outcome, span)) = joined else {
                 warn!("job panicked");

@@ -50,6 +50,7 @@ pub fn check(snapshot: &Snapshot, settings: &QueueSettings) -> Vec<Violation> {
             .iter()
             .filter(|g| !containing.iter().any(|c| c.parent_group_id == Some(g.id)))
             .count();
+
         if groups > 1 {
             violations.push(Violation::SeveralGroups { item_id: item.id });
         }

@@ -107,6 +107,7 @@ mod tests {
         let decode = |part: &str| -> serde_json::Value {
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(part).unwrap()).unwrap()
         };
+
         assert_eq!(
             decode(header),
             serde_json::json!({ "alg": "RS256", "typ": "JWT" })
@@ -122,10 +123,13 @@ mod tests {
         let read = |text: &str| AppKey::from_pem(&SecretString::from(text.to_owned()));
         assert!(matches!(read("not a key"), Err(KeyError::NotPem)));
         let label = read("-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----");
+
         assert!(matches!(label, Err(KeyError::Label(l)) if l == "EC PRIVATE KEY"));
         let base64 = read("-----BEGIN RSA PRIVATE KEY-----\n@@@\n-----END RSA PRIVATE KEY-----");
+
         assert!(matches!(base64, Err(KeyError::Base64(_))));
         let der = read("-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----");
+
         assert!(matches!(der, Err(KeyError::Rejected(_))));
     }
 }

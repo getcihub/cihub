@@ -77,6 +77,7 @@ impl Budget {
         if let Some(until) = self.paused_until.filter(|until| *until > now) {
             return Err(ScmError::RateLimited { until });
         }
+
         match self.mode {
             ConnectionMode::ScmUnavailable => {
                 if self.next_probe.is_some_and(|probe| probe > now) {
@@ -102,9 +103,11 @@ impl Budget {
                 if self.mode == ConnectionMode::ScmUnavailable {
                     self.set_mode(ConnectionMode::Normal, None);
                 }
+
                 if let Some(rate) = rate {
                     self.rates.insert(resource, rate);
                 }
+
                 self.follow_budget(now);
             }
             Observation::RateLimited { until, secondary } => {
@@ -187,12 +190,14 @@ mod tests {
             },
             at(0),
         );
+
         for class in [JobClass::Interactive, JobClass::Merge] {
             assert_eq!(
                 budget.admit(class, at(59)),
                 Err(ScmError::RateLimited { until: at(60) })
             );
         }
+
         assert_eq!(budget.admit(JobClass::Merge, at(60)), Ok(()));
         assert_eq!(budget.mode, ConnectionMode::Normal);
     }
@@ -201,11 +206,13 @@ mod tests {
     fn a_low_budget_defers_the_speculation_only() {
         let mut budget = Budget::default();
         budget.observe(answered(999), at(0));
+
         assert_eq!(budget.mode, ConnectionMode::Throttled);
         assert_eq!(
             budget.admit(JobClass::Speculate, at(1)),
             Err(ScmError::Throttled { until: at(3_600) })
         );
+
         for class in [JobClass::Interactive, JobClass::Merge, JobClass::Repair] {
             assert_eq!(budget.admit(class, at(1)), Ok(()));
         }
@@ -219,12 +226,15 @@ mod tests {
         budget.observe(answered(1_500), at(100));
         budget.observe(answered(2_500), at(200));
         budget.observe(answered(2_500), at(499));
+
         assert_eq!(
             budget.mode,
             ConnectionMode::Throttled,
             "the dip restarted the wait"
         );
+
         budget.observe(answered(2_500), at(500));
+
         assert_eq!(budget.mode, ConnectionMode::Normal);
         assert_eq!(budget.mode_reason, None);
     }
@@ -250,6 +260,7 @@ mod tests {
             assert_eq!(budget.mode, ConnectionMode::Normal);
             budget.observe(Observation::Failed, at(n));
         }
+
         assert_eq!(budget.mode, ConnectionMode::ScmUnavailable);
         assert!(matches!(
             budget.admit(JobClass::Interactive, at(10)),
@@ -258,6 +269,7 @@ mod tests {
         assert_eq!(budget.admit(JobClass::Repair, at(32)), Ok(()), "the probe");
         assert!(budget.admit(JobClass::Interactive, at(33)).is_err());
         budget.observe(answered(4_000), at(33));
+
         assert_eq!(budget.mode, ConnectionMode::Normal);
         assert_eq!(budget.failures, 0);
         assert_eq!(budget.admit(JobClass::Speculate, at(34)), Ok(()));
@@ -279,6 +291,7 @@ mod tests {
             },
             at(1),
         );
+
         assert_eq!(budget.lowest(), Some(graphql));
         assert_eq!(budget.mode, ConnectionMode::Throttled);
     }
