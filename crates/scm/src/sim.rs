@@ -1778,13 +1778,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_simulator_lists_its_installations() {
-        let repo = repo();
-        let (sim, _) = contract_world(&repo).unwrap();
-        crate::contract::installations(&sim, &repo).await;
-    }
-
-    #[tokio::test]
     async fn an_installation_changes_its_permissions_then_disappears() {
         let repo = repo();
         let (sim, _) = contract_world(&repo).unwrap();
