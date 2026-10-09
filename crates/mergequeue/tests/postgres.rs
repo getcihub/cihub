@@ -2519,7 +2519,8 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
 }
 
 /// `DECISIONS.md` D253: a command on a PR that is merged, closed or a draft
-/// is refused with its reason, and gives no item.
+/// is refused with its reason, and gives no item. The refusal mentions the
+/// author of the command (D254).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2570,11 +2571,10 @@ async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     assert_eq!(items, 0);
     for (n, state) in [(1, "merged"), (2, "closed"), (3, "a draft")] {
         let comments = sim.comments(&repo(), n);
-        let refusal = format!("Refused: this PR is {state}.");
-        assert!(
-            comments.iter().any(|body| body.contains(&refusal)),
-            "PR {n}: {comments:?}"
+        let refusal = format!(
+            "> /cihub merge\n\n@alice, the queue refused this command: this PR is {state}.\n"
         );
+        assert!(comments.contains(&refusal), "PR {n}: {comments:?}");
     }
 
     q.stop().await;
@@ -2912,7 +2912,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
 
 /// `/cihub restart` and `/cihub cancel` (`DECISIONS.md` D157): an account with
 /// `write` restarts the tests of an item in test, then cancels it; an
-/// account without it gets a comment that says why.
+/// account without it gets a comment that mentions it and says why (D254).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2954,10 +2954,12 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     q.settle().await;
     assert_eq!(item(pool.clone()).await.0, "testing", "bob cannot write");
 
+    let refusal = "> /cihub cancel\n\n@bob, the queue refused this command: \
+                   the command needs the write permission on the repository.\n";
     let refusals: Vec<String> = sim
         .comments(&repo(), number)
         .into_iter()
-        .filter(|body| body.contains("needs the write permission"))
+        .filter(|body| body == refusal)
         .collect();
 
     assert_eq!(refusals.len(), 1, "{refusals:?}");

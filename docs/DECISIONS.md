@@ -734,7 +734,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   refused command quotes the command (`> /cihub restart`) and gives the cause after `Refused:`. The commit status
   does not change. Still no checkbox for `restart` or `cancel`: a click has no confirmation, both affect the PRs
   behind, and the comment of an item under test is often rewritten. A separate evolution, outside the plan of a
-  lot. _Extended by D174._ _Extended by D241._ _Extended by D244._
+  lot. _Extended by D174._ _Extended by D241._ _Extended by D244._ _Extended by D254._
 - **D174** Extends D173: the comment of CIHub on the PR names no test branch and no run identifier. It says
   where the test runs, as a link: the draft PR of the run (`Tested on top of #5 in #42.`), or its test commit with
   `trigger: push`; nothing before the assembly. The dashboard (Lot 10) will replace it with a link to the page of
@@ -922,7 +922,12 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D253** Only an open PR that is not a draft can enter a queue. The `submit_pr` job reads the PR, then refuses a
   PR that is merged, closed or a draft before it looks for its queue: it deposits no fact and creates no queue,
   and a command or a checkbox receives `Refused: this PR is merged.` (`closed`, `a draft`). The rule applies to
-  every submission: comment, checkbox and label. Extends D102 and D157.
+  every submission: comment, checkbox and label. Extends D102 and D157. _Extended by D254._
+- **D254** The answer to a refused command mentions its author: it quotes the command, then says
+  `@<login>, the queue refused this command: <cause>` (`@nlecoy, the queue refused this command: this PR is
+  merged.`). It applies to every refused command and to the checkbox; a refused label still gets no answer. The
+  bot comment of the PR still mentions no one (D245): it is edited at each change of state, whereas the answer is
+  written once, for one person. Supersedes the `Refused:` format of D173 and D253.
 
 ## Open questions
 
