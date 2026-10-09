@@ -2,7 +2,6 @@ use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 
-use cihub_domain::ModuleName;
 use tokio_util::sync::CancellationToken;
 
 use crate::Executors;
@@ -18,7 +17,6 @@ pub type ModuleLoop = Box<
 /// executors for the worker, its loop for the scheduler, and its routes for
 /// the web role (D159). The subscriptions come with lot 11.
 pub struct Module {
-    pub name: ModuleName,
     pub executors: Box<dyn FnOnce(&mut Executors) + Send>,
     pub scheduler: ModuleLoop,
     pub api: ModuleApi,

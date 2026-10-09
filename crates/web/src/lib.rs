@@ -129,7 +129,6 @@ async fn store(webhooks: &Webhooks, received: ReceivedDelivery) -> Result<bool, 
         connection_id: None,
         queue_id: None,
         event: received.event,
-        action: received.action,
         payload: received.payload,
         received_at: (webhooks.now)(),
     };

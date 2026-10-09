@@ -79,14 +79,13 @@ type InboxRow = (
     Option<String>,
     Option<String>,
     String,
-    Option<String>,
     OffsetDateTime,
 );
 
 async fn inbox(pool: &PgPool) -> Vec<InboxRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT delivery_id, org_id, queue_id, event, action, received_at
+        "SELECT delivery_id, org_id, queue_id, event, received_at
          FROM webhook_inbox ORDER BY delivery_id",
     )
     .fetch_all(&mut *tx)
@@ -107,14 +106,7 @@ async fn a_signed_delivery_is_stored_once_and_unrouted(pool: PgPool) {
     assert_eq!(post(&addr, &headers, BODY).await, 202);
     assert_eq!(
         inbox(&pool).await,
-        [(
-            "d1".into(),
-            None,
-            None,
-            "pull_request".into(),
-            Some("opened".into()),
-            now()
-        )]
+        [("d1".into(), None, None, "pull_request".into(), now())]
     );
 }
 
@@ -163,15 +155,14 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
     }
 }
 
-async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
+async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
     let org = OrgId::from_ulid(Ulid(7));
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme') ON CONFLICT DO NOTHING;
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('a', '{org}', '{i}', '1', 'acme') ON CONFLICT DO NOTHING;
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('c', '{org}', '{i}', 'a', 'github_app', '1') ON CONFLICT DO NOTHING;
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('c', '{org}', '{i}', '1', 'github_app', '1') ON CONFLICT DO NOTHING;
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('r', '{org}', '{i}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;",
@@ -181,13 +172,12 @@ async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
     .await
     .unwrap();
     let secret = new_api_token_secret().unwrap();
-    let id = ApiTokenId::from_ulid(Ulid(u128::try_from(scopes.len()).unwrap() + 10));
+    let id = ApiTokenId::from_ulid(Ulid(number));
     let new = NewApiToken {
         id,
         org_id: org,
         name: "test",
         scopes,
-        created_by: None,
         expires_at: None,
     };
     create_api_token(&mut tx, &new, &secret).await.unwrap();
@@ -198,8 +188,8 @@ async fn token(pool: &PgPool, scopes: &[ApiScope]) -> String {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let addr = start(&pool).await;
-    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
-    let writer = token(&pool, &[ApiScope::PrsWrite, ApiScope::TargetsWrite]).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
 
     let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
     assert_eq!(anonymous.status, 401);
@@ -239,7 +229,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
     let addr = start(&pool).await;
-    let reader = token(&pool, &[ApiScope::QueuesRead]).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
             call(&addr, "GET", "/api/v1/repos", Some(&reader))

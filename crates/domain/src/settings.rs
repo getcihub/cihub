@@ -116,8 +116,6 @@ closed_enum! {
         Comment,
         Label,
         Api,
-        Ui,
-        Cli,
     }
 }
 

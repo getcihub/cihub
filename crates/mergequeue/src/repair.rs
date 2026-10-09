@@ -177,7 +177,7 @@ pub async fn resync(
     queue: QueueId,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
-    let mut tx = begin_system(pool).await.map_err(MergeQueueError::Store)?;
+    let mut tx = begin_system(pool).await?;
     let target = QueueTarget::load(&mut tx, queue).await?;
     let log = QueueLog::load(&mut tx, queue).await?;
     let subject = format!("resync-{}", window(now));
@@ -212,14 +212,11 @@ pub async fn resync(
     jobs.push(refresh_target_job(&target, &subject, JobClass::Interactive));
     let mut requested = 0;
     for job in &jobs {
-        if enqueue_job(&mut tx, job, now, now)
-            .await
-            .map_err(MergeQueueError::Platform)?
-        {
+        if enqueue_job(&mut tx, job, now, now).await? {
             requested += 1;
         }
     }
-    tx.commit().await.map_err(MergeQueueError::Query)?;
+    tx.commit().await?;
     info!(%queue, jobs = requested, "queue resync requested");
     Ok(requested)
 }

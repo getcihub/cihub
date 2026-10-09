@@ -7,10 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{
-    BlockReason, ConnectionId, EventKind, EventType, ItemState, JobClass, OrgId, Reason, RepoId,
-    ScmInstanceId,
-};
+use cihub_domain::{BlockReason, EventKind, EventType, ItemState, JobClass, Reason, RepoId};
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
@@ -23,7 +20,7 @@ use time::{OffsetDateTime, UtcOffset};
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::jobs::{Failure, connection_job, job, queue_status_context, read_payload, target_of};
+use crate::jobs::{Failure, job, queue_status_context, read_payload, target_of};
 use crate::target::QueueTarget;
 
 /// The type of the job that publishes the surfaces of a PR.
@@ -553,8 +550,7 @@ pub(crate) async fn converge_surfaces(
         sqlx::query_as("SELECT pr_number, desired_hash FROM pr_surfaces WHERE queue_id = $1")
             .bind(target.queue_id.to_string())
             .fetch_all(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
     for (surface, number) in surfaces.iter().zip(numbers) {
         let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
         let rendered = render(surface, settings, &target.target_branch, history);
@@ -578,8 +574,7 @@ pub(crate) async fn converge_surfaces(
         .bind(desired)
         .bind(&desired_hash)
         .execute(&mut *conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
     }
     let unpublished: Vec<(i64, String)> = sqlx::query_as(
         "SELECT pr_number, desired_hash FROM pr_surfaces
@@ -588,8 +583,7 @@ pub(crate) async fn converge_surfaces(
     )
     .bind(target.queue_id.to_string())
     .fetch_all(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     Ok(unpublished
         .into_iter()
         .map(|(number, hash)| publish_job(target, number, &hash))
@@ -652,8 +646,7 @@ async fn read_histories(
     .bind(&types)
     .bind(numbers)
     .fetch_all(conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
     for (number, id, kind, payload, occurred_at, login, tested_with, tested_on_top_of) in rows {
         let kind = event_kind(&kind, &payload)
@@ -855,7 +848,6 @@ mod tests {
 
     fn surface(state: ItemState) -> Surface {
         Surface {
-            item_id: ItemId::from_ulid(Ulid(1)),
             pr_number: 7,
             head_sha: "abc".into(),
             state,
@@ -1386,16 +1378,6 @@ pub(crate) struct WelcomePr {
     pub base_branch: String,
 }
 
-/// The welcome of `request` after the delivery `delivery_id`.
-pub(crate) fn welcome_job(
-    org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
-    delivery_id: &str,
-    request: &WelcomePr,
-) -> Job {
-    connection_job(org_id, connection, delivery_id, WELCOME_PR, json!(request))
-}
-
 /// The comment that welcomes a PR on a branch of a queue, with its
 /// submission box.
 pub(crate) fn welcome(target_branch: &str) -> String {
@@ -1419,7 +1401,7 @@ pub(crate) async fn post_welcome(
     let mut lock = begin_system(pool).await?;
     let queues =
         QueueTarget::queues_of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
-    let Some(target) = queues.into_iter().find(|queue| queue.enabled) else {
+    let Some(target) = queues.into_iter().next() else {
         return Ok(());
     };
     let settings = target.settings()?;

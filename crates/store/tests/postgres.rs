@@ -7,10 +7,9 @@ use std::path::Path;
 use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
-    EventId, EventKind, EventType, GroupKind, GroupState, ItemId, ItemState, JobClass, JobState,
-    MembershipRole, Mergeability, ModuleName, OrgId, Permission, Priority, QueueId, QueueMode,
-    QueueState, Reason, RequiredStatusesSource, RunStatus, ScmInstanceId, ScmKind, SubmittedVia,
-    UserId,
+    EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState, OrgId,
+    Permission, Priority, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
+    RunStatus, ScmInstanceId, ScmKind, SubmittedVia, UserId,
 };
 use cihub_store::{
     ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
@@ -64,24 +63,19 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 21] = [
+const TENANT_TABLES: [&str; 16] = [
     "orgs",
-    "org_modules",
-    "scm_accounts",
     "scm_connections",
     "repos",
     "queues",
-    "queue_leases",
     "webhook_inbox",
     "jobs",
-    "memberships",
     "api_tokens",
     "audit_log",
     "events",
     "queue_items",
     "test_groups",
     "test_runs",
-    "queue_snapshots",
     "queue_inbox",
     "check_observations",
     "pr_surfaces",
@@ -98,44 +92,36 @@ fn rows(org: OrgId, n: u8) -> String {
     let queue = QueueId::from_ulid(Ulid(100 + u128::from(n)));
     format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org-{n}');
-         INSERT INTO scm_accounts (id, org_id, scm_instance_id, external_id, path)
-             VALUES ('scmaccount-{n}', '{org}', '{GITHUB}', '{n}', 'account-{n}');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, scm_account_id, kind, external_id)
-             VALUES ('connection-{n}', '{org}', '{GITHUB}', 'scmaccount-{n}', 'github_app', '{n}');
+         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
+                                      external_id)
+             VALUES ('connection-{n}', '{org}', '{GITHUB}', '{n}', 'github_app', '{n}');
          INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
                             name, default_branch)
              VALUES ('repo-{n}', '{org}', '{GITHUB}', 'connection-{n}', '{n}', 'account-{n}',
                      'name', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main');
-         INSERT INTO queue_leases (queue_id, org_id, owner, expires_at)
-             VALUES ('{queue}', '{org}', 'scheduler', '2026-09-15T00:00:00Z');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name, snapshot_seq, snapshot)
+             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main', 1, '{{}}');
          INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, event, payload, received_at)
              VALUES ('{GITHUB}', 'delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
              VALUES ('job-{n}', 'test', 'repair', '{org}', '{{}}', '2026-09-15T00:00:00Z',
                      '2026-09-15T00:00:00Z');
-         INSERT INTO memberships (org_id, user_id, role) VALUES ('{org}', 'user-1', 'admin');
          INSERT INTO api_tokens (id, org_id, name, token_hash, scopes)
-             VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{targets:write}}');
+             VALUES ('apitoken-{n}', '{org}', 'ci', sha256('{n}'), '{{prs:write}}');
          INSERT INTO audit_log (id, org_id, action, target)
              VALUES ('audit-{n}', '{org}', 'queue.paused', 'queue-{n}');
          INSERT INTO events (id, org_id, queue_id, seq, type, actor_kind, payload, occurred_at)
              VALUES ('event-{n}', '{org}', '{queue}', 1, 'access.lost', 'system', 'null',
                      '2026-09-15T00:00:00Z');
-         INSERT INTO org_modules (org_id, module, enabled_at)
-             VALUES ('{org}', 'mergequeue', '2026-09-15T00:00:00Z');
          INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id, state,
                                   state_reason, state_changed_at, priority_value, no_batch,
-                                  force_enqueued, submitted_via, submitted_at, mergeability,
-                                  block_reasons, is_current)
+                                  force_enqueued, submitted_via, submitted_at, block_reasons,
+                                  is_current)
              VALUES ('item-{n}', '{org}', '{queue}', 1, 'abc', 'user-1', 'not_ready', 'submitted',
                      '2026-09-15T00:00:00Z', 100, false, false, 'comment',
-                     '2026-09-15T00:00:00Z', 'unknown', '[]', true);
-         INSERT INTO test_groups (id, org_id, queue_id, kind, item_ids, predecessor_ids, base_sha,
-                                  seq, state, state_reason, created_at)
-             VALUES ('group-{n}', '{org}', '{queue}', 'single', '{{item-{n}}}', '{{}}', 'abc', 2,
-                     'testing', 'test_run_started', '2026-09-15T00:00:00Z');
+                     '2026-09-15T00:00:00Z', '[]', true);
+         INSERT INTO test_groups (id, org_id, queue_id, item_ids, predecessor_ids, state)
+             VALUES ('group-{n}', '{org}', '{queue}', '{{item-{n}}}', '{{}}', 'testing');
          INSERT INTO test_runs (id, org_id, queue_id, group_id, attempt, test_branch, status,
                                 status_reason, required_statuses, started_at,
                                 failure_causing_statuses, base_sha, head_shas,
@@ -145,8 +131,6 @@ fn rows(org: OrgId, n: u8) -> String {
                      'abc', '{{abc}}', '{{1}}');
          INSERT INTO check_observations (org_id, run_id, name, kind, required, observed_at)
              VALUES ('{org}', 'run-{n}', 'ci', 'check', true, '2026-09-15T00:00:00Z');
-         INSERT INTO queue_snapshots (org_id, queue_id, seq, payload, created_at)
-             VALUES ('{org}', '{queue}', 1, '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
              VALUES ('fact-{n}', '{org}', '{queue}', 'system', 'access.lost', 'null',
                      '2026-09-15T00:00:00Z');
@@ -333,14 +317,10 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("event_type", values::<EventType>()),
-        ("group_kind", values::<GroupKind>()),
         ("group_state", values::<GroupState>()),
         ("item_state", values::<ItemState>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
-        ("membership_role", values::<MembershipRole>()),
-        ("mergeability", values::<Mergeability>()),
-        ("module_name", values::<ModuleName>()),
         ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),
         ("queue_state", values::<QueueState>()),
@@ -544,13 +524,12 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
 
     let secret = new_api_token_secret().unwrap();
     assert!(secret.expose_secret().starts_with("cht_"));
-    let scopes = [ApiScope::QueuesRead, ApiScope::TargetsWrite];
+    let scopes = [ApiScope::QueuesRead, ApiScope::PrsWrite];
     let token = NewApiToken {
         id: ApiTokenId::from_ulid(Ulid(1)),
         org_id: org(1),
         name: "ci",
         scopes: &scopes,
-        created_by: None,
         expires_at: Some(at(3600)),
     };
     let mut tx = begin_org(&pool, org(1)).await.unwrap();

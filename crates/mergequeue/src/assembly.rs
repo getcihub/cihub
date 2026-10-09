@@ -462,6 +462,31 @@ pub(crate) async fn run_state(
     .transpose()
 }
 
+/// The `test_branch.assembly_failed` fact of a build that ended the run, or a
+/// new attempt later.
+fn assembly_failed(
+    run_id: RunId,
+    step: Step,
+    attempts: i32,
+    elapsed: Duration,
+) -> Result<EventKind, Failure> {
+    let (error, conflict_culprit) = match give_up(step, attempts, elapsed) {
+        Ok(text) => return Err(Failure::Retry(text)),
+        Err(ended) => ended,
+    };
+
+    if error == JobError::RetryExhausted {
+        warn!(%run_id, "assembly gave up after its attempts");
+    }
+    info!(%run_id, error = error.as_str(), "test branch not assembled");
+
+    Ok(EventKind::TestBranchAssemblyFailed {
+        run_id,
+        error,
+        conflict_culprit,
+    })
+}
+
 /// Builds the test branch of the run of the job and gives back the result.
 /// A run that no longer waits for its assembly leaves the SCM as it is.
 pub(crate) async fn assemble_run(
@@ -485,21 +510,10 @@ pub(crate) async fn assemble_run(
         request: &request,
         class: job.class,
     };
-    let result = match assembly.build().await {
-        Ok(assembled) => Ok(assembled),
-        Err(step) => match give_up(step, job.attempts, now - started_at) {
-            Ok(text) => return Err(Failure::Retry(text)),
-            Err((error, culprit)) => {
-                if error == JobError::RetryExhausted {
-                    warn!(%run_id, "assembly gave up after its attempts");
-                }
-                Err((error, culprit))
-            }
-        },
-    };
-    let fact = match result {
+    let fact = match assembly.build().await {
         Ok(assembled) => {
             info!(%run_id, test_sha = assembled.test_sha, "test branch assembled");
+
             EventKind::TestBranchAssembled {
                 run_id,
                 test_sha: assembled.test_sha,
@@ -508,15 +522,9 @@ pub(crate) async fn assemble_run(
                 required_statuses_source: assembled.required_statuses_source,
             }
         }
-        Err((error, conflict_culprit)) => {
-            info!(%run_id, error = error.as_str(), "test branch not assembled");
-            EventKind::TestBranchAssemblyFailed {
-                run_id,
-                error,
-                conflict_culprit,
-            }
-        }
+        Err(step) => assembly_failed(run_id, step, job.attempts, now - started_at)?,
     };
+
     give_back_facts(pool, &target, vec![(Actor::System, fact)], now).await
 }
 
