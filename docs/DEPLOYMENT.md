@@ -138,24 +138,28 @@ the host (`docs/SECURITY.md`). The complete procedure is in `README.md`.
 
 ```sh
 docker compose -f deploy/compose.yaml up -d
-docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
+docker compose -f deploy/compose.yaml run --rm cihub-server server token create --org <slug>
 ```
 
-## Bootstrap an organization
+## Organizations and API tokens
 
-After the App is installed on an account, a command links the installation to a new organization, without
-the dashboard (`DECISIONS.md` D154, D155):
+Installing the App on an account is enough: CIHub syncs the installations of its App, at the start of the server,
+every 24 hours and at each `installation` delivery, and creates the organization of a new installation (its slug
+is the login of the account), its connection and the read of its repositories (`DECISIONS.md` D247,
+`docs/GITHUB.md`). Keep the App private (*Only on this account*): any account that installs a public App gets an
+organization.
+
+The sync creates no API token. A command creates one for an existing organization, without the dashboard
+(`DECISIONS.md` D248):
 
 ```sh
-cihub server bootstrap --installation <identifier of the installation>
+cihub server token create --org <slug of the organization>
 ```
 
-It requires the configuration of the server and of the GitHub App, and an up-to-date database. It creates the
-organization (its name is the login of the account), enables the merge queue, requests the read of the
-repositories of the installation and shows once an API token of the organization with all the scopes. The
-identifier of the installation is at the end of the URL of the installation page (*Settings → GitHub Apps →
-Configure*). Run again on an installation already bootstrapped, the command creates only a new token: it also
-serves to recover an organization without a token.
+It needs only the database: it creates a token named `token` with every scope, writes `token.created` in the
+audit log, and prints the token once on the standard output, and nothing else. Run again, it creates another
+token: it also serves to recover an organization without a token. An unknown slug stops the command with an
+error.
 
 ## Migrations
 

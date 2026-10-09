@@ -46,6 +46,8 @@ CREATE TABLE scm_connections (
     kind                 connection_kind NOT NULL,
     external_id          text            NOT NULL,
     suspended_at         timestamptz,
+    synced_at            timestamptz     NOT NULL,
+    permissions          jsonb           NOT NULL,
     mode                 connection_mode NOT NULL DEFAULT 'normal',
     mode_reason          text,
     rate_remaining       integer,

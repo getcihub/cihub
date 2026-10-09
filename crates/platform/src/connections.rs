@@ -10,6 +10,7 @@ use sqlx::PgConnection;
 use time::OffsetDateTime;
 use tracing::info;
 
+use crate::installations::request_installation_sync;
 use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
@@ -76,7 +77,9 @@ pub async fn request_repo_syncs(
 /// Reads the repositories of the connection of `job`, creates those that
 /// CIHub does not know and updates the others, and returns their number. A
 /// repository that the connection no longer reaches stays (`DECISIONS.md`
-/// D155); one that another organization has is left to it.
+/// D155); one that another organization has is left to it. When the SCM
+/// answers that the access is lost or the installation is not found, requests
+/// the sync of the installation (`DECISIONS.md` D247).
 ///
 /// # Errors
 ///
@@ -85,6 +88,7 @@ pub async fn run_sync_repos(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
+    now: OffsetDateTime,
 ) -> Result<usize, PlatformError> {
     let (Some(org_id), Some(connection_id)) = (job.org_id, job.connection) else {
         return Err(PlatformError::JobWithoutConnection(
@@ -107,10 +111,23 @@ pub async fn run_sync_repos(
         id: connection_id,
         external_id,
     };
-    let repos = scm
-        .list_repos(&connection, job.class)
-        .await
-        .map_err(PlatformError::Scm)?;
+
+    let listed = scm.list_repos(&connection, job.class).await;
+    if matches!(listed, Err(ScmError::AccessLost(_) | ScmError::NotFound(_))) {
+        let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+        let cause = hour_window(now);
+        request_installation_sync(
+            &mut tx,
+            &connection.external_id,
+            &cause,
+            JobClass::Repair,
+            now,
+        )
+        .await?;
+        tx.commit().await.map_err(PlatformError::Query)?;
+    }
+    let repos = listed.map_err(PlatformError::Scm)?;
+
     #[expect(
         clippy::disallowed_methods,
         reason = "a repository new to CIHub gets an identifier; the others keep theirs"
@@ -158,10 +175,10 @@ pub fn sync_repos_executor(
 + Send
 + Sync
 + 'static {
-    move |pool, job, _now| {
+    move |pool, job, now| {
         let scm = Arc::clone(&scm);
         Box::pin(async move {
-            match run_sync_repos(&pool, scm.as_ref(), &job).await {
+            match run_sync_repos(&pool, scm.as_ref(), &job, now).await {
                 Ok(_) => Outcome::Done,
                 Err(err @ PlatformError::Scm(ScmError::AccessLost(_) | ScmError::NotFound(_))) => {
                     Outcome::Failed(error_chain(&err))

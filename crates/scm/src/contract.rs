@@ -60,15 +60,18 @@ pub async fn run(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 /// The account of the connection of `repo`, and its repositories
 /// (`DECISIONS.md` D155).
 async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
-    let account = scm
+    let installation = scm
         .installation(&repo.connection.external_id, CLASS)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("the SCM knows the installation of the connection");
     assert_eq!(
-        account.path, repo.namespace,
+        installation.account.path, repo.namespace,
         "the connection serves the account of the repository"
     );
-    assert!(!account.external_id.is_empty());
+    assert!(!installation.account.external_id.is_empty());
+    assert!(!installation.permissions.is_empty());
+    assert!(!installation.is_suspended);
     let findings = scm
         .check_setup(repo, &fixture.base_branch, CLASS)
         .await
@@ -85,6 +88,26 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .expect("the connection lists the repository");
     assert!(!listed.external_id.is_empty());
     assert_eq!(listed.default_branch, fixture.base_branch);
+}
+
+/// The installations of the App list the installation of the connection of
+/// `repo` as its own read gives it (`DECISIONS.md` D247). Outside [`run`]: the
+/// recorded answers of D90 do not have this read yet.
+///
+/// # Panics
+///
+/// When an answer is not the one of the contract.
+pub async fn installations(scm: &dyn Scm, repo: &RepoRef) {
+    let installation = scm
+        .installation(&repo.connection.external_id, CLASS)
+        .await
+        .unwrap()
+        .expect("the SCM knows the installation of the connection");
+    let listed = scm.installations(CLASS).await.unwrap();
+    assert!(
+        listed.contains(&installation),
+        "the installations of the App list {installation:?}: {listed:?}"
+    );
 }
 
 async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {

@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use cihub_domain::{ConnectionId, OrgId, QueueId, RunId, run_of_test_branch};
+use cihub_domain::{ConnectionId, JobClass, OrgId, QueueId, RunId, run_of_test_branch};
 use cihub_scm::{ScmDelivery, ScmEvent};
 use cihub_store::{PgPool, begin_system};
 use serde_json::Value;
@@ -12,6 +12,8 @@ use tracing::{info, warn};
 
 use crate::connections::request_repo_sync;
 use crate::inbox::{DeliveryRow, INBOX_CHANNEL, decode};
+use crate::installations::{SYNC_AFTER, request_installation_sync};
+use crate::jobs::hour_window;
 use crate::wake::wake_for_delivery;
 use crate::{Delivery, PlatformError, QueueWakeup};
 
@@ -25,6 +27,14 @@ pub struct Route {
     pub connection_id: Option<ConnectionId>,
     pub queue_id: Option<QueueId>,
     pub processed: bool,
+    pub synced_at: Option<OffsetDateTime>,
+}
+
+fn processed_route() -> Route {
+    Route {
+        processed: true,
+        ..Route::default()
+    }
 }
 
 pub(crate) async fn unrouted_deliveries(
@@ -48,7 +58,10 @@ pub(crate) async fn unrouted_deliveries(
 
 /// Where `delivery` goes: its connection when CIHub knows it, and its queue
 /// when one is sure: a PR by its base branch, a push by its branch, a check
-/// by the test branch that names its run (`DECISIONS.md` D85).
+/// by the test branch that names its run (`DECISIONS.md` D85). A delivery
+/// without a known connection, and a change of the installation of a
+/// connection, are processed at once: the sync of the installation reads the
+/// SCM again (`DECISIONS.md` D247).
 ///
 /// # Errors
 ///
@@ -58,23 +71,22 @@ pub async fn find_route(
     delivery: &ScmDelivery,
 ) -> Result<Route, PlatformError> {
     if delivery.event == ScmEvent::Ignored {
-        return Ok(Route {
-            processed: true,
-            ..Route::default()
-        });
+        return Ok(processed_route());
     }
     let Some(external_id) = &delivery.connection_external_id else {
-        return Ok(Route::default());
+        return Ok(processed_route());
     };
-    let connection: Option<(String, String)> =
-        sqlx::query_as("SELECT org_id, id FROM scm_connections WHERE external_id = $1")
+
+    let connection: Option<(String, String, OffsetDateTime)> =
+        sqlx::query_as("SELECT org_id, id, synced_at FROM scm_connections WHERE external_id = $1")
             .bind(external_id)
             .fetch_optional(&mut *conn)
             .await
             .map_err(PlatformError::Query)?;
-    let Some((org_id, connection_id)) = connection else {
-        return Ok(Route::default());
+    let Some((org_id, connection_id, synced_at)) = connection else {
+        return Ok(processed_route());
     };
+
     let queue_id: Option<String> = match &delivery.event {
         ScmEvent::PrChanged {
             repo_external_id,
@@ -113,8 +125,26 @@ pub async fn find_route(
         queue_id: queue_id
             .map(|id| id.parse().map_err(PlatformError::read("delivery", &id)))
             .transpose()?,
-        processed: false,
+        processed: delivery.event == ScmEvent::ConnectionChanged,
+        synced_at: Some(synced_at),
     })
+}
+
+fn installation_sync(
+    delivery: &ScmDelivery,
+    route: &Route,
+    delivery_id: &str,
+    now: OffsetDateTime,
+) -> Option<(String, JobClass)> {
+    if delivery.event == ScmEvent::Ignored {
+        return None;
+    }
+    if delivery.event == ScmEvent::ConnectionChanged || route.connection_id.is_none() {
+        return Some((delivery_id.to_owned(), JobClass::Interactive));
+    }
+
+    let synced_at = route.synced_at?;
+    (synced_at < now - SYNC_AFTER).then(|| (hour_window(now), JobClass::Repair))
 }
 
 async fn queue_of_branch(
@@ -231,30 +261,27 @@ where
     let count = i64::try_from(deliveries.len()).unwrap_or(i64::MAX);
     for delivery in deliveries {
         let delivery_id = delivery.delivery_id.as_str();
-        let (route, repos_changed) = match translate(&delivery.event, &delivery.payload) {
-            Ok(read) => {
-                let route = find_route(&mut tx, &read).await?;
-                (route, matches!(read.event, ScmEvent::ReposChanged { .. }))
-            }
+        let read = match translate(&delivery.event, &delivery.payload) {
+            Ok(read) => Some(read),
             Err(err) => {
                 warn!(
                     delivery_id,
                     error = &err as &dyn Error,
                     "delivery not translated"
                 );
-                let route = Route {
-                    processed: true,
-                    ..Route::default()
-                };
-                (route, false)
+                None
             }
         };
+        let route = match &read {
+            Some(read) => find_route(&mut tx, read).await?,
+            None => processed_route(),
+        };
+
         let routed = route_delivery(&mut tx, delivery_id, route, now).await?;
-        if let (true, true, Some(org_id), Some(connection)) =
-            (routed, repos_changed, route.org_id, route.connection_id)
-        {
-            request_repo_sync(&mut tx, org_id, connection, delivery_id, now).await?;
+        if let (true, Some(read)) = (routed, &read) {
+            request_reads(&mut tx, read, route, delivery_id, now).await?;
         }
+
         info!(
             delivery_id,
             org_id = route.org_id.map(tracing::field::display),
@@ -265,4 +292,28 @@ where
     }
     tx.commit().await.map_err(PlatformError::Query)?;
     Ok(count)
+}
+
+async fn request_reads(
+    conn: &mut PgConnection,
+    delivery: &ScmDelivery,
+    route: Route,
+    delivery_id: &str,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    let repos_changed = matches!(delivery.event, ScmEvent::ReposChanged { .. });
+    if let (true, Some(org_id), Some(connection)) =
+        (repos_changed, route.org_id, route.connection_id)
+    {
+        request_repo_sync(conn, org_id, connection, delivery_id, now).await?;
+    }
+
+    let Some(external_id) = &delivery.connection_external_id else {
+        return Ok(());
+    };
+    let Some((cause, class)) = installation_sync(delivery, &route, delivery_id, now) else {
+        return Ok(());
+    };
+    request_installation_sync(conn, external_id, &cause, class, now).await?;
+    Ok(())
 }

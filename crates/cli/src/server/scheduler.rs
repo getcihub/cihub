@@ -1,6 +1,7 @@
 //! The `scheduler` role: the reconciliation loop of the queues, from
 //! `cihub-mergequeue`, and the regular requests of the maintenance, of the
-//! reads of the repositories and of the sweep of the deliveries.
+//! sync of the installations, of the reads of the repositories and of the
+//! sweep of the deliveries.
 
 use std::error::Error;
 use std::future::Future;
@@ -8,7 +9,9 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use cihub_platform::{SWEEP_EVERY, request_maintenance, request_repo_syncs, request_sweep};
+use cihub_platform::{
+    SWEEP_EVERY, request_installations_sync, request_maintenance, request_repo_syncs, request_sweep,
+};
 use cihub_store::{PgPool, Postgres, Transaction, begin_system};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -70,6 +73,12 @@ async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
         if let Err(err) = request_maintenance_now(pool).await {
             warn!(error = &*err as &dyn Error, "maintenance not requested");
         }
+        if let Err(err) = request_installations_sync_now(pool).await {
+            warn!(
+                error = &*err as &dyn Error,
+                "sync of the installations not requested"
+            );
+        }
         if let Err(err) = request_repo_syncs_now(pool).await {
             warn!(
                 error = &*err as &dyn Error,
@@ -85,6 +94,15 @@ async fn request_maintenance_now(pool: &PgPool) -> anyhow::Result<()> {
         in_system_transaction(pool, |tx| Box::pin(request_maintenance(tx, now()))).await?;
     if requested {
         info!("maintenance requested");
+    }
+    Ok(())
+}
+
+async fn request_installations_sync_now(pool: &PgPool) -> anyhow::Result<()> {
+    let requested =
+        in_system_transaction(pool, |tx| Box::pin(request_installations_sync(tx, now()))).await?;
+    if requested {
+        info!("sync of the installations requested");
     }
     Ok(())
 }

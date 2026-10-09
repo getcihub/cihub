@@ -260,8 +260,9 @@ async fn two_queues(pool: &PgPool) -> String {
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
-             VALUES ('{connection}', '{org}', '1', 'github_app', '1');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{connection}', '{org}', '1', 'github_app', '1', now(), '{{}}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)

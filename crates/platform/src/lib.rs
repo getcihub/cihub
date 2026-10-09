@@ -1,8 +1,9 @@
 //! Internal transport of CIHub on Postgres: the queue leases, the inbox of the
 //! webhook deliveries, the wake-up of the schedulers, the jobs, their worker
 //! loop, the daily maintenance (lot 3), the budgets of the connections, the
-//! routing and the sweep of the deliveries, the read of the repositories of
-//! the connections, the API tokens of an operator, the contract of a
+//! routing and the sweep of the deliveries, the sync of the installations of
+//! the App into organizations and connections, the read of the repositories
+//! of the connections, the API tokens of an operator, the contract of a
 //! module, and what the routes of the modules share (`DECISIONS.md` D159). The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
@@ -11,6 +12,7 @@ mod api;
 mod budget;
 mod connections;
 mod inbox;
+mod installations;
 mod jobs;
 mod lease;
 mod maintenance;
@@ -27,6 +29,11 @@ pub use connections::{
     SYNC_REPOS, request_repo_syncs, run_sync_repos, sync_repos_executor, sync_repos_job,
 };
 pub use inbox::{Delivery, mark_processed, pending_deliveries, store_delivery};
+pub use installations::{
+    SYNC_INSTALLATION, SYNC_INSTALLATIONS, request_installations_sync,
+    request_installations_sync_at_start, run_sync_installation, run_sync_installations,
+    sync_installation_executor, sync_installation_job, sync_installations_executor,
+};
 pub use jobs::{
     JOB_LOCK, JOBS_PER_CONNECTION, Job, MAX_ATTEMPTS, Retry, backoff, claim_jobs, complete_job,
     enqueue_job, fail_job,
@@ -62,6 +69,12 @@ pub enum PlatformError {
     },
     #[error("job {0} has no connection")]
     JobWithoutConnection(String),
+    #[error("job {0} has no installation")]
+    JobWithoutInstallation(String),
+    #[error(
+        "the installation {installation} cannot create the organization {slug}: another organization has this slug"
+    )]
+    SlugTaken { slug: String, installation: String },
     #[error("no organization has the slug {0}")]
     UnknownOrganization(String),
 }

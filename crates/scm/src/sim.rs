@@ -16,8 +16,8 @@ use time::OffsetDateTime;
 use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
-    RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmRepo, ScmUser,
-    SetupFinding, StatusUpdate,
+    RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
+    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -160,7 +160,7 @@ struct State {
     next_sha: u64,
     next_comment: u64,
     repos: BTreeMap<String, Repo>,
-    accounts: BTreeMap<String, ScmAccount>,
+    installations: BTreeMap<String, ScmInstallation>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -478,12 +478,49 @@ impl Sim {
         })
     }
 
-    /// Makes `account` the account of the connection `connection_external_id`.
-    pub fn add_account(&self, connection_external_id: &str, account: ScmAccount) {
+    /// Installs the App on `account` as the connection
+    /// `connection_external_id`, with `permissions`.
+    pub fn add_installation(
+        &self,
+        connection_external_id: &str,
+        account: ScmAccount,
+        permissions: &[(&str, &str)],
+    ) {
+        let installation = ScmInstallation {
+            external_id: connection_external_id.to_owned(),
+            account,
+            permissions: permission_levels(permissions),
+            is_suspended: false,
+        };
         self.with(|state| {
             state
-                .accounts
-                .insert(connection_external_id.to_owned(), account);
+                .installations
+                .insert(connection_external_id.to_owned(), installation);
+            state.connection_changed(connection_external_id);
+        });
+    }
+
+    /// Gives the installation `connection_external_id` the permissions
+    /// `permissions`, as an owner who accepts new permissions.
+    pub fn set_permissions(&self, connection_external_id: &str, permissions: &[(&str, &str)]) {
+        self.with(|state| {
+            let Some(installation) = state.installations.get_mut(connection_external_id) else {
+                return;
+            };
+            installation.permissions = permission_levels(permissions);
+            state.connection_changed(connection_external_id);
+        });
+    }
+
+    /// Deletes the installation `connection_external_id`: its connection
+    /// fails every call with `AccessLost`.
+    pub fn remove_installation(&self, connection_external_id: &str) {
+        self.with(|state| {
+            if state.installations.remove(connection_external_id).is_none() {
+                return;
+            }
+            state.lost.insert(connection_external_id.to_owned());
+            state.connection_changed(connection_external_id);
         });
     }
 
@@ -491,22 +528,13 @@ impl Sim {
     /// again: a suspended connection fails every call with `AccessLost`.
     pub fn set_access(&self, connection_external_id: &str, active: bool) {
         self.with(|state| {
-            let (changed, event) = if active {
-                (
-                    state.lost.remove(connection_external_id),
-                    ScmEvent::AccessRestored,
-                )
+            let changed = if active {
+                state.lost.remove(connection_external_id)
             } else {
-                (
-                    state.lost.insert(connection_external_id.to_owned()),
-                    ScmEvent::AccessLost,
-                )
+                state.lost.insert(connection_external_id.to_owned())
             };
             if changed {
-                state.deliveries.push(ScmDelivery {
-                    connection_external_id: Some(connection_external_id.to_owned()),
-                    event,
-                });
+                state.connection_changed(connection_external_id);
             }
         });
     }
@@ -639,7 +667,27 @@ pub enum PrChange {
     Close,
 }
 
+fn permission_levels(permissions: &[(&str, &str)]) -> BTreeMap<String, String> {
+    permissions
+        .iter()
+        .map(|(name, level)| ((*name).to_owned(), (*level).to_owned()))
+        .collect()
+}
+
 impl State {
+    fn connection_changed(&mut self, connection_external_id: &str) {
+        self.deliveries.push(ScmDelivery {
+            connection_external_id: Some(connection_external_id.to_owned()),
+            event: ScmEvent::ConnectionChanged,
+        });
+    }
+
+    fn installation(&self, external_id: &str) -> Option<ScmInstallation> {
+        let mut installation = self.installations.get(external_id)?.clone();
+        installation.is_suspended = self.lost.contains(external_id);
+        Some(installation)
+    }
+
     fn take_fault(&mut self, name: &str) -> Option<ScmError> {
         let Some(index) = self
             .faults
@@ -1462,13 +1510,19 @@ impl Scm for Sim {
         &'a self,
         external_id: &'a str,
         class: JobClass,
-    ) -> ScmFuture<'a, ScmAccount> {
+    ) -> ScmFuture<'a, Option<ScmInstallation>> {
         self.record_call("installation", class, move |state| {
-            state
-                .accounts
-                .get(external_id)
-                .cloned()
-                .ok_or_else(|| ScmError::NotFound(format!("installation {external_id}")))
+            Ok(state.installation(external_id))
+        })
+    }
+
+    fn installations(&self, class: JobClass) -> ScmFuture<'_, Vec<ScmInstallation>> {
+        self.record_call("installations", class, |state| {
+            Ok(state
+                .installations
+                .keys()
+                .filter_map(|external_id| state.installation(external_id))
+                .collect())
         })
     }
 
@@ -1582,7 +1636,11 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         external_id: "10".into(),
         path: repo.namespace.clone(),
     };
-    sim.add_account(&repo.connection.external_id, account);
+    sim.add_installation(
+        &repo.connection.external_id,
+        account,
+        &[("contents", "write"), ("metadata", "read")],
+    );
     sim.take_deliveries();
     let fixture = Fixture {
         base_branch: "main".into(),
@@ -1674,6 +1732,9 @@ mod tests {
         sim.set_access("100", false);
         let lost = sim.branch_head(&repo, "main", JobClass::Repair).await;
         assert!(matches!(lost, Err(ScmError::AccessLost(_))), "{lost:?}");
+        let suspended = sim.installation("100", JobClass::Repair).await.unwrap();
+        assert!(suspended.is_some_and(|installation| installation.is_suspended));
+
         sim.set_access("100", true);
         assert!(
             sim.branch_head(&repo, "main", JobClass::Repair)
@@ -1681,7 +1742,40 @@ mod tests {
                 .is_ok()
         );
         let events: Vec<ScmEvent> = sim.take_deliveries().into_iter().map(|d| d.event).collect();
-        assert_eq!(events, [ScmEvent::AccessLost, ScmEvent::AccessRestored]);
+        assert_eq!(
+            events,
+            [ScmEvent::ConnectionChanged, ScmEvent::ConnectionChanged]
+        );
+    }
+
+    #[tokio::test]
+    async fn the_simulator_lists_its_installations() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+        crate::contract::installations(&sim, &repo).await;
+    }
+
+    #[tokio::test]
+    async fn an_installation_changes_its_permissions_then_disappears() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+
+        sim.set_permissions("100", &[("contents", "read")]);
+        let installation = sim.installation("100", JobClass::Repair).await.unwrap();
+        let permissions = installation.map(|installation| installation.permissions);
+        let expected = BTreeMap::from([("contents".to_owned(), "read".to_owned())]);
+        assert_eq!(permissions, Some(expected));
+
+        sim.remove_installation("100");
+        assert_eq!(sim.installation("100", JobClass::Repair).await, Ok(None));
+        assert_eq!(sim.installations(JobClass::Repair).await, Ok(Vec::new()));
+        let lost = sim.branch_head(&repo, "main", JobClass::Repair).await;
+        assert!(matches!(lost, Err(ScmError::AccessLost(_))), "{lost:?}");
+        let events: Vec<ScmEvent> = sim.take_deliveries().into_iter().map(|d| d.event).collect();
+        assert_eq!(
+            events,
+            [ScmEvent::ConnectionChanged, ScmEvent::ConnectionChanged]
+        );
     }
 
     #[test]

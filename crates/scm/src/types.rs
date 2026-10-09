@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cihub_domain::{
     CheckConclusion, CheckReport, ConnectionId, MergeMethod, Mergeability, PrState, ReviewDecision,
@@ -137,6 +137,16 @@ pub struct ScmAccount {
     pub external_id: String,
     /// The name of the account in the paths of the SCM.
     pub path: String,
+}
+
+/// An installation of the App of CIHub on an account, as the SCM reads it
+/// (`DECISIONS.md` D247): the permission name gives its access level.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmInstallation {
+    pub external_id: String,
+    pub account: ScmAccount,
+    pub permissions: BTreeMap<String, String>,
+    pub is_suspended: bool,
 }
 
 /// A repository that a connection reaches, as the SCM lists it.

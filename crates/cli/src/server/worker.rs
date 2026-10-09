@@ -3,11 +3,12 @@
 
 use std::sync::Arc;
 
-use cihub_domain::ConnectionId;
+use cihub_domain::{ConnectionId, ConnectionKind};
 use cihub_github::GithubApp;
 use cihub_platform::{
-    ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, SWEEP_DELIVERIES, SYNC_REPOS,
-    execute_maintenance, run_budget_writer, sweep_executor, sync_repos_executor,
+    ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, SWEEP_DELIVERIES, SYNC_INSTALLATION,
+    SYNC_INSTALLATIONS, SYNC_REPOS, execute_maintenance, run_budget_writer, sweep_executor,
+    sync_installation_executor, sync_installations_executor, sync_repos_executor,
 };
 use cihub_scm::Scm;
 
@@ -27,7 +28,13 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     (merge_queue(&pool, &github, &process).executors)(&mut executors);
     let scm: Arc<dyn Scm> = github.app.clone();
     executors.register(SWEEP_DELIVERIES, sweep_executor(Arc::clone(&scm)));
-    executors.register(SYNC_REPOS, sync_repos_executor(scm));
+    executors.register(SYNC_REPOS, sync_repos_executor(Arc::clone(&scm)));
+    let kind = ConnectionKind::GithubApp;
+    executors.register(
+        SYNC_INSTALLATION,
+        sync_installation_executor(Arc::clone(&scm), kind),
+    );
+    executors.register(SYNC_INSTALLATIONS, sync_installations_executor(scm, kind));
     let worker = cihub_platform::run_worker(
         pool.clone(),
         process,
