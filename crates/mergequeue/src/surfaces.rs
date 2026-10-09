@@ -848,7 +848,6 @@ mod tests {
 
     fn surface(state: ItemState) -> Surface {
         Surface {
-            item_id: ItemId::from_ulid(Ulid(1)),
             pr_number: 7,
             head_sha: "abc".into(),
             state,

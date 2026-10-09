@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use cihub_domain::{BlockReason, Item, ItemId, ItemState, Reason};
+use cihub_domain::{BlockReason, Item, ItemState, Reason};
 use time::OffsetDateTime;
 
 use crate::Snapshot;
@@ -12,7 +12,6 @@ use crate::Snapshot;
 /// The state of one item, as its PR shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Surface {
-    pub item_id: ItemId,
     pub pr_number: u64,
     /// The head that the item tests: the status goes there.
     pub head_sha: String,
@@ -66,7 +65,6 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
         })
         .unwrap_or_default();
     Surface {
-        item_id: item.id,
         pr_number: item.pr_number,
         head_sha: item.head_sha.clone(),
         state: item.state,

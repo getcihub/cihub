@@ -173,8 +173,9 @@ pub fn plan(
             decisions.push(event);
         }
     }
-    let mut desired = desired(&state, settings, now);
-    desired.surfaces = surfaces(&state, settings, now, concluded);
+    let surfaces = surfaces(&state, settings, now, concluded);
+    let desired = desired(&state, settings, now, surfaces);
+
     Ok(Plan {
         decisions,
         desired,
@@ -264,7 +265,7 @@ fn run_to(run: &TestRun, to: RunStatus, reason: Reason, failing: Vec<String>) ->
 }
 
 fn new_run(
-    group: &TestGroup,
+    group_id: GroupId,
     first_pr: u64,
     attempt: u32,
     reason: Reason,
@@ -274,7 +275,7 @@ fn new_run(
     let run_id = RunId::from_ulid(ids.next());
     EventKind::RunTransitioned {
         run_id,
-        group_id: group.id,
+        group_id,
         from: None,
         to: RunStatus::Assembling,
         reason,
@@ -307,20 +308,6 @@ const fn assembly_reason(error: JobError) -> Reason {
         | JobError::HeadChanged
         | JobError::PrAlreadyMerged
         | JobError::DirectMergeUnavailable => Reason::StartTestRunInvalidEvent,
-    }
-}
-
-/// The reason of a failed merge. A refusal of a direct merge is
-/// `direct_merge_rejected` (`DECISIONS.md` D122).
-const fn merge_reason(error: JobError, direct: bool) -> Reason {
-    match error {
-        JobError::RateLimitExceeded => Reason::MergeRateLimitExceeded,
-        JobError::BranchProtectionUnmet => Reason::MergeBranchProtectionUnmet,
-        JobError::MergeAlreadyInProgress => Reason::MergeAlreadyInProgress,
-        JobError::RepeatedServerErrors => Reason::MergeRepeatedServerErrors,
-        JobError::HeadChanged => Reason::PrUpdatedAtMergeTime,
-        _ if direct => Reason::DirectMergeRejected,
-        _ => Reason::MergeRejected,
     }
 }
 
@@ -414,11 +401,19 @@ fn requests(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, ids: &mut IdGen)
             item_id,
             direct,
             error,
-        } => item_to(
-            item(item_id)?,
-            ItemState::Failed,
-            merge_reason(*error, *direct),
-        ),
+        } => {
+            let reason = match error {
+                JobError::RateLimitExceeded => Reason::MergeRateLimitExceeded,
+                JobError::BranchProtectionUnmet => Reason::MergeBranchProtectionUnmet,
+                JobError::MergeAlreadyInProgress => Reason::MergeAlreadyInProgress,
+                JobError::RepeatedServerErrors => Reason::MergeRepeatedServerErrors,
+                JobError::HeadChanged => Reason::PrUpdatedAtMergeTime,
+                _ if *direct => Reason::DirectMergeRejected,
+                _ => Reason::MergeRejected,
+            };
+
+            item_to(item(item_id)?, ItemState::Failed, reason)
+        }
         Request::Control(control) => queue_to(s, control.target(), Reason::AdminRequested),
         Request::AccessLost => queue_to(s, QueueState::Paused, Reason::AccessLost),
         Request::AccessRestored => queue_to(s, QueueState::Running, Reason::AccessRestored),
@@ -819,7 +814,7 @@ fn pending_failure(
             let cause = s.cause(Subject::Group(group.id));
             if run.attempt <= settings.failure_budget_retries.value {
                 let room = if group.kind == GroupKind::Bisection {
-                    bisection_has_room(s, settings)
+                    bisection_room(s, settings) > 0
                 } else {
                     window_has_room(s, settings)
                 };
@@ -832,7 +827,7 @@ fn pending_failure(
                     kinds: vec![
                         group_to(group, GroupState::Testing, Reason::FailureBudgetRetry),
                         new_run(
-                            group,
+                            group.id,
                             first_pr,
                             run.attempt + 1,
                             Reason::FailureBudgetRetry,
@@ -1021,36 +1016,24 @@ fn split(
     {
         let first = half.first()?;
         let index = order.iter().position(|i| i.id == first.id)?;
-        let group = TestGroup {
-            id: GroupId::from_ulid(ids.next()),
-            org_id: s.org_id,
-            queue_id: s.queue_id,
+        let group_id = GroupId::from_ulid(ids.next());
+        kinds.extend(half.iter().map(|i| item_to(i, ItemState::Pending, reason)));
+        kinds.push(EventKind::GroupFormed {
+            group_id,
             kind: GroupKind::Bisection,
-            state: GroupState::Testing,
-            state_reason: Reason::TestRunStarted,
             item_ids: half.iter().map(|i| i.id).collect(),
-            parent_group_id: Some(parent.id),
             predecessor_ids: predecessors(s, &order, index),
             base_sha: base.clone(),
-        };
-        kinds.extend(half.iter().map(|i| item_to(i, ItemState::Pending, reason)));
-        let run = new_run(
-            &group,
+            parent_group_id: Some(parent.id),
+        });
+        kinds.push(new_run(
+            group_id,
             first.pr_number,
             1,
             Reason::TestRunStarted,
             settings,
             ids,
-        );
-        kinds.push(EventKind::GroupFormed {
-            group_id: group.id,
-            kind: group.kind,
-            item_ids: group.item_ids,
-            predecessor_ids: group.predecessor_ids,
-            base_sha: group.base_sha,
-            parent_group_id: group.parent_group_id,
-        });
-        kinds.push(run);
+        ));
     }
     Some(kinds)
 }
@@ -1242,43 +1225,32 @@ fn formation(
         return None;
     };
     let first = members.first()?;
-    let group = TestGroup {
-        id: GroupId::from_ulid(ids.next()),
-        org_id: s.org_id,
-        queue_id: s.queue_id,
-        kind: if members.len() > 1 {
-            GroupKind::Batch
-        } else {
-            GroupKind::Single
-        },
-        state: GroupState::Testing,
-        state_reason: Reason::TestRunStarted,
+    let group_id = GroupId::from_ulid(ids.next());
+    let kind = if members.len() > 1 {
+        GroupKind::Batch
+    } else {
+        GroupKind::Single
+    };
+    let group_formed = EventKind::GroupFormed {
+        group_id,
+        kind,
         item_ids: members.iter().map(|i| i.id).collect(),
-        parent_group_id: None,
         predecessor_ids: predecessors(s, &order, index),
         base_sha: base.clone(),
+        parent_group_id: None,
     };
     let run = new_run(
-        &group,
+        group_id,
         first.pr_number,
         1,
         Reason::TestRunStarted,
         settings,
         ids,
     );
+
     Some(Step {
         cause: s.cause(Subject::Item(first.id)),
-        kinds: vec![
-            EventKind::GroupFormed {
-                group_id: group.id,
-                kind: group.kind,
-                item_ids: group.item_ids,
-                predecessor_ids: group.predecessor_ids,
-                base_sha: group.base_sha,
-                parent_group_id: None,
-            },
-            run,
-        ],
+        kinds: vec![group_formed, run],
     })
 }
 
@@ -1394,10 +1366,6 @@ fn bisection_room(s: &Snapshot, settings: &QueueSettings) -> usize {
     usize::try_from(settings.bisection_concurrency.value)
         .unwrap_or(usize::MAX)
         .saturating_sub(running)
-}
-
-fn bisection_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
-    bisection_room(s, settings) > 0
 }
 
 /// The item that the queue merges directly, without a test branch
@@ -1569,7 +1537,12 @@ fn wake_at(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Optio
         .min()
 }
 
-fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desired {
+fn desired(
+    s: &Snapshot,
+    settings: &QueueSettings,
+    now: OffsetDateTime,
+    surfaces: Vec<Surface>,
+) -> Desired {
     let heads = |ids: &[ItemId]| -> Vec<Head> {
         ids.iter()
             .filter_map(|id| s.items.get(id))
@@ -1640,7 +1613,7 @@ fn desired(s: &Snapshot, settings: &QueueSettings, now: OffsetDateTime) -> Desir
         observe,
         check_reads,
         target_read,
-        surfaces: Vec::new(),
+        surfaces,
     }
 }
 

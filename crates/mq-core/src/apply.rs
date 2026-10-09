@@ -591,7 +591,6 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
             base_sha,
             parent_group_id,
         } => {
-            check_transition(None, GroupState::Testing, Reason::TestRunStarted)?;
             if snapshot.groups.contains_key(group_id) {
                 return Err(ApplyError::GroupExists(*group_id));
             }
@@ -738,7 +737,7 @@ fn set_cause(snapshot: &mut Snapshot, subject: Subject, event: &Event) {
     };
 }
 
-/// A request that no decision can answer any more.
+/// Whether a decision can still answer the request.
 fn request_possible(snapshot: &Snapshot, request: &Request) -> bool {
     let item_in = |item_id: &ItemId, states: &[ItemState]| {
         snapshot
