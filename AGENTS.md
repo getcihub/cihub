@@ -102,6 +102,7 @@ mise run cover             # coverage of the pure crates, 90% at least
 mise run dev               # migrations, then cihub server start locally with the four roles
 mise run sim               # fault_injection on 1,000 seeds (long; the CI runs it at night)
 mise run load              # cost, time and useless assemblies of `batched` on a simulated day (long)
+mise run smoke             # the Helm chart with two replicas in a throwaway kind cluster (needs Docker)
 ```
 
 The CI runs these tasks in one job, `CI` (`.github/workflows/ci.yml`), which is the required status.
@@ -126,6 +127,6 @@ One place per fact: link, do not copy. `GOAL.md` is read first.
 | `docs/RELIABILITY.md`                      | A job, a call to the SCM, the repair loop: every failure has a named treatment                        |
 | `docs/SECURITY.md`                         | Authentication, tokens, secrets                                                                       |
 | `docs/OBSERVABILITY.md`                    | A log, a metric, an alert                                                                             |
-| `docs/DEPLOYMENT.md`                       | `compose.yaml`, the image, the migrations, the project CI, the `CIHUB_*` variables                    |
+| `docs/DEPLOYMENT.md`                       | `compose.yaml`, the Helm chart, the image, the migrations, the project CI, the `CIHUB_*` variables    |
 | `docs/ANALYTICS.md`, `docs/FLAKY_TESTS.md` | The modules to come (lots 11 and 14)                                                                  |
 | `docs/COMPETITION.md`                      | Justify a deviation from Trunk, Mergify, GitHub, GitLab, bors, Zuul, Aviator, Graphite                |

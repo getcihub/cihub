@@ -1,0 +1,18 @@
+suite: service
+templates:
+  - service.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: exposes the public address only
+    asserts:
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 8080
+              targetPort: http
+              protocol: TCP
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: server

@@ -50,7 +50,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D14** Migrations are explicit. `cihub-server migrate` applies them then stops; at startup, `cihub-server`
   applies nothing and stops if an embedded migration is missing from the database. A dedicated process runs them
   before the roles: `mise run migrate` in development, a `cihub-migrate` service in the installation
-  `docker compose`, a `Job` as a Helm `pre-install` and `pre-upgrade` hook on Kubernetes. _Extended by D168._
+  `docker compose`, a `Job` as a Helm `pre-install` and `pre-upgrade` hook on Kubernetes. _Extended by D168._ _Extended by D251._
 - **D15** The Rust practices of §5 (errors, lints, tests, async, dependencies, code documentation).
 - **D16** (Q11) The clock and randomness are forbidden everywhere by `disallowed-methods` in the root
   `clippy.toml` (`SystemTime::now`, `Instant::now`, `OffsetDateTime::now_utc`, `Ulid::generate`,
@@ -840,13 +840,13 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   so two builds at once each take about twice as long; with one job, a run takes one runner and the other one is
   free for another run. `CI` replaces `Build Success` as the required status, in the `queue_conditions` and the
   `merge_conditions` of `.cihub.yaml`. The `main` queue admits a PR whose `CI` is `success` or `skipped`, as
-  `ci.yml` skips it on the release-please PR; the test branch of the queue still runs it in full.
+  `ci.yml` skips it on the release-please PR; the test branch of the queue still runs it in full. _Extended by D251._
 - **D243** Extends D19: the image is `ghcr.io/nlecoy/cihub`, in the namespace of the current repository, until the
   repository moves to `getcihub`. It is for `linux/amd64` only, the architecture of the one node of
   `cihub-runner`; no `linux/arm64` image and no manifest for now. `image.yaml` runs on `cihub-runner`: buildx,
   with the `kubernetes` driver, starts a rootless BuildKit pod in the `buildkit` namespace of the cluster, so the
   `Dockerfile` stays the only definition of the image. `nlecoy/home-ops` gives this namespace the `privileged` Pod
-  Security level and lets the ServiceAccount of the runner manage the BuildKit deployment there.
+  Security level and lets the ServiceAccount of the runner manage the BuildKit deployment there. _Extended by D251._
 - **D244** Extends D156 and D173: the comment of CIHub on the PR shows the history of the PR in the queue, in a
   folded `<details>` block (`History (N)`) between the details and the commands. The history is a projection of
   the log: the decisions `item.transitioned` and `item.readiness_changed` of every item of the PR in the queue,
@@ -919,6 +919,30 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   question; a function has at most two levels of nesting; a comment says a constraint or a reason, never what the
   code does. No tool enforces it: `cargo fmt` does not add blank lines. The existing code gets the blank lines in
   one pass that adds only blank lines; names, nesting and comments follow crate by crate.
+- **D251** The Helm chart arrives now, out of Lot 15, in `charts/cihub`, on the model of the chart of
+  `home-operations/kritika`. It installs one Deployment of `cihub server start` (the four roles, identical
+  replicas, D170), with its `server.yaml` in a ConfigMap without secrets; the migration `Job` as a `pre-install`
+  and `pre-upgrade` hook (D14); a Service on the public port only, as `/healthz` and `/readyz` stay on the internal
+  port of the pod, for the probes; an optional Ingress or HTTPRoute; a PodDisruptionBudget above one replica; and
+  a `helm test`. The pods run as the `default` ServiceAccount without a token: CIHub does not call the Kubernetes
+  API. The secrets come only from existing Secrets. No ServiceMonitor, alert or dashboard before Lot 11. As for
+  kritika, `mise run helm-lint` (with `charts/cihub/ci/lint-values.yaml`), `mise run helm-unittest` and
+  `mise run generate-check` (`helm-docs` and `helm-schema` generate the `README.md` and the `values.schema.json`
+  of the chart) check it; `helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl` and `shellcheck` are mise tools,
+  and `mise run helm-unittest` installs the pinned `helm-unittest` plugin when it is missing. `scripts/smoke.sh`
+  (`mise run smoke`), first for local use, installs the chart with two replicas in a kind cluster, against a
+  Postgres 17 of CloudNativePG with the `cihub` role, and fails on a pod that is never ready or restarts, on
+  `helm test`, and on a signed delivery that is not accepted; `CIHUB_SMOKE_IMAGE`, `CIHUB_SMOKE_CLUSTER` and
+  `CIHUB_SMOKE_KEEP` change it. `ci.yml` runs the jobs `Helm Lint`, `Helm Unittest` and `Smoke` on runners hosted
+  by GitHub for now; `CI` stays on `cihub-runner` and stays the only required status. `image.yaml` publishes the
+  chart to `oci://ghcr.io/nlecoy/charts/cihub` at each release, with the version of the release. Extends D14,
+  D242 and D243. _Extended by D252._
+- **D252** Extends D251: with `CIHUB_SMOKE_GITHUB=1`, `scripts/smoke.sh` installs the chart with the GitHub App of
+  `mise.local.toml` (`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and
+  `CIHUB_GITHUB_URL` when it is set) instead of a false App, and also fails when no installation is synced within
+  2 minutes. It is a development use, as `mise run dev`, with the private development App; never a test, never in
+  the CI. Without the variable, the smoke stays the same everywhere. On a kept cluster, the script keeps the
+  Secrets that exist, and restarts the pods after it loads the image again.
 - **D253** Only an open PR that is not a draft can enter a queue. The `submit_pr` job reads the PR, then refuses a
   PR that is merged, closed or a draft before it looks for its queue: it deposits no fact and creates no queue,
   and a command or a checkbox receives `Refused: this PR is merged.` (`closed`, `a draft`). The rule applies to

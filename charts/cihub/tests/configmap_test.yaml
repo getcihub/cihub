@@ -1,0 +1,25 @@
+suite: configmap
+templates:
+  - configmap.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: writes server.yaml without secrets
+    set:
+      github.url: https://github.example.com
+      log.format: pretty
+    asserts:
+      - equal:
+          path: data["server.yaml"]
+          value: |
+            github:
+              app_id: "123456"
+              private_key_file: /etc/cihub/github/private-key.pem
+              url: https://github.example.com
+            http:
+              addr: 0.0.0.0:8080
+            internal:
+              addr: 0.0.0.0:8081
+            log:
+              filter: info
+              format: pretty

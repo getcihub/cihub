@@ -1,0 +1,12 @@
+---
+# The values of scripts/smoke.sh, on top of the defaults of the chart: the
+# Secrets that the script creates, and two replicas.
+replicas: 2
+database:
+  existingSecret: cihub-postgres
+github:
+  # A test never calls the real GitHub (AGENTS.md): the App does not exist,
+  # and the calls of the replicas fail on a name that does not resolve.
+  url: https://github.invalid
+  appId: 1
+  existingSecret: cihub-github

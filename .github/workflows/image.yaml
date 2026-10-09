@@ -127,3 +127,42 @@ jobs:
             [ -n "$tag" ] && args+=(--tag "$tag")
           done <<< "$TAGS"
           docker buildx imagetools create "${args[@]}" "$IMAGE@$AMD64" "$IMAGE@$ARM64"
+
+  # The chart takes the version of the release, so that it deploys the image
+  # of the same release (DECISIONS.md D251).
+  chart:
+    name: Chart
+    needs:
+      - manifest
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache in a publication: a poisoned cache would reach the chart.
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          cache: false
+          install_args: --locked
+
+      - name: Package the chart
+        run: helm package charts/cihub --version "${TAG#v}" --app-version "${TAG#v}"
+
+      - name: Login
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the chart
+        run: helm push "cihub-${TAG#v}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"

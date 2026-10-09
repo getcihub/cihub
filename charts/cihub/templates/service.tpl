@@ -1,0 +1,19 @@
+# The public address only: the internal address (/healthz, /readyz) is not
+# to be exposed (docs/SECURITY.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cihub.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cihub.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "cihub.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server

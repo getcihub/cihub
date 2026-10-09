@@ -1,0 +1,182 @@
+---
+# Default values of the cihub chart (docs/DEPLOYMENT.md, DECISIONS.md D251).
+
+image:
+  # -- Image repository.
+  repository: ghcr.io/nlecoy/cihub
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Image tag; the appVersion of the chart when empty.
+  tag: ""
+  # -- Image digest (`sha256:…`); wins over the tag when set.
+  digest: ""
+
+# -- Secrets to pull the image, for the server pods, the migration Job and the test pod.
+imagePullSecrets: []
+# -- Replaces the name of the chart in the names of the resources.
+nameOverride: ""
+# -- Replaces the full name of the resources.
+fullnameOverride: ""
+
+# -- Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.
+replicas: 1
+
+# -- Update strategy of the Deployment. A new pod is ready before an old one stops, so a replica always serves the webhooks; a published migration stays compatible with the previous version for this overlap (docs/DEPLOYMENT.md).
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+log:
+  # -- Log filter, `log.filter` of `server.yaml` (docs/OBSERVABILITY.md).
+  filter: info
+  # -- Log format, `json` or `pretty`.
+  format: json
+
+database:
+  # -- (required) Secret that holds the URL of Postgres, `database.url` of `server.yaml`. The role is neither a superuser nor `BYPASSRLS` (CIHub refuses it at startup) and owns the database: the migration Job uses the same URL.
+  existingSecret: ""
+  # -- Key of the URL in that Secret.
+  key: uri
+
+github:
+  # -- github.com, or the address of a GitHub Enterprise Server.
+  url: https://github.com
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- (required) Identifier of the GitHub App (docs/GITHUB.md).
+  appId: ""
+  # -- (required) Secret that holds the private key and the webhook secret of the App.
+  existingSecret: ""
+  # -- Key of the private key (PEM) in that Secret.
+  privateKeyKey: private-key.pem
+  # -- Key of the webhook secret in that Secret.
+  webhookSecretKey: webhook-secret
+
+# -- Annotations of the Deployment.
+deploymentAnnotations: {}
+# -- Annotations of the server pods.
+podAnnotations: {}
+# -- Labels of the server pods.
+podLabels: {}
+
+# -- Security context of the pods: the user of the image (65532), not root.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Security context of the containers: CIHub writes no file.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  # -- Type of the Service.
+  type: ClusterIP
+  # -- Port of the Service, to the public address of the pods: the webhooks on `POST /webhooks/github` and the API. The internal address (`/healthz`, `/readyz`) stays on the pods, for the probes.
+  port: 8080
+
+# One Ingress, or one Gateway API HTTPRoute, to the Service. The webhook URL
+# of the GitHub App is `https://<host>/webhooks/github`.
+ingress:
+  # -- Expose the Service through an Ingress.
+  enabled: false
+  # -- IngressClass name.
+  className: ""
+  # -- Annotations of the Ingress.
+  annotations: {}
+  # -- Hosts of the Ingress and their paths.
+  hosts:
+    - host: cihub.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration of the Ingress.
+  tls: []
+
+httpRoute:
+  # -- Expose the Service through a Gateway API HTTPRoute, instead of an Ingress.
+  enabled: false
+  # -- Annotations of the HTTPRoute.
+  annotations: {}
+  # -- Labels of the HTTPRoute.
+  labels: {}
+  # -- Gateways and listeners of the route.
+  parentRefs: []
+  # -- Host names of the route.
+  hostnames: []
+  # -- Match conditions of the rule.
+  matches:
+    - path:
+        type: PathPrefix
+        value: /
+
+# -- Resources of the server pods and of the migration Job.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# -- Liveness probe: `/healthz` answers as long as the process runs.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: internal
+  periodSeconds: 20
+# -- Readiness probe: `/readyz` answers 503 when Postgres does not answer within 2 s.
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: internal
+  periodSeconds: 10
+# -- Startup probe; the other probes wait until it passes. It allows a minute.
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: internal
+  periodSeconds: 2
+  failureThreshold: 30
+
+podDisruptionBudget:
+  # -- Create a PodDisruptionBudget when there is more than one replica.
+  enabled: true
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- Pods that must stay available, as a count or a percentage; used when `maxUnavailable` is empty.
+  minAvailable: ""
+  # @schema
+  # type: [integer, string]
+  # @schema
+  # -- Pods that may be unavailable, as a count or a percentage; wins over `minAvailable`.
+  maxUnavailable: 1
+
+# -- Priority class of the server pods.
+priorityClassName: ""
+# -- Node selector of the pods.
+nodeSelector: {}
+# -- Tolerations of the pods.
+tolerations: []
+# -- Affinity of the pods.
+affinity: {}
+# -- Topology spread constraints of the server pods.
+topologySpreadConstraints: []
+
+tests:
+  image:
+    # -- Image of the `helm test` pod.
+    repository: docker.io/curlimages/curl
+    # -- Tag of that image.
+    tag: 8.22.0
+    # -- Pull policy of that image.
+    pullPolicy: IfNotPresent
