@@ -88,6 +88,7 @@ pub async fn authenticate(
     if !is_api_token(secret.expose_secret()) {
         return Ok(None);
     }
+
     let mut tx = begin_system(pool).await?;
     let row: Option<(String, String, Vec<String>, Option<OffsetDateTime>)> = sqlx::query_as(
         "SELECT id, org_id, scopes::text[], last_used_at FROM api_tokens
@@ -101,6 +102,7 @@ pub async fn authenticate(
     let Some((id, org_id, scopes, last_used_at)) = row else {
         return Ok(None);
     };
+
     if last_used_at.is_none_or(|at| at <= now - LAST_USE_PRECISION) {
         sqlx::query("UPDATE api_tokens SET last_used_at = $2 WHERE id = $1")
             .bind(&id)
@@ -109,6 +111,7 @@ pub async fn authenticate(
             .await
             .map_err(StoreError::Query)?;
     }
+
     tx.commit().await.map_err(StoreError::Query)?;
     let grant = decode(&id, &org_id, &scopes).map_err(StoreError::read("api token", &id))?;
     Ok(Some(grant))

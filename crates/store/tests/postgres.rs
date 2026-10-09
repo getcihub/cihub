@@ -155,6 +155,7 @@ async fn seed(pool: &PgPool) {
             .await
             .unwrap();
     }
+
     tx.commit().await.unwrap();
 }
 
@@ -176,6 +177,7 @@ async fn an_organization_neither_reads_nor_writes_another(pool: PgPool) {
     for table in TENANT_TABLES {
         let column = org_column(table);
         let mut tx = begin_org(&pool, org_a).await.unwrap();
+
         assert_eq!(count(&mut tx, table).await, 1, "{table}");
         for statement in [
             format!("UPDATE {table} SET {column} = {column} WHERE {column} = '{org_b}'"),
@@ -187,6 +189,7 @@ async fn an_organization_neither_reads_nor_writes_another(pool: PgPool) {
                 .unwrap();
             assert_eq!(done.rows_affected(), 0, "{statement}");
         }
+
         tx.rollback().await.unwrap();
     }
 
@@ -197,6 +200,7 @@ async fn an_organization_neither_reads_nor_writes_another(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap_err();
+
     assert_eq!(err.as_database_error().unwrap().code().unwrap(), "42501");
     tx.rollback().await.unwrap();
     let mut tx = begin_org(&pool, org_a).await.unwrap();
@@ -204,6 +208,7 @@ async fn an_organization_neither_reads_nor_writes_another(pool: PgPool) {
         .execute(&mut *tx)
         .await
         .unwrap_err();
+
     assert_eq!(err.as_database_error().unwrap().code().unwrap(), "42501");
 }
 
@@ -232,12 +237,15 @@ async fn a_committed_context_does_not_stay_on_the_connection(pool: PgPool) {
     let org_a = org(1);
     let mut conn = pool.acquire().await.unwrap();
     let mut tx = sqlx::Connection::begin(&mut *conn).await.unwrap();
+
     sqlx::query("SELECT set_config('cihub.org_id', $1, true)")
         .bind(org_a.to_string())
         .execute(&mut *tx)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
+
     assert_eq!(count(&mut conn, "orgs").await, 0);
 }
 
@@ -274,9 +282,11 @@ async fn every_tenant_table_forces_row_level_security(pool: PgPool) {
         .filter(|(.., partition)| !partition)
         .map(|(name, ..)| name.as_str())
         .collect();
+
     names.sort_unstable();
     let mut expected = TENANT_TABLES.to_vec();
     expected.sort_unstable();
+
     assert_eq!(names, expected);
     assert!(tables.iter().any(|(name, ..)| name == "events_2026_09"));
     for (name, enabled, forced, _) in &tables {
@@ -319,10 +329,12 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
+
     assert_eq!(
         names,
         expected.iter().map(|(name, _)| *name).collect::<Vec<_>>()
     );
+
     for (name, domain) in expected {
         let labels: Vec<String> = sqlx::query_scalar(
             "SELECT e.enumlabel::text FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
@@ -354,11 +366,13 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     seed(&pool).await;
     let user_id = UserId::from_ulid(Ulid(7));
     let mut tx = begin_system(&pool).await.unwrap();
+
     sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
         .bind(user_id.to_string())
         .execute(&mut *tx)
         .await
         .unwrap();
+
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
          VALUES ($1, $2, 'repo-1', 'next', 'next')",
@@ -368,6 +382,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
 
     let submitted = event(
@@ -406,6 +421,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let log = vec![submitted, created, lost];
 
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
+
     assert_eq!(append_events(&mut tx, &log[..2]).await.unwrap(), [1, 2]);
     assert_eq!(append_events(&mut tx, &log[2..]).await.unwrap(), [3]);
     tx.commit().await.unwrap();
@@ -413,6 +429,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
     let queue = QueueId::from_ulid(Ulid(1));
     let read = load_events(&mut tx, queue, 0).await.unwrap();
+
     assert_eq!(
         read,
         [1, 2, 3].into_iter().zip(log.clone()).collect::<Vec<_>>()
@@ -426,6 +443,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
             .await
             .unwrap();
     let item = Some(ItemId::from_ulid(Ulid(1)).to_string());
+
     assert_eq!(rows, [(1, None), (2, item), (3, None)]);
 
     let mut tx = begin_org(&pool, org(2)).await.unwrap();
@@ -459,6 +477,7 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
+
     assert_eq!(partitions, ["events_2026_12", "events_2027_01"]);
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -473,6 +492,7 @@ async fn partitions_cover_this_month_and_the_next(pool: PgPool) {
     )
     .await
     .unwrap_err();
+
     assert!(format!("{err:?}").contains("no partition"), "{err:?}");
 }
 
@@ -496,6 +516,7 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         .execute(&mut *tx)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
 
     let secret = new_api_token_secret().unwrap();
@@ -509,6 +530,7 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         expires_at: Some(at(3600)),
     };
     let mut tx = begin_org(&pool, org(1)).await.unwrap();
+
     create_api_token(&mut tx, &token, &secret).await.unwrap();
     tx.commit().await.unwrap();
 
@@ -517,6 +539,7 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     assert_eq!(hash.len(), 32);
     tx.rollback().await.unwrap();
 
@@ -525,14 +548,17 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
         org_id: org(1),
         scopes: scopes.to_vec(),
     };
+
     assert_eq!(
         authenticate(&pool, &secret, at(0)).await.unwrap(),
         Some(grant)
     );
     assert_eq!(last_used_at(&pool).await, Some(at(0)));
     authenticate(&pool, &secret, at(30)).await.unwrap().unwrap();
+
     assert_eq!(last_used_at(&pool).await, Some(at(0)));
     authenticate(&pool, &secret, at(90)).await.unwrap().unwrap();
+
     assert_eq!(last_used_at(&pool).await, Some(at(90)));
 
     assert_eq!(authenticate(&pool, &secret, at(3600)).await.unwrap(), None);
