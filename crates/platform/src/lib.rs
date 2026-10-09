@@ -1,8 +1,8 @@
 //! Internal transport of CIHub on Postgres: the queue leases, the inbox of the
 //! webhook deliveries, the wake-up of the schedulers, the jobs, their worker
 //! loop, the daily maintenance (lot 3), the budgets of the connections, the
-//! routing and the sweep of the deliveries, the bootstrap of an organization
-//! and the read of the repositories of its connections, the contract of a
+//! routing and the sweep of the deliveries, the read of the repositories of
+//! the connections, the API tokens of an operator, the contract of a
 //! module, and what the routes of the modules share (`DECISIONS.md` D159). The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
@@ -17,14 +17,14 @@ mod maintenance;
 mod module;
 mod routing;
 mod sweep;
+mod tokens;
 mod wake;
 mod worker;
 
 pub use api::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery};
 pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{
-    Bootstrapped, SYNC_REPOS, bootstrap, request_repo_syncs, run_sync_repos, sync_repos_executor,
-    sync_repos_job,
+    SYNC_REPOS, request_repo_syncs, run_sync_repos, sync_repos_executor, sync_repos_job,
 };
 pub use inbox::{Delivery, mark_processed, pending_deliveries, store_delivery};
 pub use jobs::{
@@ -38,6 +38,7 @@ pub use maintenance::{
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
+pub use tokens::create_token;
 pub use wake::{
     MIN_WAIT, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
     until_next_tick,
@@ -61,6 +62,8 @@ pub enum PlatformError {
     },
     #[error("job {0} has no connection")]
     JobWithoutConnection(String),
+    #[error("no organization has the slug {0}")]
+    UnknownOrganization(String),
 }
 
 impl PlatformError {

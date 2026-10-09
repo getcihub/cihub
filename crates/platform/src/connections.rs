@@ -2,15 +2,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use cihub_domain::{
-    ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, OrgId, RepoId,
-};
-use cihub_scm::{ConnectionRef, Scm, ScmAccount, ScmError};
-use cihub_store::{NewApiToken, PgPool, begin_system, create_api_token, new_api_token_secret};
-use secrecy::SecretString;
+use cihub_domain::{ConnectionId, JobClass, OrgId, RepoId};
+use cihub_scm::{ConnectionRef, Scm, ScmError};
+use cihub_store::{PgPool, begin_system};
 use serde_json::json;
 use sqlx::PgConnection;
-use strum::IntoEnumIterator;
 use time::OffsetDateTime;
 use tracing::info;
 
@@ -18,141 +14,6 @@ use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 pub const SYNC_REPOS: &str = "sync_repos";
-
-pub(crate) const BOOTSTRAP_TOKEN: &str = "bootstrap";
-
-pub struct Bootstrapped {
-    pub org_id: OrgId,
-    pub connection_id: ConnectionId,
-    pub created: bool,
-    pub token: SecretString,
-}
-
-/// Starts an organization from the connection `external_id` of the SCM
-/// (`DECISIONS.md` D154, D155): the organization, named by the
-/// account of the connection, and the connection, then a request to read its
-/// repositories and a new API token with every scope. On a connection already known, creates only the token,
-/// so that an operator gets an organization back. The read has the key of the
-/// hour: a second bootstrap in the same hour asks for no other read.
-///
-/// # Errors
-///
-/// The SCM does not know the connection, or Postgres refuses a row: another
-/// organization already has the name of the account.
-pub async fn bootstrap(
-    pool: &PgPool,
-    scm: &dyn Scm,
-    kind: ConnectionKind,
-    external_id: &str,
-    now: OffsetDateTime,
-) -> Result<Bootstrapped, PlatformError> {
-    let account = scm
-        .installation(external_id, JobClass::Interactive)
-        .await
-        .map_err(PlatformError::Scm)?;
-    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-    let known: Option<(String, String)> = sqlx::query_as(
-        "SELECT org_id, id FROM scm_connections
-         WHERE kind = $1::connection_kind AND external_id = $2",
-    )
-    .bind(kind.as_str())
-    .bind(external_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(PlatformError::Query)?;
-    let (org_id, connection_id, created) = if let Some((org, connection)) = known {
-        let org_id = org
-            .parse()
-            .map_err(PlatformError::read("connection", &org))?;
-        let connection_id = connection
-            .parse()
-            .map_err(PlatformError::read("connection", &connection))?;
-        (org_id, connection_id, false)
-    } else {
-        let (org_id, connection_id) =
-            create_organization(&mut tx, kind, external_id, &account, now).await?;
-        (org_id, connection_id, true)
-    };
-    let job = sync_repos_job(org_id, connection_id, &hour_window(now));
-    enqueue_job(&mut tx, &job, now, now).await?;
-    let token = new_api_token_secret().map_err(PlatformError::Store)?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the bootstrap creates a new API token"
-    )]
-    let token_id = ApiTokenId::new();
-    let scopes: Vec<ApiScope> = ApiScope::iter().collect();
-    let new = NewApiToken {
-        id: token_id,
-        org_id,
-        name: BOOTSTRAP_TOKEN,
-        scopes: &scopes,
-        expires_at: None,
-    };
-    create_api_token(&mut tx, &new, &token)
-        .await
-        .map_err(PlatformError::Store)?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "an entry of the audit log has a new identifier"
-    )]
-    let audit_id = AuditEntryId::new();
-    sqlx::query(
-        "INSERT INTO audit_log (id, org_id, action, target, after, occurred_at)
-         VALUES ($1, $2, 'token.created', $3, $4, $5)",
-    )
-    .bind(audit_id.to_string())
-    .bind(org_id.to_string())
-    .bind(token_id.to_string())
-    .bind(json!({ "name": BOOTSTRAP_TOKEN, "by": "bootstrap" }))
-    .bind(now)
-    .execute(&mut *tx)
-    .await
-    .map_err(PlatformError::Query)?;
-    tx.commit().await.map_err(PlatformError::Query)?;
-    Ok(Bootstrapped {
-        org_id,
-        connection_id,
-        created,
-        token,
-    })
-}
-
-async fn create_organization(
-    conn: &mut PgConnection,
-    kind: ConnectionKind,
-    external_id: &str,
-    account: &ScmAccount,
-    now: OffsetDateTime,
-) -> Result<(OrgId, ConnectionId), PlatformError> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the bootstrap creates the organization and its connection"
-    )]
-    let (org_id, connection_id) = (OrgId::new(), ConnectionId::new());
-    sqlx::query("INSERT INTO orgs (id, slug, created_at) VALUES ($1, $2, $3)")
-        .bind(org_id.to_string())
-        .bind(&account.path)
-        .bind(now)
-        .execute(&mut *conn)
-        .await
-        .map_err(PlatformError::Query)?;
-    sqlx::query(
-        "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
-                                      created_at)
-         VALUES ($1, $2, $3, $4::connection_kind, $5, $6)",
-    )
-    .bind(connection_id.to_string())
-    .bind(org_id.to_string())
-    .bind(&account.external_id)
-    .bind(kind.as_str())
-    .bind(external_id)
-    .bind(now)
-    .execute(&mut *conn)
-    .await
-    .map_err(PlatformError::Query)?;
-    Ok((org_id, connection_id))
-}
 
 pub fn sync_repos_job(org_id: OrgId, connection: ConnectionId, cause: &str) -> Job {
     Job {

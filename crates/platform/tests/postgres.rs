@@ -4,20 +4,18 @@
 
 use std::sync::Arc;
 
-use cihub_domain::{
-    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, OrgId, QueueId,
-};
+use cihub_domain::{ApiScope, ConnectionId, ConnectionMode, JobClass, OrgId, QueueId};
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
     MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
-    backoff, begin_reconciliation, bootstrap, claim_jobs, complete_job, enqueue_job, fail_job,
+    backoff, begin_reconciliation, claim_jobs, complete_job, create_token, enqueue_job, fail_job,
     lock_queue, maintenance_job, mark_processed, pending_deliveries, record_budgets,
     release_leases, request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance,
     run_router, run_sweep, run_sync_repos, run_worker, schedule_tick, store_delivery,
     sync_repos_job, until_next_tick,
 };
 use cihub_scm::sim::Sim;
-use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
+use cihub_scm::{ConnectionRef, RepoRef, ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{authenticate, begin_org, begin_system};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -984,59 +982,16 @@ async fn sync_jobs(pool: &PgPool) -> Vec<String> {
     .unwrap()
 }
 
-type OrgRow = (String, String, String);
-
-async fn orgs(pool: &PgPool) -> Vec<OrgRow> {
-    let mut tx = begin_system(pool).await.unwrap();
-    sqlx::query_as(
-        "SELECT o.slug, c.account_external_id, c.external_id
-         FROM orgs o
-         JOIN scm_connections c ON c.org_id = o.id
-         ORDER BY o.slug",
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .unwrap()
-}
-
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool: PgPool) {
+async fn a_token_of_an_organization_has_every_scope_and_is_audited(pool: PgPool) {
     seed(&pool).await;
-    let sim = Sim::new();
-    let account = ScmAccount {
-        external_id: "70".into(),
-        path: "globex".into(),
-    };
-    sim.add_account("7", account);
-    let kind = ConnectionKind::GithubApp;
 
-    let first = bootstrap(&pool, &sim, kind, "7", at(0)).await.unwrap();
-    assert!(first.created);
-    let globex = ("globex".to_owned(), "70".to_owned(), "7".to_owned());
-    let acme = ("org".to_owned(), "1".to_owned(), "1".to_owned());
-    assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);
-    let grant = authenticate(&pool, &first.token, at(0))
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(grant.org_id, first.org_id);
+    let (org_id, token) = create_token(&pool, "org", at(0)).await.unwrap();
+    assert_eq!(org_id, org());
+    let grant = authenticate(&pool, &token, at(0)).await.unwrap().unwrap();
+    assert_eq!(grant.org_id, org());
     assert_eq!(grant.scopes.len(), 3, "{:?}", grant.scopes);
     assert!(grant.scopes.contains(&ApiScope::QueuesWrite));
-    let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
-    assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
-
-    let second = bootstrap(&pool, &sim, kind, "7", at(60)).await.unwrap();
-    assert!(!second.created);
-    assert_eq!(
-        (second.org_id, second.connection_id),
-        (first.org_id, first.connection_id)
-    );
-    assert_eq!(orgs(&pool).await, [globex, acme]);
-    for token in [&first.token, &second.token] {
-        let grant = authenticate(&pool, token, at(60)).await.unwrap().unwrap();
-        assert_eq!(grant.org_id, first.org_id);
-    }
-    assert_eq!(sync_jobs(&pool).await, [read]);
     let mut tx = begin_system(&pool).await.unwrap();
     let audited: i64 =
         sqlx::query_scalar("SELECT count(*) FROM audit_log WHERE action = 'token.created'")
@@ -1044,15 +999,14 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
             .await
             .unwrap();
     drop(tx);
-    assert_eq!(audited, 2, "each token is in the audit log");
+    assert_eq!(audited, 1);
 
-    let unknown = bootstrap(&pool, &sim, kind, "8", at(0)).await;
+    let unknown = create_token(&pool, "missing", at(0)).await;
     assert!(
-        matches!(unknown, Err(PlatformError::Scm(ScmError::NotFound(_)))),
+        matches!(unknown, Err(PlatformError::UnknownOrganization(_))),
         "{:?}",
         unknown.err()
     );
-    assert_eq!(orgs(&pool).await.len(), 2);
 }
 
 type RepoRow = (String, String, String, String, String, String);
