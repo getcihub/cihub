@@ -17,11 +17,11 @@ use cihub_domain::{
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
-    Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, enqueue_job,
-    mark_dirty, mark_processed, pending_deliveries, release_leases, schedule_tick, until_next_tick,
+    Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
+    enqueue_job, mark_dirty, pending_deliveries, release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
-use cihub_store::{PgPool, begin_system, mark_facts_processed, pending_facts};
+use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
 use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
@@ -108,13 +108,13 @@ impl Reconciler {
         let given = pending_facts(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let given_ids: Vec<_> = given.iter().map(|e| e.id).collect();
         let mut written = log.write(conn, given).await?.len();
-        mark_facts_processed(conn, &given_ids, now).await?;
+        delete_facts(conn, &given_ids).await?;
         let mut facts = Vec::new();
         let mut jobs = Vec::new();
         let deliveries = pending_deliveries(conn, queue, INBOX_PER_RECONCILIATION).await?;
         let mut deferred = 0;
         for delivery in &deliveries {
-            let (processed, error) = match (self.translate)(&delivery.event, &delivery.payload) {
+            let processed = match (self.translate)(&delivery.event, &delivery.payload) {
                 Ok(read) => {
                     let work = Work {
                         target: &target,
@@ -122,16 +122,24 @@ impl Reconciler {
                         log: &log,
                         delivery,
                     };
-                    let processed = work.read(conn, read.event, &mut facts, &mut jobs).await?;
-                    (processed, None)
+                    work.read(conn, read.event, &mut facts, &mut jobs).await?
                 }
-                Err(err) => (true, Some(err.to_string())),
+                Err(err) => {
+                    warn!(
+                        delivery_id = delivery.delivery_id.as_str(),
+                        event = delivery.event.as_str(),
+                        error = &*err as &dyn Error,
+                        "delivery not translated"
+                    );
+                    true
+                }
             };
             if !processed {
                 deferred += 1;
                 continue;
             }
-            mark_processed(conn, &delivery.delivery_id, now, error.as_deref()).await?;
+
+            delete_delivery(conn, &delivery.delivery_id).await?;
         }
         let requested_mode = log.snapshot.requested_mode;
         if settings.mode.value != requested_mode {
@@ -471,8 +479,8 @@ struct ConnectionDelivery {
 /// Reads the deliveries of a connection without a queue (`DECISIONS.md` D103),
 /// and returns their number. A `merge` command requests its submission, whose
 /// job finds the queue by the base branch of the PR; a concluded check on the head of a
-/// `not_ready` item asks its queue to read the PR. A delivery that no queue
-/// uses is marked processed.
+/// `not_ready` item asks its queue to read the PR. A delivery read is deleted
+/// in the same transaction, except one that waits for the next pass.
 ///
 /// # Errors
 ///
@@ -487,8 +495,7 @@ pub async fn pass_connection_deliveries(
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, event, payload
          FROM webhook_inbox
-         WHERE routed_at IS NOT NULL AND processed_at IS NULL AND queue_id IS NULL
-           AND connection_id IS NOT NULL
+         WHERE queue_id IS NULL AND connection_id IS NOT NULL
          ORDER BY received_at, delivery_id
          LIMIT $1
          FOR UPDATE SKIP LOCKED",
@@ -503,16 +510,23 @@ pub async fn pass_connection_deliveries(
             connection: parse_id(&connection, &delivery_id)?,
             delivery_id: delivery_id.clone(),
         };
-        let error = match (reconciler.translate)(&event, &payload) {
-            Ok(read) => {
-                if !pass_delivery(&mut tx, &delivery, read.event, now).await? {
-                    continue;
-                }
-                None
+        let processed = match (reconciler.translate)(&event, &payload) {
+            Ok(read) => pass_delivery(&mut tx, &delivery, read.event, now).await?,
+            Err(err) => {
+                warn!(
+                    delivery_id,
+                    event,
+                    error = &*err as &dyn Error,
+                    "delivery not translated"
+                );
+                true
             }
-            Err(err) => Some(err.to_string()),
         };
-        mark_processed(&mut tx, &delivery_id, now, error.as_deref()).await?;
+        if !processed {
+            continue;
+        }
+
+        delete_delivery(&mut tx, &delivery_id).await?;
     }
     tx.commit().await?;
     Ok(count)

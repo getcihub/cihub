@@ -177,8 +177,9 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 - `test_groups` and `test_runs`: a group has several attempts.
 - `check_observations`: the API reads it for the run detail.
 - `events` and its monthly partitions, `jobs`, `queue_items`: the log and its projections.
-- Operator columns `jobs.last_error`, `jobs.locked_by`, `webhook_inbox.error`, `scm_connections.mode_reason`,
-  `scm_connections.suspended_at`: read by a person, written by the code.
+- Operator columns `jobs.last_error`, `jobs.locked_by`, `scm_connections.mode_reason`,
+  `scm_connections.suspended_at`: read by a person, written by the code. `webhook_inbox.error` is gone with D249:
+  a translation error is a log line.
 
 ## Order, verification, documents
 

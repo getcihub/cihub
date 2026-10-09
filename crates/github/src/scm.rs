@@ -1268,6 +1268,7 @@ impl Scm for GithubApp {
                 id: u64,
                 guid: String,
                 delivered_at: String,
+                status_code: u16,
             }
             let mut path = Some("/app/hook/deliveries?per_page=100".to_owned());
             let mut recent = Vec::new();
@@ -1285,6 +1286,7 @@ impl Scm for GithubApp {
                     recent.push(RecentDelivery {
                         delivery_id: attempt.guid,
                         attempt_id: attempt.id.to_string(),
+                        is_delivered: (200..300).contains(&attempt.status_code),
                     });
                 }
                 if !older {

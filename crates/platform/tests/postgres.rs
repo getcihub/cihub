@@ -10,13 +10,13 @@ use cihub_domain::{
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
     MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
-    backoff, begin_reconciliation, claim_jobs, complete_job, create_token, enqueue_job, fail_job,
-    lock_queue, maintenance_job, mark_processed, pending_deliveries, record_budgets,
+    backoff, begin_reconciliation, claim_jobs, complete_job, create_token, delete_delivery,
+    enqueue_job, fail_job, lock_queue, maintenance_job, pending_deliveries, record_budgets,
     release_leases, request_installations_sync, request_installations_sync_at_start,
     request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
-    run_sweep, run_sync_installation, run_sync_installations, run_sync_repos, run_worker,
-    schedule_tick, store_delivery, sync_installation_executor, sync_installation_job,
-    sync_repos_job, until_next_tick,
+    run_sync_installation, run_sync_installations, run_sync_repos, run_worker, schedule_tick,
+    store_delivery, sync_installation_executor, sync_installation_job, sync_repos_job,
+    until_next_tick,
 };
 use cihub_scm::sim::Sim;
 use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
@@ -168,10 +168,8 @@ async fn deliveries_come_in_order_until_processed(pool: PgPool) {
     };
     assert_eq!(ids(pending(&pool).await), ["d1", "d2", "d3"]);
     let mut tx = begin_system(&pool).await.unwrap();
-    mark_processed(&mut tx, "d1", at(10), None).await.unwrap();
-    mark_processed(&mut tx, "d2", at(10), Some("unknown action"))
-        .await
-        .unwrap();
+    delete_delivery(&mut tx, "d1").await.unwrap();
+    delete_delivery(&mut tx, "d2").await.unwrap();
     tx.commit().await.unwrap();
     assert_eq!(ids(pending(&pool).await), ["d3"]);
 }
@@ -708,24 +706,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         "maintenance:2026-10-10:1"
     );
 
-    for (id, processed) in [
-        ("old", now - Duration::days(8)),
-        ("recent", now - Duration::days(1)),
-    ] {
-        store(&pool, &delivery(id, 0)).await;
-        let mut tx = begin_system(&pool).await.unwrap();
-        mark_processed(&mut tx, id, processed, None).await.unwrap();
-        tx.commit().await.unwrap();
-    }
-    for (id, received) in [("unrouted-old", 22), ("unrouted-recent", 29)] {
-        let unrouted = Delivery {
-            org_id: None,
-            connection_id: None,
-            queue_id: None,
-            ..delivery(id, received * 86_400)
-        };
-        store(&pool, &unrouted).await;
-    }
+    store(&pool, &delivery("waiting", 0)).await;
     for (key, finished) in [
         ("old", now - Duration::days(4)),
         ("recent", now - Duration::days(1)),
@@ -744,7 +725,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
-    assert_eq!(deliveries, ["recent", "unrouted-recent"]);
+    assert_eq!(deliveries, ["waiting"]);
     let jobs: Vec<String> = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
         .fetch_all(&mut *tx)
         .await
@@ -811,20 +792,12 @@ fn unrouted(id: &str, event: &str, payload: serde_json::Value) -> Delivery {
     }
 }
 
-type RouteRow = (
-    String,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    bool,
-    bool,
-);
+type RouteRow = (String, Option<String>, Option<String>, Option<String>);
 
 async fn routes(pool: &PgPool) -> Vec<RouteRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT delivery_id, org_id, connection_id, queue_id, routed_at IS NOT NULL,
-                processed_at IS NOT NULL
+        "SELECT delivery_id, org_id, connection_id, queue_id
          FROM webhook_inbox ORDER BY delivery_id",
     )
     .fetch_all(&mut *tx)
@@ -904,40 +877,17 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
             o.clone(),
             c.clone(),
             Some(queue(2).to_string()),
-            true,
-            false,
         ),
         (
             "b-push".into(),
             o.clone(),
             c.clone(),
             Some(queue(3).to_string()),
-            true,
-            false,
         ),
-        (
-            "c-other-branch".into(),
-            o.clone(),
-            c.clone(),
-            None,
-            true,
-            false,
-        ),
-        ("d-rules".into(), o.clone(), c.clone(), None, true, false),
-        ("e-unknown".into(), None, None, None, true, true),
-        ("f-ignored".into(), None, None, None, true, true),
-        ("g-broken".into(), None, None, None, true, true),
-        (
-            "h-shared-branch".into(),
-            o.clone(),
-            c.clone(),
-            None,
-            true,
-            false,
-        ),
-        ("i-repos".into(), o.clone(), c.clone(), None, true, false),
-        ("j-repos-unknown".into(), None, None, None, true, true),
-        ("k-installation".into(), o, c, None, true, true),
+        ("c-other-branch".into(), o.clone(), c.clone(), None),
+        ("d-rules".into(), o.clone(), c.clone(), None),
+        ("h-shared-branch".into(), o.clone(), c.clone(), None),
+        ("i-repos".into(), o, c, None),
     ];
     let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while routes(&pool).await != expected {
@@ -988,14 +938,17 @@ async fn route_at(pool: &PgPool, now: OffsetDateTime, deliveries: &[Delivery]) {
         store(pool, delivery).await;
     }
     for _ in 0..50 {
-        if routes(pool).await.iter().all(|route| route.4) {
+        if routes(pool).await.iter().all(|route| route.2.is_some()) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
     cancel.cancel();
     router.await.unwrap().unwrap();
-    assert!(routes(pool).await.iter().all(|route| route.4), "routed");
+    assert!(
+        routes(pool).await.iter().all(|route| route.2.is_some()),
+        "routed"
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1011,35 +964,6 @@ async fn a_delivery_of_a_connection_read_more_than_an_hour_ago_asks_for_one_sync
         installation_jobs(&pool).await,
         ["sync_installation:1-20260910T01:1"]
     );
-}
-
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn the_sweep_asks_again_only_for_the_deliveries_missing_from_the_inbox(pool: PgPool) {
-    seed(&pool).await;
-    let repo = RepoRef {
-        connection: ConnectionRef {
-            id: connection(),
-            external_id: "1".into(),
-        },
-        external_id: "1".into(),
-        namespace: "acme".into(),
-        name: "app".into(),
-    };
-    let sim = Sim::new();
-    let root = sim.add_repo(&repo, "main", &[]);
-    let alice = ScmUser {
-        external_id: "3".into(),
-        login: "alice".into(),
-    };
-    for branch in ["a", "b", "c"] {
-        sim.push(&repo, branch, &root, &alice).unwrap();
-    }
-    let sent = sim.take_deliveries();
-    for id in ["sim-1", "sim-3"] {
-        store(&pool, &unrouted(id, "push", json!({}))).await;
-    }
-    assert_eq!(run_sweep(&pool, &sim, at(0)).await.unwrap(), 1);
-    assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
 }
 
 async fn sync_jobs(pool: &PgPool) -> Vec<String> {
@@ -1175,14 +1099,13 @@ async fn a_delivery_of_a_new_installation_creates_its_organization(pool: PgPool)
     )
     .await;
     let mut tx = begin_system(&pool).await.unwrap();
-    let unprocessed: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM webhook_inbox WHERE processed_at IS NULL")
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap();
+    let waiting: i64 = sqlx::query_scalar("SELECT count(*) FROM webhook_inbox")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
     let jobs = claim_jobs(&mut tx, "w", at(0), 10).await.unwrap();
     tx.commit().await.unwrap();
-    assert_eq!(unprocessed, 0);
+    assert_eq!(waiting, 0);
 
     for job in &jobs {
         run_sync_installation(&pool, &sim, KIND, job, at(0))

@@ -13,8 +13,8 @@ use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
 pub use events::{
-    append_events, create_event_partitions, deposit_fact, event_kind, load_events,
-    mark_facts_processed, next_month, pending_facts,
+    append_events, create_event_partitions, delete_facts, deposit_fact, event_kind, load_events,
+    next_month, pending_facts,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
