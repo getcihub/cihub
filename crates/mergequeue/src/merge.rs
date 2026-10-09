@@ -60,6 +60,7 @@ pub(crate) fn merge_job(target: &QueueTarget, merge: &Merge) -> Job {
     };
     let subject = run_id.map_or_else(|| "direct".to_owned(), |run_id| run_id.to_string());
     let key = format!("{MERGE_PR}:{}-{subject}:1", merge.item_id);
+
     job(target, key, MERGE_PR, JobClass::Merge, json!(request))
 }
 
@@ -137,6 +138,7 @@ pub(crate) async fn merge_pr(
     let target = target_of(pool, job).await?;
     let settings = &target.settings()?;
     let item_id = request.item_id;
+
     if !still_to_merge(pool, &request).await? {
         info!(%item_id, "item no longer waits for its merge");
         return Ok(());
@@ -199,13 +201,16 @@ async fn land(
     let pr = scm
         .pull_request(&target.repo, request.pr_number, class)
         .await?;
+
     if pr.state == PrState::Merged {
         return Ok(Landed::AlreadyMerged);
     }
+
     if request.run_id.is_none() && !direct_merge_possible(scm, settings, target, &pr, class).await?
     {
         return Ok(Landed::Unavailable);
     }
+
     let method = settings.merge_method.value;
     let title = if method == MergeMethod::FastForward {
         String::new()
@@ -225,10 +230,12 @@ async fn land(
         title,
         message: String::new(),
     };
+
     if settings.status_check_enabled.value {
         let status = merging_status(&target.target_branch, &request.head_sha);
         scm.set_status(&target.repo, &status, class).await?;
     }
+
     match scm.merge_pr(&target.repo, &merge, class).await {
         // The target moved: the push restarts the group (`DECISIONS.md` D124).
         Err(ScmError::NotFastForward) => Err(ScmError::Unavailable(
@@ -254,6 +261,7 @@ async fn direct_merge_possible(
     let Some(base) = scm.branch_head(repo, &target.target_branch, class).await? else {
         return Ok(false);
     };
+
     let names = match required_statuses(scm, target, settings, &base, class).await {
         Ok((names, _)) => names,
         Err(Step::Transient(text) | Step::Passing(text)) => {
@@ -261,16 +269,20 @@ async fn direct_merge_possible(
         }
         Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
     };
+
     if !names.iter().all(|name| check_passed(pr, name)) {
         return Ok(false);
     }
+
     let rules = scm
         .required_checks(repo, &target.target_branch, class)
         .await?;
     let own = queue_status_context(&target.target_branch);
+
     if mergeability(pr, &rules, &own) != Mergeability::Mergeable {
         return Ok(false);
     }
+
     scm.is_ancestor(repo, &base, &pr.head_sha, class).await
 }
 
@@ -293,7 +305,9 @@ async fn still_to_merge(pool: &PgPool, request: &MergePr) -> Result<bool, Failur
     .bind(request.run_id.map(|run_id| run_id.to_string()))
     .fetch_one(&mut *tx)
     .await?;
+
     tx.commit().await?;
+
     Ok(to_merge)
 }
 
@@ -346,6 +360,7 @@ mod tests {
             Err(_) => None,
         };
         let unavailable = || ScmError::Unavailable("502".into());
+
         assert_eq!(error(ScmError::HeadChanged, 1), Some(JobError::HeadChanged));
         assert_eq!(
             error(ScmError::Forbidden("rules".into()), 1),
@@ -364,8 +379,10 @@ mod tests {
             error(ScmError::MergeInProgress, MERGE_ATTEMPTS),
             Some(JobError::MergeAlreadyInProgress)
         );
+
         let soon = now + Duration::minutes(10);
         let late = now + Duration::minutes(20);
+
         assert_eq!(error(ScmError::RateLimited { until: soon }, 3), None);
         assert_eq!(
             error(ScmError::RateLimited { until: late }, 1),
@@ -389,16 +406,19 @@ mod tests {
             tested_sha: "test".into(),
         };
         let job = merge_job(&target, &merge);
+
         assert_eq!(
             job.idempotency_key,
             format!("merge_pr:{}-{run_id}:1", merge.item_id)
         );
         assert_eq!(job.class, JobClass::Merge);
+
         // A direct merge has its own key (`DECISIONS.md` D153).
         let direct = Merge {
             run_id: None,
             ..merge
         };
+
         assert_eq!(
             merge_job(&target, &direct).idempotency_key,
             format!("merge_pr:{}-direct:1", direct.item_id)

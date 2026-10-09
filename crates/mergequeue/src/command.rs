@@ -123,14 +123,17 @@ pub(crate) async fn run_pr_command(
     let name = request.command.name();
     let refuse = |text: String| reply(scm, &repo.repo, number, name, text, class);
     let author = ScmUser::from(&request.requested_by);
+
     if scm.permission(&repo.repo, &author, class).await? < Permission::Write {
         info!(pr_number = number, "command refused: permission");
         return refuse("the command needs the write permission on the repository.".to_owned())
             .await;
     }
+
     let Some((queue_id, item_id, state)) = live_item(pool, repo.repo_id, number).await? else {
         return refuse("this PR has no item in a queue.".to_owned()).await;
     };
+
     let target = load_target(pool, queue_id).await?;
     if !target.settings()?.commands_enabled.value {
         return refuse(format!(
@@ -139,6 +142,7 @@ pub(crate) async fn run_pr_command(
         ))
         .await;
     }
+
     let kind = match request.command {
         ItemCommand::Cancel => EventKind::ItemCancelRequested {
             item_id,
@@ -159,15 +163,19 @@ pub(crate) async fn run_pr_command(
     };
     let mut tx = begin_system(pool).await?;
     let user_id = user_of(&mut tx, &author).await?;
+
     tx.commit().await?;
+
     let facts = vec![(Actor::User { user_id }, kind)];
     give_back_facts(pool, &target, facts, now).await?;
     acknowledge(scm, &repo.repo, Some(&request.comment_id), class).await;
+
     info!(
         pr_number = number,
         command = name,
         "command given to the queue"
     );
+
     Ok(())
 }
 
@@ -191,10 +199,13 @@ async fn live_item(
     .bind(i64::try_from(number).unwrap_or(i64::MAX))
     .fetch_optional(&mut *tx)
     .await?;
+
     tx.commit().await?;
+
     let Some((queue, item, state)) = row else {
         return Ok(None);
     };
+
     let never = |text: String| Failure::Never(text);
     Ok(Some((
         queue.parse().map_err(|_| never(format!("queue {queue}")))?,
