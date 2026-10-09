@@ -17,8 +17,7 @@ from it.
 
 | Entity               | Identity                     | Meaning                                                                                                                                       | Code (`cihub-domain`)  |
 | -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Organization         | `org_id`                     | Tenancy boundary: all the other tables carry `org_id`, except `scm_instances` and `users`                                                     | `OrgId`                |
-| SCM instance         | `scm_instance_id`            | An instance of an SCM (github.com, a GitHub Enterprise Server); an SCM identifier is unique within its instance only                          | `ScmInstanceId`        |
+| Organization         | `org_id`                     | Tenancy boundary: all the other tables carry `org_id`, except `users`                                                                         | `OrgId`                |
 | Connection           | `connection_id`              | The means by which CIHub reaches the repositories of an SCM account, named by `account_external_id` (`ConnectionKind`); carries the budget, the quotas and the degraded modes | `ConnectionId`         |
 | Repository           | `repo_id`                    | A repository attached to a connection; a connection can cover several repositories                                                            | `RepoId`               |
 | Queue                | `queue_id`                   | A target branch of a repository, with a name unique within the repository, its state, its mode and its settings                               | `Queue`                |
@@ -29,7 +28,8 @@ from it.
 | Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
 | Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
 
-Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). Each closed vocabulary is an
+Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). An SCM identifier is an
+`external_id`, unique within the deployment, which serves a single SCM (D246). Each closed vocabulary is an
 enumeration whose text value (`snake_case`) is the same in the API, the webhooks, the analytics and Postgres.
 
 ## Log

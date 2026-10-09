@@ -9,7 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
-use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId, ScmInstanceId};
+use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId};
 use ring::hmac;
 use secrecy::ExposeSecret;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -216,15 +216,13 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let mut stored = None;
     for _ in 0..100 {
         let mut tx = cihub_store::begin_system(&pool).await.unwrap();
-        let row: (String, String, bool) = sqlx::query_as(
-            "SELECT i.base_url, w.event, w.processed_at IS NOT NULL FROM webhook_inbox w
-             JOIN scm_instances i ON i.id = w.scm_instance_id",
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .unwrap();
+        let row: (String, bool) =
+            sqlx::query_as("SELECT event, processed_at IS NOT NULL FROM webhook_inbox")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
         tx.rollback().await.unwrap();
-        let done = row.2;
+        let done = row.1;
         stored = Some(row);
         if done {
             break;
@@ -232,8 +230,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     stop(child);
-    let (base_url, event, processed) = stored.unwrap();
-    assert!(base_url.starts_with("http://127.0.0.1:"), "{base_url}");
+    let (event, processed) = stored.unwrap();
     assert_eq!((event.as_str(), processed), ("ping", true));
 }
 
@@ -258,20 +255,15 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
 
 async fn two_queues(pool: &PgPool) -> String {
     let org = OrgId::from_ulid(Ulid(1));
-    let instance = ScmInstanceId::from_ulid(Ulid(2));
     let connection = ConnectionId::from_ulid(Ulid(4));
     let repo = RepoId::from_ulid(Ulid(5));
     let mut tx = cihub_store::begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO scm_instances (id, kind, base_url)
-             VALUES ('{instance}', 'github', 'https://github.com');
-         INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('{connection}', '{org}', '{instance}', '1', 'github_app', '1');
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
-                            name, default_branch)
-             VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app', 'main');
+        "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('{connection}', '{org}', '1', 'github_app', '1');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
              VALUES ('{main}', '{org}', '{repo}', 'main', 'main'),
                     ('{hotfix}', '{org}', '{repo}', 'main', 'hotfix');",

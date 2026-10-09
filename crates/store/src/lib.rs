@@ -6,7 +6,6 @@
 //! is missing.
 
 mod events;
-mod instances;
 mod tokens;
 mod users;
 
@@ -17,7 +16,6 @@ pub use events::{
     append_events, create_event_partitions, deposit_fact, event_kind, load_events,
     mark_facts_processed, next_month, pending_facts,
 };
-pub use instances::ensure_scm_instance;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};

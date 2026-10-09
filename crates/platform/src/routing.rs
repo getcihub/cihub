@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::time::Duration;
 
-use cihub_domain::{ConnectionId, OrgId, QueueId, RunId, ScmInstanceId, run_of_test_branch};
+use cihub_domain::{ConnectionId, OrgId, QueueId, RunId, run_of_test_branch};
 use cihub_scm::{ScmDelivery, ScmEvent};
 use cihub_store::{PgPool, begin_system};
 use serde_json::Value;
@@ -32,8 +32,7 @@ pub(crate) async fn unrouted_deliveries(
     limit: i64,
 ) -> Result<Vec<Delivery>, PlatformError> {
     let rows: Vec<DeliveryRow> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, payload,
-                received_at
+        "SELECT delivery_id, org_id, connection_id, queue_id, event, payload, received_at
          FROM webhook_inbox
          WHERE routed_at IS NULL
          ORDER BY received_at, delivery_id
@@ -56,7 +55,6 @@ pub(crate) async fn unrouted_deliveries(
 /// Postgres fails, or a row does not match the identifiers of `cihub-domain`.
 pub async fn find_route(
     conn: &mut PgConnection,
-    scm_instance_id: ScmInstanceId,
     delivery: &ScmDelivery,
 ) -> Result<Route, PlatformError> {
     if delivery.event == ScmEvent::Ignored {
@@ -68,14 +66,12 @@ pub async fn find_route(
     let Some(external_id) = &delivery.connection_external_id else {
         return Ok(Route::default());
     };
-    let connection: Option<(String, String)> = sqlx::query_as(
-        "SELECT org_id, id FROM scm_connections WHERE scm_instance_id = $1 AND external_id = $2",
-    )
-    .bind(scm_instance_id.to_string())
-    .bind(external_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(PlatformError::Query)?;
+    let connection: Option<(String, String)> =
+        sqlx::query_as("SELECT org_id, id FROM scm_connections WHERE external_id = $1")
+            .bind(external_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(PlatformError::Query)?;
     let Some((org_id, connection_id)) = connection else {
         return Ok(Route::default());
     };
@@ -89,7 +85,7 @@ pub async fn find_route(
             repo_external_id,
             branch,
             ..
-        } => queue_of_branch(conn, scm_instance_id, repo_external_id, branch).await?,
+        } => queue_of_branch(conn, repo_external_id, branch).await?,
         ScmEvent::CheckChanged {
             repo_external_id,
             sha,
@@ -99,7 +95,7 @@ pub async fn find_route(
             let run_id = branches
                 .iter()
                 .find_map(|branch| run_of_test_branch(branch));
-            queue_of_run(conn, scm_instance_id, repo_external_id, run_id, sha).await?
+            queue_of_run(conn, repo_external_id, run_id, sha).await?
         }
         _ => None,
     };
@@ -123,16 +119,14 @@ pub async fn find_route(
 
 async fn queue_of_branch(
     conn: &mut PgConnection,
-    scm_instance_id: ScmInstanceId,
     repo_external_id: &str,
     branch: &str,
 ) -> Result<Option<String>, PlatformError> {
     sqlx::query_scalar(
         "SELECT min(q.id) FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.scm_instance_id = $1 AND r.external_id = $2 AND q.target_branch = $3
+         WHERE r.external_id = $1 AND q.target_branch = $2
          HAVING count(*) = 1",
     )
-    .bind(scm_instance_id.to_string())
     .bind(repo_external_id)
     .bind(branch)
     .fetch_optional(conn)
@@ -142,7 +136,6 @@ async fn queue_of_branch(
 
 async fn queue_of_run(
     conn: &mut PgConnection,
-    scm_instance_id: ScmInstanceId,
     repo_external_id: &str,
     run_id: Option<RunId>,
     sha: &str,
@@ -151,13 +144,12 @@ async fn queue_of_run(
         "SELECT t.queue_id FROM test_runs t
          JOIN queues q ON q.id = t.queue_id
          JOIN repos r ON r.id = q.repo_id
-         WHERE (t.id = $1 OR t.test_sha = $2) AND r.scm_instance_id = $3 AND r.external_id = $4
+         WHERE (t.id = $1 OR t.test_sha = $2) AND r.external_id = $3
          ORDER BY t.id = $1 DESC, t.started_at DESC
          LIMIT 1",
     )
     .bind(run_id.map(|id| id.to_string()))
     .bind(sha)
-    .bind(scm_instance_id.to_string())
     .bind(repo_external_id)
     .fetch_optional(conn)
     .await
@@ -166,18 +158,16 @@ async fn queue_of_run(
 
 pub(crate) async fn route_delivery(
     conn: &mut PgConnection,
-    scm_instance_id: ScmInstanceId,
     delivery_id: &str,
     route: Route,
     now: OffsetDateTime,
 ) -> Result<bool, PlatformError> {
     let done = sqlx::query(
         "UPDATE webhook_inbox
-         SET org_id = $3, connection_id = $4, queue_id = $5, routed_at = $6,
-             processed_at = CASE WHEN $7 THEN $6 END
-         WHERE scm_instance_id = $1 AND delivery_id = $2 AND routed_at IS NULL",
+         SET org_id = $2, connection_id = $3, queue_id = $4, routed_at = $5,
+             processed_at = CASE WHEN $6 THEN $5 END
+         WHERE delivery_id = $1 AND routed_at IS NULL",
     )
-    .bind(scm_instance_id.to_string())
     .bind(delivery_id)
     .bind(route.org_id.map(|id| id.to_string()))
     .bind(route.connection_id.map(|id| id.to_string()))
@@ -243,7 +233,7 @@ where
         let delivery_id = delivery.delivery_id.as_str();
         let (route, repos_changed) = match translate(&delivery.event, &delivery.payload) {
             Ok(read) => {
-                let route = find_route(&mut tx, delivery.scm_instance_id, &read).await?;
+                let route = find_route(&mut tx, &read).await?;
                 (route, matches!(read.event, ScmEvent::ReposChanged { .. }))
             }
             Err(err) => {
@@ -259,13 +249,11 @@ where
                 (route, false)
             }
         };
-        let routed =
-            route_delivery(&mut tx, delivery.scm_instance_id, delivery_id, route, now).await?;
+        let routed = route_delivery(&mut tx, delivery_id, route, now).await?;
         if let (true, true, Some(org_id), Some(connection)) =
             (routed, repos_changed, route.org_id, route.connection_id)
         {
-            let instance = delivery.scm_instance_id;
-            request_repo_sync(&mut tx, org_id, instance, connection, delivery_id, now).await?;
+            request_repo_sync(&mut tx, org_id, connection, delivery_id, now).await?;
         }
         info!(
             delivery_id,

@@ -158,7 +158,7 @@ pub(crate) async fn run_pr_command(
         }
     };
     let mut tx = begin_system(pool).await?;
-    let user_id = user_of(&mut tx, target.scm_instance_id, &author).await?;
+    let user_id = user_of(&mut tx, &author).await?;
     tx.commit().await?;
     let facts = vec![(Actor::User { user_id }, kind)];
     give_back_facts(pool, &target, facts, now).await?;

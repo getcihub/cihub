@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use cihub_domain::{
     ApiScope, ApiTokenId, AuditEntryId, ConnectionId, ConnectionKind, JobClass, OrgId, RepoId,
-    ScmInstanceId,
 };
 use cihub_scm::{ConnectionRef, Scm, ScmAccount, ScmError};
 use cihub_store::{NewApiToken, PgPool, begin_system, create_api_token, new_api_token_secret};
@@ -30,7 +29,7 @@ pub struct Bootstrapped {
 }
 
 /// Starts an organization from the connection `external_id` of the SCM
-/// `instance` (`DECISIONS.md` D154, D155): the organization, named by the
+/// (`DECISIONS.md` D154, D155): the organization, named by the
 /// account of the connection, and the connection, then a request to read its
 /// repositories and a new API token with every scope. On a connection already known, creates only the token,
 /// so that an operator gets an organization back. The read has the key of the
@@ -43,7 +42,6 @@ pub struct Bootstrapped {
 pub async fn bootstrap(
     pool: &PgPool,
     scm: &dyn Scm,
-    instance: ScmInstanceId,
     kind: ConnectionKind,
     external_id: &str,
     now: OffsetDateTime,
@@ -55,9 +53,8 @@ pub async fn bootstrap(
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
     let known: Option<(String, String)> = sqlx::query_as(
         "SELECT org_id, id FROM scm_connections
-         WHERE scm_instance_id = $1 AND kind = $2::connection_kind AND external_id = $3",
+         WHERE kind = $1::connection_kind AND external_id = $2",
     )
-    .bind(instance.to_string())
     .bind(kind.as_str())
     .bind(external_id)
     .fetch_optional(&mut *tx)
@@ -73,10 +70,10 @@ pub async fn bootstrap(
         (org_id, connection_id, false)
     } else {
         let (org_id, connection_id) =
-            create_organization(&mut tx, instance, kind, external_id, &account, now).await?;
+            create_organization(&mut tx, kind, external_id, &account, now).await?;
         (org_id, connection_id, true)
     };
-    let job = sync_repos_job(org_id, instance, connection_id, &hour_window(now));
+    let job = sync_repos_job(org_id, connection_id, &hour_window(now));
     enqueue_job(&mut tx, &job, now, now).await?;
     let token = new_api_token_secret().map_err(PlatformError::Store)?;
     #[expect(
@@ -123,7 +120,6 @@ pub async fn bootstrap(
 
 async fn create_organization(
     conn: &mut PgConnection,
-    instance: ScmInstanceId,
     kind: ConnectionKind,
     external_id: &str,
     account: &ScmAccount,
@@ -142,13 +138,12 @@ async fn create_organization(
         .await
         .map_err(PlatformError::Query)?;
     sqlx::query(
-        "INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id, created_at)
-         VALUES ($1, $2, $3, $4, $5::connection_kind, $6, $7)",
+        "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      created_at)
+         VALUES ($1, $2, $3, $4::connection_kind, $5, $6)",
     )
     .bind(connection_id.to_string())
     .bind(org_id.to_string())
-    .bind(instance.to_string())
     .bind(&account.external_id)
     .bind(kind.as_str())
     .bind(external_id)
@@ -159,18 +154,13 @@ async fn create_organization(
     Ok((org_id, connection_id))
 }
 
-pub fn sync_repos_job(
-    org_id: OrgId,
-    instance: ScmInstanceId,
-    connection: ConnectionId,
-    cause: &str,
-) -> Job {
+pub fn sync_repos_job(org_id: OrgId, connection: ConnectionId, cause: &str) -> Job {
     Job {
         idempotency_key: format!("{SYNC_REPOS}:{connection}-{cause}:1"),
         job_type: SYNC_REPOS.to_owned(),
         class: JobClass::Repair,
         org_id: Some(org_id),
-        connection: Some((instance, connection)),
+        connection: Some(connection),
         queue_id: None,
         payload: json!({}),
         attempts: 0,
@@ -180,12 +170,11 @@ pub fn sync_repos_job(
 pub(crate) async fn request_repo_sync(
     conn: &mut PgConnection,
     org_id: OrgId,
-    instance: ScmInstanceId,
     connection: ConnectionId,
     delivery_id: &str,
     now: OffsetDateTime,
 ) -> Result<bool, PlatformError> {
-    let job = sync_repos_job(org_id, instance, connection, delivery_id);
+    let job = sync_repos_job(org_id, connection, delivery_id);
     enqueue_job(conn, &job, now, now).await
 }
 
@@ -200,8 +189,8 @@ pub async fn request_repo_syncs(
     conn: &mut PgConnection,
     now: OffsetDateTime,
 ) -> Result<usize, PlatformError> {
-    let connections: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT org_id, scm_instance_id, id FROM scm_connections
+    let connections: Vec<(String, String)> = sqlx::query_as(
+        "SELECT org_id, id FROM scm_connections
          WHERE suspended_at IS NULL ORDER BY id",
     )
     .fetch_all(&mut *conn)
@@ -209,11 +198,10 @@ pub async fn request_repo_syncs(
     .map_err(PlatformError::Query)?;
     let window = hour_window(now);
     let mut requested = 0;
-    for (org, instance, connection) in connections {
+    for (org, connection) in connections {
         let read = || PlatformError::read("connection", &connection);
         let job = sync_repos_job(
             org.parse().map_err(read())?,
-            instance.parse().map_err(read())?,
             connection.parse().map_err(read())?,
             &window,
         );
@@ -237,7 +225,7 @@ pub async fn run_sync_repos(
     scm: &dyn Scm,
     job: &Job,
 ) -> Result<usize, PlatformError> {
-    let (Some(org_id), Some((instance, connection_id))) = (job.org_id, job.connection) else {
+    let (Some(org_id), Some(connection_id)) = (job.org_id, job.connection) else {
         return Err(PlatformError::JobWithoutConnection(
             job.idempotency_key.clone(),
         ));
@@ -272,19 +260,18 @@ pub async fn run_sync_repos(
     };
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
     let written = sqlx::query(
-        "INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
-                            name, default_branch)
-         SELECT r.id, $2, $3, $4, r.external_id, r.namespace, r.name, r.default_branch
-         FROM unnest($1::text[], $5::text[], $6::text[], $7::text[], $8::text[])
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                            default_branch)
+         SELECT r.id, $2, $3, r.external_id, r.namespace, r.name, r.default_branch
+         FROM unnest($1::text[], $4::text[], $5::text[], $6::text[], $7::text[])
               AS r (id, external_id, namespace, name, default_branch)
-         ON CONFLICT (scm_instance_id, external_id) DO UPDATE
+         ON CONFLICT (external_id) DO UPDATE
          SET connection_id = EXCLUDED.connection_id, namespace = EXCLUDED.namespace,
              name = EXCLUDED.name, default_branch = EXCLUDED.default_branch
          WHERE repos.org_id = EXCLUDED.org_id",
     )
     .bind(&ids)
     .bind(org_id.to_string())
-    .bind(instance.to_string())
     .bind(connection_id.to_string())
     .bind(column(|repo| &repo.external_id))
     .bind(column(|repo| &repo.namespace))
@@ -340,12 +327,8 @@ mod tests {
                 .replace_minute(minute)
                 .unwrap()
         };
-        let (org, instance, connection) = (
-            OrgId::from_ulid(Ulid(1)),
-            ScmInstanceId::from_ulid(Ulid(2)),
-            ConnectionId::from_ulid(Ulid(3)),
-        );
-        let key = |cause: &str| sync_repos_job(org, instance, connection, cause).idempotency_key;
+        let (org, connection) = (OrgId::from_ulid(Ulid(1)), ConnectionId::from_ulid(Ulid(2)));
+        let key = |cause: &str| sync_repos_job(org, connection, cause).idempotency_key;
         assert_eq!(key(&hour_window(at(9, 1))), key(&hour_window(at(9, 59))));
         assert_ne!(key(&hour_window(at(9, 59))), key(&hour_window(at(10, 0))));
         assert_eq!(key("d-1"), format!("sync_repos:{connection}-d-1:1"));

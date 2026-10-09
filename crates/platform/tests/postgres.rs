@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use cihub_domain::{
-    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, OrgId, QueueId, ScmInstanceId,
+    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, OrgId, QueueId,
 };
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
@@ -33,10 +33,6 @@ fn org() -> OrgId {
     OrgId::from_ulid(Ulid(1))
 }
 
-fn instance(n: u128) -> ScmInstanceId {
-    ScmInstanceId::from_ulid(Ulid(n))
-}
-
 fn connection() -> ConnectionId {
     ConnectionId::from_ulid(Ulid(1))
 }
@@ -46,20 +42,15 @@ fn at(seconds: i64) -> OffsetDateTime {
 }
 
 async fn seed(pool: &PgPool) {
-    let (org, i1, i2, c) = (org(), instance(1), instance(2), connection());
+    let (org, c) = (org(), connection());
     let (q1, q2, q3) = (queue(1), queue(2), queue(3));
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO scm_instances (id, kind, base_url) VALUES
-             ('{i1}', 'github', 'https://github.com'),
-             ('{i2}', 'github', 'https://github.example.com');
-         INSERT INTO orgs (id, slug) VALUES ('{org}', 'org');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('{c}', '{org}', '{i1}', '1', 'github_app', '1');
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
-                            default_branch)
-             VALUES ('r', '{org}', '{i1}', '{c}', '1', 'acme', 'app', 'main');
+        "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('{c}', '{org}', '1', 'github_app', '1');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('r', '{org}', '{c}', '1', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty, next_tick_at) VALUES
              ('{q1}', '{org}', 'r', 'main', 'main', true, NULL),
              ('{q2}', '{org}', 'r', 'release', 'release', false, '{}'),
@@ -126,7 +117,6 @@ async fn one_transaction_at_a_time_holds_the_lock_of_a_queue(pool: PgPool) {
 
 fn delivery(id: &str, received: i64) -> Delivery {
     Delivery {
-        scm_instance_id: instance(1),
         delivery_id: id.to_owned(),
         org_id: Some(org()),
         connection_id: Some(connection()),
@@ -161,14 +151,6 @@ async fn a_copy_of_a_delivery_changes_nothing(pool: PgPool) {
     };
     assert!(!store(&pool, &copy).await);
     assert_eq!(pending(&pool).await, [first]);
-    let unrouted = Delivery {
-        scm_instance_id: instance(2),
-        org_id: None,
-        connection_id: None,
-        queue_id: None,
-        ..delivery("d1", 0)
-    };
-    assert!(store(&pool, &unrouted).await);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -182,10 +164,8 @@ async fn deliveries_come_in_order_until_processed(pool: PgPool) {
     };
     assert_eq!(ids(pending(&pool).await), ["d1", "d2", "d3"]);
     let mut tx = begin_system(&pool).await.unwrap();
-    mark_processed(&mut tx, instance(1), "d1", at(10), None)
-        .await
-        .unwrap();
-    mark_processed(&mut tx, instance(1), "d2", at(10), Some("unknown action"))
+    mark_processed(&mut tx, "d1", at(10), None).await.unwrap();
+    mark_processed(&mut tx, "d2", at(10), Some("unknown action"))
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -222,7 +202,7 @@ fn job(key: &str, class: JobClass) -> Job {
         job_type: "test".to_owned(),
         class,
         org_id: Some(org()),
-        connection: Some((instance(1), connection())),
+        connection: Some(connection()),
         queue_id: Some(queue(1)),
         payload: json!({}),
         attempts: 0,
@@ -730,9 +710,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
     ] {
         store(&pool, &delivery(id, 0)).await;
         let mut tx = begin_system(&pool).await.unwrap();
-        mark_processed(&mut tx, instance(1), id, processed, None)
-            .await
-            .unwrap();
+        mark_processed(&mut tx, id, processed, None).await.unwrap();
         tx.commit().await.unwrap();
     }
     for (id, received) in [("unrouted-old", 22), ("unrouted-recent", 29)] {
@@ -992,7 +970,7 @@ async fn the_sweep_asks_again_only_for_the_deliveries_missing_from_the_inbox(poo
     for id in ["sim-1", "sim-3"] {
         store(&pool, &unrouted(id, "push", json!({}))).await;
     }
-    assert_eq!(run_sweep(&pool, &sim, instance(1), at(0)).await.unwrap(), 1);
+    assert_eq!(run_sweep(&pool, &sim, at(0)).await.unwrap(), 1);
     assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
 }
 
@@ -1032,9 +1010,7 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
     sim.add_account("7", account);
     let kind = ConnectionKind::GithubApp;
 
-    let first = bootstrap(&pool, &sim, instance(1), kind, "7", at(0))
-        .await
-        .unwrap();
+    let first = bootstrap(&pool, &sim, kind, "7", at(0)).await.unwrap();
     assert!(first.created);
     let globex = ("globex".to_owned(), "70".to_owned(), "7".to_owned());
     let acme = ("org".to_owned(), "1".to_owned(), "1".to_owned());
@@ -1049,9 +1025,7 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
     let read = format!("sync_repos:{}-20260910T00:1", first.connection_id);
     assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
 
-    let second = bootstrap(&pool, &sim, instance(1), kind, "7", at(60))
-        .await
-        .unwrap();
+    let second = bootstrap(&pool, &sim, kind, "7", at(60)).await.unwrap();
     assert!(!second.created);
     assert_eq!(
         (second.org_id, second.connection_id),
@@ -1072,7 +1046,7 @@ async fn a_bootstrap_starts_an_organization_and_a_second_one_gives_a_token(pool:
     drop(tx);
     assert_eq!(audited, 2, "each token is in the audit log");
 
-    let unknown = bootstrap(&pool, &sim, instance(1), kind, "8", at(0)).await;
+    let unknown = bootstrap(&pool, &sim, kind, "8", at(0)).await;
     assert!(
         matches!(unknown, Err(PlatformError::Scm(ScmError::NotFound(_)))),
         "{:?}",
@@ -1110,16 +1084,13 @@ fn sim_repo(connection: &str, external_id: &str, name: &str) -> RepoRef {
 async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     seed(&pool).await;
     let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::raw_sql(AssertSqlSafe(format!(
+    sqlx::raw_sql(
         "INSERT INTO orgs (id, slug) VALUES ('other', 'other');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('c2', 'other', '{i1}', '2', 'github_app', '2');
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace, name,
-                            default_branch)
-             VALUES ('r4', 'other', '{i1}', 'c2', '4', 'other', 'kept', 'main');",
-        i1 = instance(1),
-    )))
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('c2', 'other', '2', 'github_app', '2');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('r4', 'other', 'c2', '4', 'other', 'kept', 'main');",
+    )
     .execute(&mut *tx)
     .await
     .unwrap();
@@ -1130,7 +1101,7 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     sim.add_repo(&sim_repo("1", "4", "taken"), "main", &[]);
     sim.add_repo(&sim_repo("9", "3", "elsewhere"), "main", &[]);
 
-    let job = sync_repos_job(org(), instance(1), connection(), "w");
+    let job = sync_repos_job(org(), connection(), "w");
     assert_eq!(run_sync_repos(&pool, &sim, &job).await.unwrap(), 2);
     let row = |id: &str, org: &str, connection: &str, namespace: &str, name: &str, branch: &str| {
         (
