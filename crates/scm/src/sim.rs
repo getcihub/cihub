@@ -4,6 +4,7 @@
 //! webhook deliveries. It has no clock: a test gives every time.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
 use cihub_domain::{
@@ -166,9 +167,16 @@ struct State {
     random: Option<RandomFaults>,
     calls: Vec<SimCall>,
     deliveries: Vec<ScmDelivery>,
-    attempts: Vec<(String, ScmDelivery)>,
+    attempts: Vec<Attempt>,
     redelivered: Vec<usize>,
     delivered: u64,
+}
+
+#[derive(Clone, Debug)]
+struct Attempt {
+    delivery_id: String,
+    delivery: ScmDelivery,
+    is_delivered: bool,
 }
 
 /// The simulator. Every method takes `&self`, so that the tests and the
@@ -586,34 +594,32 @@ impl Sim {
     /// `sim-n`; an attempt asked again keeps the identifier of its delivery.
     pub fn take_deliveries(&self) -> Vec<ScmDelivery> {
         self.with(|state| {
-            let mut taken = std::mem::take(&mut state.deliveries);
-            for delivery in &taken {
-                state.delivered += 1;
-                let id = format!("sim-{}", state.delivered);
-                state.attempts.push((id, delivery.clone()));
-            }
-            for attempt in std::mem::take(&mut state.redelivered) {
-                let again = state.attempts[attempt].clone();
-                taken.push(again.1.clone());
-                state.attempts.push(again);
-            }
-            taken
+            let taken = state.take_attempts();
+            state.attempts[taken]
+                .iter()
+                .map(|attempt| attempt.delivery.clone())
+                .collect()
         })
     }
 
     /// The deliveries sent since the last take, lost, sent twice and
-    /// reordered as `faults` says.
+    /// reordered as `faults` says. A lost attempt is not delivered.
     pub fn take_deliveries_with(&self, faults: &mut WebhookFaults) -> Vec<ScmDelivery> {
         let mut deliveries = Vec::new();
-        for delivery in self.take_deliveries() {
-            if faults.chance(faults.lose_percent) {
-                continue;
+        self.with(|state| {
+            let taken = state.take_attempts();
+            for attempt in &mut state.attempts[taken] {
+                if faults.chance(faults.lose_percent) {
+                    attempt.is_delivered = false;
+                    continue;
+                }
+
+                if faults.chance(faults.duplicate_percent) {
+                    deliveries.push(attempt.delivery.clone());
+                }
+                deliveries.push(attempt.delivery.clone());
             }
-            if faults.chance(faults.duplicate_percent) {
-                deliveries.push(delivery.clone());
-            }
-            deliveries.push(delivery);
-        }
+        });
         if faults.reorder {
             for i in (1..deliveries.len()).rev() {
                 let j = usize::try_from(faults.next() % (i as u64 + 1)).unwrap_or(i);
@@ -675,6 +681,28 @@ fn permission_levels(permissions: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 impl State {
+    fn take_attempts(&mut self) -> Range<usize> {
+        let first = self.attempts.len();
+        for delivery in std::mem::take(&mut self.deliveries) {
+            self.delivered += 1;
+            self.attempts.push(Attempt {
+                delivery_id: format!("sim-{}", self.delivered),
+                delivery,
+                is_delivered: true,
+            });
+        }
+
+        for attempt in std::mem::take(&mut self.redelivered) {
+            let again = Attempt {
+                is_delivered: true,
+                ..self.attempts[attempt].clone()
+            };
+            self.attempts.push(again);
+        }
+
+        first..self.attempts.len()
+    }
+
     fn connection_changed(&mut self, connection_external_id: &str) {
         self.deliveries.push(ScmDelivery {
             connection_external_id: Some(connection_external_id.to_owned()),
@@ -1485,9 +1513,10 @@ impl Scm for Sim {
                 .attempts
                 .iter()
                 .enumerate()
-                .map(|(n, (id, _))| RecentDelivery {
-                    delivery_id: id.clone(),
+                .map(|(n, attempt)| RecentDelivery {
+                    delivery_id: attempt.delivery_id.clone(),
                     attempt_id: (n + 1).to_string(),
+                    is_delivered: attempt.is_delivered,
                 })
                 .collect())
         })
@@ -1861,7 +1890,7 @@ mod tests {
             duplicate_percent: 0,
             reorder: false,
         };
-        let sent = sim.take_deliveries();
+        let sent = deliveries(3).take_deliveries();
         assert_eq!(sim.take_deliveries_with(lose_all), []);
         let since = OffsetDateTime::UNIX_EPOCH;
         let recent = sim
@@ -1870,6 +1899,7 @@ mod tests {
             .unwrap();
         let ids: Vec<_> = recent.iter().map(|r| r.delivery_id.as_str()).collect();
         assert_eq!(ids, ["sim-1", "sim-2", "sim-3"]);
+        assert!(recent.iter().all(|r| !r.is_delivered));
         sim.redeliver("2", JobClass::Repair).await.unwrap();
         assert_eq!(sim.take_deliveries(), [sent[1].clone()]);
         let recent = sim
@@ -1880,7 +1910,8 @@ mod tests {
             recent[3],
             RecentDelivery {
                 delivery_id: "sim-2".into(),
-                attempt_id: "4".into()
+                attempt_id: "4".into(),
+                is_delivered: true,
             }
         );
         let missing = sim.redeliver("9", JobClass::Repair).await;
