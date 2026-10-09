@@ -70,6 +70,7 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
         logs,
         github,
     } = Config::load(args.config.as_deref())?;
+
     logs.init()?;
     let pool = cihub_store::connect(&database_url).await?;
     cihub_store::check_role(&pool).await?;
@@ -97,20 +98,25 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
              variables (docs/GITHUB.md)"
         );
     };
+
     let missing = cihub_store::missing_migrations(&MIGRATOR, pool).await?;
+
     if !missing.is_empty() {
         bail!("the database misses the migrations {missing:?}: run `cihub server migrate`");
     }
+
     let config::GithubApp {
         config,
         webhook_secret,
     } = github;
     let client = GithubApp::new(&config, Arc::new(now)).context("the GitHub App cannot start")?;
+
     info!(
         url = config.url,
         app_id = config.app_id,
         "GitHub App configured"
     );
+
     Ok(Github {
         app: Arc::new(client),
         webhook_secret,

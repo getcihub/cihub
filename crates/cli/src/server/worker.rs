@@ -24,6 +24,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         ..
     } = shared;
     let mut executors = Executors::default();
+
     executors.register(MAINTENANCE, execute_maintenance);
     (merge_queue(&pool, &github, &process).executors)(&mut executors);
     let scm: Arc<dyn Scm> = github.app.clone();
@@ -34,6 +35,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         SYNC_INSTALLATION,
         sync_installation_executor(Arc::clone(&scm), kind),
     );
+
     executors.register(SYNC_INSTALLATIONS, sync_installations_executor(scm, kind));
     let worker = cihub_platform::run_worker(
         pool.clone(),
@@ -47,6 +49,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let urgent = app.budget_urgent();
     let changed = move || connection_budgets(&app);
     let writer = run_budget_writer(pool, changed, urgent, cancel);
+
     tokio::join!(worker, writer).0?;
     Ok(())
 }
