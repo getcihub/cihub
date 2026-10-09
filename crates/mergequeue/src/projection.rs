@@ -439,8 +439,8 @@ pub(crate) async fn upsert_check(
 }
 
 /// Stores a report on the test SHA of a run of `queue` that is no longer
-/// live, without a fact in the log (`DECISIONS.md` D118). Returns `false` when
-/// no run of the queue has this test SHA.
+/// live, without a fact in the log (`DECISIONS.md` D118). Does nothing when no
+/// run of the queue has this test SHA.
 pub(crate) async fn record_late_check(
     conn: &mut PgConnection,
     org_id: OrgId,
@@ -448,7 +448,7 @@ pub(crate) async fn record_late_check(
     test_sha: &str,
     check: &CheckReport,
     at: OffsetDateTime,
-) -> Result<bool, MergeQueueError> {
+) -> Result<(), MergeQueueError> {
     let run: Option<(String, Vec<String>)> = sqlx::query_as(
         "SELECT id, required_statuses FROM test_runs
          WHERE queue_id = $1 AND test_sha = $2
@@ -459,8 +459,9 @@ pub(crate) async fn record_late_check(
     .fetch_optional(&mut *conn)
     .await?;
     let Some((run_id, required)) = run else {
-        return Ok(false);
+        return Ok(());
     };
+
     let observation = CheckObservation {
         org_id,
         run_id: parse_id(&run_id, &run_id)?,
@@ -472,7 +473,8 @@ pub(crate) async fn record_late_check(
         observed_at: at,
     };
     upsert_check(conn, &observation).await?;
-    Ok(true)
+
+    Ok(())
 }
 
 fn one_row(done: Result<PgQueryResult, sqlx::Error>, event: &Event) -> Result<(), MergeQueueError> {

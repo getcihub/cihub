@@ -22,23 +22,23 @@ use cihub_platform::{
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, deposit_fact, mark_facts_processed, pending_facts};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sqlx::{PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
-use crate::command::{
-    ItemCommand, Merge, PrCommand, PrCommandRequest, parse_command, pr_command_job,
-};
+use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
 use crate::config::load_config;
-use crate::jobs::{SubmitPr, new_event_id, refresh_after, refresh_at, submit, user_of};
+use crate::jobs::{
+    SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
+};
 use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
-use crate::surfaces::{WelcomePr, converge_surfaces, welcome_job};
+use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, QueueLog, parse_id};
 
@@ -315,7 +315,7 @@ impl Work<'_> {
                     && self.settings.commands_enabled.value
                 {
                     let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
-                    jobs.push(welcome(
+                    jobs.push(welcome_job(
                         self.target.org_id,
                         connection,
                         delivery_id,
@@ -438,6 +438,7 @@ impl Work<'_> {
             self.delivery.received_at,
         )
         .await?;
+
         Ok(true)
     }
 
@@ -457,7 +458,7 @@ impl Work<'_> {
 
 /// The welcome of the PR `pr_number` of `repo_id`, opened on `base_branch`,
 /// after the delivery `delivery_id` (`DECISIONS.md` D163).
-fn welcome(
+fn welcome_job(
     org_id: OrgId,
     connection: (ScmInstanceId, ConnectionId),
     delivery_id: &str,
@@ -470,7 +471,7 @@ fn welcome(
         pr_number,
         base_branch,
     };
-    welcome_job(org_id, connection, delivery_id, &request)
+    connection_job(org_id, connection, delivery_id, WELCOME_PR, json!(request))
 }
 
 /// A delivery of a connection without a queue.
@@ -599,12 +600,7 @@ async fn pass_delivery(
                     number,
                     comment_external_id: None,
                     author: &sender,
-                    merge: Merge {
-                        priority: None,
-                        no_batch: false,
-                        direct: false,
-                        queue: None,
-                    },
+                    merge: Merge::default(),
                 };
                 request_submission(conn, delivery, &command, now).await?;
             }
@@ -690,7 +686,13 @@ async fn pass_comment(
             comment_id: comment.external_id.to_owned(),
         };
         let connection = (delivery.instance, delivery.connection);
-        let job = pr_command_job(delivery.org_id, connection, &delivery.delivery_id, &request);
+        let job = connection_job(
+            delivery.org_id,
+            connection,
+            &delivery.delivery_id,
+            PR_COMMAND,
+            json!(request),
+        );
         enqueue_job(conn, &job, now, now).await?;
     }
     Ok(())
@@ -793,7 +795,7 @@ async fn route_pr_change(
             .is_empty()
     {
         let connection = (delivery.instance, delivery.connection);
-        let job = welcome(
+        let job = welcome_job(
             delivery.org_id,
             connection,
             &delivery.delivery_id,

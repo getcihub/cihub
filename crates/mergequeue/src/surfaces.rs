@@ -7,10 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{
-    BlockReason, ConnectionId, EventKind, EventType, ItemState, JobClass, OrgId, Reason, RepoId,
-    ScmInstanceId,
-};
+use cihub_domain::{BlockReason, EventKind, EventType, ItemState, JobClass, Reason, RepoId};
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
@@ -23,7 +20,7 @@ use time::{OffsetDateTime, UtcOffset};
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::jobs::{Failure, connection_job, job, queue_status_context, read_payload, target_of};
+use crate::jobs::{Failure, job, queue_status_context, read_payload, target_of};
 use crate::target::QueueTarget;
 
 /// The type of the job that publishes the surfaces of a PR.
@@ -1380,16 +1377,6 @@ pub(crate) struct WelcomePr {
     pub repo_id: RepoId,
     pub pr_number: u64,
     pub base_branch: String,
-}
-
-/// The welcome of `request` after the delivery `delivery_id`.
-pub(crate) fn welcome_job(
-    org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
-    delivery_id: &str,
-    request: &WelcomePr,
-) -> Job {
-    connection_job(org_id, connection, delivery_id, WELCOME_PR, json!(request))
 }
 
 /// The comment that welcomes a PR on a branch of a queue, with its
