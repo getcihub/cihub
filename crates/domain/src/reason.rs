@@ -8,7 +8,7 @@ closed_enum! {
     pub enum Reason {
         /// The PR was submitted to the queue.
         Submitted,
-        /// The item became mergeable and has its impacted targets.
+        /// The item became mergeable and has its affected targets.
         MergeItemNowReady,
         /// A test run started for the group of the item.
         TestRunStarted,

@@ -17,7 +17,7 @@ glob = [".github/workflows/*.yaml", ".github/workflows/*.yml"]
 run = "actionlint {staged_files}"
 
 [pre-commit.commands.zizmor]
-glob = [".github/workflows/*.yaml", ".github/workflows/*.yml"]
+glob = [".github/workflows/*.yaml", ".github/workflows/*.yml", "actions/**/action.yml"]
 run = "zizmor --offline {staged_files}"
 
 [pre-push]

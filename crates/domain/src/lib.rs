@@ -45,7 +45,7 @@ pub use id::{
     ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
     RepoId, RunId, UserId,
 };
-pub use item::{BlockReason, ImpactedTargets, Item, Priority};
+pub use item::{AffectedTargets, BlockReason, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
 pub use pr::{CheckReport, Mergeability, Permission, PrState, ReviewDecision};
 pub use queue::{Queue, QueueControl};

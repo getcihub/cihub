@@ -1,0 +1,53 @@
+name: CIHub affected targets (Bazel)
+description: >-
+  Sends to CIHub the Bazel labels that the changed files of the pull request affect, or ALL when the computation fails (DECISIONS.md D236).
+  Needs `bazel` (or Bazelisk) on the PATH, `jq`, and a checkout with the base of the pull request (`fetch-depth: 0`). Runs on pull_request events.
+inputs:
+  url:
+    description: Address of the CIHub instance, for example https://cihub.example.com
+    required: true
+  token:
+    description: >-
+      CIHub API token with the targets:write scope. Empty for a pull request from a fork, which receives no
+      secrets: the targets go to the artifact cihub-affected-targets, which the forward action sends.
+    required: false
+    default: ''
+outputs:
+  targets:
+    description: The targets sent, as JSON (a list, or "ALL")
+    value: ${{ steps.compute.outputs.targets }}
+runs:
+  using: composite
+  steps:
+    - id: compute
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        TARGETS_FILE: ${{ runner.temp }}/cihub-affected-targets.json
+      run: |
+        "$GITHUB_ACTION_PATH/targets.sh"
+        echo "targets=$(cat "$TARGETS_FILE")" >>"$GITHUB_OUTPUT"
+    - if: inputs.token != ''
+      shell: bash
+      env:
+        UPLOAD_URL: ${{ inputs.url }}
+        UPLOAD_TOKEN: ${{ inputs.token }}
+        REPOSITORY: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        TARGETS_FILE: ${{ runner.temp }}/cihub-affected-targets.json
+      run: '"$GITHUB_ACTION_PATH/../upload.sh"'
+    - if: inputs.token == ''
+      shell: bash
+      env:
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        TARGETS_FILE: ${{ runner.temp }}/cihub-affected-targets.json
+        ARTIFACT_FILE: ${{ runner.temp }}/cihub-affected-targets/targets.json
+      run: '"$GITHUB_ACTION_PATH/../keep.sh"'
+    - if: inputs.token == ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: cihub-affected-targets
+        path: ${{ runner.temp }}/cihub-affected-targets/targets.json
+        retention-days: 1

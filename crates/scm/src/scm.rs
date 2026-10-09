@@ -5,8 +5,8 @@ use cihub_domain::{CheckReport, JobClass, Permission};
 use time::OffsetDateTime;
 
 use crate::{
-    ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
-    ScmError, ScmInstallation, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ChangedFile, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
+    RequiredChecks, ScmError, ScmInstallation, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -100,14 +100,14 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, bool>;
 
-    /// The paths of the files that the PR `number` changes, read only when a
-    /// condition uses them (`DECISIONS.md` D143).
+    /// The files that the PR `number` changes, read only when a condition
+    /// uses them (`DECISIONS.md` D143) or for the affected targets (D256).
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,
         number: u64,
         class: JobClass,
-    ) -> ScmFuture<'a, Vec<String>>;
+    ) -> ScmFuture<'a, Vec<ChangedFile>>;
 
     /// The path of each unresolved review thread of the PR `number`, read
     /// only when a condition uses them (`DECISIONS.md` D143).

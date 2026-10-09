@@ -18,7 +18,7 @@ use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
     queue_status_context, rebuild, wake_uncovered,
 };
-use cihub_mq_core::plan;
+use cihub_mq_core::{ConfigFile, plan};
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, Job, SYNC_INSTALLATION, SYNC_INSTALLATIONS, SYNC_REPOS,
     begin_reconciliation, claim_jobs, enqueue_job, find_route, mark_dirty,
@@ -178,7 +178,13 @@ impl World {
         };
         let mut tx = begin_system(&self.pool).await.unwrap();
         let mut written = self.log.write(&mut tx, vec![event]).await.unwrap();
-        let plan = plan(&self.log.snapshot, &self.settings, self.now).unwrap();
+        let plan = plan(
+            &self.log.snapshot,
+            &self.settings,
+            ConfigFile::Read,
+            self.now,
+        )
+        .unwrap();
 
         written.extend(self.log.write(&mut tx, plan.decisions).await.unwrap());
         tx.commit().await.unwrap();
@@ -291,10 +297,15 @@ impl World {
 
     /// Merges the PRs of the desired state, as the merge job does.
     async fn merge_all(&mut self) {
-        let merges = plan(&self.log.snapshot, &self.settings, self.now)
-            .unwrap()
-            .desired
-            .merges;
+        let merges = plan(
+            &self.log.snapshot,
+            &self.settings,
+            ConfigFile::Read,
+            self.now,
+        )
+        .unwrap()
+        .desired
+        .merges;
         for merge in merges {
             self.target += 1;
             let sha = format!("target-{}", self.target);
@@ -604,6 +615,7 @@ impl SimQueue {
             ApiScope::QueuesRead,
             ApiScope::QueuesWrite,
             ApiScope::PrsWrite,
+            ApiScope::TargetsWrite,
         ];
         let token = cihub_store::NewApiToken {
             id: ApiTokenId::from_ulid(Ulid(40)),
@@ -1927,6 +1939,430 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
             .any(|call| call.name == "unresolved_threads")
     );
 
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D227, D256: with `source: files`, the queue computes the
+/// targets of each head from its files. Two PRs on disjoint targets are tested
+/// side by side; a PR with a file that no target keeps is `ALL`, and is tested
+/// on top of both.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn disjoint_prs_are_tested_side_by_side_from_their_files(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    testing_concurrency: 5\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets:\n      source: files\n      targets:\n        web: [web/**]\n        api: [api/**]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    // The PRs are opened first, so that their numbers are 1 to 3: the draft
+    // PRs of the queue come after them.
+    let heads: Vec<String> = [(1, "web/page.txt"), (2, "api/main.txt"), (3, "other.txt")]
+        .into_iter()
+        .map(|(n, path)| open_pr_with(&sim, &main, n, &[(path, Some("x"))]).1)
+        .collect();
+    for (number, head) in (1..).zip(&heads) {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let mut tx = begin_system(&pool).await.unwrap();
+    let targets: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload->'targets' FROM events WHERE type::text = 'targets.received' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(
+        targets,
+        [
+            serde_json::json!({ "targets": ["web"] }),
+            serde_json::json!({ "targets": ["api"] }),
+            serde_json::json!("all"),
+        ]
+    );
+    let groups: Vec<(Vec<String>, i32)> = sqlx::query_as(
+        "SELECT tested_pr_numbers::text[], cardinality(g.predecessor_ids)
+         FROM test_runs r JOIN test_groups g ON g.id = r.group_id ORDER BY r.started_at, r.id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let groups: Vec<(&str, i32)> = groups
+        .iter()
+        .map(|(prs, predecessors)| (prs[0].as_str(), *predecessors))
+        .collect();
+    assert_eq!(groups, [("1", 0), ("2", 0), ("3", 2)]);
+    drop(tx);
+
+    // A new block computes the targets of each live item again (D230, D235).
+    let file = config.replace(
+        "        api: [api/**]\n",
+        "        api: [api/**]\n        other: [other.txt]\n",
+    );
+    let next = sim
+        .commit(&repo(), &main, &[(".cihub.yaml", Some(&file))])
+        .unwrap();
+    sim.push(&repo(), "main", &next, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let targets: Vec<(i64, serde_json::Value)> = sqlx::query_as(
+        "SELECT (payload->>'pr_number')::bigint, payload->'targets' FROM events
+         WHERE type::text = 'targets.received' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    // The same targets for PRs 1 and 2 change nothing, so the log does not
+    // keep them.
+    assert_eq!(
+        targets[3..],
+        [(3, serde_json::json!({ "targets": ["other"] }))]
+    );
+    let reads: Vec<String> = sqlx::query_scalar(
+        "SELECT idempotency_key FROM jobs WHERE type = 'read_targets' AND idempotency_key LIKE $1
+         ORDER BY idempotency_key",
+    )
+    .bind(format!("%-{next}:1"))
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(reads.len(), 3, "{reads:?}");
+    drop(tx);
+    q.stop().await;
+}
+
+/// The exit criterion of lot 13: a PR merges as soon as its own lane passes,
+/// before a PR of another lane ahead of it; a PR behind an `ALL` PR waits for
+/// it and for every PR ahead of it.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn disjoint_prs_merge_apart_and_an_all_pr_holds_the_ones_behind_it(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    // Without optimistic merging, a run that passes proves only its own PR.
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    testing_concurrency: 5\n    batching: {{ enabled: false }}\n    optimistic_merging: false\n    required_statuses: [{REQUIRED}]\n    affected_targets:\n      source: files\n      targets:\n        web: [web/**]\n        api: [api/**]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let files = [
+        (1, "web/page.txt"),
+        (2, "api/main.txt"),
+        (3, "other.txt"),
+        (4, "web/style.txt"),
+    ];
+    let heads: Vec<String> = files
+        .into_iter()
+        .map(|(n, path)| open_pr_with(&sim, &main, n, &[(path, Some("x"))]).1)
+        .collect();
+    for (number, head) in (1..).zip(&heads) {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let runs = q.runs_in_progress().await;
+    let test_sha = |pr: u64| {
+        runs.iter()
+            .find(|(_, _, prs)| prs == &[pr])
+            .map(|(_, sha, _)| sha.clone())
+            .unwrap()
+    };
+    let merged = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let prs: Vec<i64> = sqlx::query_scalar(
+            "SELECT i.pr_number FROM events e JOIN queue_items i ON i.id = e.item_id
+             WHERE e.type = 'item.transitioned' AND e.payload->>'to' = 'merged' ORDER BY e.seq",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        prs
+    };
+
+    // PR 2 merges while PR 1, ahead of it in another lane, is still tested.
+    sim.report_check(&repo(), &test_sha(2), check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(merged().await, [2]);
+    // PRs 3 and 4 pass, but wait for PR 1: PR 3 tested it, and PR 4 tested
+    // PR 3.
+    for pr in [4, 3] {
+        sim.report_check(&repo(), &test_sha(pr), check(REQUIRED, true))
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(merged().await, [2]);
+    sim.report_check(&repo(), &test_sha(1), check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(merged().await, [2, 1, 3, 4]);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D237: the first submissions of a new queue arrive with the
+/// first head of its target. The queue waits for its file before it admits
+/// them, takes the `parallel` mode at once, and tests the two lanes side by
+/// side; nothing is cancelled by the change of mode.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_new_queue_waits_for_its_file_before_its_first_groups(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets:\n      source: files\n      targets:\n        web: [web/**]\n        api: [api/**]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    for (n, path) in [(1, "web/page.txt"), (2, "api/main.txt")] {
+        let (number, head) = open_pr_with(&sim, &main, n, &[(path, Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+    }
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let classes: Vec<String> =
+        sqlx::query_scalar("SELECT class::text FROM jobs WHERE type = 'load_config'")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(classes, ["interactive"]);
+    let items: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT pr_number, state::text FROM queue_items WHERE is_current ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(items, [(1, "testing".into()), (2, "testing".into())]);
+    let predecessors: Vec<i32> =
+        sqlx::query_scalar("SELECT cardinality(predecessor_ids) FROM test_groups ORDER BY id")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(predecessors, [0, 0]);
+    let queue: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT payload FROM events WHERE type::text = 'queue.transitioned' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(
+        queue,
+        [
+            serde_json::json!({ "from": "running", "to": "switching_modes", "reason": "mode_changed" }),
+            serde_json::json!({
+                "from": "switching_modes", "to": "running", "reason": "mode_switch_completed"
+            }),
+        ]
+    );
+    drop(tx);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D234: with `source: upload`, an upload before the submission
+/// is kept for its head, and an upload after it reaches the queue at once; the
+/// item waits with `awaiting_affected_targets` in between.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_ci_uploads_the_targets_before_or_after_the_submission(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    testing_concurrency: 5\n    batching: {{ enabled: false }}\n    required_statuses: [{REQUIRED}]\n    affected_targets: {{ source: upload }}\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, token) = q.serve_api().await;
+    let upload = |number: u64, head: &str, targets: serde_json::Value| {
+        let (addr, token) = (addr.clone(), token.clone());
+        let body = serde_json::json!({ "head_sha": head, "targets": targets });
+        async move {
+            let path = format!("/repos/acme/app/prs/{number}/affected-targets");
+            call(&addr, &token, "POST", &path, Some(body)).await.0
+        }
+    };
+    let heads: Vec<String> = (1..=2)
+        .map(|n| open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]).1)
+        .collect();
+    assert_eq!(
+        upload(1, &heads[0], serde_json::json!(["//web"])).await,
+        202
+    );
+    for (number, head) in (1..).zip(&heads) {
+        sim.report_check(&repo(), head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+    let states = admissions(&pool).await;
+    assert_eq!((states[0].0, states[0].1.as_str()), (1, "testing"));
+    assert_eq!(
+        (states[1].0, states[1].1.as_str(), &states[1].2),
+        (
+            2,
+            "not_ready",
+            &serde_json::json!([{ "kind": "awaiting_affected_targets" }])
+        )
+    );
+
+    assert_eq!(upload(2, &heads[1], serde_json::json!("all")).await, 400);
+    assert_eq!(upload(2, &heads[1], serde_json::json!("ALL")).await, 202);
+    q.settle().await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let groups: Vec<(Vec<String>, i32)> = sqlx::query_as(
+        "SELECT tested_pr_numbers::text[], cardinality(g.predecessor_ids)
+         FROM test_runs r JOIN test_groups g ON g.id = r.group_id ORDER BY r.started_at, r.id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let groups: Vec<(&str, i32)> = groups
+        .iter()
+        .map(|(prs, predecessors)| (prs[0].as_str(), *predecessors))
+        .collect();
+    assert_eq!(groups, [("1", 0), ("2", 1)]);
+    drop(tx);
+    let unknown = call(
+        &addr,
+        &token,
+        "POST",
+        "/repos/acme/other/prs/1/affected-targets",
+        Some(serde_json::json!({ "head_sha": "abc", "targets": [] })),
+    )
+    .await;
+    assert_eq!(unknown.0, 404);
+    q.stop().await;
+}
+
+/// `DECISIONS.md` D236, D239: the scripts of the example actions against the
+/// route. `upload.sh` sends a file of targets with the token and refuses to
+/// run without one; for a PR from a fork, `keep.sh` writes the artifact and
+/// `forward.sh` sends it for the head of the event, and refuses an artifact
+/// that is not data of the expected shape.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_scripts_of_the_actions_send_the_targets(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    required_statuses: [{REQUIRED}]\n    affected_targets: {{ source: upload }}\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, token) = q.serve_api().await;
+    let (own, own_head) = open_pr_with(&sim, &main, 1, &[("web/page.txt", Some("x"))]);
+    let (fork, fork_head) = open_pr_with(&sim, &main, 2, &[("api/main.txt", Some("x"))]);
+    let dir = std::env::temp_dir().join(format!("cihub-actions-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let url = format!("http://{addr}/");
+    let run = |script: &str, env: Vec<(&'static str, String)>| {
+        let path = format!(
+            "{}/../../actions/affected-targets/{script}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        // The server runs on the runtime of the test: the script must not
+        // block it.
+        tokio::task::spawn_blocking(move || {
+            std::process::Command::new("bash")
+                .arg(path)
+                .envs(env)
+                .output()
+                .unwrap()
+        })
+    };
+    let stored = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let rows: Vec<(i64, String, Vec<String>)> = sqlx::query_as(
+            "SELECT pr_number, head_sha, targets FROM affected_targets ORDER BY pr_number",
+        )
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        rows
+    };
+
+    std::fs::write(file("own.json"), r#"["//web:app"]"#).unwrap();
+    let upload = |token: &str| {
+        vec![
+            ("UPLOAD_URL", url.clone()),
+            ("UPLOAD_TOKEN", token.to_owned()),
+            ("REPOSITORY", "acme/app".to_owned()),
+            ("PR_NUMBER", own.to_string()),
+            ("HEAD_SHA", own_head.clone()),
+            ("TARGETS_FILE", file("own.json")),
+        ]
+    };
+    let refused = run("upload.sh", upload("")).await.unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("no CIHub token"),
+        "{refused:?}"
+    );
+    let sent = run("upload.sh", upload(&token)).await.unwrap();
+    assert!(sent.status.success(), "{sent:?}");
+
+    // The run of the fork keeps its targets without a token.
+    std::fs::write(file("fork.json"), r#"["//api"]"#).unwrap();
+    let kept = run(
+        "keep.sh",
+        vec![
+            ("PR_NUMBER", fork.to_string()),
+            ("TARGETS_FILE", file("fork.json")),
+            ("ARTIFACT_FILE", file("artifact/targets.json")),
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(kept.status.success(), "{kept:?}");
+    let forward = |artifact: String| {
+        vec![
+            ("UPLOAD_URL", url.clone()),
+            ("UPLOAD_TOKEN", token.clone()),
+            ("REPOSITORY", "acme/app".to_owned()),
+            ("HEAD_SHA", fork_head.clone()),
+            ("ARTIFACT_FILE", artifact),
+            ("TARGETS_FILE", file("forwarded.json")),
+        ]
+    };
+    for trap in [
+        r#"{"pr_number": "2; touch pwned", "targets": []}"#,
+        r#"{"pr_number": 2, "targets": [1]}"#,
+        r#"{"pr_number": 2.5, "targets": "ALL"}"#,
+    ] {
+        std::fs::write(file("trap.json"), trap).unwrap();
+        let refused = run("forward/forward.sh", forward(file("trap.json")))
+            .await
+            .unwrap();
+        assert!(!refused.status.success(), "{trap}: {refused:?}");
+    }
+    let forwarded = run("forward/forward.sh", forward(file("artifact/targets.json")))
+        .await
+        .unwrap();
+    assert!(forwarded.status.success(), "{forwarded:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        stored().await,
+        [
+            (1, own_head, vec!["//web:app".to_owned()]),
+            (2, fork_head, vec!["//api".to_owned()]),
+        ]
+    );
     q.stop().await;
 }
 
@@ -3553,7 +3989,7 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         "{error}"
     );
 
-    let parallel_file = file("    strategy: parallel\n");
+    let parallel_file = file("    strategy: parallel\n    affected_targets: { source: upload }\n");
     let parallel = sim
         .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
         .unwrap();
@@ -4021,6 +4457,10 @@ impl Rng {
 /// The PRs of one seed.
 const CHAOS_PRS: u64 = 5;
 
+/// The `.cihub.yaml` of the `parallel` seeds: a PR changes a file of `x/`, of
+/// `y/`, or a file that no target keeps, which makes it `ALL`.
+const CHAOS_PARALLEL: &str = "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: parallel\n    affected_targets:\n      source: files\n      targets:\n        x: [x/**]\n        y: [y/**]\n";
+
 /// One seed of the fault injection test (`DECISIONS.md` D129): its own
 /// organization, connection, repository and queue in the shared database,
 /// the scheduler and the worker of the server against a simulator that fails
@@ -4347,7 +4787,7 @@ impl Chaos {
 
         files.extend(self.config.map(|config| (".cihub.yaml", config)));
 
-        let root = sim.add_repo(&repo, "main", &files);
+        let base = sim.add_repo(&repo, "main", &files);
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
             up_to_date: false,
@@ -4358,12 +4798,30 @@ impl Chaos {
         sim.set_permission(&repo, &alice(), Permission::Write)
             .unwrap();
 
+        // A push to `main` makes the queue read its file before the
+        // submissions, so that they enter the queue in its mode.
+        let root = sim
+            .commit(&repo, &base, &[("README.md", Some("cihub"))])
+            .unwrap();
+        sim.push(&repo, "main", &root, &alice()).unwrap();
+        self.deliver(false).await;
+        self.settle().await;
+
         let mut red = BTreeSet::new();
         let mut red_heads = BTreeSet::new();
+        // The directory of each PR; an empty one is `ALL`, as is every PR
+        // outside the `parallel` seeds.
+        let mut lanes = BTreeMap::new();
 
         for n in 1..=CHAOS_PRS {
             let branch = format!("pr-{n}");
-            let path = format!("f{n}.txt");
+            let lane = if self.config == Some(CHAOS_PARALLEL) {
+                ["x/", "y/", "x/", "y/", ""][usize::try_from(self.rng.next() % 5).unwrap()]
+            } else {
+                ""
+            };
+            lanes.insert(i64::try_from(n).unwrap(), lane);
+            let path = format!("{lane}f{n}.txt");
             let head = sim.commit(&repo, &root, &[(&path, Some("x"))]).unwrap();
             sim.push(&repo, &branch, &head, &bob()).unwrap();
             let number = sim.open_pr(&repo, &branch, "main", &bob()).unwrap();
@@ -4431,14 +4889,14 @@ impl Chaos {
         sim.fail_at_random(None);
         self.deliver(false).await;
         self.settle().await;
-        self.check_oracle(&red).await;
+        self.check_oracle(&red, &lanes).await;
         self.stop().await;
     }
 
-    /// Each green PR merged exactly once, in the order of the queue; each red
-    /// PR failed with a reason; the replay of the log gives the same
-    /// projections.
-    async fn check_oracle(&self, red: &BTreeSet<i64>) {
+    /// Each green PR merged exactly once, in the order of the queue among the
+    /// PRs of its lane; each red PR failed with a reason; the replay of the
+    /// log gives the same projections.
+    async fn check_oracle(&self, red: &BTreeSet<i64>, lanes: &BTreeMap<i64, &str>) {
         let seed = self.seed;
         let items = self.items().await;
         let mut merged: Vec<(i64, i64, i64)> = Vec::new();
@@ -4487,11 +4945,16 @@ impl Chaos {
 
         merged.sort_unstable();
 
-        let positions: Vec<i64> = merged.iter().map(|m| m.1).collect();
-        assert!(
-            positions.is_sorted(),
-            "seed {seed}: merged out of order {merged:?}"
-        );
+        let shared =
+            |a: &i64, b: &i64| lanes[a].is_empty() || lanes[b].is_empty() || lanes[a] == lanes[b];
+        for (i, (_, position, pr)) in merged.iter().enumerate() {
+            for (_, after, other) in &merged[i + 1..] {
+                assert!(
+                    !shared(pr, other) || position < after,
+                    "seed {seed}: merged out of order {merged:?} {lanes:?}"
+                );
+            }
+        }
 
         let before = projections(&mut tx).await;
         rebuild(&mut tx, self.queue()).await.unwrap();
@@ -4504,7 +4967,8 @@ impl Chaos {
 /// twice and reordered, and processes killed at random, each green PR is
 /// merged exactly once, in the order of the queue, and each red PR fails with
 /// a reason. `CIHUB_SIM_SEEDS` gives the number of seeds (10 by default;
-/// `mise run sim` plays 1 000, for this test and the `batched` one).
+/// `mise run sim` plays 1 000, for this test, the `batched` one and the
+/// `parallel` one).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn fault_injection(pool: PgPool) {
     play_chaos(pool, None).await;
@@ -4533,6 +4997,28 @@ async fn fault_injection_batched(pool: PgPool) {
         kinds.contains(&"batch".to_owned()) && kinds.contains(&"bisection".to_owned()),
         "{kinds:?}"
     );
+}
+
+/// The same test with the `parallel` strategy (lot 13): targets read from the
+/// files under the same faults, lanes, batches per lane and `ALL` PRs; two PRs
+/// merge in the order of the queue only when they share a target.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn fault_injection_parallel(pool: PgPool) {
+    play_chaos(pool.clone(), Some(CHAOS_PARALLEL)).await;
+    // The file applied: two lanes were tested side by side.
+    let mut tx = begin_system(&pool).await.unwrap();
+    let side_by_side: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+             SELECT 1 FROM test_runs a JOIN test_runs b
+                 ON b.queue_id = a.queue_id AND b.id > a.id
+                AND b.started_at < coalesce(a.ended_at, 'infinity')
+                AND a.started_at < coalesce(b.ended_at, 'infinity')
+             WHERE NOT a.head_shas && b.head_shas)",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert!(side_by_side);
 }
 
 async fn play_chaos(pool: PgPool, config: Option<&'static str>) {

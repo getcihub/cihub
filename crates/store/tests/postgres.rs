@@ -63,7 +63,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 16] = [
+const TENANT_TABLES: [&str; 17] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -80,6 +80,7 @@ const TENANT_TABLES: [&str; 16] = [
     "check_observations",
     "pr_surfaces",
     "pr_comments",
+    "affected_targets",
 ];
 
 fn september() -> Date {
@@ -134,7 +135,10 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO pr_surfaces (org_id, queue_id, pr_number, desired, desired_hash)
              VALUES ('{org}', '{queue}', 1, '{{}}', 'h');
          INSERT INTO pr_comments (org_id, repo_id, pr_number, comment_external_id)
-             VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');"
+             VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');
+         INSERT INTO affected_targets (org_id, repo_id, pr_number, head_sha, targets, is_all,
+                                       uploaded_at)
+             VALUES ('{org}', 'repo-{n}', 1, 'abc', '{{//a}}', false, '2026-09-15T00:00:00Z');"
     )
 }
 

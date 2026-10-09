@@ -6,8 +6,8 @@
 use std::fmt;
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, Priority, QueueMode,
-    QueueState, Reason, RequiredStatusesSource, RunStatus,
+    AffectedTargets, BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, Priority,
+    QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -196,6 +196,34 @@ pub struct SubmitPr {
     pub direct: bool,
 }
 
+/// `POST /repos/{owner}/{name}/prs/{pr_number}/affected-targets`
+/// (`DECISIONS.md` D228, D234).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TargetsUpload {
+    pub head_sha: String,
+    pub targets: TargetsInput,
+}
+
+/// The affected targets of a head: a list of opaque strings, or `"ALL"`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(untagged)]
+pub enum TargetsInput {
+    List(Vec<String>),
+    Word(String),
+}
+
+impl TargetsInput {
+    /// The targets, or `None` for a word other than `ALL`.
+    pub fn targets(self) -> Option<AffectedTargets> {
+        match self {
+            Self::List(list) => Some(AffectedTargets::Targets(list.into_iter().collect())),
+            Self::Word(word) => (word == "ALL").then_some(AffectedTargets::All),
+        }
+    }
+}
+
 /// A request that the queue does later: a submission reads the PR first.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -332,7 +360,7 @@ pub struct TestRun {
     pub conflict_culprit: Option<ConflictCulprit>,
     pub checks: Vec<RunCheck>,
     #[cfg_attr(feature = "openapi", schema(value_type = Option<Object>))]
-    pub impacted_targets: Option<Value>,
+    pub affected_targets: Option<Value>,
     pub dependents: Vec<Dependent>,
 }
 
@@ -388,6 +416,24 @@ mod tests {
         assert_eq!(read("\"urgent\"").priority(), Some(Priority::URGENT));
         assert_eq!(read("\"soon\"").priority(), None);
         assert!(serde_json::from_str::<PriorityInput>("256").is_err());
+    }
+
+    #[test]
+    fn targets_are_a_list_or_all() {
+        let read = |text: &str| {
+            serde_json::from_str::<TargetsInput>(text)
+                .unwrap()
+                .targets()
+        };
+        assert_eq!(
+            read(r#"["//b", "//a"]"#),
+            Some(AffectedTargets::Targets(
+                ["//a".into(), "//b".into()].into()
+            ))
+        );
+        assert_eq!(read(r#""ALL""#), Some(AffectedTargets::All));
+        assert_eq!(read(r#""all""#), None);
+        assert!(serde_json::from_str::<TargetsInput>("3").is_err());
     }
 
     #[test]

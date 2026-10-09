@@ -15,7 +15,7 @@ use cihub_domain::{
     Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RepoId, RunId, RunStatus, SubmittedVia,
     run_of_test_branch,
 };
-use cihub_mq_core::plan;
+use cihub_mq_core::{ConfigFile, plan};
 use cihub_platform::{
     Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
     enqueue_job, mark_dirty, pending_deliveries, release_leases, schedule_tick, until_next_tick,
@@ -32,7 +32,8 @@ use crate::assembly::{assemble, cleanup};
 use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
 use crate::config::load_config;
 use crate::jobs::{
-    SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
+    SubmitPr, connection_job, new_event_id, read_targets, refresh_after, refresh_at, submit,
+    user_of,
 };
 use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
@@ -166,7 +167,12 @@ impl Reconciler {
 
         written += log.write(conn, facts).await?.len();
 
-        let plan = plan(&log.snapshot, &settings, now)?;
+        let file = if target.config_sha.is_some() {
+            ConfigFile::Read
+        } else {
+            ConfigFile::Unread
+        };
+        let plan = plan(&log.snapshot, &settings, file, now)?;
         let ended = ended_runs(&plan.decisions);
         let decisions = log.write(conn, plan.decisions).await?.len();
         let converge = Converge {
@@ -198,7 +204,7 @@ impl Reconciler {
     /// Requests `jobs`, then the jobs that make the SCM converge to the
     /// desired state: the read of the configuration file on a new head of the
     /// target (`DECISIONS.md` D136), the reads that are due (PRs, checks, target
-    /// head), the
+    /// head), the affected targets of each head that needs them (D256), the
     /// assembly of each run that waits for its test branch, the merge of each
     /// proved item, and the cleanup of each run that ended, after the
     /// retention (`DECISIONS.md` D117). Returns the number of new jobs.
@@ -222,6 +228,10 @@ impl Reconciler {
 
         for read in &converge.desired.check_reads {
             jobs.push(refresh_checks(target, read));
+        }
+
+        for head in &converge.desired.target_reads {
+            jobs.push(read_targets(target, head));
         }
 
         if let Some(point) = converge.desired.target_read {

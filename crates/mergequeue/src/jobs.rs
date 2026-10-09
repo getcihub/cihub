@@ -1,17 +1,20 @@
 //! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
 //! again (`DECISIONS.md` D96, D101), `submit_pr` submits a PR after a command
-//! or a label (D102); the jobs of the test cycle are in `assembly`. Each one
+//! or a label (D102), `read_targets` gives the affected targets of a head,
+//! from its files or from the upload of the CI (D256, D234); the jobs of the test cycle are in `assembly`. Each one
 //! gives its facts back to the queue through `queue_inbox` (D100) and marks
 //! the queue dirty; it never writes the log.
 
 use std::collections::HashMap;
 use std::error::Error;
 
-use cihub_config::{QueueSettings, RepoConfig};
+use cihub_config::{QueueSettings, RepoConfig, TargetsSource, targets_of};
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
-    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, SubmittedVia, UserId,
+    Actor, AffectedTargets, ConnectionId, Event, EventId, EventKind, ItemState, JobClass,
+    Mergeability, OrgId, Permission, PrState, Priority, QueueId, RepoId, ReviewDecision,
+    SubmittedVia, UserId,
 };
+use cihub_mq_core::Head;
 use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
 use cihub_scm::{
     MAX_PRS_PER_READ, PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser, check_passed,
@@ -27,15 +30,24 @@ use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, routes_to, rule_priority, unmet_conditions};
 use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
+use crate::targets;
 
 pub const REFRESH_PRS: &str = "refresh_prs";
 pub(crate) const SUBMIT_PR: &str = "submit_pr";
+pub(crate) const READ_TARGETS: &str = "read_targets";
 
 /// The PRs that `refresh_prs` reads, at most
 /// [`MAX_PRS_PER_READ`](cihub_scm::MAX_PRS_PER_READ).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct RefreshPrs {
     pub prs: Vec<u64>,
+}
+
+/// The head whose affected targets `read_targets` computes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ReadTargets {
+    pub pr_number: u64,
+    pub head_sha: String,
 }
 
 /// An account of the SCM, as a job payload keeps it.
@@ -161,6 +173,21 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
     );
     let payload = json!(RefreshPrs { prs });
     job(target, key, REFRESH_PRS, JobClass::Interactive, payload)
+}
+
+/// The computation of the affected targets of `head`, once per head and per
+/// configuration (`DECISIONS.md` D256, D235).
+pub(crate) fn read_targets(target: &QueueTarget, head: &Head) -> Job {
+    let config = target.config_sha.as_deref().unwrap_or("none");
+    let key = format!(
+        "{READ_TARGETS}:{}-{}-{}-{config}:1",
+        target.queue_id, head.pr_number, head.sha
+    );
+    let payload = json!(ReadTargets {
+        pr_number: head.pr_number,
+        head_sha: head.sha.clone(),
+    });
+    job(target, key, READ_TARGETS, JobClass::Interactive, payload)
 }
 
 /// The reads of `prs`, due at the read point `point` (`DECISIONS.md` D101).
@@ -509,6 +536,88 @@ pub(crate) async fn refresh(
     }
 
     give_back_facts(pool, &target, facts, now).await
+}
+
+/// Computes the affected targets of the head of the job from the files of
+/// the PR, then reads the PR: a head that moved in between gives nothing,
+/// since the files may be those of the new head; fewer files than the PR
+/// changes give `ALL` (`DECISIONS.md` D256).
+pub(crate) async fn compute_targets(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let request: ReadTargets = read_payload(job)?;
+    let target = target_of(pool, job).await?;
+    let config = target.config()?;
+    let settings = target.settings_in(config.as_ref())?;
+    let targets = match settings.affected_targets.value {
+        Some(TargetsSource::Files(targets)) => targets,
+        Some(TargetsSource::Upload) => return deliver_stored(pool, &target, &request, now).await,
+        None => return Ok(()),
+    };
+    let files = scm
+        .pr_files(&target.repo, request.pr_number, job.class)
+        .await?;
+    let pr = scm
+        .pull_request(&target.repo, request.pr_number, job.class)
+        .await?;
+    if pr.head_sha != request.head_sha {
+        return Ok(());
+    }
+    let read_all = u64::try_from(files.len()).is_ok_and(|read| read >= pr.changed_files);
+    let affected = if read_all {
+        let paths = files
+            .iter()
+            .flat_map(|file| std::iter::once(&file.path).chain(&file.previous_path));
+        targets_of(&targets, paths.map(String::as_str))
+    } else {
+        AffectedTargets::All
+    };
+    let kind = EventKind::TargetsReceived {
+        pr_number: request.pr_number,
+        head_sha: request.head_sha,
+        targets: affected,
+    };
+    give_back_facts(pool, &target, vec![(Actor::System, kind)], now).await
+}
+
+/// Gives the stored upload of the head, if the CI sent it before the
+/// submission (`DECISIONS.md` D234); without it, the item waits for the
+/// upload, which the route gives at once.
+async fn deliver_stored(
+    pool: &PgPool,
+    target: &QueueTarget,
+    request: &ReadTargets,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let mut tx = begin_system(pool).await?;
+    let stored = targets::stored(
+        &mut tx,
+        target.org_id,
+        target.repo_id,
+        request.pr_number,
+        &request.head_sha,
+    )
+    .await?;
+    if let Some(targets) = stored {
+        let kind = EventKind::TargetsReceived {
+            pr_number: request.pr_number,
+            head_sha: request.head_sha.clone(),
+            targets,
+        };
+        give_back(
+            &mut tx,
+            target.org_id,
+            target.queue_id,
+            vec![(Actor::System, kind)],
+            now,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The live item of a PR, as `refresh_prs` needs it.

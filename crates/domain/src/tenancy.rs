@@ -36,6 +36,10 @@ closed_enum! {
         #[serde(rename = "prs:write")]
         #[strum(serialize = "prs:write")]
         PrsWrite,
+        /// Upload the affected targets of a PR; the only scope of a CI token.
+        #[serde(rename = "targets:write")]
+        #[strum(serialize = "targets:write")]
+        TargetsWrite,
     }
 }
 

@@ -467,9 +467,9 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   the target has moved since. `queues` gains `config_text` (the last valid file, `NULL` without a file),
   `config_sha` (the head read) and `config_error` (why the file read is not valid). Each reconciliation and each
   job resolves the settings of its queue from `config_text`; the assembly always reads the required statuses at
-  `base_sha`.
+  `base_sha`. _Extended by D237._
 - **D137** When the mode of the settings differs from the requested mode of the queue, the reconciliation writes
-  the `queue.settings_changed` fact (actor `system`) before `plan`.
+  the `queue.settings_changed` fact (actor `system`) before `plan`. _Extended by D237._
 - **D138** Lot 8 creates no queue from the file: the admin command of Lot 9 creates them (Q14). An entry of the
   file is linked to its queue by its branch and its name; a queue without an entry has the default settings,
   without the `defaults` of the file. _Extended by D154: the API and the CLI create the queues._ _Superseded by D172._
@@ -747,7 +747,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D210** The size of a batch is not adaptive: a batch takes the consecutive waiting items that can join it
   (`docs/ALGORITHMS.md`, "Batching"), up to `batching.size`, and starts when it is full or when its oldest member
   has waited `batching.max_wait_minutes`. The `batched` strategy has no other size rule. (Lot 12) _Extended by
-  D224._ _Extended by D241._
+  D224 and D229._ _Extended by D241._
 - **D211** An inferred failure never evicts a PR. With `bisection_skip_redundant_tests`, a half that a bisection
   proves failed without a run is split again when it has several items; a half of a single PR is tested, and
   the PR is evicted only after its own failed run and its failure budget. A confirmed failure of a batch or of a
@@ -813,12 +813,86 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `next_tick_at` that is not due yet, at least 1 second and at most `TICK` (30 seconds), instead of `TICK`
   always. A `wake_at` was served up to 30 seconds late: a batch with `max_wait_minutes: 1` waited up to 1 minute
   30 on a manual test. One more query per pass. A separate evolution, outside the plan of a lot.
+- **D255** The vocabulary says "affected targets", as Nx and target-determinator, never "impacted targets":
+  the type `AffectedTargets`, the route `POST /repos/{owner}/{name}/prs/{pr_number}/affected-targets`, the
+  table `affected_targets`, the field `affected_targets` of a run. The scope `targets:write` and the event
+  `targets.received` keep their names. (Lot 13)
+- **D226** A queue in `parallel` mode reads its targets from the `affected_targets` block, in the queue or in
+  `defaults`: `source: files` or `source: upload`. With `files`, CIHub computes the targets of each head of a PR
+  from its changed files and the `targets` map, a name to a list of patterns; with `upload`, the CI of the user
+  sends them and the block has no `targets`. A queue in `parallel` mode without this block is a configuration
+  error. (Lot 13)
+- **D227** The patterns of `source: files` use the glob of the `files *=` condition: the whole path from the root
+  of the repository, `*` inside one segment, `**` across `/`. A pattern that starts with `!` excludes: the
+  patterns of a target are read in order and the last one that matches a file decides, as in `.gitignore`. A
+  file takes every target that keeps it, and a PR takes the union over its files; a renamed file counts by its
+  old and its new path. A file that no target keeps, or a PR with more than 3,000 changed files (the limit of
+  `Scm::pr_files`), gives `ALL`. A pattern that ends with `/` is a configuration error, whose message gives the
+  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230 and D256._
+- **D228** With `source: upload`, the targets are opaque strings compared by equality, or `"ALL"`; the body of
+  the upload is limited to 20 MB, and a larger list is sent as `"ALL"`. Until the targets of its head SHA
+  arrive, the item stays `not_ready` with the block reason `awaiting_affected_targets`, without a fallback to
+  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D256 and D240._
+- **D229** Extends D210: in `parallel` mode, a batch takes the next pending items of its lane, the items that
+  overlapping targets link to it, and skips the items of the other lanes; the order stays the order of the
+  queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
+- **D230** Extends D227: when a new configuration changes the `affected_targets` block, the targets of every
+  live item are computed again; a run whose predecessors change restarts through the rules of validity. (Lot 13)
+  _Extended by D235._
+- **D231** The example actions for Bazel and Nx are composite actions in the repository that send the targets to
+  the `affected-targets` route with `curl`; no command of the CLI uploads targets. (Lot 13) _Extended by D236._
 - **D232** Extends D148: a queue entry can carry `route_conditions`, in the language of the conditions; the
   routing of a submission reads only them. The queue named by `--queue=<name>` wins; otherwise the first queue of
   the branch, in file order, whose `route_conditions` pass; a queue without `route_conditions` takes every PR;
   otherwise the first queue of the branch. `queue_conditions` no longer route: they only admit, and the item
   waits in `not_ready` in its queue until they pass. `route_conditions` is not allowed in `defaults`. The routing
   reads the PR once, at the submission; an item still never changes queue.
+- **D256** Extends D227 and D228. `Scm::pr_files` gives each changed file with its old path when the PR renames
+  it; the conditions `files *=` still read only the new path. With `source: files`, each head of a live item
+  without its targets gets one `read_targets:<queue_id>-<pr>-<head_sha>:1` job (class `interactive`): it reads
+  the files, then the PR, and gives nothing when the head moved in between, `ALL` when it read fewer files than
+  the PR changes, else the targets of the patterns, as `targets.received`. In both sources, an item that waits
+  for its targets has the block reason `awaiting_affected_targets`. (Lot 13) _Extended by D234 and D235._
+- **D234** Extends D228 and D256. The `affected-targets` route stores each upload in `affected_targets`, by
+  repository, PR and head SHA, with a token that has `targets:write`, and answers `202`; the body is limited to
+  20 MB. It gives `targets.received` at once to each queue in `source: upload` whose live item of the PR has that
+  head; otherwise the `read_targets` job of the head reads the stored upload, so that an upload before the
+  submission is kept. A queue in `source: files` ignores the uploads. The upload of a PR from a fork, without a
+  token, comes later. (Lot 13) _Extended by D239._
+- **D235** Extends D230 and D256. The key of the `read_targets` job carries the SHA of the configuration:
+  `read_targets:<queue_id>-<pr>-<head_sha>-<config_sha>:1`. When `load_config` keeps a file whose
+  `affected_targets` block changes, it asks a `read_targets` job for the head of each live item, which gives
+  the targets again. An item whose queue goes from `source: files` to `source: upload` without an upload of its
+  head keeps the targets of its files. (Lot 13)
+- **D236** Extends D231. The example actions are at `actions/affected-targets/bazel` and
+  `actions/affected-targets/nx`, used as `uses: nlecoy/cihub/actions/affected-targets/<tool>@<tag>`. Their inputs
+  are `url` and `token` (scope `targets:write`); the PR number and the head SHA come from the `pull_request`
+  event; their output `targets` gives what they sent. Bazel sends the labels that the changed files affect
+  (reverse dependencies); Nx sends the names of the affected projects. When the computation fails, the action
+  sends `ALL`. A PR from a fork without a token stops the action with a clear message (D234). (Lot 13)
+  _Extended by D238._
+- **D237** Extends D136 and D137. Until a queue has read its configuration file once (`config_sha` is `NULL`),
+  `plan` neither admits an item nor forms a group: the submissions are kept, `not_ready`, and wait for the
+  settings of the file; that first `load_config` has class `interactive`. `switching_modes` ends as soon as no
+  group of the queue is live, instead of when the queue is empty: at once, in the same reconciliation, when the
+  mode changes without a live group; the waiting items keep their place and form their groups in the new mode.
+  (Lot 13) _Extended by D240._
+- **D238** Extends D236. The Bazel action also sends `ALL` when the PR changes a file that defines the build
+  (`BUILD`, `BUILD.bazel`, `*.bzl`, `MODULE.bazel`, `MODULE.bazel.lock`, `WORKSPACE`, `WORKSPACE.bazel`,
+  `WORKSPACE.bzlmod`, `.bazelrc`, `.bazelversion`): the query sees such a file as one that no target depends on,
+  so the PR would look disjoint from the targets that it redefines. (Lot 13)
+- **D239** (Q15) Extends D234 and D236. A PR from a fork sends its targets through its repository, never through
+  a route without a token: with an empty `token`, the Bazel and Nx actions keep `{pr_number, targets}` as the
+  artifact `cihub-affected-targets` of the run; the composite action `actions/affected-targets/forward`, in a
+  workflow of the repository on `workflow_run`, which has the secrets, downloads it from the run of a
+  `pull_request` from a fork and sends it with the token. It runs no code of the PR and reads the artifact as
+  data; the head SHA comes from the event, so the targets reach only that head. A route without a token was
+  refused: the identifier of a running job is public on a public repository, so anyone could send the targets
+  of another PR. CIHub does not change. (Lot 13)
+- **D240** Extends D228 and D237. While the queue is in `switching_modes`, no group forms: a new group would test in
+  the old mode, and the switch ends when the live groups end. In `parallel` mode, a `pending` item without the
+  targets of its head forms no group and joins no batch; it keeps its place until they arrive, as a `not_ready`
+  item waits for them. Before, an item admitted in `single` mode was tested as `ALL` after the switch. (Lot 13)
 
 **October 8, 2026, validated by Nicolas Lecoy.**
 

@@ -8,7 +8,7 @@ use cihub_domain::{
     QueueMode, Strategy, Trigger, UpdateMethod,
 };
 
-use crate::{ConfigError, ConfigErrorKind, Position};
+use crate::{ConfigError, ConfigErrorKind, Position, TargetsSource};
 
 /// Where the value of a setting comes from, from the weakest to the strongest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -68,6 +68,8 @@ macro_rules! settings {
 settings! {
     strategy: Strategy = Strategy::Pipelined;
     mode: QueueMode = QueueMode::Single;
+    /// Required in `parallel` mode (`DECISIONS.md` D226).
+    affected_targets: Option<TargetsSource> = None;
     window_floor: u32 = 2;
     window_ceiling: u32 = 20;
     /// Follows `window_ceiling` when no source sets it.
@@ -183,6 +185,13 @@ impl QueueSettings {
                     "window.floor ({}) is greater than window.ceiling ({})",
                     floor.value, ceiling.value
                 ),
+            ));
+        }
+
+        if self.mode.value == QueueMode::Parallel && self.affected_targets.value.is_none() {
+            return Err(ConfigError::parsing(
+                self.mode.at.or(self.strategy.at),
+                "a queue in `parallel` mode needs an `affected_targets` block".to_owned(),
             ));
         }
 

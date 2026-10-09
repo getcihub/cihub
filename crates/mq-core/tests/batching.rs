@@ -4,10 +4,10 @@
 
 mod common;
 
-use cihub_config::{Layer, Setting};
+use cihub_config::{Layer, Setting, TargetsSource};
 use cihub_domain::{
-    Actor, CheckConclusion, EventKind, GroupKind, ItemId, ItemState, JobError, OptimizationMode,
-    PrState, Priority, Reason, RunStatus, UserId,
+    Actor, AffectedTargets, CheckConclusion, EventKind, GroupKind, ItemId, ItemState, JobError,
+    OptimizationMode, PrState, Priority, QueueMode, Reason, RunStatus, UserId,
 };
 use common::{World, head, settings, transitioned};
 use time::Duration;
@@ -476,5 +476,76 @@ fn a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it() {
 
     w.advance(5);
     assert_eq!(groups(&w)[2], (GroupKind::Batch, vec![3, 4]));
+    assert_replays(&w);
+}
+
+/// Batches per lane (`DECISIONS.md` D229): a queue in `parallel` mode whose
+/// PRs carry the targets of `lanes`, in submission order.
+fn lanes_world(size: u32, lanes: &[&[&str]]) -> World {
+    let mut w = World::new(settings(|l| {
+        batching(size, 4)(l);
+        l.mode = Some(Setting::new(QueueMode::Parallel));
+        l.affected_targets = Some(Setting::new(Some(TargetsSource::Upload)));
+    }));
+    for (pr, targets) in (1..).zip(lanes) {
+        w.submit(pr, Priority::MEDIUM);
+        w.fact(
+            Actor::System,
+            EventKind::TargetsReceived {
+                pr_number: pr,
+                head_sha: head(pr, 0),
+                targets: AffectedTargets::Targets(
+                    targets.iter().map(|t| (*t).to_owned()).collect(),
+                ),
+            },
+        );
+    }
+    w
+}
+
+#[test]
+fn a_batch_skips_the_prs_of_other_lanes() {
+    let mut w = lanes_world(4, &[&["web"], &["api"], &["web"], &["api"]]);
+    assert!(w.snapshot.groups.is_empty());
+    w.advance(5);
+    assert_eq!(
+        groups(&w),
+        vec![
+            (GroupKind::Batch, vec![1, 3]),
+            (GroupKind::Batch, vec![2, 4]),
+        ]
+    );
+    assert_replays(&w);
+}
+
+#[test]
+fn a_waiting_lane_does_not_hold_a_full_one() {
+    let w = lanes_world(2, &[&["web"], &["api"], &["api"]]);
+    assert_eq!(groups(&w), vec![(GroupKind::Batch, vec![2, 3])]);
+    assert_eq!(w.state(1), Some(ItemState::Pending));
+    assert_replays(&w);
+}
+
+#[test]
+fn a_pr_that_joins_two_lanes_ends_both_batches() {
+    let mut w = lanes_world(4, &[&["web"], &["api"], &["web", "api"], &["web"]]);
+    w.advance(5);
+    // PR 3 needs PR 1 and PR 2, so their batches end before it; PR 3 and the
+    // PR behind it then form a batch on top of both.
+    assert_eq!(
+        groups(&w),
+        vec![
+            (GroupKind::Single, vec![1]),
+            (GroupKind::Single, vec![2]),
+            (GroupKind::Batch, vec![3, 4]),
+        ]
+    );
+    let batch = w.item(3).unwrap().group_id.unwrap();
+    let below: Vec<u64> = w.snapshot.groups[&batch]
+        .predecessor_ids
+        .iter()
+        .map(|id| w.snapshot.items[id].pr_number)
+        .collect();
+    assert_eq!(below, [1, 2]);
     assert_replays(&w);
 }

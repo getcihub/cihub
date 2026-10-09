@@ -43,6 +43,54 @@ CIHub opened this pull request for the CI and closes it when the run ends. Do no
 At the end of the run, whatever its result, the `cleanup_test_branch` job closes the draft PR and deletes the
 test branch and the temporary branch, after `keep_test_branches_minutes` (`DECISIONS.md` D117).
 
-CI jobs can enrich the queue through two endpoints. `POST /api/v1/repos/{owner}/{name}/prs/{pr}/impacted-targets` sends the targets that a PR touches (Bazel, Nx or any script) for the parallel mode; `GET /api/v1/test-runs/{run_id}` lets a job discover which PRs it tests and the union of their impacted targets, so that a monorepo build limits itself to the affected projects. The run identifier is the last segment of the branch name, available in GitHub Actions through `${GITHUB_REF##*/}`.
+CI jobs can enrich the queue through two endpoints. `POST /api/v1/repos/{owner}/{name}/prs/{pr}/affected-targets` sends the targets that a PR touches (Bazel, Nx or any script) for the parallel mode; `GET /api/v1/test-runs/{run_id}` lets a job discover which PRs it tests and the union of their affected targets, so that a monorepo build limits itself to the affected projects. The run identifier is the last segment of the branch name, available in GitHub Actions through `${GITHUB_REF##*/}`.
+
+Two composite actions send the targets of a PR for a queue in `source: upload` (`DECISIONS.md` D236):
+`actions/affected-targets/bazel` sends the labels that the changed files affect (`bazel query 'rdeps(//...,
+set(<files>))'`), and `actions/affected-targets/nx` the names of the affected projects (`nx show projects
+--affected`). Both read the PR number and the head SHA from the `pull_request` event, take `url` and `token` (scope
+`targets:write`; empty for a PR from a fork), give the list sent as the output `targets`, and send `ALL` when the computation fails; the Bazel
+action also sends `ALL` when a file that defines the build changes (`BUILD`, `.bzl`, `MODULE.bazel`,
+`WORKSPACE`, `.bazelrc`), since the query sees no target that depends on it (D238). They need `jq`, a checkout with the
+base of the PR, and Bazel or the installed Nx workspace:
+
+```yaml
+on: pull_request
+jobs:
+  affected-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: nlecoy/cihub/actions/affected-targets/bazel@<tag>
+        with:
+          url: https://cihub.example.com
+          token: ${{ secrets.CIHUB_TARGETS_TOKEN }}
+```
+
+A PR from a fork receives no secrets, and the route takes no upload without a token (`DECISIONS.md` D239). With
+an empty `token`, the action keeps `{pr_number, targets}` in the artifact `cihub-affected-targets` of the run;
+`actions/affected-targets/forward`, in a workflow of the repository on `workflow_run`, which has the secrets,
+downloads it from the run of a PR from a fork and sends it with the token, for the head SHA of the event. That
+workflow runs no code of the PR and reads the artifact as data; for a PR of the repository itself, it does
+nothing. The PR waits with `awaiting_affected_targets` until the run of its CI ends:
+
+```yaml
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  actions: read
+jobs:
+  forward-affected-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: nlecoy/cihub/actions/affected-targets/forward@<tag>
+        with:
+          url: https://cihub.example.com
+          token: ${{ secrets.CIHUB_TARGETS_TOKEN }}
+```
 
 The names of the required statuses are resolved once per run and recorded on it with their source (`repo_config`, `branch_protection`). A check that reports under a name different from the required one (a renamed workflow job) is the most common configuration error; the dashboard displays the required names next to the observed names for each run to make it visible.

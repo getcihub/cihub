@@ -22,6 +22,14 @@ pub struct RepoRef {
     pub name: String,
 }
 
+/// A file that a PR changes, with its old path when the PR renames it
+/// (`DECISIONS.md` D256).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangedFile {
+    pub path: String,
+    pub previous_path: Option<String>,
+}
+
 /// A user account on the SCM (`DECISIONS.md` D51).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmUser {

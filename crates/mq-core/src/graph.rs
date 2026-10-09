@@ -1,18 +1,18 @@
 //! Queue order and merge graph (`docs/ALGORITHMS.md`, « Ordre » and « Graphe
 //! de merge »).
 
-use cihub_domain::{ImpactedTargets, Item, ItemId, ItemState, Priority, QueueMode};
+use cihub_domain::{AffectedTargets, Item, ItemId, ItemState, Priority, QueueMode};
 
 use crate::Snapshot;
 
 /// Gap between two positions after a renumbering.
 pub(crate) const POSITION_STEP: i64 = 1000;
 
-static ALL: ImpactedTargets = ImpactedTargets::All;
+static ALL: AffectedTargets = AffectedTargets::All;
 
 /// The target set of an item: `All` in single mode, or when no upload
 /// exists for its head.
-pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTargets {
+pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a AffectedTargets {
     if snapshot.mode == QueueMode::Single {
         return &ALL;
     }
@@ -24,10 +24,10 @@ pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTa
         .map_or(&ALL, |t| &t.value.targets)
 }
 
-fn overlap(a: &ImpactedTargets, b: &ImpactedTargets) -> bool {
+fn overlap(a: &AffectedTargets, b: &AffectedTargets) -> bool {
     match (a, b) {
-        (ImpactedTargets::All, _) | (_, ImpactedTargets::All) => true,
-        (ImpactedTargets::Targets(a), ImpactedTargets::Targets(b)) => !a.is_disjoint(b),
+        (AffectedTargets::All, _) | (_, AffectedTargets::All) => true,
+        (AffectedTargets::Targets(a), AffectedTargets::Targets(b)) => !a.is_disjoint(b),
     }
 }
 

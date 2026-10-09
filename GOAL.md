@@ -15,7 +15,7 @@ installs in under thirty minutes with one image and one Postgres, and explains e
    the PRs ahead of it. The required statuses are read on the target branch, never from the PR, so that a PR
    cannot weaken its own gate.
 2. **An efficient queue, not a single queue.** Several strategies chosen per queue (sequential, predictive,
-   batched, parallel by impacted targets), an adaptive speculation window, a failure budget that never removes a
+   batched, parallel by affected targets), an adaptive speculation window, a failure budget that never removes a
    PR on a single failure, and four merge methods. The strategies are tables of default values, not code in the
    core.
 3. **CI agnostic.** CIHub never runs the CI: it pushes a test branch and waits for the required statuses and check

@@ -1,5 +1,6 @@
 [tools]
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
+"aqua:jqlang/jq" = "1.8.2"
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
 "aqua:nextest-rs/nextest/cargo-nextest" = "0.9.146"
 "actionlint" = "1.7.12"
@@ -38,7 +39,7 @@ depends = ["db"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
 [tasks.sim]
-description = "Run the fault injection tests, default and batched, on 1 000 seeds (DECISIONS.md D129)"
+description = "Run the fault injection tests, default, batched and parallel, on 1 000 seeds (DECISIONS.md D129)"
 depends = ["db"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
@@ -48,8 +49,8 @@ description = "Compare batched and pipelined on the simulated load, and count th
 run = "cargo nextest run -p cihub-mq-core -E 'binary(load)' --run-ignored only"
 
 [tasks.lint-workflows]
-description = "Lint the GitHub workflows with actionlint and zizmor"
-run = ["actionlint", "zizmor .github/workflows"]
+description = "Lint the GitHub workflows with actionlint, and them and the actions with zizmor"
+run = ["actionlint", "zizmor .github/workflows actions"]
 
 [tasks.cover]
 description = "Check the line coverage of the pure crates (90 % or more)"

@@ -25,7 +25,7 @@ from it.
 | Test group           | `group_id`                   | The unit that is tested and held in pending failure: a single PR, a batch, or one half of a bisection                                         | `TestGroup`            |
 | Test run             | `run_id`                     | One attempt to test a group on a test branch; a group can have several runs (restarts)                                                        | `TestRun`              |
 | Check observation    | (`run_id`, name)             | The last observation of a check run or of a commit status on the test SHA                                                                     | `CheckObservation`     |
-| Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
+| Affected targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `AffectedTargets`      |
 | Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
 
 Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). An SCM identifier is an
@@ -112,7 +112,8 @@ CLI show it instead of the code. The code is the stable contract; the sentence i
 change without a decision.
 
 A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
-displayed in the PR comment. The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
+displayed in the PR comment; in `parallel` mode, `awaiting_affected_targets` until the affected targets of
+its head arrive (`DECISIONS.md` D256). The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
 `conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
 `docs/GITHUB.md`. What CIHub reads from a PR: its state
 (`PrState`: `open`, `closed`, `merged`), its review decision (`ReviewDecision`) and its checks (`CheckReport`).
@@ -154,7 +155,9 @@ failed; it waits for an operator).
 States (`QueueState`): `running` accepts and merges; `paused` decides nothing and merges nothing but keeps
 the order, and a submission there waits for the resume (`DECISIONS.md` D113); `draining` lets what is in flight merge and
 refuses a new submission, whose item is created `cancelled` with the reason `queue_draining` (D151);
-`switching_modes` is reached automatically when the mode changes with items in flight and behaves like
-`draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
+`switching_modes` is reached automatically when the mode changes and behaves like
+`draining` (reason `queue_switching_modes`) until no group is live: at once without a live group, in the same
+reconciliation (`DECISIONS.md` D237). No group forms in the meantime, so that the waiting items are tested in the
+new mode (D240). Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`
 (`docs/CONFIGURATION.md`).

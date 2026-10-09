@@ -22,7 +22,7 @@ rewrites.
 | 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following the README; measured in lot 15 (`DECISIONS.md` D214) |
 | 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined` (`DECISIONS.md` D212); bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
-| 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, Helm chart, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                              | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
+| 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with affected targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, Helm chart, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                              | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
 The two highest risks are the invariants of the reconciler under concurrent GitHub events (mitigated by the pure
 core and its property tests, delivered first) and the GitHub rulesets misconfigured by the users (mitigated by the
@@ -45,7 +45,7 @@ configuration checker, in phase 1).
 | 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
-| 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
+| 13  | `parallel` strategy                                    | 4     | 12         | —         | in progress                              |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, Helm, hardening                     | 4     | 11, 13     | Q8        | to do                                    |
 
@@ -307,11 +307,68 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 
 ### Lot 13: `parallel` strategy
 
-- **Content**: `POST /repos/{owner}/{name}/prs/{pr}/impacted-targets` (`targets:write` token or GitHub Actions
-  run for forks, 20 MB limit); lanes by overlap; batches per lane; `parallel` strategy;
-  example actions for Bazel and Nx.
+- **Content**: the `affected_targets` block of `.cihub.yaml` (`DECISIONS.md` D226 to D228 and D255); `source: files`,
+  with the patterns and the old paths of renamed files read by `Scm::pr_files`; `source: upload`, with
+  `POST /repos/{owner}/{name}/prs/{pr}/affected-targets` (`targets:write` token; for forks, an artifact
+  sent by a `workflow_run` workflow, D239; 20 MB limit) and the block reason `awaiting_affected_targets`; lanes by overlap; batches per lane (D229);
+  targets computed again after a change of configuration (D230); `parallel` strategy; example actions for Bazel
+  and Nx, composite actions with `curl` (D231).
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in
   parallel, and an `ALL` PR serializes everything that follows it; criterion of phase 4 on a pilot monorepo.
+- **Tracking**:
+  - Steps: 1. vocabulary "affected targets" (D255); 2. the `affected_targets` block and the computation of the
+    targets from the changed files, in `cihub-config`; 3. `Scm::pr_files` (old path of a renamed file, cut at
+    3,000) and `source: files`; 4. `source: upload`: table, route, forks, `awaiting_affected_targets`; 5. batches
+    per lane (D229) and targets computed again after a change of configuration (D230); 6. simulator scenarios
+    and `fault_injection` with `parallel`; 7. example actions (D231) and documents; 8. pilot monorepo.
+  - Done (October 7, 2026): step 1. `ImpactedTargets` becomes `AffectedTargets`, and the documents follow.
+  - Done (October 7, 2026): step 2. `cihub-config` reads the `affected_targets` block, in a queue or in
+    `defaults` (D226), and refuses a queue in `parallel` mode without it; `targets_of` computes the targets of a
+    PR from its paths (D227). The glob of `files *=` becomes `PathGlob` in `cihub-conditions`, shared by both.
+    An unquoted `!` pattern is a YAML tag: the file fails with a YAML error at its line. Tests: tables in
+    `targets.rs` and `file.rs`.
+  - Done (October 7, 2026, D256): step 3. `Scm::pr_files` gives the old path of a renamed file. With
+    `source: files`, `plan` asks for the targets of each head without them, and the `read_targets` job
+    computes them, or `ALL` when the files are cut; an item waits with `awaiting_affected_targets`, in both
+    sources. Tests: `a_head_waits_for_the_targets_of_its_files` (core),
+    `disjoint_prs_are_tested_side_by_side_from_their_files` (simulator and Postgres). The recording of the
+    GitHub contract has no renamed file: the project lead will record it again.
+  - Done (October 7, 2026, D234): step 4, with a token. The `affected-targets` route stores the upload in the
+    `affected_targets` table and gives it at once to the queues in `source: upload` whose live item has the head;
+    `read_targets` reads a stored upload for a head submitted after it. Test:
+    `the_ci_uploads_the_targets_before_or_after_the_submission`. The upload from a fork is done with D239.
+  - Done (October 7, 2026): step 5. In `parallel` mode, a batch takes the pending items of its lane and skips
+    the others; the first item of its lane that cannot join ends it, and a lane whose batch waits does not hold
+    the others (D229). When `load_config` keeps a file whose `affected_targets` block changes, it asks the
+    targets of each live item again, with the SHA of the file in the key of `read_targets` (D230, D235).
+    Tests: three scenarios in `tests/batching.rs`, and the change of patterns in
+    `disjoint_prs_are_tested_side_by_side_from_their_files`. `mise run load` passes.
+  - Done (October 7, 2026): step 6. `disjoint_prs_merge_apart_and_an_all_pr_holds_the_ones_behind_it`: on the
+    simulator, a PR merges before a PR of another lane ahead of it, and the PRs behind an `ALL` PR wait for
+    it. `fault_injection_parallel` plays the fault injection test with `strategy: parallel` and
+    `source: files`: each PR changes a file of `x/`, of `y/` or a file that no target keeps; the oracle keeps
+    the order of the queue between two PRs that share a target, and the test checks that two lanes were
+    tested side by side. The seeds now push to `main` before the submissions, so that the queue reads its
+    file first. `mise run sim` plays the three tests and passes on 1,000 seeds (2,520 s).
+  - Done (October 7, 2026, D236): step 7. The composite actions `actions/affected-targets/bazel` and
+    `actions/affected-targets/nx` compute the targets and send them with the shared `upload.sh`; they send
+    `ALL` when the computation fails, and the Bazel one also when a file that defines the build changes (the
+    query gives no target for it, D238). Test: `the_scripts_of_the_actions_send_the_targets`. The Bazel script
+    was run by hand on a small workspace; the Nx one only on its failure; the pilot monorepo checks both.
+  - Done (October 7, 2026, D237): a queue that has not read its file yet admits nothing and forms no group, and
+    its first `load_config` is `interactive`; `switching_modes` ends when no group is live. Before, the first
+    PRs of a new `parallel` queue were tested in `single` mode, and a submission during the switch was
+    cancelled. Tests: `a_queue_admits_nothing_before_its_file_is_read`,
+    `a_mode_change_waits_for_the_live_groups` (core),
+    `a_new_queue_waits_for_its_file_before_its_first_groups` (simulator and Postgres).
+  - Done (October 7, 2026, D239): the upload from a fork. With an empty `token`, the Bazel and Nx actions keep
+    the targets in the artifact `cihub-affected-targets`; `actions/affected-targets/forward`, in a `workflow_run`
+    workflow, sends it with the token, for the head SHA of the event. CIHub does not change; `jq` joins the
+    tools of `mise.toml` for the test. Test: `the_scripts_of_the_actions_send_the_targets`.
+  - Done (October 7, 2026, D240): no group forms in `switching_modes`, and in `parallel` mode a pending item
+    waits for the targets of its head before a group takes it. Before, a PR admitted in `single` mode was tested
+    as `ALL` after the switch. Test: `a_pending_pr_waits_for_its_targets_after_a_switch_to_parallel`.
+  - Blocked: step 8 waits for a pilot monorepo, which the project lead will create.
 
 ### Lot 15: scale: ClickHouse, Helm, hardening
 

@@ -124,7 +124,7 @@ before and after (`mise run sim`).
 | `scm_connections.claimed_at`      | Drop; `created_at` carries the same instant                            | amends D49   |
 | `connection_kind.github_sudo_app` | Drop the value and `ConnectionKind::GithubSudoApp`                     | amends D48   |
 | `api_scope.metrics:read`          | Drop the value and `ApiScope::MetricsRead`; lot 11 adds it with `GET /metrics` | note on D160, `docs/API.md` |
-| `api_scope.targets:write`         | Drop the value and `ApiScope::TargetsWrite`; lot 13 adds it with `POST …/impacted-targets` | note on D160, `docs/API.md` |
+| `api_scope.targets:write`         | Drop the value and `ApiScope::TargetsWrite`; lot 13 adds it with `POST …/affected-targets` | note on D160, `docs/API.md` |
 
 **Risk.** None; the enum test (`postgres_enums_match_the_domain`) and the API tests catch a forgotten side.
 

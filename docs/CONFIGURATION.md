@@ -6,7 +6,8 @@ and the strategy table are in `crates/config/src/settings.rs`. This file explain
 The behavior of a queue is configured in a `.cihub.yaml` or `.cihub.yml` file at the root of the repository, read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
 each new head (`DECISIONS.md` D136); the settings apply from the reconciliation that follows the
-read. No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
+read. Until its first read, which has class `interactive`, a queue keeps its submissions `not_ready`: it admits
+nothing and forms no group with settings that its file may change (`DECISIONS.md` D237). No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
 creates the queues that the file names on that branch, or, without such an entry, on the default branch of the
 repository, a queue named after the branch, with the default settings and `defaults`. Without a file, a team thus
 starts with one queue on its default branch; an entry `name: main`, `branch: main` then sets that same queue. An
@@ -104,6 +105,7 @@ failure budget retry.
 | Setting                                                        | Default                             | Range                                                                      |
 | -------------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------- |
 | `mode`                                                         | `single`                            | `single`, `parallel`                                                       |
+| `affected_targets.source` / `targets`                          | none                                | `files`, `upload`; required in `parallel` mode (below)                     |
 | `window.floor` / `window.ceiling`                              | 2 / 20                              | 1–100, floor ≤ ceiling                                                     |
 | `testing_concurrency`                                          | none (shortcut)                     | 1–100; sets floor and ceiling to the same value; exclusive with `window`   |
 | `bisection_concurrency`                                        | the window ceiling                  | 1–200                                                                      |
@@ -128,6 +130,46 @@ failure budget retry.
 | `branch_protection_injection`                                  | `both`                              | `both`, `merge`, `none`                                                    |
 | `required_statuses`                                            | inherited from branch protection    | list; empty list = none, `null` = inherited                                |
 
+## Affected targets (Lot 13)
+
+In `parallel` mode, each PR carries the targets that it affects; two PRs without a common target are tested and
+merged in parallel (`docs/ALGORITHMS.md`, merge graph). The `affected_targets` block, in a queue or in
+`defaults`, says where the targets come from (`DECISIONS.md` D226); a queue in `parallel` mode without it is a
+configuration error.
+
+```yaml
+affected_targets:
+  source: files                 # files | upload
+  targets:                      # only with source: files
+    web:
+      - apps/web/**
+      - libs/auth/**            # a shared library belongs to both targets
+      - "!apps/web/**/*.md"     # quoted: a bare `!` starts a YAML tag
+    api:
+      - services/api/**
+      - libs/auth/**
+    docs:
+      - docs/**
+      - "**/*.md"
+```
+
+With `source: files`, CIHub reads the changed files of each head of the PR and computes its targets
+(`DECISIONS.md` D227). A pattern is the glob of the `files *=` condition: the whole path from the root, `*` inside
+one segment, `**` across `/`; a folder is `apps/web/**`. A pattern that starts with `!` excludes: the patterns
+of a target are read in order, and the last one that matches a file decides. A file takes every target that
+keeps it, a renamed file counts by its old and its new path, and the PR takes the union over its files. A file
+that no target keeps, or more than 3,000 changed files, gives `ALL`: the PR waits for every PR ahead of it and
+every PR behind waits for it. A pattern that ends with `/`, or a list without any pattern that includes, is a
+configuration error, as are `source: files` without a `targets` map, an empty pattern and an invalid glob. A
+change of the block computes again the targets of every PR in the queue (`DECISIONS.md` D230, D235). The model and
+the computation are in `crates/config/src/targets.rs`; the glob, shared with `files *=`, is `PathGlob` in
+`cihub-conditions`.
+
+With `source: upload`, the CI of the user computes the targets (Bazel, Nx, a script) and sends them to the
+`affected-targets` route (`docs/API.md`, `docs/CI.md`): opaque strings compared by equality, or `"ALL"`
+(`DECISIONS.md` D228); the block then has no `targets`. Until the targets of its head arrive, the PR stays `not_ready` with the block reason
+`awaiting_affected_targets`.
+
 ## Per-PR options and multiple queues
 
 Per-PR options are set at submission and stored on the item: priority, `no_batch`, `direct` (admins,
@@ -139,4 +181,6 @@ base branch change cancels the item with `pr_base_branch_changed`.
 A queue cannot be deleted while it contains live items; its deletion erases its settings
 and its history from Postgres but not from ClickHouse. Changing `mode` with items in flight switches to
 `switching_modes`, refuses new submissions with `queue_switching_modes`, and ends automatically
-when the last item concludes.
+when no group is live any more; without a live group, the change ends at once and the waiting items keep their
+place (`DECISIONS.md` D237). No group forms in the meantime, and after a switch to `parallel`, a waiting PR waits
+for its targets before its test (D240).

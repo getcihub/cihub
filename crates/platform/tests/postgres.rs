@@ -1340,7 +1340,7 @@ async fn a_token_of_an_organization_has_every_scope_and_is_audited(pool: PgPool)
     assert_eq!(org_id, org());
     let grant = authenticate(&pool, &token, at(0)).await.unwrap().unwrap();
     assert_eq!(grant.org_id, org());
-    assert_eq!(grant.scopes.len(), 3, "{:?}", grant.scopes);
+    assert_eq!(grant.scopes.len(), 4, "{:?}", grant.scopes);
     assert!(grant.scopes.contains(&ApiScope::QueuesWrite));
     let mut tx = begin_system(&pool).await.unwrap();
     let audited: i64 =

@@ -20,6 +20,7 @@ mod repair;
 mod scheduler;
 mod surfaces;
 mod target;
+mod targets;
 
 use std::sync::Arc;
 
@@ -38,7 +39,7 @@ pub use scheduler::{
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
 use crate::command::PR_COMMAND;
 use crate::config::LOAD_CONFIG;
-use crate::jobs::SUBMIT_PR;
+use crate::jobs::{READ_TARGETS, SUBMIT_PR};
 use crate::merge::MERGE_PR;
 use crate::repair::{REFRESH_CHECKS, REFRESH_TARGET};
 use crate::scheduler::run_scheduler;
@@ -135,6 +136,7 @@ pub fn module(
         executors: Box::new(move |executors| {
             register!(executors, scm, REFRESH_PRS, jobs::refresh);
             register!(executors, scm, SUBMIT_PR, jobs::submit_pr);
+            register!(executors, scm, READ_TARGETS, jobs::compute_targets);
             register!(executors, scm, ASSEMBLE_TEST_BRANCH, assembly::assemble_run);
             register!(executors, scm, CLEANUP_TEST_BRANCH, assembly::cleanup_run);
             register!(executors, scm, MERGE_PR, merge::merge_pr);
