@@ -800,6 +800,17 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
     }
 }
 
+/// What the PR is, when it cannot enter a queue: only an open PR that is not a
+/// draft can (`DECISIONS.md` D253).
+fn not_open(pr: &PrSnapshot) -> Option<&'static str> {
+    match pr.state {
+        PrState::Merged => Some("merged"),
+        PrState::Closed => Some("closed"),
+        PrState::Open if pr.draft => Some("a draft"),
+        PrState::Open => None,
+    }
+}
+
 async fn find_pull_request(
     scm: &dyn Scm,
     repo: &RepoTarget,
@@ -905,6 +916,11 @@ pub(crate) async fn submit_pr(
     let Some(pr) = find_pull_request(scm, &repo, pr_number, job.class).await? else {
         return Ok(());
     };
+
+    if let Some(state) = not_open(&pr) {
+        info!(pr_number, state, "submission refused: PR not open");
+        return refuse(format!("this PR is {state}.")).await;
+    }
 
     let queues = queues_of_pr(pool, scm, &repo, &pr, &request, job.class).await?;
     let Some(first) = queues.first() else {
