@@ -75,12 +75,15 @@ pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<Mod
         .route("/repos", get(list_repos))
         .route("/orgs/{org}/audit", get(list_audit))
         .with_state(state.clone());
+
     for module in modules {
         routes = routes.merge(module.routes);
     }
+
     let routes = routes
         .fallback(|| async { ApiError::not_found("route") })
         .layer(middleware::from_fn_with_state(state, authenticated));
+
     Router::new()
         .route(
             "/openapi.json",
@@ -108,12 +111,14 @@ async fn authenticated(
     let Some(secret) = secret else {
         return unauthorized().into_response();
     };
+
     let now = (state.now)();
     let grant = match authenticate(&state.pool, &secret, now).await {
         Ok(Some(grant)) => grant,
         Ok(None) => return unauthorized().into_response(),
         Err(err) => return ApiError::from(err).into_response(),
     };
+
     if let Some(wait) = over_limit(&state, grant.id, now) {
         let mut limited = ApiError::new(
             ErrorCode::RateLimited,
@@ -122,23 +127,27 @@ async fn authenticated(
         limited.retry_after = Some(wait);
         return limited.into_response();
     }
+
     request.extensions_mut().insert(ApiGrant {
         org_id: grant.org_id,
         token_id: grant.id,
         scopes: grant.scopes,
     });
+
     next.run(request).await
 }
 
 fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Option<u64> {
     let minute = now.unix_timestamp().div_euclid(60);
     let mut windows = state.windows.lock().unwrap_or_else(PoisonError::into_inner);
+
     windows.retain(|_, (window, _)| *window == minute);
     let (_, count) = windows.entry(token).or_insert((minute, 0));
     if *count >= REQUESTS_PER_MINUTE {
         let elapsed = now.unix_timestamp().rem_euclid(60);
         return Some(u64::try_from(60 - elapsed).unwrap_or(60));
     }
+
     *count += 1;
     None
 }
@@ -170,6 +179,7 @@ async fn list_repos(
             default_branch,
         })
         .collect();
+
     Ok(Json(RepoList { repos }))
 }
 
@@ -210,14 +220,17 @@ async fn list_audit(
     if take == 0 || take > MAX_TAKE {
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
+
     let mut tx = begin_org(&state.pool, grant.org_id).await?;
     let known: Option<String> = sqlx::query_scalar("SELECT id FROM orgs WHERE slug = $1")
         .bind(&org)
         .fetch_optional(&mut *tx)
         .await?;
+
     if known.is_none() {
         return Err(ApiError::not_found("organization"));
     }
+
     let rows: Vec<AuditRow> = sqlx::query_as(
         "SELECT id, action, target, actor_user_id, before, after, occurred_at FROM audit_log
          WHERE $1::text IS NULL OR (occurred_at, id) <
@@ -249,6 +262,7 @@ async fn list_audit(
     } else {
         None
     };
+
     Ok(Json(AuditPage {
         entries,
         next_cursor,

@@ -30,6 +30,7 @@ async fn start(pool: &PgPool) -> String {
     let router = cihub_web::router(pool.clone(), now, github, Vec::new());
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
+
     tokio::spawn(cihub_web::serve(listener, router, CancellationToken::new()));
     addr
 }
@@ -51,9 +52,11 @@ async fn post(addr: &str, headers: &[(&str, &str)], body: &str) -> u16 {
          Content-Type: application/json\r\nContent-Length: {}\r\n",
         body.len()
     );
+
     for (name, value) in headers {
         let _ = write!(request, "{name}: {value}\r\n");
     }
+
     request.push_str("\r\n");
     request.push_str(body);
     stream.write_all(request.as_bytes()).await.unwrap();
@@ -90,6 +93,7 @@ async fn a_signed_delivery_is_stored_once_and_unrouted(pool: PgPool) {
         ("X-GitHub-Event", "pull_request"),
         ("X-Hub-Signature-256", signature.as_str()),
     ];
+
     assert_eq!(post(&addr, &headers, BODY).await, 202);
     assert_eq!(post(&addr, &headers, BODY).await, 202);
     assert_eq!(
@@ -108,6 +112,7 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
         ("X-GitHub-Event", "ping"),
         ("X-Hub-Signature-256", wrong.as_str()),
     ];
+
     assert_eq!(post(&addr, &unsigned, BODY).await, 401);
     assert_eq!(post(&addr, &wrongly_signed, BODY).await, 401);
     let right = signature(SECRET, BODY);
@@ -115,6 +120,7 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
         ("X-GitHub-Delivery", "d1"),
         ("X-Hub-Signature-256", right.as_str()),
     ];
+
     assert_eq!(post(&addr, &no_event, BODY).await, 400);
     assert_eq!(inbox(&pool).await, []);
 }
@@ -128,9 +134,11 @@ struct Answer {
 async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answer {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+
     if let Some(token) = token {
         let _ = write!(request, "Authorization: Bearer {token}\r\n");
     }
+
     request.push_str("\r\n");
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut response = String::new();
@@ -146,6 +154,7 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
 async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
     let org = OrgId::from_ulid(Ulid(7));
     let mut tx = begin_system(pool).await.unwrap();
+
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme') ON CONFLICT DO NOTHING;
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
@@ -166,6 +175,7 @@ async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
         scopes,
         expires_at: None,
     };
+
     create_api_token(&mut tx, &new, &secret).await.unwrap();
     tx.commit().await.unwrap();
     secret.expose_secret().to_owned()
@@ -178,6 +188,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
 
     let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
+
     assert_eq!(anonymous.status, 401);
     assert!(
         anonymous
@@ -216,6 +227,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
 async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
     let addr = start(&pool).await;
     let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
             call(&addr, "GET", "/api/v1/repos", Some(&reader))
@@ -224,6 +236,7 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
             200
         );
     }
+
     let limited = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
     assert_eq!(limited.status, 429);
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
