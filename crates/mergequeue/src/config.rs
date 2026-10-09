@@ -36,7 +36,8 @@ fn affected_targets(target: &QueueTarget) -> Result<Option<TargetsSource>, Failu
 async fn live_heads(conn: &mut PgConnection, queue: QueueId) -> Result<Vec<Head>, Failure> {
     let rows: Vec<(i64, String)> = sqlx::query_as(
         "SELECT pr_number, pr_head_sha FROM queue_items
-         WHERE queue_id = $1 AND is_current AND concluded_at IS NULL ORDER BY pr_number",
+         WHERE queue_id = $1 AND is_current AND state NOT IN ('merged', 'failed', 'cancelled')
+         ORDER BY pr_number",
     )
     .bind(queue.to_string())
     .fetch_all(conn)

@@ -1,7 +1,7 @@
 //! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
 //! again (`DECISIONS.md` D96, D101), `submit_pr` submits a PR after a command
 //! or a label (D102), `read_targets` gives the affected targets of a head,
-//! from its files or from the upload of the CI (D247, D234); the jobs of the test cycle are in `assembly`. Each one
+//! from its files or from the upload of the CI (D256, D234); the jobs of the test cycle are in `assembly`. Each one
 //! gives its facts back to the queue through `queue_inbox` (D100) and marks
 //! the queue dirty; it never writes the log.
 
@@ -176,7 +176,7 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
 }
 
 /// The computation of the affected targets of `head`, once per head and per
-/// configuration (`DECISIONS.md` D247, D235).
+/// configuration (`DECISIONS.md` D256, D235).
 pub(crate) fn read_targets(target: &QueueTarget, head: &Head) -> Job {
     let config = target.config_sha.as_deref().unwrap_or("none");
     let key = format!(
@@ -541,7 +541,7 @@ pub(crate) async fn refresh(
 /// Computes the affected targets of the head of the job from the files of
 /// the PR, then reads the PR: a head that moved in between gives nothing,
 /// since the files may be those of the new head; fewer files than the PR
-/// changes give `ALL` (`DECISIONS.md` D247).
+/// changes give `ALL` (`DECISIONS.md` D256).
 pub(crate) async fn compute_targets(
     pool: &PgPool,
     scm: &dyn Scm,

@@ -1942,7 +1942,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D227, D247: with `source: files`, the queue computes the
+/// `DECISIONS.md` D227, D256: with `source: files`, the queue computes the
 /// targets of each head from its files. Two PRs on disjoint targets are tested
 /// side by side; a PR with a file that no target keeps is `ALL`, and is tested
 /// on top of both.
@@ -2147,12 +2147,11 @@ async fn a_new_queue_waits_for_its_file_before_its_first_groups(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(items, [(1, "testing".into()), (2, "testing".into())]);
-    let predecessors: Vec<i32> = sqlx::query_scalar(
-        "SELECT cardinality(predecessor_ids) FROM test_groups ORDER BY created_at, id",
-    )
-    .fetch_all(&mut *tx)
-    .await
-    .unwrap();
+    let predecessors: Vec<i32> =
+        sqlx::query_scalar("SELECT cardinality(predecessor_ids) FROM test_groups ORDER BY id")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
     assert_eq!(predecessors, [0, 0]);
     let queue: Vec<serde_json::Value> = sqlx::query_scalar(
         "SELECT payload FROM events WHERE type::text = 'queue.transitioned' ORDER BY seq",

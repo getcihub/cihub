@@ -101,7 +101,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, bool>;
 
     /// The files that the PR `number` changes, read only when a condition
-    /// uses them (`DECISIONS.md` D143) or for the affected targets (D247).
+    /// uses them (`DECISIONS.md` D143) or for the affected targets (D256).
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,

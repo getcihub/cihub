@@ -307,7 +307,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 
 ### Lot 13: `parallel` strategy
 
-- **Content**: the `affected_targets` block of `.cihub.yaml` (`DECISIONS.md` D226 to D228 and D246); `source: files`,
+- **Content**: the `affected_targets` block of `.cihub.yaml` (`DECISIONS.md` D226 to D228 and D255); `source: files`,
   with the patterns and the old paths of renamed files read by `Scm::pr_files`; `source: upload`, with
   `POST /repos/{owner}/{name}/prs/{pr}/affected-targets` (`targets:write` token; for forks, an artifact
   sent by a `workflow_run` workflow, D239; 20 MB limit) and the block reason `awaiting_affected_targets`; lanes by overlap; batches per lane (D229);
@@ -316,7 +316,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in
   parallel, and an `ALL` PR serializes everything that follows it; criterion of phase 4 on a pilot monorepo.
 - **Tracking**:
-  - Steps: 1. vocabulary "affected targets" (D246); 2. the `affected_targets` block and the computation of the
+  - Steps: 1. vocabulary "affected targets" (D255); 2. the `affected_targets` block and the computation of the
     targets from the changed files, in `cihub-config`; 3. `Scm::pr_files` (old path of a renamed file, cut at
     3,000) and `source: files`; 4. `source: upload`: table, route, forks, `awaiting_affected_targets`; 5. batches
     per lane (D229) and targets computed again after a change of configuration (D230); 6. simulator scenarios
@@ -327,7 +327,7 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
     PR from its paths (D227). The glob of `files *=` becomes `PathGlob` in `cihub-conditions`, shared by both.
     An unquoted `!` pattern is a YAML tag: the file fails with a YAML error at its line. Tests: tables in
     `targets.rs` and `file.rs`.
-  - Done (October 7, 2026, D247): step 3. `Scm::pr_files` gives the old path of a renamed file. With
+  - Done (October 7, 2026, D256): step 3. `Scm::pr_files` gives the old path of a renamed file. With
     `source: files`, `plan` asks for the targets of each head without them, and the `read_targets` job
     computes them, or `ALL` when the files are cut; an item waits with `awaiting_affected_targets`, in both
     sources. Tests: `a_head_waits_for_the_targets_of_its_files` (core),

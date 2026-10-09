@@ -113,7 +113,7 @@ change without a decision.
 
 A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
 displayed in the PR comment; in `parallel` mode, `awaiting_affected_targets` until the affected targets of
-its head arrive (`DECISIONS.md` D247). The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
+its head arrive (`DECISIONS.md` D256). The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
 `conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
 `docs/GITHUB.md`. What CIHub reads from a PR: its state
 (`PrState`: `open`, `closed`, `merged`), its review decision (`ReviewDecision`) and its checks (`CheckReport`).

@@ -204,7 +204,7 @@ impl Reconciler {
     /// Requests `jobs`, then the jobs that make the SCM converge to the
     /// desired state: the read of the configuration file on a new head of the
     /// target (`DECISIONS.md` D136), the reads that are due (PRs, checks, target
-    /// head), the affected targets of each head that needs them (D247), the
+    /// head), the affected targets of each head that needs them (D256), the
     /// assembly of each run that waits for its test branch, the merge of each
     /// proved item, and the cleanup of each run that ended, after the
     /// retention (`DECISIONS.md` D117). Returns the number of new jobs.

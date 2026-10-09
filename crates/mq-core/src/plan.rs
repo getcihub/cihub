@@ -48,7 +48,7 @@ pub struct Desired {
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
     /// The heads whose affected targets CIHub must compute from their files,
-    /// or read from a stored upload (`DECISIONS.md` D247, D234).
+    /// or read from a stored upload (`DECISIONS.md` D256, D234).
     pub target_reads: Vec<Head>,
     /// What each PR must show: its live item, or the item that this
     /// reconciliation concluded (`DECISIONS.md` D156), by PR number.

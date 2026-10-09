@@ -23,7 +23,7 @@ pub struct RepoRef {
 }
 
 /// A file that a PR changes, with its old path when the PR renames it
-/// (`DECISIONS.md` D247).
+/// (`DECISIONS.md` D256).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChangedFile {
     pub path: String,

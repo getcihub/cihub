@@ -90,7 +90,7 @@ pub(crate) async fn deliver(
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT i.queue_id FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.org_id = $1 AND q.repo_id = $2 AND i.pr_number = $3 AND i.pr_head_sha = $4
-           AND i.is_current AND i.concluded_at IS NULL
+           AND i.is_current AND i.state NOT IN ('merged', 'failed', 'cancelled')
          ORDER BY i.queue_id",
     )
     .bind(org_id.to_string())

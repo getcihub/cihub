@@ -813,7 +813,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `next_tick_at` that is not due yet, at least 1 second and at most `TICK` (30 seconds), instead of `TICK`
   always. A `wake_at` was served up to 30 seconds late: a batch with `max_wait_minutes: 1` waited up to 1 minute
   30 on a manual test. One more query per pass. A separate evolution, outside the plan of a lot.
-- **D246** The vocabulary says "affected targets", as Nx and target-determinator, never "impacted targets":
+- **D255** The vocabulary says "affected targets", as Nx and target-determinator, never "impacted targets":
   the type `AffectedTargets`, the route `POST /repos/{owner}/{name}/prs/{pr_number}/affected-targets`, the
   table `affected_targets`, the field `affected_targets` of a run. The scope `targets:write` and the event
   `targets.received` keep their names. (Lot 13)
@@ -828,11 +828,11 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   file takes every target that keeps it, and a PR takes the union over its files; a renamed file counts by its
   old and its new path. A file that no target keeps, or a PR with more than 3,000 changed files (the limit of
   `Scm::pr_files`), gives `ALL`. A pattern that ends with `/` is a configuration error, whose message gives the
-  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230 and D247._
+  `/**` form; so is a list without any pattern that includes. (Lot 13) _Extended by D230 and D256._
 - **D228** With `source: upload`, the targets are opaque strings compared by equality, or `"ALL"`; the body of
   the upload is limited to 20 MB, and a larger list is sent as `"ALL"`. Until the targets of its head SHA
   arrive, the item stays `not_ready` with the block reason `awaiting_affected_targets`, without a fallback to
-  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D247 and D240._
+  `ALL`; `not_ready_timeout_hours` ends the wait of an abandoned PR. (Lot 13) _Extended by D256 and D240._
 - **D229** Extends D210: in `parallel` mode, a batch takes the next pending items of its lane, the items that
   overlapping targets link to it, and skips the items of the other lanes; the order stays the order of the
   queue inside each lane. The `parallel` strategy keeps its batches of at most 4 PRs. (Lot 13)
@@ -847,19 +847,19 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   otherwise the first queue of the branch. `queue_conditions` no longer route: they only admit, and the item
   waits in `not_ready` in its queue until they pass. `route_conditions` is not allowed in `defaults`. The routing
   reads the PR once, at the submission; an item still never changes queue.
-- **D247** Extends D227 and D228. `Scm::pr_files` gives each changed file with its old path when the PR renames
+- **D256** Extends D227 and D228. `Scm::pr_files` gives each changed file with its old path when the PR renames
   it; the conditions `files *=` still read only the new path. With `source: files`, each head of a live item
   without its targets gets one `read_targets:<queue_id>-<pr>-<head_sha>:1` job (class `interactive`): it reads
   the files, then the PR, and gives nothing when the head moved in between, `ALL` when it read fewer files than
   the PR changes, else the targets of the patterns, as `targets.received`. In both sources, an item that waits
   for its targets has the block reason `awaiting_affected_targets`. (Lot 13) _Extended by D234 and D235._
-- **D234** Extends D228 and D247. The `affected-targets` route stores each upload in `affected_targets`, by
+- **D234** Extends D228 and D256. The `affected-targets` route stores each upload in `affected_targets`, by
   repository, PR and head SHA, with a token that has `targets:write`, and answers `202`; the body is limited to
   20 MB. It gives `targets.received` at once to each queue in `source: upload` whose live item of the PR has that
   head; otherwise the `read_targets` job of the head reads the stored upload, so that an upload before the
   submission is kept. A queue in `source: files` ignores the uploads. The upload of a PR from a fork, without a
   token, comes later. (Lot 13) _Extended by D239._
-- **D235** Extends D230 and D247. The key of the `read_targets` job carries the SHA of the configuration:
+- **D235** Extends D230 and D256. The key of the `read_targets` job carries the SHA of the configuration:
   `read_targets:<queue_id>-<pr>-<head_sha>-<config_sha>:1`. When `load_config` keeps a file whose
   `affected_targets` block changes, it asks a `read_targets` job for the head of each live item, which gives
   the targets again. An item whose queue goes from `source: files` to `source: upload` without an upload of its
