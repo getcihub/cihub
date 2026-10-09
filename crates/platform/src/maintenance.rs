@@ -58,10 +58,12 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         .map_err(PlatformError::Query)?
         .rows_affected();
     let (dropped, kept) = drop_old_event_partitions(&mut tx, now).await?;
+
     tx.commit().await.map_err(PlatformError::Query)?;
     for partition in &kept {
         info!(partition, "event partition kept: events without a snapshot");
     }
+
     info!(jobs, partitions = dropped.len(), "maintenance done");
     Ok(())
 }
@@ -69,9 +71,11 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
 fn partition_end(name: &str) -> Option<OffsetDateTime> {
     let (year, month) = name.strip_prefix("events_")?.split_once('_')?;
     let (year, month): (i32, u8) = (year.parse().ok()?, month.parse().ok()?);
+
     if name != format!("events_{year:04}_{month:02}") {
         return None;
     }
+
     let first_day = Date::from_calendar_date(year, Month::try_from(month).ok()?, 1).ok()?;
     Some(next_month(first_day).with_time(Time::MIDNIGHT).assume_utc())
 }
@@ -95,6 +99,7 @@ async fn drop_old_event_partitions(
         if partition_end(&name).is_none_or(|end| end > now - EVENT_RETENTION) {
             continue;
         }
+
         let uncovered: bool = sqlx::query_scalar(AssertSqlSafe(format!(
             "SELECT EXISTS (
                  SELECT 1 FROM {name} e
@@ -104,14 +109,17 @@ async fn drop_old_event_partitions(
         .fetch_one(&mut *conn)
         .await
         .map_err(PlatformError::Query)?;
+
         if uncovered {
             kept.push(name);
             continue;
         }
+
         sqlx::query(AssertSqlSafe(format!("DROP TABLE {name}")))
             .execute(&mut *conn)
             .await
             .map_err(PlatformError::Query)?;
+
         dropped.push(name);
     }
     Ok((dropped, kept))

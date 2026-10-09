@@ -47,6 +47,7 @@ async fn seed(pool: &PgPool) {
     let (org, c) = (org(), connection());
     let (q1, q2, q3) = (queue(1), queue(2), queue(3));
     let mut tx = begin_system(pool).await.unwrap();
+
     sqlx::raw_sql(AssertSqlSafe(format!(
         "INSERT INTO orgs (id, slug) VALUES ('{org}', 'org');
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
@@ -64,6 +65,7 @@ async fn seed(pool: &PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
 }
 
@@ -77,6 +79,7 @@ async fn acquire(pool: &PgPool, owner: &str, now: OffsetDateTime) -> Vec<QueueId
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_lease_goes_to_one_owner_until_it_expires(pool: PgPool) {
     seed(&pool).await;
+
     assert_eq!(acquire(&pool, "a", at(0)).await, [queue(1), queue(2)]);
     assert_eq!(acquire(&pool, "b", at(1)).await, []);
     assert_eq!(acquire(&pool, "a", at(10)).await, [queue(1), queue(2)]);
@@ -93,7 +96,9 @@ async fn two_owners_at_the_same_time_never_share_a_queue(pool: PgPool) {
         let now = at(round * 100);
         let (a, b) = tokio::join!(acquire(&pool, "a", now), acquire(&pool, "b", now));
         let mut all = [a.clone(), b.clone()].concat();
+
         all.sort_unstable();
+
         assert_eq!(all, [queue(1), queue(2)], "round {round}: {a:?} {b:?}");
     }
 }
@@ -105,6 +110,7 @@ async fn a_released_lease_is_free_at_once(pool: PgPool) {
     let mut tx = begin_system(&pool).await.unwrap();
     assert_eq!(release_leases(&mut tx, "a").await.unwrap(), 2);
     tx.commit().await.unwrap();
+
     assert_eq!(acquire(&pool, "b", at(1)).await, [queue(1), queue(2)]);
 }
 
@@ -112,10 +118,12 @@ async fn a_released_lease_is_free_at_once(pool: PgPool) {
 async fn one_transaction_at_a_time_holds_the_lock_of_a_queue(pool: PgPool) {
     let mut first = pool.begin().await.unwrap();
     let mut second = pool.begin().await.unwrap();
+
     assert!(lock_queue(&mut first, queue(1)).await.unwrap());
     assert!(!lock_queue(&mut second, queue(1)).await.unwrap());
     assert!(lock_queue(&mut second, queue(2)).await.unwrap());
     first.commit().await.unwrap();
+
     assert!(lock_queue(&mut second, queue(1)).await.unwrap());
 }
 
@@ -153,6 +161,7 @@ async fn a_copy_of_a_delivery_changes_nothing(pool: PgPool) {
         received_at: at(5),
         ..first.clone()
     };
+
     assert!(!store(&pool, &copy).await);
     assert_eq!(pending(&pool).await, [first]);
 }
@@ -163,14 +172,17 @@ async fn deliveries_come_in_order_until_processed(pool: PgPool) {
     for (id, received) in [("d2", 2), ("d1", 1), ("d3", 3)] {
         store(&pool, &delivery(id, received)).await;
     }
+
     let ids = |deliveries: Vec<Delivery>| -> Vec<String> {
         deliveries.into_iter().map(|d| d.delivery_id).collect()
     };
+
     assert_eq!(ids(pending(&pool).await), ["d1", "d2", "d3"]);
     let mut tx = begin_system(&pool).await.unwrap();
     delete_delivery(&mut tx, "d1").await.unwrap();
     delete_delivery(&mut tx, "d2").await.unwrap();
     tx.commit().await.unwrap();
+
     assert_eq!(ids(pending(&pool).await), ["d3"]);
 }
 
@@ -183,18 +195,21 @@ async fn an_unrouted_delivery_is_seen_by_the_system_only(pool: PgPool) {
         queue_id: None,
         ..delivery("d1", 0)
     };
+
     assert!(store(&pool, &unrouted).await);
     let mut tx = begin_org(&pool, org()).await.unwrap();
     let seen: i64 = sqlx::query_scalar("SELECT count(*) FROM webhook_inbox")
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     assert_eq!(seen, 0);
     let orphan = Delivery {
         org_id: None,
         ..delivery("d2", 0)
     };
     let mut tx = begin_system(&pool).await.unwrap();
+
     assert!(store_delivery(&mut tx, &orphan).await.is_err());
 }
 
@@ -275,6 +290,7 @@ async fn due_jobs_come_by_class_then_by_time(pool: PgPool) {
     enqueue(&pool, &job("merge-early", JobClass::Merge), at(1)).await;
     enqueue(&pool, &job("interactive", JobClass::Interactive), at(3)).await;
     enqueue(&pool, &job("later", JobClass::Interactive), at(100)).await;
+
     assert_eq!(
         claim(&pool, "a", at(3), 10).await,
         ["interactive", "merge-early", "merge-late", "repair"]
@@ -285,6 +301,7 @@ async fn due_jobs_come_by_class_then_by_time(pool: PgPool) {
 async fn the_job_of_a_stopped_worker_is_taken_back_and_finished_once(pool: PgPool) {
     seed(&pool).await;
     enqueue(&pool, &job("j", JobClass::Merge), at(0)).await;
+
     assert_eq!(claim(&pool, "a", at(0), 10).await, ["j"]);
     assert_eq!(claim(&pool, "b", at(30), 10).await, Vec::<String>::new());
     assert_eq!(claim(&pool, "b", at(0) + JOB_LOCK, 10).await, ["j"]);
@@ -306,6 +323,7 @@ async fn two_workers_at_the_same_time_never_share_a_job(pool: PgPool) {
     for key in &keys {
         enqueue(&pool, &job(key, JobClass::Speculate), at(0)).await;
     }
+
     let mut tx = begin_system(&pool).await.unwrap();
     let a: Vec<String> = claim_jobs(&mut tx, "a", at(1), 20)
         .await
@@ -314,10 +332,13 @@ async fn two_workers_at_the_same_time_never_share_a_job(pool: PgPool) {
         .map(|job| job.idempotency_key)
         .collect();
     let b = claim(&pool, "b", at(1), 20).await;
+
     tx.commit().await.unwrap();
+
     assert_eq!(a.len() + b.len(), 30, "{a:?} {b:?}");
     let mut all = [a, b].concat();
     all.sort_unstable();
+
     assert_eq!(all, keys);
 }
 
@@ -337,11 +358,13 @@ async fn a_failed_job_waits_then_dies_after_its_last_attempt(pool: PgPool) {
             );
         }
     }
+
     assert_eq!(state(&pool, "j").await, ("dead".to_owned(), MAX_ATTEMPTS));
     assert_eq!(claim(&pool, "a", now, 10).await, Vec::<String>::new());
 
     enqueue(&pool, &job("k", JobClass::Merge), at(0)).await;
     claim(&pool, "a", now, 10).await;
+
     assert!(fail(&pool, "k", now, Retry::Never).await);
     assert_eq!(state(&pool, "k").await, ("failed".to_owned(), 1));
 }
@@ -353,12 +376,14 @@ async fn a_connection_gets_no_more_jobs_past_its_quota(pool: PgPool) {
     for n in 0..=quota {
         enqueue(&pool, &job(&format!("j{n:03}"), JobClass::Speculate), at(0)).await;
     }
+
     enqueue(&pool, &system_job("system"), at(0)).await;
     let first = claim(&pool, "a", at(1), 1_000).await;
     assert_eq!(first.len(), quota + 1);
     assert!(first.contains(&"system".to_owned()));
     assert_eq!(claim(&pool, "b", at(2), 1_000).await, Vec::<String>::new());
     complete(&pool, "j000", "a").await;
+
     assert_eq!(
         claim(&pool, "b", at(3), 1_000).await,
         [format!("j{quota:03}")]
@@ -457,11 +482,13 @@ async fn an_urgent_budget_is_written_before_the_next_period(pool: PgPool) {
         Arc::clone(&urgent),
         cancel.clone(),
     ));
+
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     changed
         .lock()
         .unwrap()
         .push((connection(), budget(Some(at(60)))));
+
     urgent.notify_one();
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
         while recorded_budget(&pool).await.5.is_none() {
@@ -470,6 +497,7 @@ async fn an_urgent_budget_is_written_before_the_next_period(pool: PgPool) {
     })
     .await
     .unwrap();
+
     assert_eq!(recorded_budget(&pool).await.5, Some(at(60)));
     cancel.cancel();
     writer.await.unwrap();
@@ -481,8 +509,10 @@ async fn a_paused_connection_gets_no_job_until_the_end_of_its_pause(pool: PgPool
     enqueue(&pool, &job("connection", JobClass::Interactive), at(0)).await;
     enqueue(&pool, &system_job("system"), at(0)).await;
     pause(&pool, at(60)).await;
+
     assert_eq!(claim(&pool, "a", at(10), 10).await, ["system"]);
     pause(&pool, at(30)).await;
+
     assert_eq!(claim(&pool, "a", at(40), 10).await, Vec::<String>::new());
     assert_eq!(claim(&pool, "a", at(60), 10).await, ["connection"]);
 }
@@ -503,12 +533,14 @@ async fn a_new_delivery_wakes_a_scheduler_within_a_second(pool: PgPool) {
     seed(&pool).await;
     let cancel = CancellationToken::new();
     let mut wakeup = QueueWakeup::listen(&pool).await.unwrap();
+
     assert_eq!(wakeup.wait(SHORT_TICK, &cancel).await.unwrap(), Wake::Tick);
 
     let queue_3 = Delivery {
         queue_id: Some(queue(3)),
         ..delivery("d1", 0)
     };
+
     store(&pool, &queue_3).await;
     let woken = tokio::time::timeout(
         std::time::Duration::from_secs(1),
@@ -517,12 +549,15 @@ async fn a_new_delivery_wakes_a_scheduler_within_a_second(pool: PgPool) {
     .await
     .unwrap()
     .unwrap();
+
     assert_eq!(woken, Wake::Notified);
     assert!(queue_state(&pool, queue(3)).await.0);
 
     store(&pool, &queue_3).await;
+
     assert_eq!(wakeup.wait(SHORT_TICK, &cancel).await.unwrap(), Wake::Tick);
     cancel.cancel();
+
     assert_eq!(
         wakeup.wait(SHORT_TICK, &cancel).await.unwrap(),
         Wake::Cancelled
@@ -535,12 +570,15 @@ async fn the_tick_finds_a_queue_whose_notification_was_lost(pool: PgPool) {
     let cancel = CancellationToken::new();
     let mut wakeup = QueueWakeup::listen(&pool).await.unwrap();
     let mut tx = begin_system(&pool).await.unwrap();
+
     sqlx::query("UPDATE queues SET dirty = true WHERE id = $1")
         .bind(queue(3).to_string())
         .execute(&mut *tx)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
+
     assert_eq!(wakeup.wait(SHORT_TICK, &cancel).await.unwrap(), Wake::Tick);
     assert!(acquire(&pool, "a", at(0)).await.contains(&queue(3)));
 }
@@ -566,6 +604,7 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
+
     assert!(
         begin_reconciliation(&pool, queue(1))
             .await
@@ -577,13 +616,17 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
         let pool = pool.clone();
         async move { store(&pool, &delivery("d1", 0)).await }
     });
+
     tokio::time::sleep(SHORT_TICK).await;
+
     assert!(!writer.is_finished());
 
     schedule_tick(&mut tx, queue(1), Some(at(50)))
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
+
     assert!(writer.await.unwrap());
     assert_eq!(queue_state(&pool, queue(1)).await, (true, Some(at(50))));
 
@@ -591,7 +634,9 @@ async fn a_write_during_a_reconciliation_marks_the_queue_again(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
+
     tx.commit().await.unwrap();
+
     assert_eq!(queue_state(&pool, queue(1)).await, (false, Some(at(50))));
 }
 
@@ -645,8 +690,10 @@ async fn a_worker_runs_each_job_with_its_executor(pool: PgPool) {
     for (key, job_type) in [("a", "ok"), ("b", "later"), ("c", "unknown")] {
         enqueue(&pool, &typed_job(key, job_type), at(0)).await;
     }
+
     let cancel = CancellationToken::new();
     let worker = start_worker(&pool, at(10), SHORT_TICK, &cancel);
+
     assert_eq!(
         wait_for_state(&pool, "a", "done").await,
         ("done".to_owned(), 1)
@@ -665,6 +712,7 @@ async fn a_worker_runs_each_job_with_its_executor(pool: PgPool) {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
+
     assert_eq!(
         errors,
         [
@@ -682,8 +730,10 @@ async fn a_new_job_wakes_a_worker_within_a_second(pool: PgPool) {
     seed(&pool).await;
     let cancel = CancellationToken::new();
     let worker = start_worker(&pool, at(10), std::time::Duration::from_mins(1), &cancel);
+
     tokio::time::sleep(SHORT_TICK).await;
     enqueue(&pool, &typed_job("a", "ok"), at(0)).await;
+
     assert_eq!(wait_for_state(&pool, "a", "done").await.0, "done");
     cancel.cancel();
     worker.await.unwrap();
@@ -694,6 +744,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
     seed(&pool).await;
     let now = at(30 * 86_400);
     let mut tx = begin_system(&pool).await.unwrap();
+
     assert!(request_maintenance(&mut tx, now).await.unwrap());
     assert!(
         !request_maintenance(&mut tx, now + Duration::hours(1))
@@ -701,6 +752,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .unwrap()
     );
     tx.commit().await.unwrap();
+
     assert_eq!(
         maintenance_job(now.date()).idempotency_key,
         "maintenance:2026-10-10:1"
@@ -717,6 +769,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         complete_job(&mut tx, key, "a", finished).await.unwrap();
         tx.commit().await.unwrap();
     }
+
     run_maintenance(&pool, now).await.unwrap();
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -725,11 +778,13 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
             .fetch_all(&mut *tx)
             .await
             .unwrap();
+
     assert_eq!(deliveries, ["waiting"]);
     let jobs: Vec<String> = sqlx::query_scalar("SELECT idempotency_key FROM jobs ORDER BY 1")
         .fetch_all(&mut *tx)
         .await
         .unwrap();
+
     assert_eq!(jobs, ["maintenance:2026-10-10:1", "recent"]);
     let partitions: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
@@ -738,6 +793,7 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
     .fetch_all(&mut *tx)
     .await
     .unwrap();
+
     assert_eq!(partitions, ["events_2026_10", "events_2026_11"]);
 }
 
@@ -820,6 +876,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
     let cancel = CancellationToken::new();
     let router = tokio::spawn(run_router(
@@ -829,6 +886,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         std::time::Duration::from_mins(1),
         cancel.clone(),
     ));
+
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let known = json!({ "installation": "1", "repo": "1", "branch": "release" });
     for delivery in [
@@ -870,6 +928,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     ] {
         store(&pool, &delivery).await;
     }
+
     let (o, c) = (Some(org().to_string()), Some(connection().to_string()));
     let expected: Vec<RouteRow> = vec![
         (
@@ -895,6 +954,7 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
         }
     })
     .await;
+
     assert_eq!(routes(&pool).await, expected, "routed within a second");
     assert!(queue_state(&pool, queue(2)).await.0);
     assert!(queue_state(&pool, queue(3)).await.0);
@@ -934,17 +994,21 @@ async fn route_at(pool: &PgPool, now: OffsetDateTime, deliveries: &[Delivery]) {
         std::time::Duration::from_millis(20),
         cancel.clone(),
     ));
+
     for delivery in deliveries {
         store(pool, delivery).await;
     }
+
     for _ in 0..50 {
         if routes(pool).await.iter().all(|route| route.2.is_some()) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+
     cancel.cancel();
     router.await.unwrap().unwrap();
+
     assert!(
         routes(pool).await.iter().all(|route| route.2.is_some()),
         "routed"
@@ -957,9 +1021,11 @@ async fn a_delivery_of_a_connection_read_more_than_an_hour_ago_asks_for_one_sync
     let push = |id: &str| unrouted(id, "push", json!({ "installation": "1", "repo": "1" }));
 
     route_at(&pool, at(3599), &[push("a")]).await;
+
     assert!(installation_jobs(&pool).await.is_empty());
 
     route_at(&pool, at(3601), &[push("b"), push("c")]).await;
+
     assert_eq!(
         installation_jobs(&pool).await,
         ["sync_installation:1-20260910T01:1"]
@@ -1042,6 +1108,7 @@ async fn the_full_sync_creates_the_organization_of_a_new_installation_once(pool:
         .unwrap();
     let globex = ("globex".to_owned(), "70".to_owned(), "7".to_owned());
     let acme = ("org".to_owned(), "1".to_owned(), "1".to_owned());
+
     assert_eq!(orgs(&pool).await, [globex.clone(), acme.clone()]);
     assert_eq!(
         connection_of(&pool, "7").await,
@@ -1058,6 +1125,7 @@ async fn the_full_sync_creates_the_organization_of_a_new_installation_once(pool:
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
     let read = format!("sync_repos:{connection_id}-20260910T00:1");
     assert_eq!(sync_jobs(&pool).await, std::slice::from_ref(&read));
@@ -1066,12 +1134,14 @@ async fn the_full_sync_creates_the_organization_of_a_new_installation_once(pool:
         connection_id.parse().unwrap(),
         "20260910T00",
     );
+
     assert_eq!(run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap(), 1);
     assert!(repos(&pool).await.iter().any(|repo| repo.0 == "5"));
 
     run_sync_installations(&pool, &sim, KIND, at(60))
         .await
         .unwrap();
+
     assert_eq!(orgs(&pool).await, [globex, acme]);
     assert_eq!(sync_jobs(&pool).await, [read]);
     assert_eq!(connection_of(&pool, "7").await.1, at(60));
@@ -1104,7 +1174,9 @@ async fn a_delivery_of_a_new_installation_creates_its_organization(pool: PgPool)
         .await
         .unwrap();
     let jobs = claim_jobs(&mut tx, "w", at(0), 10).await.unwrap();
+
     tx.commit().await.unwrap();
+
     assert_eq!(waiting, 0);
 
     for job in &jobs {
@@ -1112,6 +1184,7 @@ async fn a_delivery_of_a_new_installation_creates_its_organization(pool: PgPool)
             .await
             .unwrap();
     }
+
     let slugs: Vec<String> = orgs(&pool).await.into_iter().map(|org| org.0).collect();
     assert_eq!(slugs, ["globex", "initech", "org"]);
 }
@@ -1130,6 +1203,7 @@ async fn a_suspension_gives_access_lost_to_each_queue_then_access_restored(pool:
     sim.set_access("1", false);
     sync_installation(&pool, &sim, "1", at(10)).await;
     sync_installation(&pool, &sim, "1", at(20)).await;
+
     assert_eq!(connection_of(&pool, "1").await.2, Some(at(10)));
     assert_eq!(given_facts(&pool).await, facts("access.lost"));
     for queue in [queue(1), queue(2), queue(3)] {
@@ -1138,9 +1212,11 @@ async fn a_suspension_gives_access_lost_to_each_queue_then_access_restored(pool:
 
     sim.set_access("1", true);
     sync_installation(&pool, &sim, "1", at(30)).await;
+
     assert_eq!(connection_of(&pool, "1").await.2, None);
     let mut expected = facts("access.lost");
     expected.extend(facts("access.restored"));
+
     assert_eq!(given_facts(&pool).await, expected);
 }
 
@@ -1150,12 +1226,14 @@ async fn a_deleted_installation_suspends_its_connection(pool: PgPool) {
     let sim = Sim::new();
 
     sync_installation(&pool, &sim, "1", at(10)).await;
+
     assert_eq!(connection_of(&pool, "1").await.2, Some(at(10)));
     assert_eq!(given_facts(&pool).await.len(), 3);
 
     run_sync_installations(&pool, &sim, KIND, at(20))
         .await
         .unwrap();
+
     assert_eq!(
         connection_of(&pool, "1").await,
         ("{}".to_owned(), at(20), Some(at(10)))
@@ -1172,6 +1250,7 @@ async fn new_permissions_accepted_are_written_on_the_connection(pool: PgPool) {
     sync_installation(&pool, &sim, "1", at(10)).await;
     sim.set_permissions("1", &[("contents", "write"), ("actions", "write")]);
     sync_installation(&pool, &sim, "1", at(20)).await;
+
     assert_eq!(
         connection_of(&pool, "1").await,
         (
@@ -1192,6 +1271,7 @@ async fn a_slug_already_taken_fails_the_sync_and_creates_nothing(pool: PgPool) {
 
     let job = sync_installation_job("7", "d-1", JobClass::Interactive);
     let outcome = execute(pool.clone(), job, at(0)).await;
+
     assert!(matches!(outcome, Outcome::Failed(_)), "{outcome:?}");
     assert_eq!(orgs(&pool).await.len(), 1);
 
@@ -1214,6 +1294,7 @@ async fn a_read_of_repositories_without_access_asks_for_the_sync_of_the_installa
 
     let job = sync_repos_job(org(), connection(), "w");
     let read = run_sync_repos(&pool, &sim, &job, at(0)).await;
+
     assert!(
         matches!(read, Err(PlatformError::Scm(ScmError::AccessLost(_)))),
         "{read:?}"
@@ -1239,6 +1320,7 @@ async fn the_full_sync_is_requested_once_a_day_and_at_each_start(pool: PgPool) {
             requested.unwrap()
         }
     };
+
     assert!(request(at(0), false).await);
     assert!(!request(at(3600), false).await);
     assert!(request(at(0), true).await);
@@ -1267,7 +1349,9 @@ async fn a_token_of_an_organization_has_every_scope_and_is_audited(pool: PgPool)
             .fetch_one(&mut *tx)
             .await
             .unwrap();
+
     drop(tx);
+
     assert_eq!(audited, 1);
 
     let unknown = create_token(&pool, "missing", at(0)).await;
@@ -1318,6 +1402,7 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+
     tx.commit().await.unwrap();
     let sim = Sim::new();
     sim.add_repo(&sim_repo("1", "1", "renamed"), "trunk", &[]);
@@ -1343,13 +1428,16 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
         row("2", &o, &c, "acme", "lib", "main"),
         row("4", "other", "c2", "other", "kept", "main"),
     ];
+
     assert_eq!(repos(&pool).await, expected);
     let mut tx = begin_system(&pool).await.unwrap();
     let id: String = sqlx::query_scalar("SELECT id FROM repos WHERE external_id = '1'")
         .fetch_one(&mut *tx)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
+
     assert_eq!(id, "r");
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1358,6 +1446,7 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
         .execute(&mut *tx)
         .await
         .unwrap();
+
     tx.commit().await.unwrap();
     let calls = sim.calls().len();
     assert_eq!(run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap(), 0);
@@ -1376,6 +1465,7 @@ async fn each_active_connection_is_read_once_an_hour(pool: PgPool) {
             requested
         }
     };
+
     assert_eq!(request(at(0)).await, 1);
     assert_eq!(request(at(60)).await, 0);
     assert_eq!(request(at(3600)).await, 1);

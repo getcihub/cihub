@@ -249,11 +249,13 @@ pub async fn fail_job(
     let Some(attempts) = attempts else {
         return Ok(None);
     };
+
     let state = match retry {
         Retry::Never => JobState::Failed,
         Retry::Later if attempts >= MAX_ATTEMPTS => JobState::Dead,
         Retry::Later => JobState::Queued,
     };
+
     sqlx::query(
         "UPDATE jobs SET state = $2::job_state, run_after = $3, last_error = $4,
                          locked_by = NULL, locked_until = NULL,
@@ -268,6 +270,7 @@ pub async fn fail_job(
     .execute(conn)
     .await
     .map_err(PlatformError::Query)?;
+
     Ok(Some(state))
 }
 

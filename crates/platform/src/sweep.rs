@@ -61,6 +61,7 @@ pub async fn run_sweep(scm: &dyn Scm, now: OffsetDateTime) -> Result<usize, Plat
 
     let mut delivered = BTreeSet::new();
     let mut undelivered = BTreeMap::new();
+
     for attempt in recent {
         if attempt.is_delivered {
             delivered.insert(attempt.delivery_id);
@@ -84,6 +85,7 @@ pub async fn run_sweep(scm: &dyn Scm, now: OffsetDateTime) -> Result<usize, Plat
         info!(delivery_id, "delivery asked again");
         asked += 1;
     }
+
     Ok(asked)
 }
 
@@ -121,6 +123,7 @@ mod tests {
                 .unwrap()
         };
         let key = |minute| sweep_job(at(minute)).idempotency_key;
+
         assert_eq!(key(5), key(9));
         assert_ne!(key(9), key(10));
         assert_eq!(key(7), "sweep_deliveries:20260910T0005:1");
@@ -153,6 +156,7 @@ mod tests {
         sim.push(&repo, "a", &root, &alice).unwrap();
         sim.take_deliveries();
         sim.push(&repo, "b", &root, &alice).unwrap();
+
         assert_eq!(sim.take_deliveries_with(lose_all), []);
         sim.push(&repo, "c", &root, &alice).unwrap();
         sim.take_deliveries();

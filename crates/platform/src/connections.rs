@@ -60,6 +60,7 @@ pub async fn request_repo_syncs(
     .map_err(PlatformError::Query)?;
     let window = hour_window(now);
     let mut requested = 0;
+
     for (org, connection) in connections {
         let read = || PlatformError::read("connection", &connection);
         let job = sync_repos_job(
@@ -71,6 +72,7 @@ pub async fn request_repo_syncs(
             requested += 1;
         }
     }
+
     Ok(requested)
 }
 
@@ -95,6 +97,7 @@ pub async fn run_sync_repos(
             job.idempotency_key.clone(),
         ));
     };
+
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
     let external_id: Option<String> = sqlx::query_scalar(
         "SELECT external_id FROM scm_connections WHERE id = $1 AND suspended_at IS NULL",
@@ -103,16 +106,19 @@ pub async fn run_sync_repos(
     .fetch_optional(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
+
     tx.commit().await.map_err(PlatformError::Query)?;
     let Some(external_id) = external_id else {
         return Ok(0);
     };
+
     let connection = ConnectionRef {
         id: connection_id,
         external_id,
     };
 
     let listed = scm.list_repos(&connection, job.class).await;
+
     if matches!(listed, Err(ScmError::AccessLost(_) | ScmError::NotFound(_))) {
         let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
         let cause = hour_window(now);
@@ -126,6 +132,7 @@ pub async fn run_sync_repos(
         .await?;
         tx.commit().await.map_err(PlatformError::Query)?;
     }
+
     let repos = listed.map_err(PlatformError::Scm)?;
 
     #[expect(
@@ -158,6 +165,7 @@ pub async fn run_sync_repos(
     .execute(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
+
     tx.commit().await.map_err(PlatformError::Query)?;
     let written = usize::try_from(written.rows_affected()).unwrap_or(usize::MAX);
     info!(
@@ -166,6 +174,7 @@ pub async fn run_sync_repos(
         repos = written,
         "repositories read"
     );
+
     Ok(written)
 }
 
@@ -207,6 +216,7 @@ mod tests {
         };
         let (org, connection) = (OrgId::from_ulid(Ulid(1)), ConnectionId::from_ulid(Ulid(2)));
         let key = |cause: &str| sync_repos_job(org, connection, cause).idempotency_key;
+
         assert_eq!(key(&hour_window(at(9, 1))), key(&hour_window(at(9, 59))));
         assert_ne!(key(&hour_window(at(9, 59))), key(&hour_window(at(10, 0))));
         assert_eq!(key("d-1"), format!("sync_repos:{connection}-d-1:1"));

@@ -110,10 +110,12 @@ impl IntoResponse for ApiError {
         };
         let mut response = (status, Json(problem)).into_response();
         let headers = response.headers_mut();
+
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
         if let Some(seconds) = self.retry_after {
             headers.insert(header::RETRY_AFTER, HeaderValue::from(seconds));
         }
+
         response
     }
 }
