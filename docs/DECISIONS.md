@@ -219,6 +219,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   next month, deletes the deliveries processed more than 7 days ago and the jobs finished more than 3 days ago.
   Each scheduler replica requests it every hour with the key of the day (`maintenance:<YYYY-MM-DD>:1`): the key
   admits only one job per day, which a single worker runs. It replaces the daily partition loop.
+  _Extended by D249._
 - **D68** Extends D60: in an `idempotency_key`, the type is in `snake_case`, the subject contains no `:`, and the
   version is an integer starting at 1.
 - **D69** The worker stops an executor after `JOB_TIMEOUT` (50 s), shorter than `JOB_LOCK` (60 s), and puts its
@@ -280,7 +281,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   (D78).
 - **D84** The webhook handler verifies the signature, stores the delivery without routing it and responds. A loop
   of the `api` role reads the unrouted deliveries, translates them into `ScmDelivery`, routes them, writes the
-  routed row and marks the queue (`mark_dirty`). _Extended by D91: the `web` role._
+  routed row and marks the queue (`mark_dirty`). _Extended by D91: the `web` role._ _Extended by D249._
 - **D85** Routing is partial: it fills `org_id` and `connection_id` as soon as the connection is known, and
   `queue_id` only when a single queue is certain (PR with its base branch, push on a target branch, check of a
   test branch). Lot 5 reads the deliveries of its queue and those of its connection without a queue.
@@ -293,7 +294,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   recent deliveries and redeliver a delivery. A `sweep_deliveries` job of class `repair`, requested by each
   scheduler replica every 5 minutes with the key of the window
   (`sweep_deliveries:<scm_instance_id>-<YYYYMMDDTHHMM>:1`), redelivers the deliveries absent from the inbox.
-  _Extended by D246._
+  _Extended by D246._ _Extended by D249._
 - **D89** The wizard (`/setup`) responds only when no App is configured; the server therefore starts without the
   GitHub variables. It links the return from GitHub to the browser that started the flow by a random `state`
   parameter, kept in an `HttpOnly` and `SameSite=Lax` cookie, and refuses a return whose `state` differs. The
@@ -339,7 +340,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D100** A `queue_inbox` table receives the facts that the jobs, then the API, return to a queue: the identifier
   of the fact, its actor, its type and its payload. The depositor marks the queue; the scheduler applies these
   facts under the lock of the queue and marks them processed in the transaction of the reconciliation. The
-  scheduler is the only one that writes the log.
+  scheduler is the only one that writes the log. _Extended by D249._
 - **D101** Extends D96: the key of `refresh_prs` names its cause. After a delivery, it carries its identifier
   (`refresh_prs:<queue_id>-<delivery_id>:1`, class `interactive`); the polling keeps the key of its window
   (`refresh_prs:<queue_id>-<YYYYMMDDTHHMM>:1`, class `repair`). _Extended by D170._
@@ -903,6 +904,15 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
 - **D248** `cihub server bootstrap --installation <id>` is replaced by `cihub server token create --org <slug>`: it
   creates an API token named `token` with every scope for an existing organization, audits it (`token.created`)
   and shows it once; it creates no organization. Supersedes the bootstrap command of D154, D155 and D168.
+- **D249** An inbox holds only work to do. A row of `webhook_inbox` is deleted in the transaction that processes
+  its delivery, or when the routing finds nothing to do with it; a row of `queue_inbox` is deleted in the
+  transaction that applies its fact to the log. `processed_at` is removed from both tables, and `routed_at` and
+  `error` from `webhook_inbox`: a delivery whose `connection_id` is empty is not routed yet; a translation
+  error is a log line. The `maintenance` job no longer deletes deliveries. The sweep asks again only the
+  deliveries that have no attempt with a 2xx status code on the SCM, because CIHub answers 2xx only after it
+  stores the delivery; it no longer reads `webhook_inbox`. A delivery processed again writes no wrong fact and asks
+  each of its jobs at most once, since their keys carry its identifier; a change of a PR processed again after its
+  PR entered the queue asks one more read of that PR. Extends D67, D84, D88 and D100.
 
 ## Open questions
 

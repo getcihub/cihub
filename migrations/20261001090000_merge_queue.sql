@@ -116,13 +116,11 @@ CREATE TABLE queue_inbox (
     payload       jsonb       NOT NULL,
     received_at   timestamptz NOT NULL,
     arrival       bigint      GENERATED ALWAYS AS IDENTITY,
-    processed_at  timestamptz,
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     CHECK ((actor_kind = 'user') = (actor_user_id IS NOT NULL))
 );
 
-CREATE INDEX queue_inbox_pending ON queue_inbox (queue_id, arrival)
-    WHERE processed_at IS NULL;
+CREATE INDEX queue_inbox_pending ON queue_inbox (queue_id, arrival);
 
 SELECT cihub_tenant_table('queue_items');
 SELECT cihub_tenant_table('test_groups');

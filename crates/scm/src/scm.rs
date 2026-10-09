@@ -224,8 +224,9 @@ pub trait Scm: Send + Sync {
     -> ScmFuture<'a, ()>;
 
     /// The webhook deliveries that the SCM sent to CIHub since `since`,
-    /// each attempt once, for every connection (`DECISIONS.md` D88). No
-    /// connection makes the call, so no budget of a connection applies.
+    /// each attempt once with its outcome, for every connection
+    /// (`DECISIONS.md` D88, D249). No connection makes the call, so no budget
+    /// of a connection applies.
     fn recent_deliveries(
         &self,
         since: OffsetDateTime,

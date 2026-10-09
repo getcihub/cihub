@@ -20,11 +20,11 @@ pub struct Delivery {
 }
 
 /// Stores `delivery` and returns `true`, or returns `false` when the inbox
-/// already has it: a copy of a delivery changes nothing. A delivery with its
-/// organization is routed; a new delivery of a queue marks the queue dirty in
-/// the same transaction, and a new delivery of a connection without a queue
-/// wakes the schedulers. A new delivery without organization waits for the
-/// routing loop, which [`INBOX_CHANNEL`] wakes.
+/// still has it: a copy of a delivery that waits changes nothing. A delivery
+/// with its connection is routed; a new delivery of a queue marks the queue
+/// dirty in the same transaction, and a new delivery of a connection without
+/// a queue wakes the schedulers. A new delivery without connection waits for
+/// the routing loop, which [`INBOX_CHANNEL`] wakes.
 ///
 /// # Errors
 ///
@@ -36,8 +36,8 @@ pub async fn store_delivery(
 ) -> Result<bool, PlatformError> {
     let done = sqlx::query(
         "INSERT INTO webhook_inbox (delivery_id, org_id, connection_id, queue_id, event, payload,
-                                    received_at, routed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $2 IS NULL THEN NULL ELSE $7 END)
+                                    received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (delivery_id) DO NOTHING",
     )
     .bind(&delivery.delivery_id)
@@ -51,7 +51,7 @@ pub async fn store_delivery(
     .await
     .map_err(PlatformError::Query)?;
     let stored = done.rows_affected() == 1;
-    match (stored, delivery.org_id) {
+    match (stored, delivery.connection_id) {
         (true, Some(_)) => wake_for_delivery(conn, delivery.queue_id).await?,
         (true, None) => notify(conn, INBOX_CHANNEL).await?,
         (false, _) => {}
@@ -69,8 +69,8 @@ pub(crate) type DeliveryRow = (
     OffsetDateTime,
 );
 
-/// The deliveries of `queue` not processed yet, at most `limit`, in the order
-/// of reception. The caller holds the lock of the queue.
+/// The deliveries of `queue`, at most `limit`, in the order of reception.
+/// The caller holds the lock of the queue.
 ///
 /// # Errors
 ///
@@ -83,7 +83,7 @@ pub async fn pending_deliveries(
     let rows: Vec<DeliveryRow> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, queue_id, event, payload, received_at
          FROM webhook_inbox
-         WHERE queue_id = $1 AND processed_at IS NULL
+         WHERE queue_id = $1
          ORDER BY received_at, delivery_id
          LIMIT $2",
     )
@@ -113,23 +113,19 @@ pub(crate) fn decode(
     })
 }
 
-/// Marks a delivery as processed at `now`, with the reason when the processing
-/// failed. The caller does it in the transaction that writes the facts of the
-/// delivery, so that a crash neither loses nor repeats them.
+/// Deletes a processed delivery from the inbox (`DECISIONS.md` D249). The
+/// caller does it in the transaction that writes the facts of the delivery,
+/// so that a crash neither loses nor repeats them.
 ///
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn mark_processed(
+pub async fn delete_delivery(
     conn: &mut PgConnection,
     delivery_id: &str,
-    now: OffsetDateTime,
-    error: Option<&str>,
 ) -> Result<(), PlatformError> {
-    sqlx::query("UPDATE webhook_inbox SET processed_at = $2, error = $3 WHERE delivery_id = $1")
+    sqlx::query("DELETE FROM webhook_inbox WHERE delivery_id = $1")
         .bind(delivery_id)
-        .bind(now)
-        .bind(error)
         .execute(conn)
         .await
         .map_err(PlatformError::Query)?;

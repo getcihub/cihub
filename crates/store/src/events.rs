@@ -136,7 +136,7 @@ fn decode(
 }
 
 /// Deposits the fact `event` in the inbox of its queue (`DECISIONS.md` D100), and
-/// returns `false` when the inbox already has it: a job that runs twice
+/// returns `false` when the inbox still has it: a job that runs twice
 /// deposits the same fact once. The scheduler applies it later under the lock
 /// of the queue; the caller marks the queue dirty.
 ///
@@ -172,8 +172,8 @@ pub async fn deposit_fact(
     Ok(done.rows_affected() == 1)
 }
 
-/// The facts of the inbox of `queue` not processed yet, at most `limit`, in
-/// the order of their deposits. The time of a fact is the time it came.
+/// The facts of the inbox of `queue`, at most `limit`, in the order of their
+/// deposits. The time of a fact is the time it came.
 ///
 /// # Errors
 ///
@@ -187,7 +187,7 @@ pub async fn pending_facts(
         "SELECT 0::bigint, id, org_id, queue_id, type::text, actor_kind::text, actor_user_id,
                 NULL::text, payload, received_at
          FROM queue_inbox
-         WHERE queue_id = $1 AND processed_at IS NULL
+         WHERE queue_id = $1
          ORDER BY arrival
          LIMIT $2",
     )
@@ -205,18 +205,16 @@ pub async fn pending_facts(
         .collect()
 }
 
+/// Deletes the facts `ids` from the inbox once applied (`DECISIONS.md` D249),
+/// in the transaction that writes them to the log.
+///
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn mark_facts_processed(
-    conn: &mut PgConnection,
-    ids: &[EventId],
-    now: OffsetDateTime,
-) -> Result<(), StoreError> {
+pub async fn delete_facts(conn: &mut PgConnection, ids: &[EventId]) -> Result<(), StoreError> {
     let ids: Vec<String> = ids.iter().map(ToString::to_string).collect();
-    sqlx::query("UPDATE queue_inbox SET processed_at = $2 WHERE id = ANY($1)")
+    sqlx::query("DELETE FROM queue_inbox WHERE id = ANY($1)")
         .bind(ids)
-        .bind(now)
         .execute(conn)
         .await
         .map_err(StoreError::Query)?;
