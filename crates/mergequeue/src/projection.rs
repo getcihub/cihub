@@ -120,14 +120,12 @@ pub(crate) async fn project(
             .bind(ids(item_ids))
             .bind(ids(predecessor_ids))
             .execute(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
             sqlx::query("UPDATE queue_items SET group_id = $1 WHERE id = ANY($2)")
                 .bind(group_id.to_string())
                 .bind(ids(item_ids))
                 .execute(&mut *conn)
-                .await
-                .map_err(MergeQueueError::Query)?;
+                .await?;
         }
         EventKind::GroupTransitioned {
             group_id, from, to, ..
@@ -189,8 +187,7 @@ pub(crate) async fn project(
             .bind(head_shas)
             .bind(tested)
             .execute(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
         }
         EventKind::RunTransitioned {
             run_id,
@@ -318,8 +315,7 @@ async fn refused_item(
     .bind(event.queue_id.to_string())
     .bind(event.cause_id.map(|id| id.to_string()))
     .fetch_optional(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let Some(payload) = payload else {
         return Ok(None);
     };
@@ -377,8 +373,7 @@ async fn create_item(
         .bind(event.queue_id.to_string())
         .bind(pr_number)
         .execute(&mut *conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
     }
     let blocks = serde_json::to_value(&item.block_reasons).map_err(MergeQueueError::Snapshot)?;
     let done = sqlx::query(
@@ -438,8 +433,7 @@ pub(crate) async fn upsert_check(
     .bind(&check.details_url)
     .bind(check.observed_at)
     .execute(conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
 
     Ok(())
 }
@@ -463,8 +457,7 @@ pub(crate) async fn record_late_check(
     .bind(queue.to_string())
     .bind(test_sha)
     .fetch_optional(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let Some((run_id, required)) = run else {
         return Ok(false);
     };

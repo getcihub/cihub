@@ -104,8 +104,7 @@ impl QueueTarget {
         )))
         .bind(queue.to_string())
         .fetch_optional(conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
         decode(row.ok_or(MergeQueueError::UnknownQueue(queue))?)
     }
 
@@ -192,8 +191,7 @@ impl QueueTarget {
         .bind(repo.to_string())
         .bind(branch)
         .fetch_all(conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
         let mut queues = rows
             .into_iter()
             .map(decode)
@@ -239,8 +237,7 @@ impl RepoTarget {
         )
         .bind(repo.to_string())
         .fetch_optional(conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
         let (org, instance, external_id, namespace, name, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
         Ok(Self {

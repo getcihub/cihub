@@ -47,13 +47,13 @@ use crate::surfaces::{PUBLISH_SURFACES, WELCOME_PR};
 #[derive(Debug, thiserror::Error)]
 pub enum MergeQueueError {
     #[error("query failed")]
-    Query(#[source] sqlx::Error),
+    Query(#[from] sqlx::Error),
     #[error("store failed")]
-    Store(#[source] cihub_store::StoreError),
+    Store(#[from] cihub_store::StoreError),
     #[error("transport failed")]
-    Platform(#[source] cihub_platform::PlatformError),
+    Platform(#[from] cihub_platform::PlatformError),
     #[error("the settings of the queue are not valid")]
-    Settings(#[source] cihub_config::ConfigError),
+    Settings(#[from] cihub_config::ConfigError),
     #[error("queue {0} does not exist")]
     UnknownQueue(cihub_domain::QueueId),
     #[error("repository {0} does not exist")]
@@ -71,7 +71,7 @@ pub enum MergeQueueError {
         source: cihub_mq_core::ApplyError,
     },
     #[error("plan failed")]
-    Plan(#[source] cihub_mq_core::PlanError),
+    Plan(#[from] cihub_mq_core::PlanError),
     #[error("the log of queue {queue} has no event after {after}: its old events are gone")]
     LogGap {
         queue: cihub_domain::QueueId,

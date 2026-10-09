@@ -351,9 +351,7 @@ pub(crate) async fn give_back(
             cause_id: None,
             kind,
         };
-        deposit_fact(conn, &event, now)
-            .await
-            .map_err(MergeQueueError::Store)?;
+        deposit_fact(conn, &event, now).await?;
     }
     mark_dirty(conn, queue_id)
         .await
@@ -569,8 +567,7 @@ async fn submissions(
     .bind(queue.to_string())
     .bind(numbers)
     .fetch_all(conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     Ok(rows.into_iter().filter_map(SubmissionRow::decode).collect())
 }
 

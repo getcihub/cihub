@@ -38,8 +38,7 @@ impl QueueLog {
             sqlx::query_as("SELECT snapshot_seq, snapshot FROM queues WHERE id = $1")
                 .bind(queue.to_string())
                 .fetch_optional(&mut *conn)
-                .await
-                .map_err(MergeQueueError::Query)?;
+                .await?;
         let (snapshot_seq, snapshot) = row.ok_or(MergeQueueError::UnknownQueue(queue))?;
         let mut log = match snapshot_seq.zip(snapshot) {
             Some((seq, payload)) => Self {
@@ -53,10 +52,7 @@ impl QueueLog {
                 uncovered_since: None,
             },
         };
-        for (seq, event) in load_events(conn, queue, log.seq)
-            .await
-            .map_err(MergeQueueError::Store)?
-        {
+        for (seq, event) in load_events(conn, queue, log.seq).await? {
             if seq != log.seq + 1 {
                 return Err(MergeQueueError::LogGap {
                     queue,
@@ -114,9 +110,7 @@ impl QueueLog {
             if outcome == Outcome::Ignored {
                 continue;
             }
-            let seqs = append_events(conn, std::slice::from_ref(&event))
-                .await
-                .map_err(MergeQueueError::Store)?;
+            let seqs = append_events(conn, std::slice::from_ref(&event)).await?;
             self.seq = seqs.first().copied().unwrap_or(self.seq + 1);
             self.uncovered_since.get_or_insert(event.occurred_at);
             self.after_applied(conn, &event).await?;
@@ -158,8 +152,7 @@ impl QueueLog {
                 .bind(self.seq)
                 .bind(payload)
                 .execute(conn)
-                .await
-                .map_err(MergeQueueError::Query)?;
+                .await?;
 
         if updated.rows_affected() != 1 {
             return Err(MergeQueueError::UnknownQueue(self.snapshot.queue_id));
@@ -178,8 +171,7 @@ async fn empty(conn: &mut PgConnection, queue: QueueId) -> Result<Snapshot, Merg
         sqlx::query_as("SELECT org_id, target_branch FROM queues WHERE id = $1")
             .bind(queue.to_string())
             .fetch_optional(conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
     let (org_id, target_branch) = row.ok_or(MergeQueueError::UnknownQueue(queue))?;
     let org_id: OrgId = parse_id(&org_id, queue)?;
     Ok(Snapshot::new(
@@ -210,8 +202,7 @@ pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog
     )
     .bind(queue.to_string())
     .fetch_one(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     if first.is_some_and(|seq| seq != 1) || (first.is_none() && has_snapshot) {
         return Err(MergeQueueError::LogGap { queue, after: 0 });
     }
@@ -225,18 +216,14 @@ pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog
         sqlx::query(statement)
             .bind(queue.to_string())
             .execute(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
     }
     let mut log = QueueLog {
         snapshot: empty(conn, queue).await?,
         seq: 0,
         uncovered_since: None,
     };
-    for (seq, event) in load_events(conn, queue, 0)
-        .await
-        .map_err(MergeQueueError::Store)?
-    {
+    for (seq, event) in load_events(conn, queue, 0).await? {
         log.replay(&event)?;
         log.seq = seq;
         log.uncovered_since.get_or_insert(event.occurred_at);

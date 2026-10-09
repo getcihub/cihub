@@ -553,8 +553,7 @@ pub(crate) async fn converge_surfaces(
         sqlx::query_as("SELECT pr_number, desired_hash FROM pr_surfaces WHERE queue_id = $1")
             .bind(target.queue_id.to_string())
             .fetch_all(&mut *conn)
-            .await
-            .map_err(MergeQueueError::Query)?;
+            .await?;
     for (surface, number) in surfaces.iter().zip(numbers) {
         let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
         let rendered = render(surface, settings, &target.target_branch, history);
@@ -578,8 +577,7 @@ pub(crate) async fn converge_surfaces(
         .bind(desired)
         .bind(&desired_hash)
         .execute(&mut *conn)
-        .await
-        .map_err(MergeQueueError::Query)?;
+        .await?;
     }
     let unpublished: Vec<(i64, String)> = sqlx::query_as(
         "SELECT pr_number, desired_hash FROM pr_surfaces
@@ -588,8 +586,7 @@ pub(crate) async fn converge_surfaces(
     )
     .bind(target.queue_id.to_string())
     .fetch_all(&mut *conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     Ok(unpublished
         .into_iter()
         .map(|(number, hash)| publish_job(target, number, &hash))
@@ -652,8 +649,7 @@ async fn read_histories(
     .bind(&types)
     .bind(numbers)
     .fetch_all(conn)
-    .await
-    .map_err(MergeQueueError::Query)?;
+    .await?;
     let mut histories: BTreeMap<i64, Vec<HistoryEvent>> = BTreeMap::new();
     for (number, id, kind, payload, occurred_at, login, tested_with, tested_on_top_of) in rows {
         let kind = event_kind(&kind, &payload)
