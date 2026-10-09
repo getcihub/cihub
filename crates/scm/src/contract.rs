@@ -50,6 +50,7 @@ const CLASS: JobClass = JobClass::Interactive;
 /// When an answer is not the one of the contract.
 pub async fn run(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     connection(scm, repo, fixture).await;
+    installations(scm, repo).await;
     reads(scm, repo, fixture).await;
     branches(scm, repo, fixture).await;
     statuses_comments_and_labels(scm, repo, fixture).await;
@@ -95,13 +96,8 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 }
 
 /// The installations of the App list the installation of the connection of
-/// `repo` as its own read gives it (`DECISIONS.md` D247). Outside [`run`]: the
-/// recorded answers of D90 do not have this read yet.
-///
-/// # Panics
-///
-/// When an answer is not the one of the contract.
-pub async fn installations(scm: &dyn Scm, repo: &RepoRef) {
+/// `repo` as its own read gives it (`DECISIONS.md` D247).
+async fn installations(scm: &dyn Scm, repo: &RepoRef) {
     let installation = scm
         .installation(&repo.connection.external_id, CLASS)
         .await
