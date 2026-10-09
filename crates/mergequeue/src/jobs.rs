@@ -216,17 +216,21 @@ pub(crate) fn submit(
     connection_job(org_id, connection, delivery_id, SUBMIT_PR, json!(request))
 }
 
-/// Answers `command` on its PR, to say why the queue refused it
-/// (`DECISIONS.md` D157, D173).
+/// Answers `command` on its PR, to tell its author why the queue refused it
+/// (`DECISIONS.md` D157, D173, D254).
 pub(crate) async fn reply(
     scm: &dyn Scm,
     repo: &RepoRef,
     number: u64,
+    author: &Account,
     command: &str,
     text: String,
     class: JobClass,
 ) -> Result<(), Failure> {
-    let body = format!("> {command}\n\nRefused: {text}\n");
+    let body = format!(
+        "> {command}\n\n@{}, the queue refused this command: {text}\n",
+        author.login
+    );
     scm.create_comment(repo, number, &body, class).await?;
     Ok(())
 }
@@ -883,6 +887,31 @@ async fn submission_accounts(
     Ok((author_id, actor))
 }
 
+/// Answers the refused submission `request`: a command or a checkbox gets the
+/// cause, a label nothing, since its delivery does not give its author.
+async fn refuse_submission(
+    scm: &dyn Scm,
+    repo: &RepoRef,
+    request: &SubmitPr,
+    text: String,
+    class: JobClass,
+) -> Result<(), Failure> {
+    let Some(author) = &request.requested_by else {
+        return Ok(());
+    };
+
+    reply(
+        scm,
+        repo,
+        request.pr_number,
+        author,
+        "/cihub merge",
+        text,
+        class,
+    )
+    .await
+}
+
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused command gets a comment
 /// that says why (`DECISIONS.md` D157); a refused label gets none.
@@ -895,14 +924,8 @@ pub(crate) async fn submit_pr(
     let request: SubmitPr = read_payload(job)?;
     let repo = load_repo(pool, request.repo_id).await?;
     let pr_number = request.pr_number;
-    let (repo_ref, by_command) = (&repo.repo, request.requested_by.is_some());
-    let refuse = |text: String| async move {
-        if by_command {
-            reply(scm, repo_ref, pr_number, "/cihub merge", text, job.class).await
-        } else {
-            Ok(())
-        }
-    };
+    let repo_ref = &repo.repo;
+    let refuse = |text: String| refuse_submission(scm, repo_ref, &request, text, job.class);
 
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
         info!(pr_number, "submission refused: permission");
