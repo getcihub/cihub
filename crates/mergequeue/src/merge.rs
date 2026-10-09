@@ -84,17 +84,16 @@ pub(crate) fn merge_commit_title(
     }
 }
 
-/// What the merge gives: a fact, or a new attempt later.
-enum Merged {
-    Fact(EventKind),
-    Retry(String),
-}
-
 /// The fact or the new attempt that an error of the SCM gives, after
 /// `attempts` attempts.
-fn after_error(request: &MergePr, err: &ScmError, attempts: i32, now: OffsetDateTime) -> Merged {
+fn after_error(
+    request: &MergePr,
+    err: &ScmError,
+    attempts: i32,
+    now: OffsetDateTime,
+) -> Result<EventKind, Failure> {
     let failed = |error| {
-        Merged::Fact(EventKind::MergeFailed {
+        Ok(EventKind::MergeFailed {
             item_id: request.item_id,
             direct: request.run_id.is_none(),
             error,
@@ -108,15 +107,28 @@ fn after_error(request: &MergePr, err: &ScmError, attempts: i32, now: OffsetDate
         ScmError::RateLimited { until } | ScmError::Throttled { until }
             if *until - now <= MERGE_RATE_LIMIT_WAIT && attempts < MAX_ATTEMPTS =>
         {
-            Merged::Retry(text)
+            Err(Failure::Retry(text))
         }
         ScmError::RateLimited { .. } | ScmError::Throttled { .. } => {
             failed(JobError::RateLimitExceeded)
         }
-        _ if attempts < MERGE_ATTEMPTS => Merged::Retry(text),
+        _ if attempts < MERGE_ATTEMPTS => Err(Failure::Retry(text)),
         ScmError::Unavailable(_) => failed(JobError::RepeatedServerErrors),
         ScmError::MergeInProgress => failed(JobError::MergeAlreadyInProgress),
         _ => failed(JobError::MergeRejected),
+    }
+}
+
+fn log_merge_failure(item_id: ItemId, fact: &EventKind, scm_error: Option<&str>) {
+    if let EventKind::MergeFailed { error, .. } = fact
+        && *error != JobError::DirectMergeUnavailable
+    {
+        warn!(
+            %item_id,
+            error = error.as_str(),
+            scm_error,
+            "PR not merged"
+        );
     }
 }
 
@@ -134,49 +146,38 @@ pub(crate) async fn merge_pr(
         info!(%item_id, "item no longer waits for its merge");
         return Ok(());
     }
-    // The answer of the SCM explains a failed merge; the fact keeps only its code.
-    let mut scm_error = None;
-    let merged = match land(scm, settings, &target, &request, job.class).await {
+
+    let landed = land(scm, settings, &target, &request, job.class).await;
+    let scm_error = landed.as_ref().err().map(|err| error_chain(err));
+    let failed = |error| EventKind::MergeFailed {
+        item_id,
+        direct: request.run_id.is_none(),
+        error,
+    };
+    let fact = match landed {
         Ok(Landed::Merged(merged_sha)) => {
             info!(%item_id, merged_sha, "PR merged");
-            Merged::Fact(EventKind::MergeSucceeded {
+
+            EventKind::MergeSucceeded {
                 item_id,
                 merged_sha,
-            })
+            }
         }
-        Ok(Landed::AlreadyMerged) => Merged::Fact(EventKind::MergeFailed {
-            item_id,
-            direct: request.run_id.is_none(),
-            error: JobError::PrAlreadyMerged,
-        }),
+        Ok(Landed::AlreadyMerged) => failed(JobError::PrAlreadyMerged),
         Ok(Landed::Unavailable) => {
             info!(%item_id, "direct merge not possible: the item goes through the tests");
-            Merged::Fact(EventKind::MergeFailed {
+
+            EventKind::MergeFailed {
                 item_id,
                 direct: true,
                 error: JobError::DirectMergeUnavailable,
-            })
+            }
         }
-        Err(err) => {
-            let merged = after_error(&request, &err, job.attempts, now);
-            scm_error = Some(error_chain(&err));
-            merged
-        }
+        Err(err) => after_error(&request, &err, job.attempts, now)?,
     };
-    let fact = match merged {
-        Merged::Fact(fact) => fact,
-        Merged::Retry(text) => return Err(Failure::Retry(text)),
-    };
-    if let EventKind::MergeFailed { error, .. } = &fact
-        && *error != JobError::DirectMergeUnavailable
-    {
-        warn!(
-            %item_id,
-            error = error.as_str(),
-            scm_error = scm_error.as_deref(),
-            "PR not merged"
-        );
-    }
+
+    log_merge_failure(item_id, &fact, scm_error.as_deref());
+
     give_back_facts(pool, &target, vec![(Actor::Bot, fact)], now).await
 }
 
@@ -345,9 +346,9 @@ mod tests {
         };
         let now = OffsetDateTime::UNIX_EPOCH;
         let error = |err, attempts| match after_error(&request, &err, attempts, now) {
-            Merged::Fact(EventKind::MergeFailed { error, .. }) => Some(error),
-            Merged::Fact(_) => unreachable!("an error gives no success"),
-            Merged::Retry(_) => None,
+            Ok(EventKind::MergeFailed { error, .. }) => Some(error),
+            Ok(_) => unreachable!("an error gives no success"),
+            Err(_) => None,
         };
         let unavailable = || ScmError::Unavailable("502".into());
         assert_eq!(error(ScmError::HeadChanged, 1), Some(JobError::HeadChanged));
