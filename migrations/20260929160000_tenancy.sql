@@ -50,7 +50,7 @@ CREATE TABLE orgs (
 CREATE TABLE scm_connections (
     id                   text            PRIMARY KEY,
     org_id               text            NOT NULL REFERENCES orgs (id),
-    scm_instance_id      text            NOT NULL,
+    scm_instance_id      text            NOT NULL REFERENCES scm_instances (id),
     account_external_id  text            NOT NULL,
     kind                 connection_kind NOT NULL,
     external_id          text            NOT NULL,
