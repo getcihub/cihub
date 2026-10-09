@@ -93,7 +93,7 @@ pub enum MergeQueueError {
 
 /// Reads `text`, a column of the row `row`, as an identifier of
 /// `cihub-domain`.
-pub(crate) fn parse_id<T>(text: &str, row: impl std::fmt::Display) -> Result<T, MergeQueueError>
+fn parse_id<T>(text: &str, row: impl std::fmt::Display) -> Result<T, MergeQueueError>
 where
     T: std::str::FromStr<Err = cihub_domain::IdParseError>,
 {

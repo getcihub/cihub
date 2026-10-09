@@ -34,7 +34,7 @@ pub(crate) const SUBMIT_PR: &str = "submit_pr";
 /// The PRs that `refresh_prs` reads, at most
 /// [`MAX_PRS_PER_READ`](cihub_scm::MAX_PRS_PER_READ).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RefreshPrs {
+struct RefreshPrs {
     pub prs: Vec<u64>,
 }
 
