@@ -1,4 +1,4 @@
-//! Batches (`DECISIONS.md` D210): their formation, their wait and their merge.
+//! Batches: their formation, their wait and their merge.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
@@ -420,10 +420,10 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
     assert_replays(&w);
 }
 
-/// The exit criterion of lot 12 on the bisection (`DECISIONS.md` D223): for each
-/// size of batch and each place of the planted failure, the bisection
-/// isolates the failing PR in at most log2(size) rounds of runs, rounded up,
-/// evicts it, and merges the others.
+/// The exit criterion of lot 12 on the bisection: for each size of batch and
+/// each place of the planted failure, the bisection isolates the failing PR in
+/// at most log2(size) rounds of runs, rounded up, evicts it, and merges the
+/// others.
 #[test]
 fn a_planted_failure_is_isolated_in_log2_rounds() {
     for size in 2..=8_u64 {
@@ -457,7 +457,7 @@ fn a_planted_failure_is_isolated_in_log2_rounds() {
 
 /// The scenario of a manual test on a real repository: a `no_batch` PR behind
 /// a PR that waits for its batch starts at once, with it; the PRs behind
-/// still wait for their batch (`DECISIONS.md` D224).
+/// still wait for their batch.
 #[test]
 fn a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it() {
     let mut w = world(4, 4);

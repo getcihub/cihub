@@ -30,8 +30,7 @@ env:
 # The job runs on cihub-runner, a self-hosted runner set in Kubernetes mode,
 # without a Docker daemon. The image of the runner cannot link Rust (no C
 # library headers), so the job runs in the rust image. One job, because the
-# two runners share one node: two builds at once each take twice as long
-# (DECISIONS.md D242).
+# two runners share one node: two builds at once each take twice as long.
 jobs:
   ci:
     if: >-

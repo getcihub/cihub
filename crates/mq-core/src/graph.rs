@@ -1,4 +1,4 @@
-//! Queue order and merge graph (`docs/ALGORITHMS.md`, « Ordre » and « Graphe
+//! Queue order and merge graph (`specs/ALGORITHMS.md`, « Ordre » and « Graphe
 //! de merge »).
 
 use cihub_domain::{ImpactedTargets, Item, ItemId, ItemState, Priority, QueueMode};

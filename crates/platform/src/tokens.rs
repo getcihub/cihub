@@ -10,8 +10,7 @@ use crate::PlatformError;
 const TOKEN_NAME: &str = "token";
 
 /// Creates an API token with every scope for the organization `slug`, writes
-/// it in the audit log and returns it with its organization (`DECISIONS.md`
-/// D248).
+/// it in the audit log and returns it with its organization.
 ///
 /// # Errors
 ///

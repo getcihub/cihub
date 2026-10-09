@@ -1,5 +1,5 @@
-//! `cihub-github` against recorded answers of GitHub (`DECISIONS.md` D74, D90):
-//! the contract suite of the `Scm` trait, and the pause after a rate limit.
+//! `cihub-github` against recorded answers of GitHub: the contract suite of the
+//! `Scm` trait, and the pause after a rate limit.
 //! `test-only-key.pem` was made for these tests and opens nothing: the
 //! replay does not check the JWT.
 
@@ -210,7 +210,7 @@ fn answer(method: &str, path: &str, status: u16, body: serde_json::Value) -> Exc
 }
 
 /// Written by hand from the documentation of GitHub, not recorded: the
-/// recording of D90 needs a test repository on GitHub.
+/// recording by the `github` example needs a test repository on GitHub.
 #[tokio::test]
 async fn acknowledging_a_comment_twice_is_one_reaction() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
@@ -502,7 +502,7 @@ fn acme_installation() -> ScmInstallation {
 }
 
 /// Written by hand from the documentation of GitHub, not recorded: a
-/// recording of D90 has one page of installations only.
+/// recording by the `github` example has one page of installations only.
 #[tokio::test]
 async fn the_installations_of_the_app_come_from_every_page() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();

@@ -1,8 +1,8 @@
-//! The contract between CIHub and an SCM (`DECISIONS.md` D73, D76): the `Scm`
-//! trait, the neutral values it reads and writes, its errors, and the neutral
-//! events that an adapter reads in a webhook delivery (D75).
+//! The contract between CIHub and an SCM: the `Scm` trait, the neutral values
+//! it reads and writes, its errors, and the neutral events that an adapter
+//! reads in a webhook delivery.
 //!
-//! No SCM appears here (D78): each adapter translates its own values. This
+//! No SCM appears here: each adapter translates its own values. This
 //! crate does no I/O and has no client; the adapters do.
 
 #[cfg(any(test, feature = "sim"))]

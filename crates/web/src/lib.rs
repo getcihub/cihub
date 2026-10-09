@@ -1,8 +1,7 @@
-//! The HTTP server of the public address of the `web` role (`DECISIONS.md`
-//! D82, D91). It serves the webhooks of the SCM: it checks the signature,
-//! stores the delivery without routing it, and answers within 2 s (D83, D84);
-//! and the API v1 under `/api/v1`, with the routes of the modules (D159). The
-//! dashboard arrives with lot 10.
+//! The HTTP server of the public address of the `web` role. It serves the
+//! webhooks of the SCM: it checks the signature, stores the delivery without
+//! routing it, and answers within 2 s; and the API v1 under `/api/v1`, with
+//! the routes of the modules. The dashboard arrives with lot 10.
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.

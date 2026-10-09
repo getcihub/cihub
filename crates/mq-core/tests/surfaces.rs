@@ -1,4 +1,4 @@
-//! What each PR shows of its item (`DECISIONS.md` D156).
+//! What each PR shows of its item.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
@@ -72,7 +72,7 @@ fn a_not_ready_item_shows_why() {
     assert_eq!(last[0].block_reasons, [BlockReason::MergeConflict]);
 }
 
-/// A blocked PR names the required check that blocks it (`DECISIONS.md` D158).
+/// A blocked PR names the required check that blocks it.
 #[test]
 fn a_blocked_pr_names_its_required_checks() {
     let mut w = World::new(settings(window(2)));
@@ -145,8 +145,7 @@ fn an_item_in_test_shows_the_draft_pr_of_its_run() {
     assert_eq!(last[0].draft_pr_number, Some(42));
 }
 
-/// The members of the batch that waits, and only them, show when it closes
-/// (`DECISIONS.md` D241).
+/// The members of the batch that waits, and only them, show when it closes.
 #[test]
 fn the_members_of_a_waiting_batch_show_when_it_closes() {
     let mut w = World::new(settings(|l| {

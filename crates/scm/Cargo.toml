@@ -14,8 +14,7 @@ thiserror.workspace = true
 time.workspace = true
 
 [features]
-# The simulator and the contract suite, for the tests of other crates
-# (`DECISIONS.md` D73).
+# The simulator and the contract suite, for the tests of other crates.
 sim = []
 
 [dev-dependencies]

@@ -1,5 +1,5 @@
 {{- include "cihub.required" . -}}
-# server.yaml without its secrets (docs/DEPLOYMENT.md): CIHUB_DATABASE_URL and
+# server.yaml without its secrets (specs/DEPLOYMENT.md): CIHUB_DATABASE_URL and
 # CIHUB_GITHUB_WEBHOOK_SECRET come from the environment, the private key from
 # a file of its Secret.
 apiVersion: v1

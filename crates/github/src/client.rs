@@ -27,10 +27,10 @@ const PERMISSIONS_KEPT: usize = 10_000;
 const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const JSON: &str = "application/vnd.github+json";
 
-/// The time, read by the caller (`DECISIONS.md` D16).
+/// The time, read by the caller.
 pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
 
-/// How to reach a GitHub App (`DECISIONS.md` D79).
+/// How to reach a GitHub App.
 #[derive(Debug)]
 pub struct GithubConfig {
     /// `https://github.com`, or the address of a GitHub Enterprise Server.
@@ -160,8 +160,8 @@ impl GithubApp {
     ///
     /// The key is not valid, or the HTTP client cannot start.
     pub fn new(config: &GithubConfig, clock: Clock) -> Result<Self, ClientError> {
-        // reqwest uses rustls without a provider (`DECISIONS.md` D80): ring is
-        // the provider of the process. A second install changes nothing.
+        // reqwest uses rustls without a provider: ring is the provider of the
+        // process. A second install changes nothing.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let url = config.url.trim_end_matches('/');
         let (api_url, graphql_url) = if url == "https://github.com" {
@@ -192,14 +192,14 @@ impl GithubApp {
     }
 
     /// The budgets that changed since the last call, for the loop that
-    /// writes them (`DECISIONS.md` D77).
+    /// writes them.
     pub fn take_changed_budgets(&self) -> Vec<(ConnectionId, Budget)> {
         let mut budgets = self.budgets.lock().unwrap_or_else(PoisonError::into_inner);
         budgets.take_changed()
     }
 
     /// Notified when a budget pauses its connection or changes its mode: the
-    /// loop that writes the budgets writes it at once (`DECISIONS.md` D77).
+    /// loop that writes the budgets writes it at once.
     pub fn budget_urgent(&self) -> Arc<Notify> {
         Arc::clone(&self.urgent)
     }

@@ -1,5 +1,5 @@
 //! `cihub server migrate`: applies the missing migrations, creates the
-//! partitions of the events, then stops (`DECISIONS.md` D14).
+//! partitions of the events, then stops.
 
 use cihub_store::{MIGRATOR, PgPool};
 use tracing::info;

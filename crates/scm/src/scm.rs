@@ -10,18 +10,16 @@ use crate::{
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
-/// `Arc<dyn Scm>` (`DECISIONS.md` D71), and a trait with `async fn` cannot be
-/// used as `dyn`.
+/// `Arc<dyn Scm>`, and a trait with `async fn` cannot be used as `dyn`.
 pub type ScmFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ScmError>> + Send + 'a>>;
 
 /// A read of PRs asks for this many PRs at most.
 pub const MAX_PRS_PER_READ: usize = 50;
 
-/// The calls of CIHub to its SCM (`DECISIONS.md` D76). Each call names
-/// its repository, and so its connection, and its class, which decides what
-/// the budget of the connection lets through. A write whose result already
-/// exists succeeds without a change, so that a job can run twice (principle
-/// III).
+/// The calls of CIHub to its SCM. Each call names its repository, and so its
+/// connection, and its class, which decides what the budget of the connection
+/// lets through. A write whose result already exists succeeds without a change,
+/// so that a job can run twice (principle III).
 pub trait Scm: Send + Sync {
     /// The PRs of `numbers`, at most [`MAX_PRS_PER_READ`], in one read. A PR
     /// that does not exist is absent from the answer.
@@ -91,7 +89,7 @@ pub trait Scm: Send + Sync {
 
     /// Whether the commit `ancestor` is in the history of the commit
     /// `descendant`, or is it: a PR whose head descends from the head of its
-    /// target is up to date (`DECISIONS.md` D153).
+    /// target is up to date.
     fn is_ancestor<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -101,7 +99,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, bool>;
 
     /// The paths of the files that the PR `number` changes, read only when a
-    /// condition uses them (`DECISIONS.md` D143).
+    /// condition uses them.
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -110,7 +108,7 @@ pub trait Scm: Send + Sync {
     ) -> ScmFuture<'a, Vec<String>>;
 
     /// The path of each unresolved review thread of the PR `number`, read
-    /// only when a condition uses them (`DECISIONS.md` D143).
+    /// only when a condition uses them.
     fn unresolved_threads<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -181,8 +179,8 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, ()>;
 
-    /// Shows on the comment `comment_id` that CIHub accepted its command
-    /// (`DECISIONS.md` D166). Acknowledging twice has no more effect.
+    /// Shows on the comment `comment_id` that CIHub accepted its command.
+    /// Acknowledging twice has no more effect.
     fn acknowledge_comment<'a>(
         &'a self,
         repo: &'a RepoRef,
@@ -223,10 +221,9 @@ pub trait Scm: Send + Sync {
     fn close_pr<'a>(&'a self, repo: &'a RepoRef, number: u64, class: JobClass)
     -> ScmFuture<'a, ()>;
 
-    /// The webhook deliveries that the SCM sent to CIHub since `since`,
-    /// each attempt once with its outcome, for every connection
-    /// (`DECISIONS.md` D88, D249). No connection makes the call, so no budget
-    /// of a connection applies.
+    /// The webhook deliveries that the SCM sent to CIHub since `since`, each
+    /// attempt once with its outcome, for every connection. No connection makes
+    /// the call, so no budget of a connection applies.
     fn recent_deliveries(
         &self,
         since: OffsetDateTime,
@@ -236,21 +233,20 @@ pub trait Scm: Send + Sync {
     /// Asks the SCM to send the attempt `attempt_id` of a delivery again.
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()>;
 
-    /// The installation `external_id`, or `None` when the SCM does not know
-    /// it (`DECISIONS.md` D155, D247). No connection of CIHub may exist yet,
-    /// so no budget of a connection applies.
+    /// The installation `external_id`, or `None` when the SCM does not know it.
+    /// No connection of CIHub may exist yet, so no budget of a connection
+    /// applies.
     fn installation<'a>(
         &'a self,
         external_id: &'a str,
         class: JobClass,
     ) -> ScmFuture<'a, Option<ScmInstallation>>;
 
-    /// Every installation of the App, suspended ones included
-    /// (`DECISIONS.md` D247).
+    /// Every installation of the App, suspended ones included.
     fn installations(&self, class: JobClass) -> ScmFuture<'_, Vec<ScmInstallation>>;
 
     /// What the configuration of `branch` misses for the queue, in the order
-    /// of [`SetupFinding`] (`DECISIONS.md` D162).
+    /// of [`SetupFinding`].
     fn check_setup<'a>(
         &'a self,
         repo: &'a RepoRef,

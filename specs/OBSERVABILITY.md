@@ -5,15 +5,15 @@ Each process emits OpenTelemetry traces, Prometheus metrics and structured logs 
 | Signal                  | Content                                                                                                                                                                                                                                                                                                                                                                                                  | Where                                                                                                                                                                       |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Item timeline           | Each transition with its reason, its actor and its payload                                                                                                                                                                                                                                                                                                                                                | `events` Postgres (90 days), fact tables or ClickHouse (13 months), PR page of the dashboard, API `?include=timeline`                                                       |
-| Service metrics         | `cihub_reconcile_duration_seconds{queue}`, `cihub_reconcile_errors_total`, `cihub_jobs_inflight{type}`, `cihub_job_duration_seconds{type}`, `cihub_job_failures_total{type,reason}`, `cihub_webhook_inbox_lag_seconds`, `cihub_outbox_lag_seconds`, `cihub_github_requests_total{installation,endpoint,status}`, `cihub_github_rate_limit_remaining{installation}`, `cihub_clickhouse_insert_batch_size` | Prometheus, collected on `/metrics` of the internal address of each process, anonymous by default or with authentication (machine account or admin, `docs/SECURITY.md`)    |
+| Service metrics         | `cihub_reconcile_duration_seconds{queue}`, `cihub_reconcile_errors_total`, `cihub_jobs_inflight{type}`, `cihub_job_duration_seconds{type}`, `cihub_job_failures_total{type,reason}`, `cihub_webhook_inbox_lag_seconds`, `cihub_outbox_lag_seconds`, `cihub_github_requests_total{installation,endpoint,status}`, `cihub_github_rate_limit_remaining{installation}`, `cihub_clickhouse_insert_batch_size` | Prometheus, collected on `/metrics` of the internal address of each process, anonymous by default or with authentication (machine account or admin, `specs/SECURITY.md`)    |
 | Product metrics         | The `mq_*` series per queue (depth, wait for mergeability, slots, conclusions, restarts, histograms of wait, test and time in queue)                                                                                                                                                                                                                                                                      | `GET /api/v1/metrics` on the customer side, and the same series in the internal Prometheus with an `org` label for the fleet views                                          |
 | Traces                  | One trace per webhook delivery, from the inbox to the reconciliation then to the jobs and the GitHub calls; one per API request                                                                                                                                                                                                                                                                           | OpenTelemetry collector, sampling 10 % plus 100 % of the errors                                                                                                             |
 | Logs                    | Structured, one line per reconciliation decision (`decision=start_run group=... predecessors=...`) and per job step                                                                                                                                                                                                                                                                                       | Loki or the log storage of the cloud, 30 days                                                                                                                               |
 
 ## Logs
 
-The logs use `tracing` and `tracing-subscriber` (`DECISIONS.md` D13). Only `cihub server` installs the
-subscriber, through `cihub-telemetry` (`DECISIONS.md` D34); the library crates write with the `tracing` macros
+The logs use `tracing` and `tracing-subscriber`. Only `cihub server` installs the
+subscriber, through `cihub-telemetry`; the library crates write with the `tracing` macros
 (`info!`, `warn!`...) and open spans. The pure crates write no logs: the caller writes their
 decisions.
 
@@ -24,7 +24,7 @@ decisions.
 | `log.filter` | `CIHUB_LOG_FILTER`  | `info`  | Level filter, global or per crate, in the `EnvFilter` syntax: `info,cihub_github=debug` puts a single crate in `debug`          |
 | `log.format` | `CIHUB_LOG_FORMAT`  | `json`  | `json` (one JSON line per record, for the log storage) or `pretty` (one colored text line, for a terminal)                      |
 
-The keys are those of the configuration file (`docs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
+The keys are those of the configuration file (`specs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
 
 ### Format
 
@@ -91,7 +91,7 @@ carry the mention _lint_; review checks the others.
    `tracing::enabled!(Level::DEBUG)`, or the field is a value that formats lazily.
 10. **The logs do not replace the timeline.** The event timeline says why an item changed
     state; the logs say what the process did. An information that a customer needs goes in an
-    event with its reason (`docs/DOMAIN.md`), never only in a log.
+    event with its reason (`specs/DOMAIN.md`), never only in a log.
 11. **The tests do not write to standard output.** A test that checks a log installs a local subscriber
     (`tracing::subscriber::with_default`) that writes to a buffer.
 

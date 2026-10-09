@@ -1,6 +1,6 @@
-//! The typed client of the public API v1 of CIHub (`docs/API.md`,
-//! `DECISIONS.md` D161): the methods that the CLI uses, with the types of
-//! `cihub-api-types`. It holds no server code and no queue logic.
+//! The typed client of the public API v1 of CIHub (`specs/API.md`): the
+//! methods that the CLI uses, with the types of `cihub-api-types`. It holds no
+//! server code and no queue logic.
 
 use cihub_api_types::{
     API_PREFIX, Accepted, Graph, ItemPage, PrItem, Problem, Queue, QueueList, RepoList,
@@ -38,7 +38,7 @@ impl Client {
     ///
     /// The HTTP client cannot start.
     pub fn new(url: &str, token: SecretString) -> Result<Self, ClientError> {
-        // reqwest uses rustls without a provider (`DECISIONS.md` D80): ring is
+        // reqwest uses rustls without a provider: ring is
         // the provider of the process. A second install changes nothing.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let http = reqwest::Client::builder()

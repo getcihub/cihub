@@ -45,8 +45,7 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// What a user may do on a repository, from the lowest to the highest
-    /// (`DECISIONS.md` D145).
+    /// What a user may do on a repository, from the lowest to the highest.
     pub enum Permission {
         /// No access to the repository.
         None,

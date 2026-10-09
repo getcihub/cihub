@@ -1,5 +1,5 @@
 {{- include "cihub.required" . -}}
-# The migrations run before the pods of a new version (DECISIONS.md D14). A
+# The migrations run before the pods of a new version. A
 # hook runs before the ConfigMap of the release exists, so the Job reads its
 # configuration from the environment only.
 apiVersion: batch/v1

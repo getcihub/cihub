@@ -1,5 +1,5 @@
 //! The `web` role: the public address, served by `cihub-web` (webhooks, then
-//! the API of the modules, `DECISIONS.md` D82), and the routing of the stored
+//! the API of the modules), and the routing of the stored
 //! deliveries.
 
 use anyhow::Context;

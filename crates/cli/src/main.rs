@@ -1,4 +1,4 @@
-//! `cihub`: the one binary of CIHub (`DECISIONS.md` D168, D169). It defines
+//! `cihub`: the one binary of CIHub. It defines
 //! every command, one file per command, and starts the components. `cihub
 //! login` and `cihub queue` talk to the public API with a token; `cihub
 //! server` starts and administers an instance, with a direct access to

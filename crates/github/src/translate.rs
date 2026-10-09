@@ -1,5 +1,5 @@
-//! A GitHub webhook delivery in the neutral terms of `cihub-scm`
-//! (`DECISIONS.md` D75, D84): what changed, not the new state.
+//! A GitHub webhook delivery in the neutral terms of `cihub-scm`: what changed,
+//! not the new state.
 
 use cihub_domain::{CheckConclusion, CheckKind, CheckReport};
 use cihub_scm::{SUBMIT_BOX, ScmDelivery, ScmEvent, ScmUser};

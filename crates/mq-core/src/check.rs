@@ -1,4 +1,4 @@
-//! `check`: the consistency rules of `docs/RELIABILITY.md`, on a snapshot
+//! `check`: the consistency rules of `specs/RELIABILITY.md`, on a snapshot
 //! after `plan`.
 
 use std::collections::BTreeMap;

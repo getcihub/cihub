@@ -78,10 +78,10 @@ pub async fn request_repo_syncs(
 
 /// Reads the repositories of the connection of `job`, creates those that
 /// CIHub does not know and updates the others, and returns their number. A
-/// repository that the connection no longer reaches stays (`DECISIONS.md`
-/// D155); one that another organization has is left to it. When the SCM
+/// repository that the connection no longer reaches stays;
+/// one that another organization has is left to it. When the SCM
 /// answers that the access is lost or the installation is not found, requests
-/// the sync of the installation (`DECISIONS.md` D247).
+/// the sync of the installation.
 ///
 /// # Errors
 ///

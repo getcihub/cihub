@@ -1,6 +1,5 @@
-//! What a PR shows of its item (`DECISIONS.md` D156): the desired state of its
-//! status, its comment and its labels, in the terms of the queue. The text
-//! comes from the caller.
+//! What a PR shows of its item: the desired state of its status, its comment
+//! and its labels, in the terms of the queue. The text comes from the caller.
 
 use std::collections::BTreeSet;
 
@@ -30,12 +29,11 @@ pub struct Surface {
     pub block_reasons: Vec<BlockReason>,
     /// The labels that the PR carries, as last observed.
     pub labels: BTreeSet<String>,
-    /// The batch that waits for more PRs, for its members only
-    /// (`DECISIONS.md` D241).
+    /// The batch that waits for more PRs, for its members only.
     pub batch_wait: Option<BatchWait>,
 }
 
-/// A batch that is not full and waits for more PRs (`DECISIONS.md` D210).
+/// A batch that is not full and waits for more PRs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BatchWait {
     /// The number of its members now.

@@ -1,9 +1,8 @@
-//! The repair jobs (`DECISIONS.md` D127): `refresh_checks` reads again the checks
-//! of a run in progress that no report reached, and creates again its test
-//! branch when it is gone; `refresh_target` reads again the head of the
-//! target branch. Each one gives its facts back through `queue_inbox`, so that
-//! a lost webhook is only a delay (principle V). `resync` asks for every read
-//! at once (D128).
+//! The repair jobs: `refresh_checks` reads again the checks of a run in progress
+//! that no report reached, and creates again its test branch when it is gone;
+//! `refresh_target` reads again the head of the target branch. Each one gives its
+//! facts back through `queue_inbox`, so that a lost webhook is only a delay
+//! (principle V). `resync` asks for every read at once.
 
 use cihub_domain::{Actor, EventKind, JobClass, QueueId, RunId, RunStatus};
 use cihub_mq_core::CheckRead;
@@ -61,7 +60,7 @@ pub(crate) fn refresh_target(target: &QueueTarget, point: OffsetDateTime) -> Job
 
 /// The read of the head of the target branch after the delivery
 /// `delivery_id` of a push, when the branch has several queues and the
-/// routing gave the push to none (`DECISIONS.md` D135).
+/// routing gave the push to none.
 pub(crate) fn refresh_target_after(target: &QueueTarget, delivery_id: &str) -> Job {
     refresh_target_job(target, &subject(delivery_id), JobClass::Interactive)
 }
@@ -173,10 +172,9 @@ pub(crate) async fn read_target(
     give_back_facts(pool, &target, vec![(Actor::System, fact)], now).await
 }
 
-/// Asks, in the class `interactive`, for a read of each live PR of `queue`,
-/// of the checks of each run in progress and of the head of its target
-/// (`DECISIONS.md` D128), and returns the number of new jobs. A second resync in
-/// the same minute asks for nothing.
+/// Asks, in the class `interactive`, for a read of each live PR of `queue`, of
+/// the checks of each run in progress and of the head of its target, and returns
+/// the number of new jobs. A second resync in the same minute asks for nothing.
 ///
 /// # Errors
 ///

@@ -1,11 +1,10 @@
-//! The merge queue module (`DECISIONS.md` D93): the log of each queue in
-//! Postgres, its projections (`queue_items`, `test_groups`, `test_runs`,
-//! `check_observations`), its snapshots and their replay; the scheduler that
-//! reconciles each queue; and the jobs that read the SCM for it, build its
-//! test branches, merge its PRs, show their state on each PR and repair what a
-//! lost webhook leaves. The decisions come from `cihub-mq-core`; this crate writes
-//! them. The scheduler does not call the SCM: the jobs do, and give their
-//! facts back through `queue_inbox`.
+//! The merge queue module: the log of each queue in Postgres, its projections
+//! (`queue_items`, `test_groups`, `test_runs`, `check_observations`), its
+//! snapshots and their replay; the scheduler that reconciles each queue; and the
+//! jobs that read the SCM for it, build its test branches, merge its PRs, show
+//! their state on each PR and repair what a lost webhook leaves. The decisions
+//! come from `cihub-mq-core`; this crate writes them. The scheduler does not call
+//! the SCM: the jobs do, and give their facts back through `queue_inbox`.
 
 mod admission;
 mod api;
@@ -120,8 +119,8 @@ macro_rules! register {
     }};
 }
 
-/// The merge queue module (`DECISIONS.md` D94): the executors of its jobs, which
-/// call `scm`, and its scheduler loop, which runs as `owner`.
+/// The merge queue module: the executors of its jobs, which call `scm`, and its
+/// scheduler loop, which runs as `owner`.
 pub fn module(
     pool: PgPool,
     scm: Arc<dyn Scm>,

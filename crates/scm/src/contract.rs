@@ -58,8 +58,7 @@ pub async fn run(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     merge(scm, repo, fixture).await;
 }
 
-/// The account of the connection of `repo`, and its repositories
-/// (`DECISIONS.md` D155).
+/// The account of the connection of `repo`, and its repositories.
 async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let installation = scm
         .installation(&repo.connection.external_id, CLASS)
@@ -96,7 +95,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 }
 
 /// The installations of the App list the installation of the connection of
-/// `repo` as its own read gives it (`DECISIONS.md` D247).
+/// `repo` as its own read gives it.
 async fn installations(scm: &dyn Scm, repo: &RepoRef) {
     let installation = scm
         .installation(&repo.connection.external_id, CLASS)

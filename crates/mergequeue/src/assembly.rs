@@ -1,9 +1,9 @@
-//! The jobs of the test cycle (lot 6, `DECISIONS.md` D117). `assemble_test_branch`
-//! resolves the required statuses of a run, builds its test branch and gives
-//! back `test_branch.assembled` or `test_branch.assembly_failed`;
-//! `cleanup_test_branch` closes the draft PR and deletes the branches of a run
-//! that ended. Each one reads the real state first and changes nothing that
-//! is already done (principle III).
+//! The jobs of the test cycle (lot 6). `assemble_test_branch` resolves the
+//! required statuses of a run, builds its test branch and gives back
+//! `test_branch.assembled` or `test_branch.assembly_failed`; `cleanup_test_branch`
+//! closes the draft PR and deletes the branches of a run that ended. Each one
+//! reads the real state first and changes nothing that is already done
+//! (principle III).
 
 use std::fmt::Write;
 
@@ -29,12 +29,11 @@ pub(crate) const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
 pub(crate) const CLEANUP_TEST_BRANCH: &str = "cleanup_test_branch";
 
 /// After this many attempts, an assembly that the SCM still refuses as not
-/// valid (422) gives up with `start_test_run_retry_exhausted` (`DECISIONS.md`
-/// D133).
+/// valid (422) gives up with `start_test_run_retry_exhausted`.
 const ASSEMBLY_ATTEMPTS: i32 = 5;
 
 /// An assembly that meets another passing error (5xx, 429, a stop) tries
-/// again until this long after the start of its run (`DECISIONS.md` D133).
+/// again until this long after the start of its run.
 pub const ASSEMBLY_WAIT: Duration = Duration::minutes(15);
 
 /// The test branch that a run needs, as the plan describes it.
@@ -83,12 +82,12 @@ pub(crate) fn cleanup(target: &QueueTarget, run_id: RunId) -> Job {
     )
 }
 
-/// The title of the draft PR of a run (`docs/CI.md`).
+/// The title of the draft PR of a run (`specs/CI.md`).
 fn draft_pr_title(members: &[u64], target_branch: &str) -> String {
     format!("CIHub: test {} on {target_branch}", numbers(members))
 }
 
-/// The body of the draft PR of a run (`docs/CI.md`): the run, its base and
+/// The body of the draft PR of a run (`specs/CI.md`): the run, its base and
 /// the PRs it tests, each on its own line.
 fn draft_pr_body(
     run_id: RunId,
@@ -124,8 +123,8 @@ fn numbers(prs: &[u64]) -> String {
 
 /// The required statuses that `.cihub.yaml` gives for the queue `name` on
 /// `branch`, or `None` when the file leaves them to the branch protection
-/// (`docs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
-/// entry in the file inherits them (`DECISIONS.md` D138).
+/// (`specs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
+/// entry in the file inherits them.
 ///
 /// # Errors
 ///
@@ -150,12 +149,11 @@ fn required_statuses_of_file(
     }
 }
 
-/// The names of the required statuses at `base_sha` (`docs/ALGORITHMS.md`):
-/// the list of the file of the repository on the target branch at
-/// `base_sha`, or else the rules of the target branch when
-/// `branch_protection_injection` lets them in (`DECISIONS.md` D147), without the
-/// status of the queue itself (D98); then the checks of the
-/// `merge_conditions` (D146). `settings` gives the injection without a file.
+/// The names of the required statuses at `base_sha` (`specs/ALGORITHMS.md`): the
+/// list of the file of the repository on the target branch at `base_sha`, or
+/// else the rules of the target branch when `branch_protection_injection` lets
+/// them in, without the status of the queue itself; then the checks of the
+/// `merge_conditions`. `settings` gives the injection without a file.
 pub(crate) async fn required_statuses(
     scm: &dyn Scm,
     target: &QueueTarget,
@@ -330,8 +328,7 @@ impl Assembly<'_> {
         for head in &request.members {
             match self.merge(&temp, head).await? {
                 MergeIntoRef::Merged { sha } => current = sha,
-                // The head is already in the target: nothing to test
-                // (`DECISIONS.md` D130).
+                // The head is already in the target: nothing to test.
                 MergeIntoRef::AlreadyContained => {
                     return Err(Step::GiveUp(
                         JobError::MergeConflict,
@@ -424,7 +421,7 @@ impl Assembly<'_> {
                 Err(JobError::DraftPrsNotAllowed.into())
             }
             // The test branch holds nothing more than the target: its heads
-            // are already in it (`DECISIONS.md` D130).
+            // are already in it.
             Err(ScmError::Validation(message))
                 if message.to_lowercase().contains("no commits between") =>
             {
@@ -934,8 +931,7 @@ mod tests {
             "{waits:?}"
         );
 
-        // A member whose head is already in the target has nothing to test
-        // (`DECISIONS.md` D130).
+        // A member whose head is already in the target has nothing to test.
         let merged = head(&sim, &target, &main, 7, &[("h.txt", Some("h"))]);
         sim.push(&target.repo, "main", &merged.sha, &bot()).unwrap();
 

@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectionRef {
     pub id: ConnectionId,
-    /// The identifier of the connection on the SCM (`DECISIONS.md` D49).
+    /// The identifier of the connection on the SCM.
     pub external_id: String,
 }
 
@@ -22,7 +22,7 @@ pub struct RepoRef {
     pub name: String,
 }
 
-/// A user account on the SCM (`DECISIONS.md` D51).
+/// A user account on the SCM.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmUser {
     pub external_id: String,
@@ -41,8 +41,7 @@ pub struct PrSnapshot {
     pub from_fork: bool,
     pub created_at: OffsetDateTime,
     pub draft: bool,
-    /// The title and the description, for the title of the merge commit
-    /// (`DECISIONS.md` D126).
+    /// The title and the description, for the title of the merge commit.
     pub title: String,
     pub body: String,
     pub labels: BTreeSet<String>,
@@ -102,7 +101,7 @@ pub struct PrMerge {
     pub number: u64,
     pub head_sha: String,
     /// The test commit that proved the PR: `fast_forward` moves the base
-    /// there (`DECISIONS.md` D124).
+    /// there.
     pub tested_sha: String,
     pub method: MergeMethod,
     pub title: String,
@@ -120,8 +119,7 @@ pub enum MergeIntoRef {
     Conflict,
 }
 
-/// An attempt of the SCM to send a webhook delivery to CIHub
-/// (`DECISIONS.md` D88).
+/// An attempt of the SCM to send a webhook delivery to CIHub.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RecentDelivery {
     /// The identifier that the delivery carries; its new attempts share it.
@@ -129,12 +127,12 @@ pub struct RecentDelivery {
     /// The identifier of this attempt, to ask for the delivery again.
     pub attempt_id: String,
     /// Whether CIHub answered this attempt with a 2xx status code, which it
-    /// does only once it stores the delivery (`DECISIONS.md` D249).
+    /// does only once it stores the delivery.
     pub is_delivered: bool,
 }
 
 /// The account of the SCM that a connection serves: an organization or a
-/// user (`DECISIONS.md` D48).
+/// user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmAccount {
     pub external_id: String,
@@ -142,8 +140,8 @@ pub struct ScmAccount {
     pub path: String,
 }
 
-/// An installation of the App of CIHub on an account, as the SCM reads it
-/// (`DECISIONS.md` D247): the permission name gives its access level.
+/// An installation of the App of CIHub on an account, as the SCM reads it: the
+/// permission name gives its access level.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmInstallation {
     pub external_id: String,
@@ -162,7 +160,7 @@ pub struct ScmRepo {
 }
 
 /// A point of the configuration of the SCM that the queue needs, and that a
-/// repository misses (`DECISIONS.md` D162, `docs/GITHUB.md`).
+/// repository misses (`specs/GITHUB.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SetupFinding {
     /// No rule restricts the updates of the target branch: a merge can skip

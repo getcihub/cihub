@@ -2,12 +2,12 @@ use cihub_domain::CheckReport;
 
 use crate::ScmUser;
 
-/// The mark of the submission box in a comment of CIHub (`DECISIONS.md`
-/// D163): `- [ ] <mark>` to check, `- [x] <mark>` once checked.
+/// The mark of the submission box in a comment of CIHub: `- [ ] <mark>` to
+/// check, `- [x] <mark>` once checked.
 pub const SUBMIT_BOX: &str = "<!-- cihub:submit -->";
 
 /// A webhook delivery, as the adapter reads it: the connection that received
-/// it and what it tells (`DECISIONS.md` D75).
+/// it and what it tells.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmDelivery {
     /// The identifier of the connection on the SCM; `None` when the delivery
@@ -29,7 +29,7 @@ pub enum ScmEvent {
         /// the PR.
         label_added: Option<String>,
         /// The change made the PR ready for review: opened out of draft,
-        /// reopened, or out of draft (`DECISIONS.md` D163).
+        /// reopened, or out of draft.
         opened: bool,
     },
     /// A branch moved.
@@ -52,7 +52,7 @@ pub enum ScmEvent {
         check: CheckReport,
     },
     /// Someone else than CIHub checked the submission box of a comment of
-    /// CIHub on a PR (`DECISIONS.md` D163).
+    /// CIHub on a PR.
     SubmitBoxChecked {
         repo_external_id: String,
         number: u64,
@@ -73,7 +73,7 @@ pub enum ScmEvent {
     RepoChanged { repo_external_id: String },
     /// The installation of the connection changed on the SCM: created,
     /// deleted, suspended, active again or with new permissions. CIHub reads
-    /// the installation again (`DECISIONS.md` D247).
+    /// the installation again.
     ConnectionChanged,
     /// The connection gained or lost repositories.
     ReposChanged {

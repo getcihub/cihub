@@ -1,8 +1,8 @@
 //! The jobs of the merge queue that read the PRs: `refresh_prs` reads PRs
-//! again (`DECISIONS.md` D96, D101), `submit_pr` submits a PR after a command
-//! or a label (D102); the jobs of the test cycle are in `assembly`. Each one
-//! gives its facts back to the queue through `queue_inbox` (D100) and marks
-//! the queue dirty; it never writes the log.
+//! again, `submit_pr` submits a PR after a command or a label; the jobs of
+//! the test cycle are in `assembly`. Each one gives its facts back to the
+//! queue through `queue_inbox` and marks the queue dirty; it never writes the
+//! log.
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -75,22 +75,22 @@ pub(crate) struct SubmitPr {
     /// The author of the command; `None` for a label, whose sender the
     /// delivery does not give.
     pub requested_by: Option<Account>,
-    /// `None` leaves the priority to the `priority_rules` (`DECISIONS.md` D148).
+    /// `None` leaves the priority to the `priority_rules`.
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
-    /// The queue that the command names (D148).
+    /// The queue that the command names.
     pub queue: Option<String>,
     /// The label that the action put, for a submission by label.
     pub label: Option<String>,
     /// The comment of the command, which the job acknowledges once the
-    /// queue has the submission (`DECISIONS.md` D166).
+    /// queue has the submission.
     pub comment_id: Option<String>,
 }
 
 impl SubmitPr {
-    /// The submission of the PR `pr_number` of `repo_id` by the label `label`
-    /// (D102): no author, and the priority of the rules.
+    /// The submission of the PR `pr_number` of `repo_id` by the label
+    /// `label`: no author, and the priority of the rules.
     pub(crate) fn by_label(repo_id: RepoId, pr_number: u64, label: String) -> Self {
         Self {
             repo_id,
@@ -107,7 +107,7 @@ impl SubmitPr {
     }
 }
 
-/// A subject of a key has no `:` (`DECISIONS.md` D68).
+/// A subject of a key has no `:`, which separates the parts of the key.
 pub(crate) fn subject(text: &str) -> String {
     text.replace(':', "-")
 }
@@ -152,7 +152,7 @@ pub(crate) fn connection_job(
     }
 }
 
-/// A read of `prs` after the delivery `delivery_id` (`DECISIONS.md` D101).
+/// A read of `prs` after the delivery `delivery_id`.
 pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u64>) -> Job {
     let key = format!(
         "{REFRESH_PRS}:{}-{}:1",
@@ -163,14 +163,14 @@ pub(crate) fn refresh_after(target: &QueueTarget, delivery_id: &str, prs: Vec<u6
     job(target, key, REFRESH_PRS, JobClass::Interactive, payload)
 }
 
-/// The reads of `prs`, due at the read point `point` (`DECISIONS.md` D101).
+/// The reads of `prs`, due at the read point `point`.
 pub(crate) fn refresh_at(target: &QueueTarget, point: OffsetDateTime, prs: &[u64]) -> Vec<Job> {
     refresh_reads(target, &window(point), JobClass::Repair, prs)
 }
 
 /// The reads of `prs` under the subject `subject`, by chunks of
 /// [`MAX_PRS_PER_READ`]; the chunks after the first one add their rank to
-/// the key (`DECISIONS.md` D101).
+/// the key.
 pub(crate) fn refresh_reads(
     target: &QueueTarget,
     subject: &str,
@@ -193,7 +193,7 @@ pub(crate) fn refresh_reads(
 }
 
 /// The window of a key of a read: the minute of its read point,
-/// `AAAAMMJJTHHMM` (`DECISIONS.md` D101).
+/// `AAAAMMJJTHHMM`.
 pub(crate) fn window(point: OffsetDateTime) -> String {
     format!(
         "{:04}{:02}{:02}T{:02}{:02}",
@@ -206,7 +206,7 @@ pub(crate) fn window(point: OffsetDateTime) -> String {
 }
 
 /// The submission of `request` after the delivery `delivery_id`, on the
-/// connection `connection` (`DECISIONS.md` D102). It has no queue yet.
+/// connection `connection`. It has no queue yet.
 pub(crate) fn submit(
     org_id: OrgId,
     connection: ConnectionId,
@@ -216,8 +216,7 @@ pub(crate) fn submit(
     connection_job(org_id, connection, delivery_id, SUBMIT_PR, json!(request))
 }
 
-/// Answers `command` on its PR, to tell its author why the queue refused it
-/// (`DECISIONS.md` D157, D173, D254).
+/// Answers `command` on its PR, to tell its author why the queue refused it.
 pub(crate) async fn reply(
     scm: &dyn Scm,
     repo: &RepoRef,
@@ -235,9 +234,9 @@ pub(crate) async fn reply(
     Ok(())
 }
 
-/// Acknowledges the comment of a command that the queue accepted
-/// (`DECISIONS.md` D166). A failure is only logged: a retry of the job would
-/// give its facts to the queue a second time.
+/// Acknowledges the comment of a command that the queue accepted. A failure
+/// is only logged: a retry of the job would give its facts to the queue a
+/// second time.
 pub(crate) async fn acknowledge(
     scm: &dyn Scm,
     repo: &RepoRef,
@@ -255,14 +254,14 @@ pub(crate) async fn acknowledge(
     }
 }
 
-/// The commit status of the queue on the head of a PR (`docs/GITHUB.md`).
+/// The commit status of the queue on the head of a PR (`specs/GITHUB.md`).
 pub fn queue_status_context(target_branch: &str) -> String {
     format!("CIHub Merge Queue ({target_branch})")
 }
 
-/// The mergeability that the queue sees (`DECISIONS.md` D105): a PR blocked only
-/// by the status of the queue itself is mergeable, otherwise a repository that
-/// requires this status could never enter the queue.
+/// The mergeability that the queue sees: a PR blocked only by the status of the
+/// queue itself is mergeable, otherwise a repository that requires this status
+/// could never enter the queue.
 pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str) -> Mergeability {
     if pr.mergeability != Mergeability::Blocked || !required.names.contains(own) {
         return pr.mergeability;
@@ -489,7 +488,7 @@ pub(crate) async fn refresh(
             .get(&pr.number)
             .and_then(|submission| resubmission(&settings, &target, pr, submission));
         facts.extend(resubmitted);
-        // An admitted item no longer depends on its conditions (D142).
+        // An admitted item no longer depends on its conditions.
         let unmet = match submissions.get(&pr.number) {
             Some(Submission { admitted: true, .. }) => Vec::new(),
             submission => {
@@ -516,7 +515,7 @@ struct Submission {
     /// The item left `not_ready`.
     admitted: bool,
     sender: Sender,
-    /// What a new submission of the PR keeps (D152).
+    /// What a new submission of the PR keeps.
     head_sha: String,
     priority: Priority,
     no_batch: bool,
@@ -561,7 +560,7 @@ impl SubmissionRow {
     }
 }
 
-/// The live items of `prs` in `queue`, with who submitted them (D144).
+/// The live items of `prs` in `queue`, with who submitted them.
 async fn submissions(
     conn: &mut PgConnection,
     queue: QueueId,
@@ -586,9 +585,9 @@ async fn submissions(
 }
 
 /// The new submission of a PR in the queue that has a new head, when the
-/// queue resubmits on a push (D152): same priority, source and options. A
-/// PR that is closed, a draft or on another base leaves the queue instead,
-/// and a submission by label needs the label still.
+/// queue resubmits on a push: same priority, source and options. A PR that
+/// is closed, a draft or on another base leaves the queue instead, and a
+/// submission by label needs the label still.
 fn resubmission(
     settings: &QueueSettings,
     target: &QueueTarget,
@@ -667,8 +666,8 @@ async fn default_branch_of(pool: &PgPool, repo: RepoId) -> Result<String, Failur
     Ok(default_branch)
 }
 
-/// The queues of `branch` that take submissions (`DECISIONS.md` D172), in
-/// the order of the routing.
+/// The queues of `branch` that take submissions, in the order of the
+/// routing.
 async fn open_queues(
     pool: &PgPool,
     repo: RepoId,
@@ -690,10 +689,10 @@ async fn open_queues(
     Ok(open)
 }
 
-/// Creates the queues of `branch` (`DECISIONS.md` D172): the ones that the
-/// configuration file names on the head of the branch, or else, on the
-/// default branch, the queue named after it. Each one keeps the file that it
-/// comes from, so that the routing of the submission reads its conditions.
+/// Creates the queues of `branch`: the ones that the configuration file
+/// names on the head of the branch, or else, on the default branch, the
+/// queue named after it. Each one keeps the file that it comes from, so that
+/// the routing of the submission reads its conditions.
 async fn create_queues(
     pool: &PgPool,
     scm: &dyn Scm,
@@ -764,11 +763,10 @@ async fn create_queues(
     Ok(())
 }
 
-/// The queue that `pr` enters (`DECISIONS.md` D148, D232): the queue that the
-/// command names, or else the first queue of the branch whose
-/// `route_conditions` it meets, or else the first one. The `queue_conditions`
-/// do not route: they only admit. `None` when the command names a queue that
-/// the branch does not have.
+/// The queue that `pr` enters: the queue that the command names, or else the
+/// first queue of the branch whose `route_conditions` it meets, or else the
+/// first one. The `queue_conditions` do not route: they only admit. `None`
+/// when the command names a queue that the branch does not have.
 async fn route<'a>(
     scm: &dyn Scm,
     queues: &'a [QueueTarget],
@@ -805,7 +803,7 @@ fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Opt
 }
 
 /// What the PR is, when it cannot enter a queue: only an open PR that is not a
-/// draft can (`DECISIONS.md` D253).
+/// draft can.
 fn not_open(pr: &PrSnapshot) -> Option<&'static str> {
     match pr.state {
         PrState::Merged => Some("merged"),
@@ -914,7 +912,7 @@ async fn refuse_submission(
 
 /// Checks the submission of the job, reads the PR, and gives back its
 /// `item.submitted` and its `pr.observed`. A refused command gets a comment
-/// that says why (`DECISIONS.md` D157); a refused label gets none.
+/// that says why; a refused label gets none.
 pub(crate) async fn submit_pr(
     pool: &PgPool,
     scm: &dyn Scm,

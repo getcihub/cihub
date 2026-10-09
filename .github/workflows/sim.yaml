@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Fault Injection
 
-# The fault injection test on 1 000 seeds (AGENTS.md D129): too long for each
+# The fault injection test on 1 000 seeds: too long for each
 # pull request, it runs once a night.
 on:
   schedule:

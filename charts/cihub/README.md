@@ -7,7 +7,7 @@ Self-hosted merge queue for GitHub, on Postgres
 ## Usage
 
 The chart needs a Postgres 17, a GitHub App created by hand
-([`docs/GITHUB.md`](https://github.com/nlecoy/cihub/blob/main/docs/GITHUB.md)) and two Secrets:
+([`specs/GITHUB.md`](https://github.com/nlecoy/cihub/blob/main/specs/GITHUB.md)) and two Secrets:
 
 ```sh
 kubectl create secret generic cihub-postgres \
@@ -50,7 +50,7 @@ Kubernetes: `>=1.25.0-0`
 | database.key | string | `"uri"` | Key of the URL in that Secret. |
 | deploymentAnnotations | object | `{}` | Annotations of the Deployment. |
 | fullnameOverride | string | `""` | Replaces the full name of the resources. |
-| github.appId | required | `""` | Identifier of the GitHub App (docs/GITHUB.md). |
+| github.appId | required | `""` | Identifier of the GitHub App (specs/GITHUB.md). |
 | github.existingSecret | required | `""` | Secret that holds the private key and the webhook secret of the App. |
 | github.privateKeyKey | string | `"private-key.pem"` | Key of the private key (PEM) in that Secret. |
 | github.url | string | `"https://github.com"` | github.com, or the address of a GitHub Enterprise Server. |
@@ -72,7 +72,7 @@ Kubernetes: `>=1.25.0-0`
 | ingress.hosts | list | `[{"host":"cihub.example.com","paths":[{"path":"/","pathType":"Prefix"}]}]` | Hosts of the Ingress and their paths. |
 | ingress.tls | list | `[]` | TLS configuration of the Ingress. |
 | livenessProbe | object | `{"httpGet":{"path":"/healthz","port":"internal"},"periodSeconds":20}` | Liveness probe: `/healthz` answers as long as the process runs. |
-| log.filter | string | `"info"` | Log filter, `log.filter` of `server.yaml` (docs/OBSERVABILITY.md). |
+| log.filter | string | `"info"` | Log filter, `log.filter` of `server.yaml` (specs/OBSERVABILITY.md). |
 | log.format | string | `"json"` | Log format, `json` or `pretty`. |
 | nameOverride | string | `""` | Replaces the name of the chart in the names of the resources. |
 | nodeSelector | object | `{}` | Node selector of the pods. |
@@ -90,7 +90,7 @@ Kubernetes: `>=1.25.0-0`
 | service.port | int | `8080` | Port of the Service, to the public address of the pods: the webhooks on `POST /webhooks/github` and the API. The internal address (`/healthz`, `/readyz`) stays on the pods, for the probes. |
 | service.type | string | `"ClusterIP"` | Type of the Service. |
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"internal"},"periodSeconds":2}` | Startup probe; the other probes wait until it passes. It allows a minute. |
-| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Update strategy of the Deployment. A new pod is ready before an old one stops, so a replica always serves the webhooks; a published migration stays compatible with the previous version for this overlap (docs/DEPLOYMENT.md). |
+| strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Update strategy of the Deployment. A new pod is ready before an old one stops, so a replica always serves the webhooks; a published migration stays compatible with the previous version for this overlap (specs/DEPLOYMENT.md). |
 | tests.image.pullPolicy | string | `"IfNotPresent"` | Pull policy of that image. |
 | tests.image.repository | string | `"docker.io/curlimages/curl"` | Image of the `helm test` pod. |
 | tests.image.tag | string | `"8.22.0"` | Tag of that image. |

@@ -3,7 +3,7 @@ name: Chart
 
 # The chart jobs run on a pull request only when it changes what the chart
 # installs, and once a night: a change of the code can break an installation
-# without touching these paths (DECISIONS.md D256).
+# without touching these paths.
 on:
   pull_request:
     branches:
@@ -28,7 +28,7 @@ concurrency:
 permissions:
   contents: read
 
-# The jobs run on runners hosted by GitHub for now (DECISIONS.md D251): Smoke
+# The jobs run on runners hosted by GitHub for now: Smoke
 # needs a Docker daemon, which cihub-runner does not have. They are not
 # required statuses: CI stays the only one.
 jobs:

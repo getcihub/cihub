@@ -1,6 +1,6 @@
 //! A webhook delivery of GitHub as the ingestion receives it: its route, its
-//! signature and its headers (`DECISIONS.md` D83, D84). No decision here: the
-//! routing loop reads the payload later.
+//! signature and its headers. No decision here: the routing loop reads the
+//! payload later.
 
 use reqwest::header::HeaderMap;
 use secrecy::SecretString;

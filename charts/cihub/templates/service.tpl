@@ -1,5 +1,5 @@
 # The public address only: the internal address (/healthz, /readyz) is not
-# to be exposed (docs/SECURITY.md).
+# to be exposed (specs/SECURITY.md).
 apiVersion: v1
 kind: Service
 metadata:

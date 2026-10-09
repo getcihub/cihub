@@ -7,8 +7,7 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// How much a connection may call its SCM (`docs/RELIABILITY.md`,
-    /// `DECISIONS.md` D77).
+    /// How much a connection may call its SCM (`specs/RELIABILITY.md`).
     pub enum ConnectionMode {
         /// Every call goes out.
         Normal,
@@ -22,7 +21,7 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// What an API token may do (`docs/API.md`).
+    /// What an API token may do (`specs/API.md`).
     pub enum ApiScope {
         /// Read the queues, their items and their timeline.
         #[serde(rename = "queues:read")]

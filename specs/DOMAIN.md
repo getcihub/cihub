@@ -5,7 +5,7 @@ vocabulary is in `cihub-domain`, with a `///` comment that gives the meaning of 
 
 ## Entities
 
-The vocabulary of the domain is that of CIHub, not that of an SCM (`DECISIONS.md` D23): each adapter
+The vocabulary of the domain is that of CIHub, not that of an SCM: each adapter
 (`cihub-github`) translates the values of its SCM, and the core sees none of them. A **PR** designates any change
 request: a GitHub pull request, a GitLab merge request.
 
@@ -18,7 +18,7 @@ from it.
 | Entity               | Identity                     | Meaning                                                                                                                                       | Code (`cihub-domain`)  |
 | -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | Organization         | `org_id`                     | Tenancy boundary: all the other tables carry `org_id`, except `users`                                                                         | `OrgId`                |
-| Connection           | `connection_id`              | The means by which CIHub reaches the repositories of an SCM account, named by `account_external_id` (`ConnectionKind`); carries the budget, the quotas and the degraded modes; kept in step with the installation of the App on the SCM (`DECISIONS.md` D247) | `ConnectionId`         |
+| Connection           | `connection_id`              | The means by which CIHub reaches the repositories of an SCM account, named by `account_external_id` (`ConnectionKind`); carries the budget, the quotas and the degraded modes; kept in step with the installation of the App on the SCM | `ConnectionId`         |
 | Repository           | `repo_id`                    | A repository attached to a connection; a connection can cover several repositories                                                            | `RepoId`               |
 | Queue                | `queue_id`                   | A target branch of a repository, with a name unique within the repository, its state, its mode and its settings                               | `Queue`                |
 | Queue item           | `item_id`                    | A submission of a PR; a resubmission after cancellation creates a new item, and `is_current` designates the live item of that PR              | `Item`                 |
@@ -28,8 +28,8 @@ from it.
 | Impacted targets     | (`repo_id`, PR, head SHA)    | What a PR changes, which places it in the merge graph; `ALL` in simple mode                                                                   | `ImpactedTargets`      |
 | Event                | `event_id`                   | A fact or a decision, append-only in the log of the queue                                                                                     | `Event`                |
 
-Identifiers are typed ULIDs in the `typedid` text format (`DECISIONS.md` D4). An SCM identifier is an
-`external_id`, unique within the deployment, which serves a single SCM (D246). Each closed vocabulary is an
+Identifiers are typed ULIDs in the `typedid` text format. An SCM identifier is an
+`external_id`, unique within the deployment, which serves a single SCM. Each closed vocabulary is an
 enumeration whose text value (`snake_case`) is the same in the API, the webhooks, the analytics and Postgres.
 
 ## Log
@@ -44,7 +44,7 @@ enumeration whose text value (`snake_case`) is the same in the API, the webhooks
 - **`apply`**: the pure function that applies an event to the state; the replay uses only it.
 - **`plan`**: the pure function that reads the state and the time, and produces decisions and the desired state.
 - **Reason**: the readable cause of a transition, from a closed vocabulary. Each transition carries one.
-- **Actor**: who originated an event: an SCM user account (its identifier; the `users` table keeps the login, `DECISIONS.md` D42 and D51), the App account, or CIHub.
+- **Actor**: who originated an event: an SCM user account (its identifier; the `users` table keeps the login), the App account, or CIHub.
 
 Code: `Event`, `EventKind` (one payload per type), `EventType` (the `<subject>.<verb>` names, with
 `is_decision`), `Actor` and `ActorKind` in `cihub-domain`; `apply` in `cihub-mq-core`. A pending request
@@ -96,7 +96,7 @@ stateDiagram-v2
 | `cancelled`       | Cancelled by a user or by a change of the PR                                                  |
 
 The allowed transitions and their reasons are in the code: a single `Reason` enumeration and, for each
-state machine, a table (start state, end state) → allowed reasons (`DECISIONS.md` D6), the
+state machine, a table (start state, end state) → allowed reasons, the
 `Lifecycle` trait and the `check_transition` function.
 
 Families of reasons, to find one's way: admission and test; return to `pending` (upstream change, a member
@@ -114,12 +114,12 @@ change without a decision.
 A `not_ready` item also carries block reasons (`BlockReason`): what prevents it from being admitted,
 displayed in the PR comment. The mergeability (`Mergeability`) says whether the SCM accepts the merge: `mergeable`, `behind`,
 `conflict`, `blocked` or `unknown`; the translation from GitHub and the admission rule are in
-`docs/GITHUB.md`. What CIHub reads from a PR: its state
+`specs/GITHUB.md`. What CIHub reads from a PR: its state
 (`PrState`: `open`, `closed`, `merged`), its review decision (`ReviewDecision`) and its checks (`CheckReport`).
 
 Priority (`Priority`): a value from 0 to 255; the smallest goes first. The names `urgent` (0), `high`
 (10), `medium` (100) and `low` (200) are shortcuts. Only the value decides the order
-(`docs/ALGORITHMS.md`). Source of a submission: `SubmittedVia`.
+(`specs/ALGORITHMS.md`). Source of a submission: `SubmittedVia`.
 
 ## Test group
 
@@ -130,7 +130,7 @@ of a batch move one by one to `merged`. States (`GroupState`): `testing`, `pendi
 abandoned by the queue (a member left, a predecessor or the base changed); its members that are still live
 return to `pending`. A group in bisection stays `pending_failure` with the PRs that wait for the result of
 its current half, and ends `bisected` when its PRs have all left to its halves. The consistency rule between the state of a group and that of its items is in
-`docs/RELIABILITY.md`.
+`specs/RELIABILITY.md`.
 
 ## Test run
 
@@ -152,9 +152,9 @@ failed; it waits for an operator).
 ## Queue
 
 States (`QueueState`): `running` accepts and merges; `paused` decides nothing and merges nothing but keeps
-the order, and a submission there waits for the resume (`DECISIONS.md` D113); `draining` lets what is in flight merge and
-refuses a new submission, whose item is created `cancelled` with the reason `queue_draining` (D151);
+the order, and a submission there waits for the resume; `draining` lets what is in flight merge and
+refuses a new submission, whose item is created `cancelled` with the reason `queue_draining`;
 `switching_modes` is reached automatically when the mode changes with items in flight and behaves like
 `draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`
-(`docs/CONFIGURATION.md`).
+(`specs/CONFIGURATION.md`).

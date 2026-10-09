@@ -66,7 +66,7 @@ dbg_macro = "warn"
 todo = "warn"
 unimplemented = "warn"
 
-# The binaries of the image (docs/DEPLOYMENT.md).
+# The binaries of the image (specs/DEPLOYMENT.md).
 [profile.release]
 lto = "thin"
 codegen-units = 1

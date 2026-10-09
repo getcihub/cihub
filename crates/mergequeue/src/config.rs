@@ -1,6 +1,6 @@
-//! The job `load_config` (`DECISIONS.md` D136): it reads the configuration file
-//! on the head of the target branch, and keeps it on the queue when it is
-//! valid. The file is the only source of the settings (D134).
+//! The job `load_config`: it reads the configuration file on the head of the
+//! target branch, and keeps it on the queue when it is valid. The file is the
+//! only source of the settings.
 
 use std::error::Error;
 

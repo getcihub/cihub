@@ -4,7 +4,7 @@
 //! routing and the sweep of the deliveries, the sync of the installations of
 //! the App into organizations and connections, the read of the repositories
 //! of the connections, the API tokens of an operator, the contract of a
-//! module, and what the routes of the modules share (`DECISIONS.md` D159). The roles talk only through these tables and their notifications.
+//! module, and what the routes of the modules share. The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
 

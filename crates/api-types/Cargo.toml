@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-# The OpenAPI schemas, for the server only (DECISIONS.md D159).
+# The OpenAPI schemas, for the server only.
 openapi = ["dep:utoipa"]
 
 [dependencies]

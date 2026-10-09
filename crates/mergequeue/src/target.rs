@@ -23,7 +23,7 @@ pub(crate) struct QueueTarget {
     pub target_branch: String,
     pub name: String,
     /// The last valid configuration file, and the head of the target at the
-    /// last read (`DECISIONS.md` D136).
+    /// last read.
     pub config_text: Option<String>,
     pub config_sha: Option<String>,
 }
@@ -104,8 +104,7 @@ impl QueueTarget {
         decode(row.ok_or(MergeQueueError::UnknownQueue(queue))?)
     }
 
-    /// The last valid file of the queue (`DECISIONS.md` D136); `None` without
-    /// a file.
+    /// The last valid file of the queue; `None` without a file.
     ///
     /// # Errors
     ///
@@ -144,10 +143,10 @@ impl QueueTarget {
         self.settings_in(self.config()?.as_ref())
     }
 
-    /// Whether the queue takes new submissions (`DECISIONS.md` D172): its
-    /// file names it, or names no queue of its branch and the queue is the
-    /// one of `default_branch`, named after it. A queue that the file no
-    /// longer names finishes its items.
+    /// Whether the queue takes new submissions: its file names it, or
+    /// names no queue of its branch and the queue is the one of
+    /// `default_branch`, named after it. A queue that the file no longer
+    /// names finishes its items.
     ///
     /// # Errors
     ///
@@ -167,10 +166,9 @@ impl QueueTarget {
         })
     }
 
-    /// The queues of the branch `branch` of the repository `repo`, in the
-    /// order of the configuration file, which is the order of the routing
-    /// (`DECISIONS.md` D148); the queues that the file does not name come last,
-    /// by age.
+    /// The queues of the branch `branch` of the repository `repo`, in the order
+    /// of the configuration file, which is the order of the routing; the queues
+    /// that the file does not name come last, by age.
     ///
     /// # Errors
     ///

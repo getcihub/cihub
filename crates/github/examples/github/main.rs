@@ -2,11 +2,11 @@
 //! to check by hand that the App authenticates and that each call of the
 //! `Scm` trait returns the right data.
 //!
-//! The App comes from the environment, as for `cihub server` (`DECISIONS.md`
-//! D79): `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY` or
-//! `CIHUB_GITHUB_PRIVATE_KEY_FILE`, and `CIHUB_GITHUB_URL` (`https://github.com`
-//! by default). After each call, the example prints the budget of the
-//! connection, as the rate limit headers give it.
+//! The App comes from the environment, as for `cihub server`:
+//! `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY` or
+//! `CIHUB_GITHUB_PRIVATE_KEY_FILE`, and `CIHUB_GITHUB_URL`
+//! (`https://github.com` by default). After each call, the example prints the
+//! budget of the connection, as the rate limit headers give it.
 //!
 //! The reads change nothing. The writes act only on what they name: the
 //! branch `cihub-temp/example`, a status context, or the PR given.
@@ -34,8 +34,8 @@
 //! - `comment <pr> <body>` (write): comments on a PR, then edits the comment;
 //! - `label <pr> <label>` (write): adds the label twice, then removes it twice.
 //!
-//! The recording of the contract suite (`DECISIONS.md` D90), on a test
-//! repository whose default branch is `main`:
+//! The recording of the contract suite, on a test repository whose default
+//! branch is `main`:
 //!
 //! 1. `prepare-base` (write), once: commits the file of the suite on `main`,
 //!    opens a PR in conflict with `main` and a draft PR. Then add a ruleset

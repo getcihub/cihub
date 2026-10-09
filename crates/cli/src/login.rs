@@ -1,5 +1,4 @@
-//! `cihub login`: keeps the address of the instance and an API token
-//! (`DECISIONS.md` D161).
+//! `cihub login`: keeps the address of the instance and an API token.
 
 use std::io::Write;
 

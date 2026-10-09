@@ -1,6 +1,5 @@
 //! The budget of a connection: what its rate limit headers say, and the mode
-//! that follows (`docs/RELIABILITY.md`, `DECISIONS.md` D77). Pure: the caller
-//! gives the time.
+//! that follows (`specs/RELIABILITY.md`). Pure: the caller gives the time.
 
 use std::collections::BTreeMap;
 

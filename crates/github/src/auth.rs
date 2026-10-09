@@ -1,5 +1,5 @@
 //! The authentication of the GitHub App: its key, and the JWT that asks for
-//! the tokens of its installations (`DECISIONS.md` D80).
+//! the tokens of its installations.
 
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};

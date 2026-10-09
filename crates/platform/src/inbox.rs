@@ -113,7 +113,7 @@ pub(crate) fn decode(
     })
 }
 
-/// Deletes a processed delivery from the inbox (`DECISIONS.md` D249). The
+/// Deletes a processed delivery from the inbox. The
 /// caller does it in the transaction that writes the facts of the delivery,
 /// so that a crash neither loses nor repeats them.
 ///

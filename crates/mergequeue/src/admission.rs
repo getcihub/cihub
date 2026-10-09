@@ -1,8 +1,8 @@
-//! The `queue_conditions` of a queue (`DECISIONS.md` D142): the jobs that read
-//! a PR evaluate them, and give the conditions that the PR does not meet in
-//! its `pr.observed`. The core sees the result, not the conditions: they
-//! need the logins, which the log does not keep (D42). Also the
-//! `route_conditions` that `submit_pr` reads to choose the queue (D232).
+//! The `queue_conditions` of a queue: the jobs that read a PR evaluate them,
+//! and give the conditions that the PR does not meet in its `pr.observed`. The
+//! core sees the result, not the conditions: they need the logins, which the
+//! log does not keep. Also the `route_conditions` that `submit_pr` reads to
+//! choose the queue.
 
 use std::time::Duration;
 
@@ -23,7 +23,7 @@ pub(crate) struct Sender {
 }
 
 /// The `queue_conditions` of the entry of the queue in `config`, its last
-/// valid file; none without a file or an entry (D172).
+/// valid file; none without a file or an entry.
 fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Conditions {
     config
         .and_then(|config| config.queue(&target.target_branch, &target.name))
@@ -33,8 +33,8 @@ fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Condit
 
 /// Whether the `route_conditions` of the entry of the queue of `target` in
 /// `config`, its last valid file, send `pr` to that queue: a queue without
-/// them takes every PR (`DECISIONS.md` D232). The files and the review
-/// threads are read only when a condition uses them (D143).
+/// them takes every PR. The files and the review threads are read only
+/// when a condition uses them.
 pub(crate) async fn routes_to(
     scm: &dyn Scm,
     target: &QueueTarget,
@@ -100,18 +100,17 @@ fn context(target: &QueueTarget, pr: &PrSnapshot, sender: &Sender, now: OffsetDa
 pub(crate) struct Reading<'a> {
     pub sender: &'a Sender,
     /// The checks that the rules of the target branch require, and the
-    /// status of the queue, which they may require (D105).
+    /// status of the queue, which they may require.
     pub rules: &'a RequiredChecks,
     pub own_status: &'a str,
     pub class: JobClass,
     pub now: OffsetDateTime,
 }
 
-/// The `queue_conditions` of the queue of `target` that `pr` does not meet,
-/// as `config`, the last valid file of the queue, writes them, then, with `branch_protection_injection: both`,
-/// each check that the rules require and that has not passed on the head of
-/// the PR, as `check-success = <name>` (D147). The files and the review
-/// threads are read only when a condition uses them (D143).
+/// The `queue_conditions` of the queue of `target` that `pr` does not meet, as `config`, the last valid file
+/// of the queue, writes them, then, with `branch_protection_injection: both`, each check that the rules
+/// require and that has not passed on the head of the PR, as `check-success = <name>`. The files and the
+/// review threads are read only when a condition uses them.
 pub(crate) async fn unmet_conditions(
     scm: &dyn Scm,
     target: &QueueTarget,
@@ -158,7 +157,7 @@ async fn file_conditions(
 }
 
 /// The context of `pr`, with the attributes loaded on demand that `uses`
-/// asks for (D143).
+/// asks for.
 async fn loaded_context(
     scm: &dyn Scm,
     target: &QueueTarget,
@@ -184,7 +183,7 @@ async fn loaded_context(
 }
 
 /// The priority of the first rule of `priority_rules` that `pr` meets, in
-/// `config`, the last valid file of the queue that it enters (D148).
+/// `config`, the last valid file of the queue that it enters.
 pub(crate) async fn rule_priority(
     scm: &dyn Scm,
     target: &QueueTarget,

@@ -1,4 +1,4 @@
-# Git hooks (DECISIONS.md D166). `mise install` runs `lefthook install`.
+# Git hooks. `mise install` runs `lefthook install`.
 [pre-commit]
 parallel = true
 skip = ["merge", "rebase"]

@@ -9,9 +9,9 @@ use crate::StoreError;
 
 /// Appends `events` to the logs of their queues, each after the last event of
 /// its queue, and returns the `seq` of each. The last snapshot counts too: once
-/// the partitions of the old events are dropped, `seq` goes on from it
-/// (`DECISIONS.md` D106). The caller holds the lock of each queue: two writers on
-/// the same queue would take the same `seq`.
+/// the partitions of the old events are dropped, `seq` goes on from it. The
+/// caller holds the lock of each queue: two writers on the same queue would
+/// take the same `seq`.
 ///
 /// # Errors
 ///
@@ -135,7 +135,7 @@ fn decode(
     Ok((seq, event))
 }
 
-/// Deposits the fact `event` in the inbox of its queue (`DECISIONS.md` D100), and
+/// Deposits the fact `event` in the inbox of its queue, and
 /// returns `false` when the inbox still has it: a job that runs twice
 /// deposits the same fact once. The scheduler applies it later under the lock
 /// of the queue; the caller marks the queue dirty.
@@ -205,7 +205,7 @@ pub async fn pending_facts(
         .collect()
 }
 
-/// Deletes the facts `ids` from the inbox once applied (`DECISIONS.md` D249),
+/// Deletes the facts `ids` from the inbox once applied,
 /// in the transaction that writes them to the log.
 ///
 /// # Errors
@@ -222,7 +222,7 @@ pub async fn delete_facts(conn: &mut PgConnection, ids: &[EventId]) -> Result<()
 }
 
 /// Creates the partitions of `events` for the month of `today` and the next
-/// month, when they are missing (`DECISIONS.md` D36).
+/// month, when they are missing.
 ///
 /// # Errors
 ///

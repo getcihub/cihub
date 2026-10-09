@@ -3,16 +3,14 @@
 ## Installation target
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
-`cihub` binary (`DECISIONS.md` D168); `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
-`notifier`) in one process; a deployment scales by identical replicas (`docs/ARCHITECTURE.md`, "Scaling",
-`DECISIONS.md` D170). The GitHub App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). On Kubernetes, the Helm chart `charts/cihub` installs it (`DECISIONS.md` D251).
+`cihub` binary; `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
+`notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. On Kubernetes, the Helm chart `charts/cihub` installs it.
 
 ## Development
 
-`compose.yaml`, at the root, starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`
-(`DECISIONS.md` D12). The superuser is `postgres` (password `postgres`). The one-shot service
+`compose.yaml`, at the root, starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`. The superuser is `postgres` (password `postgres`). The one-shot service
 `postgres-setup` runs `postgres-setup.sql`, which brings the `cihub` role (password `cihub`), which is not a
-superuser and can create databases for the tests, and the `cihub` database it owns, to the desired state (D38, D52).
+superuser and can create databases for the tests, and the `cihub` database it owns, to the desired state.
 It runs at each start: a change to the file applies without erasing the data. These values are for development
 only.
 
@@ -24,7 +22,7 @@ mise run dev           # migrate, then cihub server start with the four roles an
 docker compose down    # stops Postgres and keeps the volume
 ```
 
-`mise run dev` requires a test GitHub App, created according to `docs/GITHUB.md` (D92). Its variables go in
+`mise run dev` requires a test GitHub App, created according to `specs/GITHUB.md`. Its variables go in
 `mise.local.toml`, at the root of the repository: `mise` loads it with `mise.toml`, and `.gitignore` excludes it.
 The private key stays outside the repository, and the file gives only its path.
 
@@ -44,9 +42,9 @@ of the App points to a tunnel that leads to port 8080.
 ## Server configuration
 
 `cihub server` reads its configuration from a YAML file named by `--config <file>`, and from the `CIHUB_*`
-variables (`DECISIONS.md` D31, D168). Without `--config`, it reads no file: a file forgotten in `/etc` never
+variables. Without `--config`, it reads no file: a file forgotten in `/etc` never
 changes the behavior. The documentation names the file `server.yaml`, never `cihub.yaml`, which would look like
-`.cihub.yaml`, the configuration of a repository (`docs/CONFIGURATION.md`).
+`.cihub.yaml`, the configuration of a repository (`specs/CONFIGURATION.md`).
 
 The variable of a key is `CIHUB_` followed by its path in capitals, with `_` as separator. A variable wins over
 the file, the file over the default. An unknown key, a wrong type or an invalid value stops the process at
@@ -55,12 +53,12 @@ startup, with a message that names the key and the file, or the variable.
 | Key                       | Variable                        | Default              | Role                                                                        |
 | ------------------------- | ------------------------------- | -------------------- | --------------------------------------------------------------------------- |
 | `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
-| `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`docs/SECURITY.md`) |
-| `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API (`DECISIONS.md` D82, D83) |
-| `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`docs/OBSERVABILITY.md`)                                        |
-| `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`docs/OBSERVABILITY.md`)                                |
-| `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server (`DECISIONS.md` D79) |
-| `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub server migrate` does not need it (`DECISIONS.md` D92) |
+| `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
+| `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
+| `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
+| `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
+| `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |
+| `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub server migrate` does not need it |
 | `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
 | `github.private_key_file` | `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                 | File that contains the private key, instead of `github.private_key`         |
 | `github.webhook_secret`   | `CIHUB_GITHUB_WEBHOOK_SECRET`   | none                 | Secret that signs the webhooks of the App; required with `github.app_id`   |
@@ -85,7 +83,7 @@ github:
 
 One file serves every replica. On Kubernetes, a ConfigMap carries the
 file without its secrets, and a Secret gives `CIHUB_DATABASE_URL` and `CIHUB_GITHUB_WEBHOOK_SECRET`. A file that
-carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`docs/SECURITY.md`).
+carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`specs/SECURITY.md`).
 
 ```sh
 cihub server migrate --config /etc/cihub/server.yaml
@@ -108,11 +106,10 @@ image starts the four roles, and an argument replaces it (`server migrate`). The
 license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
 probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root certificates of the system, which
-the runtime image provides: the binary does not embed a list of certificates (`DECISIONS.md` D81). The
+the runtime image provides: the binary does not embed a list of certificates. The
 `release` profile of `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) is used for this image.
 
-`.github/workflows/image.yaml` publishes the image to `ghcr.io/nlecoy/cihub` at each release
-(`DECISIONS.md` D19), with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image
+`.github/workflows/image.yaml` publishes the image to `ghcr.io/nlecoy/cihub` at each release, with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image
 is for `linux/amd64` only, the architecture of the one node of `cihub-runner`. The job runs on `cihub-runner`, which
 has no Docker daemon: buildx (driver `kubernetes`) starts a rootless BuildKit pod in the `buildkit` namespace of the
 cluster, with the ServiceAccount of the runner, and removes it at the end of the job. In `nlecoy/home-ops`, the
@@ -126,15 +123,15 @@ there lets the ServiceAccount of the runner manage the BuildKit deployment.
 | Service          | Role                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------ |
 | `postgres`       | Postgres 17, with a data volume; no port published on the host                             |
-| `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start (D38, D52) |
-| `cihub-migrate`  | One-shot: `cihub server migrate` (D14)                                                     |
+| `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start |
+| `cihub-migrate`  | One-shot: `cihub server migrate`                                                     |
 | `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
 
 The values come from `deploy/.env`, to be created from `deploy/.env.example`: the Postgres passwords,
 `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` and the path of the private key of the App. The key is mounted
 read-only and given by `CIHUB_GITHUB_PRIVATE_KEY_FILE`; the user of the image (uid 65532) must be able to
 read it. `deploy/.env` must never be committed (`.gitignore` excludes it). The internal port 8081 is not published on
-the host (`docs/SECURITY.md`). The complete procedure is in `README.md`.
+the host (`specs/SECURITY.md`). The complete procedure is in `INSTALL.md`.
 
 ```sh
 docker compose -f deploy/compose.yaml up -d
@@ -143,13 +140,13 @@ docker compose -f deploy/compose.yaml run --rm cihub-server server token create 
 
 ## Installation on Kubernetes
 
-`charts/cihub` is the Helm chart (`DECISIONS.md` D251). It installs:
+`charts/cihub` is the Helm chart. It installs:
 
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Job `<release>-migrate`     | `cihub server migrate`, as a `pre-install` and `pre-upgrade` hook (D14); it reads only the environment, as the ConfigMap does not exist yet when it runs |
+| Job `<release>-migrate`     | `cihub server migrate`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
 | ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
-| Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas (D170)               |
+| Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
 | Ingress or HTTPRoute        | Optional, to the Service                                                                                  |
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
@@ -176,7 +173,7 @@ delivery does not get `202`. The App does not exist and `github.url` does not re
 kubeconfig of the cluster is `$TMPDIR/kind-cihub-smoke.kubeconfig` (`/tmp` without `TMPDIR`), never `~/.kube`. A run
 on a kept cluster keeps its Secrets, and restarts the replicas, as the tag of the image does not change.
 
-With `CIHUB_SMOKE_GITHUB=1` (`DECISIONS.md` D252), the script uses the development App of `mise.local.toml`
+With `CIHUB_SMOKE_GITHUB=1`, the script uses the development App of `mise.local.toml`
 (`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and `CIHUB_GITHUB_URL` when it
 is set) instead of a false App, and also fails when no installation of the App is synced within 2 minutes. It is a
 development use, as `mise run dev`, never a test of the CI. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that
@@ -194,12 +191,10 @@ kind delete cluster --name cihub-smoke
 
 Installing the App on an account is enough: CIHub syncs the installations of its App, at the start of the server,
 every 24 hours and at each `installation` delivery, and creates the organization of a new installation (its slug
-is the login of the account), its connection and the read of its repositories (`DECISIONS.md` D247,
-`docs/GITHUB.md`). Keep the App private (*Only on this account*): any account that installs a public App gets an
+is the login of the account), its connection and the read of its repositories (`specs/GITHUB.md`). Keep the App private (*Only on this account*): any account that installs a public App gets an
 organization.
 
-The sync creates no API token. A command creates one for an existing organization, without the dashboard
-(`DECISIONS.md` D248):
+The sync creates no API token. A command creates one for an existing organization, without the dashboard:
 
 ```sh
 cihub server token create --org <slug of the organization>
@@ -212,7 +207,7 @@ error.
 
 ## Migrations
 
-Migrations are explicit (`DECISIONS.md` D14):
+Migrations are explicit:
 
 - `cihub server migrate` applies the embedded migrations that are missing, creates the partitions, then stops.
 - At startup, `cihub server start` applies nothing: it stops if an embedded migration is missing in the database. A
@@ -228,15 +223,15 @@ Migrations are explicit (`DECISIONS.md` D14):
 
 ## Tools
 
-`mise install` installs the whole suite (`DECISIONS.md` D17): Rust (version pinned in `mise.toml`, with `clippy`,
+`mise install` installs the whole suite: Rust (version pinned in `mise.toml`, with `clippy`,
 `rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
-`lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
+`lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml`: `cargo fmt`, `actionlint` and `zizmor` at
 commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
 ## Project CI
 
-`.github/workflows/ci.yml` has one job, `CI` (`DECISIONS.md` D242). It runs, in order: `mise run lint`,
+`.github/workflows/ci.yml` has one job, `CI`. It runs, in order: `mise run lint`,
 `mise run lint-workflows`, `postgres-setup.sql`, `mise run test`, `mise run --skip-deps test-integration`, then
 `mise run cover`.
 
@@ -259,24 +254,25 @@ dependency. The tests against Postgres run 4 at a time (`NEXTEST_TEST_THREADS`),
 which it does not know yet.
 
 `chart.yaml` has three jobs for the chart, on runners hosted by GitHub (`ubuntu-26.04`) for now, as `Smoke` needs a
-Docker daemon (`DECISIONS.md` D251): `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm
+Docker daemon: `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm
 Unittest` (`mise run helm-unittest`) and `Smoke` (`mise run smoke`). They are not required statuses. They run on a
 pull request only when it changes `charts/`, `scripts/smoke.sh`, `scripts/smoke/`, the `Dockerfile`, `migrations/`,
-`mise.toml`, `mise.lock` or `chart.yaml`, and once a night on `main` (D256).
+`mise.toml`, `mise.lock` or `chart.yaml`, and once a night on `main`, as a change of the code can break an
+installation by the chart without touching these paths.
 
 ## Versions
 
-release-please (`.github/workflows/release-please.yaml`, `DECISIONS.md` D19) maintains a release PR from the
+release-please (`.github/workflows/release-please.yaml`) maintains a release PR from the
 commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
 in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The CI does not run on the release-please PRs, which change only these files. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
 triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `charts/cihub` with the
-version of the release and pushes it to `oci://ghcr.io/nlecoy/charts/cihub` (`DECISIONS.md` D251).
+version of the release and pushes it to `oci://ghcr.io/nlecoy/charts/cihub`.
 
 ## Dependency updates
 
-Renovate (`.github/workflows/renovate.yaml`, `DECISIONS.md` D21) runs every hour, on a push that modifies
+Renovate (`.github/workflows/renovate.yaml`) runs every hour, on a push that modifies
 `.renovaterc.json5`, and on demand (with a dry-run option). It opens PRs for the GitHub actions,
 the tools of `mise.toml` (with `mise.lock`) and the crates of `Cargo.toml`, and maintains a dashboard in an
 issue. No PR is merged automatically. It uses the same bot GitHub App as release-please.

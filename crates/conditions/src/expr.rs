@@ -31,7 +31,7 @@ impl Conditions {
     }
 
     /// The text of each element of the list that does not hold, in order,
-    /// to explain why a PR waits (`DECISIONS.md` D142).
+    /// to explain why a PR waits.
     ///
     /// # Errors
     ///

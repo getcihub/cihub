@@ -1,6 +1,5 @@
 //! Optimistic merge: a run that passes proves the groups that it tested as
-//! predecessors; an evicted group still restarts the groups behind it
-//! (`DECISIONS.md` D209).
+//! predecessors; an evicted group still restarts the groups behind it.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
