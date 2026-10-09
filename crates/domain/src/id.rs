@@ -83,11 +83,9 @@ id_type!(
     GroupId => "group",
     RunId => "run",
     EventId => "event",
-    /// An SCM instance: github.com, a GitHub Enterprise Server.
-    ScmInstanceId => "scminstance",
     /// How CIHub reaches the repositories of an SCM account.
     ConnectionId => "connection",
-    /// A user account of an SCM instance, global.
+    /// A user account of the SCM, global.
     UserId => "user",
     /// The row of an API token; the secret itself is `cht_…` (`DECISIONS.md` D32).
     ApiTokenId => "apitoken",

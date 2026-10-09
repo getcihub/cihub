@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RepoId, RunId, RunStatus, ScmInstanceId,
-    SubmittedVia, run_of_test_branch,
+    Actor, ConnectionId, Event, EventKind, OrgId, QueueId, RepoId, RunId, RunStatus, SubmittedVia,
+    run_of_test_branch,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -131,14 +131,7 @@ impl Reconciler {
                 deferred += 1;
                 continue;
             }
-            mark_processed(
-                conn,
-                delivery.scm_instance_id,
-                &delivery.delivery_id,
-                now,
-                error.as_deref(),
-            )
-            .await?;
+            mark_processed(conn, &delivery.delivery_id, now, error.as_deref()).await?;
         }
         let requested_mode = log.snapshot.requested_mode;
         if settings.mode.value != requested_mode {
@@ -314,10 +307,9 @@ impl Work<'_> {
                     && self.settings.comments_enabled.value
                     && self.settings.commands_enabled.value
                 {
-                    let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
                     jobs.push(welcome_job(
                         self.target.org_id,
-                        connection,
+                        self.target.repo.connection.id,
                         delivery_id,
                         self.target.repo_id,
                         number,
@@ -335,10 +327,9 @@ impl Work<'_> {
                     && label == self.settings.enqueue_label.value
                 {
                     let request = SubmitPr::by_label(self.target.repo_id, number, label);
-                    let connection = (self.target.scm_instance_id, self.target.repo.connection.id);
                     jobs.push(submit(
                         self.target.org_id,
-                        connection,
+                        self.target.repo.connection.id,
                         delivery_id,
                         &request,
                     ));
@@ -357,7 +348,7 @@ impl Work<'_> {
                 if !own && merge_in_flight(conn, self.target.queue_id).await? {
                     return Ok(false);
                 }
-                let sender_id = user_of(conn, self.target.scm_instance_id, &sender).await?;
+                let sender_id = user_of(conn, &sender).await?;
                 facts.push(self.fact(
                     Actor::User { user_id: sender_id },
                     EventKind::TargetPushed {
@@ -460,7 +451,7 @@ impl Work<'_> {
 /// after the delivery `delivery_id` (`DECISIONS.md` D163).
 fn welcome_job(
     org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
+    connection: ConnectionId,
     delivery_id: &str,
     repo_id: RepoId,
     pr_number: u64,
@@ -476,7 +467,6 @@ fn welcome_job(
 
 /// A delivery of a connection without a queue.
 struct ConnectionDelivery {
-    instance: ScmInstanceId,
     delivery_id: String,
     org_id: OrgId,
     connection: ConnectionId,
@@ -498,18 +488,10 @@ pub async fn pass_connection_deliveries(
     reconciler: &Reconciler,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
-    type Row = (
-        String,
-        String,
-        String,
-        String,
-        String,
-        Value,
-        OffsetDateTime,
-    );
+    type Row = (String, String, String, String, Value, OffsetDateTime);
     let mut tx = begin_system(pool).await?;
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, org_id, connection_id, event, payload, received_at
+        "SELECT delivery_id, org_id, connection_id, event, payload, received_at
          FROM webhook_inbox
          WHERE routed_at IS NOT NULL AND processed_at IS NULL AND queue_id IS NULL
            AND connection_id IS NOT NULL
@@ -521,9 +503,8 @@ pub async fn pass_connection_deliveries(
     .fetch_all(&mut *tx)
     .await?;
     let count = rows.len();
-    for (instance, delivery_id, org_id, connection, event, payload, received_at) in rows {
+    for (delivery_id, org_id, connection, event, payload, received_at) in rows {
         let delivery = ConnectionDelivery {
-            instance: parse_id(&instance, &delivery_id)?,
             org_id: parse_id(&org_id, &delivery_id)?,
             connection: parse_id(&connection, &delivery_id)?,
             delivery_id: delivery_id.clone(),
@@ -538,14 +519,7 @@ pub async fn pass_connection_deliveries(
             }
             Err(err) => Some(err.to_string()),
         };
-        mark_processed(
-            &mut tx,
-            delivery.instance,
-            &delivery_id,
-            now,
-            error.as_deref(),
-        )
-        .await?;
+        mark_processed(&mut tx, &delivery_id, now, error.as_deref()).await?;
     }
     tx.commit().await?;
     Ok(count)
@@ -685,10 +659,9 @@ async fn pass_comment(
             command,
             comment_id: comment.external_id.to_owned(),
         };
-        let connection = (delivery.instance, delivery.connection);
         let job = connection_job(
             delivery.org_id,
-            connection,
+            delivery.connection,
             &delivery.delivery_id,
             PR_COMMAND,
             json!(request),
@@ -794,10 +767,9 @@ async fn route_pr_change(
             .await?
             .is_empty()
     {
-        let connection = (delivery.instance, delivery.connection);
         let job = welcome_job(
             delivery.org_id,
-            connection,
+            delivery.connection,
             &delivery.delivery_id,
             repo,
             change.number,
@@ -831,8 +803,12 @@ async fn route_pr_change(
             return Ok(());
         }
         let request = SubmitPr::by_label(repo, change.number, label);
-        let connection = (delivery.instance, delivery.connection);
-        submit(delivery.org_id, connection, &delivery.delivery_id, &request)
+        submit(
+            delivery.org_id,
+            delivery.connection,
+            &delivery.delivery_id,
+            &request,
+        )
     };
     enqueue_job(conn, &job, now, now).await?;
     Ok(())
@@ -936,8 +912,12 @@ async fn request_submission(
         label: None,
         comment_id: command.comment_external_id.map(str::to_owned),
     };
-    let connection = (delivery.instance, delivery.connection);
-    let job = submit(delivery.org_id, connection, &delivery.delivery_id, &request);
+    let job = submit(
+        delivery.org_id,
+        delivery.connection,
+        &delivery.delivery_id,
+        &request,
+    );
     enqueue_job(conn, &job, now, now).await?;
     Ok(())
 }

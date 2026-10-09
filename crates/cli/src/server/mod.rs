@@ -19,11 +19,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, bail};
-use cihub_domain::{ScmInstanceId, ScmKind};
 use cihub_github::GithubApp;
 use cihub_mergequeue::Translate;
 use cihub_scm::Scm;
-use cihub_store::{MIGRATOR, PgPool, begin_system, ensure_scm_instance};
+use cihub_store::{MIGRATOR, PgPool};
 use clap::{Args, Subcommand};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -84,7 +83,6 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
 #[derive(Clone)]
 struct Github {
     app: Arc<GithubApp>,
-    scm_instance_id: ScmInstanceId,
     webhook_secret: SecretString,
 }
 
@@ -105,15 +103,6 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
         webhook_secret,
     } = github;
     let client = GithubApp::new(&config, Arc::new(now)).context("the GitHub App cannot start")?;
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the identifier of the SCM instance, used only when it is new"
-    )]
-    let candidate = ScmInstanceId::new();
-    let mut tx = begin_system(pool).await?;
-    let scm_instance_id =
-        ensure_scm_instance(&mut tx, candidate, ScmKind::Github, &config.url).await?;
-    tx.commit().await?;
     info!(
         url = config.url,
         app_id = config.app_id,
@@ -121,7 +110,6 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
     );
     Ok(Github {
         app: Arc::new(client),
-        scm_instance_id,
         webhook_secret,
     })
 }

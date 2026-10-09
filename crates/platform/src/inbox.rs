@@ -1,4 +1,4 @@
-use cihub_domain::{ConnectionId, OrgId, QueueId, ScmInstanceId};
+use cihub_domain::{ConnectionId, OrgId, QueueId};
 use serde_json::Value;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
@@ -10,7 +10,6 @@ pub(crate) const INBOX_CHANNEL: &str = "cihub_inbox";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delivery {
-    pub scm_instance_id: ScmInstanceId,
     pub delivery_id: String,
     pub org_id: Option<OrgId>,
     pub connection_id: Option<ConnectionId>,
@@ -36,12 +35,11 @@ pub async fn store_delivery(
     delivery: &Delivery,
 ) -> Result<bool, PlatformError> {
     let done = sqlx::query(
-        "INSERT INTO webhook_inbox (scm_instance_id, delivery_id, org_id, connection_id, queue_id,
-                                    event, payload, received_at, routed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $3 IS NULL THEN NULL ELSE $8 END)
-         ON CONFLICT (scm_instance_id, delivery_id) DO NOTHING",
+        "INSERT INTO webhook_inbox (delivery_id, org_id, connection_id, queue_id, event, payload,
+                                    received_at, routed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $2 IS NULL THEN NULL ELSE $7 END)
+         ON CONFLICT (delivery_id) DO NOTHING",
     )
-    .bind(delivery.scm_instance_id.to_string())
     .bind(&delivery.delivery_id)
     .bind(delivery.org_id.map(|id| id.to_string()))
     .bind(delivery.connection_id.map(|id| id.to_string()))
@@ -63,7 +61,6 @@ pub async fn store_delivery(
 
 pub(crate) type DeliveryRow = (
     String,
-    String,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -84,8 +81,7 @@ pub async fn pending_deliveries(
     limit: i64,
 ) -> Result<Vec<Delivery>, PlatformError> {
     let rows: Vec<DeliveryRow> = sqlx::query_as(
-        "SELECT scm_instance_id, delivery_id, org_id, connection_id, queue_id, event, payload,
-                received_at
+        "SELECT delivery_id, org_id, connection_id, queue_id, event, payload, received_at
          FROM webhook_inbox
          WHERE queue_id = $1 AND processed_at IS NULL
          ORDER BY received_at, delivery_id
@@ -100,20 +96,10 @@ pub async fn pending_deliveries(
 }
 
 pub(crate) fn decode(
-    (
-        scm_instance_id,
-        delivery_id,
-        org_id,
-        connection_id,
-        queue_id,
-        event,
-        payload,
-        received_at,
-    ): DeliveryRow,
+    (delivery_id, org_id, connection_id, queue_id, event, payload, received_at): DeliveryRow,
 ) -> Result<Delivery, PlatformError> {
     let read = || PlatformError::read("delivery", &delivery_id);
     Ok(Delivery {
-        scm_instance_id: scm_instance_id.parse().map_err(read())?,
         org_id: org_id.map(|id| id.parse()).transpose().map_err(read())?,
         connection_id: connection_id
             .map(|id| id.parse())
@@ -136,21 +122,16 @@ pub(crate) fn decode(
 /// Postgres fails.
 pub async fn mark_processed(
     conn: &mut PgConnection,
-    scm_instance_id: ScmInstanceId,
     delivery_id: &str,
     now: OffsetDateTime,
     error: Option<&str>,
 ) -> Result<(), PlatformError> {
-    sqlx::query(
-        "UPDATE webhook_inbox SET processed_at = $3, error = $4
-         WHERE scm_instance_id = $1 AND delivery_id = $2",
-    )
-    .bind(scm_instance_id.to_string())
-    .bind(delivery_id)
-    .bind(now)
-    .bind(error)
-    .execute(conn)
-    .await
-    .map_err(PlatformError::Query)?;
+    sqlx::query("UPDATE webhook_inbox SET processed_at = $2, error = $3 WHERE delivery_id = $1")
+        .bind(delivery_id)
+        .bind(now)
+        .bind(error)
+        .execute(conn)
+        .await
+        .map_err(PlatformError::Query)?;
     Ok(())
 }

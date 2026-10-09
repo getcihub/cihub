@@ -10,8 +10,7 @@ use std::error::Error;
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
     Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
-    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, ScmInstanceId, SubmittedVia,
-    UserId,
+    Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, SubmittedVia, UserId,
 };
 use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
 use cihub_scm::{
@@ -125,7 +124,7 @@ pub(crate) fn job(
         job_type: job_type.to_owned(),
         class,
         org_id: Some(target.org_id),
-        connection: Some((target.scm_instance_id, target.repo.connection.id)),
+        connection: Some(target.repo.connection.id),
         queue_id: Some(target.queue_id),
         payload,
         attempts: 0,
@@ -136,7 +135,7 @@ pub(crate) fn job(
 /// without a queue yet: the job finds it.
 pub(crate) fn connection_job(
     org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
+    connection: ConnectionId,
     delivery_id: &str,
     job_type: &str,
     payload: serde_json::Value,
@@ -210,7 +209,7 @@ pub(crate) fn window(point: OffsetDateTime) -> String {
 /// connection `connection` (`DECISIONS.md` D102). It has no queue yet.
 pub(crate) fn submit(
     org_id: OrgId,
-    connection: (ScmInstanceId, ConnectionId),
+    connection: ConnectionId,
     delivery_id: &str,
     request: &SubmitPr,
 ) -> Job {
@@ -319,7 +318,6 @@ pub(crate) fn new_event_id() -> EventId {
 
 pub(crate) async fn user_of(
     conn: &mut PgConnection,
-    instance: ScmInstanceId,
     user: &ScmUser,
 ) -> Result<UserId, MergeQueueError> {
     #[expect(
@@ -327,7 +325,7 @@ pub(crate) async fn user_of(
         reason = "the identifier of an account of the SCM, used only when it is new"
     )]
     let candidate = UserId::new();
-    ensure_user(conn, candidate, instance, &user.external_id, &user.login)
+    ensure_user(conn, candidate, &user.external_id, &user.login)
         .await
         .map_err(MergeQueueError::Store)
 }
@@ -825,7 +823,6 @@ async fn submission_priority(
 
 async fn submission_accounts(
     pool: &PgPool,
-    target: &QueueTarget,
     pr: &PrSnapshot,
     request: &SubmitPr,
 ) -> Result<(UserId, Actor), Failure> {
@@ -833,10 +830,10 @@ async fn submission_accounts(
     // facts back waits for the reconciliation of the queue, which may need
     // the same rows of `users`.
     let mut tx = begin_system(pool).await?;
-    let author_id = user_of(&mut tx, target.scm_instance_id, &pr.author).await?;
+    let author_id = user_of(&mut tx, &pr.author).await?;
     let actor = match &request.requested_by {
         Some(account) => Actor::User {
-            user_id: user_of(&mut tx, target.scm_instance_id, &account.into()).await?,
+            user_id: user_of(&mut tx, &account.into()).await?,
         },
         None => Actor::System,
     };
@@ -922,7 +919,7 @@ pub(crate) async fn submit_pr(
     let unmet = unmet_conditions(scm, target, config.as_ref(), &pr, &reading).await?;
     let priority =
         submission_priority(scm, target, config.as_ref(), &pr, &request, &reading).await?;
-    let (author_id, actor) = submission_accounts(pool, target, &pr, &request).await?;
+    let (author_id, actor) = submission_accounts(pool, &pr, &request).await?;
 
     let submitted = EventKind::ItemSubmitted {
         pr_number,
@@ -1043,9 +1040,8 @@ mod tests {
             label: None,
             comment_id: None,
         };
-        let connection = (target.scm_instance_id, target.repo.connection.id);
         assert_eq!(
-            submit(target.org_id, connection, "d", &request).idempotency_key,
+            submit(target.org_id, target.repo.connection.id, "d", &request).idempotency_key,
             "submit_pr:d:1"
         );
     }

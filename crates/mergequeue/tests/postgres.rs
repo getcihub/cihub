@@ -11,7 +11,7 @@ use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability,
     OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId, RequiredStatusesSource,
-    ReviewDecision, RunId, RunStatus, ScmInstanceId, SubmittedVia, UserId, temp_branch,
+    ReviewDecision, RunId, RunStatus, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -51,10 +51,6 @@ fn head(pr: u64) -> String {
     format!("head-{pr}")
 }
 
-fn instance() -> ScmInstanceId {
-    ScmInstanceId::from_ulid(Ulid(10))
-}
-
 fn connection() -> ConnectionId {
     ConnectionId::from_ulid(Ulid(11))
 }
@@ -90,21 +86,14 @@ async fn seed(pool: &PgPool) {
     .unwrap();
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO scm_instances (id, kind, base_url)
-             VALUES ('{instance}', 'github', 'https://github.com');
-         INSERT INTO users (id, scm_instance_id, external_id, login)
-             VALUES ('{user}', '{instance}', '3', 'octocat');
+        "INSERT INTO users (id, external_id, login) VALUES ('{user}', '3', 'octocat');
          INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme');
-         INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                      external_id)
-             VALUES ('{connection}', '{org}', '{instance}', '1', 'github_app', '1');
-         INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id, namespace,
-                            name, default_branch)
-             VALUES ('{repo}', '{org}', '{instance}', '{connection}', '200', 'acme', 'app',
-                     'main');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+             VALUES ('{connection}', '{org}', '1', 'github_app', '1');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
              VALUES ('{queue}', '{org}', '{repo}', 'main', 'main');",
-        instance = instance(),
         user = user(),
         org = org(),
         connection = connection(),
@@ -556,7 +545,6 @@ impl SimQueue {
             .unwrap();
         tx.commit().await.unwrap();
         let webhooks = cihub_web::GithubWebhooks {
-            scm_instance_id: instance(),
             secret: SecretString::from("unused"),
         };
         let fixed = || OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
@@ -574,10 +562,9 @@ impl SimQueue {
         for delivery in self.sim.take_deliveries() {
             self.sent += 1;
             let id = format!("delivery-{}", self.sent);
-            let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+            let route = find_route(&mut tx, &delivery).await.unwrap();
             self.deliveries.lock().unwrap().insert(id.clone(), delivery);
             let stored = Delivery {
-                scm_instance_id: instance(),
                 delivery_id: id.clone(),
                 org_id: route.org_id,
                 connection_id: route.connection_id,
@@ -894,10 +881,9 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let mut tx = begin_system(&pool).await.unwrap();
     for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
         let id = format!("delivery-{n}");
-        let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+        let route = find_route(&mut tx, &delivery).await.unwrap();
         deliveries.lock().unwrap().insert(id.clone(), delivery);
         let stored = Delivery {
-            scm_instance_id: instance(),
             delivery_id: id.clone(),
             org_id: route.org_id,
             connection_id: route.connection_id,
@@ -1033,7 +1019,7 @@ fn read_job(n: u64) -> Job {
         job_type: REFRESH_PRS.into(),
         class: JobClass::Interactive,
         org_id: Some(org()),
-        connection: Some((instance(), connection())),
+        connection: Some(connection()),
         queue_id: Some(queue()),
         payload: serde_json::json!({ "prs": [n] }),
         attempts: 0,
@@ -1772,11 +1758,10 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     let deliveries = Arc::new(Mutex::new(HashMap::new()));
     for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
         let id = format!("push-{n}");
-        let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+        let route = find_route(&mut tx, &delivery).await.unwrap();
         assert_eq!(route.queue_id, None, "two queues: no sure queue");
         deliveries.lock().unwrap().insert(id.clone(), delivery);
         let stored = Delivery {
-            scm_instance_id: instance(),
             delivery_id: id.clone(),
             org_id: route.org_id,
             connection_id: route.connection_id,
@@ -1792,7 +1777,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         job_type: "merge_pr".into(),
         class: JobClass::Merge,
         org_id: Some(org()),
-        connection: Some((instance(), connection())),
+        connection: Some(connection()),
         queue_id: Some(queue()),
         payload: serde_json::json!({}),
         attempts: 0,
@@ -3368,18 +3353,16 @@ impl Chaos {
         let mut tx = begin_system(&chaos.pool).await.unwrap();
         sqlx::raw_sql(AssertSqlSafe(format!(
             "INSERT INTO orgs (id, slug) VALUES ('{org}', 'acme-{seed}');
-             INSERT INTO scm_connections (id, org_id, scm_instance_id, account_external_id, kind,
-                                          external_id)
-                 VALUES ('{connection}', '{org}', '{instance}', 'account-{seed}', 'github_app',
+             INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id)
+                 VALUES ('{connection}', '{org}', 'account-{seed}', 'github_app',
                          '{connection_external_id}');
-             INSERT INTO repos (id, org_id, scm_instance_id, connection_id, external_id,
-                                namespace, name, default_branch)
-                 VALUES ('{repo_id}', '{org}', '{instance}', '{connection}', '{repo_external_id}',
-                         'acme', '{name}', 'main');
+             INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                                default_branch)
+                 VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
+                         '{name}', 'main');
              INSERT INTO queues (id, org_id, repo_id, target_branch, name)
                  VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');",
             org = chaos.org(),
-            instance = instance(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,
             repo_id = RepoId::from_ulid(chaos.id(5)),
@@ -3480,10 +3463,9 @@ impl Chaos {
         }
         let mut tx = begin_system(&self.pool).await.unwrap();
         for (id, delivery) in taken {
-            let route = find_route(&mut tx, instance(), &delivery).await.unwrap();
+            let route = find_route(&mut tx, &delivery).await.unwrap();
             self.deliveries.lock().unwrap().insert(id.clone(), delivery);
             let stored = Delivery {
-                scm_instance_id: instance(),
                 delivery_id: id.clone(),
                 org_id: route.org_id,
                 connection_id: route.connection_id,
@@ -3799,15 +3781,6 @@ async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
     )
     .await
     .unwrap();
-    let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::query(
-        "INSERT INTO scm_instances (id, kind, base_url) VALUES ($1, 'github', 'https://github.com')",
-    )
-    .bind(instance().to_string())
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
     let clock = TestClock::new();
     for seed in 0..seeds {
         let mut chaos = Chaos::new(pool.clone(), seed, clock.clone(), config).await;

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use cihub_domain::{JobClass, ScmInstanceId};
+use cihub_domain::JobClass;
 use cihub_scm::Scm;
 use cihub_store::{PgPool, begin_system};
 use serde_json::json;
@@ -19,10 +19,10 @@ pub const SWEEP_EVERY: std::time::Duration = std::time::Duration::from_mins(5);
 
 pub(crate) const SWEEP_LOOKBACK: Duration = Duration::minutes(10);
 
-pub(crate) fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
+pub(crate) fn sweep_job(now: OffsetDateTime) -> Job {
     let window = format!("{}{:02}", hour_window(now), now.minute() - now.minute() % 5);
     Job {
-        idempotency_key: format!("{SWEEP_DELIVERIES}:{instance}-{window}:1"),
+        idempotency_key: format!("{SWEEP_DELIVERIES}:{window}:1"),
         job_type: SWEEP_DELIVERIES.to_owned(),
         class: JobClass::Repair,
         org_id: None,
@@ -38,14 +38,13 @@ pub(crate) fn sweep_job(instance: ScmInstanceId, now: OffsetDateTime) -> Job {
 /// Postgres fails.
 pub async fn request_sweep(
     conn: &mut PgConnection,
-    instance: ScmInstanceId,
     now: OffsetDateTime,
 ) -> Result<bool, PlatformError> {
-    enqueue_job(conn, &sweep_job(instance, now), now, now).await
+    enqueue_job(conn, &sweep_job(now), now, now).await
 }
 
 /// Lists the attempts of the last [`SWEEP_LOOKBACK`], and asks the SCM again
-/// for each delivery that the inbox of `instance` does not have. Returns the
+/// for each delivery that the inbox does not have. Returns the
 /// number of deliveries asked again. A copy of a delivery changes nothing in
 /// the inbox, so a delivery asked twice does no harm.
 ///
@@ -55,7 +54,6 @@ pub async fn request_sweep(
 pub async fn run_sweep(
     pool: &PgPool,
     scm: &dyn Scm,
-    instance: ScmInstanceId,
     now: OffsetDateTime,
 ) -> Result<usize, PlatformError> {
     let recent = scm
@@ -70,15 +68,12 @@ pub async fn run_sweep(
     }
     let ids: Vec<&String> = attempts.keys().collect();
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-    let known: Vec<String> = sqlx::query_scalar(
-        "SELECT delivery_id FROM webhook_inbox
-         WHERE scm_instance_id = $1 AND delivery_id = ANY($2)",
-    )
-    .bind(instance.to_string())
-    .bind(&ids)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(PlatformError::Query)?;
+    let known: Vec<String> =
+        sqlx::query_scalar("SELECT delivery_id FROM webhook_inbox WHERE delivery_id = ANY($1)")
+            .bind(&ids)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(PlatformError::Query)?;
     tx.commit().await.map_err(PlatformError::Query)?;
     let mut asked = 0;
     for (delivery_id, attempt_id) in &attempts {
@@ -96,7 +91,6 @@ pub async fn run_sweep(
 
 pub fn sweep_executor(
     scm: Arc<dyn Scm>,
-    instance: ScmInstanceId,
 ) -> impl Fn(PgPool, Job, OffsetDateTime) -> std::pin::Pin<Box<dyn Future<Output = Outcome> + Send>>
 + Send
 + Sync
@@ -104,7 +98,7 @@ pub fn sweep_executor(
     move |pool, _job, now| {
         let scm = Arc::clone(&scm);
         Box::pin(async move {
-            match run_sweep(&pool, scm.as_ref(), instance, now).await {
+            match run_sweep(&pool, scm.as_ref(), now).await {
                 Ok(_) => Outcome::Done,
                 Err(err) => Outcome::Retry(error_chain(&err)),
             }
@@ -114,25 +108,19 @@ pub fn sweep_executor(
 
 #[cfg(test)]
 mod tests {
-    use ulid::Ulid;
-
     use super::*;
 
     #[test]
     fn a_sweep_has_one_job_per_five_minute_window() {
-        let instance = ScmInstanceId::from_ulid(Ulid(1));
         let at = |minute| {
             OffsetDateTime::from_unix_timestamp(1_789_000_000)
                 .unwrap()
                 .replace_minute(minute)
                 .unwrap()
         };
-        let key = |minute| sweep_job(instance, at(minute)).idempotency_key;
+        let key = |minute| sweep_job(at(minute)).idempotency_key;
         assert_eq!(key(5), key(9));
         assert_ne!(key(9), key(10));
-        assert_eq!(
-            key(7),
-            format!("sweep_deliveries:{instance}-20260910T0005:1")
-        );
+        assert_eq!(key(7), "sweep_deliveries:20260910T0005:1");
     }
 }

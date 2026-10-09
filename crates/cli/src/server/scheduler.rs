@@ -8,7 +8,6 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use cihub_domain::ScmInstanceId;
 use cihub_platform::{SWEEP_EVERY, request_maintenance, request_repo_syncs, request_sweep};
 use cihub_store::{PgPool, Postgres, Transaction, begin_system};
 use tokio_util::sync::CancellationToken;
@@ -28,7 +27,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let module = merge_queue(&pool, &github, &process);
     let queues = (module.scheduler)(cancel.clone());
     let maintenance = request_hourly(&pool, &cancel);
-    let sweep = request_sweep_regularly(&pool, github.scm_instance_id, &cancel);
+    let sweep = request_sweep_regularly(&pool, &cancel);
     let (queues, (), ()) = tokio::join!(queues, maintenance, sweep);
     queues.map_err(|err| anyhow!(err).context("the scheduler of the queues stopped"))
 }
@@ -99,22 +98,17 @@ async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn request_sweep_regularly(
-    pool: &PgPool,
-    instance: ScmInstanceId,
-    cancel: &CancellationToken,
-) {
+async fn request_sweep_regularly(pool: &PgPool, cancel: &CancellationToken) {
     repeat_every(SWEEP_EVERY, cancel, || async move {
-        if let Err(err) = request_sweep_now(pool, instance).await {
+        if let Err(err) = request_sweep_now(pool).await {
             warn!(error = &*err as &dyn Error, "sweep not requested");
         }
     })
     .await;
 }
 
-async fn request_sweep_now(pool: &PgPool, instance: ScmInstanceId) -> anyhow::Result<()> {
-    let requested =
-        in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, instance, now()))).await?;
+async fn request_sweep_now(pool: &PgPool) -> anyhow::Result<()> {
+    let requested = in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, now()))).await?;
     if requested {
         info!("sweep of the deliveries requested");
     }

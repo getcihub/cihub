@@ -19,7 +19,6 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use cihub_api_types::API_PREFIX;
-use cihub_domain::ScmInstanceId;
 use cihub_github::{ReceivedDelivery, WEBHOOK_PATH, WebhookError};
 use cihub_platform::{Delivery, ModuleApi, PlatformError, store_delivery};
 use cihub_store::{PgPool, begin_system};
@@ -35,7 +34,6 @@ const MAX_DELIVERY_BYTES: usize = 25 * 1024 * 1024;
 const ACK_WITHIN: Duration = Duration::from_secs(2);
 
 pub struct GithubWebhooks {
-    pub scm_instance_id: ScmInstanceId,
     pub secret: SecretString,
 }
 
@@ -123,7 +121,6 @@ async fn github_webhook(
 
 async fn store(webhooks: &Webhooks, received: ReceivedDelivery) -> Result<bool, PlatformError> {
     let delivery = Delivery {
-        scm_instance_id: webhooks.github.scm_instance_id,
         delivery_id: received.delivery_id,
         org_id: None,
         connection_id: None,

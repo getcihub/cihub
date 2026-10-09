@@ -595,7 +595,7 @@ impl Sim {
         deliveries
     }
 
-    fn instance_call<T: Send + 'static>(
+    fn record_call<T: Send + 'static>(
         &self,
         name: &'static str,
         class: JobClass,
@@ -618,7 +618,7 @@ impl Sim {
         class: JobClass,
         run: impl FnOnce(&mut Ctx<'_>) -> Result<T, ScmError>,
     ) -> ScmFuture<'_, T> {
-        self.instance_call(name, class, |state| {
+        self.record_call(name, class, |state| {
             if state.lost.contains(&repo.connection.external_id) {
                 return Err(ScmError::AccessLost("connection suspended".into()));
             }
@@ -1432,7 +1432,7 @@ impl Scm for Sim {
         _since: OffsetDateTime,
         class: JobClass,
     ) -> ScmFuture<'_, Vec<RecentDelivery>> {
-        self.instance_call("recent_deliveries", class, |state| {
+        self.record_call("recent_deliveries", class, |state| {
             Ok(state
                 .attempts
                 .iter()
@@ -1446,7 +1446,7 @@ impl Scm for Sim {
     }
 
     fn redeliver<'a>(&'a self, attempt_id: &'a str, class: JobClass) -> ScmFuture<'a, ()> {
-        self.instance_call("redeliver", class, move |state| {
+        self.record_call("redeliver", class, move |state| {
             let attempt = attempt_id
                 .parse::<usize>()
                 .ok()
@@ -1463,7 +1463,7 @@ impl Scm for Sim {
         external_id: &'a str,
         class: JobClass,
     ) -> ScmFuture<'a, ScmAccount> {
-        self.instance_call("installation", class, move |state| {
+        self.record_call("installation", class, move |state| {
             state
                 .accounts
                 .get(external_id)
@@ -1499,7 +1499,7 @@ impl Scm for Sim {
         connection: &'a ConnectionRef,
         class: JobClass,
     ) -> ScmFuture<'a, Vec<ScmRepo>> {
-        self.instance_call("list_repos", class, move |state| {
+        self.record_call("list_repos", class, move |state| {
             if state.lost.contains(&connection.external_id) {
                 return Err(ScmError::AccessLost("connection suspended".into()));
             }

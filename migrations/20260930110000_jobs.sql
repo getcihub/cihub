@@ -6,7 +6,6 @@ CREATE TABLE jobs (
     type            text        NOT NULL,
     class           job_class   NOT NULL,
     org_id          text        REFERENCES orgs (id),
-    scm_instance_id text,
     connection_id   text,
     queue_id        text,
     payload         jsonb       NOT NULL,
@@ -18,11 +17,9 @@ CREATE TABLE jobs (
     last_error      text,
     created_at      timestamptz NOT NULL,
     finished_at     timestamptz,
-    FOREIGN KEY (org_id, scm_instance_id, connection_id)
-        REFERENCES scm_connections (org_id, scm_instance_id, id),
+    FOREIGN KEY (org_id, connection_id) REFERENCES scm_connections (org_id, id),
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id),
     CHECK (org_id IS NOT NULL OR (connection_id IS NULL AND queue_id IS NULL)),
-    CHECK ((connection_id IS NULL) = (scm_instance_id IS NULL)),
     CHECK ((state = 'running') = (locked_until IS NOT NULL)),
     CHECK ((state IN ('done', 'failed', 'dead')) = (finished_at IS NOT NULL))
 );

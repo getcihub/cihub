@@ -4,7 +4,7 @@
   never at startup. Before the first published version, we rewrite a migration rather than add one that fixes it;
   `mise run db-reset` starts again from an empty database.
 - Every tenant table carries `org_id`, forced row level security and the `tenant` policy (D38). Only
-  `scm_instances` and `users` are global. The test `every_tenant_table_forces_row_level_security` fails otherwise.
+  `users` is global. The test `every_tenant_table_forces_row_level_security` fails otherwise.
 - A transaction opens with `begin_org(org_id)` or `begin_system()`; without a context it sees nothing. A system
   query always filters by `queue_id` or `org_id`.
 - The identifiers are `text` in the typedid format (D37). The Postgres enums mirror `cihub-domain` through

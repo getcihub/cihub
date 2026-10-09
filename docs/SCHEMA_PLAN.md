@@ -144,6 +144,8 @@ API response, which this change keeps as it is.
 
 **Decision.** Amends D58 for the first point. **Risk.** Low.
 
+**Status.** `jobs.scm_instance_id` is gone with D246: the composite foreign key of `jobs` becomes (`org_id`, `connection_id`).
+
 ## Step 5: rules for the tables of the next lots
 
 Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
