@@ -121,7 +121,17 @@ pub(crate) async fn run_pr_command(
     let repo = load_repo(pool, request.repo_id).await?;
     let number = request.pr_number;
     let name = request.command.name();
-    let refuse = |text: String| reply(scm, &repo.repo, number, name, text, class);
+    let refuse = |text: String| {
+        reply(
+            scm,
+            &repo.repo,
+            number,
+            &request.requested_by,
+            name,
+            text,
+            class,
+        )
+    };
     let author = ScmUser::from(&request.requested_by);
 
     if scm.permission(&repo.repo, &author, class).await? < Permission::Write {
