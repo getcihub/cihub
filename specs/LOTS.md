@@ -42,7 +42,11 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
-| 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
+| 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | in progress                              |
+| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | to do                                    |
+| 10c | Dashboard: PR drawer, actions and audit                | 2     | 10b        | —         | to do                                    |
+| 10d | Dashboard: live updates and search                     | 2     | 10b        | —         | to do                                    |
+| 10e | Dashboard: configuration checker and form              | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
@@ -62,7 +66,11 @@ flowchart LR
   L6 --> L8[8 Policy]
   L7 --> L9[9 Surfaces]
   L8 --> L9
-  L9 --> L10[10 Dashboard]
+  L9 --> L10a[10a Session]
+  L10a --> L10b[10b Queues]
+  L10b --> L10c[10c PR and actions]
+  L10b --> L10d[10d Live]
+  L10b --> L10e[10e Configuration]
   L9 --> L11[11 Analytics]
   L9 --> L12[12 batched]
   L9 --> L14[14 flakytests]
@@ -71,8 +79,8 @@ flowchart LR
   L13 --> L15
 ```
 
-Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, and lots 10, 11, 12 and 14
-after lot 9.
+Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11, 12 and 14
+after lot 9, and lots 10c, 10d and 10e after lot 10b.
 
 ---
 
@@ -188,17 +196,108 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ## Phase 2: throughput and visibility
 
-### Lot 10: dashboard
+### Lots 10a to 10e: dashboard
 
-- **Content**: `web/` (Q9), served and embedded by the `web` role; GitHub OAuth login, sessions, CSRF; pages for
-  the queue, the PR and its timeline, the run (required statuses against observed statuses), live graph;
-  configuration checker and assistant; form that writes `.cihub.yaml` and opens it as a PR on the repository, never
-  as a direct commit.
-- **Exit criterion**: component tests and an end-to-end browser test on `docker compose`: login, creation of a
-  queue, submission, follow-up until the merge; the assistant reports each configuration point of
-  `specs/GITHUB.md` on a misconfigured repository.
-- **Open questions**:
-  - **Q9** Dashboard stack: React with the generated TypeScript client is the hypothesis; to be confirmed.
+The dashboard follows the mockups v3: the list of the queues of an organization, the page of a queue (counters,
+settings, live graph, items), the drawer of a PR (run, checks, history), the settings (configuration, branch
+protection, audit log). It is split in five lots of about one week; each lot brings its routes, its migrations
+and its pages together, and starts from the routes by name of `/orgs/{org}/…`.
+
+Decisions:
+
+- **Q9** (decided October 10, 2026): TypeScript, React, Vite and the TanStack libraries (Router, Query, Form),
+  with a client generated from the OpenAPI document. The stack and its rules are in `web/AGENTS.md`.
+- The roles are `admin` and `member`, from the SCM membership. The `viewer` role and the change of a role by an
+  admin come after lot 10e (see "Next").
+
+#### Lot 10a: session, roles and frame
+
+- **Goal**: a person signs in with the SCM and sees the organizations that the App serves for them.
+- **Content**: `GET /auth/github`, `GET /auth/github/callback` and `POST /auth/sign-out`, outside `/api/v1`;
+  `sessions` table (14 days, revocable) and `memberships` table, filled from the SCM membership and refreshed
+  every hour (`specs/SCHEMA_PLAN.md`); same-site cookie and CSRF token on every `POST`, `PATCH` and `DELETE` of a
+  session; `GET /api/v1/me` (login, organizations with their role, version of the instance, installation URL of
+  the App); a session is a second authentication of every route, and its role gives the scopes (`member`:
+  `queues:read`, `prs:write`; `admin`: every scope); the sign-in flow in the simulator; a server on the
+  simulator for the browser tests. `web/`: Vite, the generated client, the router, the sign-in page and its
+  two errors, the frame (navigation, organization switcher, user menu), the pages "not found" and "server
+  error"; the build embedded by the `web` role; the dashboard in `mise run lint`, `mise run check` and the CI.
+- **Frozen interfaces**: the session cookie and the CSRF token; `GET /me`; the scopes of each role.
+- **Exit criterion**: a browser test on the simulator signs in and sees its organization; a `member` gets
+  `403` on `PATCH` of a queue; a session of another organization gets `404` (principle VIII); a failed sign-in
+  and a user without an organization see their message.
+- **Tracking**:
+  - Steps: 1. `sessions` and `memberships` tables; 2. sign-in through the SCM, in `cihub-github` and in the
+    simulator, and the refresh of the roles; 3. session in `cihub-web` (cookie, CSRF, scopes of a role, `/auth/*`,
+    `GET /me`); 4. `web/` (tools, Vite, router, generated client, lint and tests in `mise` and the CI); 5. pages and
+    the build embedded in the binary; 6. server on the simulator and browser test of the exit criterion.
+  - Decided (October 10, 2026): the sign-in goes through the App that exists (authorization of a user by the
+    App), coded with `reqwest`, without an OAuth crate: the App lists the installations that the user reaches
+    and already reads the members. A session is a row of `sessions` that keeps the hash of its token, as
+    `api_tokens`, so that a sign-out revokes it; the table is global, as `users`, because a session covers
+    several organizations. The client is generated by `@hey-api/openapi-ts` at a pinned version. The tools of
+    the dashboard are Node and pnpm, pinned in `mise.toml`.
+  - Open: how the build of `web/` enters the binary (a `build.rs` without a dependency, or `rust-embed`); decided
+    at step 5.
+
+#### Lot 10b: queues and the page of a queue
+
+- **Goal**: read the state of every queue and of the items of one queue.
+- **Content**: `Queue` gains `strategy`, `state_changed_at`, `state_changed_by`, `target_head_sha` and `access`
+  (`ok`, `suspended`, `removed`); `Repo` gains `url` and `access`; `GET …/queues/{queue}` gives the counters of
+  `GET /orgs/{org}/queues`, the number of live runs and the window (current, floor, ceiling); `Item` gains
+  `title`, `author`, `url`, `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of
+  `GET …/prs` takes several states; `Graph` gains the head of the target branch and the live runs (members,
+  predecessors, attempt, status); `GET …/config` reads the effective settings with their source and the text of
+  `.cihub.yaml`. Migrations: the title of the PR, kept up to date by the webhooks; the time and the author of
+  the last state of a queue. Pages: the list of the queues and its empty states; the page of a queue (banners of
+  pause, drain, lost access and invalid file; counters; settings; live graph; tabs). The page reads again every
+  10 seconds until lot 10d.
+- **Frozen interfaces**: `Queue`, `QueueDetail`, `Item`, `Graph`, `QueueConfig`.
+- **Exit criterion**: on the simulator, PRs submitted by comment appear with their title, author and position,
+  and the graph shows their runs; the routes give the same answers after a replay of the log (principle I).
+
+#### Lot 10c: PR drawer, actions and audit
+
+- **Goal**: follow a PR to its merge and act on the queue from the dashboard.
+- **Content**: `TimelineEvent` gains `actor` and `description`; `RunCheck` gains `status`, `started_at` and
+  `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `POST …/prs` refuses at
+  once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue (the refusals that
+  need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write `item.cancelled` and
+  `item.restarted` in the audit log; `AuditEntry` names its actor and its target and keeps the state before.
+  Pages: the drawer of a PR (run, required and observed checks, history); the submission, cancellation and
+  restart; pause, drain and resume; the audit log, and its page for a `member`.
+- **Frozen interfaces**: `TimelineEvent`, `RunCheck`, `AuditEntry`.
+- **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
+  submits a PR from the dashboard and follows it until the merge; the audit log then shows the pause of the
+  queue with its state before and after.
+
+#### Lot 10d: live updates and search
+
+- **Goal**: the pages follow the queue without a reload; a PR is found by its number or its title.
+- **Content**: `GET /orgs/{org}/stream`, server-sent events built on `NOTIFY cihub_queue`, that carry only
+  `queue_changed` (queue, sequence number) and a ping; the dashboard invalidates the reads of the queue that
+  changed and stops its polling; `GET /orgs/{org}/prs?query=` searches the current items of every queue by a
+  prefix of the number or a part of the title; the search palette (`/`).
+- **Frozen interfaces**: the event `queue_changed`.
+- **Exit criterion**: a change on the simulator shows on an open page in less than 2 seconds; the stream of an
+  organization carries no event of another one (principle VIII); the stream closes when the server stops; the
+  search finds a PR by the prefix of its number and by a word of its title.
+
+#### Lot 10e: configuration checker and form
+
+- **Goal**: show what the configuration of the SCM misses, and change `.cihub.yaml` through a PR.
+- **Content**: the configuration check is stored with its time and refreshed by the repair loop;
+  `POST …/config-check:run` checks again with the class `interactive`; `ConfigCheck` gives every point of
+  `specs/GITHUB.md` with `is_ok`, in a closed enumeration; `OrgQueue` gains the number of failed points;
+  `POST …/config:propose` writes the change on a branch and opens a PR on the target branch, never a direct
+  commit, with an idempotency key and the `sha` of the file it changes. Pages: configuration (settings, sources,
+  file), branch protection, the badges of the navigation and the banner of the queue, the form that changes the
+  configuration.
+- **Frozen interfaces**: `ConfigCheck`, `ConfigProposal`.
+- **Exit criterion**: on a misconfigured repository of the simulator, the page reports each point of
+  `specs/GITHUB.md`; two calls of `config:propose` with the same key open one PR; showing a page calls the SCM
+  zero times (principle VII).
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 
@@ -329,5 +428,5 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ### Next
 
-Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`. These lots are
-split when phase 4 starts.
+Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`; the `viewer` role
+and the change of a role by an admin (`specs/SECURITY.md`). These lots are split when phase 4 starts.
