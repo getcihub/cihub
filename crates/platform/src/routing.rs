@@ -98,7 +98,7 @@ pub async fn find_route(
             repo_external_id,
             branch,
             ..
-        } => queue_of_branch(conn, repo_external_id, branch).await?,
+        } => queue_of_branch(conn, &connection_id, repo_external_id, branch).await?,
         ScmEvent::CheckChanged {
             repo_external_id,
             sha,
@@ -108,7 +108,7 @@ pub async fn find_route(
             let run_id = branches
                 .iter()
                 .find_map(|branch| run_of_test_branch(branch));
-            queue_of_run(conn, repo_external_id, run_id, sha).await?
+            queue_of_run(conn, &connection_id, repo_external_id, run_id, sha).await?
         }
         _ => None,
     };
@@ -151,14 +151,16 @@ fn installation_sync(
 
 async fn queue_of_branch(
     conn: &mut PgConnection,
+    connection_id: &str,
     repo_external_id: &str,
     branch: &str,
 ) -> Result<Option<String>, PlatformError> {
     sqlx::query_scalar(
         "SELECT min(q.id) FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.external_id = $1 AND q.target_branch = $2
+         WHERE r.connection_id = $1 AND r.external_id = $2 AND q.target_branch = $3
          HAVING count(*) = 1",
     )
+    .bind(connection_id)
     .bind(repo_external_id)
     .bind(branch)
     .fetch_optional(conn)
@@ -168,6 +170,7 @@ async fn queue_of_branch(
 
 async fn queue_of_run(
     conn: &mut PgConnection,
+    connection_id: &str,
     repo_external_id: &str,
     run_id: Option<RunId>,
     sha: &str,
@@ -176,12 +179,13 @@ async fn queue_of_run(
         "SELECT t.queue_id FROM test_runs t
          JOIN queues q ON q.id = t.queue_id
          JOIN repos r ON r.id = q.repo_id
-         WHERE (t.id = $1 OR t.test_sha = $2) AND r.external_id = $3
+         WHERE (t.id = $1 OR t.test_sha = $2) AND r.connection_id = $3 AND r.external_id = $4
          ORDER BY t.id = $1 DESC, t.started_at DESC
          LIMIT 1",
     )
     .bind(run_id.map(|id| id.to_string()))
     .bind(sha)
+    .bind(connection_id)
     .bind(repo_external_id)
     .fetch_optional(conn)
     .await
