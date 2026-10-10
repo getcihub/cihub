@@ -311,7 +311,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ### Lot 13: `parallel` strategy
 
-- **Content**: `POST /repos/{owner}/{name}/prs/{pr}/impacted-targets` (`targets:write` token or GitHub Actions
+- **Content**: `POST /orgs/{org}/repos/{repo}/prs/{number}/impacted-targets` (`targets:write` token or GitHub Actions
   run for forks, 20 MB limit); lanes by overlap; batches per lane; `parallel` strategy;
   example actions for Bazel and Nx.
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in

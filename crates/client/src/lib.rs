@@ -2,8 +2,10 @@
 //! methods that the CLI uses, with the types of `cihub-api-types`. It holds no
 //! server code and no queue logic.
 
+use std::fmt::Write;
+
 use cihub_api_types::{
-    API_PREFIX, Accepted, Graph, ItemPage, PrItem, Problem, Queue, QueueList, RepoList,
+    API_PREFIX, Accepted, Graph, ItemPage, OrgQueueList, PrItem, Problem, Queue, QueueList,
     RequestedQueueState, SubmitPr, UpdateQueue,
 };
 use reqwest::{Method, StatusCode};
@@ -89,22 +91,23 @@ impl Client {
         self.send(Method::GET, path, None::<&()>).await
     }
 
-    /// The repositories of the organization of the token.
+    /// Every queue of the organization `org`, with its counters.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn repos(&self) -> Result<RepoList, ClientError> {
-        self.get("/repos").await
+    pub async fn org_queues(&self, org: &str) -> Result<OrgQueueList, ClientError> {
+        self.get(&format!("/orgs/{}/queues", segment(org))).await
     }
 
-    /// The queues of the repository `owner/name`.
+    /// The queues of the repository `repo` of the organization `org`.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn queues(&self, owner: &str, name: &str) -> Result<QueueList, ClientError> {
-        self.get(&format!("/repos/{owner}/{name}/queues")).await
+    pub async fn queues(&self, org: &str, repo: &str) -> Result<QueueList, ClientError> {
+        let path = format!("/orgs/{}/repos/{}/queues", segment(org), segment(repo));
+        self.get(&path).await
     }
 
     /// Asks the queue for `state`.
@@ -114,12 +117,11 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn set_queue_state(
         &self,
-        queue_id: &str,
+        queue: QueuePath<'_>,
         state: RequestedQueueState,
     ) -> Result<Queue, ClientError> {
-        let path = format!("/queues/{queue_id}");
         let body = UpdateQueue { state };
-        self.send(Method::PATCH, &path, Some(&body)).await
+        self.send(Method::PATCH, &queue.path(), Some(&body)).await
     }
 
     /// The first page of the items of the queue, newest first.
@@ -127,9 +129,8 @@ impl Client {
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn items(&self, queue_id: &str, take: u32) -> Result<ItemPage, ClientError> {
-        self.get(&format!("/queues/{queue_id}/items?take={take}"))
-            .await
+    pub async fn items(&self, queue: QueuePath<'_>, take: u32) -> Result<ItemPage, ClientError> {
+        self.get(&format!("{}/prs?take={take}", queue.path())).await
     }
 
     /// Submits a PR to the queue.
@@ -139,10 +140,10 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn submit(
         &self,
-        queue_id: &str,
+        queue: QueuePath<'_>,
         request: &SubmitPr,
     ) -> Result<Accepted, ClientError> {
-        let path = format!("/queues/{queue_id}/items");
+        let path = format!("{}/prs", queue.path());
         self.send(Method::POST, &path, Some(request)).await
     }
 
@@ -153,35 +154,105 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn pr(
         &self,
-        queue_id: &str,
+        queue: QueuePath<'_>,
         pr_number: u64,
         timeline: bool,
     ) -> Result<PrItem, ClientError> {
         let include = if timeline { "?include=timeline" } else { "" };
-        self.get(&format!("/queues/{queue_id}/prs/{pr_number}{include}"))
+        self.get(&format!("{}/prs/{pr_number}{include}", queue.path()))
             .await
     }
 
+    /// Cancels the current item of the PR `pr_number` in the queue.
+    ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn cancel(&self, item_id: &str) -> Result<Accepted, ClientError> {
-        let path = format!("/items/{item_id}/cancel");
+    pub async fn cancel(
+        &self,
+        queue: QueuePath<'_>,
+        pr_number: u64,
+    ) -> Result<Accepted, ClientError> {
+        let path = format!("{}/prs/{pr_number}:cancel", queue.path());
+        self.send(Method::POST, &path, None::<&()>).await
+    }
+
+    /// Restarts the tests of the current item of the PR `pr_number` in the
+    /// queue.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub refuses it.
+    pub async fn restart(
+        &self,
+        queue: QueuePath<'_>,
+        pr_number: u64,
+    ) -> Result<Accepted, ClientError> {
+        let path = format!("{}/prs/{pr_number}:restart", queue.path());
         self.send(Method::POST, &path, None::<&()>).await
     }
 
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn restart(&self, item_id: &str) -> Result<Accepted, ClientError> {
-        let path = format!("/items/{item_id}/restart");
-        self.send(Method::POST, &path, None::<&()>).await
+    pub async fn graph(&self, queue: QueuePath<'_>) -> Result<Graph, ClientError> {
+        self.get(&format!("{}/graph", queue.path())).await
+    }
+}
+
+/// A queue as the URL of the API names it (`specs/API.md`): the slug of the
+/// organization, the name of the repository in it, and the name of the queue
+/// in the repository.
+#[derive(Clone, Copy, Debug)]
+pub struct QueuePath<'a> {
+    pub org: &'a str,
+    pub repo: &'a str,
+    pub queue: &'a str,
+}
+
+impl QueuePath<'_> {
+    fn path(self) -> String {
+        format!(
+            "/orgs/{}/repos/{}/queues/{}",
+            segment(self.org),
+            segment(self.repo),
+            segment(self.queue)
+        )
+    }
+}
+
+/// `name` as one segment of a path. A queue named after its branch can hold a
+/// `/`: every byte but the unreserved characters of RFC 3986 is
+/// percent-encoded.
+fn segment(name: &str) -> String {
+    let mut encoded = String::with_capacity(name.len());
+
+    for byte in name.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            // Writing to a `String` cannot fail.
+            let _ = write!(encoded, "%{byte:02X}");
+        }
     }
 
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn graph(&self, queue_id: &str) -> Result<Graph, ClientError> {
-        self.get(&format!("/queues/{queue_id}/graph")).await
+    encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_queue_path_keeps_each_name_in_its_segment() {
+        let queue = QueuePath {
+            org: "acme",
+            repo: "app.web",
+            queue: "release/1.0 rc",
+        };
+
+        let path = queue.path();
+
+        assert_eq!(path, "/orgs/acme/repos/app.web/queues/release%2F1.0%20rc");
     }
 }

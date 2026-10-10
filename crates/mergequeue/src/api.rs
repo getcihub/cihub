@@ -1,7 +1,8 @@
-//! The routes of the merge queue under `/api/v1` (`specs/API.md`). They read the
-//! projections in a transaction of the organization of the token, and change a
-//! queue only through its inbox (`queue_inbox`) or a job: the scheduler stays
-//! the only writer of the log.
+//! The routes of the merge queue under `/api/v1` (`specs/API.md`). They name
+//! the organization, the repository and the queue by their names, read the
+//! projections in a transaction of the organization, and change a queue only
+//! through its inbox (`queue_inbox`) or a job: the scheduler stays the only
+//! writer of the log.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -11,8 +12,9 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use cihub_api_types::{
     Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
-    GraphEdge, GraphNode, Item, ItemPage, MAX_BATCH_GET, MAX_TAKE, PrItem, Queue, QueueList,
-    RequestedQueueState, RunCheck, SubmitPr, TestRun, TimelineEvent, UpdateQueue,
+    GraphEdge, GraphNode, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgQueue,
+    OrgQueueList, PrItem, Queue, QueueList, RequestedQueueState, RunCheck, SubmitPr, TestRun,
+    TimelineEvent, UpdateQueue,
 };
 use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
@@ -20,7 +22,7 @@ use cihub_domain::{
 };
 use cihub_platform::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, ModuleApi, enqueue_job};
 use cihub_scm::{Scm, ScmError, SetupFinding};
-use cihub_store::{PgPool, Postgres, Transaction, begin_org};
+use cihub_store::{PgPool, Postgres, Transaction};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::PgConnection;
@@ -41,6 +43,7 @@ struct ApiState {
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        list_org_queues,
         list_queues,
         get_queue,
         update_queue,
@@ -63,7 +66,10 @@ struct ApiState {
         BatchGetResponse,
         Graph,
         Item,
+        ItemCounts,
         ItemPage,
+        OrgQueue,
+        OrgQueueList,
         PrItem,
         Queue,
         QueueList,
@@ -77,19 +83,32 @@ struct MergeQueueApi;
 /// The routes of the module and their `OpenAPI` document.
 pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     let routes = Router::new()
-        .route("/repos/{owner}/{name}/queues", get(list_queues))
+        .route("/orgs/{org}/queues", get(list_org_queues))
+        .route("/orgs/{org}/repos/{repo}/queues", get(list_queues))
+        // `POST` on a queue or a PR takes the action after a colon in the last
+        // segment: `{queue}:resync`, `{number}:cancel`, `{number}:restart`.
         .route(
-            "/queues/{queue_id}",
+            "/orgs/{org}/repos/{repo}/queues/{queue}",
             get(get_queue).patch(update_queue).post(queue_action),
         )
-        .route("/queues/{queue_id}/items", get(list_items).post(submit))
-        .route("/queues/{queue_id}/prs/{pr_number}", get(get_pr))
-        .route("/queues/{queue_id}/prs:batchGet", post(batch_get))
-        .route("/queues/{queue_id}/graph", get(graph))
-        .route("/items/{item_id}/cancel", post(cancel_item))
-        .route("/items/{item_id}/restart", post(restart_item))
-        .route("/test-runs/{run_id}", get(test_run))
-        .route("/queues/{queue_id}/config-check", get(config_check))
+        .route(
+            "/orgs/{org}/repos/{repo}/queues/{queue}/prs",
+            get(list_items).post(submit),
+        )
+        .route(
+            "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}",
+            get(get_pr).post(pr_action),
+        )
+        .route(
+            "/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet",
+            post(batch_get),
+        )
+        .route("/orgs/{org}/repos/{repo}/queues/{queue}/graph", get(graph))
+        .route(
+            "/orgs/{org}/repos/{repo}/queues/{queue}/config-check",
+            get(config_check),
+        )
+        .route("/orgs/{org}/runs/{run_id}", get(test_run))
         .with_state(ApiState { pool, clock, scm });
     ModuleApi {
         routes,
@@ -97,22 +116,85 @@ pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     }
 }
 
-async fn begin(
-    state: &ApiState,
-    grant: &ApiGrant,
-) -> Result<Transaction<'static, Postgres>, ApiError> {
-    Ok(begin_org(&state.pool, grant.org_id).await?)
+/// The repository that the URL names.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Path)]
+struct RepoPath {
+    /// The slug of the organization.
+    org: String,
+    /// The name of the repository in the organization.
+    repo: String,
 }
 
-/// A transaction of the organization of `grant`, and the queue `id` read in
-/// it.
+/// The queue that the URL names.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Path)]
+struct QueuePath {
+    /// The slug of the organization.
+    org: String,
+    /// The name of the repository in the organization.
+    repo: String,
+    /// The name of the queue in the repository.
+    queue: String,
+}
+
+/// The PR that the URL names in a queue.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Path)]
+struct PrPath {
+    /// The slug of the organization.
+    org: String,
+    /// The name of the repository in the organization.
+    repo: String,
+    /// The name of the queue in the repository.
+    queue: String,
+    /// The number of the PR.
+    number: u64,
+}
+
+impl PrPath {
+    fn into_queue_and_number(self) -> (QueuePath, u64) {
+        let queue = QueuePath {
+            org: self.org,
+            repo: self.repo,
+            queue: self.queue,
+        };
+
+        (queue, self.number)
+    }
+}
+
+/// The path of an action on a PR: its last segment is `{number}:{action}`.
+#[derive(Deserialize)]
+struct PrActionPath {
+    org: String,
+    repo: String,
+    queue: String,
+    #[serde(rename = "number")]
+    number_and_action: String,
+}
+
+/// The run that the URL names.
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Path)]
+struct RunPath {
+    /// The slug of the organization.
+    org: String,
+    /// The identifier of the run.
+    run_id: String,
+}
+
+/// A transaction of the organization of the URL, and the queue that the URL
+/// names, read in it.
 async fn begin_queue(
     state: &ApiState,
     grant: &ApiGrant,
-    id: &str,
+    path: &QueuePath,
 ) -> Result<(Transaction<'static, Postgres>, QueueRow), ApiError> {
-    let mut tx = begin(state, grant).await?;
-    let row = queue_row(&mut tx, id).await?;
+    let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
+    let repo = repo_id(&mut tx, &path.repo).await?;
+    let row = queue_row(&mut tx, &repo, &path.queue).await?;
+
     Ok((tx, row))
 }
 
@@ -154,29 +236,35 @@ impl QueueRow {
     }
 }
 
-/// The queue `id`, when the organization of the transaction has it.
-async fn queue_row(conn: &mut PgConnection, id: &str) -> Result<QueueRow, ApiError> {
+/// The queue `name` of the repository `repo`.
+async fn queue_row(
+    conn: &mut PgConnection,
+    repo: &RepoId,
+    name: &str,
+) -> Result<QueueRow, ApiError> {
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {QUEUE_COLUMNS} FROM queues WHERE id = $1"
+        "SELECT {QUEUE_COLUMNS} FROM queues WHERE repo_id = $1 AND name = $2"
     )))
-    .bind(id)
+    .bind(repo.to_string())
+    .bind(name)
     .fetch_optional(conn)
     .await?
     .ok_or_else(|| ApiError::not_found("queue"))
 }
 
-/// The repository `owner/name` of the organization of the transaction.
-async fn repo_id(conn: &mut PgConnection, owner: &str, name: &str) -> Result<RepoId, ApiError> {
+/// The repository `name` of the organization of the transaction. Its
+/// repositories come from one installation of the App, so from one account:
+/// the name is enough.
+async fn repo_id(conn: &mut PgConnection, name: &str) -> Result<RepoId, ApiError> {
     // The SCM does not tell names apart by their case.
     let id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM repos WHERE lower(namespace) = lower($1) AND lower(name) = lower($2)
-         ORDER BY id LIMIT 1",
+        "SELECT id FROM repos WHERE lower(name) = lower($1) ORDER BY id LIMIT 1",
     )
-    .bind(owner)
     .bind(name)
     .fetch_optional(conn)
     .await?;
-    id.ok_or_else(|| ApiError::not_found(&format!("repository {owner}/{name}")))?
+
+    id.ok_or_else(|| ApiError::not_found(&format!("repository {name}")))?
         .parse()
         .map_err(ApiError::from)
 }
@@ -212,20 +300,20 @@ async fn audit(
 /// The queues of a repository.
 #[utoipa::path(
     get,
-    path = "/repos/{owner}/{name}/queues",
-    params(("owner" = String, Path), ("name" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues",
+    params(RepoPath),
     responses((status = 200, body = QueueList)),
     security(("token" = ["queues:read"]))
 )]
 async fn list_queues(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath((owner, name)): ApiPath<(String, String)>,
+    ApiPath(path): ApiPath<RepoPath>,
 ) -> Result<axum::Json<QueueList>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let mut tx = begin(&state, &grant).await?;
-    let repo = repo_id(&mut tx, &owner, &name).await?;
+    let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
+    let repo = repo_id(&mut tx, &path.repo).await?;
     let rows: Vec<QueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {QUEUE_COLUMNS} FROM queues WHERE repo_id = $1 ORDER BY name"
     )))
@@ -240,20 +328,111 @@ async fn list_queues(
     Ok(axum::Json(QueueList { queues }))
 }
 
+#[derive(sqlx::FromRow)]
+struct OrgQueueRow {
+    repo: String,
+    #[sqlx(flatten)]
+    queue: QueueRow,
+    not_ready: i64,
+    pending: i64,
+    testing: i64,
+    pending_failure: i64,
+    tests_passed: i64,
+    merged_last_24h: i64,
+    failed_last_24h: i64,
+    last_merged_at: Option<OffsetDateTime>,
+}
+
+impl OrgQueueRow {
+    fn into_org_queue(self) -> Result<OrgQueue, ApiError> {
+        let counts = ItemCounts {
+            not_ready: u32::try_from(self.not_ready)?,
+            pending: u32::try_from(self.pending)?,
+            testing: u32::try_from(self.testing)?,
+            pending_failure: u32::try_from(self.pending_failure)?,
+            tests_passed: u32::try_from(self.tests_passed)?,
+        };
+
+        Ok(OrgQueue {
+            repo: self.repo,
+            queue: self.queue.into_queue()?,
+            counts,
+            merged_last_24h: u32::try_from(self.merged_last_24h)?,
+            failed_last_24h: u32::try_from(self.failed_last_24h)?,
+            last_merged_at: self.last_merged_at,
+        })
+    }
+}
+
+/// Every queue of the organization with its counters, for the overview of
+/// the dashboard. Like the graph and the commands, the counters read only
+/// the current item of each PR.
 #[utoipa::path(
     get,
-    path = "/queues/{queue_id}",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/queues",
+    params(("org" = String, Path, description = "The slug of the organization")),
+    responses((status = 200, body = OrgQueueList)),
+    security(("token" = ["queues:read"]))
+)]
+async fn list_org_queues(
+    grant: ApiGrant,
+    axum::extract::State(state): axum::extract::State<ApiState>,
+    ApiPath(org): ApiPath<String>,
+) -> Result<axum::Json<OrgQueueList>, ApiError> {
+    grant.require(ApiScope::QueuesRead)?;
+
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
+    let now = (state.clock)();
+    let rows: Vec<OrgQueueRow> = sqlx::query_as(
+        "SELECT r.name AS repo, q.id, q.repo_id, q.name, q.target_branch, q.state::text AS state,
+                q.mode::text AS mode, q.config_sha, q.config_error,
+                count(*) FILTER (WHERE i.is_current AND i.state = 'not_ready') AS not_ready,
+                count(*) FILTER (WHERE i.is_current AND i.state = 'pending') AS pending,
+                count(*) FILTER (WHERE i.is_current AND i.state = 'testing') AS testing,
+                count(*) FILTER (WHERE i.is_current AND i.state = 'pending_failure')
+                    AS pending_failure,
+                count(*) FILTER (WHERE i.is_current AND i.state = 'tests_passed') AS tests_passed,
+                count(*) FILTER (WHERE i.state = 'merged'
+                                   AND i.state_changed_at > $1 - interval '24 hours')
+                    AS merged_last_24h,
+                count(*) FILTER (WHERE i.state = 'failed'
+                                   AND i.state_changed_at > $1 - interval '24 hours')
+                    AS failed_last_24h,
+                max(i.state_changed_at) FILTER (WHERE i.state = 'merged') AS last_merged_at
+         FROM queues q
+         JOIN repos r ON r.id = q.repo_id
+         LEFT JOIN queue_items i ON i.queue_id = q.id
+         GROUP BY q.id, r.id
+         ORDER BY r.name, q.name, q.id",
+    )
+    .bind(now)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let queues = rows
+        .into_iter()
+        .map(OrgQueueRow::into_org_queue)
+        .collect::<Result<_, _>>()?;
+
+    Ok(axum::Json(OrgQueueList { queues }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}",
+    params(QueuePath),
     responses((status = 200, body = Queue)),
     security(("token" = ["queues:read"]))
 )]
 async fn get_queue(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
 ) -> Result<axum::Json<Queue>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let (_, row) = begin_queue(&state, &grant, &queue_id).await?;
+
+    let (_, row) = begin_queue(&state, &grant, &path).await?;
+
     Ok(axum::Json(row.into_queue()?))
 }
 
@@ -261,8 +440,8 @@ async fn get_queue(
 /// reconciliation.
 #[utoipa::path(
     patch,
-    path = "/queues/{queue_id}",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}",
+    params(QueuePath),
     request_body = UpdateQueue,
     responses((status = 202, body = Queue)),
     security(("token" = ["queues:write"]))
@@ -270,12 +449,12 @@ async fn get_queue(
 async fn update_queue(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
     ApiJson(request): ApiJson<UpdateQueue>,
 ) -> Result<(StatusCode, axum::Json<Queue>), ApiError> {
     grant.require(ApiScope::QueuesWrite)?;
 
-    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
     let control = match request.state {
         RequestedQueueState::Running => QueueControl::Resume,
         RequestedQueueState::Paused => QueueControl::Pause,
@@ -288,7 +467,7 @@ async fn update_queue(
     give_back(&mut tx, grant.org_id, id, facts, now).await?;
 
     let after = json!({ "state": request.state });
-    audit(&mut tx, &grant, "queue.state_requested", &queue_id, after).await?;
+    audit(&mut tx, &grant, "queue.state_requested", &row.id, after).await?;
 
     let queue = row.into_queue()?;
     tx.commit().await?;
@@ -296,28 +475,30 @@ async fn update_queue(
     Ok((StatusCode::ACCEPTED, axum::Json(queue)))
 }
 
-/// `POST /queues/{queue_id}:resync`: reads again from the SCM each live PR,
+/// `POST …/queues/{queue}:resync`: reads again from the SCM each live PR,
 /// the checks of each live run and the head of the target.
 #[utoipa::path(
     post,
-    path = "/queues/{queue_id}:resync",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}:resync",
+    params(QueuePath),
     responses((status = 202, body = Accepted)),
     security(("token" = ["queues:write"]))
 )]
 async fn queue_action(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(target): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
-    let Some(queue_id) = target.strip_suffix(":resync") else {
+    let Some(queue) = path.queue.strip_suffix(":resync").map(str::to_owned) else {
         return Err(ApiError::not_found("action"));
     };
 
     grant.require(ApiScope::QueuesWrite)?;
 
-    let (mut tx, row) = begin_queue(&state, &grant, queue_id).await?;
-    audit(&mut tx, &grant, "queue.resync", queue_id, json!({})).await?;
+    let path = QueuePath { queue, ..path };
+    let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
+
+    audit(&mut tx, &grant, "queue.resync", &row.id, json!({})).await?;
     tx.commit().await?;
 
     let id: QueueId = row.id.parse()?;
@@ -397,15 +578,15 @@ struct ItemFilter {
 /// The items of a queue, live and past, newest submission first.
 #[utoipa::path(
     get,
-    path = "/queues/{queue_id}/items",
-    params(("queue_id" = String, Path), ItemFilter),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs",
+    params(QueuePath, ItemFilter),
     responses((status = 200, body = ItemPage)),
     security(("token" = ["queues:read"]))
 )]
 async fn list_items(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
     ApiQuery(filter): ApiQuery<ItemFilter>,
 ) -> Result<axum::Json<ItemPage>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
@@ -415,7 +596,7 @@ async fn list_items(
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
 
-    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let rows: Vec<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM queue_items
          WHERE queue_id = $1
@@ -427,7 +608,7 @@ async fn list_items(
          ORDER BY submitted_at DESC, id DESC
          LIMIT $6"
     )))
-    .bind(&queue_id)
+    .bind(&queue.id)
     .bind(filter.state.map(ItemState::as_str))
     .bind(filter.since)
     .bind(filter.until)
@@ -451,8 +632,8 @@ async fn list_items(
 
 #[utoipa::path(
     post,
-    path = "/queues/{queue_id}/items",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs",
+    params(QueuePath),
     request_body = SubmitPr,
     responses((status = 202, body = Accepted)),
     security(("token" = ["prs:write"]))
@@ -460,7 +641,7 @@ async fn list_items(
 async fn submit(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
     ApiJson(request): ApiJson<SubmitPr>,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
     grant.require(ApiScope::PrsWrite)?;
@@ -474,7 +655,7 @@ async fn submit(
                 .ok_or_else(|| ApiError::invalid("the priority is a name or a value from 0 to 255"))
         })
         .transpose()?;
-    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
     let id: QueueId = row.id.parse()?;
     let target = QueueTarget::load(&mut tx, id).await?;
     let payload = jobs::SubmitPr {
@@ -508,32 +689,33 @@ struct PrQuery {
 /// The last item of a PR in the queue.
 #[utoipa::path(
     get,
-    path = "/queues/{queue_id}/prs/{pr_number}",
-    params(("queue_id" = String, Path), ("pr_number" = u64, Path), PrQuery),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}",
+    params(PrPath, PrQuery),
     responses((status = 200, body = PrItem)),
     security(("token" = ["queues:read"]))
 )]
 async fn get_pr(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath((queue_id, pr_number)): ApiPath<(String, u64)>,
+    ApiPath(path): ApiPath<PrPath>,
     ApiQuery(query): ApiQuery<PrQuery>,
 ) -> Result<axum::Json<PrItem>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
+    let (path, pr_number) = path.into_queue_and_number();
+    let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let number = i64::try_from(pr_number).map_err(|_| ApiError::not_found("PR"))?;
     let row: Option<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ITEM_COLUMNS} FROM queue_items WHERE queue_id = $1 AND pr_number = $2
          ORDER BY submitted_at DESC, id DESC LIMIT 1"
     )))
-    .bind(&queue_id)
+    .bind(&queue.id)
     .bind(number)
     .fetch_optional(&mut *tx)
     .await?;
     let item = row.ok_or_else(|| ApiError::not_found("PR"))?.into_item()?;
     let timeline = match query.include.as_deref() {
-        Some("timeline") => Some(timeline(&mut tx, &queue_id, &item.id).await?),
+        Some("timeline") => Some(timeline(&mut tx, &queue.id, &item.id).await?),
         Some(other) => return Err(ApiError::invalid(format!("unknown include `{other}`"))),
         None => None,
     };
@@ -573,8 +755,8 @@ async fn timeline(
 /// The last item of each PR, at most 50 PRs.
 #[utoipa::path(
     post,
-    path = "/queues/{queue_id}/prs:batchGet",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet",
+    params(QueuePath),
     request_body = BatchGet,
     responses((status = 200, body = BatchGetResponse)),
     security(("token" = ["queues:read"]))
@@ -582,7 +764,7 @@ async fn timeline(
 async fn batch_get(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
     ApiJson(request): ApiJson<BatchGet>,
 ) -> Result<axum::Json<BatchGetResponse>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
@@ -593,7 +775,7 @@ async fn batch_get(
         )));
     }
 
-    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let numbers: Vec<i64> = request
         .pr_numbers
         .iter()
@@ -604,7 +786,7 @@ async fn batch_get(
          WHERE queue_id = $1 AND pr_number = ANY($2)
          ORDER BY pr_number, submitted_at DESC, id DESC"
     )))
-    .bind(&queue_id)
+    .bind(&queue.id)
     .bind(&numbers)
     .fetch_all(&mut *tx)
     .await?;
@@ -626,26 +808,26 @@ async fn batch_get(
 /// predecessors that the test of each one merges before it.
 #[utoipa::path(
     get,
-    path = "/queues/{queue_id}/graph",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/graph",
+    params(QueuePath),
     responses((status = 200, body = Graph)),
     security(("token" = ["queues:read"]))
 )]
 async fn graph(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
 ) -> Result<axum::Json<Graph>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let (mut tx, _) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let rows: Vec<(String, i64, String, Option<i64>)> = sqlx::query_as(
         "SELECT id, pr_number, state::text, position FROM queue_items
          WHERE queue_id = $1 AND is_current
            AND state NOT IN ('merged', 'failed', 'cancelled')
          ORDER BY position NULLS LAST, submitted_at",
     )
-    .bind(&queue_id)
+    .bind(&queue.id)
     .fetch_all(&mut *tx)
     .await?;
     let nodes = rows
@@ -663,7 +845,7 @@ async fn graph(
         "SELECT item_ids, predecessor_ids FROM test_groups
          WHERE queue_id = $1 AND state NOT IN ('merged', 'failed', 'bisected', 'dissolved')",
     )
-    .bind(&queue_id)
+    .bind(&queue.id)
     .fetch_all(&mut *tx)
     .await?;
     let mut edges = Vec::new();
@@ -682,31 +864,41 @@ async fn graph(
     Ok(axum::Json(Graph { nodes, edges }))
 }
 
-/// The live item `id` of the organization: its queue and its state.
-async fn item_of(
+/// The current item of the PR `number` in the queue `queue_id`, and its
+/// state.
+async fn current_item(
     conn: &mut PgConnection,
-    id: &str,
-) -> Result<(QueueId, ItemId, ItemState), ApiError> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT queue_id, state::text FROM queue_items WHERE id = $1")
-            .bind(id)
-            .fetch_optional(conn)
-            .await?;
-    let (queue, state) = row.ok_or_else(|| ApiError::not_found("item"))?;
-    Ok((queue.parse()?, id.parse()?, state.parse()?))
+    queue_id: &str,
+    number: u64,
+) -> Result<(ItemId, ItemState), ApiError> {
+    let number = i64::try_from(number).map_err(|_| ApiError::not_found("item"))?;
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT id, state::text FROM queue_items
+         WHERE queue_id = $1 AND pr_number = $2 AND is_current",
+    )
+    .bind(queue_id)
+    .bind(number)
+    .fetch_optional(conn)
+    .await?;
+    let (id, state) = row.ok_or_else(|| ApiError::not_found("item"))?;
+
+    Ok((id.parse()?, state.parse()?))
 }
 
+/// Gives the queue the request `kind` on the current item of the PR `number`.
 async fn give(
     state: &ApiState,
     grant: &ApiGrant,
-    item: &str,
+    path: &QueuePath,
+    number: u64,
     kind: impl FnOnce(ItemId, ItemState) -> Result<EventKind, ApiError>,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
     grant.require(ApiScope::PrsWrite)?;
 
-    let mut tx = begin(state, grant).await?;
-    let (queue_id, item_id, item_state) = item_of(&mut tx, item).await?;
+    let (mut tx, queue) = begin_queue(state, grant, path).await?;
+    let (item_id, item_state) = current_item(&mut tx, &queue.id, number).await?;
     let fact = kind(item_id, item_state)?;
+    let queue_id: QueueId = queue.id.parse()?;
 
     give_back(
         &mut tx,
@@ -722,26 +914,54 @@ async fn give(
     Ok(accepted())
 }
 
-/// Cancels an item (`admin_requested`).
+/// `POST …/prs/{number}:cancel` and `POST …/prs/{number}:restart`.
+async fn pr_action(
+    grant: ApiGrant,
+    axum::extract::State(state): axum::extract::State<ApiState>,
+    ApiPath(path): ApiPath<PrActionPath>,
+) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
+    let Some((number, action)) = path.number_and_action.split_once(':') else {
+        return Err(ApiError::not_found("action"));
+    };
+
+    let number: u64 = number
+        .parse()
+        .map_err(|_| ApiError::invalid("the PR number is a positive integer"))?;
+    let queue = QueuePath {
+        org: path.org,
+        repo: path.repo,
+        queue: path.queue,
+    };
+
+    match action {
+        "cancel" => cancel_item(&state, &grant, &queue, number).await,
+        "restart" => restart_item(&state, &grant, &queue, number).await,
+        _ => Err(ApiError::not_found("action")),
+    }
+}
+
+/// Cancels the current item of the PR (`admin_requested`).
 #[utoipa::path(
     post,
-    path = "/items/{item_id}/cancel",
-    params(("item_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel",
+    params(PrPath),
     responses((status = 202, body = Accepted)),
     security(("token" = ["prs:write"]))
 )]
 async fn cancel_item(
-    grant: ApiGrant,
-    axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(item_id): ApiPath<String>,
+    state: &ApiState,
+    grant: &ApiGrant,
+    path: &QueuePath,
+    number: u64,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
-    give(&state, &grant, &item_id, |item_id, item_state| {
+    give(state, grant, path, number, |item_id, item_state| {
         if item_state.is_terminal() {
             return Err(ApiError::new(
                 ErrorCode::InvalidState,
                 format!("the item is `{item_state}`"),
             ));
         }
+
         Ok(EventKind::ItemCancelRequested {
             item_id,
             by_admin: true,
@@ -750,26 +970,29 @@ async fn cancel_item(
     .await
 }
 
-/// Restarts the tests of an item in test (`tests_restarted_by_api_request`).
+/// Restarts the tests of the current item of the PR, in test
+/// (`tests_restarted_by_api_request`).
 #[utoipa::path(
     post,
-    path = "/items/{item_id}/restart",
-    params(("item_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:restart",
+    params(PrPath),
     responses((status = 202, body = Accepted)),
     security(("token" = ["prs:write"]))
 )]
 async fn restart_item(
-    grant: ApiGrant,
-    axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(item_id): ApiPath<String>,
+    state: &ApiState,
+    grant: &ApiGrant,
+    path: &QueuePath,
+    number: u64,
 ) -> Result<(StatusCode, axum::Json<Accepted>), ApiError> {
-    give(&state, &grant, &item_id, |item_id, item_state| {
+    give(state, grant, path, number, |item_id, item_state| {
         if !matches!(item_state, ItemState::Testing | ItemState::PendingFailure) {
             return Err(ApiError::new(
                 ErrorCode::InvalidState,
                 format!("only an item in test can restart; this one is `{item_state}`"),
             ));
         }
+
         Ok(EventKind::ItemRestartRequested {
             item_id,
             by_api: true,
@@ -805,20 +1028,21 @@ struct RunRow {
 /// The detail of a run.
 #[utoipa::path(
     get,
-    path = "/test-runs/{run_id}",
-    params(("run_id" = String, Path)),
+    path = "/orgs/{org}/runs/{run_id}",
+    params(RunPath),
     responses((status = 200, body = TestRun)),
     security(("token" = ["queues:read"]))
 )]
 async fn test_run(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(run_id): ApiPath<String>,
+    ApiPath(path): ApiPath<RunPath>,
 ) -> Result<axum::Json<TestRun>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
+    let RunPath { org, run_id } = path;
     let _: RunId = run_id.parse().map_err(|_| ApiError::not_found("run"))?;
-    let mut tx = begin(&state, &grant).await?;
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let run: RunRow = sqlx::query_as(
         "SELECT id, queue_id, group_id, attempt, status::text, status_reason::text, test_branch,
                 test_sha, base_sha, draft_pr_number, tested_pr_numbers, head_shas,
@@ -965,19 +1189,19 @@ async fn dependents(
 /// What the configuration of the SCM misses for the queue: no finding means a sound configuration.
 #[utoipa::path(
     get,
-    path = "/queues/{queue_id}/config-check",
-    params(("queue_id" = String, Path)),
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/config-check",
+    params(QueuePath),
     responses((status = 200, body = ConfigCheck)),
     security(("token" = ["queues:read"]))
 )]
 async fn config_check(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
-    ApiPath(queue_id): ApiPath<String>,
+    ApiPath(path): ApiPath<QueuePath>,
 ) -> Result<axum::Json<ConfigCheck>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let (mut tx, row) = begin_queue(&state, &grant, &queue_id).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
     let id: QueueId = row.id.parse()?;
     let target = QueueTarget::load(&mut tx, id).await?;
 
