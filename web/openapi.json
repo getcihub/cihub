@@ -1202,7 +1202,8 @@
         "description": "The merge graph: the live items, and the predecessors that their tests\nmerge before them.",
         "required": [
           "nodes",
-          "edges"
+          "edges",
+          "runs"
         ],
         "properties": {
           "edges": {
@@ -1216,6 +1217,20 @@
             "items": {
               "$ref": "#/components/schemas/GraphNode"
             }
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphRun"
+            },
+            "description": "The last run of each live group, the oldest first."
+          },
+          "target_head_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The head of the target branch that the queue saw last; `None` before\nthe first."
           }
         }
       },
@@ -1259,6 +1274,48 @@
             "minimum": 0
           },
           "state": {
+            "type": "string"
+          }
+        }
+      },
+      "GraphRun": {
+        "type": "object",
+        "description": "A run of the graph: the items that it tests, on top of their\npredecessors.",
+        "required": [
+          "run_id",
+          "item_ids",
+          "predecessor_ids",
+          "attempt",
+          "status",
+          "started_at"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "From 1; a run tested again within the failure budget has a higher\nattempt.",
+            "minimum": 0
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "predecessor_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
             "type": "string"
           }
         }

@@ -84,6 +84,15 @@ export type Finding = {
 export type Graph = {
     edges: Array<GraphEdge>;
     nodes: Array<GraphNode>;
+    /**
+     * The last run of each live group, the oldest first.
+     */
+    runs: Array<GraphRun>;
+    /**
+     * The head of the target branch that the queue saw last; `None` before
+     * the first.
+     */
+    target_head_sha?: string | null;
 };
 
 /**
@@ -99,6 +108,23 @@ export type GraphNode = {
     position?: number | null;
     pr_number: number;
     state: string;
+};
+
+/**
+ * A run of the graph: the items that it tests, on top of their
+ * predecessors.
+ */
+export type GraphRun = {
+    /**
+     * From 1; a run tested again within the failure budget has a higher
+     * attempt.
+     */
+    attempt: number;
+    item_ids: Array<string>;
+    predecessor_ids: Array<string>;
+    run_id: string;
+    started_at: string;
+    status: string;
 };
 
 /**

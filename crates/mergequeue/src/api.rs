@@ -12,7 +12,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use cihub_api_types::{
     Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
-    GraphEdge, GraphNode, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgQueue,
+    GraphEdge, GraphNode, GraphRun, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgQueue,
     OrgQueueList, PrItem, Queue, QueueAccess, QueueDetail, QueueList, RequestedQueueState,
     RunCheck, SettingsSummary, SubmitPr, TestRun, TimelineEvent, UpdateQueue, Window,
 };
@@ -69,6 +69,7 @@ struct ApiState {
         BatchGet,
         BatchGetResponse,
         Graph,
+        GraphRun,
         Item,
         ItemCounts,
         ItemPage,
@@ -1049,7 +1050,54 @@ async fn graph(
         }
     }
 
-    Ok(axum::Json(Graph { nodes, edges }))
+    let rows: Vec<GraphRunRow> = sqlx::query_as(
+        "SELECT * FROM (
+             SELECT DISTINCT ON (g.id) r.id AS run_id, g.item_ids, g.predecessor_ids, r.attempt,
+                    r.status::text AS status, r.started_at
+             FROM test_groups g
+             JOIN test_runs r ON r.group_id = g.id
+             WHERE g.queue_id = $1 AND g.state NOT IN ('merged', 'failed', 'bisected', 'dissolved')
+             ORDER BY g.id, r.attempt DESC
+         ) AS last_runs
+         ORDER BY started_at, run_id",
+    )
+    .bind(&queue.id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let runs = rows
+        .into_iter()
+        .map(GraphRunRow::into_graph_run)
+        .collect::<Result<_, _>>()?;
+
+    Ok(axum::Json(Graph {
+        target_head_sha: queue.target_head_sha,
+        nodes,
+        edges,
+        runs,
+    }))
+}
+
+#[derive(sqlx::FromRow)]
+struct GraphRunRow {
+    run_id: String,
+    item_ids: Vec<String>,
+    predecessor_ids: Vec<String>,
+    attempt: i32,
+    status: String,
+    started_at: OffsetDateTime,
+}
+
+impl GraphRunRow {
+    fn into_graph_run(self) -> Result<GraphRun, ApiError> {
+        Ok(GraphRun {
+            attempt: u32::try_from(self.attempt)?,
+            status: self.status.parse()?,
+            run_id: self.run_id,
+            item_ids: self.item_ids,
+            predecessor_ids: self.predecessor_ids,
+            started_at: self.started_at,
+        })
+    }
 }
 
 /// The current item of the PR `number` in the queue `queue_id`, and its

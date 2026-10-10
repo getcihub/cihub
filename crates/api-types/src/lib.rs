@@ -399,8 +399,13 @@ pub struct BatchGetResponse {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Graph {
+    /// The head of the target branch that the queue saw last; `None` before
+    /// the first.
+    pub target_head_sha: Option<String>,
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+    /// The last run of each live group, the oldest first.
+    pub runs: Vec<GraphRun>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -411,6 +416,24 @@ pub struct GraphNode {
     #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub state: ItemState,
     pub position: Option<i64>,
+}
+
+/// A run of the graph: the items that it tests, on top of their
+/// predecessors.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct GraphRun {
+    pub run_id: String,
+    pub item_ids: Vec<String>,
+    pub predecessor_ids: Vec<String>,
+    /// From 1; a run tested again within the failure budget has a higher
+    /// attempt.
+    pub attempt: u32,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub status: RunStatus,
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub started_at: OffsetDateTime,
 }
 
 /// The test of `to` merges `from` before it.
