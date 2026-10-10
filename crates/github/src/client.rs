@@ -578,7 +578,7 @@ mod tests {
 
         assert!(!budgets.observe(connection, answered.clone(), at(0)));
         assert_eq!(budgets.take_changed().len(), 1);
-        assert!(budgets.take_changed().is_empty());
+        assert_eq!(budgets.take_changed(), []);
         let limited = Observation::RateLimited {
             until: at(60),
             secondary: false,

@@ -445,11 +445,11 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     assert_eq!(rows, [(1, None), (2, item), (3, None)]);
 
     let mut tx = begin_org(&pool, org(2)).await.unwrap();
-    assert!(
+    assert_eq!(
         load_events(&mut tx, QueueId::from_ulid(Ulid(1)), 0)
             .await
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        []
     );
 }
 

@@ -1058,7 +1058,7 @@ async fn a_delivery_of_a_connection_read_more_than_an_hour_ago_asks_for_one_sync
 
     route_at(&pool, at(3599), &[push("a")]).await;
 
-    assert!(installation_jobs(&pool).await.is_empty());
+    assert_eq!(installation_jobs(&pool).await, [] as [String; 0]);
 
     route_at(&pool, at(3601), &[push("b"), push("c")]).await;
 
@@ -1181,7 +1181,7 @@ async fn the_full_sync_creates_the_organization_of_a_new_installation_once(pool:
     assert_eq!(orgs(&pool).await, [globex, acme]);
     assert_eq!(sync_jobs(&pool).await, [read]);
     assert_eq!(connection_of(&pool, "7").await.1, at(60));
-    assert!(given_facts(&pool).await.is_empty());
+    assert_eq!(given_facts(&pool).await, [] as [(String, String); 0]);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

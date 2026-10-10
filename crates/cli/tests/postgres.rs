@@ -399,5 +399,5 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
 
     let unknown = create("missing");
     assert!(!unknown.status.success());
-    assert!(unknown.stdout.is_empty());
+    assert_eq!(unknown.stdout, b"");
 }
