@@ -131,6 +131,21 @@ pub async fn members(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     );
 }
 
+/// The SCM gives a page that installs the App. Outside [`run`] until the
+/// recorded answers of each SCM hold the call.
+///
+/// # Panics
+///
+/// When an answer is not the one of the contract.
+pub async fn install_page(scm: &dyn Scm) {
+    let url = scm.app_install_url(CLASS).await.unwrap();
+
+    assert!(
+        !url.is_empty(),
+        "the SCM gives the page that installs the App"
+    );
+}
+
 async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let numbers = [
         fixture.mergeable_pr,

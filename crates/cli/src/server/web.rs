@@ -4,7 +4,10 @@
 
 use anyhow::Context;
 use cihub_platform::{ROUTE_POLL, run_router};
-use cihub_web::GithubWebhooks;
+use std::sync::Arc;
+
+use cihub_scm::Scm;
+use cihub_web::{Dashboard, GithubWebhooks};
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -16,6 +19,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         pool,
         process,
         http_addr,
+        public_url,
         github,
         cancel,
     } = shared;
@@ -28,7 +32,9 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let webhooks = GithubWebhooks {
         secret: github.webhook_secret,
     };
-    let router = cihub_web::router(pool.clone(), now, webhooks, modules);
+    let scm: Arc<dyn Scm> = github.app;
+    let dashboard = Dashboard { scm, public_url };
+    let router = cihub_web::router(pool.clone(), now, webhooks, modules, dashboard);
     let serve = async {
         cihub_web::serve(listener, router, cancel.clone())
             .await

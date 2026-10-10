@@ -5,6 +5,7 @@
 //! of all of them.
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::extract::{DefaultBodyLimit, Request, State};
@@ -17,8 +18,9 @@ use axum::{Extension, Json, Router};
 use cihub_api_types::{
     AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Me, OrgRole, Problem, Repo, RepoList,
 };
-use cihub_domain::{ApiScope, ApiTokenId, SessionId};
+use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi};
+use cihub_scm::Scm;
 use cihub_store::{
     PgPool, SessionGrant, authenticate, authenticate_session, login_of, memberships_of,
 };
@@ -26,6 +28,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 use time::OffsetDateTime;
+use tracing::warn;
 use utoipa::openapi::security::{
     ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityRequirement, SecurityScheme,
 };
@@ -41,6 +44,7 @@ const MAX_BODY_BYTES: usize = 25 * 1024 * 1024;
 struct ApiState {
     pool: PgPool,
     now: fn() -> OffsetDateTime,
+    scm: Arc<dyn Scm>,
     windows: Arc<Mutex<HashMap<Caller, (i64, u32)>>>,
 }
 
@@ -111,11 +115,17 @@ fn accept_sessions(document: &mut utoipa::openapi::OpenApi) {
     }
 }
 
-pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<ModuleApi>) -> Router {
+pub(crate) fn router(
+    pool: PgPool,
+    now: fn() -> OffsetDateTime,
+    modules: Vec<ModuleApi>,
+    scm: Arc<dyn Scm>,
+) -> Router {
     let document = openapi(&modules);
     let state = ApiState {
         pool,
         now,
+        scm,
         windows: Arc::default(),
     };
     let mut routes = Router::new()
@@ -324,10 +334,22 @@ async fn me(
         })
         .collect();
 
+    let app_install_url = match state.scm.app_install_url(JobClass::Interactive).await {
+        Ok(url) => Some(url),
+        Err(err) => {
+            warn!(
+                error = &err as &dyn Error,
+                "install page of the App not read"
+            );
+            None
+        }
+    };
+
     Ok(Json(Me {
         login,
         orgs,
         version: env!("CARGO_PKG_VERSION").to_owned(),
+        app_install_url,
     }))
 }
 

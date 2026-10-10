@@ -32,8 +32,8 @@ pub fn new_api_token_secret() -> Result<SecretString, StoreError> {
     Ok(format_api_token(&draw_secret_bytes()?).into())
 }
 
-pub(crate) fn draw_secret_bytes() -> Result<[u8; 20], StoreError> {
-    let mut bytes = [0u8; 20];
+pub(crate) fn draw_secret_bytes<const N: usize>() -> Result<[u8; N], StoreError> {
+    let mut bytes = [0u8; N];
     #[expect(
         clippy::disallowed_methods,
         reason = "the one place that draws the secret of a token"

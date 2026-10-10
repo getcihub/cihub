@@ -68,6 +68,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.github.existingSecret | quote }}
                   key: {{ .Values.github.webhookSecretKey | quote }}
+            {{- if .Values.github.clientId }}
+            - name: CIHUB_GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.github.existingSecret | quote }}
+                  key: {{ .Values.github.clientSecretKey | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8080

@@ -22,7 +22,7 @@ pub use memberships::{Membership, forget_memberships_before, memberships_of, rec
 use secrecy::{ExposeSecret, SecretString};
 pub use sessions::{
     NewSession, SessionGrant, authenticate_session, create_session, csrf_token, delete_session,
-    new_session_secret,
+    new_session_secret, new_sign_in_secret,
 };
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};

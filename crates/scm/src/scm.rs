@@ -262,6 +262,11 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, Vec<ScmRepo>>;
 
+    /// The page of the SCM where an owner installs the App on an account, or
+    /// chooses the repositories of its installation. No connection makes the
+    /// call, so no budget of a connection applies.
+    fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String>;
+
     /// The address of the SCM where a person signs in to CIHub, or `None`
     /// when the operator configured no sign-in.
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String>;

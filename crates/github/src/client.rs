@@ -97,6 +97,9 @@ pub struct GithubApp {
     /// The address of the pages of GitHub, where a person signs in.
     web_url: String,
     sign_in: Option<SignInClient>,
+    /// The page that installs the App, read once: its slug does not change
+    /// while the server runs.
+    install_url: Mutex<Option<String>>,
     app_id: String,
     key: AppKey,
     http: Client,
@@ -153,6 +156,22 @@ impl GithubApp {
         self.sign_in.as_ref()
     }
 
+    pub(crate) fn kept_install_url(&self) -> Option<String> {
+        let kept = self
+            .install_url
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        kept.clone()
+    }
+
+    pub(crate) fn keep_install_url(&self, url: &str) {
+        let mut kept = self
+            .install_url
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *kept = Some(url.to_owned());
+    }
+
     pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
         let now = (self.clock)();
         let kept = self
@@ -203,6 +222,7 @@ impl GithubApp {
             graphql_url,
             web_url: url.to_owned(),
             sign_in: config.sign_in.clone(),
+            install_url: Mutex::new(None),
             app_id: config.app_id.clone(),
             key: AppKey::from_pem(&config.private_key)?,
             http,

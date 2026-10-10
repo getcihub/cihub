@@ -40,8 +40,13 @@ Branch protection expectations, documented for customers: two rulesets on the ta
 The server then receives `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE` (or `CIHUB_GITHUB_PRIVATE_KEY`), `CIHUB_GITHUB_WEBHOOK_SECRET`, `CIHUB_GITHUB_CLIENT_ID` and `CIHUB_GITHUB_CLIENT_SECRET` (both or none: without them, nobody signs in to the dashboard, and the API tokens still work) and, for a GitHub Enterprise Server, `CIHUB_GITHUB_URL` (`specs/DEPLOYMENT.md`). These variables can also be the `github.*` keys of the configuration file. Without them, `cihub server start` stops at startup with a message that names them. Finally, the operator installs the App on the repositories to serve (*Install App*): CIHub creates the organization by itself (see the onboarding below). An App that already exists is suitable, if its permissions, its events and its webhook URL are these.
 
 **Sign-in and roles.** A person signs in to the dashboard through the App (user authorization of a GitHub App,
-with PKCE `S256` and a `state`): `GET <url>/login/oauth/authorize`, then `POST <url>/login/oauth/access_token`
-with the client secret. With the token of the person, CIHub reads `GET /user`, every page of
+with PKCE `S256` and a `state`). `GET /auth/github` keeps the `state`, the verifier and the page to open after
+in the cookie `__Host-cihub_sign_in` (10 minutes), and sends the person to `GET <url>/login/oauth/authorize` with
+the `redirect_uri` `<http.public_url>/auth/github/callback`; the callback checks the `state`, then `POST
+<url>/login/oauth/access_token` with the client secret. Without `http.public_url` or the client of the App, and
+on any failure, the person comes back to `/sign-in?error=failed`. A person without an organization gets a session
+too: the dashboard asks them to install the App, whose page comes from `GET /app` (`html_url`, then
+`/installations/new`), read once. With the token of the person, CIHub reads `GET /user`, every page of
 `GET /user/installations`, and, for each installation on an organization, `GET /user/memberships/orgs/{org}`: an
 active membership gives `admin` or `member`; on the account of a person, only its owner is `admin`; another kind
 of account gives no role. CIHub then forgets the token: it never stores it. An installation that CIHub has not

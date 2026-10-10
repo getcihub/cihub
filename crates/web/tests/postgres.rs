@@ -3,13 +3,16 @@
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt::Write;
+use std::sync::Arc;
 
 use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, SessionId, UserId};
+use cihub_scm::sim::Sim;
+use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
 use cihub_store::{
     NewApiToken, NewSession, begin_org, begin_system, create_api_token, create_session, csrf_token,
     ensure_user, new_api_token_secret, new_session_secret, record_membership,
 };
-use cihub_web::GithubWebhooks;
+use cihub_web::{Dashboard, GithubWebhooks};
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
@@ -27,10 +30,20 @@ fn now() -> OffsetDateTime {
 }
 
 async fn start(pool: &PgPool) -> String {
+    start_with(pool, Arc::new(Sim::new())).await
+}
+
+const PUBLIC_URL: &str = "https://ci.example.com";
+
+async fn start_with(pool: &PgPool, sim: Arc<Sim>) -> String {
     let github = GithubWebhooks {
         secret: SecretString::from(SECRET),
     };
-    let router = cihub_web::router(pool.clone(), now, github, Vec::new());
+    let dashboard = Dashboard {
+        scm: sim,
+        public_url: Some(PUBLIC_URL.to_owned()),
+    };
+    let router = cihub_web::router(pool.clone(), now, github, Vec::new(), dashboard);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
 
@@ -130,7 +143,10 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
 
 struct Answer {
     status: u16,
+    /// The head in lower case, to compare the names of the headers.
     head: String,
+    /// The head as the server sent it: a value keeps its case.
+    raw_head: String,
     body: String,
 }
 
@@ -161,6 +177,7 @@ async fn call_with(addr: &str, method: &str, path: &str, headers: &[(&str, &str)
     Answer {
         status: head.split(' ').nth(1).unwrap().parse().unwrap(),
         head: head.to_lowercase(),
+        raw_head: head.to_owned(),
         body: body.to_owned(),
     }
 }
@@ -353,4 +370,152 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
         signed_out.head
     );
     assert_eq!(after.status, 401);
+}
+
+/// The values of the header `name` of the raw head of an answer.
+fn header_values(raw_head: &str, name: &str) -> Vec<String> {
+    raw_head
+        .lines()
+        .filter_map(|line| line.split_once(": "))
+        .filter(|(header, _)| header.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.to_owned())
+        .collect()
+}
+
+/// The value that a `Set-Cookie` header gives to the cookie `name`.
+fn cookie_set(raw_head: &str, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
+    header_values(raw_head, "set-cookie")
+        .iter()
+        .find_map(|cookie| {
+            cookie
+                .strip_prefix(&prefix)?
+                .split(';')
+                .next()
+                .map(str::to_owned)
+        })
+}
+
+/// Starts a sign-in, signs `person` in on the simulator, and returns the
+/// answer of the callback.
+async fn sign_in(addr: &str, sim: &Sim, person: &ScmUser, next: &str) -> Answer {
+    let started = call_with(addr, "GET", &format!("/auth/github?next={next}"), &[]).await;
+    let location = header_values(&started.raw_head, "location").pop().unwrap();
+    let query = location.split_once('?').unwrap().1;
+    let param = |name: &str| {
+        query
+            .split('&')
+            .find_map(|pair| pair.strip_prefix(&format!("{name}=")))
+            .unwrap()
+            .to_owned()
+    };
+    let request = SignInRequest {
+        redirect_url: param("redirect_uri"),
+        state: param("state"),
+        code_challenge: param("code_challenge"),
+    };
+    let kept = cookie_set(&started.raw_head, "__Host-cihub_sign_in").unwrap();
+    let code = sim.authorize(person, &request);
+    let cookie = format!("__Host-cihub_sign_in={kept}");
+    let path = format!("/auth/github/callback?code={code}&state={}", request.state);
+
+    assert_eq!(started.status, 303);
+    assert_eq!(
+        request.redirect_url,
+        format!("{PUBLIC_URL}/auth/github/callback")
+    );
+    call_with(addr, "GET", &path, &[("Cookie", cookie.as_str())]).await
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgPool) {
+    token(&pool, 9, &[]).await;
+    let sim = Arc::new(Sim::new());
+    let ada = ScmUser {
+        external_id: "5".into(),
+        login: "ada".into(),
+    };
+    let account = ScmAccount {
+        external_id: "1".into(),
+        path: "acme".into(),
+    };
+
+    sim.add_installation("1", account, &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+
+    let callback = sign_in(&addr, &sim, &ada, "/orgs/acme").await;
+
+    assert_eq!(callback.status, 303, "{}", callback.head);
+    assert_eq!(
+        header_values(&callback.raw_head, "location"),
+        ["/orgs/acme"]
+    );
+    let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
+    let csrf = cookie_set(&callback.raw_head, "__Host-cihub_csrf").unwrap();
+    assert_eq!(csrf, csrf_token(&SecretString::from(session.clone())));
+    assert_eq!(
+        cookie_set(&callback.raw_head, "__Host-cihub_sign_in").as_deref(),
+        Some("")
+    );
+
+    let cookie = format!("__Host-cihub_session={session}");
+    let me = call_with(&addr, "GET", "/api/v1/me", &[("Cookie", cookie.as_str())]).await;
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+
+    assert_eq!(me["login"], "ada");
+    assert_eq!(
+        me["orgs"],
+        serde_json::json!([{ "slug": "acme", "role": "member" }])
+    );
+    assert_eq!(me["app_install_url"], "sim:install");
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_person_without_an_organization_gets_a_session_to_install_the_app(pool: PgPool) {
+    let sim = Arc::new(Sim::new());
+    let grace = ScmUser {
+        external_id: "6".into(),
+        login: "grace".into(),
+    };
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+
+    let callback = sign_in(&addr, &sim, &grace, "/").await;
+
+    assert_eq!(header_values(&callback.raw_head, "location"), ["/"]);
+    let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
+    let cookie = format!("__Host-cihub_session={session}");
+    let me = call_with(&addr, "GET", "/api/v1/me", &[("Cookie", cookie.as_str())]).await;
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+
+    assert_eq!(me["login"], "grace");
+    assert_eq!(me["orgs"], serde_json::json!([]));
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_callback_that_is_not_the_one_of_the_sign_in_fails(pool: PgPool) {
+    let sim = Arc::new(Sim::new());
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+    let started = call_with(&addr, "GET", "/auth/github", &[]).await;
+    let kept = cookie_set(&started.raw_head, "__Host-cihub_sign_in").unwrap();
+    let cookie = format!("__Host-cihub_sign_in={kept}");
+
+    let without_sign_in =
+        call_with(&addr, "GET", "/auth/github/callback?code=c&state=s", &[]).await;
+    let other_state = call_with(
+        &addr,
+        "GET",
+        "/auth/github/callback?code=c&state=forged",
+        &[("Cookie", cookie.as_str())],
+    )
+    .await;
+
+    for failed in [without_sign_in, other_state] {
+        assert_eq!(failed.status, 303);
+        assert_eq!(
+            header_values(&failed.raw_head, "location"),
+            ["/sign-in?error=failed"]
+        );
+        assert!(cookie_set(&failed.raw_head, "__Host-cihub_session").is_none());
+    }
 }

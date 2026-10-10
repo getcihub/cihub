@@ -18,6 +18,9 @@ nameOverride: ""
 # -- Replaces the full name of the resources.
 fullnameOverride: ""
 
+# -- The root address where people reach the instance, such as `https://ci.example.com`. The sign-in to the dashboard sends them back there; without it, nobody signs in (specs/DEPLOYMENT.md).
+publicUrl: ""
+
 # -- Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.
 replicas: 1
 
@@ -54,6 +57,10 @@ github:
   privateKeyKey: private-key.pem
   # -- Key of the webhook secret in that Secret.
   webhookSecretKey: webhook-secret
+  # -- Client ID of the App, for the sign-in to the dashboard; with it, the Secret also holds the client secret.
+  clientId: ""
+  # -- Key of the client secret of the App in that Secret, read when `clientId` is set.
+  clientSecretKey: client-secret
 
 # -- Annotations of the Deployment.
 deploymentAnnotations: {}

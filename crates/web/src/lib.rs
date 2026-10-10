@@ -8,6 +8,7 @@
 
 mod api;
 mod session;
+mod sign_in;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -17,10 +18,13 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::post;
+use axum::routing::{get, post};
 use cihub_api_types::API_PREFIX;
-use cihub_github::{ReceivedDelivery, WEBHOOK_PATH, WebhookError};
+use cihub_github::{
+    ReceivedDelivery, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH, WEBHOOK_PATH, WebhookError,
+};
 use cihub_platform::{Delivery, ModuleApi, PlatformError, store_delivery};
+use cihub_scm::Scm;
 use cihub_store::{PgPool, begin_system};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -35,6 +39,13 @@ const ACK_WITHIN: Duration = Duration::from_secs(2);
 
 pub struct GithubWebhooks {
     pub secret: SecretString,
+}
+
+/// What the dashboard needs: the SCM where people sign in, and the root
+/// address of the instance, which the SCM sends them back to.
+pub struct Dashboard {
+    pub scm: Arc<dyn Scm>,
+    pub public_url: Option<String>,
 }
 
 #[derive(Clone)]
@@ -52,6 +63,7 @@ pub fn router(
     now: fn() -> OffsetDateTime,
     github: GithubWebhooks,
     modules: Vec<ModuleApi>,
+    dashboard: Dashboard,
 ) -> Router {
     let webhooks = Webhooks {
         pool: pool.clone(),
@@ -66,7 +78,21 @@ pub fn router(
             SIGN_OUT_PATH,
             post(session::sign_out).with_state(pool.clone()),
         )
-        .nest(API_PREFIX, api::router(pool, now, modules))
+        .merge(sign_in_routes(&pool, now, &dashboard))
+        .nest(API_PREFIX, api::router(pool, now, modules, dashboard.scm))
+}
+
+fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashboard) -> Router {
+    let state = sign_in::SignIn {
+        pool: pool.clone(),
+        now,
+        scm: Arc::clone(&dashboard.scm),
+        public_url: dashboard.public_url.clone(),
+    };
+    Router::new()
+        .route(SIGN_IN_PATH, get(sign_in::start))
+        .route(SIGN_IN_CALLBACK_PATH, get(sign_in::callback))
+        .with_state(state)
 }
 
 /// # Errors
