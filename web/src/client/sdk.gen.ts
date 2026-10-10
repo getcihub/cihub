@@ -46,8 +46,7 @@ export const listAudit = <ThrowOnError extends boolean = false>(options: Options
 
 /**
  * Every queue of the organization with its counters, for the overview of
- * the dashboard. Like the graph and the commands, the counters read only
- * the current item of each PR.
+ * the dashboard.
  */
 export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Options<ListOrgQueuesData, ThrowOnError>): RequestResult<ListOrgQueuesResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListOrgQueuesResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -85,6 +84,10 @@ export const listQueues = <ThrowOnError extends boolean = false>(options: Option
     ...options
 });
 
+/**
+ * The queue with its counters, its window and its settings, for its page
+ * in the dashboard.
+ */
 export const getQueue = <ThrowOnError extends boolean = false>(options: Options<GetQueueData, ThrowOnError>): RequestResult<GetQueueResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetQueueResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',

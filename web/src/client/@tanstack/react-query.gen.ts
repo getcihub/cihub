@@ -138,8 +138,7 @@ export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => cr
 
 /**
  * Every queue of the organization with its counters, for the overview of
- * the dashboard. Like the graph and the commands, the counters read only
- * the current item of each PR.
+ * the dashboard.
  */
 export const listOrgQueuesOptions = (options: Options<ListOrgQueuesData>) => queryOptions<ListOrgQueuesResponse, DefaultError, ListOrgQueuesResponse, ReturnType<typeof listOrgQueuesQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -192,6 +191,10 @@ export const listQueuesOptions = (options: Options<ListQueuesData>) => queryOpti
 
 export const getQueueQueryKey = (options: Options<GetQueueData>) => createQueryKey('getQueue', options);
 
+/**
+ * The queue with its counters, its window and its settings, for its page
+ * in the dashboard.
+ */
 export const getQueueOptions = (options: Options<GetQueueData>) => queryOptions<GetQueueResponse, DefaultError, GetQueueResponse, ReturnType<typeof getQueueQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
         const { data } = await getQueue({

@@ -17,7 +17,7 @@ segment (`:resync`, `:cancel`, `:restart`, `:batchGet`). The paths below follow 
 | GET                | `/orgs/{org}/repos`                                      | Repositories of the organization                                                                                                                                                                                                               |
 | GET                | `/orgs/{org}/queues`                                     | Every queue of the organization with its counters, by repository name then queue name: `counts` (the current items in each state that is not terminal), `merged_last_24h` and `failed_last_24h` (the items that reached `merged` or `failed` in the 24 hours before the request, not in a calendar day; a PR that failed, then came back, still counts its failure), `last_merged_at` |
 | GET                | `/orgs/{org}/repos/{repo}/queues`                        | List the queues; the settings come from the `.cihub.yaml` file |
-| GET, PATCH         | `…`                                                      | Read, or request a `state` (`running`, `paused`, `draining`); deletion is deferred |
+| GET, PATCH         | `…`                                                      | Read (`QueueDetail`: the queue, the counters of `GET /orgs/{org}/queues`, `live_runs`, the `window` with its `current`, `floor` and `ceiling`, and `settings`: `batching_enabled`, `batching_size`, `batching_max_wait_minutes`, `failure_budget_retries`, `merge_method`; the strategy is on the queue), or request a `state` (`running`, `paused`, `draining`); deletion is deferred |
 | GET                | `…/prs`                                                  | Live items and history, filters `state`, `since`, `until`, cursor pagination with `take` ≤ 100                                                                                                                                                 |
 | POST               | `…/prs`                                                  | Submit a PR: `pr_number`, `priority` (name or 0–255), `no_batch`, `direct`                                                                                                                                                                     |
 | GET                | `…/prs/{number}`                                         | Latest item of a PR, `?include=timeline`; the search by `?branch=` is deferred |
@@ -32,6 +32,12 @@ segment (`:resync`, `:cancel`, `:restart`, `:batchGet`). The paths below follow 
 | GET                | `/metrics`                                               | Prometheus exposition, filters `repo`, `branch`                                                                                                                                                                                                |
 | GET, POST, DELETE  | `/orgs/{org}/webhooks`                                   | Manage the outgoing webhook endpoints, test a delivery                                                                                                                                                                                         |
 | GET                | `/orgs/{org}/audit`                                      | Setting changes and admin actions                                                                                                                                                                                                              |
+
+A queue (`Queue`) carries its `state` and `mode`, `state_changed_at` (its creation before a first change) and
+`state_changed_by`, the login of the person who asked for the state (`null` when CIHub decided it or a token asked
+for it); the `strategy` of its last valid file; `target_head_sha`, the head of the target branch that the log saw
+last; `access`, `ok` or `suspended` when the installation of the App is suspended or removed; `has_config_file`,
+`config_sha` and `config_error`. Every field comes from Postgres: showing a queue calls the SCM zero times.
 
 An item (`Item` in `cihub-api-types`) carries `state_reason`, the code of the closed vocabulary, and
 `state_description`, its sentence for a person (`Reason::describe`, `specs/DOMAIN.md`). A client shows the

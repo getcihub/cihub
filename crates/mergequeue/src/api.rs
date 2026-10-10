@@ -13,13 +13,15 @@ use axum::routing::{get, post};
 use cihub_api_types::{
     Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
     GraphEdge, GraphNode, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgQueue,
-    OrgQueueList, PrItem, Queue, QueueList, RequestedQueueState, RunCheck, SubmitPr, TestRun,
-    TimelineEvent, UpdateQueue,
+    OrgQueueList, PrItem, Queue, QueueAccess, QueueDetail, QueueList, RequestedQueueState,
+    RunCheck, SettingsSummary, SubmitPr, TestRun, TimelineEvent, UpdateQueue, Window,
 };
+use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
     Reason, RepoId, RunId, SubmittedVia,
 };
+use cihub_mq_core::current_window;
 use cihub_platform::{
     ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, Job, ModuleApi, enqueue_job,
 };
@@ -33,7 +35,7 @@ use utoipa::OpenApi;
 
 use crate::Clock;
 use crate::jobs::{self, Account, give_back, new_event_id};
-use crate::target::QueueTarget;
+use crate::target::{QueueTarget, queue_settings};
 
 #[derive(Clone)]
 struct ApiState {
@@ -74,10 +76,14 @@ struct ApiState {
         OrgQueueList,
         PrItem,
         Queue,
+        QueueAccess,
+        QueueDetail,
         QueueList,
+        SettingsSummary,
         SubmitPr,
         TestRun,
-        UpdateQueue
+        UpdateQueue,
+        Window
     ))
 )]
 struct MergeQueueApi;
@@ -221,18 +227,65 @@ struct QueueRow {
     target_branch: String,
     state: String,
     mode: String,
+    state_changed_at: OffsetDateTime,
+    state_changed_by: Option<String>,
+    target_head_sha: Option<String>,
+    window_size: Option<i32>,
+    is_suspended: bool,
+    config_text: Option<String>,
     config_sha: Option<String>,
     config_error: Option<String>,
 }
 
-const QUEUE_COLUMNS: &str =
-    "id, repo_id, name, target_branch, state::text, mode::text, config_sha, config_error";
+/// The columns of [`QueueRow`], read from [`QUEUE_SOURCE`].
+const QUEUE_COLUMNS: &str = "q.id, q.repo_id, q.name, q.target_branch, q.state::text AS state,
+    q.mode::text AS mode, coalesce(q.state_changed_at, q.created_at) AS state_changed_at,
+    u.login AS state_changed_by, q.target_head_sha, q.window_size,
+    c.suspended_at IS NOT NULL AS is_suspended, q.config_text, q.config_sha, q.config_error";
+
+const QUEUE_SOURCE: &str = "queues q
+    JOIN repos r ON r.id = q.repo_id
+    JOIN scm_connections c ON c.id = r.connection_id
+    LEFT JOIN users u ON u.id = q.state_changed_by";
 
 impl QueueRow {
+    /// The settings of the last valid file of the queue.
+    fn settings(&self) -> Result<QueueSettings, ApiError> {
+        let config = self
+            .config_text
+            .as_deref()
+            .map(RepoConfig::parse)
+            .transpose()?;
+
+        Ok(queue_settings(
+            config.as_ref(),
+            &self.target_branch,
+            &self.name,
+        )?)
+    }
+
     fn into_queue(self) -> Result<Queue, ApiError> {
+        let settings = self.settings()?;
+        self.into_queue_with(&settings)
+    }
+
+    /// The queue, whose last valid file gives `settings`.
+    fn into_queue_with(self, settings: &QueueSettings) -> Result<Queue, ApiError> {
+        let access = if self.is_suspended {
+            QueueAccess::Suspended
+        } else {
+            QueueAccess::Ok
+        };
+
         Ok(Queue {
             state: self.state.parse()?,
             mode: self.mode.parse()?,
+            state_changed_at: self.state_changed_at,
+            state_changed_by: self.state_changed_by,
+            strategy: settings.strategy.value,
+            target_head_sha: self.target_head_sha,
+            access,
+            has_config_file: self.config_text.is_some() || self.config_error.is_some(),
             id: self.id,
             repo_id: self.repo_id,
             name: self.name,
@@ -250,7 +303,7 @@ async fn queue_row(
     name: &str,
 ) -> Result<QueueRow, ApiError> {
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {QUEUE_COLUMNS} FROM queues WHERE repo_id = $1 AND name = $2"
+        "SELECT {QUEUE_COLUMNS} FROM {QUEUE_SOURCE} WHERE q.repo_id = $1 AND q.name = $2"
     )))
     .bind(repo.to_string())
     .bind(name)
@@ -353,7 +406,7 @@ async fn list_queues(
     let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
     let repo = repo_id(&mut tx, &path.repo).await?;
     let rows: Vec<QueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {QUEUE_COLUMNS} FROM queues WHERE repo_id = $1 ORDER BY name"
+        "SELECT {QUEUE_COLUMNS} FROM {QUEUE_SOURCE} WHERE q.repo_id = $1 ORDER BY q.name"
     )))
     .bind(repo.to_string())
     .fetch_all(&mut *tx)
@@ -366,11 +419,9 @@ async fn list_queues(
     Ok(axum::Json(QueueList { queues }))
 }
 
+/// The counters of the items of a queue, read with [`COUNT_COLUMNS`].
 #[derive(sqlx::FromRow)]
-struct OrgQueueRow {
-    repo: String,
-    #[sqlx(flatten)]
-    queue: QueueRow,
+struct CountsRow {
     not_ready: i64,
     pending: i64,
     testing: i64,
@@ -381,30 +432,57 @@ struct OrgQueueRow {
     last_merged_at: Option<OffsetDateTime>,
 }
 
-impl OrgQueueRow {
-    fn into_org_queue(self) -> Result<OrgQueue, ApiError> {
-        let counts = ItemCounts {
+/// The aggregates of [`CountsRow`] over the items `i`, with the time of the
+/// request as `$1`. Like the graph and the commands, the counters read only
+/// the current item of each PR.
+const COUNT_COLUMNS: &str =
+    "count(*) FILTER (WHERE i.is_current AND i.state = 'not_ready') AS not_ready,
+     count(*) FILTER (WHERE i.is_current AND i.state = 'pending') AS pending,
+     count(*) FILTER (WHERE i.is_current AND i.state = 'testing') AS testing,
+     count(*) FILTER (WHERE i.is_current AND i.state = 'pending_failure') AS pending_failure,
+     count(*) FILTER (WHERE i.is_current AND i.state = 'tests_passed') AS tests_passed,
+     count(*) FILTER (WHERE i.state = 'merged' AND i.state_changed_at > $1 - interval '24 hours')
+         AS merged_last_24h,
+     count(*) FILTER (WHERE i.state = 'failed' AND i.state_changed_at > $1 - interval '24 hours')
+         AS failed_last_24h,
+     max(i.state_changed_at) FILTER (WHERE i.state = 'merged') AS last_merged_at";
+
+impl CountsRow {
+    fn counts(&self) -> Result<ItemCounts, ApiError> {
+        Ok(ItemCounts {
             not_ready: u32::try_from(self.not_ready)?,
             pending: u32::try_from(self.pending)?,
             testing: u32::try_from(self.testing)?,
             pending_failure: u32::try_from(self.pending_failure)?,
             tests_passed: u32::try_from(self.tests_passed)?,
-        };
+        })
+    }
+}
 
+#[derive(sqlx::FromRow)]
+struct OrgQueueRow {
+    repo: String,
+    #[sqlx(flatten)]
+    queue: QueueRow,
+    #[sqlx(flatten)]
+    counts: CountsRow,
+}
+
+impl OrgQueueRow {
+    fn into_org_queue(self) -> Result<OrgQueue, ApiError> {
         Ok(OrgQueue {
             repo: self.repo,
+            counts: self.counts.counts()?,
+            merged_last_24h: u32::try_from(self.counts.merged_last_24h)?,
+            failed_last_24h: u32::try_from(self.counts.failed_last_24h)?,
+            last_merged_at: self.counts.last_merged_at,
             queue: self.queue.into_queue()?,
-            counts,
-            merged_last_24h: u32::try_from(self.merged_last_24h)?,
-            failed_last_24h: u32::try_from(self.failed_last_24h)?,
-            last_merged_at: self.last_merged_at,
         })
     }
 }
 
 /// Every queue of the organization with its counters, for the overview of
-/// the dashboard. Like the graph and the commands, the counters read only
-/// the current item of each PR.
+/// the dashboard.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/queues",
@@ -421,28 +499,13 @@ async fn list_org_queues(
 
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let now = (state.clock)();
-    let rows: Vec<OrgQueueRow> = sqlx::query_as(
-        "SELECT r.name AS repo, q.id, q.repo_id, q.name, q.target_branch, q.state::text AS state,
-                q.mode::text AS mode, q.config_sha, q.config_error,
-                count(*) FILTER (WHERE i.is_current AND i.state = 'not_ready') AS not_ready,
-                count(*) FILTER (WHERE i.is_current AND i.state = 'pending') AS pending,
-                count(*) FILTER (WHERE i.is_current AND i.state = 'testing') AS testing,
-                count(*) FILTER (WHERE i.is_current AND i.state = 'pending_failure')
-                    AS pending_failure,
-                count(*) FILTER (WHERE i.is_current AND i.state = 'tests_passed') AS tests_passed,
-                count(*) FILTER (WHERE i.state = 'merged'
-                                   AND i.state_changed_at > $1 - interval '24 hours')
-                    AS merged_last_24h,
-                count(*) FILTER (WHERE i.state = 'failed'
-                                   AND i.state_changed_at > $1 - interval '24 hours')
-                    AS failed_last_24h,
-                max(i.state_changed_at) FILTER (WHERE i.state = 'merged') AS last_merged_at
-         FROM queues q
-         JOIN repos r ON r.id = q.repo_id
+    let rows: Vec<OrgQueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT r.name AS repo, {QUEUE_COLUMNS}, {COUNT_COLUMNS}
+         FROM {QUEUE_SOURCE}
          LEFT JOIN queue_items i ON i.queue_id = q.id
-         GROUP BY q.id, r.id
-         ORDER BY r.name, q.name, q.id",
-    )
+         GROUP BY q.id, r.id, c.id, u.id
+         ORDER BY r.name, q.name, q.id"
+    )))
     .bind(now)
     .fetch_all(&mut *tx)
     .await?;
@@ -455,23 +518,64 @@ async fn list_org_queues(
     Ok(axum::Json(OrgQueueList { queues }))
 }
 
+/// The queue with its counters, its window and its settings, for its page
+/// in the dashboard.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}",
     params(QueuePath),
-    responses((status = 200, body = Queue)),
+    responses((status = 200, body = QueueDetail)),
     security(("token" = ["queues:read"]))
 )]
 async fn get_queue(
     grant: ApiGrant,
     axum::extract::State(state): axum::extract::State<ApiState>,
     ApiPath(path): ApiPath<QueuePath>,
-) -> Result<axum::Json<Queue>, ApiError> {
+) -> Result<axum::Json<QueueDetail>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let (_, row) = begin_queue(&state, &grant, &path).await?;
+    let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
+    let now = (state.clock)();
+    let counts: CountsRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT {COUNT_COLUMNS} FROM queue_items i WHERE i.queue_id = $2"
+    )))
+    .bind(now)
+    .bind(&row.id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let live_runs: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM test_runs
+         WHERE queue_id = $1 AND status IN ('assembling', 'in_progress')",
+    )
+    .bind(&row.id)
+    .fetch_one(&mut *tx)
+    .await?;
 
-    Ok(axum::Json(row.into_queue()?))
+    let settings = row.settings()?;
+    let window_size = row.window_size.map(u32::try_from).transpose()?;
+    let window = Window {
+        current: current_window(window_size, &settings),
+        floor: settings.window_floor.value,
+        ceiling: settings.window_ceiling.value,
+    };
+    let summary = SettingsSummary {
+        batching_enabled: settings.batching_enabled.value,
+        batching_size: settings.batching_size.value,
+        batching_max_wait_minutes: settings.batching_max_wait_minutes.value,
+        failure_budget_retries: settings.failure_budget_retries.value,
+        merge_method: settings.merge_method.value,
+    };
+
+    Ok(axum::Json(QueueDetail {
+        counts: counts.counts()?,
+        merged_last_24h: u32::try_from(counts.merged_last_24h)?,
+        failed_last_24h: u32::try_from(counts.failed_last_24h)?,
+        last_merged_at: counts.last_merged_at,
+        live_runs: u32::try_from(live_runs)?,
+        window,
+        settings: summary,
+        queue: row.into_queue_with(&settings)?,
+    }))
 }
 
 /// Asks the queue for a new state; the queue changes it at its next

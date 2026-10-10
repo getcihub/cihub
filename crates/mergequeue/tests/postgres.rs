@@ -6,13 +6,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use cihub_api_types::QueueAccess;
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, ConnectionKind, Event, EventId, EventKind, ItemState, JobClass,
-    MembershipRole, Mergeability, OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId,
-    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SessionId, SubmittedVia, UserId,
-    temp_branch,
+    MembershipRole, Mergeability, OrgId, Permission, PrState, Priority, QueueControl, QueueId,
+    Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SessionId, Strategy,
+    SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -319,7 +320,11 @@ async fn projections(conn: &mut PgConnection) -> Vec<Value> {
         "SELECT to_jsonb(c) FROM check_observations c
          WHERE run_id IN (SELECT id FROM test_runs WHERE queue_id = $1)
          ORDER BY run_id, name, kind",
-        "SELECT jsonb_build_object('state', state, 'mode', mode) FROM queues WHERE id = $1",
+        "SELECT jsonb_build_object('state', state, 'mode', mode,
+                                   'state_changed_at', state_changed_at,
+                                   'state_changed_by', state_changed_by,
+                                   'target_head_sha', target_head_sha, 'window_size', window_size)
+         FROM queues WHERE id = $1",
     ] {
         let found: Vec<Value> = sqlx::query_scalar(query)
             .bind(queue().to_string())
@@ -350,9 +355,39 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
         w.merge_all().await;
     }
 
+    let pause = EventKind::QueueControlRequested {
+        control: QueueControl::Pause,
+    };
+    w.fact(Actor::User { user_id: user() }, pause).await;
+
     assert!(w.log.seq > SNAPSHOT_EVERY, "{} events only", w.log.seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
+    let queue_row: (
+        String,
+        Option<OffsetDateTime>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT state::text, state_changed_at, state_changed_by, target_head_sha
+             FROM queues WHERE id = $1",
+    )
+    .bind(queue().to_string())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        queue_row,
+        (
+            "paused".into(),
+            Some(w.now),
+            Some(user().to_string()),
+            Some(format!("target-{}", w.target))
+        ),
+        "the person who asked for the pause, not CIHub that decided it"
+    );
+
     let states: Vec<(String, i64)> = sqlx::query_as(
         "SELECT state::text, count(*) FROM queue_items WHERE queue_id = $1
          GROUP BY state ORDER BY state",
@@ -3270,7 +3305,23 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     q.settle().await;
 
     let (_, read) = call("GET", queue.to_owned(), None).await;
-    assert_eq!(read["state"], "paused");
+    assert_eq!(read["queue"]["state"], "paused");
+    assert_eq!(
+        read["queue"]["state_changed_by"],
+        Value::Null,
+        "a token stands for no person"
+    );
+    assert_eq!(read["queue"]["strategy"], "pipelined");
+    assert_eq!(read["queue"]["target_head_sha"], main.as_str());
+    assert_eq!(read["queue"]["access"], "ok");
+    assert_eq!(read["queue"]["has_config_file"], true);
+    assert_eq!(read["counts"]["testing"], 0);
+    assert_eq!(read["live_runs"], 0);
+    assert_eq!(
+        read["window"],
+        serde_json::json!({ "current": 2, "floor": 2, "ceiling": 20 })
+    );
+    assert_eq!(read["settings"]["merge_method"], "squash");
 
     let (_, queues) = call("GET", "/orgs/acme/repos/app/queues".into(), None).await;
     assert_eq!(queues["queues"].as_array().unwrap().len(), 1);
@@ -3554,16 +3605,23 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
     let api_main = QueueId::from_ulid(Ulid(62)).to_string();
     let mut tx = begin_system(&pool).await.unwrap();
 
+    // The repository `api` comes from a second installation, suspended; a
+    // person paused the queue `main` of `app`.
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
-             VALUES ('{api_repo}', '{org}', '{connection}', '201', 'acme', 'api', 'main');
+        "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions, suspended_at)
+             VALUES ('{suspended}', '{org}', '2', 'github_app', '2', '{now}', '{{}}', '{now}');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{api_repo}', '{org}', '{suspended}', '201', 'acme', 'api', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
              VALUES ('{app_release}', '{org}', '{app_repo}', 'release', 'release'),
-                    ('{api_main}', '{org}', '{api_repo}', 'main', 'main');",
+                    ('{api_main}', '{org}', '{api_repo}', 'main', 'main');
+         UPDATE queues SET state = 'paused', state_changed_by = '{user}' WHERE id = '{app_main}';",
+        suspended = ConnectionId::from_ulid(Ulid(63)),
+        user = user(),
         api_repo = RepoId::from_ulid(Ulid(61)),
         app_repo = RepoId::from_ulid(Ulid(12)),
         org = org(),
-        connection = connection(),
     )))
     .execute(&mut *tx)
     .await
@@ -3665,6 +3723,17 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
     );
     assert_eq!(document["queues"][2]["last_merged_at"], Value::Null);
     assert_eq!(document["queues"][1]["counts"]["pending_failure"], 1);
+
+    let access: Vec<_> = listed.iter().map(|entry| entry.queue.access).collect();
+
+    assert_eq!(
+        access,
+        [QueueAccess::Suspended, QueueAccess::Ok, QueueAccess::Ok]
+    );
+    assert_eq!(listed[1].queue.strategy, Strategy::Pipelined, "the default");
+    assert!(!listed[1].queue.has_config_file);
+    assert_eq!(listed[1].queue.state_changed_by.as_deref(), Some("octocat"));
+    assert_eq!(listed[2].queue.state_changed_by, None);
 
     cancel.cancel();
 }

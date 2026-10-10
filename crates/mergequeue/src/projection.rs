@@ -220,14 +220,39 @@ pub(crate) async fn project(
             one_row(done, event)?;
         }
         EventKind::QueueTransitioned { .. } => {
+            // A decision acts as CIHub: the person who asked for the state is
+            // the actor of its cause.
             let done = sqlx::query(
-                "UPDATE queues SET state = $2::queue_state, mode = $3::queue_mode WHERE id = $1",
+                "UPDATE queues SET state = $2::queue_state, mode = $3::queue_mode,
+                                   state_changed_at = $4,
+                                   state_changed_by = (SELECT actor_user_id FROM events
+                                                       WHERE queue_id = $1 AND id = $5)
+                 WHERE id = $1",
             )
             .bind(event.queue_id.to_string())
             .bind(after.state.as_str())
             .bind(after.mode.as_str())
+            .bind(at)
+            .bind(event.cause_id.map(|id| id.to_string()))
             .execute(&mut *conn)
             .await;
+            one_row(done, event)?;
+        }
+        EventKind::TargetPushed { .. } => {
+            let head = after.target.head.as_ref().map(|head| &head.value);
+            let done = sqlx::query("UPDATE queues SET target_head_sha = $2 WHERE id = $1")
+                .bind(event.queue_id.to_string())
+                .bind(head)
+                .execute(&mut *conn)
+                .await;
+            one_row(done, event)?;
+        }
+        EventKind::QueueWindowChanged { after: window, .. } => {
+            let done = sqlx::query("UPDATE queues SET window_size = $2 WHERE id = $1")
+                .bind(event.queue_id.to_string())
+                .bind(i32::try_from(*window).map_err(|_| mismatch())?)
+                .execute(&mut *conn)
+                .await;
             one_row(done, event)?;
         }
         EventKind::TestBranchAssembled {
@@ -282,21 +307,18 @@ pub(crate) async fn project(
                 .ok_or_else(mismatch)?;
             upsert_check(conn, &observed.value).await?;
         }
-        // The other facts change only the observed state, and the window has
-        // no column before lot 8.
+        // The other facts change only the observed state.
         EventKind::ItemSubmitted { .. }
         | EventKind::ItemCancelRequested { .. }
         | EventKind::ItemRestartRequested { .. }
         | EventKind::PrObserved { .. }
-        | EventKind::TargetPushed { .. }
         | EventKind::TargetsReceived { .. }
         | EventKind::MergeSucceeded { .. }
         | EventKind::MergeFailed { .. }
         | EventKind::QueueControlRequested { .. }
         | EventKind::QueueSettingsChanged { .. }
         | EventKind::AccessLost
-        | EventKind::AccessRestored
-        | EventKind::QueueWindowChanged { .. } => {}
+        | EventKind::AccessRestored => {}
     }
 
     Ok(())

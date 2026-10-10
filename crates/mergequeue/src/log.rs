@@ -215,7 +215,9 @@ pub async fn rebuild(conn: &mut PgConnection, queue: QueueId) -> Result<QueueLog
         "DELETE FROM test_runs WHERE queue_id = $1",
         "DELETE FROM test_groups WHERE queue_id = $1",
         "DELETE FROM queue_items WHERE queue_id = $1",
-        "UPDATE queues SET state = 'running', mode = 'single', snapshot_seq = NULL, snapshot = NULL
+        "UPDATE queues SET state = 'running', mode = 'single', state_changed_at = NULL,
+                           state_changed_by = NULL, target_head_sha = NULL, window_size = NULL,
+                           snapshot_seq = NULL, snapshot = NULL
          WHERE id = $1",
     ] {
         sqlx::query(statement)

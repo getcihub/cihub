@@ -106,7 +106,7 @@
     "/orgs/{org}/queues": {
       "get": {
         "tags": [],
-        "summary": "Every queue of the organization with its counters, for the overview of\nthe dashboard. Like the graph and the commands, the counters read only\nthe current item of each PR.",
+        "summary": "Every queue of the organization with its counters, for the overview of\nthe dashboard.",
         "operationId": "list_org_queues",
         "parameters": [
           {
@@ -232,6 +232,7 @@
     "/orgs/{org}/repos/{repo}/queues/{queue}": {
       "get": {
         "tags": [],
+        "summary": "The queue with its counters, its window and its settings, for its page\nin the dashboard.",
         "operationId": "get_queue",
         "parameters": [
           {
@@ -267,7 +268,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Queue"
+                  "$ref": "#/components/schemas/QueueDetail"
                 }
               }
             }
@@ -1613,9 +1614,16 @@
           "name",
           "target_branch",
           "state",
-          "mode"
+          "mode",
+          "state_changed_at",
+          "strategy",
+          "access",
+          "has_config_file"
         ],
         "properties": {
+          "access": {
+            "$ref": "#/components/schemas/QueueAccess"
+          },
           "config_error": {
             "type": [
               "string",
@@ -1629,6 +1637,10 @@
               "null"
             ],
             "description": "The head of the target whose configuration file the queue read last."
+          },
+          "has_config_file": {
+            "type": "boolean",
+            "description": "The target branch has a configuration file, valid or not; without\nit, the queue takes the defaults."
           },
           "id": {
             "type": "string"
@@ -1645,8 +1657,89 @@
           "state": {
             "type": "string"
           },
+          "state_changed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the queue reached its state; its creation before a first change."
+          },
+          "state_changed_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The login of the person who asked for the state; `None` when CIHub\ndecided it, or when an API token asked for it."
+          },
+          "strategy": {
+            "type": "string",
+            "description": "The strategy of the last valid configuration file."
+          },
           "target_branch": {
             "type": "string"
+          },
+          "target_head_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The head of the target branch that the queue saw last; `None` before\nthe first."
+          }
+        }
+      },
+      "QueueAccess": {
+        "type": "string",
+        "description": "Whether CIHub reaches the repository of a queue on the SCM.",
+        "enum": [
+          "ok",
+          "suspended"
+        ]
+      },
+      "QueueDetail": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/repos/{repo}/queues/{queue}`: a queue, its counters as\nin [`OrgQueue`], its runs and the summary of its settings.",
+        "required": [
+          "queue",
+          "counts",
+          "merged_last_24h",
+          "failed_last_24h",
+          "live_runs",
+          "window",
+          "settings"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ItemCounts"
+          },
+          "failed_last_24h": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "last_merged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "live_runs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The runs in progress.",
+            "minimum": 0
+          },
+          "merged_last_24h": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "queue": {
+            "$ref": "#/components/schemas/Queue"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/SettingsSummary"
+          },
+          "window": {
+            "$ref": "#/components/schemas/Window"
           }
         }
       },
@@ -1745,6 +1838,41 @@
           },
           "required": {
             "type": "boolean"
+          }
+        }
+      },
+      "SettingsSummary": {
+        "type": "object",
+        "description": "The settings of a queue that its page shows, from its last valid\nconfiguration file.",
+        "required": [
+          "batching_enabled",
+          "batching_size",
+          "batching_max_wait_minutes",
+          "failure_budget_retries",
+          "merge_method"
+        ],
+        "properties": {
+          "batching_enabled": {
+            "type": "boolean"
+          },
+          "batching_max_wait_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "batching_size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "failure_budget_retries": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many times a run that fails is tested again before its PRs fail.",
+            "minimum": 0
+          },
+          "merge_method": {
+            "type": "string"
           }
         }
       },
@@ -1974,6 +2102,32 @@
         "properties": {
           "state": {
             "$ref": "#/components/schemas/RequestedQueueState"
+          }
+        }
+      },
+      "Window": {
+        "type": "object",
+        "description": "The speculation window: how many runs the queue keeps in progress.",
+        "required": [
+          "current",
+          "floor",
+          "ceiling"
+        ],
+        "properties": {
+          "ceiling": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "current": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "floor": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       }

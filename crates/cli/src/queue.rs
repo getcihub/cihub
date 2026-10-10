@@ -223,7 +223,9 @@ mod tests {
     fn queue(name: &str) -> Queue {
         serde_json::from_value(serde_json::json!({
             "id": format!("queue-{name}"), "repo_id": "r", "name": name, "target_branch": name,
-            "state": "running", "mode": "single", "config_sha": null, "config_error": null,
+            "state": "running", "mode": "single", "state_changed_at": "2026-10-01T09:00:00Z",
+            "state_changed_by": null, "strategy": "pipelined", "target_head_sha": null,
+            "access": "ok", "has_config_file": false, "config_sha": null, "config_error": null,
         }))
         .unwrap()
     }
