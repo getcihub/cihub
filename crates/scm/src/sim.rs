@@ -4,6 +4,7 @@
 //! no clock: a test gives every time.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::fmt::Write;
 use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
@@ -170,6 +171,9 @@ struct State {
     /// the request of CIHub.
     sign_in_codes: BTreeMap<String, (ScmUser, SignInRequest)>,
     next_sign_in_code: u64,
+    /// The page that a browser opens to sign in, for a test in a browser;
+    /// `sim:authorize` without it.
+    sign_in_page: Option<String>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -573,6 +577,12 @@ impl Sim {
         });
     }
 
+    /// Makes the address of a sign-in a page that a browser opens: a test
+    /// server serves it, and signs a person in with [`Sim::authorize`].
+    pub fn serve_sign_in_at(&self, page: &str) {
+        self.with(|state| state.sign_in_page = Some(page.to_owned()));
+    }
+
     /// Signs `user` in on the page of the SCM for `request`, as after their
     /// consent, and returns the code that the SCM sends to its
     /// `redirect_url`.
@@ -727,6 +737,20 @@ pub enum PrChange {
     /// Forces the mergeability, or computes it again with `None`.
     Mergeability(Option<Mergeability>),
     Close,
+}
+
+/// `text` for the query of an address: every byte but the unreserved ones
+/// of RFC 3986 is percent-encoded.
+fn encode_query(text: &str) -> String {
+    text.bytes()
+        .fold(String::with_capacity(text.len()), |mut encoded, byte| {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                encoded.push(char::from(byte));
+            } else {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
+            encoded
+        })
 }
 
 fn permission_levels(permissions: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1688,9 +1712,14 @@ impl Scm for Sim {
     }
 
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
+        let page = self
+            .with(|state| state.sign_in_page.clone())
+            .unwrap_or_else(|| "sim:authorize".to_owned());
         Some(format!(
-            "sim:authorize?redirect_uri={}&state={}&code_challenge={}",
-            request.redirect_url, request.state, request.code_challenge
+            "{page}?redirect_uri={}&state={}&code_challenge={}",
+            encode_query(&request.redirect_url),
+            encode_query(&request.state),
+            encode_query(&request.code_challenge)
         ))
     }
 
