@@ -10,6 +10,24 @@ on:
       - .renovaterc.json5
       - .renovate/**.json5
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run
+        type: boolean
+        default: false
+        required: true
+      log_level:
+        description: Log level
+        type: choice
+        default: debug
+        options:
+          - debug
+          - info
+        required: true
+      version:
+        description: Renovate version
+        default: latest
+        required: true
   issues:
     types:
       - edited
