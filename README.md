@@ -97,7 +97,7 @@ cihub queue status
 
 ## Write your `.cihub.yaml` with an assistant
 
-A queue works without a file. To change its behavior, or to add queues, add `.cihub.yaml` at the root of the repository; CIHub reads
+A queue works without a file. To change its behavior, or to add queues, add `.cihub.yaml` at the root of the repository (or `.cihub/config.yaml`); CIHub reads
 it on the head of the target branch, never from a pull request. Copy this prompt into an LLM assistant:
 
 ```text
