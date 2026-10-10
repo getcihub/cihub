@@ -22,7 +22,7 @@ rewrites.
 | 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following the README; measured in lot 15 (`DECISIONS.md` D214) |
 | 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined` (`DECISIONS.md` D212); bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
-| 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, Helm chart, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                              | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
+| 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                                            | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
 The two highest risks are the invariants of the reconciler under concurrent GitHub events (mitigated by the pure
 core and its property tests, delivered first) and the GitHub rulesets misconfigured by the users (mitigated by the
@@ -47,7 +47,7 @@ configuration checker, in phase 1).
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
-| 15  | Scale: ClickHouse, Helm, hardening                     | 4     | 11, 13     | Q8        | to do                                    |
+| 15  | Scale: ClickHouse, hardening                           | 4     | 11, 13     | Q8        | to do                                    |
 
 ```mermaid
 flowchart LR
@@ -313,12 +313,11 @@ Lots 0 to 8 are done; their tracking is in [LOTS_DONE.md](LOTS_DONE.md).
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in
   parallel, and an `ALL` PR serializes everything that follows it; criterion of phase 4 on a pilot monorepo.
 
-### Lot 15: scale: ClickHouse, Helm, hardening
+### Lot 15: scale: ClickHouse, hardening
 
-- **Content**: ClickHouse implementation of `AnalyticsStore` (Q8); Helm chart, with the migration `Job` as a
-  `pre-install` and `pre-upgrade` hook (`DECISIONS.md` D14); load test at the order of magnitude of the standard
-  instance; chaos exercise on staging; the two bars of phase 1 measured by hand (`DECISIONS.md` D214); API
-  compatibility policy and first published version.
+- **Content**: ClickHouse implementation of `AnalyticsStore` (Q8); load test at the order of magnitude of the
+  standard instance; chaos exercise on staging; the two bars of phase 1 measured by hand (`DECISIONS.md` D214); API
+  compatibility policy and first published version. The Helm chart came before this lot (`DECISIONS.md` D251).
 - **Exit criterion**: an instance holds 1,000 PRs per day with ClickHouse enabled; the migration from Postgres to
   ClickHouse is a copy without any change to the application code.
 

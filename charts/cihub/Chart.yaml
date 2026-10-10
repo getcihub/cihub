@@ -1,0 +1,19 @@
+---
+apiVersion: v2
+name: cihub
+description: Self-hosted merge queue for GitHub, on Postgres
+type: application
+# The restricted Pod Security profile (seccompProfile), policy/v1 and the
+# Gateway API v1.
+kubeVersion: ">=1.25.0-0"
+# release-please sets both at each release, so that an install from git
+# deploys a published image; image.yaml sets them again when it packages.
+version: 0.1.0 # x-release-please-version
+appVersion: "0.1.0" # x-release-please-version
+home: https://github.com/nlecoy/cihub
+sources:
+  - https://github.com/nlecoy/cihub
+keywords:
+  - merge-queue
+  - github
+  - pull-request

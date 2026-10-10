@@ -1,0 +1,40 @@
+suite: pdb
+templates:
+  - pdb.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: keeps one of two replicas available
+    set:
+      replicas: 2
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: uses minAvailable when maxUnavailable is empty
+    set:
+      replicas: 2
+      podDisruptionBudget.maxUnavailable: ""
+      podDisruptionBudget.minAvailable: 50%
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: renders none for one replica
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders none when turned off
+    set:
+      replicas: 2
+      podDisruptionBudget.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

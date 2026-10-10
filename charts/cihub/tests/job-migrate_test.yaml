@@ -1,0 +1,40 @@
+suite: migration job
+templates:
+  - job-migrate.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: migrates before an install and an upgrade
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [server, migrate]
+
+  - it: reads only the environment, as the ConfigMap does not exist yet
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_URL
+            valueFrom:
+              secretKeyRef: { name: cihub-postgres, key: uri }
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_GITHUB_WEBHOOK_SECRET
+          any: true
+
+  - it: pulls with the secrets of the chart
+    set:
+      imagePullSecrets: [{ name: ghcr }]
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value: [{ name: ghcr }]

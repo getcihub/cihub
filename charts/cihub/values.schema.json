@@ -1,0 +1,674 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "affinity": {
+      "description": "Affinity of the pods.",
+      "required": [],
+      "title": "affinity",
+      "type": "object"
+    },
+    "database": {
+      "properties": {
+        "existingSecret": {
+          "default": "",
+          "description": "(required) Secret that holds the URL of Postgres, `database.url` of `server.yaml`. The role is neither a superuser nor `BYPASSRLS` (CIHub refuses it at startup) and owns the database: the migration Job uses the same URL.",
+          "title": "existingSecret",
+          "type": "string"
+        },
+        "key": {
+          "default": "uri",
+          "description": "Key of the URL in that Secret.",
+          "title": "key",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "database",
+      "type": "object"
+    },
+    "deploymentAnnotations": {
+      "description": "Annotations of the Deployment.",
+      "required": [],
+      "title": "deploymentAnnotations",
+      "type": "object"
+    },
+    "fullnameOverride": {
+      "default": "",
+      "description": "Replaces the full name of the resources.",
+      "title": "fullnameOverride",
+      "type": "string"
+    },
+    "github": {
+      "properties": {
+        "appId": {
+          "default": "",
+          "description": "(required) Identifier of the GitHub App (docs/GITHUB.md).",
+          "required": [],
+          "title": "appId",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "existingSecret": {
+          "default": "",
+          "description": "(required) Secret that holds the private key and the webhook secret of the App.",
+          "title": "existingSecret",
+          "type": "string"
+        },
+        "privateKeyKey": {
+          "default": "private-key.pem",
+          "description": "Key of the private key (PEM) in that Secret.",
+          "title": "privateKeyKey",
+          "type": "string"
+        },
+        "url": {
+          "default": "https://github.com",
+          "description": "github.com, or the address of a GitHub Enterprise Server.",
+          "title": "url",
+          "type": "string"
+        },
+        "webhookSecretKey": {
+          "default": "webhook-secret",
+          "description": "Key of the webhook secret in that Secret.",
+          "title": "webhookSecretKey",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "github",
+      "type": "object"
+    },
+    "global": {
+      "description": "Global values are values that can be accessed from any chart or subchart by exactly the same name.",
+      "required": [],
+      "title": "global",
+      "type": "object"
+    },
+    "httpRoute": {
+      "properties": {
+        "annotations": {
+          "description": "Annotations of the HTTPRoute.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Expose the Service through a Gateway API HTTPRoute, instead of an Ingress.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "hostnames": {
+          "description": "Host names of the route.",
+          "items": {
+            "required": []
+          },
+          "title": "hostnames",
+          "type": "array"
+        },
+        "labels": {
+          "description": "Labels of the HTTPRoute.",
+          "required": [],
+          "title": "labels",
+          "type": "object"
+        },
+        "matches": {
+          "description": "Match conditions of the rule.",
+          "items": {
+            "anyOf": [
+              {
+                "properties": {
+                  "path": {
+                    "properties": {
+                      "type": {
+                        "default": "PathPrefix",
+                        "title": "type",
+                        "type": "string"
+                      },
+                      "value": {
+                        "default": "/",
+                        "title": "value",
+                        "type": "string"
+                      }
+                    },
+                    "required": [],
+                    "title": "path",
+                    "type": "object"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            ],
+            "required": []
+          },
+          "title": "matches",
+          "type": "array"
+        },
+        "parentRefs": {
+          "description": "Gateways and listeners of the route.",
+          "items": {
+            "required": []
+          },
+          "title": "parentRefs",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "httpRoute",
+      "type": "object"
+    },
+    "image": {
+      "description": "Default values of the cihub chart (docs/DEPLOYMENT.md, DECISIONS.md D251).",
+      "properties": {
+        "digest": {
+          "default": "",
+          "description": "Image digest (`sha256:…`); wins over the tag when set.",
+          "title": "digest",
+          "type": "string"
+        },
+        "pullPolicy": {
+          "default": "IfNotPresent",
+          "description": "Image pull policy.",
+          "title": "pullPolicy",
+          "type": "string"
+        },
+        "repository": {
+          "default": "ghcr.io/nlecoy/cihub",
+          "description": "Image repository.",
+          "title": "repository",
+          "type": "string"
+        },
+        "tag": {
+          "default": "",
+          "description": "Image tag; the appVersion of the chart when empty.",
+          "title": "tag",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "image",
+      "type": "object"
+    },
+    "imagePullSecrets": {
+      "description": "Secrets to pull the image, for the server pods, the migration Job and the test pod.",
+      "items": {
+        "required": []
+      },
+      "title": "imagePullSecrets",
+      "type": "array"
+    },
+    "ingress": {
+      "description": "One Ingress, or one Gateway API HTTPRoute, to the Service. The webhook URL\nof the GitHub App is `https://\u003chost\u003e/webhooks/github`.",
+      "properties": {
+        "annotations": {
+          "description": "Annotations of the Ingress.",
+          "required": [],
+          "title": "annotations",
+          "type": "object"
+        },
+        "className": {
+          "default": "",
+          "description": "IngressClass name.",
+          "title": "className",
+          "type": "string"
+        },
+        "enabled": {
+          "default": false,
+          "description": "Expose the Service through an Ingress.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "hosts": {
+          "description": "Hosts of the Ingress and their paths.",
+          "items": {
+            "anyOf": [
+              {
+                "properties": {
+                  "host": {
+                    "default": "cihub.example.com",
+                    "title": "host",
+                    "type": "string"
+                  },
+                  "paths": {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "path": {
+                              "default": "/",
+                              "title": "path",
+                              "type": "string"
+                            },
+                            "pathType": {
+                              "default": "Prefix",
+                              "title": "pathType",
+                              "type": "string"
+                            }
+                          },
+                          "required": [],
+                          "type": "object"
+                        }
+                      ],
+                      "required": []
+                    },
+                    "title": "paths",
+                    "type": "array"
+                  }
+                },
+                "required": [],
+                "type": "object"
+              }
+            ],
+            "required": []
+          },
+          "title": "hosts",
+          "type": "array"
+        },
+        "tls": {
+          "description": "TLS configuration of the Ingress.",
+          "items": {
+            "required": []
+          },
+          "title": "tls",
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "ingress",
+      "type": "object"
+    },
+    "livenessProbe": {
+      "description": "Liveness probe: `/healthz` answers as long as the process runs.",
+      "properties": {
+        "httpGet": {
+          "properties": {
+            "path": {
+              "default": "/healthz",
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "internal",
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet",
+          "type": "object"
+        },
+        "periodSeconds": {
+          "default": 20,
+          "title": "periodSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "livenessProbe",
+      "type": "object"
+    },
+    "log": {
+      "properties": {
+        "filter": {
+          "default": "info",
+          "description": "Log filter, `log.filter` of `server.yaml` (docs/OBSERVABILITY.md).",
+          "title": "filter",
+          "type": "string"
+        },
+        "format": {
+          "default": "json",
+          "description": "Log format, `json` or `pretty`.",
+          "title": "format",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "log",
+      "type": "object"
+    },
+    "nameOverride": {
+      "default": "",
+      "description": "Replaces the name of the chart in the names of the resources.",
+      "title": "nameOverride",
+      "type": "string"
+    },
+    "nodeSelector": {
+      "description": "Node selector of the pods.",
+      "required": [],
+      "title": "nodeSelector",
+      "type": "object"
+    },
+    "podAnnotations": {
+      "description": "Annotations of the server pods.",
+      "required": [],
+      "title": "podAnnotations",
+      "type": "object"
+    },
+    "podDisruptionBudget": {
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Create a PodDisruptionBudget when there is more than one replica.",
+          "title": "enabled",
+          "type": "boolean"
+        },
+        "maxUnavailable": {
+          "default": 1,
+          "description": "Pods that may be unavailable, as a count or a percentage; wins over `minAvailable`.",
+          "required": [],
+          "title": "maxUnavailable",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "minAvailable": {
+          "default": "",
+          "description": "Pods that must stay available, as a count or a percentage; used when `maxUnavailable` is empty.",
+          "required": [],
+          "title": "minAvailable",
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "required": [],
+      "title": "podDisruptionBudget",
+      "type": "object"
+    },
+    "podLabels": {
+      "description": "Labels of the server pods.",
+      "required": [],
+      "title": "podLabels",
+      "type": "object"
+    },
+    "podSecurityContext": {
+      "description": "Security context of the pods: the user of the image (65532), not root.",
+      "properties": {
+        "runAsGroup": {
+          "default": 65532,
+          "title": "runAsGroup",
+          "type": "integer"
+        },
+        "runAsNonRoot": {
+          "default": true,
+          "title": "runAsNonRoot",
+          "type": "boolean"
+        },
+        "runAsUser": {
+          "default": 65532,
+          "title": "runAsUser",
+          "type": "integer"
+        },
+        "seccompProfile": {
+          "properties": {
+            "type": {
+              "default": "RuntimeDefault",
+              "title": "type",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "seccompProfile",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "podSecurityContext",
+      "type": "object"
+    },
+    "priorityClassName": {
+      "default": "",
+      "description": "Priority class of the server pods.",
+      "title": "priorityClassName",
+      "type": "string"
+    },
+    "readinessProbe": {
+      "description": "Readiness probe: `/readyz` answers 503 when Postgres does not answer within 2 s.",
+      "properties": {
+        "httpGet": {
+          "properties": {
+            "path": {
+              "default": "/readyz",
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "internal",
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet",
+          "type": "object"
+        },
+        "periodSeconds": {
+          "default": 10,
+          "title": "periodSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "readinessProbe",
+      "type": "object"
+    },
+    "replicas": {
+      "default": 1,
+      "description": "Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.",
+      "title": "replicas",
+      "type": "integer"
+    },
+    "resources": {
+      "description": "Resources of the server pods and of the migration Job.",
+      "properties": {
+        "limits": {
+          "properties": {
+            "memory": {
+              "default": "256Mi",
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "limits",
+          "type": "object"
+        },
+        "requests": {
+          "properties": {
+            "cpu": {
+              "default": "50m",
+              "title": "cpu",
+              "type": "string"
+            },
+            "memory": {
+              "default": "64Mi",
+              "title": "memory",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "requests",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "resources",
+      "type": "object"
+    },
+    "securityContext": {
+      "description": "Security context of the containers: CIHub writes no file.",
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "default": false,
+          "title": "allowPrivilegeEscalation",
+          "type": "boolean"
+        },
+        "capabilities": {
+          "properties": {
+            "drop": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  }
+                ],
+                "required": []
+              },
+              "title": "drop",
+              "type": "array"
+            }
+          },
+          "required": [],
+          "title": "capabilities",
+          "type": "object"
+        },
+        "readOnlyRootFilesystem": {
+          "default": true,
+          "title": "readOnlyRootFilesystem",
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "title": "securityContext",
+      "type": "object"
+    },
+    "service": {
+      "properties": {
+        "port": {
+          "default": 8080,
+          "description": "Port of the Service, to the public address of the pods: the webhooks on `POST /webhooks/github` and the API. The internal address (`/healthz`, `/readyz`) stays on the pods, for the probes.",
+          "title": "port",
+          "type": "integer"
+        },
+        "type": {
+          "default": "ClusterIP",
+          "description": "Type of the Service.",
+          "title": "type",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "service",
+      "type": "object"
+    },
+    "startupProbe": {
+      "description": "Startup probe; the other probes wait until it passes. It allows a minute.",
+      "properties": {
+        "failureThreshold": {
+          "default": 30,
+          "title": "failureThreshold",
+          "type": "integer"
+        },
+        "httpGet": {
+          "properties": {
+            "path": {
+              "default": "/healthz",
+              "title": "path",
+              "type": "string"
+            },
+            "port": {
+              "default": "internal",
+              "title": "port",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "httpGet",
+          "type": "object"
+        },
+        "periodSeconds": {
+          "default": 2,
+          "title": "periodSeconds",
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "startupProbe",
+      "type": "object"
+    },
+    "strategy": {
+      "description": "Update strategy of the Deployment. A new pod is ready before an old one stops, so a replica always serves the webhooks; a published migration stays compatible with the previous version for this overlap (docs/DEPLOYMENT.md).",
+      "properties": {
+        "rollingUpdate": {
+          "properties": {
+            "maxSurge": {
+              "default": 1,
+              "title": "maxSurge",
+              "type": "integer"
+            },
+            "maxUnavailable": {
+              "default": 0,
+              "title": "maxUnavailable",
+              "type": "integer"
+            }
+          },
+          "required": [],
+          "title": "rollingUpdate",
+          "type": "object"
+        },
+        "type": {
+          "default": "RollingUpdate",
+          "title": "type",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "title": "strategy",
+      "type": "object"
+    },
+    "tests": {
+      "properties": {
+        "image": {
+          "properties": {
+            "pullPolicy": {
+              "default": "IfNotPresent",
+              "description": "Pull policy of that image.",
+              "title": "pullPolicy",
+              "type": "string"
+            },
+            "repository": {
+              "default": "docker.io/curlimages/curl",
+              "description": "Image of the `helm test` pod.",
+              "title": "repository",
+              "type": "string"
+            },
+            "tag": {
+              "default": "8.22.0",
+              "description": "Tag of that image.",
+              "title": "tag",
+              "type": "string"
+            }
+          },
+          "required": [],
+          "title": "image",
+          "type": "object"
+        }
+      },
+      "required": [],
+      "title": "tests",
+      "type": "object"
+    },
+    "tolerations": {
+      "description": "Tolerations of the pods.",
+      "items": {
+        "required": []
+      },
+      "title": "tolerations",
+      "type": "array"
+    },
+    "topologySpreadConstraints": {
+      "description": "Topology spread constraints of the server pods.",
+      "items": {
+        "required": []
+      },
+      "title": "topologySpreadConstraints",
+      "type": "array"
+    }
+  },
+  "required": [],
+  "type": "object"
+}

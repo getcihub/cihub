@@ -1,0 +1,8 @@
+---
+# Values that let the chart render without a cluster, for helm lint, helm
+# template and the unit tests. Nothing here is a working configuration.
+database:
+  existingSecret: cihub-postgres
+github:
+  appId: 123456
+  existingSecret: cihub-github

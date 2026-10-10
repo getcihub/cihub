@@ -1,0 +1,25 @@
+suite: ingress
+templates:
+  - ingress.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: renders none by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes the hosts to the Service
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service
+          value:
+            name: RELEASE-NAME-cihub
+            port:
+              name: http

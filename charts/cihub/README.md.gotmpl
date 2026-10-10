@@ -1,0 +1,47 @@
+{{ template "chart.header" . }}
+
+{{ template "chart.description" . }}
+
+{{ template "chart.homepageLine" . }}
+
+## Usage
+
+The chart needs a Postgres 17, a GitHub App created by hand
+([`docs/GITHUB.md`](https://github.com/nlecoy/cihub/blob/main/docs/GITHUB.md)) and two Secrets:
+
+```sh
+kubectl create secret generic cihub-postgres \
+  --from-literal=uri='postgres://cihub:<password>@<host>:5432/cihub'
+kubectl create secret generic cihub-github \
+  --from-file=private-key.pem=<the private key of the App> \
+  --from-literal=webhook-secret=<the webhook secret of the App>
+helm install cihub oci://ghcr.io/nlecoy/charts/cihub \
+  --set database.existingSecret=cihub-postgres \
+  --set github.appId=<the App ID> \
+  --set github.existingSecret=cihub-github
+```
+
+The role of the URL is neither a superuser nor `BYPASSRLS`: CIHub refuses it at startup. It owns the database, as
+the migration Job uses the same URL.
+
+## What the chart installs
+
+- A `pre-install` and `pre-upgrade` hook Job, `cihub server migrate`: the pods of a new version start only once
+  the migrations are applied.
+- A Deployment of `cihub server start`. Each replica runs the four roles; the replicas share the work through
+  Postgres. `server.yaml` comes from a ConfigMap, without secrets: the URL of the database and the webhook secret
+  come from the environment, the private key from a file of its Secret.
+- A Service to the public address of the pods (`POST /webhooks/github` and the API), and an optional Ingress or
+  HTTPRoute. `/healthz` and `/readyz` stay on the internal address of the pods, for the probes.
+- A PodDisruptionBudget when `replicas` is above 1.
+
+The pods mount no ServiceAccount token: CIHub does not call the Kubernetes API.
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+---
+
+_helm-docs generates this README from `Chart.yaml`, `values.yaml` and `README.md.gotmpl`; edit them, then run
+`mise run generate`._
