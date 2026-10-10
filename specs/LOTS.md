@@ -43,10 +43,9 @@ configuration checker, in phase 1).
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
-| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | to do                                    |
-| 10c | Dashboard: PR drawer, actions and audit                | 2     | 10b        | —         | to do                                    |
-| 10d | Dashboard: live updates and search                     | 2     | 10b        | —         | to do                                    |
-| 10e | Dashboard: configuration checker and form              | 2     | 10b        | —         | to do                                    |
+| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | in progress                              |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | to do                                    |
+| 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
@@ -70,7 +69,6 @@ flowchart LR
   L10a --> L10b[10b Queues]
   L10b --> L10c[10c PR and actions]
   L10b --> L10d[10d Live]
-  L10b --> L10e[10e Configuration]
   L9 --> L11[11 Analytics]
   L9 --> L12[12 batched]
   L9 --> L14[14 flakytests]
@@ -80,7 +78,7 @@ flowchart LR
 ```
 
 Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11, 12 and 14
-after lot 9, and lots 10c, 10d and 10e after lot 10b.
+after lot 9, and lots 10c and 10d after lot 10b.
 
 ---
 
@@ -196,7 +194,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ## Phase 2: throughput and visibility
 
-### Lots 10a to 10e: dashboard
+### Lots 10a to 10d: dashboard
 
 The dashboard follows the mockups v3: the list of the queues of an organization, the page of a queue (counters,
 settings, live graph, items), the drawer of a PR (run, checks, history), the settings (configuration, branch
@@ -208,7 +206,11 @@ Decisions:
 - **Q9** (decided October 10, 2026): TypeScript, React, Vite and the TanStack libraries (Router, Query, Form),
   with a client generated from the OpenAPI document. The stack and its rules are in `web/AGENTS.md`.
 - The roles are `admin` and `member`, from the SCM membership. The `viewer` role and the change of a role by an
-  admin come after lot 10e (see "Next").
+  admin come after lot 10d (see "Next").
+- The mockups v5 (October 10, 2026, validated by the project lead) drop the pages of the settings (configuration,
+  branch protection, audit log), the form that changes `.cihub.yaml` and the search, which go to "Next", and add
+  "Your pull requests": where each PR of the person is, and when it should merge. Lot 10e disappears; what remains
+  of it, the configuration check stored for the banner of a queue, goes to lot 10b.
 
 #### Lot 10a: session, roles and frame
 
@@ -296,61 +298,52 @@ Decisions:
 #### Lot 10b: queues and the page of a queue
 
 - **Goal**: read the state of every queue and of the items of one queue.
-- **Content**: `Queue` gains `strategy`, `state_changed_at`, `state_changed_by`, `target_head_sha` and `access`
-  (`ok`, `suspended`, `removed`); `Repo` gains `url` and `access`; `GET …/queues/{queue}` gives the counters of
-  `GET /orgs/{org}/queues`, the number of live runs and the window (current, floor, ceiling); `Item` gains
-  `title`, `author`, `url`, `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of
-  `GET …/prs` takes several states; `Graph` gains the head of the target branch and the live runs (members,
-  predecessors, attempt, status); `GET …/config` reads the effective settings with their source and the text of
-  `.cihub.yaml`. Migrations: the title of the PR, kept up to date by the webhooks; the time and the author of
-  the last state of a queue. Pages: the list of the queues and its empty states; the page of a queue (banners of
-  pause, drain, lost access and invalid file; counters; settings; live graph; tabs). The page reads again every
-  10 seconds until lot 10d.
-- **Frozen interfaces**: `Queue`, `QueueDetail`, `Item`, `Graph`, `QueueConfig`.
-- **Exit criterion**: on the simulator, PRs submitted by comment appear with their title, author and position,
-  and the graph shows their runs; the routes give the same answers after a replay of the log (principle I).
+- **Content**: `Queue` gains `strategy`, `state_changed_at`, `state_changed_by` (the login, for "Paused by
+  @hugo"), `target_head_sha`, `access` (`ok`, `suspended`) and `has_config_file`; `GET …/queues/{queue}` gives the
+  counters of `GET /orgs/{org}/queues`, the number of live runs, the window (current, floor, ceiling) and the
+  summary of the settings (strategy, batching, failure budget, merge method); `Item` gains `title`, `author`,
+  `url`, `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of `GET …/prs` takes
+  several states; `Graph` gains the head of the target branch and the live runs (members, predecessors, attempt,
+  status); the configuration check is stored with its time, refreshed by the repair loop, and `GET …/config-check`
+  reads it without a call to the SCM. Migrations: the title of the PR, kept up to date by the reads of the PRs;
+  the time and the author of the last state of a queue; the stored configuration check. Pages: the queues of an
+  organization and of a repository (cards, the queues that need someone first, a filter from eight queues, the
+  empty states); the page of a queue (banners of pause, drain, lost access, invalid file and up-to-date rule;
+  counters; settings; live graph; the tabs of the items, live, merged, failed and cancelled). The pages read again
+  every 10 seconds until lot 10d.
+- **Frozen interfaces**: `Queue`, `QueueDetail`, `Item`, `Graph`, `ConfigCheck`.
+- **Exit criterion**: a browser test on the simulator shows the cards of the queues and the page of a queue with
+  the PRs submitted by comment, their title, author and position, and the runs of the graph; the routes give the
+  same answers after a replay of the log (principle I); showing a page calls the SCM zero times (principle VII).
 
-#### Lot 10c: PR drawer, actions and audit
+#### Lot 10c: your pull requests, drawer and actions
 
-- **Goal**: follow a PR to its merge and act on the queue from the dashboard.
-- **Content**: `TimelineEvent` gains `actor` and `description`; `RunCheck` gains `status`, `started_at` and
-  `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `POST …/prs` refuses at
-  once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue (the refusals that
-  need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write `item.cancelled` and
-  `item.restarted` in the audit log; `AuditEntry` names its actor and its target and keeps the state before.
-  Pages: the drawer of a PR (run, required and observed checks, history); the submission, cancellation and
-  restart; pause, drain and resume; the audit log, and its page for a `member`.
-- **Frozen interfaces**: `TimelineEvent`, `RunCheck`, `AuditEntry`.
+- **Goal**: a person follows their PRs to the merge, and acts on the queue from the dashboard.
+- **Content**: `GET /orgs/{org}/prs?author={login}`: the current items of a person in every queue, those that
+  merged a moment ago, with the states of the PRs ahead of each one; `QueueDetail` gains the median duration of a
+  run, for the estimate "merges in about N min"; "Your pull requests" on the queues, their spotlight on the page of
+  a queue, the title of the tab. `TimelineEvent` gains `actor` and `description`; `RunCheck` gains `status`,
+  `started_at` and `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `POST
+  …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue
+  (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
+  `item.cancelled` and `item.restarted` in the audit log. The comment of CIHub and the status of a PR link to the
+  page of the PR in the dashboard (`http.public_url`). Pages: the drawer of a PR (where it is, run, required and
+  observed checks, history); the submission, cancellation and restart; pause, drain and resume.
+- **Frozen interfaces**: the answer of `GET /orgs/{org}/prs`, `TimelineEvent`, `RunCheck`.
 - **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
-  submits a PR from the dashboard and follows it until the merge; the audit log then shows the pause of the
-  queue with its state before and after.
+  submits a PR from the dashboard and follows it in "Your pull requests" until the merge; a member pauses
+  nothing; the comment of the PR links to its page.
 
-#### Lot 10d: live updates and search
+#### Lot 10d: live updates
 
-- **Goal**: the pages follow the queue without a reload; a PR is found by its number or its title.
+- **Goal**: the pages follow the queue without a reload.
 - **Content**: `GET /orgs/{org}/stream`, server-sent events built on `NOTIFY cihub_queue`, that carry only
   `queue_changed` (queue, sequence number) and a ping; the dashboard invalidates the reads of the queue that
-  changed and stops its polling; `GET /orgs/{org}/prs?query=` searches the current items of every queue by a
-  prefix of the number or a part of the title; the search palette (`/`).
+  changed and stops its polling; the motion of the mockups v5 (what changed moves, a merged PR goes into its
+  branch) and a notice when a PR of the person moves.
 - **Frozen interfaces**: the event `queue_changed`.
 - **Exit criterion**: a change on the simulator shows on an open page in less than 2 seconds; the stream of an
-  organization carries no event of another one (principle VIII); the stream closes when the server stops; the
-  search finds a PR by the prefix of its number and by a word of its title.
-
-#### Lot 10e: configuration checker and form
-
-- **Goal**: show what the configuration of the SCM misses, and change `.cihub.yaml` through a PR.
-- **Content**: the configuration check is stored with its time and refreshed by the repair loop;
-  `POST …/config-check:run` checks again with the class `interactive`; `ConfigCheck` gives every point of
-  `specs/GITHUB.md` with `is_ok`, in a closed enumeration; `OrgQueue` gains the number of failed points;
-  `POST …/config:propose` writes the change on a branch and opens a PR on the target branch, never a direct
-  commit, with an idempotency key and the `sha` of the file it changes. Pages: configuration (settings, sources,
-  file), branch protection, the badges of the navigation and the banner of the queue, the form that changes the
-  configuration.
-- **Frozen interfaces**: `ConfigCheck`, `ConfigProposal`.
-- **Exit criterion**: on a misconfigured repository of the simulator, the page reports each point of
-  `specs/GITHUB.md`; two calls of `config:propose` with the same key open one PR; showing a page calls the SCM
-  zero times (principle VII).
+  organization carries no event of another one (principle VIII); the stream closes when the server stops.
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 
@@ -482,4 +475,6 @@ Decisions:
 ### Next
 
 Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`; the `viewer` role
-and the change of a role by an admin (`specs/SECURITY.md`). These lots are split when phase 4 starts.
+and the change of a role by an admin (`specs/SECURITY.md`); from the mockups v3, the pages of the settings
+(configuration and its sources, branch protection with "Check again", audit log), the form that changes
+`.cihub.yaml` through a PR, and the search of a PR. These lots are split when phase 4 starts.
