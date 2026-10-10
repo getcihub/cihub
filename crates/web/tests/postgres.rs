@@ -187,7 +187,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
     let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
 
-    let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
+    let anonymous = call(&addr, "GET", "/api/v1/orgs/acme/repos", None).await;
 
     assert_eq!(anonymous.status, 401);
     assert!(
@@ -199,15 +199,15 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(problem["code"], "unauthorized");
     assert_eq!(problem["status"], 401);
     assert_eq!(
-        call(&addr, "GET", "/api/v1/repos", Some("cht_unknown"))
+        call(&addr, "GET", "/api/v1/orgs/acme/repos", Some("cht_unknown"))
             .await
             .status,
         401
     );
 
-    let forbidden = call(&addr, "GET", "/api/v1/repos", Some(&writer)).await;
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&writer)).await;
     assert_eq!(forbidden.status, 403, "{}", forbidden.body);
-    let repos = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    let repos = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
     assert_eq!(repos.status, 200, "{}", repos.body);
     let repos: serde_json::Value = serde_json::from_str(&repos.body).unwrap();
     assert_eq!(repos["repos"][0]["name"], "app");
@@ -220,7 +220,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(document.status, 200);
     let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
     assert!(document["openapi"].as_str().unwrap().starts_with("3.1"));
-    assert!(document["paths"]["/repos"]["get"].is_object());
+    assert!(document["paths"]["/orgs/{org}/repos"]["get"].is_object());
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -230,14 +230,14 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
 
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
-            call(&addr, "GET", "/api/v1/repos", Some(&reader))
+            call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader))
                 .await
                 .status,
             200
         );
     }
 
-    let limited = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    let limited = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
     assert_eq!(limited.status, 429);
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
     let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();

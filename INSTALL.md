@@ -74,8 +74,8 @@ commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high
 CIHub checks the protection of the branch for you, once the queue exists:
 
 ```sh
-curl https://<your CIHub host>/api/v1/repos/<owner>/<repo>/queues -H "Authorization: Bearer <token>"
-curl https://<your CIHub host>/api/v1/queues/<queue id>/config-check -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues/<queue>/config-check -H "Authorization: Bearer <token>"
 ```
 
 An empty list of `findings` means a sound configuration.

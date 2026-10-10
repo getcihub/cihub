@@ -281,7 +281,7 @@ async fn two_queues(pool: &PgPool) -> String {
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, name)
              VALUES ('{main}', '{org}', '{repo}', 'main', 'main'),
-                    ('{hotfix}', '{org}', '{repo}', 'main', 'hotfix');",
+                    ('{hotfix}', '{org}', '{repo}', 'main', 'hotfix/1');",
         main = QueueId::from_ulid(Ulid(6)),
         hotfix = QueueId::from_ulid(Ulid(7)),
     )))
@@ -336,15 +336,16 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
     assert!(!refused.status.success());
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(
-        stderr
-            .contains("acme/app has more than one queue: choose one with `--queue` (hotfix, main)"),
+        stderr.contains(
+            "acme/app has more than one queue: choose one with `--queue` (hotfix/1, main)"
+        ),
         "{stderr}"
     );
-    let drained = cihub(&["drain", "--queue", "hotfix"]);
+    let drained = cihub(&["drain", "--queue", "hotfix/1"]);
     let stdout = String::from_utf8_lossy(&drained.stdout);
 
     assert!(drained.status.success(), "{stdout}");
-    assert_eq!(stdout, "queue `hotfix`: \"draining\" asked\n");
+    assert_eq!(stdout, "queue `hotfix/1`: \"draining\" asked\n");
     let status = cihub(&["status", "--queue", "main"]);
     let stdout = String::from_utf8_lossy(&status.stdout);
 
