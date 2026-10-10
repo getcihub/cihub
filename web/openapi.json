@@ -1,0 +1,1993 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CIHub API",
+    "description": "CIHub HTTP server of the web role: the webhooks of the SCM, then the API",
+    "license": {
+      "name": "FSL-1.1-ALv2",
+      "identifier": "FSL-1.1-ALv2"
+    },
+    "version": "1"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "tags": [],
+        "summary": "The user of the session and the organizations that they reach.",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/audit": {
+      "get": {
+        "tags": [],
+        "summary": "The audit log of the organization, newest first.",
+        "operationId": "list_audit",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "path",
+            "description": "The `next_cursor` of the previous page.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "take",
+            "in": "path",
+            "description": "At most 100; 50 by default.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/queues": {
+      "get": {
+        "tags": [],
+        "summary": "Every queue of the organization with its counters, for the overview of\nthe dashboard. Like the graph and the commands, the counters read only\nthe current item of each PR.",
+        "operationId": "list_org_queues",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgQueueList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos": {
+      "get": {
+        "tags": [],
+        "summary": "The repositories of the organization.",
+        "operationId": "list_repos",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues": {
+      "get": {
+        "tags": [],
+        "summary": "The queues of a repository.",
+        "operationId": "list_queues",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}": {
+      "get": {
+        "tags": [],
+        "operationId": "get_queue",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queue"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [],
+        "summary": "Asks the queue for a new state; the queue changes it at its next\nreconciliation.",
+        "operationId": "update_queue",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateQueue"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Queue"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/config-check": {
+      "get": {
+        "tags": [],
+        "summary": "What the configuration of the SCM misses for the queue: no finding means a sound configuration.",
+        "operationId": "config_check",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigCheck"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/graph": {
+      "get": {
+        "tags": [],
+        "summary": "The merge graph of the queue: its live items in order, and the\npredecessors that the test of each one merges before it.",
+        "operationId": "graph",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Graph"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs": {
+      "get": {
+        "tags": [],
+        "summary": "The items of a queue, live and past, newest submission first.",
+        "operationId": "list_items",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "path",
+            "description": "Only the items in this state.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "path",
+            "description": "Submitted at or after this time (RFC 3339).",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "until",
+            "in": "path",
+            "description": "Submitted before this time (RFC 3339).",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "path",
+            "description": "The `next_cursor` of the previous page.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "take",
+            "in": "path",
+            "description": "At most 100; 50 by default.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [],
+        "operationId": "submit",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitPr"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "prs:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}": {
+      "get": {
+        "tags": [],
+        "summary": "The last item of a PR in the queue.",
+        "operationId": "get_pr",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "The number of the PR.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "include",
+            "in": "path",
+            "description": "`timeline` adds the events of the item.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrItem"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel": {
+      "post": {
+        "tags": [],
+        "summary": "Cancels the current item of the PR (`admin_requested`).",
+        "operationId": "cancel_item",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "The number of the PR.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "prs:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:restart": {
+      "post": {
+        "tags": [],
+        "summary": "Restarts the tests of the current item of the PR, in test\n(`tests_restarted_by_api_request`).",
+        "operationId": "restart_item",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "description": "The number of the PR.",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "prs:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet": {
+      "post": {
+        "tags": [],
+        "summary": "The last item of each PR, at most 50 PRs.",
+        "operationId": "batch_get",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchGet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchGetResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/queues/{queue}:resync": {
+      "post": {
+        "tags": [],
+        "summary": "`POST …/queues/{queue}:resync`: reads again from the SCM each live PR,\nthe checks of each live run and the head of the target.",
+        "operationId": "queue_action",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:write"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/runs/{run_id}": {
+      "get": {
+        "tags": [],
+        "summary": "The detail of a run.",
+        "operationId": "test_run",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "The identifier of the run.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestRun"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Accepted": {
+        "type": "object",
+        "description": "A request that the queue does later: a submission reads the PR first.",
+        "required": [
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "description": "An action of an admin, or a change of a queue.",
+        "required": [
+          "id",
+          "action",
+          "target",
+          "occurred_at"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor_user_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "after": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "before": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
+      "AuditPage": {
+        "type": "object",
+        "description": "A page of the audit log, newest first.",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BatchGet": {
+        "type": "object",
+        "description": "`POST /orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet`.",
+        "required": [
+          "pr_numbers"
+        ],
+        "properties": {
+          "pr_numbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "BatchGetResponse": {
+        "type": "object",
+        "required": [
+          "items",
+          "not_found"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          },
+          "not_found": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "ConfigCheck": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: no finding means a sound\nconfiguration.",
+        "required": [
+          "findings"
+        ],
+        "properties": {
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            }
+          }
+        }
+      },
+      "Dependent": {
+        "type": "object",
+        "description": "A live run whose predecessors hold a PR of this run.",
+        "required": [
+          "run_id",
+          "pr_numbers"
+        ],
+        "properties": {
+          "pr_numbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          "run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "The machine code of an error.",
+        "enum": [
+          "unauthorized",
+          "forbidden",
+          "csrf_refused",
+          "not_found",
+          "invalid_request",
+          "rate_limited",
+          "invalid_state",
+          "internal"
+        ]
+      },
+      "Finding": {
+        "type": "object",
+        "description": "A point of the configuration of the SCM that the queue needs.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "Graph": {
+        "type": "object",
+        "description": "The merge graph: the live items, and the predecessors that their tests\nmerge before them.",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "properties": {
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            }
+          }
+        }
+      },
+      "GraphEdge": {
+        "type": "object",
+        "description": "The test of `to` merges `from` before it.",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "GraphNode": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "pr_number",
+          "state"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "string"
+          },
+          "position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "description": "A submission of a PR.",
+        "required": [
+          "id",
+          "queue_id",
+          "pr_number",
+          "head_sha",
+          "state",
+          "state_reason",
+          "state_description",
+          "state_changed_at",
+          "priority",
+          "is_current",
+          "block_reasons",
+          "submitted_at"
+        ],
+        "properties": {
+          "block_reasons": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "group_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "head_sha": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "is_current": {
+            "type": "boolean"
+          },
+          "merged_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The order in the queue; `None` before the admission."
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Lower first.",
+            "minimum": 0
+          },
+          "queue_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "state_changed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state_description": {
+            "type": "string",
+            "description": "The sentence of `state_reason`, in English, for a person; it can\nchange without notice, unlike `state_reason`."
+          },
+          "state_reason": {
+            "type": "string"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ItemCounts": {
+        "type": "object",
+        "description": "The current items of a queue in each state that is not terminal.",
+        "required": [
+          "not_ready",
+          "pending",
+          "testing",
+          "pending_failure",
+          "tests_passed"
+        ],
+        "properties": {
+          "not_ready": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "pending_failure": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "testing": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "tests_passed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ItemPage": {
+        "type": "object",
+        "description": "A page of items, newest submission first.",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The cursor of the next page; `None` on the last page."
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "description": "`GET /me`: the user of a session of the dashboard, and the organizations\nthat they reach.",
+        "required": [
+          "login",
+          "orgs",
+          "version"
+        ],
+        "properties": {
+          "app_install_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The page of the SCM that installs the App on an account, or chooses\nthe repositories of its installation; `null` when the SCM did not\nanswer."
+          },
+          "login": {
+            "type": "string"
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgRole"
+            },
+            "description": "By slug."
+          },
+          "version": {
+            "type": "string",
+            "description": "The version of the instance."
+          }
+        }
+      },
+      "OrgQueue": {
+        "type": "object",
+        "description": "A queue of the organization, with its counters.",
+        "required": [
+          "repo",
+          "queue",
+          "counts",
+          "merged_last_24h",
+          "failed_last_24h"
+        ],
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ItemCounts"
+          },
+          "failed_last_24h": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The current items that reached `failed` in the 24 hours before the\nrequest.",
+            "minimum": 0
+          },
+          "last_merged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the last current item reached `merged`; `None` if no item merged."
+          },
+          "merged_last_24h": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The current items that reached `merged` in the 24 hours before the\nrequest.",
+            "minimum": 0
+          },
+          "queue": {
+            "$ref": "#/components/schemas/Queue"
+          },
+          "repo": {
+            "type": "string",
+            "description": "The name of the repository of the queue, as the routes name it."
+          }
+        }
+      },
+      "OrgQueueList": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/queues`: by repository name, then queue name.",
+        "required": [
+          "queues"
+        ],
+        "properties": {
+          "queues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgQueue"
+            }
+          }
+        }
+      },
+      "OrgRole": {
+        "type": "object",
+        "description": "An organization of the user, and the role of the user in it.",
+        "required": [
+          "slug",
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "PrItem": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}`: the last item of the PR.",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/Item"
+          },
+          "timeline": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            },
+            "description": "With `?include=timeline`: the events of the item, in their order."
+          }
+        }
+      },
+      "PriorityInput": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          {
+            "type": "string"
+          }
+        ],
+        "description": "The priority of a submission: a name or a value from 0 to 255."
+      },
+      "Problem": {
+        "type": "object",
+        "description": "An error, as `application/problem+json` (RFC 9457).",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "Queue": {
+        "type": "object",
+        "description": "A queue of a target branch.",
+        "required": [
+          "id",
+          "repo_id",
+          "name",
+          "target_branch",
+          "state",
+          "mode"
+        ],
+        "properties": {
+          "config_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the last file read is not valid; the queue keeps the last valid\none."
+          },
+          "config_sha": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The head of the target whose configuration file the queue read last."
+          },
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "target_branch": {
+            "type": "string"
+          }
+        }
+      },
+      "QueueList": {
+        "type": "object",
+        "required": [
+          "queues"
+        ],
+        "properties": {
+          "queues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Queue"
+            }
+          }
+        }
+      },
+      "Repo": {
+        "type": "object",
+        "description": "A repository that the token sees.",
+        "required": [
+          "id",
+          "namespace",
+          "name",
+          "default_branch"
+        ],
+        "properties": {
+          "default_branch": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          }
+        }
+      },
+      "RepoList": {
+        "type": "object",
+        "required": [
+          "repos"
+        ],
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Repo"
+            }
+          }
+        }
+      },
+      "RequestedQueueState": {
+        "type": "string",
+        "description": "The state that `PATCH /orgs/{org}/repos/{repo}/queues/{queue}` asks for.",
+        "enum": [
+          "running",
+          "paused",
+          "draining"
+        ]
+      },
+      "RunCheck": {
+        "type": "object",
+        "description": "A check or a status observed on the test SHA of a run.",
+        "required": [
+          "name",
+          "kind",
+          "required",
+          "observed_at"
+        ],
+        "properties": {
+          "conclusion": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "details_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SubmitPr": {
+        "type": "object",
+        "description": "`POST /orgs/{org}/repos/{repo}/queues/{queue}/prs`.",
+        "required": [
+          "pr_number"
+        ],
+        "properties": {
+          "direct": {
+            "type": "boolean"
+          },
+          "no_batch": {
+            "type": "boolean"
+          },
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "priority": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PriorityInput",
+                "description": "The `priority_rules` of the file decide without it."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TestRun": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/runs/{run_id}`, as `specs/API.md` fixes it.",
+        "required": [
+          "id",
+          "queue_id",
+          "group_id",
+          "attempt",
+          "status",
+          "status_reason",
+          "test_branch",
+          "base_sha",
+          "tested_pr_numbers",
+          "head_shas",
+          "predecessor_pr_numbers",
+          "required_statuses",
+          "started_at",
+          "failure_causing_statuses",
+          "checks",
+          "dependents"
+        ],
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "base_sha": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunCheck"
+            }
+          },
+          "conflict_culprit": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "dependents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dependent"
+            }
+          },
+          "draft_pr_number": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "failure_causing_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failure_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "head_shas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The heads merged in order: the predecessors, then the members."
+          },
+          "id": {
+            "type": "string"
+          },
+          "impacted_targets": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "last_report_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "predecessor_pr_numbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          "queue_id": {
+            "type": "string"
+          },
+          "required_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_statuses_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_reason": {
+            "type": "string"
+          },
+          "test_branch": {
+            "type": "string"
+          },
+          "test_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tested_pr_numbers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "TimelineEvent": {
+        "type": "object",
+        "description": "An event of the log of a queue.",
+        "required": [
+          "id",
+          "seq",
+          "type",
+          "actor_kind",
+          "occurred_at",
+          "payload"
+        ],
+        "properties": {
+          "actor_kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateQueue": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "$ref": "#/components/schemas/RequestedQueueState"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-cihub_session"
+      },
+      "token": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

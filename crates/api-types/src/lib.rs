@@ -81,7 +81,7 @@ pub struct Me {
     /// The version of the instance.
     pub version: String,
     /// The page of the SCM that installs the App on an account, or chooses
-    /// the repositories of its installation; `None` when the SCM did not
+    /// the repositories of its installation; `null` when the SCM did not
     /// answer.
     pub app_install_url: Option<String>,
 }

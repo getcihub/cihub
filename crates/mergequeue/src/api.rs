@@ -82,6 +82,11 @@ struct ApiState {
 )]
 struct MergeQueueApi;
 
+/// The `OpenAPI` document of the routes of the queues.
+pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
+    MergeQueueApi::openapi()
+}
+
 /// The routes of the module and their `OpenAPI` document.
 pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     let routes = Router::new()
@@ -114,7 +119,7 @@ pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
         .with_state(ApiState { pool, clock, scm });
     ModuleApi {
         routes,
-        openapi: MergeQueueApi::openapi(),
+        openapi: openapi(),
     }
 }
 

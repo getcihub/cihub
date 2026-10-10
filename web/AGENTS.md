@@ -6,13 +6,15 @@ does not also check.
 
 ## Stack (Q9, decided)
 
-- TypeScript in strict mode (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); no `any`, no
-  non-null assertion `!`, no `@ts-ignore`.
+- TypeScript in strict mode (`strict`, `noUncheckedIndexedAccess`); no `any`, no non-null assertion `!`, no
+  `@ts-ignore`. Not `exactOptionalPropertyTypes`: the generated client does not compile with it.
 - React, Vite, and the TanStack libraries: Router for the routes, Query for the data of the server, Form for the
   forms. Table only for a table that the client sorts or filters; the server already orders the items.
-- The client of the API is generated from `/api/v1/openapi.json` by `@hey-api/openapi-ts`, with its plugin
-  `@tanstack/react-query` (`queryOptions`, `mutationOptions`, query keys). The generated files are never edited
-  by hand; a change of the API regenerates them in the same change.
+- The client of the API is generated from `web/openapi.json`, the document that `/api/v1/openapi.json` serves,
+  by `@hey-api/openapi-ts`, with its plugin `@tanstack/react-query` (`queryOptions`, `mutationOptions`, query
+  keys). The generated files are never edited by hand; a change of the API regenerates them in the same change
+  (`mise run web-generate`), and `mise run web-generate-check` fails otherwise. The routes outside the API
+  (`/auth/*`, `specs/API.md`) are called with `fetch` in `src/session.ts` only.
 - Zod 4 for the search parameters and the forms, without adapter (Standard Schema).
 - Vitest and Testing Library for the components; Playwright for the browser tests, against a server on the
   simulator (`cihub-scm`, feature `sim`), never the real SCM.
@@ -53,7 +55,8 @@ does not also check.
 ## Interface
 
 - The design tokens (colors, spacing, the two themes) are CSS custom properties, taken from the mockups; no CSS
-  framework. A component keeps its styles in a CSS module next to it.
+  framework. A component keeps its styles in a CSS module next to it, with a `*.module.d.css.ts` that names its
+  classes, so that a class is a `string` and not `string | undefined`.
 - Every action works with the keyboard; `/` opens the search, `Escape` closes a drawer or a modal. A page has its
   loading, empty and error states.
 
@@ -61,5 +64,8 @@ does not also check.
 
 `mise run lint` and `mise run check` cover the dashboard: type check, ESLint (`typescript-eslint`,
 `react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), Prettier, Vitest.
+`mise run web-dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
+`mise run web-build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web-generate`
+writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`.
 
 Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10e).

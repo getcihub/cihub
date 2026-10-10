@@ -81,10 +81,11 @@ impl Modify for Security {
 )]
 struct PlatformApi;
 
-pub fn openapi(modules: &[ModuleApi]) -> utoipa::openapi::OpenApi {
+/// The document of the platform and of the parts that the modules give.
+pub fn openapi(modules: &[utoipa::openapi::OpenApi]) -> utoipa::openapi::OpenApi {
     let mut document = PlatformApi::openapi();
     for module in modules {
-        document.merge(module.openapi.clone());
+        document.merge(module.clone());
     }
 
     accept_sessions(&mut document);
@@ -121,7 +122,11 @@ pub(crate) fn router(
     modules: Vec<ModuleApi>,
     scm: Arc<dyn Scm>,
 ) -> Router {
-    let document = openapi(&modules);
+    let parts: Vec<_> = modules
+        .iter()
+        .map(|module| module.openapi.clone())
+        .collect();
+    let document = openapi(&parts);
     let state = ApiState {
         pool,
         now,

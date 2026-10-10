@@ -77,7 +77,7 @@ crates/
   cli/                   cihub-cli            (exists, the cihub binary)
   ...                    the other crates of the table, with their lot
 migrations/              Postgres migrations embedded in the cihub binary (Lot 2)
-web/                     dashboard, embedded by the web role (Lots 10a to 10e)
+web/                     dashboard (React, Vite, TanStack), embedded in the binary by crates/web/build.rs (Lots 10a to 10e)
 ```
 
 | Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |

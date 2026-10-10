@@ -413,6 +413,7 @@ async fn sign_in(addr: &str, sim: &Sim, person: &ScmUser, next: &str) -> Answer 
         redirect_url: param("redirect_uri"),
         state: param("state"),
         code_challenge: param("code_challenge"),
+        asks_for_account: false,
     };
     let kept = cookie_set(&started.raw_head, "__Host-cihub_sign_in").unwrap();
     let code = sim.authorize(person, &request);

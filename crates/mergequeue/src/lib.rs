@@ -119,6 +119,11 @@ macro_rules! register {
     }};
 }
 
+/// The part of the API document that the routes of the queues give.
+pub fn openapi() -> utoipa::openapi::OpenApi {
+    api::openapi()
+}
+
 /// The merge queue module: the executors of its jobs, which call `scm`, and its
 /// scheduler loop, which runs as `owner`.
 pub fn module(

@@ -75,7 +75,7 @@ impl GithubApp {
 
     pub(crate) fn sign_in_address(&self, request: &SignInRequest) -> Option<String> {
         let client = self.sign_in_client()?;
-        let address = Url::parse_with_params(
+        let mut address = Url::parse_with_params(
             &format!("{}/login/oauth/authorize", self.web_url()),
             [
                 ("client_id", client.client_id.as_str()),
@@ -86,6 +86,12 @@ impl GithubApp {
             ],
         )
         .ok()?;
+
+        if request.asks_for_account {
+            address
+                .query_pairs_mut()
+                .append_pair("prompt", "select_account");
+        }
         Some(address.into())
     }
 
