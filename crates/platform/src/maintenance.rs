@@ -40,7 +40,7 @@ pub async fn request_maintenance(
 }
 
 /// Creates the partitions of `events` for the month of `now` and the next,
-/// then deletes the done jobs past their retention, and drops the old partitions of `events` that snapshots cover.
+/// then deletes the done jobs past their retention and the expired sessions, and drops the old partitions of `events` that snapshots cover.
 /// Each step can run twice without harm.
 ///
 /// # Errors
@@ -57,6 +57,12 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         .await
         .map_err(PlatformError::Query)?
         .rows_affected();
+    let sessions = sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(PlatformError::Query)?
+        .rows_affected();
     let (dropped, kept) = drop_old_event_partitions(&mut tx, now).await?;
 
     tx.commit().await.map_err(PlatformError::Query)?;
@@ -64,7 +70,12 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         info!(partition, "event partition kept: events without a snapshot");
     }
 
-    info!(jobs, partitions = dropped.len(), "maintenance done");
+    info!(
+        jobs,
+        sessions,
+        partitions = dropped.len(),
+        "maintenance done"
+    );
     Ok(())
 }
 

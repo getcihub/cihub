@@ -769,6 +769,23 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         tx.commit().await.unwrap();
     }
 
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ('user-9', '9', 'hubot')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, expires_at) in [("expired", now), ("live", now + Duration::days(1))] {
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at)
+             VALUES ($1, 'user-9', sha256($1::bytea), $2, $3)",
+        )
+        .bind(id)
+        .bind(now - Duration::days(14))
+        .bind(expires_at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
     run_maintenance(&pool, now).await.unwrap();
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -785,6 +802,12 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .unwrap();
 
     assert_eq!(jobs, ["maintenance:2026-10-10:1", "recent"]);
+    let sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(sessions, ["live"]);
     let partitions: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
          WHERE i.inhparent = 'events'::regclass ORDER BY 1",
