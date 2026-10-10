@@ -405,7 +405,7 @@ async fn a_fact_that_changes_nothing_is_not_written(pool: PgPool) {
     w.submit(1).await;
 
     let seq = w.log.seq;
-    assert!(w.observe(1, PrState::Open).await.is_empty());
+    assert_eq!(w.observe(1, PrState::Open).await, []);
     assert_eq!(w.log.seq, seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1400,11 +1400,11 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
     assert!(error.contains("rate limit"), "{error}");
     enqueue_job(&mut tx, &read_job(2), now, now).await.unwrap();
 
-    assert!(
+    assert_eq!(
         claim_jobs(&mut tx, "worker", reset - Duration::seconds(1), 10)
             .await
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        []
     );
 
     let after = claim_jobs(&mut tx, "worker", reset, 10).await.unwrap();
@@ -3295,7 +3295,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     let item = client.pr(&queue, number, true).await.unwrap();
     assert_eq!(item.item.state, ItemState::Cancelled);
-    assert!(!item.timeline.unwrap().is_empty());
+    assert_ne!(item.timeline.unwrap(), []);
 
     let refused = client.restart(&item_id).await.unwrap_err();
     assert!(

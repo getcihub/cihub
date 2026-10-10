@@ -310,7 +310,7 @@ fn a_flaky_failure_of_a_batch_evicts_no_pr() {
     w.drain_with(|run, _| run == 1);
 
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 2, 3, 4]);
-    assert!(ended(&w, ItemState::Failed).is_empty());
+    assert_eq!(ended(&w, ItemState::Failed), []);
     assert_replays(&w);
 }
 
@@ -427,7 +427,7 @@ fn a_conflict_in_a_batch_is_bisected_and_evicts_only_its_pr() {
 #[test]
 fn a_planted_failure_is_isolated_in_log2_rounds() {
     for size in 2..=8_u64 {
-        let rounds = u64::from(u64::BITS - (size - 1).leading_zeros());
+        let rounds = u64::from((size - 1).bit_width());
 
         for culprit in 1..=size {
             let mut w = bisecting(u32::try_from(size).unwrap());

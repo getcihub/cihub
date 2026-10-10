@@ -634,7 +634,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         ))
         .unwrap();
         assert_eq!(config.merge_checks("main", "main"), ["build", "e2e tests"]);
-        assert!(config.merge_checks("main", "other").is_empty());
+        assert_eq!(config.merge_checks("main", "other"), [] as [String; 0]);
         for (body, shown) in [
             ("      - label = ready\n", "label = ready"),
             ("      - -check-success = build\n", "-check-success = build"),
