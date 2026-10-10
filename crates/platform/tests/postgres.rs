@@ -11,12 +11,12 @@ use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
     MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
     backoff, begin_reconciliation, claim_jobs, complete_job, create_token, delete_delivery,
-    enqueue_job, fail_job, lock_queue, maintenance_job, pending_deliveries, record_budgets,
-    release_leases, request_installations_sync, request_installations_sync_at_start,
-    request_maintenance, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
-    run_sync_installation, run_sync_installations, run_sync_repos, run_worker, schedule_tick,
-    store_delivery, sync_installation_executor, sync_installation_job, sync_repos_job,
-    until_next_tick,
+    enqueue_job, fail_job, find_route, lock_queue, maintenance_job, pending_deliveries,
+    record_budgets, release_leases, request_installations_sync,
+    request_installations_sync_at_start, request_maintenance, request_repo_syncs,
+    run_budget_writer, run_maintenance, run_router, run_sync_installation, run_sync_installations,
+    run_sync_repos, run_worker, schedule_tick, store_delivery, sync_installation_executor,
+    sync_installation_job, sync_repos_job, until_next_tick,
 };
 use cihub_scm::sim::Sim;
 use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
@@ -973,6 +973,43 @@ async fn the_router_routes_each_delivery_to_its_connection_and_sure_queue(pool: 
     router.await.unwrap().unwrap();
 }
 
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_repository_of_two_connections_routes_to_the_queue_of_each(pool: PgPool) {
+    seed(&pool).await;
+    let other_org = OrgId::from_ulid(Ulid(2));
+    let other_connection = ConnectionId::from_ulid(Ulid(2));
+    let other_queue = queue(6);
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('{other_org}', 'other');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{other_connection}', '{other_org}', '2', 'github_app', '2', now(), '{{}}');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('r2', '{other_org}', '{other_connection}', '1', 'other', 'app', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+             VALUES ('{other_queue}', '{other_org}', 'r2', 'main', 'main');"
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    let main_of = |installation: &str| {
+        fake_translate(
+            "pr",
+            &json!({ "installation": installation, "repo": "1", "branch": "main" }),
+        )
+        .unwrap()
+    };
+    let first = find_route(&mut tx, &main_of("1")).await.unwrap();
+    let second = find_route(&mut tx, &main_of("2")).await.unwrap();
+
+    assert_eq!(first.org_id, Some(org()));
+    assert_eq!(first.queue_id, Some(queue(1)));
+    assert_eq!(second.org_id, Some(other_org));
+    assert_eq!(second.queue_id, Some(other_queue));
+}
+
 async fn installation_jobs(pool: &PgPool) -> Vec<String> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_scalar(
@@ -1367,7 +1404,7 @@ async fn repos(pool: &PgPool) -> Vec<RepoRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
         "SELECT external_id, org_id, connection_id, namespace, name, default_branch
-         FROM repos ORDER BY external_id",
+         FROM repos ORDER BY external_id, org_id",
     )
     .fetch_all(&mut *tx)
     .await
@@ -1387,7 +1424,7 @@ fn sim_repo(connection: &str, external_id: &str, name: &str) -> RepoRef {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
+async fn a_read_of_the_repositories_creates_and_updates_those_of_its_connection(pool: PgPool) {
     seed(&pool).await;
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(
@@ -1396,7 +1433,7 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
                                       synced_at, permissions)
              VALUES ('c2', 'other', '2', 'github_app', '2', now(), '{}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
-             VALUES ('r4', 'other', 'c2', '4', 'other', 'kept', 'main');",
+             VALUES ('r4', 'other', 'c2', '4', 'other', 'moved', 'main');",
     )
     .execute(&mut *tx)
     .await
@@ -1406,11 +1443,11 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     let sim = Sim::new();
     sim.add_repo(&sim_repo("1", "1", "renamed"), "trunk", &[]);
     sim.add_repo(&sim_repo("1", "2", "lib"), "main", &[]);
-    sim.add_repo(&sim_repo("1", "4", "taken"), "main", &[]);
+    sim.add_repo(&sim_repo("1", "4", "moved"), "main", &[]);
     sim.add_repo(&sim_repo("9", "3", "elsewhere"), "main", &[]);
 
     let job = sync_repos_job(org(), connection(), "w");
-    assert_eq!(run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap(), 2);
+    assert_eq!(run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap(), 3);
     let row = |id: &str, org: &str, connection: &str, namespace: &str, name: &str, branch: &str| {
         (
             id.to_owned(),
@@ -1425,7 +1462,8 @@ async fn a_read_of_the_repositories_creates_and_updates_them(pool: PgPool) {
     let expected = [
         row("1", &o, &c, "acme", "renamed", "trunk"),
         row("2", &o, &c, "acme", "lib", "main"),
-        row("4", "other", "c2", "other", "kept", "main"),
+        row("4", &o, &c, "acme", "moved", "main"),
+        row("4", "other", "c2", "other", "moved", "main"),
     ];
 
     assert_eq!(repos(&pool).await, expected);

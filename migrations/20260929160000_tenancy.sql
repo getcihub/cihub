@@ -67,12 +67,13 @@ CREATE TABLE repos (
     id             text        PRIMARY KEY,
     org_id         text        NOT NULL REFERENCES orgs (id),
     connection_id  text        NOT NULL,
-    external_id    text        NOT NULL UNIQUE,
+    external_id    text        NOT NULL,
     namespace      text        NOT NULL,
     name           text        NOT NULL,
     default_branch text        NOT NULL,
     created_at     timestamptz NOT NULL DEFAULT now(),
     UNIQUE (org_id, id),
+    UNIQUE (connection_id, external_id),
     FOREIGN KEY (org_id, connection_id) REFERENCES scm_connections (org_id, id)
 );
 

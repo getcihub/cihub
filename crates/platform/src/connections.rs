@@ -150,10 +150,9 @@ pub async fn run_sync_repos(
          SELECT r.id, $2, $3, r.external_id, r.namespace, r.name, r.default_branch
          FROM unnest($1::text[], $4::text[], $5::text[], $6::text[], $7::text[])
               AS r (id, external_id, namespace, name, default_branch)
-         ON CONFLICT (external_id) DO UPDATE
-         SET connection_id = EXCLUDED.connection_id, namespace = EXCLUDED.namespace,
-             name = EXCLUDED.name, default_branch = EXCLUDED.default_branch
-         WHERE repos.org_id = EXCLUDED.org_id",
+         ON CONFLICT (connection_id, external_id) DO UPDATE
+         SET namespace = EXCLUDED.namespace, name = EXCLUDED.name,
+             default_branch = EXCLUDED.default_branch",
     )
     .bind(&ids)
     .bind(org_id.to_string())

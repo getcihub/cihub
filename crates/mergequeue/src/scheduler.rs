@@ -678,7 +678,7 @@ async fn pass_comment(
         None => None,
     };
     if let Some(command) = item_command
-        && let Some(repo_id) = repo_of(conn, delivery, comment.repo_external_id).await?
+        && let Some(repo_id) = repo_of_command(conn, delivery, comment.repo_external_id).await?
     {
         let request = PrCommandRequest {
             repo_id,
@@ -742,6 +742,27 @@ async fn repo_of(
             .fetch_optional(&mut *conn)
             .await?;
     repo.map(|id| parse_id(&id, &id)).transpose()
+}
+
+/// Like [`repo_of`], for a command: a command on a repository that the
+/// connection does not list is lost, so it is logged.
+async fn repo_of_command(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    external_id: &str,
+) -> Result<Option<RepoId>, MergeQueueError> {
+    let repo = repo_of(conn, delivery, external_id).await?;
+
+    if repo.is_none() {
+        warn!(
+            delivery_id = delivery.delivery_id,
+            org_id = %delivery.org_id,
+            repo_external_id = external_id,
+            "command on an unknown repository ignored"
+        );
+    }
+
+    Ok(repo)
 }
 
 /// Gives `change` to the queue of the live item of its PR, which reads the
@@ -905,7 +926,7 @@ async fn request_submission(
     command: &Command<'_>,
     now: OffsetDateTime,
 ) -> Result<(), MergeQueueError> {
-    let Some(repo) = repo_of(conn, delivery, command.repo_external_id).await? else {
+    let Some(repo) = repo_of_command(conn, delivery, command.repo_external_id).await? else {
         return Ok(());
     };
 
