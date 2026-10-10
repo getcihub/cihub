@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.1](https://github.com/getcihub/cihub/compare/v0.2.0...v0.2.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **platform:** attach a repository to each connection that lists it ([f1ed32e](https://github.com/getcihub/cihub/commit/f1ed32ef359886fbf5cf89ed3aded551c124491d))
+
+
+### Miscellaneous Chores
+
+* **deps:** update dependency rust to v1.99.0 ([8d0a498](https://github.com/getcihub/cihub/commit/8d0a49890c512f78b99da1fb4333cc631e94b824))
+* **deps:** update rust crate base64 to 0.23.0 ([bc05264](https://github.com/getcihub/cihub/commit/bc0526493250fe88576c98a11bff9359d8f95817))
+
 ## [0.2.0](https://github.com/getcihub/cihub/compare/v0.1.0...v0.2.0) (2026-10-10)
 
 
