@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: CI
 
@@ -21,11 +22,9 @@ concurrency:
 permissions:
   contents: read
 
-# The runner of a job is new for each run: incremental state and full debug
-# information are work that no one reads.
 env:
-  CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
+  HELM_UNITTEST_VERSION: "v1.2.1"
 
 # Every job runs on a runner hosted by GitHub: the repository is public, and a
 # self-hosted runner would run the code of the pull requests of forks.
@@ -187,7 +186,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-  # The chart jobs are not in the needs of CI: they are not required statuses.
   helm-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
@@ -233,7 +231,9 @@ jobs:
           install_args: --locked
 
       - name: Run helm unit tests
-        run: mise run helm-unittest
+        run: |-
+          helm plugin install https://github.com/helm-unittest/helm-unittest --version "${HELM_UNITTEST_VERSION}" --verify=false
+          mise run helm-unittest
 
   smoke:
     if: >-
@@ -260,24 +260,28 @@ jobs:
       - name: Run smoke test
         run: mise run smoke
 
-  # The required status. cancelled counts as failed: a job that never reached
-  # a verdict must not let a PR through.
-  ci:
+  status:
     if: ${{ !cancelled() }}
-    name: CI
+    name: Build Success
     needs:
       - rust-lint
       - rust-test
       - rust-integration
       - rust-cover
       - workflow-lint
+      - helm-lint
+      - helm-unittest
+      - smoke
     runs-on: ubuntu-26.04
     permissions: {}
     steps:
+      # cancelled counts as failed: !cancelled() above still runs this job when
+      # individual needs were cancelled but the run was not, and a required job
+      # that never reached a verdict must not clear the merge gate.
       - name: Any jobs failed?
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
 
       - name: All jobs passed or skipped?
         if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
-        run: echo "All jobs passed or skipped"
+        run: echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"

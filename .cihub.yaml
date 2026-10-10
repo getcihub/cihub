@@ -8,9 +8,9 @@ queues:
     queue_conditions:
       - -draft
       - -label = do-not-merge
-      - check-success = CI
+      - check-success = Build Success
     merge_conditions:
-      - check-success = CI
+      - check-success = Build Success
   - name: main
     branch: main
     strategy: batched
@@ -18,6 +18,6 @@ queues:
     queue_conditions:
       - -draft
       - -label = do-not-merge
-      - check-success = CI
+      - check-success = Build Success
     merge_conditions:
-      - check-success = CI
+      - check-success = Build Success

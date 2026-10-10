@@ -230,12 +230,11 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 ## Project CI
 
-`.github/workflows/ci.yml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
-test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise run cover`) and `Workflow Lint`
-(`mise run lint-workflows`). The last job, `CI`, is the required status of the `main` branch: it fails when one of
-these jobs failed or was cancelled. `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm
-Unittest` (`mise run helm-unittest`) and `Smoke` (`mise run smoke`) run on every pull request too, but are not in
-the needs of `CI`: they are not required statuses.
+`.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
+test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise run cover`), `Workflow Lint`
+(`mise run lint-workflows`), `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm Unittest`
+(`mise run helm-unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
+of the `main` branch: it fails when one of these jobs failed or was cancelled.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each
 job installs the tools with `mise install --locked`. Each action and each image is pinned by its SHA or its
@@ -243,7 +242,7 @@ digest, with the version as a comment or a tag.
 
 Every workflow runs on the standard runners hosted by GitHub (`ubuntu-26.04`), never on a self-hosted runner: the
 repository is public, and a self-hosted runner would run the code of the pull requests of forks. The runner of a
-job is new for each run, so `ci.yml` turns off incremental compilation (`CARGO_INCREMENTAL=0`) and keeps only the
+job is new for each run, so `ci.yaml` turns off incremental compilation (`CARGO_INCREMENTAL=0`) and keeps only the
 line numbers of the debug information (`CARGO_PROFILE_DEV_DEBUG=line-tables-only`). The Rust jobs cache the
 Cargo registry and `target/` with `actions/cache`, under a key per job and per content of `Cargo.lock` and
 `mise.lock`; `Rust Test` and `Rust Integration` share their key, as they build the same test binaries. `Rust
@@ -256,7 +255,7 @@ yet.
 release-please (`.github/workflows/release-please.yaml`) maintains a release PR from the
 commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
-in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `CI` passes. The workflow
+in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
 triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `charts/cihub` with the
 version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.

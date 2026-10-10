@@ -72,7 +72,7 @@ its own `AGENTS.md`.
 
 `mise tasks` lists them all; every tool installs with `mise install`. `mise run check` (lint, then unit tests),
 `mise run test-integration` (the `tests/postgres.rs` files against the Postgres of `compose.yaml`), `mise run
-cover` (90% for the pure crates). The CI runs them in parallel jobs; the last one, `CI`, is the required status.
+cover` (90% for the pure crates). The CI runs them in parallel jobs; the last one, `Build Success`, is the required status.
 
 ## Map of the specs
 
