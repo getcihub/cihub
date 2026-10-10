@@ -15,26 +15,32 @@ use serde_saphyr::{DefaultMessageFormatter, MessageFormatter, Spanned};
 use crate::settings::in_range;
 use crate::{ConfigError, ConfigErrorKind, Layer, Position, QueueSettings, Setting};
 
-/// Names of the configuration file at the root of the repository.
-pub const FILE_NAMES: [&str; 2] = [".cihub.yaml", ".cihub.yml"];
+/// Paths of the configuration file in the repository (`DECISIONS.md` D255).
+pub const FILE_NAMES: [&str; 4] = [
+    ".cihub.yaml",
+    ".cihub.yml",
+    ".cihub/config.yaml",
+    ".cihub/config.yml",
+];
 
-/// Chooses the configuration file among the entries of the repository root.
+/// Chooses the configuration file among the paths that exist in the repository.
 ///
 /// # Errors
 ///
-/// Both names exist: neither one wins.
+/// Several paths exist: none wins.
 pub fn find_config_file<'a>(
-    root: impl IntoIterator<Item = &'a str>,
+    found: impl IntoIterator<Item = &'a str>,
 ) -> Result<Option<&'static str>, ConfigError> {
-    let root: HashSet<_> = root.into_iter().collect();
-    match FILE_NAMES.map(|name| root.contains(name)) {
-        [true, true] => Err(ConfigError::parsing(
+    let found: HashSet<_> = found.into_iter().collect();
+    let mut existing = FILE_NAMES.into_iter().filter(|name| found.contains(name));
+
+    match (existing.next(), existing.next()) {
+        (name, None) => Ok(name),
+        _ => Err(ConfigError::parsing(
             None,
-            "both .cihub.yaml and .cihub.yml exist; keep one of them",
+            "several configuration files exist; keep only one of .cihub.yaml, .cihub.yml, \
+             .cihub/config.yaml and .cihub/config.yml",
         )),
-        [true, false] => Ok(Some(FILE_NAMES[0])),
-        [false, true] => Ok(Some(FILE_NAMES[1])),
-        [false, false] => Ok(None),
     }
 }
 
@@ -848,7 +854,12 @@ queues:
             find_config_file(["README.md", ".cihub.yml"]),
             Ok(Some(".cihub.yml"))
         );
+        assert_eq!(
+            find_config_file(["README.md", ".cihub/config.yaml"]),
+            Ok(Some(".cihub/config.yaml"))
+        );
         assert_eq!(find_config_file(["README.md"]), Ok(None));
         assert!(find_config_file([".cihub.yaml", ".cihub.yml"]).is_err());
+        assert!(find_config_file([".cihub.yml", ".cihub/config.yml"]).is_err());
     }
 }

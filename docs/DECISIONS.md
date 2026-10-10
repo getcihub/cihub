@@ -458,7 +458,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   never as a direct commit on the target (Lot 10); a help prompt arrives with the installation README (Lot 9).
   The state of the queue (`pause`, `resume`, `drain`) is not a setting and stays in the dashboard, the API and
   the CLI. An invalid file fails the run that reads it at `base_sha` (`start_test_run_config_*`); for the other
-  settings, the queue keeps the last valid file and shows the error.
+  settings, the queue keeps the last valid file and shows the error. _Extended by D255._
 - **D135** `queues` gains `name`, unique per repository (`repo_id`, `name`), instead of the uniqueness by
   (`repo_id`, `target_branch`): several queues can target the same branch. The routing of a delivery gives a
   queue only when the branch has only one (D85).
@@ -928,6 +928,14 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   merged.`). It applies to every refused command and to the checkbox; a refused label still gets no answer. The
   bot comment of the PR still mentions no one (D245): it is edited at each change of state, whereas the answer is
   written once, for one person. Supersedes the `Refused:` format of D173 and D253.
+
+**October 10, 2026, validated by Nicolas Lecoy.**
+
+- **D255** The configuration file has four possible paths: `.cihub.yaml` and `.cihub.yml` at the root of the
+  repository, `.cihub/config.yaml` and `.cihub/config.yml`. Exactly one of them can exist: with two or more, the
+  configuration is in error, because none wins. A read of the file costs one call to the SCM per path. The form
+  of the dashboard (Lot 10) edits the existing file at its path, and writes `.cihub.yaml` when the repository has
+  none. Extends D134.
 
 ## Open questions
 
