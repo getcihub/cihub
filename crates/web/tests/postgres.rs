@@ -4,8 +4,11 @@
 
 use std::fmt::Write;
 
-use cihub_domain::{ApiScope, ApiTokenId, OrgId};
-use cihub_store::{NewApiToken, begin_system, create_api_token, new_api_token_secret};
+use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, SessionId, UserId};
+use cihub_store::{
+    NewApiToken, NewSession, begin_org, begin_system, create_api_token, create_session, csrf_token,
+    ensure_user, new_api_token_secret, new_session_secret, record_membership,
+};
 use cihub_web::GithubWebhooks;
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
@@ -132,11 +135,22 @@ struct Answer {
 }
 
 async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answer {
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    let authorization = token.map(|token| format!("Bearer {token}"));
+    let headers: Vec<(&str, &str)> = authorization
+        .iter()
+        .map(|value| ("Authorization", value.as_str()))
+        .collect();
+    call_with(addr, method, path, &headers).await
+}
 
-    if let Some(token) = token {
-        let _ = write!(request, "Authorization: Bearer {token}\r\n");
+async fn call_with(addr: &str, method: &str, path: &str, headers: &[(&str, &str)]) -> Answer {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: 0\r\n"
+    );
+
+    for (name, value) in headers {
+        let _ = write!(request, "{name}: {value}\r\n");
     }
 
     request.push_str("\r\n");
@@ -220,7 +234,10 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(document.status, 200);
     let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
     assert!(document["openapi"].as_str().unwrap().starts_with("3.1"));
-    assert!(document["paths"]["/orgs/{org}/repos"]["get"].is_object());
+    assert_eq!(
+        document["paths"]["/orgs/{org}/repos"]["get"]["security"],
+        serde_json::json!([{ "token": ["queues:read"] }, { "session": [] }])
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -242,4 +259,98 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
     let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();
     assert_eq!(problem["code"], "rate_limited");
+}
+
+/// A session of a user with `role` in `acme`, and its secret.
+async fn session(pool: &PgPool, role: MembershipRole) -> SecretString {
+    token(pool, 9, &[]).await;
+    let org = OrgId::from_ulid(Ulid(7));
+    let user_id = UserId::from_ulid(Ulid(5));
+    let secret = new_session_secret().unwrap();
+    let session = NewSession {
+        id: SessionId::from_ulid(Ulid(1)),
+        user_id,
+        created_at: now(),
+        expires_at: now() + time::Duration::days(14),
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+
+    ensure_user(&mut tx, user_id, "5", "ada").await.unwrap();
+    create_session(&mut tx, &session, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+    let mut tx = begin_org(pool, org).await.unwrap();
+    record_membership(&mut tx, org, user_id, role, now())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret
+}
+
+fn session_cookie(secret: &SecretString) -> String {
+    format!(
+        "theme=dark; __Host-cihub_session={}",
+        secret.expose_secret()
+    )
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Member).await;
+    let cookie = session_cookie(&secret);
+    let with_session = [("Cookie", cookie.as_str())];
+    let unknown = [("Cookie", "__Host-cihub_session=chs_unknown")];
+
+    let me = call_with(&addr, "GET", "/api/v1/me", &with_session).await;
+    let repos = call_with(&addr, "GET", "/api/v1/orgs/ACME/repos", &with_session).await;
+    let audit = call_with(&addr, "GET", "/api/v1/orgs/acme/audit", &with_session).await;
+    let other = call_with(&addr, "GET", "/api/v1/orgs/globex/repos", &with_session).await;
+    let anonymous = call_with(&addr, "GET", "/api/v1/me", &unknown).await;
+
+    assert_eq!(me.status, 200, "{}", me.body);
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    assert_eq!(me["login"], "ada");
+    assert_eq!(
+        me["orgs"],
+        serde_json::json!([{ "slug": "acme", "role": "member" }])
+    );
+    assert_eq!(repos.status, 200, "{}", repos.body);
+    assert_eq!(audit.status, 403, "{}", audit.body);
+    assert_eq!(other.status, 404, "{}", other.body);
+    assert_eq!(anonymous.status, 401);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Admin).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let cookie = session_cookie(&secret);
+    let csrf = csrf_token(&secret);
+    let forged = [("Cookie", cookie.as_str()), ("X-CSRF-Token", "guess")];
+    let signed = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
+
+    let refused = call_with(&addr, "POST", "/auth/sign-out", &forged).await;
+    let by_token = call(&addr, "GET", "/api/v1/me", Some(&reader)).await;
+    let signed_out = call_with(&addr, "POST", "/auth/sign-out", &signed).await;
+    let after = call_with(&addr, "GET", "/api/v1/me", &signed).await;
+
+    assert_eq!(refused.status, 403, "{}", refused.body);
+    assert_eq!(by_token.status, 401, "{}", by_token.body);
+    assert_eq!(signed_out.status, 204);
+    assert!(
+        signed_out.head.contains(
+            "set-cookie: __host-cihub_session=; path=/; secure; samesite=lax; max-age=0; httponly"
+        ),
+        "{}",
+        signed_out.head
+    );
+    assert!(
+        signed_out
+            .head
+            .contains("set-cookie: __host-cihub_csrf=; path=/; secure; samesite=lax; max-age=0\r"),
+        "{}",
+        signed_out.head
+    );
+    assert_eq!(after.status, 401);
 }

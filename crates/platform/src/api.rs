@@ -6,31 +6,44 @@ use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, PROBLEM_JSON, Problem};
-use cihub_domain::{ApiScope, ApiTokenId, OrgId};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId, UserId};
 use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::de::DeserializeOwned;
 use tracing::error;
 
+/// What a request may do in the organization of its URL.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiGrant {
     pub org_id: OrgId,
-    pub token_id: ApiTokenId,
+    pub actor: GrantActor,
     pub scopes: Vec<ApiScope>,
+}
+
+/// Who acts: an API token, or a user through a session of the dashboard,
+/// with the scopes of their role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GrantActor {
+    Token(ApiTokenId),
+    User(UserId),
 }
 
 impl ApiGrant {
     /// # Errors
     ///
-    /// The token lacks `scope`.
+    /// The token, or the role of the user, lacks `scope`.
     pub fn require(&self, scope: ApiScope) -> Result<(), ApiError> {
         if self.scopes.contains(&scope) {
-            Ok(())
-        } else {
-            Err(ApiError::new(
-                ErrorCode::Forbidden,
-                format!("the token lacks the scope `{scope}`"),
-            ))
+            return Ok(());
         }
+
+        let who = match self.actor {
+            GrantActor::Token(_) => "the token",
+            GrantActor::User(_) => "the role of the user",
+        };
+        Err(ApiError::new(
+            ErrorCode::Forbidden,
+            format!("{who} lacks the scope `{scope}`"),
+        ))
     }
 
     /// A transaction of the organization whose slug is `org`, which the URL
@@ -70,13 +83,12 @@ impl<S: Send + Sync> FromRequestParts<S> for ApiGrant {
         parts: &mut Parts,
         _: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        std::future::ready(
-            parts
-                .extensions
-                .get::<Self>()
-                .cloned()
-                .ok_or_else(|| ApiError::new(ErrorCode::Unauthorized, "no valid API token".into())),
-        )
+        std::future::ready(parts.extensions.get::<Self>().cloned().ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::Unauthorized,
+                "no valid API token or session".into(),
+            )
+        }))
     }
 }
 

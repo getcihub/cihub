@@ -1,5 +1,8 @@
+use std::fmt::Write;
+
 use cihub_domain::{SessionId, UserId, format_session_token, is_session_token};
 use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool};
 use time::OffsetDateTime;
 
@@ -26,6 +29,22 @@ pub struct SessionGrant {
 /// The system has no random source.
 pub fn new_session_secret() -> Result<SecretString, StoreError> {
     Ok(format_session_token(&draw_secret_bytes()?).into())
+}
+
+/// The CSRF token of the session of `secret`: the hexadecimal SHA-256 of a
+/// label and the secret. A script of another site can neither read the
+/// cookie of the session nor compute it, and the server keeps nothing more.
+pub fn csrf_token(secret: &SecretString) -> String {
+    let digest = Sha256::new()
+        .chain_update(b"cihub-csrf:")
+        .chain_update(secret.expose_secret().as_bytes())
+        .finalize();
+    digest
+        .iter()
+        .fold(String::with_capacity(64), |mut text, byte| {
+            let _ = write!(text, "{byte:02x}");
+            text
+        })
 }
 
 /// Stores `session` with the hash of `secret`.

@@ -1,12 +1,13 @@
 //! The HTTP server of the public address of the `web` role. It serves the
 //! webhooks of the SCM: it checks the signature, stores the delivery without
-//! routing it, and answers within 2 s; and the API v1 under `/api/v1`, with
-//! the routes of the modules. The dashboard arrives with lot 10.
+//! routing it, and answers within 2 s; the API v1 under `/api/v1`, with the
+//! routes of the modules; and the sessions of the dashboard (lot 10a).
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.
 
 mod api;
+mod session;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -44,6 +45,7 @@ struct Webhooks {
 }
 
 pub use api::REQUESTS_PER_MINUTE;
+pub use session::SIGN_OUT_PATH;
 
 pub fn router(
     pool: PgPool,
@@ -60,6 +62,10 @@ pub fn router(
         .route(WEBHOOK_PATH, post(github_webhook))
         .layer(DefaultBodyLimit::max(MAX_DELIVERY_BYTES))
         .with_state(webhooks)
+        .route(
+            SIGN_OUT_PATH,
+            post(session::sign_out).with_state(pool.clone()),
+        )
         .nest(API_PREFIX, api::router(pool, now, modules))
 }
 

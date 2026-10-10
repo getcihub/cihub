@@ -6,8 +6,8 @@
 use std::fmt;
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, Priority, QueueMode,
-    QueueState, Reason, RequiredStatusesSource, RunStatus,
+    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole, Priority,
+    QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -63,6 +63,27 @@ pub struct Problem {
     pub status: u16,
     pub detail: String,
     pub code: ErrorCode,
+}
+
+/// `GET /me`: the user of a session of the dashboard, and the organizations
+/// that they reach.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Me {
+    pub login: String,
+    /// By slug.
+    pub orgs: Vec<OrgRole>,
+    /// The version of the instance.
+    pub version: String,
+}
+
+/// An organization of the user, and the role of the user in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OrgRole {
+    pub slug: String,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub role: MembershipRole,
 }
 
 /// A repository that the token sees.

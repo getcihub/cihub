@@ -25,7 +25,7 @@ mod tokens;
 mod wake;
 mod worker;
 
-pub use api::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery};
+pub use api::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor};
 pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{
     SYNC_REPOS, request_repo_syncs, run_sync_repos, sync_repos_executor, sync_repos_job,
