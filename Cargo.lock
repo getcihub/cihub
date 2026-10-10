@@ -300,7 +300,7 @@ name = "cihub-github"
 version = "0.2.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "cihub-domain",
  "cihub-scm",
  "reqwest",
