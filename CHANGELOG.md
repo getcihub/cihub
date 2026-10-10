@@ -1,5 +1,104 @@
 # Changelog
 
+## [0.2.0](https://github.com/getcihub/cihub/compare/v0.1.0...v0.2.0) (2026-10-10)
+
+
+### Features
+
+* **cli:** replace bootstrap with token create ([333ffcd](https://github.com/getcihub/cihub/commit/333ffcd94f179d7ae7b1e9b0b3c76bc883efd297))
+* **config:** read the configuration file from .cihub/config.yaml too ([866ff04](https://github.com/getcihub/cihub/commit/866ff0436d7bd03a3e68ab20ae207f264f8cd364))
+* **deploy:** add the Helm chart and its smoke test ([cf157ce](https://github.com/getcihub/cihub/commit/cf157ce5b0e9e54a57db734eb021741777c0ae6d))
+* **mergequeue:** mention the author of a refused command in the answer ([1d30c66](https://github.com/getcihub/cihub/commit/1d30c6677446d86fb068b939466822953e69603c))
+* **mergequeue:** show the history of the PR in its comment ([e941a09](https://github.com/getcihub/cihub/commit/e941a0905ec5172dd837c62e5c2789d04d45a398))
+* **mergequeue:** show the test branch and the merged commit in the history ([3d82790](https://github.com/getcihub/cihub/commit/3d82790d13270fca582fe6466bfc9ba15e62371c))
+* **platform:** sync the installations of the App ([571dc33](https://github.com/getcihub/cihub/commit/571dc333b6ec9fb19288fda5c7e4aac214907c31))
+* **platform:** sync the installations of the App and onboard them without a bootstrap ([d5db5ad](https://github.com/getcihub/cihub/commit/d5db5ad4b28bd3f10803ee9970e4d4fda7ee7418))
+
+
+### Bug Fixes
+
+* **ci:** add inputs back ([86ab12d](https://github.com/getcihub/cihub/commit/86ab12de093b1df966afe412ed20d27ccd69985c))
+* **ci:** use dedicated renovate github app ([b95dcf7](https://github.com/getcihub/cihub/commit/b95dcf7d9f7c0869603cda2e42f347018af56792))
+* **ci:** use github app for release-please ([1ef667a](https://github.com/getcihub/cihub/commit/1ef667a292f115891681ae2ce7665c1eb77a15a2))
+* **mergequeue:** refuse the submission of a PR that is merged, closed or a draft ([d9ea903](https://github.com/getcihub/cihub/commit/d9ea90317468939ef8a3a65b3ae5be9319345ecd))
+
+
+### Code Refactoring
+
+* **domain:** drop the enum values that no code constructs ([ad0e0ab](https://github.com/getcihub/cihub/commit/ad0e0ab86e9fad064106cbbe04414a9f3f2ce54c))
+* **mergequeue:** compute the failure reason and the last report of a run when read ([6d396c6](https://github.com/getcihub/cihub/commit/6d396c673902d8331145055b627180ed375eb6ee))
+* **mergequeue:** convert the errors of other crates with from ([eb7f46b](https://github.com/getcihub/cihub/commit/eb7f46bb0c5ac25c8e870a232107a12bd41f2ec4))
+* **mergequeue:** drop org_modules, every organization has the merge queue ([7a98aac](https://github.com/getcihub/cihub/commit/7a98aac00d518b6051cfd002467093a6681a1a87))
+* **mergequeue:** flatten the assembly and merge jobs ([c311106](https://github.com/getcihub/cihub/commit/c3111065fff01709b8b39a99ea65d8fbbc816493))
+* **mergequeue:** keep the last snapshot of a queue in two columns of queues ([008b299](https://github.com/getcihub/cihub/commit/008b299e7aa2a510c04436640e183167f65d3f3a))
+* **mergequeue:** make the items used in one module private ([67519d6](https://github.com/getcihub/cihub/commit/67519d6fa227616cd915ccc32350c60d140d125b))
+* **mergequeue:** make the items used in one module private ([ade035c](https://github.com/getcihub/cihub/commit/ade035c89c834172becf2803f874a2bd9b578acd))
+* **mergequeue:** remove one-caller job wrappers and flatten the merge command parser ([8714801](https://github.com/getcihub/cihub/commit/8714801255cdc61692c04ddbe546dae8404b562f))
+* **mergequeue:** simplify the merge queue and its data model ([c2c43ff](https://github.com/getcihub/cihub/commit/c2c43ff49005d72a78df0636abccfce74d4e5660))
+* **mergequeue:** split the scheduler loop and the submission job into named steps ([3294232](https://github.com/getcihub/cihub/commit/329423293137f8630df502877b30fdce2074f302))
+* **mq-core:** remove dead values, a forwarder and a boolean parameter ([a8b3c3d](https://github.com/getcihub/cihub/commit/a8b3c3d917e479701aa2e2a06fd26cad3e4f54f3))
+* **platform:** keep only the work to do in the inboxes ([cd8c088](https://github.com/getcihub/cihub/commit/cd8c0887f380c57f700132480bd8570a76cb6bb7))
+* **platform:** keep only the work to do in the inboxes ([117d608](https://github.com/getcihub/cihub/commit/117d6084438b5968ea30b89b70ad598b87debe93))
+* **platform:** keep the lease of a queue in two columns of queues ([b743741](https://github.com/getcihub/cihub/commit/b743741ada47a2530a8a6c2674a171be84633e49))
+* **store:** drop memberships and three columns that no code reads ([6656c6b](https://github.com/getcihub/cihub/commit/6656c6bdd0d133fc14eac8d68c248f6eedb8f251))
+* **store:** drop the projection columns that no code reads ([95110e7](https://github.com/getcihub/cihub/commit/95110e74ddba3e9a836588f945983b3dd67037f0))
+* **store:** keep the foreign key from scm_connections to scm_instances ([0b1eb1f](https://github.com/getcihub/cihub/commit/0b1eb1f15a5bb4193f04b0d3b842e00bd703441d))
+* **store:** merge scm_accounts into scm_connections ([d1182ad](https://github.com/getcihub/cihub/commit/d1182adda904c2c088d22a8390409c744f211846))
+* **store:** serve a single SCM instance per deployment ([d55110b](https://github.com/getcihub/cihub/commit/d55110bc8f6ba487854a08f24dc44880c0bce349))
+* **store:** serve a single SCM instance per deployment ([39799d3](https://github.com/getcihub/cihub/commit/39799d3d47316f10d3686d4bda8d237c0471110f))
+
+
+### Documentation
+
+* mark the done steps of the schema plan and count the tables ([aa29a84](https://github.com/getcihub/cihub/commit/aa29a848a8944fc15da71cdf0710aee642056935))
+* record D246, a single SCM instance per deployment ([45948a1](https://github.com/getcihub/cihub/commit/45948a1a9625b2184e7ab75b637e447c99f73b4c))
+* record D247 and D248 ([47bee72](https://github.com/getcihub/cihub/commit/47bee728f9b1e927989c77954f90a4cd40200826))
+* record D249 ([dc19861](https://github.com/getcihub/cihub/commit/dc19861093d44d8c6d628daffe8f3d19617e390b))
+* record D250, the readability rule ([7a0cb84](https://github.com/getcihub/cihub/commit/7a0cb84d583106e6b3c892b4ae8bccfb04408c86))
+* say that repos and webhook_inbox lose scm_instance_id ([5f8be6a](https://github.com/getcihub/cihub/commit/5f8be6a32d0b0b60f4e78dc512be58884bc98f66))
+
+
+### Styles
+
+* **client:** separate the steps of the functions with blank lines ([b1d17b6](https://github.com/getcihub/cihub/commit/b1d17b63b1dbd83673673c092e5f0e716cc357ca))
+* **cli:** separate the steps of the functions with blank lines ([98d69ca](https://github.com/getcihub/cihub/commit/98d69ca35a48a74bd60a5505138f3f0e6c4789b0))
+* **conditions:** separate the steps of the functions with blank lines ([6b06957](https://github.com/getcihub/cihub/commit/6b06957a0427bcb357d3b03b1278229f0e789c12))
+* **config:** separate the steps of the functions with blank lines ([b0b2745](https://github.com/getcihub/cihub/commit/b0b27458cd38a105b5ad66ad79867ed9a1672c73))
+* **domain:** separate the steps of the functions with blank lines ([7bd8b93](https://github.com/getcihub/cihub/commit/7bd8b93725a15062733590dd39e9ed75086a8f13))
+* **github:** separate the steps of the functions with blank lines ([316dbf2](https://github.com/getcihub/cihub/commit/316dbf276a78dcdb3747d82f7d8ef9d5de7c0f91))
+* keep a let and its immediate use together ([3b4e68b](https://github.com/getcihub/cihub/commit/3b4e68be2ca4fe36f235357ebc723af86a683b2f))
+* **mergequeue:** separate the steps of the functions with blank lines ([a95dfea](https://github.com/getcihub/cihub/commit/a95dfea7cae5b9f8a18c7af9f9e12b5330db5a3b))
+* **mq-core:** separate the steps of the functions with blank lines ([def48db](https://github.com/getcihub/cihub/commit/def48dba280e40e89324bef35bcd9ad2b1eb9412))
+* **platform:** separate the steps of the functions with blank lines ([0e1271b](https://github.com/getcihub/cihub/commit/0e1271b7b00124bf7c99946be2dd00212f27d961))
+* **scm:** separate the steps of the functions with blank lines ([f42c5f6](https://github.com/getcihub/cihub/commit/f42c5f6ee7c491eb67d3eccd0ac141bbb2ba58dc))
+* separate the steps of the functions with blank lines (D250) ([41f727c](https://github.com/getcihub/cihub/commit/41f727c4e9c823f42aabb79076cfe00851e8e064))
+* **store:** separate the steps of the functions with blank lines ([5c0643d](https://github.com/getcihub/cihub/commit/5c0643ded1883234f2a817746fb3e0c912977cf2))
+* **web:** separate the steps of the functions with blank lines ([9c37733](https://github.com/getcihub/cihub/commit/9c37733d0f4fa0f535154ed080147fe392aa11f0))
+
+
+### Tests
+
+* **github:** record the contract with the installations of the App ([d41944b](https://github.com/getcihub/cihub/commit/d41944b8f28d0f6d34835465b0a82a39f8373138))
+
+
+### Continuous Integration
+
+* run the CI in parallel jobs on runners hosted by GitHub ([3440728](https://github.com/getcihub/cihub/commit/3440728e1d6bb0796eb391aef2cd3a0a5344916c))
+
+
+### Miscellaneous Chores
+
+* add shellcheckrc configuration ([369bc35](https://github.com/getcihub/cihub/commit/369bc353d3b63022113290254c621d1fc53e2ffc))
+* **ci:** update configuration for CI and release-please ([987ccc7](https://github.com/getcihub/cihub/commit/987ccc793b421df2018a4996cebe924a7592cddc))
+* merge the queue main with squash again ([1f7ea9b](https://github.com/getcihub/cihub/commit/1f7ea9b8143745d581837d47fc71e01fc18b8b82))
+* merge the stacked PRs with merge commits ([e66b8a0](https://github.com/getcihub/cihub/commit/e66b8a02e49810893211fed080f1d021757bac3a))
+* move the image, the chart and the links to getcihub ([be4b769](https://github.com/getcihub/cihub/commit/be4b76997e52aa777ebf289521bb3a151e2d3cfd))
+* **release:** bump minor on feat before 1.0 ([209c8db](https://github.com/getcihub/cihub/commit/209c8dbf0e9af06e10156b87430cfc25fcd6be4b))
+* remove release-as from release-please config ([521f346](https://github.com/getcihub/cihub/commit/521f34686dd5aaa4281bc9b95dc43abcc82911f8))
+* replace the decision log, check the rules of AGENTS.md, and rewrite the README ([#72](https://github.com/getcihub/cihub/issues/72)) ([dd59126](https://github.com/getcihub/cihub/commit/dd591269adbb9212b3a6e4702b0d2392abd02042))
+* run no-comments ([9176321](https://github.com/getcihub/cihub/commit/91763212102062d12115942f72f132f23c7d0f80))
+* update README and license ([74480dd](https://github.com/getcihub/cihub/commit/74480ddbc99886c808c4f123913263a6de0d5838))
+
 ## [0.1.0](https://github.com/nlecoy/cihub/compare/v0.1.0...v0.1.0) (2026-10-08)
 
 
