@@ -38,7 +38,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
     assert_eq!(last[0].head_sha, head(1, 0));
     assert!(last.iter().all(|s| s.batch_wait.is_none()));
     assert!(last[0].test_sha.is_some());
-    assert!(last[0].failing_checks.is_empty());
+    assert_eq!(last[0].failing_checks, [] as [String; 0]);
 
     w.report(1, CheckConclusion::Failure);
     w.assemble_all();
@@ -53,7 +53,7 @@ fn each_live_item_shows_its_place_and_a_concluded_one_its_end() {
         .unwrap();
     assert_eq!(concluded.reason, Reason::TestRunRequiredStatusFailed);
     assert_eq!(concluded.position, None);
-    assert!(!concluded.failing_checks.is_empty());
+    assert_ne!(concluded.failing_checks, [] as [String; 0]);
 
     w.advance(1);
     let next = w.surfaces.last().unwrap();

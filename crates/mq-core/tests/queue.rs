@@ -70,7 +70,7 @@ fn a_direct_merge_lands_without_a_test_branch() {
     );
 
     assert_eq!(w.state(2), Some(ItemState::Testing));
-    assert!(w.reconcile().desired.merges.is_empty());
+    assert_eq!(w.reconcile().desired.merges, []);
 
     assert_replays(&w);
 }
@@ -263,10 +263,9 @@ fn a_culprit_fails_after_its_budget_and_its_successor_restarts() {
     assert_eq!(w.state(2), Some(ItemState::Testing));
 
     let second = w.item(2).unwrap();
-    assert!(
-        w.snapshot.groups[&second.group_id.unwrap()]
-            .predecessor_ids
-            .is_empty()
+    assert_eq!(
+        w.snapshot.groups[&second.group_id.unwrap()].predecessor_ids,
+        []
     );
 
     assert_replays(&w);
@@ -880,7 +879,7 @@ fn a_not_ready_pr_is_read_less_and_less_often() {
 
     w.observe(1, |p| p.mergeability = Mergeability::Unknown);
     let plan = w.reconcile();
-    assert!(plan.desired.observe.is_empty());
+    assert_eq!(plan.desired.observe, []);
     assert_eq!(plan.wake_at, Some(at(62)));
 
     assert_replays(&w);
@@ -942,7 +941,7 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
     );
 
     let reported = w.now;
-    assert!(w.reconcile().desired.check_reads.is_empty());
+    assert_eq!(w.reconcile().desired.check_reads, []);
 
     w.advance(25);
     let plan = w.reconcile();

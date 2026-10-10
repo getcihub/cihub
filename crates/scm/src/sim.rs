@@ -1991,10 +1991,9 @@ mod tests {
         let clean = deliveries(20).take_deliveries();
 
         assert_eq!(clean.len(), 20);
-        assert!(
-            deliveries(20)
-                .take_deliveries_with(&mut faults(100, 0, false))
-                .is_empty()
+        assert_eq!(
+            deliveries(20).take_deliveries_with(&mut faults(100, 0, false)),
+            []
         );
 
         let twice = deliveries(20).take_deliveries_with(&mut faults(0, 100, false));

@@ -70,7 +70,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         installation.account.path, repo.namespace,
         "the connection serves the account of the repository"
     );
-    assert!(!installation.account.external_id.is_empty());
+    assert_ne!(installation.account.external_id, "");
     assert!(!installation.permissions.is_empty());
     assert!(!installation.is_suspended);
     let findings = scm
@@ -90,7 +90,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .find(|listed| listed.namespace == repo.namespace && listed.name == repo.name)
         .expect("the connection lists the repository");
 
-    assert!(!listed.external_id.is_empty());
+    assert_ne!(listed.external_id, "");
     assert_eq!(listed.default_branch, fixture.base_branch);
 }
 
@@ -137,7 +137,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     assert_eq!(mergeable.review_decision, ReviewDecision::Approved);
     assert!(!mergeable.draft);
     assert!(mergeable.changed_files > 0);
-    assert!(!mergeable.head_branch.is_empty());
+    assert_ne!(mergeable.head_branch, "");
     assert!(!mergeable.from_fork);
     assert!(
         !mergeable.approved_by.is_empty(),
