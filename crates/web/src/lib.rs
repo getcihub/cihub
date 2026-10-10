@@ -1,12 +1,14 @@
 //! The HTTP server of the public address of the `web` role. It serves the
 //! webhooks of the SCM: it checks the signature, stores the delivery without
 //! routing it, and answers within 2 s; the API v1 under `/api/v1`, with the
-//! routes of the modules; and the sessions of the dashboard (lot 10a).
+//! routes of the modules; the sign-in and the sessions of the dashboard, and
+//! its files, embedded at the build (lot 10a).
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.
 
 mod api;
+mod dashboard;
 mod session;
 mod sign_in;
 
@@ -55,7 +57,7 @@ struct Webhooks {
     github: Arc<GithubWebhooks>,
 }
 
-pub use api::REQUESTS_PER_MINUTE;
+pub use api::{REQUESTS_PER_MINUTE, openapi};
 pub use session::SIGN_OUT_PATH;
 
 pub fn router(
@@ -80,6 +82,7 @@ pub fn router(
         )
         .merge(sign_in_routes(&pool, now, &dashboard))
         .nest(API_PREFIX, api::router(pool, now, modules, dashboard.scm))
+        .fallback(get(dashboard::serve))
 }
 
 fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashboard) -> Router {

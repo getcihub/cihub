@@ -122,6 +122,8 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
     })
 }
 
+/// A new module also adds its `OpenAPI` document to `examples/openapi.rs`,
+/// which writes the document of the dashboard.
 fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)

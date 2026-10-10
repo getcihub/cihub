@@ -165,6 +165,9 @@ pub struct SignInRequest {
     /// The SHA-256 of the code verifier, in base64url without padding
     /// (PKCE, method `S256`).
     pub code_challenge: String,
+    /// The SCM asks which of its accounts the person signs in with, instead
+    /// of the one already signed in.
+    pub asks_for_account: bool,
 }
 
 /// The challenge of `verifier` for PKCE, method `S256`: the SHA-256 of the

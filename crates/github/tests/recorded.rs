@@ -657,10 +657,16 @@ async fn the_sign_in_address_carries_the_client_and_the_challenge() {
         redirect_url: "https://ci.example.com/auth/github/callback".into(),
         state: "state".into(),
         code_challenge: "challenge".into(),
+        asks_for_account: false,
     };
 
     let address = app_with_sign_in("https://github.example.com", now).sign_in_url(&request);
     let without_client = app("https://github.example.com", now).sign_in_url(&request);
+    let choose = SignInRequest {
+        asks_for_account: true,
+        ..request.clone()
+    };
+    let chosen = app_with_sign_in("https://github.example.com", now).sign_in_url(&choose);
 
     assert_eq!(
         address.as_deref(),
@@ -671,6 +677,7 @@ async fn the_sign_in_address_carries_the_client_and_the_challenge() {
         )
     );
     assert_eq!(without_client, None);
+    assert!(chosen.is_some_and(|address| address.ends_with("&prompt=select_account")));
 }
 
 /// Written by hand from the documentation of GitHub, not recorded: the

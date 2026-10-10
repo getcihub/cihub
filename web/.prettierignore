@@ -1,0 +1,5 @@
+dist/
+pnpm-lock.yaml
+openapi.json
+src/client/
+src/routeTree.gen.ts

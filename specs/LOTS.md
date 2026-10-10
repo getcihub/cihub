@@ -267,8 +267,17 @@ Decisions:
     sign-in.
   - Changed by the mockups v5 (October 10, 2026, validated by the project lead): a person without an organization
     gets a session, and the dashboard asks them to install the App, instead of an error of the sign-in.
-  - Open: how the build of `web/` enters the binary (a `build.rs` without a dependency, or `rust-embed`); decided
-    at step 5.
+  - Done (October 10, 2026): step 4. `web/`: TypeScript 6 (`typescript-eslint` does not take 7 yet), React 19,
+    Vite 8, TanStack Router and Query, Zod 4, the client of `@hey-api/openapi-ts` from `web/openapi.json`, which
+    the example `openapi` of `cihub-cli` writes without a database; ESLint, Prettier and Vitest in `mise run lint`
+    and `mise run test`; Node 24 and pnpm 12 in `mise.toml`.
+  - Done (October 10, 2026), part of step 5: the sign-in page of the mockups v5 (sign-in, failure, no
+    organization, another account with `prompt=select_account`), and the build embedded in the binary by
+    `crates/web/build.rs`, without a dependency (decided by the project lead); `index.html` answers every path of
+    the dashboard. The image builds the dashboard in a stage of its own. Remains: the frame (navigation, organization
+    switcher, user menu), the pages "not found" and "server error", and step 6.
+  - To check on the App of staging: that GitHub shows its account picker for a GitHub App with
+    `prompt=select_account` (documented for an OAuth App only), and the URL of the callback of the App.
 
 #### Lot 10b: queues and the page of a queue
 

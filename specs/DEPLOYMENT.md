@@ -104,10 +104,12 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 
 ## Image
 
-`Dockerfile`, at the root, builds the `cihub` image in two stages: compilation on
-`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
-`gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
-comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
+`Dockerfile`, at the root, builds the `cihub` image in three stages: the dashboard on
+`node:24.21.0-bookworm-slim` (the Node of `mise.toml`, pnpm by corepack from `web/package.json`), compilation on
+`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), which embeds `web/dist` in the
+binary (`crates/web/build.rs`), then execution on `gcr.io/distroless/cc-debian12:nonroot`. The images are pinned
+by their digest, with the tag as a comment. A build of the Rust code without `web/dist` serves no dashboard: its
+pages answer `404`, and the API works. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
 image starts the four roles, and an argument replaces it (`server migrate`). The project
 license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the

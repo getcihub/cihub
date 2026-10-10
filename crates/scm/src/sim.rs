@@ -1877,6 +1877,7 @@ mod tests {
             redirect_url: "https://ci.example.com/auth/callback".into(),
             state: "state".into(),
             code_challenge: code_challenge(&"verifier".into()),
+            asks_for_account: false,
         };
         let exchange = |code: String, verifier: &str, redirect_url: &str| SignInCode {
             code: code.into(),

@@ -65,11 +65,15 @@ enum SignInFailure {
 pub(crate) struct Start {
     /// The page of the dashboard to open once signed in.
     next: Option<String>,
+    /// `choose_account=true` lets the person choose another account of the
+    /// SCM.
+    #[serde(default, rename = "choose_account")]
+    asks_for_account: bool,
 }
 
 /// Sends the person to the page of the SCM where they sign in.
 pub(crate) async fn start(State(sign_in): State<SignIn>, Query(start): Query<Start>) -> Response {
-    match address_of_sign_in(&sign_in, start.next.as_deref()) {
+    match address_of_sign_in(&sign_in, &start) {
         Ok((address, kept)) => (
             AppendHeaders([(
                 SET_COOKIE,
@@ -84,10 +88,7 @@ pub(crate) async fn start(State(sign_in): State<SignIn>, Query(start): Query<Sta
 
 /// The address of the sign-in on the SCM, and the value of the cookie that
 /// keeps what the callback checks.
-fn address_of_sign_in(
-    sign_in: &SignIn,
-    next: Option<&str>,
-) -> Result<(String, String), SignInFailure> {
+fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String), SignInFailure> {
     let public_url = sign_in
         .public_url
         .as_deref()
@@ -98,6 +99,7 @@ fn address_of_sign_in(
         redirect_url: format!("{public_url}{SIGN_IN_CALLBACK_PATH}"),
         state: state.expose_secret().to_owned(),
         code_challenge: code_challenge(&verifier),
+        asks_for_account: start.asks_for_account,
     };
 
     let address = sign_in
@@ -108,7 +110,7 @@ fn address_of_sign_in(
         "{}.{}.{}",
         request.state,
         verifier.expose_secret(),
-        page_after(next)
+        page_after(start.next.as_deref())
     );
     Ok((address, kept))
 }

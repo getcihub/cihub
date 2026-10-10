@@ -1,0 +1,79 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import type { Me } from "../client/types.gen";
+import { SignInPage } from "./SignInPage";
+
+const lonely: Me = {
+  login: "grace",
+  orgs: [],
+  version: "0.2.0",
+  app_install_url: "https://github.com/apps/cihub/installations/new",
+};
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("SignInPage", () => {
+  it("starts the sign-in, then opens the page that the link asked for", () => {
+    render(<SignInPage me={null} hasFailed={false} next="/orgs/acme" />);
+
+    const start = screen.getByRole("link", { name: /continue with github/i });
+
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    expect(start).toHaveAttribute("href", "/auth/github?next=%2Forgs%2Facme");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("says that the sign-in failed", () => {
+    render(<SignInPage me={null} hasFailed={true} next="/" />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("The sign-in failed. Try again.");
+  });
+
+  it("leads a user without an organization to the installation of the App", () => {
+    render(<SignInPage me={lonely} hasFailed={false} next="/" />);
+
+    expect(screen.getByRole("heading", { name: "No organization yet" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /install the app on github/i })).toHaveAttribute(
+      "href",
+      lonely.app_install_url,
+    );
+  });
+
+  it("signs out, then lets the user choose another account", async () => {
+    const fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    const assign = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("location", { assign });
+    // The server sets this cookie; a script only reads it.
+    vi.spyOn(document, "cookie", "get").mockReturnValue("theme=dark; __Host-cihub_csrf=token");
+    render(<SignInPage me={lonely} hasFailed={false} next="/" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign in with another account" }));
+
+    expect(fetch).toHaveBeenCalledWith("/auth/sign-out", {
+      method: "POST",
+      headers: { "X-CSRF-Token": "token" },
+    });
+    expect(assign).toHaveBeenCalledWith("/auth/github?next=%2F&choose_account=true");
+  });
+
+  it("stays on the page and says so when the sign-out fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve(new Response(null, { status: 403 }))),
+    );
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    render(<SignInPage me={lonely} hasFailed={false} next="/" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign in with another account" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The sign-out failed.");
+    expect(assign).not.toHaveBeenCalled();
+  });
+});

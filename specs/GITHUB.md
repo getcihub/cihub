@@ -42,7 +42,8 @@ The server then receives `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE` 
 **Sign-in and roles.** A person signs in to the dashboard through the App (user authorization of a GitHub App,
 with PKCE `S256` and a `state`). `GET /auth/github` keeps the `state`, the verifier and the page to open after
 in the cookie `__Host-cihub_sign_in` (10 minutes), and sends the person to `GET <url>/login/oauth/authorize` with
-the `redirect_uri` `<http.public_url>/auth/github/callback`; the callback checks the `state`, then `POST
+the `redirect_uri` `<http.public_url>/auth/github/callback`, and `prompt=select_account` when the dashboard asks
+for another account (documented by GitHub for an OAuth App; not verified yet on a GitHub App); the callback checks the `state`, then `POST
 <url>/login/oauth/access_token` with the client secret. Without `http.public_url` or the client of the App, and
 on any failure, the person comes back to `/sign-in?error=failed`. A person without an organization gets a session
 too: the dashboard asks them to install the App, whose page comes from `GET /app` (`html_url`, then
