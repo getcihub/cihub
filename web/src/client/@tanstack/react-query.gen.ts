@@ -110,13 +110,13 @@ export const listAuditInfiniteQueryKey = (options: Options<ListAuditData>): Quer
  * The audit log of the organization, newest first.
  */
 export const listAuditInfiniteOptions = (options: Options<ListAuditData>) => {
-    const opts = infiniteQueryOptions<ListAuditResponse, DefaultError, InfiniteData<ListAuditResponse>, QueryKey<Options<ListAuditData>>, string | null | Pick<QueryKey<Options<ListAuditData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<ListAuditResponse, DefaultError, InfiniteData<ListAuditResponse>, QueryKey<Options<ListAuditData>>, string | Pick<QueryKey<Options<ListAuditData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
             // @ts-ignore
             const page: Pick<QueryKey<Options<ListAuditData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                path: {
+                query: {
                     cursor: pageParam
                 }
             };
@@ -287,13 +287,13 @@ export const listItemsInfiniteQueryKey = (options: Options<ListItemsData>): Quer
  * The items of a queue, live and past, newest submission first.
  */
 export const listItemsInfiniteOptions = (options: Options<ListItemsData>) => {
-    const opts = infiniteQueryOptions<ListItemsResponse, DefaultError, InfiniteData<ListItemsResponse>, QueryKey<Options<ListItemsData>>, string | null | Pick<QueryKey<Options<ListItemsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    const opts = infiniteQueryOptions<ListItemsResponse, DefaultError, InfiniteData<ListItemsResponse>, QueryKey<Options<ListItemsData>>, string | Pick<QueryKey<Options<ListItemsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
     // @ts-ignore
     {
         queryFn: async ({ pageParam, queryKey, signal }) => {
             // @ts-ignore
             const page: Pick<QueryKey<Options<ListItemsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
-                path: {
+                query: {
                     cursor: pageParam
                 }
             };

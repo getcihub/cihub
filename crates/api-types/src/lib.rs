@@ -8,7 +8,7 @@ use std::fmt;
 use cihub_domain::{
     BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole,
     MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
-    Strategy,
+    Strategy, SubmittedVia,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -267,6 +267,10 @@ pub struct Item {
     pub id: String,
     pub queue_id: String,
     pub pr_number: u64,
+    /// The title at the last read of the PR; `None` before the first.
+    pub title: Option<String>,
+    /// The login of the author of the PR.
+    pub author: String,
     pub head_sha: String,
     #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub state: ItemState,
@@ -287,7 +291,17 @@ pub struct Item {
     #[cfg_attr(feature = "openapi", schema(value_type = Vec<Object>))]
     pub block_reasons: Vec<BlockReason>,
     pub group_id: Option<String>,
+    /// The last run of the group of the item: the run that tests it, or
+    /// that tested it last; `None` outside a group.
+    pub run_id: Option<String>,
     pub merged_sha: Option<String>,
+    /// The PR is tested alone, never in a batch.
+    pub no_batch: bool,
+    /// The login of the person who submitted the PR; `None` when CIHub or an
+    /// API token did.
+    pub submitted_by: Option<String>,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub submitted_via: SubmittedVia,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub submitted_at: OffsetDateTime,

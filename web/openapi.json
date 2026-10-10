@@ -55,26 +55,20 @@
           },
           {
             "name": "cursor",
-            "in": "path",
+            "in": "query",
             "description": "The `next_cursor` of the previous page.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
             "name": "take",
-            "in": "path",
+            "in": "query",
             "description": "At most 100; 50 by default.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "int32",
               "minimum": 0
             }
@@ -500,62 +494,47 @@
           },
           {
             "name": "state",
-            "in": "path",
-            "description": "Only the items in this state.",
-            "required": true,
+            "in": "query",
+            "description": "Only the items in these states, separated by commas:\n`pending,testing`.",
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
             "name": "since",
-            "in": "path",
+            "in": "query",
             "description": "Submitted at or after this time (RFC 3339).",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
             "name": "until",
-            "in": "path",
+            "in": "query",
             "description": "Submitted before this time (RFC 3339).",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
             "name": "cursor",
-            "in": "path",
+            "in": "query",
             "description": "The `next_cursor` of the previous page.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           },
           {
             "name": "take",
-            "in": "path",
+            "in": "query",
             "description": "At most 100; 50 by default.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "int32",
               "minimum": 0
             }
@@ -694,14 +673,11 @@
           },
           {
             "name": "include",
-            "in": "path",
+            "in": "query",
             "description": "`timeline` adds the events of the item.",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": "string"
             }
           }
         ],
@@ -1294,6 +1270,7 @@
           "id",
           "queue_id",
           "pr_number",
+          "author",
           "head_sha",
           "state",
           "state_reason",
@@ -1302,9 +1279,15 @@
           "priority",
           "is_current",
           "block_reasons",
+          "no_batch",
+          "submitted_via",
           "submitted_at"
         ],
         "properties": {
+          "author": {
+            "type": "string",
+            "description": "The login of the author of the PR."
+          },
           "block_reasons": {
             "type": "array",
             "items": {
@@ -1332,6 +1315,10 @@
               "null"
             ]
           },
+          "no_batch": {
+            "type": "boolean",
+            "description": "The PR is tested alone, never in a batch."
+          },
           "position": {
             "type": [
               "integer",
@@ -1354,6 +1341,13 @@
           "queue_id": {
             "type": "string"
           },
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The last run of the group of the item: the run that tests it, or\nthat tested it last; `None` outside a group."
+          },
           "state": {
             "type": "string"
           },
@@ -1371,6 +1365,23 @@
           "submitted_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "submitted_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The login of the person who submitted the PR; `None` when CIHub or an\nAPI token did."
+          },
+          "submitted_via": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title at the last read of the PR; `None` before the first."
           }
         }
       },

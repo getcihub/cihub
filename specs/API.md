@@ -18,7 +18,7 @@ segment (`:resync`, `:cancel`, `:restart`, `:batchGet`). The paths below follow 
 | GET                | `/orgs/{org}/queues`                                     | Every queue of the organization with its counters, by repository name then queue name: `counts` (the current items in each state that is not terminal), `merged_last_24h` and `failed_last_24h` (the items that reached `merged` or `failed` in the 24 hours before the request, not in a calendar day; a PR that failed, then came back, still counts its failure), `last_merged_at` |
 | GET                | `/orgs/{org}/repos/{repo}/queues`                        | List the queues; the settings come from the `.cihub.yaml` file |
 | GET, PATCH         | `…`                                                      | Read (`QueueDetail`: the queue, the counters of `GET /orgs/{org}/queues`, `live_runs`, the `window` with its `current`, `floor` and `ceiling`, and `settings`: `batching_enabled`, `batching_size`, `batching_max_wait_minutes`, `failure_budget_retries`, `merge_method`; the strategy is on the queue), or request a `state` (`running`, `paused`, `draining`); deletion is deferred |
-| GET                | `…/prs`                                                  | Live items and history, filters `state`, `since`, `until`, cursor pagination with `take` ≤ 100                                                                                                                                                 |
+| GET                | `…/prs`                                                  | Live items and history, filters `state` (one state or several, separated by commas: `pending,testing`; an unknown state answers `400 invalid_request`), `since`, `until`, cursor pagination with `take` ≤ 100                                                                                                                                                 |
 | POST               | `…/prs`                                                  | Submit a PR: `pr_number`, `priority` (name or 0–255), `no_batch`, `direct`                                                                                                                                                                     |
 | GET                | `…/prs/{number}`                                         | Latest item of a PR, `?include=timeline`; the search by `?branch=` is deferred |
 | POST               | `…/prs:batchGet`                                         | Up to 50 PRs by number, returns `not_found[]` |
@@ -41,7 +41,9 @@ last; `access`, `ok` or `suspended` when the installation of the App is suspende
 
 An item (`Item` in `cihub-api-types`) carries `state_reason`, the code of the closed vocabulary, and
 `state_description`, its sentence for a person (`Reason::describe`, `specs/DOMAIN.md`). A client shows the
-sentence and decides on the code: the sentence can change without notice.
+sentence and decides on the code: the sentence can change without notice. An item also carries the `title` of the
+PR at its last read (`pr_titles`), its `author`, the `run_id` of the last run of its group, `no_batch`,
+`submitted_via`, and `submitted_by`, the login of the person who submitted it (`null` for CIHub or a token).
 
 **`GET /orgs/{org}/runs/{run_id}`** returns a JSON object whose fields are the columns of `test_runs` and of
 `check_observations` (`specs/DATA_MODEL.md`), with the names of the closed vocabulary: `id`, `queue_id`, `group_id`,

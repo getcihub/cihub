@@ -27,7 +27,7 @@ use cihub_platform::{
 };
 use cihub_scm::{Scm, ScmError, ScmUser, SetupFinding};
 use cihub_store::{PgPool, Postgres, Transaction};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use time::OffsetDateTime;
@@ -663,13 +663,30 @@ struct ItemRow {
     is_current: bool,
     block_reasons: Value,
     group_id: Option<String>,
+    run_id: Option<String>,
     merged_sha: Option<String>,
+    no_batch: bool,
+    submitted_by: Option<String>,
+    submitted_via: String,
     submitted_at: OffsetDateTime,
+    title: Option<String>,
+    author: String,
 }
 
-const ITEM_COLUMNS: &str = "id, queue_id, pr_number, pr_head_sha, state::text, state_reason::text,
-    state_changed_at, priority_value, position, is_current, block_reasons, group_id, merged_sha,
-    submitted_at";
+/// The columns of [`ItemRow`], read from [`ITEM_SOURCE`].
+const ITEM_COLUMNS: &str = "i.id, i.queue_id, i.pr_number, i.pr_head_sha,
+    i.state::text AS state, i.state_reason::text AS state_reason, i.state_changed_at,
+    i.priority_value, i.position, i.is_current, i.block_reasons, i.group_id,
+    (SELECT r.id FROM test_runs r WHERE r.group_id = i.group_id ORDER BY r.attempt DESC LIMIT 1)
+        AS run_id,
+    i.merged_sha, i.no_batch, submitter.login AS submitted_by,
+    i.submitted_via::text AS submitted_via, i.submitted_at, t.title, author.login AS author";
+
+const ITEM_SOURCE: &str = "queue_items i
+    JOIN queues q ON q.id = i.queue_id
+    JOIN users author ON author.id = i.pr_author_id
+    LEFT JOIN users submitter ON submitter.id = i.submitted_by
+    LEFT JOIN pr_titles t ON t.repo_id = q.repo_id AND t.pr_number = i.pr_number";
 
 impl ItemRow {
     fn into_item(self) -> Result<Item, ApiError> {
@@ -688,8 +705,14 @@ impl ItemRow {
             position: self.position,
             is_current: self.is_current,
             group_id: self.group_id,
+            run_id: self.run_id,
             merged_sha: self.merged_sha,
+            no_batch: self.no_batch,
+            submitted_by: self.submitted_by,
+            submitted_via: self.submitted_via.parse()?,
             submitted_at: self.submitted_at,
+            title: self.title,
+            author: self.author,
         })
     }
 }
@@ -699,10 +722,13 @@ fn items(rows: Vec<ItemRow>) -> Result<Vec<Item>, ApiError> {
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 struct ItemFilter {
-    /// Only the items in this state.
+    /// Only the items in these states, separated by commas:
+    /// `pending,testing`.
+    #[serde(default, deserialize_with = "item_states")]
     #[param(value_type = Option<String>)]
-    state: Option<ItemState>,
+    state: Vec<ItemState>,
     /// Submitted at or after this time (RFC 3339).
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[param(value_type = Option<String>)]
@@ -715,6 +741,18 @@ struct ItemFilter {
     cursor: Option<String>,
     /// At most 100; 50 by default.
     take: Option<u32>,
+}
+
+fn item_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<ItemState>, D::Error> {
+    let text = String::deserialize(deserializer)?;
+
+    text.split(',')
+        .map(|state| {
+            state
+                .parse()
+                .map_err(|_| serde::de::Error::custom(format!("unknown state `{state}`")))
+        })
+        .collect()
 }
 
 /// The items of a queue, live and past, newest submission first.
@@ -740,18 +778,24 @@ async fn list_items(
 
     let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let rows: Vec<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {ITEM_COLUMNS} FROM queue_items
-         WHERE queue_id = $1
-           AND ($2::item_state IS NULL OR state = $2::item_state)
-           AND ($3::timestamptz IS NULL OR submitted_at >= $3)
-           AND ($4::timestamptz IS NULL OR submitted_at < $4)
-           AND ($5::text IS NULL OR (submitted_at, id) <
+        "SELECT {ITEM_COLUMNS} FROM {ITEM_SOURCE}
+         WHERE i.queue_id = $1
+           AND (cardinality($2::text[]) = 0 OR i.state = ANY($2::text[]::item_state[]))
+           AND ($3::timestamptz IS NULL OR i.submitted_at >= $3)
+           AND ($4::timestamptz IS NULL OR i.submitted_at < $4)
+           AND ($5::text IS NULL OR (i.submitted_at, i.id) <
                 (SELECT submitted_at, id FROM queue_items WHERE id = $5))
-         ORDER BY submitted_at DESC, id DESC
+         ORDER BY i.submitted_at DESC, i.id DESC
          LIMIT $6"
     )))
     .bind(&queue.id)
-    .bind(filter.state.map(ItemState::as_str))
+    .bind(
+        filter
+            .state
+            .iter()
+            .map(|state| state.as_str())
+            .collect::<Vec<_>>(),
+    )
     .bind(filter.since)
     .bind(filter.until)
     .bind(&filter.cursor)
@@ -824,6 +868,7 @@ async fn submit(
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 struct PrQuery {
     /// `timeline` adds the events of the item.
     include: Option<String>,
@@ -849,8 +894,8 @@ async fn get_pr(
     let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let number = i64::try_from(pr_number).map_err(|_| ApiError::not_found("PR"))?;
     let row: Option<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {ITEM_COLUMNS} FROM queue_items WHERE queue_id = $1 AND pr_number = $2
-         ORDER BY submitted_at DESC, id DESC LIMIT 1"
+        "SELECT {ITEM_COLUMNS} FROM {ITEM_SOURCE} WHERE i.queue_id = $1 AND i.pr_number = $2
+         ORDER BY i.submitted_at DESC, i.id DESC LIMIT 1"
     )))
     .bind(&queue.id)
     .bind(number)
@@ -925,9 +970,9 @@ async fn batch_get(
         .filter_map(|n| i64::try_from(*n).ok())
         .collect();
     let rows: Vec<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT DISTINCT ON (pr_number) {ITEM_COLUMNS} FROM queue_items
-         WHERE queue_id = $1 AND pr_number = ANY($2)
-         ORDER BY pr_number, submitted_at DESC, id DESC"
+        "SELECT DISTINCT ON (i.pr_number) {ITEM_COLUMNS} FROM {ITEM_SOURCE}
+         WHERE i.queue_id = $1 AND i.pr_number = ANY($2)
+         ORDER BY i.pr_number, i.submitted_at DESC, i.id DESC"
     )))
     .bind(&queue.id)
     .bind(&numbers)
