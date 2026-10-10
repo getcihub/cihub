@@ -258,9 +258,11 @@ dependency. The tests against Postgres run 4 at a time (`NEXTEST_TEST_THREADS`),
 `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint` ignore the label `ubuntu-26.04`,
 which it does not know yet.
 
-`ci.yml` also has three jobs for the chart, on runners hosted by GitHub (`ubuntu-26.04`) for now, as `Smoke` needs a
+`chart.yaml` has three jobs for the chart, on runners hosted by GitHub (`ubuntu-26.04`) for now, as `Smoke` needs a
 Docker daemon (`DECISIONS.md` D251): `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm
-Unittest` (`mise run helm-unittest`) and `Smoke` (`mise run smoke`). They are not required statuses.
+Unittest` (`mise run helm-unittest`) and `Smoke` (`mise run smoke`). They are not required statuses. They run on a
+pull request only when it changes `charts/`, `scripts/smoke.sh`, `scripts/smoke/`, the `Dockerfile`, `migrations/`,
+`mise.toml`, `mise.lock` or `chart.yaml`, and once a night on `main` (D256).
 
 ## Versions
 

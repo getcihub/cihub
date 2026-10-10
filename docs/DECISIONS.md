@@ -936,7 +936,7 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   `CIHUB_SMOKE_KEEP` change it. `ci.yml` runs the jobs `Helm Lint`, `Helm Unittest` and `Smoke` on runners hosted
   by GitHub for now; `CI` stays on `cihub-runner` and stays the only required status. `image.yaml` publishes the
   chart to `oci://ghcr.io/nlecoy/charts/cihub` at each release, with the version of the release. Extends D14,
-  D242 and D243. _Extended by D252._
+  D242 and D243. _Extended by D252._ _Extended by D256._
 - **D252** Extends D251: with `CIHUB_SMOKE_GITHUB=1`, `scripts/smoke.sh` installs the chart with the GitHub App of
   `mise.local.toml` (`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and
   `CIHUB_GITHUB_URL` when it is set) instead of a false App, and also fails when no installation is synced within
@@ -960,6 +960,11 @@ what it supersedes, and the old one gains the mention _Superseded by Dn_ (supers
   configuration is in error, because none wins. A read of the file costs one call to the SCM per path. The form
   of the dashboard (Lot 10) edits the existing file at its path, and writes `.cihub.yaml` when the repository has
   none. Extends D134.
+- **D256** Extends D251: the jobs `Helm Lint`, `Helm Unittest` and `Smoke` leave `ci.yml` for their own workflow,
+  `chart.yaml`. It runs on a pull request only when the pull request changes `charts/`, `scripts/smoke.sh`,
+  `scripts/smoke/`, the `Dockerfile`, `migrations/`, `mise.toml`, `mise.lock` or `chart.yaml`; once a night on
+  `main`, as a change of the code can break an installation by the chart without touching these paths; and by
+  hand. They stay statuses that are not required.
 
 ## Open questions
 
