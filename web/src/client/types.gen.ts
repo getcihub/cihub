@@ -250,6 +250,7 @@ export type Problem = {
  * A queue of a target branch.
  */
 export type Queue = {
+    access: QueueAccess;
     /**
      * Why the last file read is not valid; the queue keeps the last valid
      * one.
@@ -259,12 +260,58 @@ export type Queue = {
      * The head of the target whose configuration file the queue read last.
      */
     config_sha?: string | null;
+    /**
+     * The target branch has a configuration file, valid or not; without
+     * it, the queue takes the defaults.
+     */
+    has_config_file: boolean;
     id: string;
     mode: string;
     name: string;
     repo_id: string;
     state: string;
+    /**
+     * When the queue reached its state; its creation before a first change.
+     */
+    state_changed_at: string;
+    /**
+     * The login of the person who asked for the state; `None` when CIHub
+     * decided it, or when an API token asked for it.
+     */
+    state_changed_by?: string | null;
+    /**
+     * The strategy of the last valid configuration file.
+     */
+    strategy: string;
     target_branch: string;
+    /**
+     * The head of the target branch that the queue saw last; `None` before
+     * the first.
+     */
+    target_head_sha?: string | null;
+};
+
+/**
+ * Whether CIHub reaches the repository of a queue on the SCM.
+ */
+export type QueueAccess = 'ok' | 'suspended';
+
+/**
+ * `GET /orgs/{org}/repos/{repo}/queues/{queue}`: a queue, its counters as
+ * in [`OrgQueue`], its runs and the summary of its settings.
+ */
+export type QueueDetail = {
+    counts: ItemCounts;
+    failed_last_24h: number;
+    last_merged_at?: string | null;
+    /**
+     * The runs in progress.
+     */
+    live_runs: number;
+    merged_last_24h: number;
+    queue: Queue;
+    settings: SettingsSummary;
+    window: Window;
 };
 
 export type QueueList = {
@@ -300,6 +347,21 @@ export type RunCheck = {
     name: string;
     observed_at: string;
     required: boolean;
+};
+
+/**
+ * The settings of a queue that its page shows, from its last valid
+ * configuration file.
+ */
+export type SettingsSummary = {
+    batching_enabled: boolean;
+    batching_max_wait_minutes: number;
+    batching_size: number;
+    /**
+     * How many times a run that fails is tested again before its PRs fail.
+     */
+    failure_budget_retries: number;
+    merge_method: string;
 };
 
 /**
@@ -365,6 +427,15 @@ export type TimelineEvent = {
 
 export type UpdateQueue = {
     state: RequestedQueueState;
+};
+
+/**
+ * The speculation window: how many runs the queue keeps in progress.
+ */
+export type Window = {
+    ceiling: number;
+    current: number;
+    floor: number;
 };
 
 export type MeData = {
@@ -485,7 +556,7 @@ export type GetQueueData = {
 };
 
 export type GetQueueResponses = {
-    200: Queue;
+    200: QueueDetail;
 };
 
 export type GetQueueResponse = GetQueueResponses[keyof GetQueueResponses];

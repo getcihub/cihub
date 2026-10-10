@@ -14,7 +14,9 @@ mod surface;
 
 pub use apply::{ApplyError, Outcome, apply};
 pub use check::{Violation, check};
-pub use plan::{CheckRead, Desired, Head, Merge, Plan, PlanError, Read, TestBranch, plan};
+pub use plan::{
+    CheckRead, Desired, Head, Merge, Plan, PlanError, Read, TestBranch, current_window, plan,
+};
 pub use snapshot::{
     Observed, PrObservation, Request, Snapshot, Subject, TargetBranch, TargetsUpload,
 };

@@ -315,6 +315,14 @@ Decisions:
 - **Exit criterion**: a browser test on the simulator shows the cards of the queues and the page of a queue with
   the PRs submitted by comment, their title, author and position, and the runs of the graph; the routes give the
   same answers after a replay of the log (principle I); showing a page calls the SCM zero times (principle VII).
+- **Tracking**:
+  - Done (October 10, 2026): step 1. `Queue` gains its fields, read from Postgres only: the log projects in
+    `queues` the time of the last state, its author (the user of the cause of `queue.transitioned`, since a
+    decision acts as CIHub), the head of the target and the window; the replay rebuilds them. `GET
+    …/queues/{queue}` answers `QueueDetail`. The migration of `queues` is rewritten, as before the first version:
+    a development database needs `mise run db-reset`.
+  - Remaining: the fields of `Item`, the graph of the runs, the stored configuration check, the pages, the
+    browser test.
 
 #### Lot 10c: your pull requests, drawer and actions
 

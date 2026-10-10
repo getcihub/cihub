@@ -86,6 +86,24 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
     })
 }
 
+/// The settings of the queue `name` of `branch` in `config`, its last valid
+/// file; the defaults without a file.
+///
+/// # Errors
+///
+/// The file does not give valid settings for the queue.
+pub(crate) fn queue_settings(
+    config: Option<&RepoConfig>,
+    branch: &str,
+    name: &str,
+) -> Result<QueueSettings, MergeQueueError> {
+    match config {
+        Some(config) => config.settings(branch, name),
+        None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
+    }
+    .map_err(MergeQueueError::Settings)
+}
+
 impl QueueTarget {
     /// # Errors
     ///
@@ -127,11 +145,7 @@ impl QueueTarget {
         &self,
         config: Option<&RepoConfig>,
     ) -> Result<QueueSettings, MergeQueueError> {
-        match config {
-            Some(config) => config.settings(&self.target_branch, &self.name),
-            None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
-        }
-        .map_err(MergeQueueError::Settings)
+        queue_settings(config, &self.target_branch, &self.name)
     }
 
     /// The settings of the queue, from its last valid file.

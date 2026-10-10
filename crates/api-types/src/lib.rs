@@ -6,8 +6,9 @@
 use std::fmt;
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole, Priority,
-    QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
+    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole,
+    MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
+    Strategy,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -123,11 +124,39 @@ pub struct Queue {
     pub state: QueueState,
     #[cfg_attr(feature = "openapi", schema(value_type = String))]
     pub mode: QueueMode,
+    /// When the queue reached its state; its creation before a first change.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub state_changed_at: OffsetDateTime,
+    /// The login of the person who asked for the state; `None` when CIHub
+    /// decided it, or when an API token asked for it.
+    pub state_changed_by: Option<String>,
+    /// The strategy of the last valid configuration file.
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub strategy: Strategy,
+    /// The head of the target branch that the queue saw last; `None` before
+    /// the first.
+    pub target_head_sha: Option<String>,
+    pub access: QueueAccess,
+    /// The target branch has a configuration file, valid or not; without
+    /// it, the queue takes the defaults.
+    pub has_config_file: bool,
     /// The head of the target whose configuration file the queue read last.
     pub config_sha: Option<String>,
     /// Why the last file read is not valid; the queue keeps the last valid
     /// one.
     pub config_error: Option<String>,
+}
+
+/// Whether CIHub reaches the repository of a queue on the SCM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum QueueAccess {
+    Ok,
+    /// The App is suspended or uninstalled: the queue is paused until the
+    /// access comes back.
+    Suspended,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +194,47 @@ pub struct OrgQueue {
     #[serde(with = "time::serde::rfc3339::option")]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = DateTime))]
     pub last_merged_at: Option<OffsetDateTime>,
+}
+
+/// `GET /orgs/{org}/repos/{repo}/queues/{queue}`: a queue, its counters as
+/// in [`OrgQueue`], its runs and the summary of its settings.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct QueueDetail {
+    pub queue: Queue,
+    pub counts: ItemCounts,
+    pub merged_last_24h: u32,
+    pub failed_last_24h: u32,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = DateTime))]
+    pub last_merged_at: Option<OffsetDateTime>,
+    /// The runs in progress.
+    pub live_runs: u32,
+    pub window: Window,
+    pub settings: SettingsSummary,
+}
+
+/// The speculation window: how many runs the queue keeps in progress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Window {
+    pub current: u32,
+    pub floor: u32,
+    pub ceiling: u32,
+}
+
+/// The settings of a queue that its page shows, from its last valid
+/// configuration file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SettingsSummary {
+    pub batching_enabled: bool,
+    pub batching_size: u32,
+    pub batching_max_wait_minutes: u32,
+    /// How many times a run that fails is tested again before its PRs fail.
+    pub failure_budget_retries: u32,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub merge_method: MergeMethod,
 }
 
 /// `GET /orgs/{org}/queues`: by repository name, then queue name.
