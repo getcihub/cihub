@@ -1,10 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cihub_domain::{
     CheckConclusion, CheckReport, ConnectionId, MembershipRole, MergeMethod, Mergeability, PrState,
     ReviewDecision,
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 /// The connection that a call uses: its quota, its budget and its credentials.
@@ -162,6 +165,12 @@ pub struct SignInRequest {
     /// The SHA-256 of the code verifier, in base64url without padding
     /// (PKCE, method `S256`).
     pub code_challenge: String,
+}
+
+/// The challenge of `verifier` for PKCE, method `S256`: the SHA-256 of the
+/// verifier, in base64url without padding (RFC 7636).
+pub fn code_challenge(verifier: &SecretString) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.expose_secret().as_bytes()))
 }
 
 /// The code that the SCM gives on the callback of a sign-in, and the

@@ -250,6 +250,8 @@ Decisions:
     none; the hourly `sync_members` job converges the members of each connection and alone deletes. New keys `github.client_id` and
     `github.client_secret`, both or none. Tests: the simulator and the contract suite (`members`), the GitHub
     adapter on answers written by hand, `tests/postgres.rs` of `cihub-platform`.
+  - Done (October 10, 2026): the simulator checks PKCE: a code is refused when the verifier does not give the
+    challenge of its request. `code_challenge` (`cihub-scm`) computes it, for the simulator and for `cihub-web`.
   - Waits on the project lead: a new recording by the `github` example (`record` mode), so that the recorded
     contract suite also runs `contract::members`; the fixture admin must be an owner of the account. Then
     `contract::members` moves into `contract::run`.

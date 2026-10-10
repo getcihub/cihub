@@ -19,7 +19,7 @@ use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
     RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
     ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn,
-    StatusUpdate,
+    StatusUpdate, code_challenge,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -166,9 +166,9 @@ struct State {
     /// The members of the account of each installation, by the external
     /// identifier of the user.
     members: BTreeMap<String, BTreeMap<String, ScmMember>>,
-    /// The codes of the sign-ins that wait for their exchange: the person and
-    /// the address that the SCM sends the code to.
-    sign_in_codes: BTreeMap<String, (ScmUser, String)>,
+    /// The sign-ins that wait for the exchange of their code: the person and
+    /// the request of CIHub.
+    sign_in_codes: BTreeMap<String, (ScmUser, SignInRequest)>,
     next_sign_in_code: u64,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
@@ -573,15 +573,16 @@ impl Sim {
         });
     }
 
-    /// Signs `user` in on the page of the SCM, as after their consent, and
-    /// returns the code that the SCM sends to `redirect_url`.
-    pub fn authorize(&self, user: &ScmUser, redirect_url: &str) -> String {
+    /// Signs `user` in on the page of the SCM for `request`, as after their
+    /// consent, and returns the code that the SCM sends to its
+    /// `redirect_url`.
+    pub fn authorize(&self, user: &ScmUser, request: &SignInRequest) -> String {
         self.with(|state| {
             state.next_sign_in_code += 1;
             let code = format!("code-{}", state.next_sign_in_code);
             state
                 .sign_in_codes
-                .insert(code.clone(), (user.clone(), redirect_url.to_owned()));
+                .insert(code.clone(), (user.clone(), request.clone()));
             code
         })
     }
@@ -1692,11 +1693,13 @@ impl Scm for Sim {
     fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn> {
         self.record_call("sign_in", class, move |state| {
             let refused = || ScmError::Validation("the code of the sign-in is not valid".into());
-            let (user, redirect_url) = state
+            let (user, request) = state
                 .sign_in_codes
                 .remove(code.code.expose_secret())
                 .ok_or_else(refused)?;
-            if redirect_url != code.redirect_url {
+            let is_same_request = request.redirect_url == code.redirect_url
+                && request.code_challenge == code_challenge(&code.code_verifier);
+            if !is_same_request {
                 return Err(refused());
             }
 
@@ -1865,38 +1868,57 @@ mod tests {
             external_id: "7".into(),
             login: "ada".into(),
         };
-        let redirect_url = "https://ci.example.com/auth/callback";
-        let exchange = |code: String, redirect_url: &str| SignInCode {
+        let request = SignInRequest {
+            redirect_url: "https://ci.example.com/auth/callback".into(),
+            state: "state".into(),
+            code_challenge: code_challenge(&"verifier".into()),
+        };
+        let exchange = |code: String, verifier: &str, redirect_url: &str| SignInCode {
             code: code.into(),
-            code_verifier: "verifier".into(),
+            code_verifier: verifier.into(),
             redirect_url: redirect_url.into(),
         };
         let member = ScmMembership {
             connection_external_id: "100".into(),
             role: MembershipRole::Member,
         };
+        let url = request.redirect_url.as_str();
 
         sim.set_member("100", &person, MembershipRole::Member);
         sim.set_member("999", &person, MembershipRole::Admin);
-        let code = sim.authorize(&person, redirect_url);
-        let signed_in = sim
-            .sign_in(&exchange(code.clone(), redirect_url), JobClass::Interactive)
-            .await
-            .unwrap();
-        let again = sim
-            .sign_in(&exchange(code, redirect_url), JobClass::Interactive)
-            .await;
-        let elsewhere = sim
-            .sign_in(
-                &exchange(sim.authorize(&person, redirect_url), "https://evil.example"),
-                JobClass::Interactive,
-            )
-            .await;
+        let code = sim.authorize(&person, &request);
+        let first = exchange(code.clone(), "verifier", url);
+        let replayed = exchange(code, "verifier", url);
+        let elsewhere = exchange(
+            sim.authorize(&person, &request),
+            "verifier",
+            "https://evil.example",
+        );
+        let forged = exchange(sim.authorize(&person, &request), "other", url);
+        let signed_in = sim.sign_in(&first, JobClass::Interactive).await.unwrap();
+        let mut refused = Vec::new();
+        for code in [&replayed, &elsewhere, &forged] {
+            refused.push(sim.sign_in(code, JobClass::Interactive).await);
+        }
 
         assert_eq!(signed_in.user, person);
         assert_eq!(signed_in.memberships, [member]);
-        assert!(matches!(again, Err(ScmError::Validation(_))));
-        assert!(matches!(elsewhere, Err(ScmError::Validation(_))));
+        for refused in refused {
+            assert!(
+                matches!(refused, Err(ScmError::Validation(_))),
+                "{refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_code_challenge_is_the_one_of_rfc_7636() {
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into();
+
+        assert_eq!(
+            code_challenge(&verifier),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
     }
 
     #[tokio::test]
