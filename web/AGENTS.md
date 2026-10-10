@@ -1,0 +1,65 @@
+# web
+
+The dashboard: a single-page application in TypeScript, built by Vite and embedded in the `cihub` binary by the
+`web` role. It reads and acts only through the public API; it holds no queue logic and no rule that the server
+does not also check.
+
+## Stack (Q9, decided)
+
+- TypeScript in strict mode (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); no `any`, no
+  non-null assertion `!`, no `@ts-ignore`.
+- React, Vite, and the TanStack libraries: Router for the routes, Query for the data of the server, Form for the
+  forms. Table only for a table that the client sorts or filters; the server already orders the items.
+- The client of the API is generated from `/api/v1/openapi.json` by `@hey-api/openapi-ts`, with its plugin
+  `@tanstack/react-query` (`queryOptions`, `mutationOptions`, query keys). The generated files are never edited
+  by hand; a change of the API regenerates them in the same change.
+- Zod 4 for the search parameters and the forms, without adapter (Standard Schema).
+- Vitest and Testing Library for the components; Playwright for the browser tests, against a server on the
+  simulator (`cihub-scm`, feature `sim`), never the real SCM.
+- A new dependency of `package.json` is proposed to the project lead, as a crate is.
+
+## Routes
+
+- File-based routing with `@tanstack/router-plugin/vite`, placed before `@vitejs/plugin-react`, with
+  `autoCodeSplitting`. The files of `src/routes/` follow the URL: `/orgs/$org/repos/$repo/queues/$queue`, as the
+  API names its resources.
+- The URL holds the state that a link must keep: the organization, the queue, the open PR, the tab. Every search
+  parameter goes through `validateSearch` with a Zod schema.
+- A link is a typed `<Link to=…>` or `navigate({ to })`; never a path built from strings.
+- The router context carries the `QueryClient`. The layout of the signed-in pages reads `/me` in `beforeLoad`
+  and redirects to the sign-in page on `401`.
+
+## Data of the server
+
+- Every read goes through TanStack Query with the generated `queryOptions`; never a `fetch` by hand, never a copy
+  of the data of the server in `useState`, a context or a store.
+- A route loader starts its reads with `queryClient.query(...)` (`ensureQueryData` is deprecated); the component
+  reads them with `useSuspenseQuery`. No request waterfall: a loader starts the independent reads together.
+- The stream `/orgs/{org}/stream` invalidates the query keys of the queue that changed; no polling once it exists
+  (Lot 10d).
+- A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
+  answers `202` and the queue decides at its next reconciliation; the page shows the request as sent until the
+  stream signals the change.
+- An error is the `Problem` of the API: the page decides on its `code`, never on `detail` or on the status alone.
+  A route has its `errorComponent`, which resets the queries with `useQueryErrorResetBoundary`.
+
+## Vocabulary and rights
+
+- The page shows `state_description` and the descriptions that the API gives; it decides on the codes
+  (`state_reason`, `kind`, `code`). It never writes its own sentence for a reason of the closed vocabulary.
+- The role of `/me` only hides or disables a button; the server refuses what the role does not allow.
+- Every text is in English, with the words of `specs/DOMAIN.md`.
+
+## Interface
+
+- The design tokens (colors, spacing, the two themes) are CSS custom properties, taken from the mockups; no CSS
+  framework. A component keeps its styles in a CSS module next to it.
+- Every action works with the keyboard; `/` opens the search, `Escape` closes a drawer or a modal. A page has its
+  loading, empty and error states.
+
+## Commands
+
+`mise run lint` and `mise run check` cover the dashboard: type check, ESLint (`typescript-eslint`,
+`react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), Prettier, Vitest.
+
+Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10e).
