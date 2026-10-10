@@ -58,11 +58,10 @@ pub(crate) async fn unrouted_deliveries(
 
 /// Where `delivery` goes: its connection when CIHub knows it, and its queue
 /// when one is sure: a PR by its base branch, a push by its branch, a check
-/// by the test branch that names its run (`DECISIONS.md` D85). A delivery
+/// by the test branch that names its run. A delivery
 /// without a known connection, and a change of the installation of a
 /// connection, are processed at once: the sync of the installation reads the
-/// SCM again (`DECISIONS.md` D247), and the router deletes the delivery
-/// (`DECISIONS.md` D249).
+/// SCM again, and the router deletes the delivery.
 ///
 /// # Errors
 ///
@@ -228,7 +227,7 @@ pub(crate) async fn route_delivery(
 
 /// Routes the deliveries that wait, [`ROUTES_PER_PASS`] per transaction,
 /// then waits for [`INBOX_CHANNEL`] or `idle_wait`, until cancellation. `translate`
-/// reads a delivery of the SCM (`DECISIONS.md` D84); a delivery that it cannot
+/// reads a delivery of the SCM; a delivery that it cannot
 /// read is deleted, with a warning.
 ///
 /// # Errors

@@ -1,6 +1,6 @@
-//! The recorded answers of GitHub (`DECISIONS.md` D90): the world of the
-//! contract suite, and each exchange in the order of the calls. The example
-//! `github` writes them; the tests replay them.
+//! The recorded answers of GitHub: the world of the contract suite, and each
+//! exchange in the order of the calls. The example `github` writes them; the
+//! tests replay them.
 #![allow(
     dead_code,
     reason = "shared by the tests and the example: each uses a part"

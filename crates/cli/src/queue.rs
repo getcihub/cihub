@@ -1,7 +1,6 @@
-//! `cihub queue`: the merge queue, through the public API (`docs/API.md`,
-//! `DECISIONS.md` D161, D168). The repository comes from `--repo`, else from
-//! the remote `origin` of git; the queue from `--queue`, else from the only
-//! queue of the repository.
+//! `cihub queue`: the merge queue, through the public API (`specs/API.md`).
+//! The repository comes from `--repo`, else from the remote `origin` of git;
+//! the queue from `--queue`, else from the only queue of the repository.
 
 use std::io::Write;
 

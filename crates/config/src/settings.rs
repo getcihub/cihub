@@ -85,7 +85,7 @@ settings! {
     failure_budget_retries: u32 = 1;
     optimistic_merging: bool = false;
     pending_failure_depth: u32 = 0;
-    /// `off` by default, in every strategy (`DECISIONS.md` D153).
+    /// `off` by default, in every strategy.
     direct_merge_mode: DirectMergeMode = DirectMergeMode::Off;
     optimization_mode: OptimizationMode = OptimizationMode::BisectionSkipRedundantTests;
     comments_enabled: bool = true;
@@ -94,8 +94,7 @@ settings! {
     label_commands_enabled: bool = true;
     enqueue_label: String = "cihub-merge-queue-submit".to_owned();
     state_labels_enabled: bool = false;
-    /// A push on a PR in the queue submits it again at the end of the queue
-    /// (`DECISIONS.md` D152).
+    /// A push on a PR in the queue submits it again at the end of the queue.
     resubmit_on_push: bool = false;
     keep_test_branches_minutes: u32 = 0;
     /// Test branches are `<prefix>-merge/` and `<prefix>-temp/`.
@@ -150,7 +149,7 @@ fn strategy_layer(strategy: Strategy) -> Layer {
 
 impl QueueSettings {
     /// Merges the sources of one queue, from the strongest: the queue in the
-    /// file, then `defaults` in the file (`DECISIONS.md` D134).
+    /// file, then `defaults` in the file.
     ///
     /// # Errors
     ///

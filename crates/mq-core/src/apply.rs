@@ -1,5 +1,5 @@
 //! `apply`: the pure function that applies one event to the snapshot. Replay
-//! uses it alone and never calls `plan` (`DECISIONS.md` D5).
+//! uses it alone and never calls `plan`.
 
 use cihub_domain::{
     Actor, CheckObservation, Event, EventId, EventKind, GroupId, GroupState, Item, ItemId,

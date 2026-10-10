@@ -3,9 +3,8 @@ use sqlx::PgConnection;
 
 use crate::StoreError;
 
-/// The account `external_id` of the SCM, created with `id` when it is missing
-/// (`DECISIONS.md` D42, D51). Its login follows a rename: the log points to the
-/// account, never to a login.
+/// The account `external_id` of the SCM, created with `id` when it is missing.
+/// Its login follows a rename: the log points to the account, never to a login.
 ///
 /// # Errors
 ///

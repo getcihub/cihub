@@ -1,7 +1,7 @@
-//! The merge job (`DECISIONS.md` D123): `merge_pr` merges a PR of the desired
-//! state, guarded by its head, and gives back `merge.succeeded` or
-//! `merge.failed`. It reads the projection first, so that a decision that
-//! changed since the request merges nothing (principle III).
+//! The merge job: `merge_pr` merges a PR of the desired state, guarded by its
+//! head, and gives back `merge.succeeded` or `merge.failed`. It reads the
+//! projection first, so that a decision that changed since the request merges
+//! nothing (principle III).
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
@@ -26,8 +26,8 @@ use crate::target::QueueTarget;
 
 pub(crate) const MERGE_PR: &str = "merge_pr";
 
-/// After this many attempts, a merge that still fails on a passing error
-/// gives up (`DECISIONS.md` D123): with the backoff of the jobs, about a minute.
+/// After this many attempts, a merge that still fails on a passing error gives
+/// up: with the backoff of the jobs, about a minute.
 const MERGE_ATTEMPTS: i32 = 6;
 
 // A retry must end in a fact before the job goes `dead`.
@@ -41,7 +41,7 @@ const MERGE_RATE_LIMIT_WAIT: Duration = Duration::minutes(15);
 struct MergePr {
     pub item_id: ItemId,
     /// The run that proved the item: an item proved again by another run
-    /// has another job. `None` for a direct merge (`DECISIONS.md` D153).
+    /// has another job. `None` for a direct merge.
     pub run_id: Option<RunId>,
     pub pr_number: u64,
     pub head_sha: String,
@@ -182,9 +182,9 @@ pub(crate) async fn merge_pr(
 enum Landed {
     /// The commit that landed on the target.
     Merged(String),
-    /// The PR was merged before: not by this job (`DECISIONS.md` D132).
+    /// The PR was merged before: not by this job.
     AlreadyMerged,
-    /// The direct merge cannot happen now (`DECISIONS.md` D153).
+    /// The direct merge cannot happen now.
     Unavailable,
 }
 
@@ -237,7 +237,7 @@ async fn land(
     }
 
     match scm.merge_pr(&target.repo, &merge, class).await {
-        // The target moved: the push restarts the group (`DECISIONS.md` D124).
+        // The target moved: the push restarts the group.
         Err(ScmError::NotFastForward) => Err(ScmError::Unavailable(
             "the target moved: not a fast forward".into(),
         )),
@@ -245,11 +245,11 @@ async fn land(
     }
 }
 
-/// A direct merge lands exactly what the CI of the PR tested (`DECISIONS.md`
-/// D153): the required statuses of a test SHA on the current head of the
-/// target are green on the head of the PR, the PR contains that head, and
-/// the PR is mergeable. An error of the configuration leaves the item to the
-/// tests, whose assembly reports it.
+/// A direct merge lands exactly what the CI of the PR tested: the required
+/// statuses of a test SHA on the current head of the target are green on the
+/// head of the PR, the PR contains that head, and the PR is mergeable. An
+/// error of the configuration leaves the item to the tests, whose assembly
+/// reports it.
 async fn direct_merge_possible(
     scm: &dyn Scm,
     settings: &QueueSettings,
@@ -413,7 +413,7 @@ mod tests {
         );
         assert_eq!(job.class, JobClass::Merge);
 
-        // A direct merge has its own key (`DECISIONS.md` D153).
+        // A direct merge has its own key.
         let direct = Merge {
             run_id: None,
             ..merge

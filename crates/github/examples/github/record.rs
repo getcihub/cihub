@@ -1,6 +1,6 @@
 //! Prepares the repository of the contract suite on a real GitHub, then plays
 //! the suite through a recording proxy and writes each exchange in
-//! `tests/recorded/contract.json` (`DECISIONS.md` D90).
+//! `tests/recorded/contract.json`.
 
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};

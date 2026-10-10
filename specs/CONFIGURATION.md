@@ -4,21 +4,20 @@ The model of the file is in `crates/config/src/file.rs`; the settings, their def
 and the strategy table are in `crates/config/src/settings.rs`. This file explains them.
 
 The behavior of a queue is configured in one file of the repository, `.cihub.yaml`, `.cihub.yml`,
-`.cihub/config.yaml` or `.cihub/config.yml` (`DECISIONS.md` D255), read on
+`.cihub/config.yaml` or `.cihub/config.yml`, read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
-each new head (`DECISIONS.md` D136); the settings apply from the reconciliation that follows the
-read. No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
+each new head; the settings apply from the reconciliation that follows the
+read. No queue is created by hand: the first `/cihub merge` on a branch without a queue
 creates the queues that the file names on that branch, or, without such an entry, on the default branch of the
 repository, a queue named after the branch, with the default settings and `defaults`. Without a file, a team thus
 starts with one queue on its default branch; an entry `name: main`, `branch: main` then sets that same queue. An
 entry of `queues` links to its queue by `branch` and `name`; a queue without an entry has `defaults`. A queue
 that the file no longer names takes no new submission and finishes its items. This file is the only
-source of the settings (`DECISIONS.md` D134): the dashboard helps write it through a form that opens a PR on
+source of the settings: the dashboard helps write it through a form that opens a PR on
 the repository, never a direct commit on the target. If several of these files exist, the configuration is in error, because none
 wins. Several queues can target the same branch: a PR is routed to the queue named in the command
 (`/cihub merge --queue=hotfix`), otherwise to the first queue, in file order, whose `route_conditions` are
-satisfied (a queue without `route_conditions` takes every PR), otherwise to the first queue of the branch
-(`DECISIONS.md` D148, D232). The routing reads the PR once, at the submission, and an item never changes queue.
+satisfied (a queue without `route_conditions` takes every PR), otherwise to the first queue of the branch. The routing reads the PR once, at the submission, and an item never changes queue.
 `queue_conditions` do not route: they only admit, and the item waits in `not_ready` in its queue until they are
 satisfied. Write in `route_conditions` what says where a PR goes and does not change (its head branch, for example),
 and in `queue_conditions` what says whether it is ready (its checks, its reviews). The first rule of `priority_rules` that the PR satisfies gives its priority, unless the
@@ -73,7 +72,7 @@ The file must start with `version: 1`: another value, or its absence, gives
 `start_test_run_config_bad_version`. An unknown key, an out-of-range value or two settings that do not go
 together give `start_test_run_config_parsing_failure`, with the line and column of the faulty value. A
 `required_statuses` list with an empty or duplicate name gives `start_test_run_config_bad_required_statuses`.
-For now, `merge_conditions` accepts only `check-success = <name>` at the first level (`DECISIONS.md` D146):
+For now, `merge_conditions` accepts only `check-success = <name>` at the first level:
 another form gives `start_test_run_config_parsing_failure`, with its position. `defaults` accepts every
 queue setting, but not `name`, `branch` or the conditions (`route_conditions`, `queue_conditions`,
 `merge_conditions`); two queues cannot have the same `name`.
@@ -97,7 +96,7 @@ follow. A strategy is a table of default values, with no code in the core:
 | `batched`    | `single`   | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 | `parallel`   | `parallel` | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 
-All strategies keep direct merge disabled (`direct_merge_mode: off`, `DECISIONS.md` D153) and give one
+All strategies keep direct merge disabled (`direct_merge_mode: off`) and give one
 failure budget retry.
 
 ## Settings
@@ -110,10 +109,10 @@ failure budget retry.
 | `bisection_concurrency`                                        | the window ceiling                  | 1–200                                                                      |
 | `testing_timeout_minutes`                                      | 300                                 | 10–1440                                                                    |
 | `not_ready_timeout_hours`                                      | 168                                 | 1–720                                                                      |
-| `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward` (`sequential` strategy only, `DECISIONS.md` D120) |
+| `merge_method`                                                 | `squash`                            | `squash`, `merge_commit`, `rebase`, `fast_forward` (`sequential` strategy only) |
 | `merge_commit_title`                                           | `pr_title`                          | `pr_title`, `pr_title_and_number`                                          |
-| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`; `inplace` arrives with a later lot and is refused until then (`DECISIONS.md` D119) |
-| `update_method`                                                | `merge`                             | `merge`; used by `inplace` (`rebase` arrives with a later lot, `DECISIONS.md` D114) |
+| `trigger`                                                      | `draft_pr`                          | `draft_pr`, `push`; `inplace` arrives with a later lot and is refused until then |
+| `update_method`                                                | `merge`                             | `merge`; used by `inplace` (`rebase` arrives with a later lot) |
 | `batching.enabled` / `size` / `max_wait_minutes`               | disabled / 4 / 5                    | maximum size 2–20, wait 1–60                                               |
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |
 | `optimistic_merging`                                           | disabled                            | boolean                                                                    |
@@ -123,7 +122,7 @@ failure budget retry.
 | `comments_enabled`, `commands_enabled`, `status_check_enabled` | enabled                             | boolean                                                                    |
 | `label_commands.enabled` / `enqueue_label`                     | enabled / `cihub-merge-queue-submit` | non-empty string                                                           |
 | `state_labels_enabled`                                         | disabled                            | boolean                                                                    |
-| `resubmit_on_push`                                             | disabled                            | boolean; a push on a queued PR resubmits it at the end of the queue (`DECISIONS.md` D152) |
+| `resubmit_on_push`                                             | disabled                            | boolean; a push on a queued PR resubmits it at the end of the queue |
 | `keep_test_branches_minutes`                                   | 0                                   | 0–1440                                                                     |
 | `branch_prefix`                                                | `cihub`                             | string without `/` or space; branches `<prefix>-merge/` and `<prefix>-temp/` |
 | `branch_protection_injection`                                  | `both`                              | `both`, `merge`, `none`                                                    |

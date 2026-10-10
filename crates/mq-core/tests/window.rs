@@ -1,6 +1,6 @@
-//! The adaptive window (`DECISIONS.md` D141): exit criterion of lot 8. A
-//! `pipelined` queue under 20 % of failing PRs closes its window to the
-//! floor, then opens it again once the PRs pass.
+//! The adaptive window: exit criterion of lot 8. A `pipelined` queue under 20 %
+//! of failing PRs closes its window to the floor, then opens it again once the
+//! PRs pass.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 

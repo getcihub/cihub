@@ -1,4 +1,4 @@
-//! `/api/v1` (`docs/API.md`, `DECISIONS.md` D159): the authentication of each
+//! `/api/v1` (`specs/API.md`): the authentication of each
 //! request by its API token, the rate limit of each token, the routes of the
 //! platform (`/repos`, `/orgs/{org}/audit`), the routes of the modules, and
 //! the `OpenAPI` document of all of them.

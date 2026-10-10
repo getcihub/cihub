@@ -39,7 +39,7 @@ spec:
       # The legacy link variables of a Service named cihub would start with
       # CIHUB_, the prefix of the configuration.
       enableServiceLinks: false
-      # CIHub does not call the Kubernetes API (DECISIONS.md D251).
+      # CIHub does not call the Kubernetes API.
       automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

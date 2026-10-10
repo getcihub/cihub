@@ -678,10 +678,10 @@ impl SimQueue {
     }
 
     /// Delivers the deliveries of the simulator, then processes each one
-    /// again, one at a time (`DECISIONS.md` D249): the log of the queue and
-    /// the jobs stay the same, except for a PR opened, which is in the queue
-    /// now and asks one read of the PR, keyed by the delivery, and the
-    /// `pr.observed` facts of that read. Returns the events of the deliveries.
+    /// again, one at a time: the log of the queue and the jobs stay the same,
+    /// except for a PR opened, which is in the queue now and asks one read of
+    /// the PR, keyed by the delivery, and the `pr.observed` facts of that
+    /// read. Returns the events of the deliveries.
     async fn deliver_and_process_again(&mut self) -> Vec<ScmEvent> {
         let first = self.sent + 1;
         self.deliver().await;
@@ -1322,9 +1322,9 @@ fn read_job(n: u64) -> Job {
     }
 }
 
-/// The lot 4 chain, end to end (`DECISIONS.md` D70, D77): an executor calls
-/// GitHub through the connection, GitHub answers 429, the pause reaches
-/// `scm_connections`, and no job of the connection goes out before the reset.
+/// The lot 4 chain, end to end: an executor calls GitHub through the
+/// connection, GitHub answers 429, the pause reaches `scm_connections`, and
+/// no job of the connection goes out before the reset.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: PgPool) {
     seed(&pool).await;
@@ -1473,7 +1473,7 @@ async fn test_runs(conn: &mut PgConnection) -> Vec<RunRow> {
     .unwrap()
 }
 
-/// The exit criterion of lot 6 (`docs/LOTS.md`): ten PRs, two with a red CI,
+/// The exit criterion of lot 6 (`specs/LOTS.md`): ten PRs, two with a red CI,
 /// one in conflict with a PR ahead of it, one whose CI never reports. Each
 /// PR is tested on top of its predecessors, each run ends with its reason,
 /// the PRs behind a failed one restart without it, and the merge job merges
@@ -1842,9 +1842,9 @@ async fn admissions(pool: &PgPool) -> Vec<(i64, String, serde_json::Value, Optio
     .unwrap()
 }
 
-/// `DECISIONS.md` D142 to D144: a PR waits in `not_ready` with the
-/// `queue_conditions` that it does not meet, and enters the queue once it
-/// meets them; the files are read only because a condition uses them.
+/// A PR waits in `not_ready` with the `queue_conditions` that it does not
+/// meet, and enters the queue once it meets them; the files are read only
+/// because a condition uses them.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -1992,12 +1992,11 @@ async fn routed_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
         .collect()
 }
 
-/// `DECISIONS.md` D148 and D232: with two queues on `main`, a PR enters the
-/// first queue whose `route_conditions` it meets, or the one that its command
-/// names, with the priority of the first rule that it meets unless the
-/// command gives one. A `hotfix/` PR whose CI still runs enters `hotfix` and
-/// waits there for its `queue_conditions`. A push on `main` reaches both
-/// queues (D135).
+/// With two queues on `main`, a PR enters the first queue whose
+/// `route_conditions` it meets, or the one that its command names, with the
+/// priority of the first rule that it meets unless the command gives one. A
+/// `hotfix/` PR whose CI still runs enters `hotfix` and waits there for its
+/// `queue_conditions`. A push on `main` reaches both queues.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2076,8 +2075,8 @@ priority_rules:
     q.stop().await;
 }
 
-/// `DECISIONS.md` D232: a PR that the `route_conditions` of no queue of its
-/// branch take enters the first queue of the branch.
+/// A PR that the `route_conditions` of no queue of its branch take enters
+/// the first queue of the branch.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_that_no_queue_routes_enters_the_first_queue(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2108,8 +2107,8 @@ queues:
     q.stop().await;
 }
 
-/// `DECISIONS.md` D150: a push on a branch with two queues waits while a merge
-/// of one of them is in flight, then asks each queue to read its head.
+/// A push on a branch with two queues waits while a merge of one of them is in
+/// flight, then asks each queue to read its head.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     seed(&pool).await;
@@ -2207,8 +2206,8 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     assert_eq!(state(pool.clone()).await, (0, 2));
 }
 
-/// `DECISIONS.md` D152: with `resubmit_on_push`, a push on a PR in the queue
-/// cancels its item and submits the new head, with the same priority.
+/// With `resubmit_on_push`, a push on a PR in the queue cancels its item and
+/// submits the new head, with the same priority.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_push_submits_the_pr_again(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2298,9 +2297,9 @@ async fn item_state(pool: &PgPool, number: u64) -> String {
         .unwrap()
 }
 
-/// `DECISIONS.md` D170: a check that concludes on the head of a waiting item
-/// asks its queue to read the PR at once, before any read point; a check in
-/// progress and a replayed delivery ask nothing.
+/// A check that concludes on the head of a waiting item asks its queue to
+/// read the PR at once, before any read point; a check in progress and a
+/// replayed delivery ask nothing.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2359,10 +2358,10 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D249: a delivery stored and processed again once the inbox
-/// deleted it writes no wrong fact and asks no job twice: the change of a PR,
-/// a `/cihub merge` command, a check on the head of a PR and on the test SHA
-/// of a live run, and the push and the change of the PR that merge it.
+/// A delivery stored and processed again once the inbox deleted it writes no
+/// wrong fact and asks no job twice: the change of a PR, a `/cihub merge`
+/// command, a check on the head of a PR and on the test SHA of a live run,
+/// and the push and the change of the PR that merge it.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2423,8 +2422,8 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D170: a check that concludes on the head of an admitted
-/// item, or on a commit that is the head of no item, asks for no read.
+/// A check that concludes on the head of an admitted item, or on a commit
+/// that is the head of no item, asks for no read.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2460,8 +2459,8 @@ async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D151: a submission while the queue drains gives an item that
-/// is cancelled at once, concluded, and not the live item of its PR.
+/// A submission while the queue drains gives an item that is cancelled at
+/// once, concluded, and not the live item of its PR.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2518,9 +2517,8 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D253: a command on a PR that is merged, closed or a draft
-/// is refused with its reason, and gives no item. The refusal mentions the
-/// author of the command (D254).
+/// A command on a PR that is merged, closed or a draft is refused with its
+/// reason, and gives no item. The refusal mentions the author of the command.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2620,9 +2618,8 @@ async fn without_queue(pool: &PgPool) {
     tx.commit().await.unwrap();
 }
 
-/// `DECISIONS.md` D172: without a file, the first command on the default
-/// branch creates its queue; a label, or a command on another branch,
-/// creates none.
+/// Without a file, the first command on the default branch creates its
+/// queue; a label, or a command on another branch, creates none.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2693,9 +2690,9 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     q.stop().await;
 }
 
-/// `DECISIONS.md` D172: the first command on a branch creates the queues
-/// that the file names on it, with the file, so that the routing of the
-/// command reads their conditions.
+/// The first command on a branch creates the queues that the file names
+/// on it, with the file, so that the routing of the command reads their
+/// conditions.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_command_creates_the_queues_that_the_file_names(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2745,9 +2742,9 @@ queues:
     q.stop().await;
 }
 
-/// `DECISIONS.md` D153: with `direct_merge_mode: always`, a green PR that
-/// contains the head of the target merges without a test branch; a PR that
-/// does not contain it goes through the tests.
+/// With `direct_merge_mode: always`, a green PR that contains the head of
+/// the target merges without a test branch; a PR that does not contain it
+/// goes through the tests.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2805,9 +2802,9 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     q.stop().await;
 }
 
-/// Each PR shows its item (`DECISIONS.md` D156): one comment of the queue,
-/// edited in place, the status of the queue on its head, and the state
-/// labels; a merged PR keeps its last state.
+/// Each PR shows its item: one comment of the queue, edited in place, the
+/// status of the queue on its head, and the state labels; a merged PR
+/// keeps its last state.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -2910,9 +2907,9 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     q.stop().await;
 }
 
-/// `/cihub restart` and `/cihub cancel` (`DECISIONS.md` D157): an account with
-/// `write` restarts the tests of an item in test, then cancels it; an
-/// account without it gets a comment that mentions it and says why (D254).
+/// `/cihub restart` and `/cihub cancel`: an account with `write` restarts the
+/// tests of an item in test, then cancels it; an account without it gets a
+/// comment that mentions it and says why.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3009,9 +3006,9 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     q.stop().await;
 }
 
-/// The comment shows the history of the PR in the queue (`DECISIONS.md` D244):
-/// the login of a user who sent a command is in a code span, and the rendering
-/// in `pr_surfaces` is the one that the SCM shows.
+/// The comment shows the history of the PR in the queue: the login of a user
+/// who sent a command is in a code span, and the rendering in `pr_surfaces` is
+/// the one that the SCM shows.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3061,8 +3058,8 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     q.stop().await;
 }
 
-/// The history covers every item of the PR, in the order of the log
-/// (`DECISIONS.md` D244): a PR cancelled then submitted again shows both.
+/// The history covers every item of the PR, in the order of the log: a PR
+/// cancelled then submitted again shows both.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3147,9 +3144,9 @@ async fn call(
     )
 }
 
-/// The API v1 reads and changes a queue (`DECISIONS.md` D160): a submission,
-/// its item, its timeline and its run, the graph, a restart and a cancel,
-/// a pause, a new queue, a resync and the audit log.
+/// The API v1 reads and changes a queue: a submission, its item, its
+/// timeline and its run, the graph, a restart and a cancel, a pause, a new
+/// queue, a resync and the audit log.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3309,11 +3306,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     q.stop().await;
 }
 
-/// A new PR gets the welcome comment of the queue, whose box submits it
-/// (`DECISIONS.md` D163): an account with `write` checks it, the comment shows
-/// the item, and the box comes back once the item is cancelled. A box in a
-/// comment of someone else, or checked by an account without `write`,
-/// submits nothing.
+/// A new PR gets the welcome comment of the queue, whose box submits it: an
+/// account with `write` checks it, the comment shows the item, and the box
+/// comes back once the item is cancelled. A box in a comment of someone else,
+/// or checked by an account without `write`, submits nothing.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3516,8 +3512,8 @@ async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<Str
         .unwrap()
 }
 
-/// `DECISIONS.md` D136, D137: the queue reads its file on each new head of its
-/// target, keeps the last valid one, and follows its mode.
+/// The queue reads its file on each new head of its target, keeps the last
+/// valid one, and follows its mode.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3614,8 +3610,8 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
         .unwrap()
 }
 
-/// `DECISIONS.md` D106: an old partition goes only once a snapshot covers its
-/// events, and the log of the queue goes on from the snapshot.
+/// An old partition goes only once a snapshot covers its events, and the log
+/// of the queue goes on from the snapshot.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     let may = OffsetDateTime::new_utc(
@@ -3678,8 +3674,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     assert!(matches!(err, MergeQueueError::LogGap { .. }), "{err:?}");
 }
 
-/// A live queue without a wake-up is woken when a scheduler starts
-/// (`DECISIONS.md` D131); a queue whose items all concluded is not.
+/// A live queue without a wake-up is woken when a scheduler starts; a queue whose items all concluded is not.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_live_queues_are_woken_at_start(pool: PgPool) {
     async fn asleep(pool: &PgPool) {
@@ -3739,8 +3734,8 @@ fn submit_new_pr(sim: &Sim, main: &str, n: u64) -> u64 {
     number
 }
 
-/// The merge job (`DECISIONS.md` D123): a server error is retried, a head that
-/// changed fails the item with `pr_updated_at_merge_time`.
+/// The merge job: a server error is retried, a head that changed fails the
+/// item with `pr_updated_at_merge_time`.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3814,9 +3809,9 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     q.stop().await;
 }
 
-/// A PR merged outside the queue while in test (`DECISIONS.md` D132): the merge
-/// job does not claim it, the item is `manual_merge`, and the PR behind it is
-/// tested again on what landed, then merged.
+/// A PR merged outside the queue while in test: the merge job does not claim
+/// it, the item is `manual_merge`, and the PR behind it is tested again on what
+/// landed, then merged.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3898,9 +3893,8 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     q.stop().await;
 }
 
-/// The repair reads (`DECISIONS.md` D127): a lost report, a deleted test branch
-/// and a lost push on the target are found again; `resync` asks for every
-/// read at once (D128).
+/// The repair reads: a lost report, a deleted test branch and a lost push on
+/// the target are found again; `resync` asks for every read at once.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -4000,7 +3994,7 @@ async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
 }
 
 /// A generator of the fault injection test: splitmix64, so that a seed gives
-/// the same faults (`DECISIONS.md` D16).
+/// the same faults.
 struct Rng(u64);
 
 impl Rng {
@@ -4021,10 +4015,10 @@ impl Rng {
 /// The PRs of one seed.
 const CHAOS_PRS: u64 = 5;
 
-/// One seed of the fault injection test (`DECISIONS.md` D129): its own
-/// organization, connection, repository and queue in the shared database,
-/// the scheduler and the worker of the server against a simulator that fails
-/// calls at random, and webhooks lost, sent twice and reordered.
+/// One seed of the fault injection test: its own organization, connection,
+/// repository and queue in the shared database, the scheduler and the worker
+/// of the server against a simulator that fails calls at random, and
+/// webhooks lost, sent twice and reordered.
 struct Chaos {
     seed: u64,
     /// The `.cihub.yaml` of the repository; `None` keeps the defaults.
@@ -4499,12 +4493,12 @@ impl Chaos {
     }
 }
 
-/// The exit criterion of lot 7 (`docs/RELIABILITY.md`, `DECISIONS.md` D129): on
-/// each seed, server errors and rate limits at random, webhooks lost, sent
-/// twice and reordered, and processes killed at random, each green PR is
-/// merged exactly once, in the order of the queue, and each red PR fails with
-/// a reason. `CIHUB_SIM_SEEDS` gives the number of seeds (10 by default;
-/// `mise run sim` plays 1 000, for this test and the `batched` one).
+/// The exit criterion of lot 7 (`specs/RELIABILITY.md`): on each seed, server
+/// errors and rate limits at random, webhooks lost, sent twice and reordered,
+/// and processes killed at random, each green PR is merged exactly once, in the
+/// order of the queue, and each red PR fails with a reason. `CIHUB_SIM_SEEDS`
+/// gives the number of seeds (10 by default; `mise run sim` plays 1 000, for
+/// this test and the `batched` one).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn fault_injection(pool: PgPool) {
     play_chaos(pool, None).await;

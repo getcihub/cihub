@@ -21,7 +21,7 @@ installs in under thirty minutes with one image and one Postgres, and explains e
 3. **CI agnostic.** CIHub never runs the CI: it pushes a test branch and waits for the required statuses and check
    runs. GitHub Actions, Buildkite, CircleCI, Jenkins work without modification.
 4. **Simple to install and operate.** One image, one Postgres 17, one GitHub App created according to
-   `docs/GITHUB.md`; `docker compose up` is enough for one organization. Under thirty minutes from the first
+   `specs/GITHUB.md`; `docker compose up` is enough for one organization. Under thirty minutes from the first
    command to the first merged PR.
 5. **Every decision is explained.** Every transition carries a reason from a closed vocabulary; an event log per
    PR answers "why is my PR still waiting" and feeds the dashboards.
@@ -38,7 +38,7 @@ installs in under thirty minutes with one image and one Postgres, and explains e
 
 | Claim                  | Bar                                                                                                                                                                                        |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Installation           | An outside person installs CIHub and merges a first PR in under 30 minutes by following the README                                                                                         |
+| Installation           | An outside person installs CIHub and merges a first PR in under 30 minutes by following `INSTALL.md`                                                                                       |
 | Green branch           | The CIHub repository merges through CIHub for 2 weeks without a red merge                                                                                                                  |
 | Resilience             | Under the GitHub simulator (5xx, 429, lost, duplicated, out-of-order webhooks, killed processes), every green PR is merged exactly once, in graph order, and every red PR carries a reason |
 | Lost webhook           | Costs at most one interval of the repair loop, never a blockage                                                                                                                            |
@@ -55,4 +55,4 @@ installs in under thirty minutes with one image and one Postgres, and explains e
 - Code review, a browser extension, a Slack app beyond the outgoing webhooks, a Terraform provider.
 - GitLab and Bitbucket: the `Scm` trait allows for them, v1 does not implement them.
 - ClickHouse itself: it arrives when the volume justifies it, behind the `AnalyticsStore` trait.
-- Uber-style probabilistic speculation: outside v1, but the log already keeps the useful attributes (`DECISIONS.md` D27).
+- Uber-style probabilistic speculation: outside v1, but the log already keeps the useful attributes.

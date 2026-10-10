@@ -27,7 +27,7 @@ The branch names are frozen (Lot 6, `cihub-domain`): `<prefix>-temp/pr-<N>/<run_
 branch where the heads are merged, `<prefix>-merge/pr-<N>/<run_id>` for the test branch, where `N` is the
 number of the first PR of the group and `run_id` the identifier of the run (`run_…`), with `branch_prefix`
 (`cihub` by default). The name of the test branch leads to its run: a check reported on it is routed to its
-queue by this name, or by its test SHA once the branch is deleted (`DECISIONS.md` D118). The title of the draft
+queue by this name, or by its test SHA once the branch is deleted. The title of the draft
 PR is `CIHub: test #12 on main` and its body is frozen too:
 
 ```markdown
@@ -41,7 +41,7 @@ CIHub opened this pull request for the CI and closes it when the run ends. Do no
 ```
 
 At the end of the run, whatever its result, the `cleanup_test_branch` job closes the draft PR and deletes the
-test branch and the temporary branch, after `keep_test_branches_minutes` (`DECISIONS.md` D117).
+test branch and the temporary branch, after `keep_test_branches_minutes`.
 
 CI jobs can enrich the queue through two endpoints. `POST /api/v1/repos/{owner}/{name}/prs/{pr}/impacted-targets` sends the targets that a PR touches (Bazel, Nx or any script) for the parallel mode; `GET /api/v1/test-runs/{run_id}` lets a job discover which PRs it tests and the union of their impacted targets, so that a monorepo build limits itself to the affected projects. The run identifier is the last segment of the branch name, available in GitHub Actions through `${GITHUB_REF##*/}`.
 

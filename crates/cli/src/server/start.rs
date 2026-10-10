@@ -1,6 +1,6 @@
 //! `cihub server start`: serves `/healthz` and `/readyz` on the internal
-//! address, and runs the four roles in one process until `SIGTERM` or `SIGINT`
-//! (`DECISIONS.md` D168, D170). The roles of one process share only the
+//! address, and runs the four roles in one process until `SIGTERM` or `SIGINT`.
+//! The roles of one process share only the
 //! Postgres pool.
 
 use std::net::SocketAddr;

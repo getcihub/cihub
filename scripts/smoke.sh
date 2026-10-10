@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # smoke.sh: installs the chart as a cluster deploys it and checks that CIHub
-# starts (DECISIONS.md D251): two replicas in a throwaway kind cluster, against
+# starts: two replicas in a throwaway kind cluster, against
 # a CloudNativePG Postgres 17 whose owner is the cihub role, neither superuser
-# nor BYPASSRLS (D38). It fails on a migration Job that fails, on a pod that is
+# nor BYPASSRLS. It fails on a migration Job that fails, on a pod that is
 # never ready or restarts, on `helm test`, and on a signed delivery that the
 # web role does not accept.
 #
@@ -14,7 +14,7 @@
 #                        keeps its Secrets and restarts the replicas
 #   CIHUB_SMOKE_GITHUB=1 use the GitHub App of mise.local.toml instead of a
 #                        false one, and also check that its installations are
-#                        synced (D252): a development use, never in the CI
+#                        synced: a development use, never in the CI
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,7 +33,7 @@ log() { echo "==> $*"; }
 github="${CIHUB_SMOKE_GITHUB:-}"
 if [ "$github" = 1 ]; then
   for name in CIHUB_GITHUB_APP_ID CIHUB_GITHUB_PRIVATE_KEY_FILE CIHUB_GITHUB_WEBHOOK_SECRET; do
-    [ -n "${!name:-}" ] || { echo "CIHUB_SMOKE_GITHUB=1 needs $name, from mise.local.toml (docs/DEPLOYMENT.md)"; exit 1; }
+    [ -n "${!name:-}" ] || { echo "CIHUB_SMOKE_GITHUB=1 needs $name, from mise.local.toml (specs/DEPLOYMENT.md)"; exit 1; }
   done
 fi
 

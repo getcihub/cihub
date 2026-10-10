@@ -1,4 +1,4 @@
-# Development only (DECISIONS.md D12, D52): Postgres 17 for local work and the
+# Development only: Postgres 17 for local work and the
 # integration tests. The credentials are fixed for local use: never use them
 # elsewhere.
 #
@@ -8,7 +8,7 @@
 #   docker compose down  # stop Postgres, keep the data
 #
 # postgres/postgres is the superuser. cihub server connects as cihub/cihub,
-# which is neither superuser nor BYPASSRLS (D38) and can create the databases
+# which is neither superuser nor BYPASSRLS and can create the databases
 # of #[sqlx::test].
 
 services:

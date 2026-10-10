@@ -1,5 +1,5 @@
 //! The requests, the responses and the errors of the public API v1
-//! (`docs/API.md`, `DECISIONS.md` D159, D160), shared by the server and the
+//! (`specs/API.md`), shared by the server and the
 //! clients. Pure: no I/O and no server code. The feature `openapi` derives
 //! the `OpenAPI` schemas, for the server only.
 
@@ -96,7 +96,7 @@ pub struct Queue {
     /// The head of the target whose configuration file the queue read last.
     pub config_sha: Option<String>,
     /// Why the last file read is not valid; the queue keeps the last valid
-    /// one (`DECISIONS.md` D134).
+    /// one.
     pub config_error: Option<String>,
 }
 
@@ -293,7 +293,7 @@ pub struct Dependent {
     pub pr_numbers: Vec<u64>,
 }
 
-/// `GET /test-runs/{run_id}`, as `docs/API.md` fixes it (`DECISIONS.md` D115).
+/// `GET /test-runs/{run_id}`, as `specs/API.md` fixes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TestRun {
@@ -361,8 +361,7 @@ pub struct AuditPage {
     pub next_cursor: Option<String>,
 }
 
-/// A point of the configuration of the SCM that the queue needs
-/// (`DECISIONS.md` D162).
+/// A point of the configuration of the SCM that the queue needs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Finding {

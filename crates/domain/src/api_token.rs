@@ -1,6 +1,6 @@
-//! Text form of an API token (`DECISIONS.md` D32): `cht_` then 20 random bytes
-//! in the base32 alphabet of the identifiers, 36 characters. The caller draws
-//! the bytes; the store keeps only the SHA-256 of the whole text.
+//! Text form of an API token: `cht_` then 20 random bytes in the base32
+//! alphabet of the identifiers, 36 characters. The caller draws the bytes; the
+//! store keeps only the SHA-256 of the whole text.
 
 use crate::id::{ALPHABET, push_base32};
 

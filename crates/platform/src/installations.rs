@@ -91,8 +91,7 @@ pub async fn request_installations_sync_at_start(
     enqueue_job(conn, &sync_installations_job(&instant), now, now).await
 }
 
-/// Reads the installation of `job` on the SCM and converges its connection
-/// (`DECISIONS.md` D247).
+/// Reads the installation of `job` on the SCM and converges its connection.
 ///
 /// # Errors
 ///
@@ -120,8 +119,8 @@ pub async fn run_sync_installation(
 }
 
 /// Reads every installation of the App and converges each connection; a
-/// connection whose installation the SCM no longer lists is deleted
-/// (`DECISIONS.md` D247). A slug already taken does not stop the others.
+/// connection whose installation the SCM no longer lists is deleted.
+/// A slug already taken does not stop the others.
 ///
 /// # Errors
 ///
@@ -395,7 +394,7 @@ async fn update_connection(
 }
 
 /// Deposits the fact `kind` in the inbox of each queue of `connection`, and
-/// marks them dirty (`DECISIONS.md` D100, D103).
+/// marks them dirty.
 async fn give_to_queues(
     conn: &mut PgConnection,
     connection: &KnownConnection,

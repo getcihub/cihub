@@ -87,7 +87,7 @@ id_type!(
     ConnectionId => "connection",
     /// A user account of the SCM, global.
     UserId => "user",
-    /// The row of an API token; the secret itself is `cht_…` (`DECISIONS.md` D32).
+    /// The row of an API token; the secret itself is `cht_…`.
     ApiTokenId => "apitoken",
     AuditEntryId => "audit",
 );

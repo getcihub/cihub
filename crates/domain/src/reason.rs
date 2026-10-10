@@ -110,10 +110,9 @@ closed_enum! {
         ModeChanged,
         /// The queue is empty after a mode change.
         ModeSwitchCompleted,
-        /// A submission came while the queue drains: it accepts nothing new
-        /// (`DECISIONS.md` D151).
+        /// A submission came while the queue drains: it accepts nothing new.
         QueueDraining,
-        /// A submission came while the queue switches its mode (D151).
+        /// A submission came while the queue switches its mode.
         QueueSwitchingModes,
     }
 }
@@ -122,7 +121,7 @@ impl Reason {
     /// The sentence that a person reads for this reason: the PR comment and
     /// status, the API (`state_description`) and the CLI. In English, without
     /// a capital or a final period, to follow `Failed: ` or `Cancelled: `. A
-    /// free rendering: the stable contract is `as_str` (`DECISIONS.md` D167).
+    /// free rendering: the stable contract is `as_str`.
     pub fn describe(self) -> &'static str {
         match self {
             Self::Submitted => "the PR was submitted to the queue",

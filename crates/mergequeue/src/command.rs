@@ -1,6 +1,6 @@
-//! The commands that a comment on a PR holds (`docs/GITHUB.md`):
+//! The commands that a comment on a PR holds (`specs/GITHUB.md`):
 //! `/cihub merge`, which `submit_pr` runs, and `/cihub cancel` and
-//! `/cihub restart`, which the job `pr_command` runs (`DECISIONS.md` D157).
+//! `/cihub restart`, which the job `pr_command` runs.
 
 use cihub_domain::{Actor, EventKind, ItemId, ItemState, Permission, Priority, QueueId, RepoId};
 use cihub_platform::Job;
@@ -30,11 +30,11 @@ pub(crate) enum PrCommand {
 /// [--direct] [--queue=<name>]`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Merge {
-    /// `None` leaves the priority to the `priority_rules` (`DECISIONS.md` D148).
+    /// `None` leaves the priority to the `priority_rules`.
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
-    /// The queue of the branch to enter, by its name (D148).
+    /// The queue of the branch to enter, by its name.
     pub queue: Option<String>,
 }
 
@@ -103,7 +103,7 @@ pub(crate) struct PrCommandRequest {
     pub pr_number: u64,
     pub requested_by: Account,
     pub command: ItemCommand,
-    /// The comment of the command (`DECISIONS.md` D166).
+    /// The comment of the command.
     pub comment_id: String,
 }
 

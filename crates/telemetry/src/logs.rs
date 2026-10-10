@@ -40,7 +40,7 @@ impl Logs {
         self.format
     }
 
-    /// Installs the global subscriber (`docs/OBSERVABILITY.md`).
+    /// Installs the global subscriber (`specs/OBSERVABILITY.md`).
     ///
     /// # Errors
     ///

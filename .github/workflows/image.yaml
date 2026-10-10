@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Image
 
-# Builds the image of CIHub for each release (AGENTS.md D19), on a
+# Builds the image of CIHub for each release, on a
 # native runner per architecture, then joins the two in one manifest.
 
 on:
@@ -129,7 +129,7 @@ jobs:
           docker buildx imagetools create "${args[@]}" "$IMAGE@$AMD64" "$IMAGE@$ARM64"
 
   # The chart takes the version of the release, so that it deploys the image
-  # of the same release (DECISIONS.md D251).
+  # of the same release.
   chart:
     name: Chart
     needs:

@@ -1,8 +1,7 @@
 //! `cihub server`: starts and administers an instance, with a direct access to
-//! Postgres (`DECISIONS.md` D168, D169, D248). One file per command (`start`,
-//! `migrate`, `token`) and one per role (`web`, `scheduler`, `worker`,
-//! `notifier`). A role holds no queue logic: it starts loops whose code lives
-//! in the library crates.
+//! Postgres. One file per command (`start`, `migrate`, `token`) and one per
+//! role (`web`, `scheduler`, `worker`, `notifier`). A role holds no queue
+//! logic: it starts loops whose code lives in the library crates.
 
 mod config;
 mod health;
@@ -34,7 +33,7 @@ use self::config::Config;
 #[command(arg_required_else_help = true)]
 pub(crate) struct ServerArgs {
     /// The configuration file; without it, the `CIHUB_*` variables and the
-    /// defaults only (`docs/DEPLOYMENT.md`).
+    /// defaults only (`specs/DEPLOYMENT.md`).
     #[arg(long, global = true, value_name = "FILE")]
     config: Option<PathBuf>,
     #[command(subcommand)]
@@ -95,7 +94,7 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
         bail!(
             "GitHub is not configured: set the keys github.app_id, github.private_key or \
              github.private_key_file, and github.webhook_secret, or their CIHUB_GITHUB_* \
-             variables (docs/GITHUB.md)"
+             variables (specs/GITHUB.md)"
         );
     };
 

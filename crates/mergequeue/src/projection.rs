@@ -41,7 +41,7 @@ pub(crate) async fn project(
             let item = match after.items.get(item_id) {
                 Some(item) => item.clone(),
                 // A refused submission is concluded at once, so `apply`
-                // already evicted it (`DECISIONS.md` D151).
+                // already evicted it.
                 None => refused_item(conn, event, *item_id, *to, *reason)
                     .await?
                     .ok_or_else(mismatch)?,
@@ -370,7 +370,7 @@ async fn create_item(
     item: &Item,
     pr_number: i64,
 ) -> Result<(), MergeQueueError> {
-    // A refused submission never becomes the live item of its PR (D151).
+    // A refused submission never becomes the live item of its PR.
     if item.is_current {
         sqlx::query(
             "UPDATE queue_items SET is_current = false WHERE queue_id = $1 AND pr_number = $2",
@@ -415,9 +415,8 @@ async fn create_item(
 }
 
 /// Writes the last report of a check on the test SHA of its run, when it is
-/// newer than the one stored.
-/// The same rows come from a fact of the log and from a late report (D118),
-/// so a replay of the log keeps the late reports.
+/// newer than the one stored. The same rows come from a fact of the log and
+/// from a late report, so a replay of the log keeps the late reports.
 async fn upsert_check(
     conn: &mut PgConnection,
     check: &CheckObservation,
@@ -445,9 +444,9 @@ async fn upsert_check(
     Ok(())
 }
 
-/// Stores a report on the test SHA of a run of `queue` that is no longer
-/// live, without a fact in the log (`DECISIONS.md` D118). Does nothing when no
-/// run of the queue has this test SHA.
+/// Stores a report on the test SHA of a run of `queue` that is no longer live,
+/// without a fact in the log. Does nothing when no run of the queue has this
+/// test SHA.
 pub(crate) async fn record_late_check(
     conn: &mut PgConnection,
     org_id: OrgId,

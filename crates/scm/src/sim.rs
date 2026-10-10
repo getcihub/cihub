@@ -1,7 +1,7 @@
-//! An SCM in memory, for the tests of CIHub (`DECISIONS.md` D73). It keeps
-//! repositories with commits, branches, PRs, checks, comments and rules; it
-//! records each call; it can fail calls and lose, duplicate or reorder its
-//! webhook deliveries. It has no clock: a test gives every time.
+//! An SCM in memory, for the tests of CIHub. It keeps repositories with
+//! commits, branches, PRs, checks, comments and rules; it records each call; it
+//! can fail calls and lose, duplicate or reorder its webhook deliveries. It has
+//! no clock: a test gives every time.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::ops::Range;
@@ -77,9 +77,8 @@ impl WebhookFaults {
     }
 }
 
-/// Makes calls fail at random (`DECISIONS.md` D129), after the faults of
-/// [`Sim::fail`]. The same seed gives the same failures for the same
-/// sequence of calls.
+/// Makes calls fail at random, after the faults of [`Sim::fail`]. The same seed
+/// gives the same failures for the same sequence of calls.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RandomFaults {
     pub seed: u64,
@@ -349,7 +348,7 @@ impl Sim {
     }
 
     /// Checks, as `user`, the submission box of the comment of CIHub on the
-    /// PR `number`, and sends its delivery (`DECISIONS.md` D163).
+    /// PR `number`, and sends its delivery.
     ///
     /// # Errors
     ///

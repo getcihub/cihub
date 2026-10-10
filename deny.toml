@@ -8,8 +8,8 @@ ignore = []
 allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.8
 
-# The root certificates of Mozilla, which rustls-platform-verifier embeds
-# (DECISIONS.md D81): a license for data, not for code.
+# The root certificates of Mozilla, which rustls-platform-verifier embeds:
+# a license for data, not for code.
 [[licenses.exceptions]]
 crate = "webpki-root-certs"
 allow = ["CDLA-Permissive-2.0"]
@@ -61,13 +61,35 @@ deny = [
         "cihub-client",
     ] },
     { crate = "axum", wrappers = [
-        # A dev-dependency only: the replay of recorded answers (DECISIONS.md D74).
+        # A dev-dependency only: the replay of recorded answers.
         "cihub-github",
         "cihub-platform",
         "cihub-web",
         "cihub-mergequeue",
         "cihub-flakytests",
         "cihub-cli",
+    ] },
+    # The pure crates write no logs: the caller writes their decisions.
+    { crate = "tracing", wrappers = [
+        "cihub-cli",
+        "cihub-mergequeue",
+        "cihub-platform",
+        "cihub-telemetry",
+        "cihub-web",
+        "hyper-util",
+        "sqlx-core",
+        "sqlx-postgres",
+        "tracing-subscriber",
+    ] },
+    # A library crate keeps the cause in its own `thiserror` enumeration.
+    { crate = "anyhow", wrappers = ["cihub-cli"] },
+    # Only the binary and the web server wire the adapter; the other crates see
+    # the neutral `Scm` trait.
+    { crate = "cihub-github", wrappers = [
+        "cihub-cli",
+        "cihub-web",
+        # A dev-dependency only: the rate limit test, end to end.
+        "cihub-mergequeue",
     ] },
 ]
 

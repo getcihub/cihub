@@ -1,7 +1,7 @@
-//! What each PR shows of its item (`DECISIONS.md` D156): the status of the
-//! queue on its head, the comment of the queue and the state labels. The
-//! reconciliation renders the surfaces of `plan` into `pr_surfaces`; the job
-//! `publish_surfaces` makes the SCM show the last rendering.
+//! What each PR shows of its item: the status of the queue on its head, the
+//! comment of the queue and the state labels. The reconciliation renders the
+//! surfaces of `plan` into `pr_surfaces`; the job `publish_surfaces` makes
+//! the SCM show the last rendering.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -26,16 +26,15 @@ use crate::target::QueueTarget;
 /// The type of the job that publishes the surfaces of a PR.
 pub(crate) const PUBLISH_SURFACES: &str = "publish_surfaces";
 
-/// The labels that say the state of an item (`docs/GITHUB.md`).
+/// The labels that say the state of an item (`specs/GITHUB.md`).
 const STATE_LABELS: [&str; 3] = ["cihub:queued", "cihub:testing", "cihub:failed"];
 
 /// A commit status of the SCM is at most this long.
 const DESCRIPTION_LIMIT: usize = 140;
 
-/// The events of its items that the history of a PR shows (`DECISIONS.md`
-/// D244): the decisions. A request of a user is not a row: the decision that
-/// answers it names the user. The history also shows the test branches of the
-/// runs of the PR (`DECISIONS.md` D245).
+/// The events of its items that the history of a PR shows: the decisions. A
+/// request of a user is not a row: the decision that answers it names the
+/// user. The history also shows the test branches of the runs of the PR.
 const HISTORY_EVENTS: [EventType; 2] =
     [EventType::ItemTransitioned, EventType::ItemReadinessChanged];
 
@@ -201,9 +200,8 @@ fn block_text(reason: &BlockReason) -> String {
     }
 }
 
-/// The comment of the queue on the PR, in Markdown (`DECISIONS.md` D173): the
-/// state line, its details, the history (`DECISIONS.md` D244), then the
-/// commands in small print.
+/// The comment of the queue on the PR, in Markdown: the state line, its
+/// details, the history, then the commands in small print.
 fn comment(
     surface: &Surface,
     settings: &QueueSettings,
@@ -266,7 +264,7 @@ fn comment(
 
     blocks.extend(history_block(history));
 
-    // Only an item in test can restart (`DECISIONS.md` D157).
+    // Only an item in test can restart.
     let mut notes = Vec::new();
     match surface.state {
         ItemState::Failed | ItemState::Cancelled if commands => {
@@ -349,9 +347,9 @@ struct HistoryEvent {
     pub tested_on_top_of: Vec<i64>,
 }
 
-/// The history of a PR as a folded table (`DECISIONS.md` D244), `None` without
-/// a row. Two consecutive events with the same text and the same user are one
-/// row; the comment shows the last rows and counts the older ones.
+/// The history of a PR as a folded table, `None` without a row. Two
+/// consecutive events with the same text and the same user are one row; the
+/// comment shows the last rows and counts the older ones.
 fn history_block(events: &[HistoryEvent]) -> Option<String> {
     let mut rows: Vec<(&HistoryEvent, String)> = events
         .iter()
@@ -428,8 +426,7 @@ fn event_text(event: &HistoryEvent) -> Option<String> {
     }
 }
 
-/// A mention notifies its user: the code span names the user without it
-/// (`DECISIONS.md` D244).
+/// A mention notifies its user: the code span names the user without it.
 fn by_cell(login: Option<&str>) -> String {
     login.map_or_else(String::new, |login| format!("`@{login}`"))
 }
@@ -494,9 +491,9 @@ fn cell(text: &str) -> String {
 }
 
 /// When the batch stops waiting for more PRs, never when its test starts: a
-/// closed batch still waits for room in the window (`DECISIONS.md` D241). An
-/// absolute time does not go stale between two edits of the comment; the
-/// seconds are dropped, so the batch closes during the minute shown.
+/// closed batch still waits for room in the window. An absolute time does
+/// not go stale between two edits of the comment; the seconds are dropped,
+/// so the batch closes during the minute shown.
 fn batch_wait_line(wait: &BatchWait, size: u32) -> String {
     let prs = if wait.members == 1 { "PR" } else { "PRs" };
     let at = wait.closes_at.to_offset(UtcOffset::UTC);
@@ -568,7 +565,7 @@ pub(crate) async fn converge_surfaces(
         .iter()
         .map(|surface| i64::try_from(surface.pr_number).unwrap_or(i64::MAX))
         .collect();
-    // Without a comment, the history has no use (`DECISIONS.md` D244).
+    // Without a comment, the history has no use.
     let histories = if settings.comments_enabled.value {
         read_histories(conn, target, &numbers).await?
     } else {
@@ -636,11 +633,11 @@ type HistoryRow = (
 );
 
 /// The events of the history of the PRs `numbers` of the queue, by PR, in the
-/// order of the log (`DECISIONS.md` D244). All the items of a PR count, not
-/// only the current one. The reading starts from these items: their events
-/// come through `events.item_id`. A decision has the system as actor; the
-/// user is the actor of its cause. The test branches come through the runs
-/// that tested the PR (`DECISIONS.md` D245).
+/// order of the log. All the items of a PR count, not only the current one.
+/// The reading starts from these items: their events come through
+/// `events.item_id`. A decision has the system as actor; the user is the
+/// actor of its cause. The test branches come through the runs that tested
+/// the PR.
 async fn read_histories(
     conn: &mut PgConnection,
     target: &QueueTarget,
@@ -806,7 +803,7 @@ pub(crate) async fn publish(
 
 /// Takes the lock of the comment of the PR `pr_number` of `repo` for the
 /// transaction: one job at a time writes the comment of a PR, whatever its
-/// queue (`DECISIONS.md` D163).
+/// queue.
 async fn lock_comment(
     conn: &mut PgConnection,
     repo: RepoId,
@@ -871,8 +868,8 @@ async fn publish_comment(
     Ok(scm.create_comment(repo, number, body, class).await?)
 }
 
-/// The status `success` before the merge of the PR (`DECISIONS.md` D156): a
-/// rule that requires the status of the queue lets the merge through.
+/// The status `success` before the merge of the PR: a rule that requires
+/// the status of the queue lets the merge through.
 pub(crate) fn merging_status(target_branch: &str, sha: &str) -> StatusUpdate {
     queue_status(
         target_branch,
@@ -1015,7 +1012,6 @@ mod tests {
         }
     }
 
-    /// `DECISIONS.md` D241.
     #[test]
     fn a_waiting_batch_says_when_it_closes() {
         let closes_at = time::Date::from_calendar_date(2026, time::Month::October, 8)
@@ -1195,7 +1191,6 @@ mod tests {
             .collect()
     }
 
-    /// `DECISIONS.md` D244.
     #[test]
     fn each_decision_gives_its_row() {
         let cases = [
@@ -1236,7 +1231,6 @@ mod tests {
         }
     }
 
-    /// `DECISIONS.md` D245.
     #[test]
     fn a_merge_gives_its_commit() {
         let merged = EventKind::ItemTransitioned {
@@ -1256,7 +1250,6 @@ mod tests {
         );
     }
 
-    /// `DECISIONS.md` D245.
     #[test]
     fn a_test_branch_gives_where_its_ci_runs() {
         let assembled = |draft_pr_number| EventKind::TestBranchAssembled {
@@ -1437,8 +1430,7 @@ mod tests {
     }
 }
 
-/// The type of the job that posts the welcome comment of a PR
-/// (`DECISIONS.md` D163).
+/// The type of the job that posts the welcome comment of a PR.
 pub(crate) const WELCOME_PR: &str = "welcome_pr";
 
 /// The payload of `welcome_pr`.

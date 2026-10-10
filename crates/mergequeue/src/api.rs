@@ -1,7 +1,7 @@
-//! The routes of the merge queue under `/api/v1` (`docs/API.md`,
-//! `DECISIONS.md` D159, D160). They read the projections in a transaction of the
-//! organization of the token, and change a queue only through its inbox
-//! (`queue_inbox`) or a job: the scheduler stays the only writer of the log.
+//! The routes of the merge queue under `/api/v1` (`specs/API.md`). They read the
+//! projections in a transaction of the organization of the token, and change a
+//! queue only through its inbox (`queue_inbox`) or a job: the scheduler stays
+//! the only writer of the log.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -297,8 +297,7 @@ async fn update_queue(
 }
 
 /// `POST /queues/{queue_id}:resync`: reads again from the SCM each live PR,
-/// the checks of each live run and the head of the target (`DECISIONS.md`
-/// D128).
+/// the checks of each live run and the head of the target.
 #[utoipa::path(
     post,
     path = "/queues/{queue_id}:resync",
@@ -803,7 +802,7 @@ struct RunRow {
     conflict_culprit: Option<Value>,
 }
 
-/// The detail of a run (`DECISIONS.md` D115).
+/// The detail of a run.
 #[utoipa::path(
     get,
     path = "/test-runs/{run_id}",
@@ -963,8 +962,7 @@ async fn dependents(
         .collect()
 }
 
-/// What the configuration of the SCM misses for the queue (`DECISIONS.md`
-/// D162): no finding means a sound configuration.
+/// What the configuration of the SCM misses for the queue: no finding means a sound configuration.
 #[utoipa::path(
     get,
     path = "/queues/{queue_id}/config-check",

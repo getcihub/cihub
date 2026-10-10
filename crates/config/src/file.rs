@@ -15,7 +15,7 @@ use serde_saphyr::{DefaultMessageFormatter, MessageFormatter, Spanned};
 use crate::settings::in_range;
 use crate::{ConfigError, ConfigErrorKind, Layer, Position, QueueSettings, Setting};
 
-/// Paths of the configuration file in the repository (`DECISIONS.md` D255).
+/// Paths of the configuration file in the repository.
 pub const FILE_NAMES: [&str; 4] = [
     ".cihub.yaml",
     ".cihub.yml",
@@ -58,7 +58,7 @@ pub struct QueueConfig {
     pub name: String,
     pub branch: String,
     /// Which PRs the routing of a submission sends to this queue; empty
-    /// takes every PR (`DECISIONS.md` D232).
+    /// takes every PR.
     pub route_conditions: Conditions,
     pub queue_conditions: Conditions,
     pub merge_conditions: Conditions,
@@ -117,8 +117,7 @@ impl RepoConfig {
         })
     }
 
-    /// The entry of the queue `name` on the branch `branch`, if any
-    /// (`DECISIONS.md` D138).
+    /// The entry of the queue `name` on the branch `branch`, if any.
     pub fn queue(&self, branch: &str, name: &str) -> Option<&QueueConfig> {
         self.queues
             .iter()
@@ -126,7 +125,7 @@ impl RepoConfig {
     }
 
     /// The checks that the `merge_conditions` of the queue `name` on the
-    /// branch `branch` require on the test SHA (`DECISIONS.md` D146).
+    /// branch `branch` require on the test SHA.
     pub fn merge_checks(&self, branch: &str, name: &str) -> Vec<String> {
         self.queue(branch, name)
             .into_iter()
@@ -139,7 +138,7 @@ impl RepoConfig {
     }
 
     /// The settings of the queue `name` on the branch `branch`. A queue
-    /// without an entry has the `defaults` of the file (`DECISIONS.md` D172).
+    /// without an entry has the `defaults` of the file.
     ///
     /// # Errors
     ///
@@ -438,7 +437,7 @@ fn conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, Confi
 }
 
 /// `merge_conditions` accept only `check-success = <name>` at the first
-/// level for now (`DECISIONS.md` D146).
+/// level for now.
 fn merge_conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
     let conditions = conditions(list, text)?;
     for (node, expr) in list.iter().zip(&conditions.0) {

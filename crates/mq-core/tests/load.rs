@@ -1,8 +1,8 @@
-//! The cost criterion of lot 12 (`DECISIONS.md` D212, D215, D223): on a fixed
-//! load of the simulated world, `batched` uses at least 30 % fewer runs per
-//! merged PR than `pipelined`, with a p50 time in queue at most 1.5 times as
-//! long. The same load with closed PRs measures the useless assemblies (lot 7,
-//! D212). `mise run load` runs both: they take a few minutes.
+//! The cost criterion of lot 12: on a fixed load of the simulated world,
+//! `batched` uses at least 30 % fewer runs per merged PR than `pipelined`, with
+//! a p50 time in queue at most 1.5 times as long. The same load with closed PRs
+//! measures the useless assemblies (lot 7). `mise run load` runs both: they
+//! take a few minutes.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
@@ -247,11 +247,11 @@ fn batched_costs_fewer_runs_than_pipelined_for_a_close_time_in_queue() {
     );
 }
 
-/// The useless assemblies after a close (taken over from lot 7, `DECISIONS.md`
-/// D212): the same load where 5 % of the PRs close while they wait. An
-/// assembly is useless when its run stops without a result because a PR that
-/// it tested closed; the run of the closed PR alone does not count. Lot 12
-/// works on them only above 5 % of the assemblies.
+/// The useless assemblies after a close (taken over from lot 7): the same load
+/// where 5 % of the PRs close while they wait. An assembly is useless when its
+/// run stops without a result because a PR that it tested closed; the run of
+/// the closed PR alone does not count. Lot 12 works on them only above 5 % of
+/// the assemblies.
 #[test]
 #[ignore = "long: `mise run load`"]
 fn useless_assemblies_after_a_close_stay_under_5_percent() {

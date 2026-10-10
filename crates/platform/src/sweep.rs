@@ -45,7 +45,7 @@ pub async fn request_sweep(
 
 /// Lists the attempts of the last [`SWEEP_LOOKBACK`], and asks the SCM again
 /// for each delivery that no attempt delivered: CIHub answers 2xx only once
-/// it stores a delivery (`DECISIONS.md` D249). Returns the number of
+/// it stores a delivery. Returns the number of
 /// deliveries asked again. A delivery processed again writes no wrong fact
 /// and asks each of its jobs at most once, so a delivery asked twice does no
 /// harm.

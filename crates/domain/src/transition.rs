@@ -1,6 +1,5 @@
-//! Tables of the permitted transitions (`DECISIONS.md` D6): for each (state
-//! before, state after), the reasons that may explain it. `None` before is a
-//! creation.
+//! Tables of the permitted transitions: for each (state before, state after),
+//! the reasons that may explain it. `None` before is a creation.
 
 use std::fmt;
 
@@ -105,8 +104,8 @@ const MERGE_FAILED: [Reason; 6] = [
     R::MergeRepeatedServerErrors,
     R::PrUpdatedAtMergeTime,
 ];
-/// Failure of a direct merge (`DECISIONS.md` D122): a refusal of the SCM is
-/// `direct_merge_rejected`, the other errors keep their reason.
+/// Failure of a direct merge: a refusal of the SCM is `direct_merge_rejected`,
+/// the other errors keep their reason.
 const DIRECT_MERGE_FAILED: [Reason; 6] = [
     R::DirectMergeRejected,
     R::MergeRateLimitExceeded,
@@ -116,8 +115,7 @@ const DIRECT_MERGE_FAILED: [Reason; 6] = [
     R::PrUpdatedAtMergeTime,
 ];
 /// A failed run of a group that waits to know who is at fault: a conflict at
-/// the assembly of a group of several PRs is bisected too (`DECISIONS.md`
-/// D218).
+/// the assembly of a group of several PRs is bisected too.
 const PENDING_FAILURE: [Reason; 3] = [
     R::TestRunRequiredStatusFailed,
     R::TestRunTimeout,
@@ -245,7 +243,7 @@ mod tests {
 
     use super::*;
 
-    /// A row of a table in `docs/LOTS.md`: states before, state after, and
+    /// A row of a table in `specs/LOTS.md`: states before, state after, and
     /// the reasons, written as the stored names. A name that ends with `*`
     /// is a prefix.
     type Row<S> = (&'static [Option<S>], S, &'static [&'static str]);

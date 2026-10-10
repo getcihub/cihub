@@ -1,6 +1,6 @@
 //! Postgres store of CIHub: the connection pool, the transactions of an
-//! organization or of the system (row level security, `DECISIONS.md` D38), and
-//! the migrations embedded from `migrations/` (`DECISIONS.md` D14). It holds no
+//! organization or of the system (row level security), and
+//! the migrations embedded from `migrations/`. It holds no
 //! queue logic and does not decide when the migrations run: `cihub server
 //! migrate` applies them, and `cihub server start` refuses to start while one
 //! is missing.

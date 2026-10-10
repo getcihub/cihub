@@ -99,7 +99,7 @@ const REVIEW_DECISION_NAMES: &[&str] =
     &["approved", "changes_requested", "review_required", "none"];
 
 /// Names of the values of `sender-permission`, in the declaration order of
-/// `Permission` (`DECISIONS.md` D145).
+/// `Permission`.
 const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
 
 #[cfg(test)]

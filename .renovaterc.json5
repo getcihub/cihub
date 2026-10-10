@@ -7,7 +7,7 @@
     ":semanticCommits",
   ],
   dependencyDashboardTitle: "Renovate Dashboard",
-  // Every update is merged by a person (AGENTS.md D21).
+  // Every update is merged by a person.
   automerge: false,
   // Fresh releases often finish uploading per-platform assets after the tag;
   // locking too early leaves mise.lock with missing platform entries.

@@ -127,7 +127,7 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// How `inplace` updates the PR branch on the target (`DECISIONS.md` D114).
+    /// How `inplace` updates the PR branch on the target.
     pub enum UpdateMethod {
         Merge,
     }

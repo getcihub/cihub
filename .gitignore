@@ -1,5 +1,5 @@
 /target
-# Local settings and secrets of each developer (docs/DEPLOYMENT.md).
+# Local settings and secrets of each developer (specs/DEPLOYMENT.md).
 mise.local.toml
 # The secrets of an installation (deploy/.env.example).
 deploy/.env

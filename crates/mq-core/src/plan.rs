@@ -43,12 +43,12 @@ pub struct Desired {
     /// and a `not_ready` item waits for a change that no webhook may report.
     pub observe: Vec<Read>,
     /// The checks that CIHub must read again now on the test SHA of a run in
-    /// progress that no report reached for a while (`DECISIONS.md` D127).
+    /// progress that no report reached for a while.
     pub check_reads: Vec<CheckRead>,
     /// The read point of the head of the target branch, when a read is due.
     pub target_read: Option<OffsetDateTime>,
     /// What each PR must show: its live item, or the item that this
-    /// reconciliation concluded (`DECISIONS.md` D156), by PR number.
+    /// reconciliation concluded, by PR number.
     pub surfaces: Vec<Surface>,
 }
 
@@ -94,8 +94,8 @@ pub struct Merge {
     pub item_id: ItemId,
     pub pr_number: u64,
     pub head_sha: String,
-    /// The run that proved the item, and its test SHA (`DECISIONS.md` D124);
-    /// `None` for a direct merge, whose tested SHA is the head (D153).
+    /// The run that proved the item, and its test SHA; `None` for a direct
+    /// merge, whose tested SHA is the head.
     pub run_id: Option<RunId>,
     pub tested_sha: String,
 }
@@ -166,9 +166,7 @@ pub fn plan(
             {
                 let item_id = *item_id;
                 apply_seen(&mut state, &event, &mut |next| {
-                    if let Some(item) = next.items.get(&item_id) {
-                        concluded.push(surface(next, item));
-                    }
+                    concluded.extend(next.items.get(&item_id).map(|item| surface(next, item)));
                 })?;
             } else {
                 apply_seen(&mut state, &event, &mut |_| {})?;
@@ -317,7 +315,7 @@ const fn assembly_reason(error: JobError) -> Reason {
 }
 
 /// The new item of a submission: `not_ready`, or `cancelled` at once while
-/// the queue drains or switches its mode (`DECISIONS.md` D151).
+/// the queue drains or switches its mode.
 fn submitted(s: &Snapshot, ids: &mut IdGen) -> EventKind {
     let (to, reason) = match s.state {
         QueueState::Draining => (ItemState::Cancelled, Reason::QueueDraining),
@@ -644,7 +642,7 @@ fn group_follows_run(
 /// `pending_failure` is released (`successor_test_run_passed`). Their members
 /// record that run. A group in bisection is not proved this way: its halves
 /// are. A group that is evicted still restarts the groups behind
-/// it (`DECISIONS.md` D209).
+/// it.
 fn optimistic(
     s: &Snapshot,
     settings: &QueueSettings,
@@ -950,14 +948,14 @@ fn waiting<'a>(s: &'a Snapshot, group: &TestGroup) -> Vec<&'a Item> {
     items
 }
 
-/// A group of several PRs in failure whose predecessors all merged is
-/// bisected at once, without the failure budget (`DECISIONS.md` D211): the
-/// first half is tested in a child group, the other half waits in the group.
-/// When the child passes, the other half holds the failure: it is split in
-/// turn, and a half of one PR is tested alone, because an inferred failure
-/// never evicts a PR (D211); with `optimization_mode: off`, it goes back to
-/// the queue instead. When the child fails or is given up, the other half
-/// goes back to the queue. The first split closes the window by half.
+/// A group of several PRs in failure whose predecessors all merged is bisected
+/// at once, without the failure budget: the first half is tested in a child
+/// group, the other half waits in the group. When the child passes, the other
+/// half holds the failure: it is split in turn, and a half of one PR is tested
+/// alone, because an inferred failure never evicts a PR; with
+/// `optimization_mode: off`, it goes back to the queue instead. When the child
+/// fails or is given up, the other half goes back to the queue. The first split
+/// closes the window by half.
 fn bisection(
     s: &Snapshot,
     settings: &QueueSettings,
@@ -1039,10 +1037,10 @@ fn bisection(
         })
 }
 
-/// Cuts `waiting` in two halves, the first rounded up, and tests each one in
-/// a new child group of `parent`, at the same time while the bisection pool
-/// has room (`DECISIONS.md` D220): the second half is tested on top of the
-/// first. A half that finds no room waits in `parent`.
+/// Cuts `waiting` in two halves, the first rounded up, and tests each one in a
+/// new child group of `parent`, at the same time while the bisection pool has
+/// room: the second half is tested on top of the first. A half that finds no
+/// room waits in `parent`.
 fn split(
     s: &Snapshot,
     settings: &QueueSettings,
@@ -1154,7 +1152,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
 
 /// Mergeability and block reasons of a `not_ready` item: the mergeability on
 /// the SCM, the impacted targets in parallel mode, and the `queue_conditions`
-/// that the job that read the PR found unmet (`DECISIONS.md` D142).
+/// that the job that read the PR found unmet.
 fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReason> {
     let mut blocks = match pr.mergeability {
         Mergeability::Mergeable => Vec::new(),
@@ -1185,7 +1183,7 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
 }
 
 /// The required checks that block a PR: failed, or not concluded yet; else
-/// the SCM does not say why the PR is blocked (`DECISIONS.md` D158).
+/// the SCM does not say why the PR is blocked.
 fn blocking_checks(pr: &PrObservation) -> Vec<BlockReason> {
     let blocks: Vec<BlockReason> = pr
         .required_checks
@@ -1326,7 +1324,7 @@ fn formation(
 }
 
 /// The item is in a group of several PRs that failed, or in one of its halves:
-/// no group forms on top of it until the bisection ends (`DECISIONS.md` D221).
+/// no group forms on top of it until the bisection ends.
 fn in_bisection(s: &Snapshot, item: &Item) -> bool {
     item.group_id
         .and_then(|g| s.groups.get(&g))
@@ -1349,13 +1347,12 @@ enum Next<'a> {
     },
 }
 
-/// The first pending item whose predecessors are all in groups, at `index`
-/// in `order`. With batching, the pending items that follow it join it, up to
-/// `batching.size`, until an item that is not pending or is `no_batch`. A
-/// batch that is not full waits until its oldest member has waited
-/// `batching.max_wait_minutes` in the queue (`DECISIONS.md` D210), unless the
-/// item right behind it is `no_batch`: the batch cannot grow, and that item
-/// would wait for nothing (D224).
+/// The first pending item whose predecessors are all in groups, at `index` in
+/// `order`. With batching, the pending items that follow it join it, up to
+/// `batching.size`, until an item that is not pending or is `no_batch`. A batch
+/// that is not full waits until its oldest member has waited
+/// `batching.max_wait_minutes` in the queue, unless the item right behind it is
+/// `no_batch`: the batch cannot grow, and that item would wait for nothing.
 fn next_group<'a>(
     s: &Snapshot,
     order: &[&'a Item],
@@ -1443,10 +1440,9 @@ fn bisection_room(s: &Snapshot, settings: &QueueSettings) -> usize {
         .saturating_sub(running)
 }
 
-/// The item that the queue merges directly, without a test branch
-/// (`DECISIONS.md` D153): with `direct_merge_mode: always`, the first item of a
-/// running queue without a live group, when it is `pending` and no direct
-/// merge of it was tried.
+/// The item that the queue merges directly, without a test branch: with
+/// `direct_merge_mode: always`, the first item of a running queue without a
+/// live group, when it is `pending` and no direct merge of it was tried.
 fn direct_merge<'a>(s: &'a Snapshot, settings: &QueueSettings) -> Option<&'a Item> {
     if settings.direct_merge_mode.value != DirectMergeMode::Always
         || s.state != QueueState::Running
@@ -1533,7 +1529,7 @@ fn read_due(s: &Snapshot, item: &Item, now: OffsetDateTime) -> Option<Read> {
     })
 }
 
-/// The live items whose PR CIHub reads (`DECISIONS.md` D127).
+/// The live items whose PR CIHub reads.
 fn live_items(s: &Snapshot) -> impl Iterator<Item = &Item> {
     s.items
         .values()
@@ -1708,7 +1704,7 @@ fn desired(
 
 /// The surface of each PR: its live item, else the last item that this
 /// reconciliation concluded. The members of the batch that waits show when it
-/// closes (`DECISIONS.md` D241), with the time that `wake_at` uses.
+/// closes, with the time that `wake_at` uses.
 fn surfaces(
     s: &Snapshot,
     settings: &QueueSettings,

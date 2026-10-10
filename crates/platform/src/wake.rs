@@ -103,7 +103,7 @@ pub const MIN_WAIT: Duration = Duration::from_secs(1);
 /// How long a scheduler waits for a notification after a pass: until the next
 /// tick of a queue that is not due yet, between [`MIN_WAIT`] and [`TICK`], so
 /// that the `wake_at` of a plan is served on time and not at the next
-/// [`TICK`] (`DECISIONS.md` D225).
+/// [`TICK`].
 ///
 /// # Errors
 ///
