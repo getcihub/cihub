@@ -29,18 +29,22 @@ pub struct ApiTokenGrant {
 ///
 /// The system has no random source.
 pub fn new_api_token_secret() -> Result<SecretString, StoreError> {
+    Ok(format_api_token(&draw_secret_bytes()?).into())
+}
+
+pub(crate) fn draw_secret_bytes() -> Result<[u8; 20], StoreError> {
     let mut bytes = [0u8; 20];
     #[expect(
         clippy::disallowed_methods,
-        reason = "the one place that draws the secret of an API token"
+        reason = "the one place that draws the secret of a token"
     )]
     SysRng
         .try_fill_bytes(&mut bytes)
         .map_err(StoreError::Random)?;
-    Ok(format_api_token(&bytes).into())
+    Ok(bytes)
 }
 
-fn hash(secret: &SecretString) -> Vec<u8> {
+pub(crate) fn hash(secret: &SecretString) -> Vec<u8> {
     Sha256::digest(secret.expose_secret().as_bytes()).to_vec()
 }
 

@@ -6,6 +6,8 @@
 //! is missing.
 
 mod events;
+mod memberships;
+mod sessions;
 mod tokens;
 mod users;
 
@@ -16,7 +18,12 @@ pub use events::{
     append_events, create_event_partitions, delete_facts, deposit_fact, event_kind, load_events,
     next_month, pending_facts,
 };
+pub use memberships::{Membership, forget_memberships_before, memberships_of, record_membership};
 use secrecy::{ExposeSecret, SecretString};
+pub use sessions::{
+    NewSession, SessionGrant, authenticate_session, create_session, delete_session,
+    new_session_secret,
+};
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};
 pub use tokens::{

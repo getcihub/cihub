@@ -38,9 +38,52 @@ closed_enum! {
     }
 }
 
+closed_enum! {
+    /// The role of a user in an organization, from its membership on the
+    /// SCM (`specs/SECURITY.md`).
+    pub enum MembershipRole {
+        /// An owner of the account on the SCM: also changes the state and the
+        /// configuration of a queue, and reads the audit log.
+        Admin,
+        /// Reads the queues, and submits, cancels and restarts PRs.
+        Member,
+    }
+}
+
+impl MembershipRole {
+    /// What a session of this role may do: the scopes of an API token.
+    pub const fn scopes(self) -> &'static [ApiScope] {
+        match self {
+            Self::Admin => &[
+                ApiScope::QueuesRead,
+                ApiScope::QueuesWrite,
+                ApiScope::PrsWrite,
+            ],
+            Self::Member => &[ApiScope::QueuesRead, ApiScope::PrsWrite],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_admin_changes_a_queue() {
+        for scope in <ApiScope as strum::IntoEnumIterator>::iter() {
+            assert!(MembershipRole::Admin.scopes().contains(&scope), "{scope}");
+        }
+        assert!(
+            !MembershipRole::Member
+                .scopes()
+                .contains(&ApiScope::QueuesWrite)
+        );
+        assert!(
+            MembershipRole::Member
+                .scopes()
+                .contains(&ApiScope::PrsWrite)
+        );
+    }
 
     #[test]
     fn scopes_keep_their_colon() {
