@@ -1,6 +1,6 @@
 //! `/api/v1` (`specs/API.md`): the authentication of each
 //! request by its API token, the rate limit of each token, the routes of the
-//! platform (`/repos`, `/orgs/{org}/audit`), the routes of the modules, and
+//! platform (`/orgs/{org}/repos`, `/orgs/{org}/audit`), the routes of the modules, and
 //! the `OpenAPI` document of all of them.
 
 use std::collections::HashMap;
@@ -15,7 +15,7 @@ use axum::{Json, Router};
 use cihub_api_types::{AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Problem, Repo, RepoList};
 use cihub_domain::{ApiScope, ApiTokenId};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, ModuleApi};
-use cihub_store::{PgPool, authenticate, begin_org};
+use cihub_store::{PgPool, authenticate};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
@@ -72,7 +72,7 @@ pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<Mod
         windows: Arc::default(),
     };
     let mut routes = Router::new()
-        .route("/repos", get(list_repos))
+        .route("/orgs/{org}/repos", get(list_repos))
         .route("/orgs/{org}/audit", get(list_audit))
         .with_state(state.clone());
 
@@ -152,19 +152,22 @@ fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Optio
     None
 }
 
-/// The repositories of the organization of the token.
+/// The repositories of the organization.
 #[utoipa::path(
     get,
-    path = "/repos",
+    path = "/orgs/{org}/repos",
+    params(("org" = String, Path, description = "The slug of the organization")),
     responses((status = 200, body = RepoList)),
     security(("token" = ["queues:read"]))
 )]
 async fn list_repos(
     grant: ApiGrant,
     State(state): State<ApiState>,
+    ApiPath(org): ApiPath<String>,
 ) -> Result<Json<RepoList>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    let mut tx = begin_org(&state.pool, grant.org_id).await?;
+
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let rows: Vec<(String, String, String, String)> = sqlx::query_as(
         "SELECT id, namespace, name, default_branch FROM repos ORDER BY namespace, name",
     )
@@ -221,16 +224,7 @@ async fn list_audit(
         return Err(ApiError::invalid(format!("take is from 1 to {MAX_TAKE}")));
     }
 
-    let mut tx = begin_org(&state.pool, grant.org_id).await?;
-    let known: Option<String> = sqlx::query_scalar("SELECT id FROM orgs WHERE slug = $1")
-        .bind(&org)
-        .fetch_optional(&mut *tx)
-        .await?;
-
-    if known.is_none() {
-        return Err(ApiError::not_found("organization"));
-    }
-
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let rows: Vec<AuditRow> = sqlx::query_as(
         "SELECT id, action, target, actor_user_id, before, after, occurred_at FROM audit_log
          WHERE $1::text IS NULL OR (occurred_at, id) <

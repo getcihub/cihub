@@ -7,6 +7,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, PROBLEM_JSON, Problem};
 use cihub_domain::{ApiScope, ApiTokenId, OrgId};
+use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::de::DeserializeOwned;
 use tracing::error;
 
@@ -30,6 +31,35 @@ impl ApiGrant {
                 format!("the token lacks the scope `{scope}`"),
             ))
         }
+    }
+
+    /// A transaction of the organization whose slug is `org`, which the URL
+    /// names (`specs/API.md`).
+    ///
+    /// # Errors
+    ///
+    /// Not found when the grant does not belong to `org`, never forbidden: a
+    /// caller does not learn that another organization exists. Postgres fails.
+    pub async fn begin_in_org(
+        &self,
+        pool: &PgPool,
+        org: &str,
+    ) -> Result<Transaction<'static, Postgres>, ApiError> {
+        let mut tx = begin_org(pool, self.org_id).await?;
+
+        // Row level security shows only the organization of the grant; the SCM
+        // does not tell names apart by their case.
+        let is_grant_org: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM orgs WHERE lower(slug) = lower($1))")
+                .bind(org)
+                .fetch_one(&mut *tx)
+                .await?;
+
+        if !is_grant_org {
+            return Err(ApiError::not_found("organization"));
+        }
+
+        Ok(tx)
     }
 }
 

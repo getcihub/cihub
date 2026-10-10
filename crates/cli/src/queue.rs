@@ -1,12 +1,13 @@
 //! `cihub queue`: the merge queue, through the public API (`specs/API.md`).
-//! The repository comes from `--repo`, else from the remote `origin` of git;
-//! the queue from `--queue`, else from the only queue of the repository.
+//! The repository comes from `--repo`, else from the remote `origin` of git,
+//! and its owner is the slug of the organization; the queue comes from
+//! `--queue`, else from the only queue of the repository.
 
 use std::io::Write;
 
 use anyhow::{Context, bail};
 use cihub_api_types::{PriorityInput, Queue, RequestedQueueState, SubmitPr};
-use cihub_client::Client;
+use cihub_client::{Client, QueuePath};
 use clap::{Args, Subcommand};
 use secrecy::SecretString;
 
@@ -63,7 +64,11 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
     };
     let queues = client.queues(&owner, &name).await?.queues;
     let queue = pick_queue(queues, args.queue.as_deref(), &format!("{owner}/{name}"))?;
-    let id = &queue.id;
+    let path = QueuePath {
+        org: &owner,
+        repo: &name,
+        queue: &queue.name,
+    };
 
     match args.command {
         QueueCommand::Merge {
@@ -81,27 +86,25 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
                 no_batch,
                 direct: false,
             };
-            client.submit(id, &request).await?;
+            client.submit(path, &request).await?;
             writeln!(out, "#{pr} submitted to `{}`", queue.name)?;
         }
         QueueCommand::Cancel { pr } => {
-            let item = client.pr(id, pr, false).await?.item;
-            client.cancel(&item.id).await?;
+            client.cancel(path, pr).await?;
             writeln!(out, "#{pr}: cancel asked")?;
         }
         QueueCommand::Restart { pr } => {
-            let item = client.pr(id, pr, false).await?.item;
-            client.restart(&item.id).await?;
+            client.restart(path, pr).await?;
             writeln!(out, "#{pr}: restart asked")?;
         }
-        QueueCommand::Status { pr } => status(out, &client, &queue, pr).await?,
-        QueueCommand::Graph => graph(out, &client, &queue).await?,
-        QueueCommand::Pause => set_state(out, &client, &queue, RequestedQueueState::Paused).await?,
+        QueueCommand::Status { pr } => status(out, &client, path, &queue, pr).await?,
+        QueueCommand::Graph => graph(out, &client, path).await?,
+        QueueCommand::Pause => set_state(out, &client, path, RequestedQueueState::Paused).await?,
         QueueCommand::Resume => {
-            set_state(out, &client, &queue, RequestedQueueState::Running).await?;
+            set_state(out, &client, path, RequestedQueueState::Running).await?;
         }
         QueueCommand::Drain => {
-            set_state(out, &client, &queue, RequestedQueueState::Draining).await?;
+            set_state(out, &client, path, RequestedQueueState::Draining).await?;
         }
     }
 
@@ -111,6 +114,7 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
 async fn status(
     out: &mut impl Write,
     client: &Client,
+    path: QueuePath<'_>,
     queue: &Queue,
     pr: Option<u64>,
 ) -> anyhow::Result<()> {
@@ -123,7 +127,7 @@ async fn status(
         if let Some(error) = &queue.config_error {
             writeln!(out, "  configuration file not valid: {error}")?;
         }
-        for item in client.items(&queue.id, 100).await?.items {
+        for item in client.items(path, 100).await?.items {
             if item.is_current && !item.state.is_terminal() {
                 writeln!(
                     out,
@@ -135,7 +139,7 @@ async fn status(
         return Ok(());
     };
 
-    let item = client.pr(&queue.id, pr, false).await?.item;
+    let item = client.pr(path, pr, false).await?.item;
     let position = item
         .position
         .map(|p| format!(", position {p}"))
@@ -154,8 +158,8 @@ async fn status(
     Ok(())
 }
 
-async fn graph(out: &mut impl Write, client: &Client, queue: &Queue) -> anyhow::Result<()> {
-    let graph = client.graph(&queue.id).await?;
+async fn graph(out: &mut impl Write, client: &Client, path: QueuePath<'_>) -> anyhow::Result<()> {
+    let graph = client.graph(path).await?;
     let pr = |item_id: &str| {
         graph
             .nodes
@@ -178,14 +182,14 @@ async fn graph(out: &mut impl Write, client: &Client, queue: &Queue) -> anyhow::
 async fn set_state(
     out: &mut impl Write,
     client: &Client,
-    queue: &Queue,
+    path: QueuePath<'_>,
     state: RequestedQueueState,
 ) -> anyhow::Result<()> {
-    client.set_queue_state(&queue.id, state).await?;
+    client.set_queue_state(path, state).await?;
     writeln!(
         out,
         "queue `{}`: {} asked",
-        queue.name,
+        path.queue,
         serde_json::to_string(&state)?
     )?;
     Ok(())

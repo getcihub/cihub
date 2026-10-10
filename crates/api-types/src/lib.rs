@@ -106,7 +106,45 @@ pub struct QueueList {
     pub queues: Vec<Queue>,
 }
 
-/// The state that `PATCH /queues/{id}` asks for.
+/// The current items of a queue in each state that is not terminal.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ItemCounts {
+    pub not_ready: u32,
+    pub pending: u32,
+    pub testing: u32,
+    pub pending_failure: u32,
+    pub tests_passed: u32,
+}
+
+/// A queue of the organization, with its counters.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OrgQueue {
+    /// The name of the repository of the queue, as the routes name it.
+    pub repo: String,
+    pub queue: Queue,
+    pub counts: ItemCounts,
+    /// The current items that reached `merged` in the 24 hours before the
+    /// request.
+    pub merged_last_24h: u32,
+    /// The current items that reached `failed` in the 24 hours before the
+    /// request.
+    pub failed_last_24h: u32,
+    /// When the last current item reached `merged`; `None` if no item merged.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = DateTime))]
+    pub last_merged_at: Option<OffsetDateTime>,
+}
+
+/// `GET /orgs/{org}/queues`: by repository name, then queue name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OrgQueueList {
+    pub queues: Vec<OrgQueue>,
+}
+
+/// The state that `PATCH /orgs/{org}/repos/{repo}/queues/{queue}` asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
@@ -183,7 +221,7 @@ impl PriorityInput {
     }
 }
 
-/// `POST /queues/{id}/items`.
+/// `POST /orgs/{org}/repos/{repo}/queues/{queue}/prs`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SubmitPr {
@@ -219,7 +257,7 @@ pub struct TimelineEvent {
     pub payload: Value,
 }
 
-/// `GET /queues/{id}/prs/{pr_number}`: the last item of the PR.
+/// `GET /orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}`: the last item of the PR.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PrItem {
@@ -228,7 +266,7 @@ pub struct PrItem {
     pub timeline: Option<Vec<TimelineEvent>>,
 }
 
-/// `POST /queues/{id}/prs:batchGet`.
+/// `POST /orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct BatchGet {
@@ -293,7 +331,7 @@ pub struct Dependent {
     pub pr_numbers: Vec<u64>,
 }
 
-/// `GET /test-runs/{run_id}`, as `specs/API.md` fixes it.
+/// `GET /orgs/{org}/runs/{run_id}`, as `specs/API.md` fixes it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TestRun {
@@ -369,7 +407,8 @@ pub struct Finding {
     pub message: String,
 }
 
-/// `GET /queues/{id}/config-check`: no finding means a sound configuration.
+/// `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: no finding means a sound
+/// configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfigCheck {
