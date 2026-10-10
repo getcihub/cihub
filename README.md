@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/getcihub/cihub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/getcihub/cihub/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-006FFF"></a>
+  <a href="LICENSE"><img alt="License: FSL-1.1-ALv2" src="https://img.shields.io/badge/license-FSL--1.1--ALv2-006FFF"></a>
   <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-14171C">
   <img alt="Runs on Postgres" src="https://img.shields.io/badge/runs%20on-Postgres-14171C">
 </p>
@@ -46,6 +46,9 @@ passes. No rebase loop, no broken `main`, no "who merged that?".
 
 Early days: v0.1. The queue works; a dashboard, metrics and flaky test detection come next.
 
+CIHub is in active development. Do not use it in production yet: its behavior, its configuration and its data
+can change without notice from one version to the next.
+
 ## Contribute
 
 Read [`GOAL.md`](GOAL.md) for what CIHub is for and [`AGENTS.md`](AGENTS.md) for how we build it, with or
@@ -53,4 +56,6 @@ without a coding agent.
 
 ## License
 
-[Apache-2.0](LICENSE).
+[FSL-1.1-ALv2](LICENSE). Use, modify and run CIHub for your own needs, free of charge. Offering it to others as a
+competing commercial product or service is not allowed. Each version becomes Apache-2.0 two years after its
+release.

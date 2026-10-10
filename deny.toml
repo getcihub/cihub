@@ -8,6 +8,11 @@ ignore = []
 allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.8
 
+# The list above is for the dependencies. Our own crates are not published and
+# carry the license of CIHub, FSL-1.1-ALv2, which no dependency may have.
+[licenses.private]
+ignore = true
+
 # The root certificates of Mozilla, which rustls-platform-verifier embeds:
 # a license for data, not for code.
 [[licenses.exceptions]]
