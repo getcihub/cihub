@@ -327,7 +327,9 @@ Decisions:
   - Changed (October 10, 2026, validated by the project lead): the `url` of an item goes to lot 10c, with the
     drawer that links to the PR. The adapter does not read it yet, and reading it changes the recorded answers of
     the contract, which must then be recorded again.
-  - Remaining: the graph of the runs, the stored configuration check, the pages, the browser test.
+  - Done (October 10, 2026): step 3. `Graph` gains the head of the target branch and the last run of each live
+    group: a group in `pending_failure` keeps its failed run, which the page shows as failing.
+  - Remaining: the stored configuration check, the pages, the browser test.
 
 #### Lot 10c: your pull requests, drawer and actions
 

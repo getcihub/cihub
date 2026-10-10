@@ -3290,7 +3290,17 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(batch["not_found"], serde_json::json!([999]));
 
     let (_, graph) = call("GET", format!("{queue}/graph"), None).await;
+    let run = &graph["runs"][0];
+
     assert_eq!(graph["nodes"][0]["pr_number"], number);
+    assert_eq!(graph["target_head_sha"], main.as_str());
+    assert_eq!(run["run_id"], live_run.to_string().as_str());
+    assert_eq!(run["item_ids"], serde_json::json!([item_id]));
+    assert_eq!(run["predecessor_ids"], serde_json::json!([]));
+    assert_eq!(
+        (&run["attempt"], &run["status"]),
+        (&1.into(), &"in_progress".into())
+    );
 
     let (run_id, _, _) = q.runs_in_progress().await.remove(0);
     let (status, run) = call("GET", format!("/orgs/acme/runs/{run_id}"), None).await;
@@ -3443,6 +3453,53 @@ async fn an_item_follows_the_title_of_its_pr_and_survives_a_replay(pool: PgPool)
 
     let (_, replayed) = call(&addr, &token, "GET", items, None).await;
     assert_eq!(replayed, renamed);
+    q.stop().await;
+}
+
+/// The graph gives each live run with the items that it tests on top of
+/// their predecessors, the oldest run first.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+
+    for n in 1..=2 {
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let (_, graph) = call(&addr, &token, "GET", &format!("{queue}/graph"), None).await;
+    let first = graph["nodes"][0]["item_id"].clone();
+    let second = graph["nodes"][1]["item_id"].clone();
+    let runs: Vec<(Value, Value)> = graph["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["item_ids"].clone(), run["predecessor_ids"].clone()))
+        .collect();
+
+    assert_eq!(
+        runs,
+        [
+            (serde_json::json!([first]), serde_json::json!([])),
+            (serde_json::json!([second]), serde_json::json!([first])),
+        ]
+    );
     q.stop().await;
 }
 
