@@ -1,27 +1,37 @@
 //! `/api/v1` (`specs/API.md`): the authentication of each
-//! request by its API token, the rate limit of each token, the routes of the
-//! platform (`/orgs/{org}/repos`, `/orgs/{org}/audit`), the routes of the modules, and
-//! the `OpenAPI` document of all of them.
+//! request by its API token or by a session of the dashboard, the rate limit
+//! of each of them, the routes of the platform (`/me`, `/orgs/{org}/repos`,
+//! `/orgs/{org}/audit`), the routes of the modules, and the `OpenAPI` document
+//! of all of them.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::header::AUTHORIZATION;
+use axum::http::{HeaderMap, Method};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
-use cihub_api_types::{AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Problem, Repo, RepoList};
-use cihub_domain::{ApiScope, ApiTokenId};
-use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, ModuleApi};
-use cihub_store::{PgPool, authenticate};
+use axum::{Extension, Json, Router};
+use cihub_api_types::{
+    AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Me, OrgRole, Problem, Repo, RepoList,
+};
+use cihub_domain::{ApiScope, ApiTokenId, SessionId};
+use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi};
+use cihub_store::{
+    PgPool, SessionGrant, authenticate, authenticate_session, login_of, memberships_of,
+};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
 use time::OffsetDateTime;
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{
+    ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityRequirement, SecurityScheme,
+};
 use utoipa::{Modify, OpenApi};
+
+use crate::session::{SESSION_COOKIE, cookie, csrf_refused, has_csrf_token, needs_csrf_token};
 
 pub const REQUESTS_PER_MINUTE: u32 = 600;
 
@@ -31,7 +41,14 @@ const MAX_BODY_BYTES: usize = 25 * 1024 * 1024;
 struct ApiState {
     pool: PgPool,
     now: fn() -> OffsetDateTime,
-    windows: Arc<Mutex<HashMap<ApiTokenId, (i64, u32)>>>,
+    windows: Arc<Mutex<HashMap<Caller, (i64, u32)>>>,
+}
+
+/// Who calls, for the rate limit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Caller {
+    Token(ApiTokenId),
+    Session(SessionId),
 }
 
 struct Security;
@@ -43,6 +60,10 @@ impl Modify for Security {
             "token",
             SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
         );
+        components.add_security_scheme(
+            "session",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new(SESSION_COOKIE))),
+        );
     }
 }
 
@@ -50,8 +71,8 @@ impl Modify for Security {
 #[openapi(
     info(title = "CIHub API", version = "1"),
     servers((url = "/api/v1")),
-    paths(list_repos, list_audit),
-    components(schemas(AuditEntry, AuditPage, ErrorCode, Problem, Repo, RepoList)),
+    paths(me, list_repos, list_audit),
+    components(schemas(AuditEntry, AuditPage, ErrorCode, Me, OrgRole, Problem, Repo, RepoList)),
     modifiers(&Security)
 )]
 struct PlatformApi;
@@ -61,7 +82,33 @@ pub fn openapi(modules: &[ModuleApi]) -> utoipa::openapi::OpenApi {
     for module in modules {
         document.merge(module.openapi.clone());
     }
+
+    accept_sessions(&mut document);
     document
+}
+
+/// Every route that a token reaches also answers a session, whose role gives
+/// the scopes: the client of the dashboard is generated from this document.
+fn accept_sessions(document: &mut utoipa::openapi::OpenApi) {
+    let session = SecurityRequirement::new("session", Vec::<String>::new());
+    for item in document.paths.paths.values_mut() {
+        let operations = [
+            &mut item.get,
+            &mut item.put,
+            &mut item.post,
+            &mut item.delete,
+            &mut item.patch,
+        ];
+        for security in operations
+            .into_iter()
+            .flatten()
+            .filter_map(|op| op.security.as_mut())
+        {
+            if !security.contains(&session) {
+                security.push(session.clone());
+            }
+        }
+    }
 }
 
 pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<ModuleApi>) -> Router {
@@ -72,6 +119,7 @@ pub(crate) fn router(pool: PgPool, now: fn() -> OffsetDateTime, modules: Vec<Mod
         windows: Arc::default(),
     };
     let mut routes = Router::new()
+        .route("/me", get(me))
         .route("/orgs/{org}/repos", get(list_repos))
         .route("/orgs/{org}/audit", get(list_audit))
         .with_state(state.clone());
@@ -101,48 +149,142 @@ async fn authenticated(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let secret = request
+    let now = (state.now)();
+    let bearer = request
         .headers()
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(|token| SecretString::from(token.trim().to_owned()));
-    let unauthorized = || ApiError::new(ErrorCode::Unauthorized, "no valid API token".into());
-    let Some(secret) = secret else {
-        return unauthorized().into_response();
+    let authenticated = if let Some(secret) = bearer {
+        by_token(&state, &secret, now).await
+    } else {
+        let (headers, method, path) = (request.headers(), request.method(), request.uri().path());
+        by_session(&state, headers, method, path, now).await
+    };
+    let authenticated = match authenticated {
+        Ok(authenticated) => authenticated,
+        Err(err) => return err.into_response(),
     };
 
-    let now = (state.now)();
-    let grant = match authenticate(&state.pool, &secret, now).await {
-        Ok(Some(grant)) => grant,
-        Ok(None) => return unauthorized().into_response(),
-        Err(err) => return ApiError::from(err).into_response(),
-    };
-
-    if let Some(wait) = over_limit(&state, grant.id, now) {
+    if let Some(wait) = over_limit(&state, authenticated.caller(), now) {
         let mut limited = ApiError::new(
             ErrorCode::RateLimited,
-            format!("at most {REQUESTS_PER_MINUTE} requests per minute and per token"),
+            format!("at most {REQUESTS_PER_MINUTE} requests per minute and per token or session"),
         );
         limited.retry_after = Some(wait);
         return limited.into_response();
     }
 
-    request.extensions_mut().insert(ApiGrant {
-        org_id: grant.org_id,
-        token_id: grant.id,
-        scopes: grant.scopes,
-    });
+    let extensions = request.extensions_mut();
+    match authenticated {
+        Authenticated::Token(_, grant) => {
+            extensions.insert(grant);
+        }
+        Authenticated::Session(session, grant) => {
+            extensions.insert(session);
+            if let Some(grant) = grant {
+                extensions.insert(grant);
+            }
+        }
+    }
 
     next.run(request).await
 }
 
-fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Option<u64> {
+/// A token always has a grant in its organization. A session has one only
+/// on a route of an organization where its user has a role.
+enum Authenticated {
+    Token(ApiTokenId, ApiGrant),
+    Session(SessionGrant, Option<ApiGrant>),
+}
+
+impl Authenticated {
+    fn caller(&self) -> Caller {
+        match self {
+            Self::Token(id, _) => Caller::Token(*id),
+            Self::Session(session, _) => Caller::Session(session.id),
+        }
+    }
+}
+
+fn unauthorized() -> ApiError {
+    ApiError::new(
+        ErrorCode::Unauthorized,
+        "no valid API token or session".into(),
+    )
+}
+
+async fn by_token(
+    state: &ApiState,
+    secret: &SecretString,
+    now: OffsetDateTime,
+) -> Result<Authenticated, ApiError> {
+    let grant = authenticate(&state.pool, secret, now)
+        .await?
+        .ok_or_else(unauthorized)?;
+
+    Ok(Authenticated::Token(
+        grant.id,
+        ApiGrant {
+            org_id: grant.org_id,
+            actor: GrantActor::Token(grant.id),
+            scopes: grant.scopes,
+        },
+    ))
+}
+
+/// A session, and on a route of an organization the grant of the role of
+/// its user there. An organization where the user has no role answers
+/// `404`, as for a token of another organization.
+async fn by_session(
+    state: &ApiState,
+    headers: &HeaderMap,
+    method: &Method,
+    path: &str,
+    now: OffsetDateTime,
+) -> Result<Authenticated, ApiError> {
+    let secret = cookie(headers, SESSION_COOKIE).ok_or_else(unauthorized)?;
+    let session = authenticate_session(&state.pool, &secret, now)
+        .await?
+        .ok_or_else(unauthorized)?;
+
+    if needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
+        return Err(csrf_refused());
+    }
+
+    let Some(slug) = org_of_path(path) else {
+        return Ok(Authenticated::Session(session, None));
+    };
+
+    let memberships = memberships_of(&state.pool, session.user_id).await?;
+    let membership = memberships
+        .into_iter()
+        .find(|membership| membership.org_slug.eq_ignore_ascii_case(slug))
+        .ok_or_else(|| ApiError::not_found("organization"))?;
+    let grant = ApiGrant {
+        org_id: membership.org_id,
+        actor: GrantActor::User(session.user_id),
+        scopes: membership.role.scopes().to_vec(),
+    };
+
+    Ok(Authenticated::Session(session, Some(grant)))
+}
+
+/// The slug of the organization that the path names, as `/orgs/{org}/…`.
+fn org_of_path(path: &str) -> Option<&str> {
+    path.strip_prefix("/orgs/")?
+        .split('/')
+        .next()
+        .filter(|slug| !slug.is_empty())
+}
+
+fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u64> {
     let minute = now.unix_timestamp().div_euclid(60);
     let mut windows = state.windows.lock().unwrap_or_else(PoisonError::into_inner);
 
     windows.retain(|_, (window, _)| *window == minute);
-    let (_, count) = windows.entry(token).or_insert((minute, 0));
+    let (_, count) = windows.entry(caller).or_insert((minute, 0));
     if *count >= REQUESTS_PER_MINUTE {
         let elapsed = now.unix_timestamp().rem_euclid(60);
         return Some(u64::try_from(60 - elapsed).unwrap_or(60));
@@ -150,6 +292,43 @@ fn over_limit(state: &ApiState, token: ApiTokenId, now: OffsetDateTime) -> Optio
 
     *count += 1;
     None
+}
+
+/// The user of the session and the organizations that they reach.
+#[utoipa::path(
+    get,
+    path = "/me",
+    responses((status = 200, body = Me)),
+    security(("session" = []))
+)]
+async fn me(
+    State(state): State<ApiState>,
+    session: Option<Extension<SessionGrant>>,
+) -> Result<Json<Me>, ApiError> {
+    let Some(Extension(session)) = session else {
+        return Err(ApiError::new(
+            ErrorCode::Unauthorized,
+            "`/me` needs a session of the dashboard".into(),
+        ));
+    };
+
+    let login = login_of(&state.pool, session.user_id)
+        .await?
+        .ok_or_else(unauthorized)?;
+    let orgs = memberships_of(&state.pool, session.user_id)
+        .await?
+        .into_iter()
+        .map(|membership| OrgRole {
+            slug: membership.org_slug,
+            role: membership.role,
+        })
+        .collect();
+
+    Ok(Json(Me {
+        login,
+        orgs,
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+    }))
 }
 
 /// The repositories of the organization.

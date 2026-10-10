@@ -10,8 +10,9 @@ use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, ConnectionKind, Event, EventId, EventKind, ItemState, JobClass,
-    Mergeability, OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId,
-    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId, temp_branch,
+    MembershipRole, Mergeability, OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId,
+    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SessionId, SubmittedVia, UserId,
+    temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -3464,8 +3465,10 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
     let (_, document) = call(&addr, &token, "GET", "/openapi.json", None).await;
     let paths: Vec<&String> = document["paths"].as_object().unwrap().keys().collect();
     assert!(
-        paths.iter().all(|path| path.starts_with("/orgs/{org}/")),
-        "{paths:?}"
+        paths
+            .iter()
+            .all(|path| path.starts_with("/orgs/{org}/") || *path == "/me"),
+        "only `/me`, the user of a session, is outside an organization: {paths:?}"
     );
     assert!(
         paths.contains(&&"/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel".to_owned()),
@@ -4925,4 +4928,131 @@ async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
         let mut chaos = Chaos::new(pool.clone(), seed, clock.clone(), config).await;
         chaos.play().await;
     }
+}
+
+/// A session of the dashboard of `login`, with `role` in the organization,
+/// and its secret.
+async fn session_of(pool: &PgPool, n: u128, login: &str, role: MembershipRole) -> SecretString {
+    let user_id = UserId::from_ulid(Ulid(n));
+    let secret = cihub_store::new_session_secret().unwrap();
+    let session = cihub_store::NewSession {
+        id: SessionId::from_ulid(Ulid(n)),
+        user_id,
+        created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+        expires_at: OffsetDateTime::from_unix_timestamp(1_790_100_000).unwrap(),
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+
+    cihub_store::ensure_user(&mut tx, user_id, &n.to_string(), login)
+        .await
+        .unwrap();
+    cihub_store::create_session(&mut tx, &session, &secret)
+        .await
+        .unwrap();
+    cihub_store::record_membership(&mut tx, org(), user_id, role, session.created_at)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret
+}
+
+/// Sends `method path` with the session of `secret`, with its CSRF token or
+/// without it, and returns the status of the answer.
+async fn call_as(
+    addr: &str,
+    secret: &SecretString,
+    with_csrf: bool,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let csrf = if with_csrf {
+        format!("X-CSRF-Token: {}\r\n", cihub_store::csrf_token(secret))
+    } else {
+        String::new()
+    };
+    let request = format!(
+        "{method} /api/v1{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\
+         Cookie: __Host-cihub_session={}\r\n{csrf}Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\r\n{body}",
+        secret.expose_secret(),
+        body.len()
+    );
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response.split(' ').nth(1).unwrap().parse().unwrap()
+}
+
+/// A session acts on a queue with the role of its user: a member cannot
+/// pause it, an admin needs the CSRF token, and the log and the audit log
+/// name the user. A submission from a session carries the account of its
+/// user, so that the job checks their permission on the repository, as for
+/// a command in a comment.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n";
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let pause = r#"{"state":"paused"}"#;
+    let direct = r#"{"pr_number":1,"direct":true}"#;
+
+    target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, _) = q.serve_api().await;
+    let admin = session_of(&pool, 70, "ada", MembershipRole::Admin).await;
+    let member = session_of(&pool, 71, "grace", MembershipRole::Member).await;
+
+    let by_member = call_as(&addr, &member, true, "PATCH", queue, pause).await;
+    let without_csrf = call_as(&addr, &admin, false, "PATCH", queue, pause).await;
+    let by_admin = call_as(&addr, &admin, true, "PATCH", queue, pause).await;
+    let submitted = call_as(
+        &addr,
+        &member,
+        true,
+        "POST",
+        &format!("{queue}/prs"),
+        direct,
+    )
+    .await;
+
+    assert_eq!(
+        (by_member, without_csrf, by_admin, submitted),
+        (403, 403, 202, 202)
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let actors: Vec<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT actor_user_id, actor_token_id FROM audit_log")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    let controls: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT actor_kind::text, actor_user_id FROM queue_inbox
+         WHERE type = 'queue.control_requested'
+         UNION ALL
+         SELECT actor_kind::text, actor_user_id FROM events WHERE type = 'queue.control_requested'",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let requested_by: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT payload -> 'requested_by' FROM jobs WHERE type = 'submit_pr'")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+
+    let ada = UserId::from_ulid(Ulid(70)).to_string();
+    assert_eq!(actors, [(Some(ada.clone()), None)]);
+    assert_eq!(controls, [("user".to_owned(), Some(ada))]);
+    assert_eq!(
+        requested_by,
+        [serde_json::json!({ "external_id": "71", "login": "grace" })]
+    );
+    q.stop().await;
 }

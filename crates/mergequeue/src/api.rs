@@ -20,8 +20,10 @@ use cihub_domain::{
     Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
     Reason, RepoId, RunId, SubmittedVia,
 };
-use cihub_platform::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, ModuleApi, enqueue_job};
-use cihub_scm::{Scm, ScmError, SetupFinding};
+use cihub_platform::{
+    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, Job, ModuleApi, enqueue_job,
+};
+use cihub_scm::{Scm, ScmError, ScmUser, SetupFinding};
 use cihub_store::{PgPool, Postgres, Transaction};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -30,7 +32,7 @@ use time::OffsetDateTime;
 use utoipa::OpenApi;
 
 use crate::Clock;
-use crate::jobs::{self, give_back, new_event_id};
+use crate::jobs::{self, Account, give_back, new_event_id};
 use crate::target::QueueTarget;
 
 #[derive(Clone)]
@@ -269,7 +271,33 @@ async fn repo_id(conn: &mut PgConnection, name: &str) -> Result<RepoId, ApiError
         .map_err(ApiError::from)
 }
 
-/// Writes an action of the token of `grant` in the audit log.
+/// Who acts in the log: the user of a session, or CIHub for a token, which
+/// stands for no person.
+fn actor(grant: &ApiGrant) -> Actor {
+    match grant.actor {
+        GrantActor::User(user_id) => Actor::User { user_id },
+        GrantActor::Token(_) => Actor::System,
+    }
+}
+
+/// The account of the user of a session on the SCM: the submission job
+/// checks its permission on the repository, `write`, or `admin` for a direct
+/// merge, as for a command in a comment. A token has the scope `prs:write`
+/// and no account.
+async fn requester(conn: &mut PgConnection, grant: &ApiGrant) -> Result<Option<Account>, ApiError> {
+    let GrantActor::User(user_id) = grant.actor else {
+        return Ok(None);
+    };
+
+    let (external_id, login): (String, String) =
+        sqlx::query_as("SELECT external_id, login FROM users WHERE id = $1")
+            .bind(user_id.to_string())
+            .fetch_one(conn)
+            .await?;
+    Ok(Some(Account::from(&ScmUser { external_id, login })))
+}
+
+/// Writes an action of the actor of `grant` in the audit log.
 async fn audit(
     conn: &mut PgConnection,
     grant: &ApiGrant,
@@ -282,13 +310,18 @@ async fn audit(
         reason = "an entry of the audit log has a new identifier"
     )]
     let id = cihub_domain::AuditEntryId::new();
+    let (token_id, user_id) = match grant.actor {
+        GrantActor::Token(token_id) => (Some(token_id.to_string()), None),
+        GrantActor::User(user_id) => (None, Some(user_id.to_string())),
+    };
     sqlx::query(
-        "INSERT INTO audit_log (id, org_id, actor_token_id, action, target, after)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO audit_log (id, org_id, actor_token_id, actor_user_id, action, target, after)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(id.to_string())
     .bind(grant.org_id.to_string())
-    .bind(grant.token_id.to_string())
+    .bind(token_id)
+    .bind(user_id)
     .bind(action)
     .bind(target)
     .bind(after)
@@ -462,7 +495,7 @@ async fn update_queue(
     };
     let id: QueueId = row.id.parse()?;
     let now = (state.clock)();
-    let facts = vec![(Actor::System, EventKind::QueueControlRequested { control })];
+    let facts = vec![(actor(&grant), EventKind::QueueControlRequested { control })];
 
     give_back(&mut tx, grant.org_id, id, facts, now).await?;
 
@@ -658,11 +691,12 @@ async fn submit(
     let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
     let id: QueueId = row.id.parse()?;
     let target = QueueTarget::load(&mut tx, id).await?;
+    let requested_by = requester(&mut tx, &grant).await?;
     let payload = jobs::SubmitPr {
         repo_id: target.repo_id,
         pr_number: request.pr_number,
         via: SubmittedVia::Api,
-        requested_by: None,
+        requested_by,
         priority,
         no_batch: request.no_batch,
         direct: request.direct,
@@ -904,7 +938,7 @@ async fn give(
         &mut tx,
         grant.org_id,
         queue_id,
-        vec![(Actor::System, fact)],
+        vec![(actor(grant), fact)],
         (state.clock)(),
     )
     .await?;

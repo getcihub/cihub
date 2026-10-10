@@ -21,7 +21,7 @@ pub use events::{
 pub use memberships::{Membership, forget_memberships_before, memberships_of, record_membership};
 use secrecy::{ExposeSecret, SecretString};
 pub use sessions::{
-    NewSession, SessionGrant, authenticate_session, create_session, delete_session,
+    NewSession, SessionGrant, authenticate_session, create_session, csrf_token, delete_session,
     new_session_secret,
 };
 use sqlx::migrate::{MigrateError, Migrator};
@@ -29,7 +29,7 @@ pub use sqlx::{PgPool, Postgres, Transaction};
 pub use tokens::{
     ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
 };
-pub use users::ensure_user;
+pub use users::{ensure_user, login_of};
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 

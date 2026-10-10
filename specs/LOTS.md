@@ -255,7 +255,14 @@ Decisions:
   - Waits on the project lead: a new recording by the `github` example (`record` mode), so that the recorded
     contract suite also runs `contract::members`; the fixture admin must be an owner of the account. Then
     `contract::members` moves into `contract::run`.
-  - Step 3 gives the two keys to the chart and to `deploy/compose.yaml`, with the routes that use them.
+  - In progress (October 10, 2026): step 3. A session is a second authentication of `/api/v1`: the cookie
+    `__Host-cihub_session`, the role in the organization of the URL as scopes, `404` for an organization without a role,
+    the header `X-CSRF-Token` (a SHA-256 of the secret of the session, which the server keeps nowhere) on a request
+    that can change a state; one rate limit per token or session. `ApiGrant` names its actor, a token or a user: the
+    audit log and the log of the queue record the user, and a submission carries their account, so that the job
+    checks their permission on the repository. The OpenAPI document gives the scheme `session` to every route.
+    `GET /api/v1/me` and `POST /auth/sign-out`. Remains: the start and the callback of the sign-in, which set the two
+    cookies; the installation URL of the App in `/me`; the two keys in the chart and in `deploy/compose.yaml`.
   - Open: how the build of `web/` enters the binary (a `build.rs` without a dependency, or `rust-embed`); decided
     at step 5.
 
