@@ -3,9 +3,9 @@ import { useState } from "react";
 import type { Me } from "../client/types.gen";
 import { signInAddress, signOut } from "../session";
 import styles from "./SignIn.module.css";
-import { Mark } from "./Mark";
 import { Timeline } from "./Timeline";
-import { ArrowIcon, CheckIcon, ErrorIcon } from "./icons";
+import { Mark } from "../ui/Mark";
+import { ArrowIcon, CheckIcon, ErrorIcon } from "../ui/icons";
 
 interface Props {
   /** The user of the session; a user without an organization must install the App. */

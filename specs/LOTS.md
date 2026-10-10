@@ -274,8 +274,16 @@ Decisions:
   - Done (October 10, 2026), part of step 5: the sign-in page of the mockups v5 (sign-in, failure, no
     organization, another account with `prompt=select_account`), and the build embedded in the binary by
     `crates/web/build.rs`, without a dependency (decided by the project lead); `index.html` answers every path of
-    the dashboard. The image builds the dashboard in a stage of its own. Remains: the frame (navigation, organization
-    switcher, user menu), the pages "not found" and "server error", and step 6.
+    the dashboard. The image builds the dashboard in a stage of its own.
+  - Done (October 10, 2026): end of step 5. The frame of the mockups v5: the top bar with the pickers of the
+    organization (with the role of the person, and the page that installs the App), of the repository and of the
+    queue, and the menu of the person (theme, sign-out); the routes `/orgs/$org`, `/orgs/$org/repos/$repo` and
+    `/orgs/$org/repos/$repo/queues/$queue`, as the API names them, whose content comes with lot 10b; `/` opens the
+    organization that the person opened last. The pages "not found", "server error" and "no access" (the API
+    answers `404` on an organization where the person has no role, or that does not exist; an organization that
+    the App left keeps its members, and its queues say that the access is lost, lot 10b). The pages read the data of
+    the server from the cache of the queries (fresh 30 seconds), and a `401` drops `/me` from it, so that the
+    sign-in does not send the person back. Remains: step 6.
   - To check on the App of staging: that GitHub shows its account picker for a GitHub App with
     `prompt=select_account` (documented for an OAuth App only), and the URL of the callback of the App.
 
