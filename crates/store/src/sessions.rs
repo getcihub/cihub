@@ -31,6 +31,16 @@ pub fn new_session_secret() -> Result<SecretString, StoreError> {
     Ok(format_session_token(&draw_secret_bytes()?).into())
 }
 
+/// A secret of a sign-in in progress, for its `state` or its PKCE verifier:
+/// 32 random bytes in hexadecimal, 64 characters, which RFC 7636 allows.
+///
+/// # Errors
+///
+/// The system has no random source.
+pub fn new_sign_in_secret() -> Result<SecretString, StoreError> {
+    Ok(hexadecimal(&draw_secret_bytes::<32>()?).into())
+}
+
 /// The CSRF token of the session of `secret`: the hexadecimal SHA-256 of a
 /// label and the secret. A script of another site can neither read the
 /// cookie of the session nor compute it, and the server keeps nothing more.
@@ -39,9 +49,13 @@ pub fn csrf_token(secret: &SecretString) -> String {
         .chain_update(b"cihub-csrf:")
         .chain_update(secret.expose_secret().as_bytes())
         .finalize();
-    digest
+    hexadecimal(&digest)
+}
+
+fn hexadecimal(bytes: &[u8]) -> String {
+    bytes
         .iter()
-        .fold(String::with_capacity(64), |mut text, byte| {
+        .fold(String::with_capacity(bytes.len() * 2), |mut text, byte| {
             let _ = write!(text, "{byte:02x}");
             text
         })

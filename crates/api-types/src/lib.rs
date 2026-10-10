@@ -32,8 +32,13 @@ pub const MAX_BATCH_GET: usize = 50;
 pub enum ErrorCode {
     /// No token, or a token that is unknown or expired.
     Unauthorized,
-    /// The token lacks the scope of the route.
+    /// The token, or the role of the user of a session, lacks the scope of
+    /// the route.
     Forbidden,
+    /// A request of a session that can change a state lacks the CSRF token
+    /// of the session, or carries another one: read the cookie
+    /// `__Host-cihub_csrf` again, or sign in again.
+    CsrfRefused,
     NotFound,
     /// The request is not valid: its body, its path or its query.
     InvalidRequest,
@@ -75,6 +80,10 @@ pub struct Me {
     pub orgs: Vec<OrgRole>,
     /// The version of the instance.
     pub version: String,
+    /// The page of the SCM that installs the App on an account, or chooses
+    /// the repositories of its installation; `None` when the SCM did not
+    /// answer.
+    pub app_install_url: Option<String>,
 }
 
 /// An organization of the user, and the role of the user in it.

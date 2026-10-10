@@ -850,7 +850,11 @@ async fn serve_api(
         secret: SecretString::from("unused"),
     };
     let fixed = || OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
-    let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api]);
+    let dashboard = cihub_web::Dashboard {
+        scm: Arc::new(Sim::new()),
+        public_url: None,
+    };
+    let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api], dashboard);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
 

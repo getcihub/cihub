@@ -42,13 +42,13 @@ pub(crate) fn cookie(headers: &HeaderMap, name: &str) -> Option<SecretString> {
         .then(|| SecretString::from(value.to_owned()))
 }
 
-/// The `Set-Cookie` value of the cookie `name`; only the session cookie is
-/// hidden from the scripts.
+/// The `Set-Cookie` value of the cookie `name`; every cookie but the CSRF
+/// one is hidden from the scripts.
 pub(crate) fn set_cookie(name: &str, value: &str, max_age_seconds: i64) -> String {
-    let hidden = if name == SESSION_COOKIE {
-        "; HttpOnly"
-    } else {
+    let hidden = if name == CSRF_COOKIE {
         ""
+    } else {
+        "; HttpOnly"
     };
     format!("{name}={value}; {COOKIE_ATTRIBUTES}; Max-Age={max_age_seconds}{hidden}")
 }
@@ -72,7 +72,7 @@ pub(crate) fn has_csrf_token(headers: &HeaderMap, secret: &SecretString) -> bool
 
 /// Compares every byte, so that the time of the answer does not tell how
 /// much of a guess was right.
-fn is_same_text(left: &str, right: &str) -> bool {
+pub(crate) fn is_same_text(left: &str, right: &str) -> bool {
     left.len() == right.len()
         && left
             .bytes()
@@ -83,7 +83,7 @@ fn is_same_text(left: &str, right: &str) -> bool {
 
 pub(crate) fn csrf_refused() -> ApiError {
     ApiError::new(
-        ErrorCode::Forbidden,
+        ErrorCode::CsrfRefused,
         format!("the header `{CSRF_HEADER}` does not carry the CSRF token of the session"),
     )
 }

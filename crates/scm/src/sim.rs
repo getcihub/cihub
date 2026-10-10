@@ -1683,6 +1683,10 @@ impl Scm for Sim {
         })
     }
 
+    fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String> {
+        self.record_call("app_install_url", class, |_| Ok("sim:install".to_owned()))
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         Some(format!(
             "sim:authorize?redirect_uri={}&state={}&code_challenge={}",
@@ -1858,6 +1862,7 @@ mod tests {
         let (sim, fixture) = contract_world(&repo).unwrap();
         crate::contract::run(&sim, &repo, &fixture).await;
         crate::contract::members(&sim, &repo, &fixture).await;
+        crate::contract::install_page(&sim).await;
     }
 
     #[tokio::test]

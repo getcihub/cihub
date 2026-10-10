@@ -124,7 +124,7 @@ impl ApiError {
     pub fn status(&self) -> StatusCode {
         match self.code {
             ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+            ErrorCode::Forbidden | ErrorCode::CsrfRefused => StatusCode::FORBIDDEN,
             ErrorCode::NotFound => StatusCode::NOT_FOUND,
             ErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
             ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,

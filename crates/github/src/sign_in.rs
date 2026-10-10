@@ -1,6 +1,7 @@
-//! A person on GitHub: the sign-in through the App, which gives the role of the
-//! person in each installation that they reach, and the members of the account
-//! of an installation (`specs/GITHUB.md`).
+//! A person on GitHub: the page that installs the App, the sign-in through the
+//! App, which gives the role of the person in each installation that they
+//! reach, and the members of the account of an installation
+//! (`specs/GITHUB.md`).
 
 use cihub_domain::{JobClass, MembershipRole};
 use cihub_scm::{
@@ -13,6 +14,11 @@ use serde::Deserialize;
 use crate::GithubApp;
 use crate::client::{JSON, Request};
 use crate::scm::{encode, expect};
+
+/// Where the dashboard sends a person to sign in through GitHub.
+pub const SIGN_IN_PATH: &str = "/auth/github";
+/// Where GitHub sends the person back; the *Callback URL* of the App.
+pub const SIGN_IN_CALLBACK_PATH: &str = "/auth/github/callback";
 
 const MEMBERS_PER_PAGE: usize = 100;
 
@@ -46,6 +52,27 @@ struct Account {
 }
 
 impl GithubApp {
+    /// `<html_url of the App>/installations/new`: GitHub shows the accounts
+    /// where the App is not installed yet, and the repositories of an
+    /// installation that exists.
+    pub(crate) async fn install_address(&self) -> Result<String, ScmError> {
+        #[derive(Deserialize)]
+        struct App {
+            html_url: String,
+        }
+
+        if let Some(url) = self.kept_install_url() {
+            return Ok(url);
+        }
+
+        let (answer, _) = self.send_as_app(Method::GET, "/app").await?;
+        let app: App = expect(answer, &[StatusCode::OK])?.json()?;
+        let url = format!("{}/installations/new", app.html_url.trim_end_matches('/'));
+
+        self.keep_install_url(&url);
+        Ok(url)
+    }
+
     pub(crate) fn sign_in_address(&self, request: &SignInRequest) -> Option<String> {
         let client = self.sign_in_client()?;
         let address = Url::parse_with_params(

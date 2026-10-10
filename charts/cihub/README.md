@@ -51,6 +51,8 @@ Kubernetes: `>=1.25.0-0`
 | deploymentAnnotations | object | `{}` | Annotations of the Deployment. |
 | fullnameOverride | string | `""` | Replaces the full name of the resources. |
 | github.appId | required | `""` | Identifier of the GitHub App (specs/GITHUB.md). |
+| github.clientId | string | `""` | Client ID of the App, for the sign-in to the dashboard; with it, the Secret also holds the client secret. |
+| github.clientSecretKey | string | `"client-secret"` | Key of the client secret of the App in that Secret, read when `clientId` is set. |
 | github.existingSecret | required | `""` | Secret that holds the private key and the webhook secret of the App. |
 | github.privateKeyKey | string | `"private-key.pem"` | Key of the private key (PEM) in that Secret. |
 | github.url | string | `"https://github.com"` | github.com, or the address of a GitHub Enterprise Server. |
@@ -83,6 +85,7 @@ Kubernetes: `>=1.25.0-0`
 | podLabels | object | `{}` | Labels of the server pods. |
 | podSecurityContext | object | `{"runAsGroup":65532,"runAsNonRoot":true,"runAsUser":65532,"seccompProfile":{"type":"RuntimeDefault"}}` | Security context of the pods: the user of the image (65532), not root. |
 | priorityClassName | string | `""` | Priority class of the server pods. |
+| publicUrl | string | `""` | The root address where people reach the instance, such as `https://ci.example.com`. The sign-in to the dashboard sends them back there; without it, nobody signs in (specs/DEPLOYMENT.md). |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"internal"},"periodSeconds":10}` | Readiness probe: `/readyz` answers 503 when Postgres does not answer within 2 s. |
 | replicas | int | `1` | Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost. |
 | resources | object | `{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resources of the server pods and of the migration Job. |

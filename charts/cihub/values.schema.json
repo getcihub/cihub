@@ -50,6 +50,18 @@
             "string"
           ]
         },
+        "clientId": {
+          "default": "",
+          "description": "Client ID of the App, for the sign-in to the dashboard; with it, the Secret also holds the client secret.",
+          "title": "clientId",
+          "type": "string"
+        },
+        "clientSecretKey": {
+          "default": "client-secret",
+          "description": "Key of the client secret of the App in that Secret, read when `clientId` is set.",
+          "title": "clientSecretKey",
+          "type": "string"
+        },
         "existingSecret": {
           "default": "",
           "description": "(required) Secret that holds the private key and the webhook secret of the App.",
@@ -424,6 +436,12 @@
       "default": "",
       "description": "Priority class of the server pods.",
       "title": "priorityClassName",
+      "type": "string"
+    },
+    "publicUrl": {
+      "default": "",
+      "description": "The root address where people reach the instance, such as `https://ci.example.com`. The sign-in to the dashboard sends them back there; without it, nobody signs in (specs/DEPLOYMENT.md).",
+      "title": "publicUrl",
       "type": "string"
     },
     "readinessProbe": {

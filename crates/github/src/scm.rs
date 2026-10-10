@@ -1511,6 +1511,10 @@ impl Scm for GithubApp {
         })
     }
 
+    fn app_install_url(&self, _class: JobClass) -> ScmFuture<'_, String> {
+        Box::pin(self.install_address())
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         self.sign_in_address(request)
     }
