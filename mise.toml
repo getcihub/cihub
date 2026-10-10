@@ -57,6 +57,16 @@ description = "Build the dashboard into web/dist, which the next build of cihub-
 depends = ["web-install"]
 run = "pnpm --dir web build"
 
+# The test server creates the database cihub_e2e next to the one of
+# DATABASE_URL; its build embeds the dashboard that web-build makes.
+[tasks.e2e]
+description = "Run the browser tests of the dashboard against a server on the simulator (needs Postgres)"
+depends = ["db", "web-build"]
+run = [
+  "pnpm --dir web exec playwright install chromium",
+  "pnpm --dir web e2e",
+]
+
 [tasks.web-dev]
 description = "Serve the dashboard with Vite, in front of a cihub server start on CIHUB_URL (http://localhost:8080)"
 depends = ["web-install"]

@@ -42,7 +42,7 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
-| 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | in progress                              |
+| 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | to do                                    |
 | 10c | Dashboard: PR drawer, actions and audit                | 2     | 10b        | —         | to do                                    |
 | 10d | Dashboard: live updates and search                     | 2     | 10b        | —         | to do                                    |
@@ -283,7 +283,13 @@ Decisions:
     answers `404` on an organization where the person has no role, or that does not exist; an organization that
     the App left keeps its members, and its queues say that the access is lost, lot 10b). The pages read the data of
     the server from the cache of the queries (fresh 30 seconds), and a `401` drops `/me` from it, so that the
-    sign-in does not send the person back. Remains: step 6.
+    sign-in does not send the person back.
+  - Done (October 10, 2026): step 6 and exit criterion. `crates/cli/examples/e2e.rs` serves the API, the dashboard
+    and the sign-in on the simulator, with a fresh database `cihub_e2e` (`acme` and `globex`); the simulator serves
+    its sign-in on a page that a browser opens, and signs in the person chosen there. `web/e2e/sign-in.spec.ts`
+    (Playwright, `mise run e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
+    a member gets `403` on `PATCH` of a queue, a session gets `404` on another organization and its page, a refused
+    sign-in and a person without an organization see their message.
   - To check on the App of staging: that GitHub shows its account picker for a GitHub App with
     `prompt=select_account` (documented for an OAuth App only), and the URL of the callback of the App.
 

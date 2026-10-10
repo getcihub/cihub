@@ -37,8 +37,9 @@ tracing.workspace = true
 ulid.workspace = true
 
 [dev-dependencies]
+axum = { workspace = true, features = ["query"] }
+cihub-scm = { workspace = true, features = ["sim"] }
 ring.workspace = true
-serde_json.workspace = true
 sqlx.workspace = true
 
 [lints]

@@ -372,6 +372,23 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
     assert_eq!(after.status, 401);
 }
 
+/// `text` with each `%XX` of a query decoded.
+fn percent_decode(text: &str) -> String {
+    let mut bytes = Vec::new();
+    let mut rest = text.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%' && tail.len() >= 2 {
+            let hex = std::str::from_utf8(&tail[..2]).unwrap();
+            bytes.push(u8::from_str_radix(hex, 16).unwrap());
+            rest = &tail[2..];
+        } else {
+            bytes.push(byte);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).unwrap()
+}
+
 /// The values of the header `name` of the raw head of an answer.
 fn header_values(raw_head: &str, name: &str) -> Vec<String> {
     raw_head
@@ -403,11 +420,11 @@ async fn sign_in(addr: &str, sim: &Sim, person: &ScmUser, next: &str) -> Answer 
     let location = header_values(&started.raw_head, "location").pop().unwrap();
     let query = location.split_once('?').unwrap().1;
     let param = |name: &str| {
-        query
+        let value = query
             .split('&')
             .find_map(|pair| pair.strip_prefix(&format!("{name}=")))
-            .unwrap()
-            .to_owned()
+            .unwrap();
+        percent_decode(value)
     };
     let request = SignInRequest {
         redirect_url: param("redirect_uri"),

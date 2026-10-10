@@ -68,6 +68,8 @@ does not also check.
 `react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), Prettier, Vitest.
 `mise run web-dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
 `mise run web-build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web-generate`
-writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`.
+writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;
+`mise run e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
+server on the simulator with a fresh database.
 
 Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10e).
