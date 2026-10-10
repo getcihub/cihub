@@ -105,6 +105,10 @@ export type GraphNode = {
  * A submission of a PR.
  */
 export type Item = {
+    /**
+     * The login of the author of the PR.
+     */
+    author: string;
     block_reasons: Array<{
         [key: string]: unknown;
     }>;
@@ -113,6 +117,10 @@ export type Item = {
     id: string;
     is_current: boolean;
     merged_sha?: string | null;
+    /**
+     * The PR is tested alone, never in a batch.
+     */
+    no_batch: boolean;
     /**
      * The order in the queue; `None` before the admission.
      */
@@ -123,6 +131,11 @@ export type Item = {
      */
     priority: number;
     queue_id: string;
+    /**
+     * The last run of the group of the item: the run that tests it, or
+     * that tested it last; `None` outside a group.
+     */
+    run_id?: string | null;
     state: string;
     state_changed_at: string;
     /**
@@ -132,6 +145,16 @@ export type Item = {
     state_description: string;
     state_reason: string;
     submitted_at: string;
+    /**
+     * The login of the person who submitted the PR; `None` when CIHub or an
+     * API token did.
+     */
+    submitted_by?: string | null;
+    submitted_via: string;
+    /**
+     * The title at the last read of the PR; `None` before the first.
+     */
+    title?: string | null;
 };
 
 /**
@@ -458,16 +481,17 @@ export type ListAuditData = {
          * The slug of the organization
          */
         org: string;
+    };
+    query?: {
         /**
          * The `next_cursor` of the previous page.
          */
-        cursor: string | null;
+        cursor?: string;
         /**
          * At most 100; 50 by default.
          */
-        take: number | null;
+        take?: number;
     };
-    query?: never;
     url: '/orgs/{org}/audit';
 };
 
@@ -654,28 +678,30 @@ export type ListItemsData = {
          * The name of the queue in the repository.
          */
         queue: string;
+    };
+    query?: {
         /**
-         * Only the items in this state.
+         * Only the items in these states, separated by commas:
+         * `pending,testing`.
          */
-        state: string | null;
+        state?: string;
         /**
          * Submitted at or after this time (RFC 3339).
          */
-        since: string | null;
+        since?: string;
         /**
          * Submitted before this time (RFC 3339).
          */
-        until: string | null;
+        until?: string;
         /**
          * The `next_cursor` of the previous page.
          */
-        cursor: string | null;
+        cursor?: string;
         /**
          * At most 100; 50 by default.
          */
-        take: number | null;
+        take?: number;
     };
-    query?: never;
     url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs';
 };
 
@@ -730,12 +756,13 @@ export type GetPrData = {
          * The number of the PR.
          */
         number: number;
+    };
+    query?: {
         /**
          * `timeline` adds the events of the item.
          */
-        include: string | null;
+        include?: string;
     };
-    query?: never;
     url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}';
 };
 

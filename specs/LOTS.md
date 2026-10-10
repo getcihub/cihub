@@ -302,7 +302,7 @@ Decisions:
   @hugo"), `target_head_sha`, `access` (`ok`, `suspended`) and `has_config_file`; `GET …/queues/{queue}` gives the
   counters of `GET /orgs/{org}/queues`, the number of live runs, the window (current, floor, ceiling) and the
   summary of the settings (strategy, batching, failure budget, merge method); `Item` gains `title`, `author`,
-  `url`, `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of `GET …/prs` takes
+  `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of `GET …/prs` takes
   several states; `Graph` gains the head of the target branch and the live runs (members, predecessors, attempt,
   status); the configuration check is stored with its time, refreshed by the repair loop, and `GET …/config-check`
   reads it without a call to the SCM. Migrations: the title of the PR, kept up to date by the reads of the PRs;
@@ -321,8 +321,13 @@ Decisions:
     decision acts as CIHub), the head of the target and the window; the replay rebuilds them. `GET
     …/queues/{queue}` answers `QueueDetail`. The migration of `queues` is rewritten, as before the first version:
     a development database needs `mise run db-reset`.
-  - Remaining: the fields of `Item`, the graph of the runs, the stored configuration check, the pages, the
-    browser test.
+  - Done (October 10, 2026): step 2. `Item` gains `title`, `author`, `run_id`, `no_batch`,
+    `submitted_by` and `submitted_via`; the filter `state` takes several states, separated by commas. The title
+    of a PR is kept in `pr_titles` at each read of the PR by a job, outside the log.
+  - Changed (October 10, 2026, validated by the project lead): the `url` of an item goes to lot 10c, with the
+    drawer that links to the PR. The adapter does not read it yet, and reading it changes the recorded answers of
+    the contract, which must then be recorded again.
+  - Remaining: the graph of the runs, the stored configuration check, the pages, the browser test.
 
 #### Lot 10c: your pull requests, drawer and actions
 
@@ -331,13 +336,13 @@ Decisions:
   merged a moment ago, with the states of the PRs ahead of each one; `QueueDetail` gains the median duration of a
   run, for the estimate "merges in about N min"; "Your pull requests" on the queues, their spotlight on the page of
   a queue, the title of the tab. `TimelineEvent` gains `actor` and `description`; `RunCheck` gains `status`,
-  `started_at` and `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `POST
-  …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue
+  `started_at` and `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `Item`
+  gains `url`, read by the adapter with the PR; `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue
   (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
   `item.cancelled` and `item.restarted` in the audit log. The comment of CIHub and the status of a PR link to the
   page of the PR in the dashboard (`http.public_url`). Pages: the drawer of a PR (where it is, run, required and
   observed checks, history); the submission, cancellation and restart; pause, drain and resume.
-- **Frozen interfaces**: the answer of `GET /orgs/{org}/prs`, `TimelineEvent`, `RunCheck`.
+- **Frozen interfaces**: the answer of `GET /orgs/{org}/prs`, `TimelineEvent`, `RunCheck`, `Item`.
 - **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
   submits a PR from the dashboard and follows it in "Your pull requests" until the merge; a member pauses
   nothing; the comment of the PR links to its page.

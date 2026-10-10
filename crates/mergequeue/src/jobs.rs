@@ -455,6 +455,40 @@ pub(crate) async fn give_back_facts(
     Ok(())
 }
 
+/// Gives back the facts of the PRs read at `now`, with their titles, for the
+/// pages of the dashboard: an older read does not replace a newer title, and
+/// a title that did not change is not written again.
+async fn give_back_with_titles(
+    pool: &PgPool,
+    target: &QueueTarget,
+    prs: &[PrSnapshot],
+    facts: Vec<(Actor, EventKind)>,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let mut tx = begin_system(pool).await?;
+
+    for pr in prs {
+        sqlx::query(
+            "INSERT INTO pr_titles (org_id, repo_id, pr_number, title, read_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (repo_id, pr_number) DO UPDATE SET title = $4, read_at = $5
+             WHERE pr_titles.read_at <= $5 AND pr_titles.title <> $4",
+        )
+        .bind(target.org_id.to_string())
+        .bind(target.repo_id.to_string())
+        .bind(i64::try_from(pr.number).unwrap_or(i64::MAX))
+        .bind(&pr.title)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
+    tx.commit().await?;
+
+    Ok(())
+}
+
 /// Reads the PRs of the job and gives back one `pr.observed` per PR. A PR
 /// that no longer exists gives nothing.
 pub(crate) async fn refresh(
@@ -507,7 +541,7 @@ pub(crate) async fn refresh(
         facts.push((Actor::System, kind));
     }
 
-    give_back_facts(pool, &target, facts, now).await
+    give_back_with_titles(pool, &target, &prs, facts, now).await
 }
 
 /// The live item of a PR, as `refresh_prs` needs it.
@@ -1012,7 +1046,7 @@ pub(crate) async fn submit_pr(
         (Actor::System, observed(&pr, &required, &own, unmet)),
     ];
 
-    give_back_facts(pool, target, facts, now).await?;
+    give_back_with_titles(pool, target, std::slice::from_ref(&pr), facts, now).await?;
     acknowledge(scm, repo_ref, request.comment_id.as_deref(), job.class).await;
 
     Ok(())

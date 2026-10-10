@@ -3238,9 +3238,36 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     q.settle().await;
 
     let (status, listed) = call("GET", format!("{queue}/prs"), None).await;
+    let (live_run, _, _) = q.runs_in_progress().await.remove(0);
+    let item = &listed["items"][0];
+
     assert_eq!(status, 200, "{listed}");
-    assert_eq!(listed["items"][0]["state"], "testing");
-    assert_eq!(listed["items"][0]["priority"], 10);
+    assert_eq!(item["state"], "testing");
+    assert_eq!(item["priority"], 10);
+    assert_eq!(
+        item["title"], "pr-1",
+        "the simulator names a PR after its branch"
+    );
+    assert_eq!(item["author"], "bob");
+    assert_eq!(item["run_id"], live_run.to_string().as_str());
+    assert_eq!(item["no_batch"], false);
+    assert_eq!(item["submitted_via"], "api");
+    assert_eq!(
+        item["submitted_by"],
+        Value::Null,
+        "a token stands for no person"
+    );
+
+    let live = call("GET", format!("{queue}/prs?state=pending,testing"), None).await;
+    let merged = call("GET", format!("{queue}/prs?state=merged"), None).await;
+    let unknown = call("GET", format!("{queue}/prs?state=testing,lost"), None).await;
+
+    assert_eq!(live.1["items"].as_array().unwrap().len(), 1, "{}", live.1);
+    assert_eq!(merged.1["items"], serde_json::json!([]));
+    assert_eq!(
+        (unknown.0, &unknown.1["code"]),
+        (400, &serde_json::json!("invalid_request"))
+    );
 
     let item_id = listed["items"][0]["id"].as_str().unwrap().to_owned();
     let (_, pr) = call(
@@ -3366,6 +3393,56 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "{refused}"
     );
 
+    q.stop().await;
+}
+
+/// An item gives the title of the PR at its last read, and the person who
+/// submitted it; a replay of the log gives the same items (principle I).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn an_item_follows_the_title_of_its_pr_and_survives_a_replay(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let items = "/orgs/acme/repos/app/queues/main/prs";
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, submitted) = call(&addr, &token, "GET", items, None).await;
+    let item = &submitted["items"][0];
+
+    assert_eq!(item["title"], "pr-1");
+    assert_eq!(item["submitted_by"], "alice");
+    assert_eq!(item["submitted_via"], "comment");
+    assert!(item["run_id"].is_string(), "{item}");
+
+    sim.change_pr(&repo(), number, PrChange::Title("Fix the login redirect"))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, renamed) = call(&addr, &token, "GET", items, None).await;
+    assert_eq!(renamed["items"][0]["title"], "Fix the login redirect");
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let (_, replayed) = call(&addr, &token, "GET", items, None).await;
+    assert_eq!(replayed, renamed);
     q.stop().await;
 }
 

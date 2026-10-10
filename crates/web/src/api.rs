@@ -393,6 +393,7 @@ async fn list_repos(
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 struct AuditQuery {
     /// The `next_cursor` of the previous page.
     cursor: Option<String>,

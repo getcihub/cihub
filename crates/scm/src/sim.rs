@@ -328,6 +328,7 @@ impl Sim {
                 PrChange::Draft(draft) => pr.draft = draft,
                 PrChange::Review(decision) => pr.review_decision = decision,
                 PrChange::Mergeability(mergeability) => pr.mergeability = mergeability,
+                PrChange::Title(title) => title.clone_into(&mut pr.title),
                 PrChange::Close => pr.state = PrState::Closed,
             }
 
@@ -736,6 +737,7 @@ pub enum PrChange {
     Review(ReviewDecision),
     /// Forces the mergeability, or computes it again with `None`.
     Mergeability(Option<Mergeability>),
+    Title(&'static str),
     Close,
 }
 

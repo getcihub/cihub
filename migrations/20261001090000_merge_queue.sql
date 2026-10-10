@@ -105,6 +105,7 @@ CREATE TABLE test_runs (
 CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
 CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
+CREATE INDEX test_runs_group_id ON test_runs (group_id);
 
 CREATE TABLE queue_inbox (
     id            text        PRIMARY KEY,
