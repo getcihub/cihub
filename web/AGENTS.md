@@ -50,7 +50,9 @@ does not also check.
 - The page shows `state_description` and the descriptions that the API gives; it decides on the codes
   (`state_reason`, `kind`, `code`). It never writes its own sentence for a reason of the closed vocabulary.
 - The role of `/me` only hides or disables a button; the server refuses what the role does not allow.
-- Every text is in English, with the words of `specs/DOMAIN.md`.
+- Every text is in English, with the words of `specs/DOMAIN.md`. The texts of the dashboard may name GitHub, as
+  the mockups do ("Continue with GitHub"), an exception to the neutral vocabulary of the code that the project
+  lead accepted: the name will come from the API when a second SCM arrives.
 
 ## Interface
 

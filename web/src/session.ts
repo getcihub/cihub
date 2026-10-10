@@ -61,3 +61,17 @@ export async function signOut(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Ends the session, then opens the sign-in page. A full load, and not a
+ * navigation of the router, clears the data of the old session from the
+ * cache of the queries. Whether the server ended it: without that, the page
+ * stays and says so.
+ */
+export async function signOutAndLeave(): Promise<boolean> {
+  const hasSignedOut = await signOut();
+  if (hasSignedOut) {
+    window.location.assign("/sign-in");
+  }
+  return hasSignedOut;
+}
