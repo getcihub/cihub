@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/nlecoy/cihub
+  IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
   build-amd64:

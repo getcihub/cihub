@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/nlecoy/cihub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nlecoy/cihub/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/getcihub/cihub/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/getcihub/cihub/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-006FFF"></a>
   <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-14171C">
   <img alt="Runs on Postgres" src="https://img.shields.io/badge/runs%20on-Postgres-14171C">

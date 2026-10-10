@@ -10,9 +10,9 @@ kubeVersion: ">=1.25.0-0"
 # deploys a published image; image.yaml sets them again when it packages.
 version: 0.1.0 # x-release-please-version
 appVersion: "0.1.0" # x-release-please-version
-home: https://github.com/nlecoy/cihub
+home: https://github.com/getcihub/cihub
 sources:
-  - https://github.com/nlecoy/cihub
+  - https://github.com/getcihub/cihub
 keywords:
   - merge-queue
   - github

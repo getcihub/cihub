@@ -3,7 +3,7 @@
 
 image:
   # -- Image repository.
-  repository: ghcr.io/nlecoy/cihub
+  repository: ghcr.io/getcihub/cihub
   # -- Image pull policy.
   pullPolicy: IfNotPresent
   # -- Image tag; the appVersion of the chart when empty.

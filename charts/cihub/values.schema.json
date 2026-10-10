@@ -175,7 +175,7 @@
           "type": "string"
         },
         "repository": {
-          "default": "ghcr.io/nlecoy/cihub",
+          "default": "ghcr.io/getcihub/cihub",
           "description": "Image repository.",
           "title": "repository",
           "type": "string"

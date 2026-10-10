@@ -2,12 +2,12 @@
 
 Self-hosted merge queue for GitHub, on Postgres
 
-**Homepage:** <https://github.com/nlecoy/cihub>
+**Homepage:** <https://github.com/getcihub/cihub>
 
 ## Usage
 
 The chart needs a Postgres 17, a GitHub App created by hand
-([`specs/GITHUB.md`](https://github.com/nlecoy/cihub/blob/main/specs/GITHUB.md)) and two Secrets:
+([`specs/GITHUB.md`](https://github.com/getcihub/cihub/blob/main/specs/GITHUB.md)) and two Secrets:
 
 ```sh
 kubectl create secret generic cihub-postgres \
@@ -15,7 +15,7 @@ kubectl create secret generic cihub-postgres \
 kubectl create secret generic cihub-github \
   --from-file=private-key.pem=<the private key of the App> \
   --from-literal=webhook-secret=<the webhook secret of the App>
-helm install cihub oci://ghcr.io/nlecoy/charts/cihub \
+helm install cihub oci://ghcr.io/getcihub/charts/cihub \
   --set database.existingSecret=cihub-postgres \
   --set github.appId=<the App ID> \
   --set github.existingSecret=cihub-github
@@ -63,7 +63,7 @@ Kubernetes: `>=1.25.0-0`
 | httpRoute.parentRefs | list | `[]` | Gateways and listeners of the route. |
 | image.digest | string | `""` | Image digest (`sha256:…`); wins over the tag when set. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
-| image.repository | string | `"ghcr.io/nlecoy/cihub"` | Image repository. |
+| image.repository | string | `"ghcr.io/getcihub/cihub"` | Image repository. |
 | image.tag | string | `""` | Image tag; the appVersion of the chart when empty. |
 | imagePullSecrets | list | `[]` | Secrets to pull the image, for the server pods, the migration Job and the test pod. |
 | ingress.annotations | object | `{}` | Annotations of the Ingress. |

@@ -73,7 +73,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/nlecoy/cihub@sha256:0123
+          value: ghcr.io/getcihub/cihub@sha256:0123
 
   - it: defaults the tag to the appVersion
     template: deployment.tpl
@@ -82,7 +82,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/nlecoy/cihub:1.2.3
+          value: ghcr.io/getcihub/cihub:1.2.3
 
   - it: refuses a missing database Secret
     template: deployment.tpl

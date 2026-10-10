@@ -24,7 +24,7 @@ CNPG_VERSION=v1.30.1
 POSTGRES_IMAGE=ghcr.io/cloudnative-pg/postgresql:17.11-minimal-trixie
 
 cluster="${CIHUB_SMOKE_CLUSTER:-cihub-smoke}"
-image="${CIHUB_SMOKE_IMAGE:-ghcr.io/nlecoy/cihub:smoke}"
+image="${CIHUB_SMOKE_IMAGE:-ghcr.io/getcihub/cihub:smoke}"
 ns=cihub
 export KUBECONFIG="${TMPDIR:-/tmp}/kind-${cluster}.kubeconfig"
 

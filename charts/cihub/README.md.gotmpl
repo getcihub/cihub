@@ -7,7 +7,7 @@
 ## Usage
 
 The chart needs a Postgres 17, a GitHub App created by hand
-([`specs/GITHUB.md`](https://github.com/nlecoy/cihub/blob/main/specs/GITHUB.md)) and two Secrets:
+([`specs/GITHUB.md`](https://github.com/getcihub/cihub/blob/main/specs/GITHUB.md)) and two Secrets:
 
 ```sh
 kubectl create secret generic cihub-postgres \
@@ -15,7 +15,7 @@ kubectl create secret generic cihub-postgres \
 kubectl create secret generic cihub-github \
   --from-file=private-key.pem=<the private key of the App> \
   --from-literal=webhook-secret=<the webhook secret of the App>
-helm install cihub oci://ghcr.io/nlecoy/charts/cihub \
+helm install cihub oci://ghcr.io/getcihub/charts/cihub \
   --set database.existingSecret=cihub-postgres \
   --set github.appId=<the App ID> \
   --set github.existingSecret=cihub-github

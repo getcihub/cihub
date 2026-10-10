@@ -109,12 +109,11 @@ probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root c
 the runtime image provides: the binary does not embed a list of certificates. The
 `release` profile of `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) is used for this image.
 
-`.github/workflows/image.yaml` publishes the image to `ghcr.io/nlecoy/cihub` at each release, with the tags `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image
-is for `linux/amd64` only, the architecture of the one node of `cihub-runner`. The job runs on `cihub-runner`, which
-has no Docker daemon: buildx (driver `kubernetes`) starts a rootless BuildKit pod in the `buildkit` namespace of the
-cluster, with the ServiceAccount of the runner, and removes it at the end of the job. In `nlecoy/home-ops`, the
-`buildkit` namespace allows privileged pods (BuildKit rootless needs the `Unconfined` seccomp profile), and a `Role`
-there lets the ServiceAccount of the runner manage the BuildKit deployment.
+`.github/workflows/image.yaml` publishes the image to `ghcr.io/getcihub/cihub` at each release, with the tags
+`X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image is for `linux/amd64` and
+`linux/arm64`: each architecture is built on a native runner hosted by GitHub (`ubuntu-26.04`,
+`ubuntu-26.04-arm`), then the two are joined in one manifest. The workflow takes the name of the image from the
+repository.
 
 ## Installation with Docker Compose
 
@@ -268,7 +267,7 @@ and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and th
 in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The CI does not run on the release-please PRs, which change only these files. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
 triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `charts/cihub` with the
-version of the release and pushes it to `oci://ghcr.io/nlecoy/charts/cihub`.
+version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.
 
 ## Dependency updates
 
