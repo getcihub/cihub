@@ -59,7 +59,7 @@ does not also check.
 - The design tokens (colors, spacing, the two themes) are CSS custom properties, taken from the mockups; no CSS
   framework. A component keeps its styles in a CSS module next to it, with a `*.module.d.css.ts` that names its
   classes, so that a class is a `string` and not `string | undefined`.
-- Every action works with the keyboard; `/` opens the search, `Escape` closes a drawer or a modal. A page has its
+- Every action works with the keyboard; `Escape` closes a menu, a drawer or a modal. A page has its
   loading, empty and error states.
 
 ## Commands
@@ -72,4 +72,4 @@ writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`)
 `mise run e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
 server on the simulator with a fresh database.
 
-Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10e).
+Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d).
