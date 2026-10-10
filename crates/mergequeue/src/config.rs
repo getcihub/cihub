@@ -37,7 +37,7 @@ pub(crate) fn load_config(target: &QueueTarget, sha: &str) -> Job {
 ///
 /// # Errors
 ///
-/// The SCM fails (outer), or both names of the file exist (inner).
+/// The SCM fails (outer), or several paths of the file exist (inner).
 pub(crate) async fn read_config_file(
     scm: &dyn Scm,
     repo: &RepoRef,

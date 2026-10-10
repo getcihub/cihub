@@ -4,7 +4,7 @@ CIHub presents itself as a GitHub App (`cihub-io`) installed per organization, w
 
 | Permission      | Level             | Usage                                                                                                                                 |
 | --------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Contents        | write             | create and delete the `cihub-temp/**` and `cihub-merge/**` refs, merges API, read `.cihub.yaml` or `.cihub.yml`                       |
+| Contents        | write             | create and delete the `cihub-temp/**` and `cihub-merge/**` refs, merges API, read the configuration file                              |
 | Pull requests   | write             | read the state and mergeability of PRs, open and close the test draft PRs, merge PRs, post and edit comments                          |
 | Commit statuses | write             | publish the `CIHub Merge Queue (<branch>)` status                                                                                     |
 | Checks          | read              | observe the check runs on the test SHAs                                                                                               |

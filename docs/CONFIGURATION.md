@@ -3,7 +3,8 @@
 The model of the file is in `crates/config/src/file.rs`; the settings, their default values, their ranges
 and the strategy table are in `crates/config/src/settings.rs`. This file explains them.
 
-The behavior of a queue is configured in a `.cihub.yaml` or `.cihub.yml` file at the root of the repository, read on
+The behavior of a queue is configured in one file of the repository, `.cihub.yaml`, `.cihub.yml`,
+`.cihub/config.yaml` or `.cihub/config.yml` (`DECISIONS.md` D255), read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
 each new head (`DECISIONS.md` D136); the settings apply from the reconciliation that follows the
 read. No queue is created by hand (`DECISIONS.md` D172): the first `/cihub merge` on a branch without a queue
@@ -13,8 +14,8 @@ starts with one queue on its default branch; an entry `name: main`, `branch: mai
 entry of `queues` links to its queue by `branch` and `name`; a queue without an entry has `defaults`. A queue
 that the file no longer names takes no new submission and finishes its items. This file is the only
 source of the settings (`DECISIONS.md` D134): the dashboard helps write it through a form that opens a PR on
-the repository, never a direct commit on the target. If both file names exist, the configuration is in error, because neither
-one wins. Several queues can target the same branch: a PR is routed to the queue named in the command
+the repository, never a direct commit on the target. If several of these files exist, the configuration is in error, because none
+wins. Several queues can target the same branch: a PR is routed to the queue named in the command
 (`/cihub merge --queue=hotfix`), otherwise to the first queue, in file order, whose `route_conditions` are
 satisfied (a queue without `route_conditions` takes every PR), otherwise to the first queue of the branch
 (`DECISIONS.md` D148, D232). The routing reads the PR once, at the submission, and an item never changes queue.

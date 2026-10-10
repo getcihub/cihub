@@ -1035,7 +1035,7 @@ mod tests {
         // The file of the repository, read on the target branch at the base.
         let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [build]\n";
         let with_file = sim
-            .commit(&target.repo, &main, &[(".cihub.yaml", Some(config))])
+            .commit(&target.repo, &main, &[(".cihub/config.yml", Some(config))])
             .unwrap();
         let defaults = settings(|_| {});
         let built = build(
@@ -1053,9 +1053,9 @@ mod tests {
             RequiredStatusesSource::RepoConfig
         );
 
-        // Both names of the file: neither one wins.
+        // Two paths of the file: none wins.
         let both = sim
-            .commit(&target.repo, &with_file, &[(".cihub.yml", Some(config))])
+            .commit(&target.repo, &with_file, &[(".cihub.yaml", Some(config))])
             .unwrap();
 
         assert_eq!(
