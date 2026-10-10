@@ -38,18 +38,20 @@ reason no longer holds.
 - **Why not**: it does not handle a workspace whose root has no `[package]`. The `simple` type with `extra-files`
   updates `[workspace.package].version` and the `cihub-*` versions in `Cargo.lock`.
 
-### Several parallel CI jobs on the self-hosted runners
+### A self-hosted runner for the CI
 
-- **Tried / considered**: one job for lint and coverage, one for the tests, on the two runners of `cihub-runner`.
-- **Why not**: both runners share one node, so two builds at once each take about twice as long. One job, `CI`,
-  takes one runner and leaves the other free for another run.
-- **Would change if**: the runners get their own nodes.
+- **Tried / considered**: `cihub-runner`, a runner set of Actions Runner Controller in a home cluster, for the CI,
+  the fault injection test and the image.
+- **Why not**: the repository is public, and a self-hosted runner runs the code of the pull requests of forks.
+  The standard runners hosted by GitHub are free for a public repository.
 
-### A `linux/arm64` image
+### The chart jobs only on a pull request that changes the chart
 
-- **Tried / considered**: a multi-architecture image.
-- **Why not**: the image is built by an in-cluster BuildKit on the one `amd64` node of `cihub-runner`.
-- **Would change if**: the build infrastructure gets an `arm64` node.
+- **Tried / considered**: `Helm Lint`, `Helm Unittest` and `Smoke` in a workflow filtered on the paths of the
+  chart, plus a run once a night.
+- **Why not**: `Smoke` also checks the image, the migrations and the configuration, so a change of the code can
+  break an installation by the chart without touching these paths. On the free runners of a public repository,
+  they run on every pull request.
 
 ## Process and binaries
 

@@ -21,31 +21,21 @@ concurrency:
 permissions:
   contents: read
 
-# The pod of a job is new for each run: incremental state and full debug
+# The runner of a job is new for each run: incremental state and full debug
 # information are work that no one reads.
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
-# The job runs on cihub-runner, a self-hosted runner set in Kubernetes mode,
-# without a Docker daemon. The image of the runner cannot link Rust (no C
-# library headers), so the job runs in the rust image. One job, because the
-# two runners share one node: two builds at once each take twice as long.
+# Every job runs on a runner hosted by GitHub: the repository is public, and a
+# self-hosted runner would run the code of the pull requests of forks.
 jobs:
-  ci:
+  rust-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: CI
-    runs-on: cihub-runner
-    container:
-      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
-    # Postgres runs in the pod of the job, on 127.0.0.1 as in compose.yaml.
-    services:
-      postgres:
-        image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
-        env:
-          POSTGRES_PASSWORD: postgres
+    name: Rust Lint
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -59,35 +49,235 @@ jobs:
         with:
           install_args: --locked
 
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('Cargo.lock', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-lint-
+
       - name: Run linters
         run: mise run lint
+
+  rust-test:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Rust Test
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      - name: Run unit tests
+        run: mise run test
+
+  rust-integration:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Rust Integration
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      # Starts the Postgres of compose.yaml, as in development.
+      - name: Run tests against Postgres
+        run: mise run test-integration
+
+  rust-cover:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Rust Coverage
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-cover-${{ hashFiles('Cargo.lock', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cover-
+
+      - name: Check coverage of the pure crates
+        run: mise run cover
+
+  workflow-lint:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Workflow Lint
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
 
       - name: Lint workflows
         run: mise run lint-workflows
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Setup Postgres
-        env:
-          PGHOST: 127.0.0.1
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: |
-          apt-get -qq update
-          apt-get -qq install -y --no-install-recommends postgresql-client
-          timeout 60 sh -c 'until pg_isready --quiet; do sleep 1; done'
-          psql --quiet --set ON_ERROR_STOP=1 --file postgres-setup.sql
+  # The chart jobs are not in the needs of CI: they are not required statuses.
+  helm-lint:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Helm Lint
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # nextest builds every test binary of the workspace, then filters: the
-      # tests against Postgres reuse the build of the unit tests.
-      - name: Run unit tests
-        run: mise run test
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
 
-      - name: Run tests against Postgres
-        run: mise run --skip-deps test-integration
-        env:
-          # The tests share one Postgres and the node runs other workloads.
-          NEXTEST_TEST_THREADS: "4"
+      - name: Run helm lint
+        run: mise run helm-lint
 
-      - name: Check coverage of the pure crates
-        run: mise run cover
+      - name: Check that the generated files of the chart are up to date
+        run: mise run generate-check
+
+  helm-unittest:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Helm Unittest
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Run helm unit tests
+        run: mise run helm-unittest
+
+  smoke:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Smoke
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      # Installs the chart with two replicas in a kind cluster, against a
+      # CloudNativePG Postgres, then checks the migrations, the readiness,
+      # helm test and a signed delivery.
+      - name: Run smoke test
+        run: mise run smoke
+
+  # The required status. cancelled counts as failed: a job that never reached
+  # a verdict must not let a PR through.
+  ci:
+    if: ${{ !cancelled() }}
+    name: CI
+    needs:
+      - rust-lint
+      - rust-test
+      - rust-integration
+      - rust-cover
+      - workflow-lint
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - name: Any jobs failed?
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+
+      - name: All jobs passed or skipped?
+        if: ${{ !(contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
+        run: echo "All jobs passed or skipped"

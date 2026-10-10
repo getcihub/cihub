@@ -18,15 +18,7 @@ permissions:
 jobs:
   sim:
     name: Fault Injection
-    # Same runner, image and Postgres service as the CI job in ci.yml.
-    runs-on: cihub-runner
-    container:
-      image: rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546
-    services:
-      postgres:
-        image: postgres:17.5-alpine@sha256:6567bca8d7bc8c82c5922425a0baee57be8402df92bae5eacad5f01ae9544daa
-        env:
-          POSTGRES_PASSWORD: postgres
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
@@ -41,16 +33,5 @@ jobs:
         with:
           install_args: --locked
 
-      - name: Setup Postgres
-        env:
-          PGHOST: 127.0.0.1
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: |
-          apt-get -qq update
-          apt-get -qq install -y --no-install-recommends postgresql-client
-          timeout 60 sh -c 'until pg_isready --quiet; do sleep 1; done'
-          psql --quiet --set ON_ERROR_STOP=1 --file postgres-setup.sql
-
       - name: Run the fault injection test on 1 000 seeds
-        run: mise run --skip-deps sim
+        run: mise run sim

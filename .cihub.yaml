@@ -1,6 +1,5 @@
 version: 1
 queues:
-  # First: `main` has no route_conditions and takes every PR.
   - name: hotfix
     branch: main
     strategy: sequential
@@ -19,10 +18,6 @@ queues:
     queue_conditions:
       - -draft
       - -label = do-not-merge
-      # ci.yml skips CI on the release-please PR; the test branch
-      # of the queue still runs it in full.
-      - or:
-          - check-success = CI
-          - check-skipped = CI
+      - check-success = CI
     merge_conditions:
       - check-success = CI

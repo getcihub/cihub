@@ -61,7 +61,7 @@ mise.lock                versions and checksums of the tools, per platform
 compose.yaml             development Postgres
 release-please-config.json, .release-please-manifest.json   versions and CHANGELOG.md
 .renovaterc.json5        dependency updates
-.github/workflows/       CI (one job, CI)
+.github/workflows/       CI (parallel jobs, then CI, the required status)
 crates/
   domain/                cihub-domain         (exists)
   conditions/            cihub-conditions     (exists)
