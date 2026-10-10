@@ -1,0 +1,14 @@
+suite: helm test
+templates:
+  - tests/test-connection.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: posts an unsigned delivery to the Service
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: http://RELEASE-NAME-cihub:8080/webhooks/github

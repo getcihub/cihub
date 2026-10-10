@@ -1,0 +1,25 @@
+suite: httproute
+templates:
+  - httproute.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: renders none by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: routes to the Service
+    set:
+      httpRoute.enabled: true
+      httpRoute.parentRefs: [{ name: gateway, namespace: gateway }]
+      httpRoute.hostnames: [cihub.example.com]
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - equal:
+          path: spec.rules[0].backendRefs
+          value: [{ name: RELEASE-NAME-cihub, port: 8080 }]
+      - equal:
+          path: spec.hostnames
+          value: [cihub.example.com]

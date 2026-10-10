@@ -1,0 +1,109 @@
+suite: deployment
+templates:
+  - deployment.tpl
+  - configmap.tpl
+values:
+  - ../ci/lint-values.yaml
+tests:
+  - it: starts the four roles with the file of the ConfigMap
+    template: deployment.tpl
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: [server, start, --config, /etc/cihub/server.yaml]
+      - equal:
+          path: spec.template.spec.volumes[0].configMap.name
+          value: RELEASE-NAME-cihub
+
+  - it: takes the secrets from their Secrets
+    template: deployment.tpl
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_URL
+            valueFrom:
+              secretKeyRef: { name: cihub-postgres, key: uri }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_GITHUB_WEBHOOK_SECRET
+            valueFrom:
+              secretKeyRef: { name: cihub-github, key: webhook-secret }
+      - equal:
+          path: spec.template.spec.volumes[1].secret
+          value:
+            secretName: cihub-github
+            items:
+              - key: private-key.pem
+                path: private-key.pem
+
+  - it: probes the internal address
+    template: deployment.tpl
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value: { path: /healthz, port: internal }
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+          value: { path: /readyz, port: internal }
+
+  - it: mounts no ServiceAccount token
+    template: deployment.tpl
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - notExists:
+          path: spec.template.spec.serviceAccountName
+
+  - it: rolls the pods when server.yaml changes
+    template: deployment.tpl
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/config"]
+          pattern: ^[0-9a-f]{64}$
+
+  - it: pins the image by its digest
+    template: deployment.tpl
+    set:
+      image.digest: sha256:0123
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/nlecoy/cihub@sha256:0123
+
+  - it: defaults the tag to the appVersion
+    template: deployment.tpl
+    chart:
+      appVersion: 1.2.3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/nlecoy/cihub:1.2.3
+
+  - it: refuses a missing database Secret
+    template: deployment.tpl
+    set:
+      database.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: database.existingSecret is required
+
+  - it: refuses a missing App ID
+    template: deployment.tpl
+    set:
+      github.appId: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: github.appId is required
+
+  - it: refuses a missing GitHub Secret
+    template: deployment.tpl
+    set:
+      github.existingSecret: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: github.existingSecret is required

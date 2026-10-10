@@ -5,7 +5,7 @@
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
 `cihub` binary (`DECISIONS.md` D168); `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
 `notifier`) in one process; a deployment scales by identical replicas (`docs/ARCHITECTURE.md`, "Scaling",
-`DECISIONS.md` D170). The GitHub App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). The Helm chart arrives in Lot 15.
+`DECISIONS.md` D170). The GitHub App is created by hand, according to `docs/GITHUB.md` (`DECISIONS.md` D92). On Kubernetes, the Helm chart `charts/cihub` installs it (`DECISIONS.md` D251).
 
 ## Development
 
@@ -141,6 +141,55 @@ docker compose -f deploy/compose.yaml up -d
 docker compose -f deploy/compose.yaml run --rm cihub-server server token create --org <slug>
 ```
 
+## Installation on Kubernetes
+
+`charts/cihub` is the Helm chart (`DECISIONS.md` D251). It installs:
+
+| Resource                    | Role                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Job `<release>-migrate`     | `cihub server migrate`, as a `pre-install` and `pre-upgrade` hook (D14); it reads only the environment, as the ConfigMap does not exist yet when it runs |
+| ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
+| Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas (D170)               |
+| Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
+| Ingress or HTTPRoute        | Optional, to the Service                                                                                  |
+| PodDisruptionBudget         | When `replicas` is above 1                                                                               |
+| Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
+
+The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL`, and
+`github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET` and the private key of the App, mounted as a file. The
+role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
+CIHub does not call the Kubernetes API. `charts/cihub/README.md`, generated, lists the values.
+
+```sh
+mise run helm-lint       # helm lint with charts/cihub/ci/lint-values.yaml
+mise run helm-unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
+mise run generate        # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
+mise run smoke           # the chart in a throwaway kind cluster (needs Docker)
+```
+
+`mise run smoke` (`scripts/smoke.sh`) builds the image, creates a kind cluster, installs CloudNativePG and a
+Postgres 17 whose owner is the `cihub` role, then the chart with two replicas (`scripts/smoke/values.yaml`). It
+fails when the migration Job fails, when a pod is not ready or restarts, when `helm test` fails, or when a signed
+delivery does not get `202`. The App does not exist and `github.url` does not resolve: the test calls no GitHub.
+`CIHUB_SMOKE_IMAGE` gives an image already built, `CIHUB_SMOKE_CLUSTER` the name of the cluster (`cihub-smoke`), and
+`CIHUB_SMOKE_KEEP=1` keeps the cluster at the end; a failure shows the pods, the logs and the state of Postgres. The
+kubeconfig of the cluster is `$TMPDIR/kind-cihub-smoke.kubeconfig` (`/tmp` without `TMPDIR`), never `~/.kube`. A run
+on a kept cluster keeps its Secrets, and restarts the replicas, as the tag of the image does not change.
+
+With `CIHUB_SMOKE_GITHUB=1` (`DECISIONS.md` D252), the script uses the development App of `mise.local.toml`
+(`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and `CIHUB_GITHUB_URL` when it
+is set) instead of a false App, and also fails when no installation of the App is synced within 2 minutes. It is a
+development use, as `mise run dev`, never a test of the CI. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that
+bring the webhooks of the App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the
+webhook URL of the App.
+
+```sh
+CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run smoke
+export KUBECONFIG="$TMPDIR/kind-cihub-smoke.kubeconfig"
+kubectl -n cihub get pods
+kind delete cluster --name cihub-smoke
+```
+
 ## Organizations and API tokens
 
 Installing the App on an account is enough: CIHub syncs the installations of its App, at the start of the server,
@@ -180,8 +229,8 @@ Migrations are explicit (`DECISIONS.md` D14):
 ## Tools
 
 `mise install` installs the whole suite (`DECISIONS.md` D17): Rust (version pinned in `mise.toml`, with `clippy`,
-`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`
-and `lefthook`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
+`rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
+`lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml` (D166): `cargo fmt`, `actionlint` and `zizmor` at
 commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
@@ -209,14 +258,21 @@ dependency. The tests against Postgres run 4 at a time (`NEXTEST_TEST_THREADS`),
 `.github/actionlint.yaml` declares the label `cihub-runner` and makes `actionlint` ignore the label `ubuntu-26.04`,
 which it does not know yet.
 
+`chart.yaml` has three jobs for the chart, on runners hosted by GitHub (`ubuntu-26.04`) for now, as `Smoke` needs a
+Docker daemon (`DECISIONS.md` D251): `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm
+Unittest` (`mise run helm-unittest`) and `Smoke` (`mise run smoke`). They are not required statuses. They run on a
+pull request only when it changes `charts/`, `scripts/smoke.sh`, `scripts/smoke/`, the `Dockerfile`, `migrations/`,
+`mise.toml`, `mise.lock` or `chart.yaml`, and once a night on `main` (D256).
+
 ## Versions
 
 release-please (`.github/workflows/release-please.yaml`, `DECISIONS.md` D19) maintains a release PR from the
 commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
-in `Cargo.lock`. The CI does not run on the release-please PRs, which change only these files. The workflow
+in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The CI does not run on the release-please PRs, which change only these files. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
-triggers the publication of the image ("Image").
+triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `charts/cihub` with the
+version of the release and pushes it to `oci://ghcr.io/nlecoy/charts/cihub` (`DECISIONS.md` D251).
 
 ## Dependency updates
 

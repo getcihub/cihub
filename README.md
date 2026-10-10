@@ -41,6 +41,8 @@ docker compose -f deploy/compose.yaml up -d
 Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
 starts `cihub server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
 
+On Kubernetes, the Helm chart replaces Compose: see [`charts/cihub/README.md`](charts/cihub/README.md).
+
 ### 3. Install the App and start your organization
 
 Install the App on the repositories to serve (*Install App* on the page of the App). CIHub creates the
