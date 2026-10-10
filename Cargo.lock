@@ -387,6 +387,7 @@ name = "cihub-scm"
 version = "0.2.1"
 dependencies = [
  "cihub-domain",
+ "secrecy",
  "thiserror",
  "time",
  "tokio",
