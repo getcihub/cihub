@@ -405,7 +405,6 @@ async fn sign_in_as(
         redirect_url: get("redirect_uri"),
         state: get("state"),
         code_challenge: get("code_challenge"),
-        asks_for_account: false,
     };
     let code = sim.authorize(&person, &request);
     Redirect::to(&format!(

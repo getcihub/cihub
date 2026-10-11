@@ -3490,6 +3490,23 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "{refused}"
     );
 
+    // A target branch that no longer exists is a finding of the check.
+    sim.delete_branch(&repo(), "main", JobClass::Interactive)
+        .await
+        .unwrap();
+    q.clock.advance(1);
+    assert_eq!(call("POST", format!("{queue}:resync"), None).await.0, 202);
+    q.settle().await;
+
+    let (_, checked) = call("GET", format!("{queue}/config-check"), None).await;
+    assert_eq!(
+        checked["findings"],
+        serde_json::json!([{
+            "code": "target_branch_missing",
+            "message": "the branch `main` no longer exists: the queue cannot merge"
+        }])
+    );
+
     q.stop().await;
 }
 

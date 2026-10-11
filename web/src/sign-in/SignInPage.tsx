@@ -1,11 +1,15 @@
 import { useState } from "react";
 
 import type { Me } from "../client/types.gen";
-import { signInAddress, signOut } from "../session";
+import { signInAddress, signOutAndLeave } from "../session";
 import styles from "./SignIn.module.css";
 import { Timeline } from "./Timeline";
 import { Mark } from "../ui/Mark";
 import { ArrowIcon, CheckIcon, ErrorIcon } from "../ui/icons";
+
+// GitHub asks which account to use only when no account is signed in: the App
+// cannot ask for another one (`prompt=select_account` does nothing for it).
+const GITHUB_SIGN_OUT = "https://github.com/logout";
 
 interface Props {
   /** The user of the session; a user without an organization must install the App. */
@@ -124,20 +128,22 @@ function NoOrganization({ installUrl }: { installUrl: string | null }) {
         Only an owner of the organization can install it. If you are not one, ask an owner, then sign in
         again.
       </p>
+      <p className={styles.note}>
+        To use another GitHub account, <a href={GITHUB_SIGN_OUT}>sign out of GitHub</a>, then sign out here
+        and sign in again.
+      </p>
       <button
         type="button"
         className={`${styles.button} ${styles.second}`}
         onClick={() => {
-          void signOut().then((hasSignedOut) => {
-            if (hasSignedOut) {
-              window.location.assign(signInAddress("/", true));
-            } else {
+          void signOutAndLeave().then((hasSignedOut) => {
+            if (!hasSignedOut) {
               setHasSignOutFailed(true);
             }
           });
         }}
       >
-        Sign in with another account
+        Sign out
       </button>
       {hasSignOutFailed && (
         <div className={`${styles.alert} ${styles.below}`} role="alert">

@@ -59,5 +59,5 @@ test("a person without an organization is asked to install the App", async ({ pa
   await signIn(page, /sign in as grace/i);
 
   await expect(page.getByRole("heading", { name: "No organization yet" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Sign in with another account" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "sign out of GitHub" })).toBeVisible();
 });
