@@ -140,7 +140,10 @@ export function QueueGraph({
       </div>
       <div className={styles.graph}>
         {lanes.length === 0 && (
-          <p className={styles.idle}>No pull request waits and no run is in progress.</p>
+          <>
+            <p className={styles.idle}>No pull request waits and no run is in progress.</p>
+            <span className={`${styles.link} ${styles.toBranch}`} />
+          </>
         )}
         {lanes.map((lane, index) => (
           <Fragment key={lane.key}>
