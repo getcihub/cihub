@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BatchGetData, BatchGetResponses, CancelItemData, CancelItemResponses, ConfigCheckData, ConfigCheckResponses, GetPrData, GetPrResponses, GetQueueData, GetQueueResponses, GraphData, GraphResponses, ListAuditData, ListAuditResponses, ListItemsData, ListItemsResponses, ListOrgPrsData, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesResponses, ListQueuesData, ListQueuesResponses, ListReposData, ListReposResponses, MeData, MeResponses, QueueActionData, QueueActionResponses, RestartItemData, RestartItemResponses, StreamData, StreamResponse, StreamResponses, SubmitData, SubmitResponses, TestRunData, TestRunResponses, UpdateQueueData, UpdateQueueResponses } from './types.gen';
+import type { CancelItemData, CancelItemResponses, ConfigCheckData, ConfigCheckResponses, GetPrData, GetPrResponses, GetQueueData, GetQueueResponses, GraphData, GraphResponses, ListAuditData, ListAuditResponses, ListItemsData, ListItemsResponses, ListOrgPrsData, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesResponses, ListQueuesData, ListQueuesResponses, ListReposData, ListReposResponses, MeData, MeResponses, RestartItemData, RestartItemResponses, ResyncQueueData, ResyncQueueResponses, StreamData, StreamResponse, StreamResponses, SubmitData, SubmitResponses, TestRunData, TestRunResponses, UpdateQueueData, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -134,7 +134,7 @@ export const updateQueue = <ThrowOnError extends boolean = false>(options: Optio
 /**
  * What the configuration of the SCM missed for the queue at its last check.
  *
- * The scheduler checks it every hour, and `:resync` at once.
+ * The scheduler checks it every hour, and `…/resync` at once.
  */
 export const configCheck = <ThrowOnError extends boolean = false>(options: Options<ConfigCheckData, ThrowOnError>): RequestResult<ConfigCheckResponses, unknown, ThrowOnError> => (options.client ?? client).get<ConfigCheckResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -218,7 +218,7 @@ export const cancelItem = <ThrowOnError extends boolean = false>(options: Option
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel',
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel',
     ...options
 });
 
@@ -232,38 +232,21 @@ export const restartItem = <ThrowOnError extends boolean = false>(options: Optio
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:restart',
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/restart',
     ...options
 });
 
 /**
- * The last item of each PR, at most 50 PRs.
+ * Reads again from the SCM each live PR, the checks of each live run and
+ * the head of the target.
  */
-export const batchGet = <ThrowOnError extends boolean = false>(options: Options<BatchGetData, ThrowOnError>): RequestResult<BatchGetResponses, unknown, ThrowOnError> => (options.client ?? client).post<BatchGetResponses, unknown, ThrowOnError>({
+export const resyncQueue = <ThrowOnError extends boolean = false>(options: Options<ResyncQueueData, ThrowOnError>): RequestResult<ResyncQueueResponses, unknown, ThrowOnError> => (options.client ?? client).post<ResyncQueueResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * `POST …/queues/{queue}:resync`: reads again from the SCM each live PR,
- * the checks of each live run and the head of the target.
- */
-export const queueAction = <ThrowOnError extends boolean = false>(options: Options<QueueActionData, ThrowOnError>): RequestResult<QueueActionResponses, unknown, ThrowOnError> => (options.client ?? client).post<QueueActionResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}:resync',
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/resync',
     ...options
 });
 

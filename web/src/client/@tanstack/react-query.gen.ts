@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { batchGet, cancelItem, configCheck, getPr, getQueue, graph, listAudit, listItems, listOrgPrs, listOrgQueues, listQueues, listRepos, me, type Options, queueAction, restartItem, submit, testRun, updateQueue } from '../sdk.gen';
-import type { BatchGetData, BatchGetResponse2, CancelItemData, CancelItemResponse, ConfigCheckData, ConfigCheckResponse, GetPrData, GetPrResponse, GetQueueData, GetQueueResponse, GraphData, GraphResponse, ListAuditData, ListAuditResponse, ListItemsData, ListItemsResponse, ListOrgPrsData, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesResponse, ListQueuesData, ListQueuesResponse, ListReposData, ListReposResponse, MeData, MeResponse, QueueActionData, QueueActionResponse, RestartItemData, RestartItemResponse, SubmitData, SubmitResponse, TestRunData, TestRunResponse, UpdateQueueData, UpdateQueueResponse } from '../types.gen';
+import { cancelItem, configCheck, getPr, getQueue, graph, listAudit, listItems, listOrgPrs, listOrgQueues, listQueues, listRepos, me, type Options, restartItem, resyncQueue, submit, testRun, updateQueue } from '../sdk.gen';
+import type { CancelItemData, CancelItemResponse, ConfigCheckData, ConfigCheckResponse, GetPrData, GetPrResponse, GetQueueData, GetQueueResponse, GraphData, GraphResponse, ListAuditData, ListAuditResponse, ListItemsData, ListItemsResponse, ListOrgPrsData, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesResponse, ListQueuesData, ListQueuesResponse, ListReposData, ListReposResponse, MeData, MeResponse, RestartItemData, RestartItemResponse, ResyncQueueData, ResyncQueueResponse, SubmitData, SubmitResponse, TestRunData, TestRunResponse, UpdateQueueData, UpdateQueueResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -251,7 +251,7 @@ export const configCheckQueryKey = (options: Options<ConfigCheckData>) => create
 /**
  * What the configuration of the SCM missed for the queue at its last check.
  *
- * The scheduler checks it every hour, and `:resync` at once.
+ * The scheduler checks it every hour, and `…/resync` at once.
  */
 export const configCheckOptions = (options: Options<ConfigCheckData>) => queryOptions<ConfigCheckResponse, DefaultError, ConfigCheckResponse, ReturnType<typeof configCheckQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -410,30 +410,13 @@ export const restartItemMutation = (options?: Partial<Options<RestartItemData>>)
 };
 
 /**
- * The last item of each PR, at most 50 PRs.
+ * Reads again from the SCM each live PR, the checks of each live run and
+ * the head of the target.
  */
-export const batchGetMutation = (options?: Partial<Options<BatchGetData>>): UseMutationOptions<BatchGetResponse2, DefaultError, Options<BatchGetData>> => {
-    const mutationOptions: UseMutationOptions<BatchGetResponse2, DefaultError, Options<BatchGetData>> = {
+export const resyncQueueMutation = (options?: Partial<Options<ResyncQueueData>>): UseMutationOptions<ResyncQueueResponse, DefaultError, Options<ResyncQueueData>> => {
+    const mutationOptions: UseMutationOptions<ResyncQueueResponse, DefaultError, Options<ResyncQueueData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await batchGet({
-                ...options,
-                ...fnOptions,
-                throwOnError: true
-            });
-            return data;
-        }
-    };
-    return mutationOptions;
-};
-
-/**
- * `POST …/queues/{queue}:resync`: reads again from the SCM each live PR,
- * the checks of each live run and the head of the target.
- */
-export const queueActionMutation = (options?: Partial<Options<QueueActionData>>): UseMutationOptions<QueueActionResponse, DefaultError, Options<QueueActionData>> => {
-    const mutationOptions: UseMutationOptions<QueueActionResponse, DefaultError, Options<QueueActionData>> = {
-        mutationFn: async (fnOptions) => {
-            const { data } = await queueAction({
+            const { data } = await resyncQueue({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

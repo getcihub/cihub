@@ -291,3 +291,13 @@ reason no longer holds.
   row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The check has
   its own table, `config_checks`. A job that must write `queues` calls `mark_dirty` in its transaction, as
   `load_config` does.
+
+## API
+
+### An action after a colon in the last segment of a route
+
+- **Tried / considered**: `POST …/queues/{queue}:resync`, `…/prs/{number}:cancel`, `…/prs/{number}:restart` and
+  `…/prs:batchGet`, the custom methods of the Google API design guide.
+- **Why not**: axum routes whole segments only. A handler took every `POST` on the queue or the PR and cut the
+  segment by hand, a wrong method answered `404` instead of `405`, and the paths of the `OpenAPI` document were
+  not those of the router. An action is a segment of its own: `…/resync`, `…/prs/{number}/cancel`.

@@ -37,18 +37,6 @@ export type AuditPage = {
 };
 
 /**
- * `POST /orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet`.
- */
-export type BatchGet = {
-    pr_numbers: Array<number>;
-};
-
-export type BatchGetResponse = {
-    items: Array<Item>;
-    not_found: Array<number>;
-};
-
-/**
  * `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
  * check of the configuration of the SCM; no finding means a sound
  * configuration.
@@ -925,7 +913,7 @@ export type CancelItemData = {
         number: number;
     };
     query?: never;
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel';
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel';
 };
 
 export type CancelItemResponses = {
@@ -955,7 +943,7 @@ export type RestartItemData = {
         number: number;
     };
     query?: never;
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:restart';
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/restart';
 };
 
 export type RestartItemResponses = {
@@ -964,33 +952,7 @@ export type RestartItemResponses = {
 
 export type RestartItemResponse = RestartItemResponses[keyof RestartItemResponses];
 
-export type BatchGetData = {
-    body: BatchGet;
-    path: {
-        /**
-         * The slug of the organization.
-         */
-        org: string;
-        /**
-         * The name of the repository in the organization.
-         */
-        repo: string;
-        /**
-         * The name of the queue in the repository.
-         */
-        queue: string;
-    };
-    query?: never;
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet';
-};
-
-export type BatchGetResponses = {
-    200: BatchGetResponse;
-};
-
-export type BatchGetResponse2 = BatchGetResponses[keyof BatchGetResponses];
-
-export type QueueActionData = {
+export type ResyncQueueData = {
     body?: never;
     path: {
         /**
@@ -1007,14 +969,14 @@ export type QueueActionData = {
         queue: string;
     };
     query?: never;
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}:resync';
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/resync';
 };
 
-export type QueueActionResponses = {
+export type ResyncQueueResponses = {
     202: Accepted;
 };
 
-export type QueueActionResponse = QueueActionResponses[keyof QueueActionResponses];
+export type ResyncQueueResponse = ResyncQueueResponses[keyof ResyncQueueResponses];
 
 export type TestRunData = {
     body?: never;

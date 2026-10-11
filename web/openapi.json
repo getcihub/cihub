@@ -397,7 +397,7 @@
       "get": {
         "tags": [],
         "summary": "What the configuration of the SCM missed for the queue at its last check.",
-        "description": "The scheduler checks it every hour, and `:resync` at once.",
+        "description": "The scheduler checks it every hour, and `…/resync` at once.",
         "operationId": "config_check",
         "parameters": [
           {
@@ -765,7 +765,7 @@
         ]
       }
     },
-    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel": {
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel": {
       "post": {
         "tags": [],
         "summary": "Cancels the current item of the PR (`admin_requested`).",
@@ -833,7 +833,7 @@
         ]
       }
     },
-    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:restart": {
+    "/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/restart": {
       "post": {
         "tags": [],
         "summary": "Restarts the tests of the current item of the PR, in test\n(`tests_restarted_by_api_request`).",
@@ -901,78 +901,11 @@
         ]
       }
     },
-    "/orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet": {
+    "/orgs/{org}/repos/{repo}/queues/{queue}/resync": {
       "post": {
         "tags": [],
-        "summary": "The last item of each PR, at most 50 PRs.",
-        "operationId": "batch_get",
-        "parameters": [
-          {
-            "name": "org",
-            "in": "path",
-            "description": "The slug of the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "repo",
-            "in": "path",
-            "description": "The name of the repository in the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "queue",
-            "in": "path",
-            "description": "The name of the queue in the repository.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BatchGet"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BatchGetResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "token": [
-              "queues:read"
-            ]
-          },
-          {
-            "session": []
-          }
-        ]
-      }
-    },
-    "/orgs/{org}/repos/{repo}/queues/{queue}:resync": {
-      "post": {
-        "tags": [],
-        "summary": "`POST …/queues/{queue}:resync`: reads again from the SCM each live PR,\nthe checks of each live run and the head of the target.",
-        "operationId": "queue_action",
+        "summary": "Reads again from the SCM each live PR, the checks of each live run and\nthe head of the target.",
+        "operationId": "resync_queue",
         "parameters": [
           {
             "name": "org",
@@ -1188,46 +1121,6 @@
               "string",
               "null"
             ]
-          }
-        }
-      },
-      "BatchGet": {
-        "type": "object",
-        "description": "`POST /orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet`.",
-        "required": [
-          "pr_numbers"
-        ],
-        "properties": {
-          "pr_numbers": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
-          }
-        }
-      },
-      "BatchGetResponse": {
-        "type": "object",
-        "required": [
-          "items",
-          "not_found"
-        ],
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Item"
-            }
-          },
-          "not_found": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "format": "int64",
-              "minimum": 0
-            }
           }
         }
       },
