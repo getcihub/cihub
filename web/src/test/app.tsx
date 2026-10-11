@@ -5,6 +5,10 @@ import { vi } from "vitest";
 
 import { client } from "../client/client.gen";
 import { routeTree } from "../routeTree.gen";
+import { sendCsrfToken } from "../session";
+
+// As `main.tsx` does, once.
+sendCsrfToken();
 
 export type Answer = [number, unknown];
 /**

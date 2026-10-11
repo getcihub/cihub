@@ -1,5 +1,6 @@
 // The classes of queue.module.css.
 declare const styles: {
+  readonly actions: string;
   readonly activeTab: string;
   readonly amber: string;
   readonly banner: string;

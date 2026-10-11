@@ -1,11 +1,12 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { getPrOptions, graphOptions, testRunOptions } from "../client/@tanstack/react-query.gen";
 import type { Item, TimelineEvent } from "../client/types.gen";
 import { READ_AGAIN_EVERY } from "../live";
 import { ItemStateBadge, itemStateLabel } from "../ui/StateBadge";
+import { PrActions } from "./Actions";
 import styles from "./PrDrawer.module.css";
 import { Prose } from "./Prose";
 import type { QueuePath } from "./reads";
@@ -173,6 +174,8 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
     (node) => node.position != null && item.position != null && node.position < item.position,
   ).length;
   const lastWait = timeline.findLast((event) => event.type === "item.readiness_changed");
+  // A request is sent, not done: the queue decides at its next reconciliation.
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     heading.current?.focus();
@@ -215,7 +218,15 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
           <h2 id="pr-title" ref={heading} tabIndex={-1}>
             {item.title ?? `#${String(item.pr_number)}`}
           </h2>
-          <ItemStateBadge state={item.state} />
+          <div className={styles.status}>
+            <ItemStateBadge state={item.state} />
+            {!TERMINAL.includes(item.state) && <PrActions path={path} item={item} onSent={setNotice} />}
+          </div>
+          {notice && (
+            <p className={styles.notice} role="status">
+              {notice}
+            </p>
+          )}
         </header>
         <section aria-label="Where it is">
           <Journey item={item} />
