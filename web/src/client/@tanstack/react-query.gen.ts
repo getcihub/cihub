@@ -336,6 +336,12 @@ export const listItemsInfiniteOptions = (options: Options<ListItemsData>) => {
     return opts as Omit<typeof opts, 'initialData'>;
 };
 
+/**
+ * Submits a PR, which the queue takes at its next reconciliation.
+ *
+ * A draining queue, and a PR already in the queue, answer `409` at once; the
+ * refusals that need a read of the SCM come later, on the PR.
+ */
 export const submitMutation = (options?: Partial<Options<SubmitData>>): UseMutationOptions<SubmitResponse, DefaultError, Options<SubmitData>> => {
     const mutationOptions: UseMutationOptions<SubmitResponse, DefaultError, Options<SubmitData>> = {
         mutationFn: async (fnOptions) => {

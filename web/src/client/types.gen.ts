@@ -519,7 +519,18 @@ export type TestRun = {
  * An event of the log of a queue.
  */
 export type TimelineEvent = {
+    /**
+     * The login of the person who acted, or whose request caused the
+     * decision; `None` when CIHub or an API token did.
+     */
+    actor?: string | null;
     actor_kind: string;
+    /**
+     * What happened, in English, for a person, where a check or a condition
+     * is a Markdown code span; it can change without notice, unlike `type`
+     * and `payload`.
+     */
+    description: string;
     id: string;
     occurred_at: string;
     payload: {

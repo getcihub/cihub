@@ -357,7 +357,7 @@ Decisions:
   `TestRun` gains `draft_pr_url`; `Item` gains `url`, read by the adapter with the PR (the recorded contract is
   recorded again); `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR
   already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
-  `item.cancelled` and `item.restarted` in the audit log. The comment of CIHub and the status of a PR link to the
+  `item.cancel_requested` and `item.restart_requested` in the audit log. The comment of CIHub and the status of a PR link to the
   page of the PR in the dashboard (`http.public_url`), `/orgs/$org/repos/$repo/queues/$queue/prs/$number`. Pages:
   the drawer of a PR at this address (where it is, run, required and observed checks, history); the submission,
   with TanStack Form, cancellation and restart; pause, drain and resume.
@@ -375,9 +375,14 @@ Decisions:
     `state_changed_since` of `GET …/prs`, which the tabs of the last 24 hours now use, and
     `QueueDetail.median_run_seconds`. `OrgPr` carries `merges_in_seconds`, computed by the server from the
     median duration of the runs and the window of the queue, so that the dashboard holds no queue logic.
-  - Remaining: the fields of the detail of a PR (`url` waits for the new recording of the contract), the
-    refusals at once and the audit of the actions, the links of the comment and of the status, the pages, the
-    browser test.
+  - Done (October 11, 2026): part of step 2 and step 3. `TimelineEvent` gains `actor` (the user of the cause
+    of a decision) and `description` (the sentences of the blocks are those of the comment); `POST …/prs`
+    answers `409 invalid_state` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
+    already in the queue; `:cancel` and `:restart`
+    write the audit log.
+  - Waits on the project lead: `RunCheck.status`, `started_at` and `completed_at` change `CheckReport`, so the
+    log; with `Item.url` and `TestRun.draft_pr_url`, they wait for the new recording of the contract.
+  - Remaining: the links of the comment and of the status, the pages, the browser test.
 
 #### Lot 10d: live updates
 

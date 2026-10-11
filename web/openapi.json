@@ -623,6 +623,8 @@
       },
       "post": {
         "tags": [],
+        "summary": "Submits a PR, which the queue takes at its next reconciliation.",
+        "description": "A draining queue, and a PR already in the queue, answer `409` at once; the\nrefusals that need a read of the SCM come later, on the PR.",
         "operationId": "submit",
         "parameters": [
           {
@@ -2285,11 +2287,23 @@
           "type",
           "actor_kind",
           "occurred_at",
+          "description",
           "payload"
         ],
         "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The login of the person who acted, or whose request caused the\ndecision; `None` when CIHub or an API token did."
+          },
           "actor_kind": {
             "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "What happened, in English, for a person, where a check or a condition\nis a Markdown code span; it can change without notice, unlike `type`\nand `payload`."
           },
           "id": {
             "type": "string"
