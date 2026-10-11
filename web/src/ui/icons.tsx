@@ -49,3 +49,34 @@ export function UpDownIcon() {
     </svg>
   );
 }
+
+export function WarningIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M10 3 L17.5 16 H2.5 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M10 8 V11.5 M10 13.8 V14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function PauseIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M5.5 3.5 V12.5 M10.5 3.5 V12.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function DrainIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 3.5 L9.5 8 L3.5 12.5 Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M12 3.5 V12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

@@ -1,4 +1,4 @@
-import type { Me, OrgQueue } from "../client/types.gen";
+import type { Graph, Item, Me, OrgQueue, QueueDetail } from "../client/types.gen";
 
 export const ada: Me = {
   login: "ada",
@@ -38,3 +38,54 @@ export function queueOf(
     last_merged_at: null,
   };
 }
+
+/** The detail of the queue of `entry`, with no PR and the default settings. */
+export function detailOf(entry: OrgQueue, changes: Partial<QueueDetail> = {}): QueueDetail {
+  return {
+    queue: entry.queue,
+    counts: entry.counts,
+    merged_last_24h: entry.merged_last_24h,
+    failed_last_24h: entry.failed_last_24h,
+    last_merged_at: entry.last_merged_at,
+    live_runs: 0,
+    window: { current: 2, floor: 2, ceiling: 20 },
+    settings: {
+      batching_enabled: false,
+      batching_size: 4,
+      batching_max_wait_minutes: 5,
+      failure_budget_retries: 1,
+      merge_method: "squash",
+    },
+    ...changes,
+  };
+}
+
+/** The current item of the PR `number`, submitted by its author with a comment. */
+export function itemOf(number: number, state: string, changes: Partial<Item> = {}): Item {
+  return {
+    id: `item_${String(number)}`,
+    queue_id: "queue_web_main",
+    pr_number: number,
+    title: `Change ${String(number)}`,
+    author: "marie",
+    head_sha: "abc",
+    state,
+    state_reason: "submitted",
+    state_description: "the PR was submitted",
+    state_changed_at: new Date().toISOString(),
+    priority: 100,
+    position: null,
+    is_current: true,
+    block_reasons: [],
+    group_id: null,
+    run_id: null,
+    merged_sha: null,
+    no_batch: false,
+    submitted_by: "marie",
+    submitted_via: "comment",
+    submitted_at: new Date().toISOString(),
+    ...changes,
+  };
+}
+
+export const noGraph: Graph = { target_head_sha: null, nodes: [], edges: [], runs: [] };

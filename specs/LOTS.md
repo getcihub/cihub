@@ -43,7 +43,7 @@ configuration checker, in phase 1).
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
-| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | in progress                              |
+| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | to do                                    |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
@@ -332,7 +332,18 @@ Decisions:
   - Done (October 11, 2026): step 4. The job `check_config` keeps the findings of the configuration of the SCM
     and the time of the check in `config_checks`; the scheduler asks for it when the last check is one hour old,
     and `:resync` asks for it too. `GET …/config-check` reads it: the routes of the queues no longer hold the `Scm`.
-  - Remaining: the pages, the browser test.
+  - Done (October 11, 2026): step 5. The cards of the queues of an organization and of a repository (the ones
+    that need someone first, a filter from eight queues); the page of a queue: the banners of a lost access, of
+    an invalid file, of a pause with its author, of a drain and of each finding of the configuration check; the
+    counters; the settings; the live graph (the items that wait, then the runs, the run of the head of the queue next to the branch);
+    the tabs of the live items in their order, and of the items merged, failed or cancelled in the last 24 hours,
+    the tab in the address. The pages read their queue again every 10 seconds. "Your pull requests" and the
+    actions stay for lot 10c.
+  - Done (October 11, 2026): step 6 and exit criterion. The server of the browser tests runs the worker, the
+    router and the scheduler of the queues on the simulator, where `ada` submits three PRs of `acme/web` by
+    comment; `web/e2e/queues.spec.ts` checks the cards and the page of the queue (titles, authors, positions,
+    runs). `the_page_of_a_queue_follows_its_prs_and_survives_a_replay` checks that the page calls the SCM zero
+    times and gives the same answers after a replay.
 
 #### Lot 10c: your pull requests, drawer and actions
 
