@@ -7,10 +7,10 @@
 //! The world: `acme` and `globex`, a queue each; `ada` is a member of `acme`,
 //! `grace` of no organization. On `acme/web`, `ada` submits three PRs with
 //! `/cihub merge`: two whose check passed, which the queue tests, and one
-//! whose check waits; #4 is open, not submitted. `acme/api` has no queue yet, a PR of `marie` and one
-//! of `ada`, both green, and a CI that passes each test commit; the page
-//! `/sim/merge` comments `/cihub merge` on a PR, `/sim/comment` gives the last
-//! comment of a PR.
+//! whose check waits; #4 is open, not submitted. `acme/api` has no queue
+//! yet, a PR of `marie` and one of `ada`, both green, and a CI that passes
+//! each test commit; the page `/sim/merge` comments `/cihub merge` on a PR,
+//! `/sim/comment` gives the last comment of a PR.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -149,7 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dashboard = Dashboard {
         scm: sim.clone(),
         public_url: Some(PUBLIC_URL.to_owned()),
-        news: QueueNewsFeed::start(pool.clone(), cancel.clone()),
+        news: QueueNewsFeed::start(pool.clone(), cancel.clone()).await?,
     };
     let sign_in_page = Router::new()
         .route("/sim/authorize", get(authorize_page))

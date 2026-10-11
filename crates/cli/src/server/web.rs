@@ -2,18 +2,16 @@
 //! the API of the modules), and the routing of the stored
 //! deliveries.
 
-use anyhow::Context;
-use cihub_platform::{ROUTE_POLL, run_router};
 use std::sync::Arc;
 
+use anyhow::Context;
+use cihub_platform::{QueueNewsFeed, ROUTE_POLL, run_router};
 use cihub_scm::Scm;
 use cihub_web::{Dashboard, GithubWebhooks};
 use tokio::net::TcpListener;
 use tracing::info;
 
 use super::start::Shared;
-use cihub_platform::QueueNewsFeed;
-
 use super::{merge_queue, now};
 
 pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
@@ -35,7 +33,9 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         secret: github.webhook_secret,
     };
     let scm: Arc<dyn Scm> = github.app;
-    let news = QueueNewsFeed::start(pool.clone(), cancel.clone());
+    let news = QueueNewsFeed::start(pool.clone(), cancel.clone())
+        .await
+        .context("the changes of the queues cannot be heard")?;
     let dashboard = Dashboard {
         scm,
         public_url,

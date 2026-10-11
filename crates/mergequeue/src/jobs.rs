@@ -789,7 +789,7 @@ async fn create_queues(
         if inserted.rows_affected() == 1 {
             info!(queue_name = name, target_branch = branch, "queue created");
             mark_dirty(&mut tx, id).await?;
-            notify_queue_changed(&mut tx, repo.org_id, id).await?;
+            notify_queue_changed(&mut tx, repo.org_id, id, Some(0)).await?;
         }
     }
 

@@ -155,7 +155,7 @@ docker compose -f deploy/compose.yaml run --rm cihub-server server token create 
 | ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
 | Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
-| Ingress or HTTPRoute        | Optional, to the Service                                                                                  |
+| Ingress or HTTPRoute        | Optional, to the Service; it must not buffer the stream `/api/v1/orgs/{org}/stream` (CIHub sends `X-Accel-Buffering: no`) and must keep it open past 15 seconds of silence, the ping; HTTP/2 to the browser, else each open tab holds one of the 6 connections that a browser opens to a site |
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 

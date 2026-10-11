@@ -1076,7 +1076,7 @@
     "/orgs/{org}/stream": {
       "get": {
         "tags": [],
-        "summary": "The changes of the queues of the organization: an event `queue_changed`\nfor each, and a ping. The stream ends when the server stops, or when the\nserver lost changes: the browser opens it again and reads everything.",
+        "summary": "The changes of the queues of the organization: an event `queue_changed`\nfor each, and a ping. The stream ends when the server stops, when the\nserver lost changes, and after a few minutes: the browser opens it again\nand reads everything.",
         "operationId": "stream",
         "parameters": [
           {

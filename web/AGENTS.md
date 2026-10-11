@@ -37,8 +37,9 @@ does not also check.
   of the data of the server in `useState`, a context or a store.
 - A route loader starts its reads with `queryClient.query(...)` (`ensureQueryData` is deprecated); the component
   reads them with `useSuspenseQuery`. No request waterfall: a loader starts the independent reads together.
-- The stream `/orgs/{org}/stream` (`src/live.ts`) invalidates the query keys of the queue that changed, and every
-  read of the organization when it opens again after a loss; no polling.
+- The stream `/orgs/{org}/stream` (`src/live.ts`) invalidates the query keys of the queue that changed, gathered
+  over half a second, and every read of the organization each time it opens; it opens again after an error; no
+  polling.
 - A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
   answers `202` and the queue decides at its next reconciliation; the page shows the request as sent until the
   stream signals the change.

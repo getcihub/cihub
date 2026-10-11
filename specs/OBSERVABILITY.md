@@ -26,6 +26,8 @@ decisions.
 
 The keys are those of the configuration file (`specs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
 
+A `web` replica that loses its connection to `cihub_queue_changed` writes `warn` ("changes of the queues not heard", or "connection of the changes of the queues lost"): the open pages then read everything again. No metric counts the open streams yet (Lot 11).
+
 ### Format
 
 In `json`, a record is one line, in the JSON format of `tracing-subscriber`. The fields of the event are

@@ -15,10 +15,7 @@ export function useFlip(container: RefObject<HTMLElement | null>): void {
       return;
     }
 
-    // A browser without media queries, as the tests have, gets no motion.
-    const media = (window as Partial<Window>).matchMedia;
-    const isCalm =
-      typeof media !== "function" || media.call(window, "(prefers-reduced-motion: reduce)").matches;
+    const isCalm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // A place in the container, so that a scroll of the page moves nothing.
     const origin = root.getBoundingClientRect();
     const next = new Map<string, { left: number; top: number }>();

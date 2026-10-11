@@ -1,25 +1,35 @@
 //! `GET /orgs/{org}/stream`: the changes of the queues of an organization, as
 //! server-sent events, for the pages of the dashboard.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::State;
+use axum::http::HeaderName;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
-use cihub_api_types::QueueChanged;
+use cihub_api_types::{ErrorCode, QueueChanged};
 use cihub_domain::{ApiScope, OrgId};
-use cihub_platform::{ApiError, ApiGrant, ApiPath, QueueNews, QueueNewsFeed};
+use cihub_platform::{ApiError, ApiGrant, ApiPath, GrantActor, QueueNews, QueueNewsFeed};
 use cihub_store::PgPool;
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::time::Interval;
+use tokio::time::{Instant, Interval};
 use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 
 /// A ping keeps the proxies from closing a quiet stream.
 const PING_EVERY: Duration = Duration::from_secs(15);
+
+/// A stream ends after this long, and the browser opens it again with its
+/// session or token: a grant revoked meanwhile no longer hears the changes.
+const STREAM_LIFETIME: Duration = Duration::from_mins(5);
+
+/// A page that reads nothing for this long is gone: its stream ends.
+const WRITE_WITHIN: Duration = Duration::from_secs(30);
 
 /// How long the browser waits before it opens the stream again.
 const RETRY_MS: u64 = 1000;
@@ -27,15 +37,35 @@ const RETRY_MS: u64 = 1000;
 /// What a stream buffers for a slow page before it waits.
 const BUFFER_BYTES: usize = 16 * 1024;
 
+/// The streams that a token or a person keeps open at once, a few tabs.
+const STREAMS_PER_CALLER: usize = 8;
+
 #[derive(Clone)]
 pub(crate) struct Streams {
     pub pool: PgPool,
     pub news: QueueNewsFeed,
+    pub open: Arc<Mutex<HashMap<GrantActor, usize>>>,
+}
+
+/// One open stream of a caller, given back when the stream ends.
+struct Opened {
+    open: Arc<Mutex<HashMap<GrantActor, usize>>>,
+    caller: GrantActor,
+}
+
+impl Drop for Opened {
+    fn drop(&mut self) {
+        let mut open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(count) = open.get_mut(&self.caller) {
+            *count = count.saturating_sub(1);
+        }
+    }
 }
 
 /// The changes of the queues of the organization: an event `queue_changed`
-/// for each, and a ping. The stream ends when the server stops, or when the
-/// server lost changes: the browser opens it again and reads everything.
+/// for each, and a ping. The stream ends when the server stops, when the
+/// server lost changes, and after a few minutes: the browser opens it again
+/// and reads everything.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/stream",
@@ -54,35 +84,66 @@ pub(crate) async fn stream(
     let tx = grant.begin_in_org(&streams.pool, &org).await?;
     tx.rollback().await?;
 
+    let opened = open_for(&streams, grant.actor)?;
     let (writer, reader) = tokio::io::duplex(BUFFER_BYTES);
     let news = streams.news.subscribe();
     let stopped = streams.news.stopped().clone();
-    tokio::spawn(write_events(writer, news, stopped, grant.org_id));
+    tokio::spawn(async move {
+        write_events(writer, news, &stopped, grant.org_id).await;
+        drop(opened);
+    });
 
     let headers = [
         (CONTENT_TYPE, "text/event-stream"),
         (CACHE_CONTROL, "no-cache"),
+        // nginx would hold the events back.
+        (HeaderName::from_static("x-accel-buffering"), "no"),
     ];
 
     Ok((headers, Body::from_stream(ReaderStream::new(reader))).into_response())
 }
 
-/// Writes the events of `org` until the server stops, the page leaves, or
-/// changes are lost.
+/// Counts one more stream of `caller`; `429` past [`STREAMS_PER_CALLER`].
+fn open_for(streams: &Streams, caller: GrantActor) -> Result<Opened, ApiError> {
+    let mut open = streams.open.lock().unwrap_or_else(PoisonError::into_inner);
+    let count = open.entry(caller).or_default();
+
+    if *count >= STREAMS_PER_CALLER {
+        return Err(ApiError::new(
+            ErrorCode::RateLimited,
+            format!("at most {STREAMS_PER_CALLER} streams at once per token or person"),
+        ));
+    }
+
+    *count += 1;
+
+    Ok(Opened {
+        open: Arc::clone(&streams.open),
+        caller,
+    })
+}
+
+/// Writes the events of `org` until the server stops, the page leaves or
+/// reads nothing, changes are lost, or the stream is old enough.
 async fn write_events(
     mut writer: DuplexStream,
     mut news: Receiver<QueueNews>,
-    stopped: CancellationToken,
+    stopped: &CancellationToken,
     org: OrgId,
 ) {
     let mut ping = tokio::time::interval(PING_EVERY);
+    let end = Instant::now() + STREAM_LIFETIME;
     let mut text = Some(format!("retry: {RETRY_MS}\n\n"));
 
     while let Some(next) = text {
-        if writer.write_all(next.as_bytes()).await.is_err() {
+        let written = tokio::select! {
+            () = stopped.cancelled() => return,
+            written = tokio::time::timeout(WRITE_WITHIN, writer.write_all(next.as_bytes())) => written,
+        };
+        if !matches!(written, Ok(Ok(()))) {
             return;
         }
-        text = next_text(&mut news, &mut ping, &stopped, org).await;
+        text = next_text(&mut news, &mut ping, stopped, end, org).await;
     }
 }
 
@@ -91,11 +152,13 @@ async fn next_text(
     news: &mut Receiver<QueueNews>,
     ping: &mut Interval,
     stopped: &CancellationToken,
+    end: Instant,
     org: OrgId,
 ) -> Option<String> {
     loop {
         let received = tokio::select! {
             () = stopped.cancelled() => return None,
+            () = tokio::time::sleep_until(end) => return None,
             _ = ping.tick() => return Some(": ping\n\n".to_owned()),
             received = news.recv() => received,
         };

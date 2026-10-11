@@ -54,32 +54,34 @@ afterEach(() => {
 });
 
 describe("the stream of an organization", () => {
-  it("reads again the queue that changed, and everything after a new stream", async () => {
+  it("reads everything when the stream opens, then only the queue that changed", async () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     renderApp("/orgs/acme/repos/web/queues/main", answers);
     await screen.findByRole("heading", { level: 1, name: "main" });
 
     const [stream] = FakeEventSource.opened;
-    const before = readsOf(QUEUE);
+    const checks = readsOf(`${QUEUE}/config-check`);
 
     expect(stream?.url).toBe("http://localhost/api/v1/orgs/acme/stream");
 
     stream?.onopen?.();
+    await waitFor(() => {
+      expect(readsOf(`${QUEUE}/config-check`)).toBe(checks + 1);
+    });
+
+    const queues = readsOf("/api/v1/orgs/acme/queues");
+    const before = readsOf(QUEUE);
     stream?.emit("queue_changed", { queue_id: api.queue.id, seq: 3 });
     await waitFor(() => {
-      expect(readsOf("/api/v1/orgs/acme/queues")).toBeGreaterThan(1);
+      expect(readsOf("/api/v1/orgs/acme/queues")).toBe(queues + 1);
     });
 
     expect(readsOf(QUEUE)).toBe(before);
 
     stream?.emit("queue_changed", { queue_id: web.queue.id, seq: 4 });
+    stream?.emit("queue_changed", { queue_id: web.queue.id, seq: 5 });
     await waitFor(() => {
       expect(readsOf(QUEUE)).toBe(before + 1);
-    });
-
-    stream?.onopen?.();
-    await waitFor(() => {
-      expect(readsOf(`${QUEUE}/config-check`)).toBeGreaterThan(1);
     });
   });
 

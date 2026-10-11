@@ -13,8 +13,6 @@ test("a change of a queue shows on its open page in less than 2 seconds", async 
   await page.goto("/orgs/acme/repos/web/queues/main");
   await expect(page.getByRole("table")).toBeVisible();
   await expect(page.getByText("Update the changelog")).toHaveCount(0);
-  // The stream of the page is open before the change.
-  await page.waitForTimeout(500);
 
   const commented = await page.request.get("/sim/merge?repo=web&number=4&login=ada");
   expect(await commented.text()).toBe("commented");

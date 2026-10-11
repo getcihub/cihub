@@ -37,7 +37,8 @@ pub enum QueueNews {
 }
 
 /// Tells the pages, once the transaction of `conn` commits, that `queue`
-/// changed.
+/// changed; `seq` is the last sequence number of its log, read from the log
+/// when the caller does not know it.
 ///
 /// # Errors
 ///
@@ -46,14 +47,16 @@ pub async fn notify_queue_changed(
     conn: &mut PgConnection,
     org: OrgId,
     queue: QueueId,
+    seq: Option<i64>,
 ) -> Result<(), PlatformError> {
     sqlx::query(
         "SELECT pg_notify($1, $2 || ' ' || $3 || ' '
-                || coalesce((SELECT max(seq) FROM events WHERE queue_id = $3), 0))",
+                || coalesce($4, (SELECT max(seq) FROM events WHERE queue_id = $3), 0))",
     )
     .bind(QUEUE_CHANGED_CHANNEL)
     .bind(org.to_string())
     .bind(queue.to_string())
+    .bind(seq)
     .execute(conn)
     .await
     .map_err(PlatformError::Query)?;
@@ -69,11 +72,18 @@ pub struct QueueNewsFeed {
 }
 
 impl QueueNewsFeed {
-    /// Listens to the changes until `cancel`.
-    pub fn start(pool: PgPool, cancel: CancellationToken) -> Self {
+    /// Listens to the changes until `cancel`; returns once it listens, so that
+    /// no change of a page opened after it is lost.
+    ///
+    /// # Errors
+    ///
+    /// Postgres cannot be reached.
+    pub async fn start(pool: PgPool, cancel: CancellationToken) -> Result<Self, PlatformError> {
+        let listener = listening(&pool).await.map_err(PlatformError::Query)?;
         let (news, _) = broadcast::channel(NEWS_KEPT);
-        tokio::spawn(listen(pool, news.clone(), cancel.clone()));
-        Self { news, cancel }
+        tokio::spawn(listen(pool, listener, news.clone(), cancel.clone()));
+
+        Ok(Self { news, cancel })
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<QueueNews> {
@@ -86,43 +96,75 @@ impl QueueNewsFeed {
     }
 }
 
-async fn listen(pool: PgPool, news: broadcast::Sender<QueueNews>, cancel: CancellationToken) {
-    while !cancel.is_cancelled() {
-        if let Err(err) = listen_until_lost(&pool, &news, &cancel).await {
-            warn!(
+async fn listening(pool: &PgPool) -> Result<PgListener, sqlx::Error> {
+    let mut listener = PgListener::connect_with(pool).await?;
+    listener.listen(QUEUE_CHANGED_CHANNEL).await?;
+    Ok(listener)
+}
+
+/// Passes the changes on until `cancel`; listens again after a failure, and
+/// tells the pages that the changes of the meantime are lost once it listens.
+async fn listen(
+    pool: PgPool,
+    mut listener: PgListener,
+    news: broadcast::Sender<QueueNews>,
+    cancel: CancellationToken,
+) {
+    loop {
+        let Err(err) = pass_on(&mut listener, &news, &cancel).await else {
+            return;
+        };
+        warn!(
+            error = &err as &dyn Error,
+            "changes of the queues not heard"
+        );
+
+        let Some(again) = listen_again(&pool, &cancel).await else {
+            return;
+        };
+        listener = again;
+        let _ = news.send(QueueNews::Lost);
+    }
+}
+
+/// A new listener, tried every second until `cancel`.
+async fn listen_again(pool: &PgPool, cancel: &CancellationToken) -> Option<PgListener> {
+    loop {
+        tokio::select! {
+            () = cancel.cancelled() => return None,
+            () = tokio::time::sleep(LISTEN_AGAIN_AFTER) => {}
+        }
+        match listening(pool).await {
+            Ok(listener) => return Some(listener),
+            Err(err) => warn!(
                 error = &err as &dyn Error,
                 "changes of the queues not heard"
-            );
-        }
-
-        let _ = news.send(QueueNews::Lost);
-        tokio::select! {
-            () = cancel.cancelled() => {}
-            () = tokio::time::sleep(LISTEN_AGAIN_AFTER) => {}
+            ),
         }
     }
 }
 
-/// Passes the changes on until `cancel`, or until the connection drops,
-/// when the changes of the meantime are lost.
-async fn listen_until_lost(
-    pool: &PgPool,
+/// Passes the changes on until `cancel`, or until the listener fails. The
+/// listener connects again by itself after a lost connection: the pages read
+/// everything again, as they may have missed changes.
+async fn pass_on(
+    listener: &mut PgListener,
     news: &broadcast::Sender<QueueNews>,
     cancel: &CancellationToken,
 ) -> Result<(), sqlx::Error> {
-    let mut listener = PgListener::connect_with(pool).await?;
-    listener.listen(QUEUE_CHANGED_CHANNEL).await?;
-
     loop {
         let received = tokio::select! {
             () = cancel.cancelled() => return Ok(()),
             received = listener.try_recv() => received?,
         };
-        let Some(notification) = received else {
-            return Ok(());
+        let heard = if let Some(notification) = received {
+            change_of(notification.payload()).map(QueueNews::Changed)
+        } else {
+            warn!("connection of the changes of the queues lost: the pages read again");
+            Some(QueueNews::Lost)
         };
-        if let Some(change) = change_of(notification.payload()) {
-            let _ = news.send(QueueNews::Changed(change));
+        if let Some(heard) = heard {
+            let _ = news.send(heard);
         }
     }
 }

@@ -104,7 +104,7 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
   return (
     <Frame me={me} org={org} queues={data.queues} repo={knownRepo} queue={knownQueue}>
       <Outlet />
-      <MoveNotice prs={mine} queues={data.queues} />
+      <MoveNotice org={org} login={me.login} queues={data.queues} />
     </Frame>
   );
 }

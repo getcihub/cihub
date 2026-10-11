@@ -1,38 +1,50 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import type { OrgPr, OrgQueue } from "../client/types.gen";
+import type { OrgPrList, OrgQueue } from "../client/types.gen";
+import ui from "../ui/ui.module.css";
 import styles from "./Mine.module.css";
-import { whereOf } from "./reads";
+import { minePrsOptions, whereOf } from "./reads";
 
 const SHOWN_MS = 8_000;
 
-function whereEach(prs: OrgPr[], queues: OrgQueue[]): [string, string][] {
-  return prs.map((pr) => {
-    const queue = queues.find((entry) => entry.repo === pr.repo && entry.queue.name === pr.queue)?.queue;
-    return [pr.item.id, whereOf(pr, queue?.state === "paused", queue?.target_branch ?? pr.queue)];
-  });
+function whereEach(prs: OrgPrList | undefined, queues: OrgQueue[]): Map<string, [string, string]> {
+  return new Map(
+    (prs?.prs ?? []).map((pr) => {
+      const queue = queues.find((entry) => entry.repo === pr.repo && entry.queue.name === pr.queue)?.queue;
+      const where = whereOf(pr, queue?.state === "paused", queue?.target_branch ?? pr.queue);
+      return [pr.item.id, [`#${String(pr.item.pr_number)} ${pr.item.title ?? ""}`, where]];
+    }),
+  );
 }
 
-/** Tells the person, for a moment, that one of their PRs moved: "#124 Fix the login redirect: testing". */
-export function MoveNotice({ prs, queues }: { prs: OrgPr[]; queues: OrgQueue[] }) {
-  const where = whereEach(prs, queues);
-  const shown = JSON.stringify(where);
-  const [seen, setSeen] = useState(shown);
+/**
+ * Tells the person, for a moment, which of their PRs moved: "#124 Fix the login redirect: testing". It compares
+ * the reads of their PRs in the cache, the last one with the new one.
+ */
+export function MoveNotice({ org, login, queues }: { org: string; login: string; queues: OrgQueue[] }) {
+  const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
 
-  // The where of the last render: a PR whose where changed since then moved.
-  if (seen !== shown) {
-    const before = new Map(JSON.parse(seen) as [string, string][]);
-    const moved = prs.find((pr, index) => {
-      const was = before.get(pr.item.id);
-      return was !== undefined && was !== where[index]?.[1];
+  useEffect(() => {
+    const key = JSON.stringify(minePrsOptions(org, login).queryKey);
+    let last = whereEach(queryClient.getQueryData(minePrsOptions(org, login).queryKey), queues);
+
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || JSON.stringify(event.query.queryKey) !== key) {
+        return;
+      }
+      const next = whereEach(event.query.state.data as OrgPrList | undefined, queues);
+      const moved = [...next].filter(([id, [, where]]) => {
+        const before = last.get(id);
+        return before !== undefined && before[1] !== where;
+      });
+      last = next;
+      if (moved.length > 0) {
+        setNotice(moved.map(([, [pr, where]]) => `${pr}: ${where}`).join(" · "));
+      }
     });
-    setSeen(shown);
-    if (moved) {
-      const title = moved.item.title ?? "";
-      setNotice(`#${String(moved.item.pr_number)} ${title}: ${where[prs.indexOf(moved)]?.[1] ?? ""}`);
-    }
-  }
+  }, [org, login, queues, queryClient]);
 
   useEffect(() => {
     if (!notice) {
@@ -48,7 +60,20 @@ export function MoveNotice({ prs, queues }: { prs: OrgPr[]; queues: OrgQueue[] }
 
   return (
     <div className={styles.toasts} role="status">
-      {notice && <p className={styles.toast}>{notice}</p>}
+      {notice && (
+        <p className={styles.toast}>
+          {notice}{" "}
+          <button
+            type="button"
+            className={ui.button}
+            onClick={() => {
+              setNotice(null);
+            }}
+          >
+            Dismiss
+          </button>
+        </p>
+      )}
     </div>
   );
 }

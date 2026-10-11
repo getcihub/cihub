@@ -1,8 +1,9 @@
 import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { meOptions } from "../client/@tanstack/react-query.gen";
 import type { Item, Queue } from "../client/types.gen";
+import { onQueueChanged } from "../live";
 import { Spotlight } from "../mine/Mine";
 import { useMinePrs } from "../mine/reads";
 import { useNow } from "../time";
@@ -54,6 +55,17 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);
   const { queue } = detail.data;
+
+  useEffect(
+    () =>
+      onQueueChanged((queueId) => {
+        if (queueId === queue.id) {
+          setNotice(null);
+        }
+      }),
+    [queue.id],
+  );
+
   const items = inQueueOrder(live.data.items);
   // A position is an order, not a rank: the page shows 1, 2, 3 for the items admitted. The graph has every live
   // item, where the read of the items stops at 100.
