@@ -436,19 +436,30 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     let with_session = [("Cookie", cookie.as_str())];
     let unknown = [("Cookie", "__Host-cihub_session=chs_unknown")];
 
-    let me = call_with(&addr, "GET", "/api/v1/me", &with_session).await;
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let org = call_with(&addr, "GET", "/api/v1/orgs/acme", &with_session).await;
     let repos = call_with(&addr, "GET", "/api/v1/orgs/ACME/repos", &with_session).await;
+    let repo = call_with(&addr, "GET", "/api/v1/orgs/acme/repos/APP", &with_session).await;
     let audit = call_with(&addr, "GET", "/api/v1/orgs/acme/audit", &with_session).await;
     let other = call_with(&addr, "GET", "/api/v1/orgs/globex/repos", &with_session).await;
-    let anonymous = call_with(&addr, "GET", "/api/v1/me", &unknown).await;
+    let anonymous = call_with(&addr, "GET", "/api/v1/user", &unknown).await;
 
     assert_eq!(me.status, 200, "{}", me.body);
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
-    assert_eq!(me["login"], "ada");
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+    let org: serde_json::Value = serde_json::from_str(&org.body).unwrap();
+    let repo: serde_json::Value = serde_json::from_str(&repo.body).unwrap();
+    assert_eq!(me, serde_json::json!({ "login": "ada" }));
     assert_eq!(
-        me["orgs"],
-        serde_json::json!([{ "slug": "acme", "role": "member" }])
+        orgs,
+        serde_json::json!({
+            "orgs": [{ "slug": "acme", "role": "member" }],
+            "has_more": false, "count": 1, "cursor": null
+        })
     );
+    assert_eq!(org, serde_json::json!({ "slug": "acme", "role": "member" }));
+    assert_eq!(repo["name"], "app", "the case of a name does not matter");
     assert_eq!(repos.status, 200, "{}", repos.body);
     assert_eq!(audit.status, 403, "{}", audit.body);
     assert_eq!(other.status, 404, "{}", other.body);
@@ -466,12 +477,20 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
     let signed = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
 
     let refused = call_with(&addr, "POST", "/auth/sign-out", &forged).await;
-    let by_token = call(&addr, "GET", "/api/v1/me", Some(&reader)).await;
+    let by_token = call(&addr, "GET", "/api/v1/user", Some(&reader)).await;
+    let instance = call(&addr, "GET", "/api/v1/instance", Some(&reader)).await;
+    let org = call(&addr, "GET", "/api/v1/orgs/acme", Some(&reader)).await;
     let signed_out = call_with(&addr, "POST", "/auth/sign-out", &signed).await;
-    let after = call_with(&addr, "GET", "/api/v1/me", &signed).await;
+    let after = call_with(&addr, "GET", "/api/v1/user", &signed).await;
 
     assert_eq!(refused.status, 403, "{}", refused.body);
     assert_eq!(by_token.status, 401, "{}", by_token.body);
+    assert_eq!(instance.status, 200, "{}", instance.body);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&org.body).unwrap(),
+        serde_json::json!({ "slug": "acme", "role": null }),
+        "a token has no role"
+    );
     assert_eq!(signed_out.status, 204);
     assert!(
         signed_out.head.contains(
@@ -595,15 +614,20 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
     );
 
     let cookie = format!("__Host-cihub_session={session}");
-    let me = call_with(&addr, "GET", "/api/v1/me", &[("Cookie", cookie.as_str())]).await;
+    let with_session = [("Cookie", cookie.as_str())];
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let instance = call_with(&addr, "GET", "/api/v1/instance", &with_session).await;
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+    let instance: serde_json::Value = serde_json::from_str(&instance.body).unwrap();
 
     assert_eq!(me["login"], "ada");
     assert_eq!(
-        me["orgs"],
+        orgs["orgs"],
         serde_json::json!([{ "slug": "acme", "role": "member" }])
     );
-    assert_eq!(me["app_install_url"], "sim:install");
+    assert_eq!(instance["app_install_url"], "sim:install");
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -620,11 +644,14 @@ async fn a_person_without_an_organization_gets_a_session_to_install_the_app(pool
     assert_eq!(header_values(&callback.raw_head, "location"), ["/"]);
     let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
     let cookie = format!("__Host-cihub_session={session}");
-    let me = call_with(&addr, "GET", "/api/v1/me", &[("Cookie", cookie.as_str())]).await;
+    let with_session = [("Cookie", cookie.as_str())];
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
 
     assert_eq!(me["login"], "grace");
-    assert_eq!(me["orgs"], serde_json::json!([]));
+    assert_eq!(orgs["orgs"], serde_json::json!([]));
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

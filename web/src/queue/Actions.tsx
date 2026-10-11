@@ -4,12 +4,12 @@ import { useState } from "react";
 import { z } from "zod";
 
 import {
-  cancelItemMutation,
-  restartItemMutation,
+  cancelMutation,
+  restartMutation,
   submitMutation,
   updateQueueMutation,
 } from "../client/@tanstack/react-query.gen";
-import type { Item, Queue, RequestedQueueState } from "../client/types.gen";
+import type { Pr, Queue, RequestedQueueState } from "../client/types.gen";
 import { Modal } from "../ui/Modal";
 import ui from "../ui/ui.module.css";
 import { type QueuePath, readQueueAgain } from "./reads";
@@ -141,9 +141,9 @@ export function SubmitPr({
     validators: { onSubmit: submission },
     onSubmit: async ({ value }) => {
       const number = Number(value.number);
-      const body = { pr_number: number, priority: value.priority, no_batch: value.isAlone };
+      const body = { queue: path.queue, priority: value.priority, no_batch: value.isAlone };
       try {
-        await submit.mutateAsync({ path, body });
+        await submit.mutateAsync({ path: { org: path.org, repo: path.repo, number }, body });
       } catch {
         // The form shows the refusal of the server.
         return;
@@ -271,15 +271,15 @@ export function PrActions({
   onSent,
 }: {
   path: QueuePath;
-  item: Item;
+  item: Pr;
   onSent: (notice: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [isCancelling, setIsCancelling] = useState(false);
   const options = { onSettled: () => readQueueAgain(queryClient) };
-  const restart = useMutation({ ...restartItemMutation(), ...options });
-  const cancel = useMutation({ ...cancelItemMutation(), ...options });
-  const target = { path: { ...path, number: item.pr_number } };
+  const restart = useMutation({ ...restartMutation(), ...options });
+  const cancel = useMutation({ ...cancelMutation(), ...options });
+  const target = { path: { org: path.org, repo: path.repo, number: item.number } };
   const canRestart = item.state === "testing" || item.state === "pending_failure";
   const isTested = canRestart || item.state === "tests_passed";
   const error = restart.error ?? cancel.error;
@@ -319,7 +319,7 @@ export function PrActions({
       )}
       {isCancelling && (
         <Modal
-          title={`Take #${String(item.pr_number)} out of the queue?`}
+          title={`Take #${String(item.number)} out of the queue?`}
           onClose={() => {
             setIsCancelling(false);
           }}

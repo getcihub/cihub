@@ -2,11 +2,11 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Outlet, createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { listOrgQueuesOptions } from "../client/@tanstack/react-query.gen";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
 import { QueuePage } from "../queue/QueuePage";
 import { TABS, queueReads } from "../queue/reads";
+import { orgQueuesOptions } from "../queue/reads";
 
 const search = z.object({ tab: z.enum(TABS).default("live").catch("live") });
 
@@ -26,7 +26,6 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
     await Promise.all([
       queryClient.query(reads.detail).catch(ignore),
       queryClient.query(reads.graph).catch(ignore),
-      queryClient.query(reads.check).catch(ignore),
       queryClient.query(reads.live).catch(ignore),
       queryClient.query(reads.tab).catch(ignore),
     ]);
@@ -39,9 +38,9 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
 function QueueRoute() {
   const { org, repo, queue } = Route.useParams();
   const { tab } = Route.useSearch();
-  const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
+  const { data } = useSuspenseQuery(orgQueuesOptions(org));
 
-  if (!data.queues.some((candidate) => candidate.repo === repo && candidate.queue.name === queue)) {
+  if (!data.queues.some((candidate) => candidate.repo === repo && candidate.name === queue)) {
     return <NotFoundPage />;
   }
 

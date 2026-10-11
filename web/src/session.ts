@@ -1,11 +1,17 @@
 // The session of the dashboard: who signs in, and the routes of the server
 // outside the API (`specs/API.md`, `specs/SECURITY.md`).
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useSuspenseQueries } from "@tanstack/react-query";
 import { z } from "zod";
 
-import { meOptions } from "./client/@tanstack/react-query.gen";
+import {
+  getInstanceOptions,
+  getUserOptions,
+  getUserQueryKey,
+  listUserOrgsOptions,
+  listUserOrgsQueryKey,
+} from "./client/@tanstack/react-query.gen";
 import { client } from "./client/client.gen";
-import type { ErrorCode, Me } from "./client/types.gen";
+import type { ErrorCode, Org } from "./client/types.gen";
 
 const SIGN_IN_PATH = "/auth/github";
 const SIGN_OUT_PATH = "/auth/sign-out";
@@ -41,16 +47,68 @@ export function isProblem(error: unknown, code: ErrorCode): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === code;
 }
 
-/** The user of the session, or `null` without a session. */
+/** The person of the session, their organizations, and the instance: `/user`, `/user/orgs` and `/instance`. */
+export interface Me {
+  login: string;
+  orgs: Org[];
+  version: string;
+  app_install_url?: string | null;
+}
+
+/** A person has a few organizations: one page holds them all. */
+const ORGS_OF_THE_USER = { query: { limit: 100 } };
+
+const readsOfMe = () =>
+  [getUserOptions(), listUserOrgsOptions(ORGS_OF_THE_USER), getInstanceOptions()] as const;
+
+/** The person of the session, or `null` without a session. */
 export async function readMe(queryClient: QueryClient): Promise<Me | null> {
-  try {
-    return await queryClient.query(meOptions());
-  } catch (error) {
-    if (isProblem(error, "unauthorized")) {
-      return null;
-    }
-    throw error;
+  const [user, orgs, instance] = readsOfMe();
+  const [readUser, readOrgs, readInstance] = await Promise.allSettled([
+    queryClient.query(user),
+    queryClient.query(orgs),
+    queryClient.query(instance),
+  ]);
+  const failures = [readUser, readOrgs, readInstance].flatMap((read) =>
+    read.status === "rejected" ? [read.reason as unknown] : [],
+  );
+
+  if (failures.some((error) => isProblem(error, "unauthorized"))) {
+    return null;
   }
+  if (
+    readUser.status === "rejected" ||
+    readOrgs.status === "rejected" ||
+    readInstance.status === "rejected"
+  ) {
+    throw failures[0];
+  }
+  return meOf(readUser.value, readOrgs.value, readInstance.value);
+}
+
+/** The person of the session, from the reads of `readMe` in the cache. */
+export function useMe(): Me {
+  const [user, orgs, instance] = useSuspenseQueries({ queries: readsOfMe() });
+  return meOf(user.data, orgs.data, instance.data);
+}
+
+function meOf(
+  user: { login: string },
+  orgs: { orgs: Org[] },
+  instance: { version: string; app_install_url?: string | null },
+): Me {
+  return {
+    login: user.login,
+    orgs: orgs.orgs,
+    version: instance.version,
+    app_install_url: instance.app_install_url,
+  };
+}
+
+/** Forgets the person of the session: a read still fresh in the cache would send them back from the sign-in. */
+export function forgetMe(queryClient: QueryClient): void {
+  queryClient.removeQueries({ queryKey: getUserQueryKey() });
+  queryClient.removeQueries({ queryKey: listUserOrgsQueryKey(ORGS_OF_THE_USER) });
 }
 
 /** The address that starts a sign-in, then opens `next`. */

@@ -312,7 +312,8 @@ Decisions:
   empty states); the page of a queue (banners of pause, drain, lost access, invalid file and up-to-date rule;
   counters; settings; live graph; the tabs of the items, live, merged, failed and cancelled). The pages read again
   every 10 seconds until lot 10d.
-- **Frozen interfaces**: `Queue`, `QueueDetail`, `Item`, `Graph`, `ConfigCheck`.
+- **Frozen interfaces**: `Queue`, `Pr`, `Graph`, `ConfigCheck` (the forms of the decision of October 11, 2026, in
+  lot 10d).
 - **Exit criterion**: a browser test on the simulator shows the cards of the queues and the page of a queue with
   the PRs submitted by comment, their title, author and position, and the runs of the graph; the routes give the
   same answers after a replay of the log (principle I); showing a page calls the SCM zero times (principle VII).
@@ -356,13 +357,14 @@ Decisions:
   queues, their spotlight on the page of a queue, the title of the tab. `TimelineEvent` gains `actor` and
   `description`; `RunCheck` gains `status`, `started_at` and `completed_at` (migration of `check_observations`);
   `TestRun` gains `draft_pr_url`; `Item` gains `url`, read by the adapter with the PR (the recorded contract is
-  recorded again); `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR
+  recorded again); `POST …/prs` refuses at once, with `409`, a queue that accepts nothing and a PR
   already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `…/cancel` and `…/restart` write
   `item.cancel_requested` and `item.restart_requested` in the audit log. The comment of CIHub and the status of a PR link to the
   page of the PR in the dashboard (`http.public_url`), `/orgs/$org/repos/$repo/queues/$queue/prs/$number`. Pages:
   the drawer of a PR at this address (where it is, run, required and observed checks, history); the submission,
   with TanStack Form, cancellation and restart; pause, drain and resume.
-- **Frozen interfaces**: the answer of `GET /orgs/{org}/prs`, `TimelineEvent`, `RunCheck`, `Item`.
+- **Frozen interfaces**: `PrList`, `Event`, `RunCheck`, `Pr` (the forms of the decision of October 11, 2026, in
+  lot 10d).
 - **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
   submits a PR from the dashboard and follows it in "Your pull requests" until the merge; a member pauses
   nothing; the comment of the PR links to its page.
@@ -378,7 +380,7 @@ Decisions:
     median duration of the runs and the window of the queue, so that the dashboard holds no queue logic.
   - Done (October 11, 2026): part of step 2 and step 3. `TimelineEvent` gains `actor` (the user of the cause
     of a decision) and `description` (the sentences of the blocks are those of the comment); `POST …/prs`
-    answers `409 invalid_state` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
+    answers `409` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
     already in the queue; `…/cancel` and `…/restart`
     write the audit log.
   - Decided (October 11, 2026, validated by the project lead): `CheckReport` gains `status`, `started_at` and
@@ -395,7 +397,7 @@ Decisions:
     requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
     browser tests passes each test commit of `acme/api`.
   - The project lead started lot 10d meanwhile: the rest of lot 10c waits for the recording, not for lot 10d.
-  - Remaining, with the new recording of the contract: `Item.url`, `TestRun.draft_pr_url`, and the state and
+  - Remaining, with the new recording of the contract: `Pr.url`, `Run.draft_pr_url`, and the state and
     times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
     lot; the lot is done once they are.
 
@@ -428,6 +430,22 @@ Decisions:
   - Decided (October 11, 2026, validated by the project lead): an action takes a segment of its own,
     `POST …/resync`, `POST …/prs/{number}/cancel` and `POST …/prs/{number}/restart`, and no longer a colon in
     the last segment; `POST …/prs:batchGet` goes, as no client reads it (`specs/LESSONS.md`).
+  - Decided (October 11, 2026, validated by the project lead): the error codes name their cause
+    (`queue_not_found`, `pr_already_queued`, `item_not_in_test`, …) instead of `not_found`, `forbidden` and
+    `invalid_state`, whose cause was only in `detail` (principle VI). Done: the OpenAPI document reads as a
+    reference: an introduction with every code, a tag, a title and a description for each route, every error
+    of each route with an example, a description and an example for every field, the closed enums as named
+    schemas; `crates/cli/tests/openapi.rs` keeps it so.
+  - Decided (October 11, 2026, validated by the project lead), it changes the frozen interfaces of lots 10a to
+    10c: one contract for the lists (`from` and `limit`; `has_more`, `count` and an opaque base64 `cursor`); a PR
+    belongs to its repository (`/orgs/{org}/repos/{repo}/prs/{number}`, with `…/events`, `…/submit`, `…/cancel` and
+    `…/restart`), and `GET /orgs/{org}/prs` lists PRs with filters (`author`, `@me` for the person of a session,
+    `repo`, `queue`, `state`, times, `sort`), in place of `…/queues/{queue}/prs` and of the PRs of a person;
+    `GET /orgs/{org}`, `GET /orgs/{org}/repos/{repo}`; `/me` becomes `/user`, `/user/orgs` and `/instance`; one
+    form per resource (`Queue` holds the counters, the settings and the check of the configuration, which leaves
+    `…/config-check`; `Pr` in place of `Item`, `OrgPr` and `PrItem`; `Event`, `Run`); a `202` has no body. Done
+    with it: the server, `cihub-client`, the CLI, the dashboard (the person of the session is `Me` in
+    `src/session.ts`; "Your pull requests" reads the live PRs of `@me` and the last ones merged) and the tests.
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 

@@ -20,13 +20,16 @@ mod maintenance;
 mod members;
 mod module;
 mod news;
+mod page;
 mod routing;
 mod sweep;
 mod tokens;
 mod wake;
 mod worker;
 
-pub use api::{ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor};
+pub use api::{
+    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, document_error, error_responses,
+};
 pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{
     SYNC_REPOS, request_repo_syncs, run_sync_repos, sync_repos_executor, sync_repos_job,
@@ -51,6 +54,7 @@ pub use members::{
 };
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use news::{QueueChange, QueueNews, QueueNewsFeed, notify_queue_changed};
+pub use page::{PAGE_ERRORS, Page, cursor_of};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
 pub use tokens::create_token;

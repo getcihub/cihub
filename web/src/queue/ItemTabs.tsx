@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useRef } from "react";
 
-import type { Item, QueueDetail } from "../client/types.gen";
+import type { Pr, Queue } from "../client/types.gen";
 import { durationBetween, timeAgo } from "../time";
 import { Avatar } from "../ui/Avatar";
 import { ItemStateBadge } from "../ui/StateBadge";
@@ -29,7 +29,7 @@ const NONE: Record<Tab, string> = {
 
 const PRIORITIES: Record<number, string> = { 0: "urgent", 10: "high", 100: "medium", 200: "low" };
 
-function priorityOf(item: Item) {
+function priorityOf(item: Pr) {
   const name = PRIORITIES[item.priority];
   const tone = name === "urgent" ? styles.urgent : name === "high" ? styles.high : "";
 
@@ -37,7 +37,7 @@ function priorityOf(item: Item) {
 }
 
 /** The sentence of the API, and for a merge where and after how long it landed. */
-function Detail({ item }: { item: Item }) {
+function Detail({ item }: { item: Pr }) {
   const landed = item.state === "merged" && item.merged_sha;
 
   return (
@@ -67,10 +67,10 @@ export function ItemTabs({
 }: {
   path: QueuePath;
   tab: Tab;
-  detail: QueueDetail;
-  live: Item[];
+  detail: Queue;
+  live: Pr[];
   ranks: Map<string, number>;
-  opened: Item[];
+  opened: Pr[];
   /** The read of the tab stopped at 100 items: the oldest submissions are not in it. */
   isCut: boolean;
   now: number;
@@ -102,7 +102,8 @@ export function ItemTabs({
           ))}
         </nav>
         <div className={styles.right}>
-          {tab === "live" && "By position: priority first, then arrival"}
+          {tab === "live" &&
+            (isCut ? "By position, the first 100 only" : "By position: priority first, then arrival")}
           {tab !== "live" && (isCut ? "Last 24 hours, the 100 latest submissions only" : "Last 24 hours")}
         </div>
       </div>
@@ -128,11 +129,11 @@ export function ItemTabs({
                   <div className={styles.pr}>
                     <Avatar name={item.author} />
                     <div>
-                      <PrLink className={styles.prTitle} number={item.pr_number}>
-                        {item.title ?? `#${String(item.pr_number)}`}
+                      <PrLink className={styles.prTitle} number={item.number}>
+                        {item.title ?? `#${String(item.number)}`}
                       </PrLink>
                       <div className={styles.meta}>
-                        #{item.pr_number} · {item.author}
+                        #{item.number} · {item.author}
                       </div>
                     </div>
                   </div>

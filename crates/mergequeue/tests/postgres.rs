@@ -2560,19 +2560,19 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
         .unwrap();
 
     let (addr, token) = q.serve_api().await;
-    let submit = serde_json::json!({ "pr_number": number });
+    let submit = serde_json::json!({ "queue": "main" });
     let (status, refused) = call(
         &addr,
         &token,
         "POST",
-        "/orgs/acme/repos/app/queues/main/prs",
+        &format!("/orgs/acme/repos/app/prs/{number}/submit"),
         Some(submit),
     )
     .await;
 
     assert_eq!(
         (status, &refused["code"]),
-        (409, &serde_json::json!("invalid_state")),
+        (409, &serde_json::json!("queue_not_accepting")),
         "the API refuses at once: {refused}"
     );
 
@@ -3226,6 +3226,25 @@ async fn call(
     )
 }
 
+/// Every entry of the list at `path`, read one page of one entry at a time:
+/// the pages hold the list in order, each entry once.
+async fn every_page(addr: &str, token: &str, path: &str, entries: &str) -> Vec<Value> {
+    let separator = if path.contains('?') { '&' } else { '?' };
+    let mut every = Vec::new();
+    let mut from = String::new();
+
+    loop {
+        let page_path = format!("{path}{separator}limit=1{from}");
+        let (status, page) = call(addr, token, "GET", &page_path, None).await;
+        assert_eq!(status, 200, "{page_path}: {page}");
+        every.extend(page[entries].as_array().unwrap().iter().cloned());
+        let Some(cursor) = page["cursor"].as_str() else {
+            return every;
+        };
+        from = format!("&from={cursor}");
+    }
+}
+
 /// The API v1 reads and changes a queue, named by the organization, the
 /// repository and the queue: a submission, its item, its timeline and its run,
 /// the graph, a restart and a cancel by PR number on the current item, a
@@ -3250,6 +3269,8 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     };
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let pr_path = format!("/orgs/acme/repos/app/prs/{number}");
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
@@ -3259,68 +3280,84 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     let submitted = call(
         "POST",
-        format!("{queue}/prs"),
-        Some(serde_json::json!({ "pr_number": number, "priority": "high" })),
+        format!("{pr_path}/submit"),
+        Some(serde_json::json!({ "priority": "high" })),
     )
     .await;
 
-    assert_eq!(submitted, (202, serde_json::json!({ "accepted": true })));
+    assert_eq!(
+        submitted,
+        (202, Value::Null),
+        "no body: the queue acts later"
+    );
     q.settle().await;
 
     let (status, twice) = call(
         "POST",
-        format!("{queue}/prs"),
-        Some(serde_json::json!({ "pr_number": number })),
+        format!("{pr_path}/submit"),
+        Some(serde_json::json!({})),
     )
     .await;
     assert_eq!(
         (status, &twice["code"]),
-        (409, &serde_json::json!("invalid_state")),
+        (409, &serde_json::json!("pr_already_queued")),
         "the PR waits in the queue: {twice}"
     );
 
-    let (status, listed) = call("GET", format!("{queue}/prs"), None).await;
+    let (status, listed) = call("GET", prs.to_owned(), None).await;
     let (live_run, _, _) = q.runs_in_progress().await.remove(0);
-    let item = &listed["items"][0];
+    let pr = &listed["prs"][0];
 
     assert_eq!(status, 200, "{listed}");
-    assert_eq!(item["state"], "testing");
-    assert_eq!(item["priority"], 10);
     assert_eq!(
-        item["title"], "pr-1",
+        (&listed["count"], &listed["has_more"], &listed["cursor"]),
+        (&1.into(), &false.into(), &Value::Null)
+    );
+    assert_eq!(pr["number"], number);
+    assert_eq!((&pr["repo"], &pr["queue"]), (&"app".into(), &"main".into()));
+    assert_eq!(pr["state"], "testing");
+    assert_eq!(pr["priority"], 10);
+    assert_eq!(
+        pr["title"], "pr-1",
         "the simulator names a PR after its branch"
     );
-    assert_eq!(item["author"], "bob");
-    assert_eq!(item["run_id"], live_run.to_string().as_str());
-    assert_eq!(item["no_batch"], false);
-    assert_eq!(item["submitted_via"], "api");
+    assert_eq!(pr["author"], "bob");
+    assert_eq!(pr["run_id"], live_run.to_string().as_str());
+    assert_eq!(pr["no_batch"], false);
+    assert_eq!(pr["submitted_via"], "api");
     assert_eq!(
-        item["submitted_by"],
+        pr["submitted_by"],
         Value::Null,
         "a token stands for no person"
     );
 
-    let live = call("GET", format!("{queue}/prs?state=pending,testing"), None).await;
-    let merged = call("GET", format!("{queue}/prs?state=merged"), None).await;
-    let unknown = call("GET", format!("{queue}/prs?state=testing,lost"), None).await;
+    let live = call("GET", format!("{prs}&state=pending,testing"), None).await;
+    let merged = call("GET", format!("{prs}&state=merged"), None).await;
+    let unknown = call("GET", format!("{prs}&state=testing,lost"), None).await;
+    let without_repo = call("GET", "/orgs/acme/prs?queue=main".into(), None).await;
+    let me = call("GET", "/orgs/acme/prs?author=@me".into(), None).await;
+    let bob = call("GET", "/orgs/acme/prs?author=BOB".into(), None).await;
 
-    assert_eq!(live.1["items"].as_array().unwrap().len(), 1, "{}", live.1);
-    assert_eq!(merged.1["items"], serde_json::json!([]));
+    assert_eq!(live.1["prs"].as_array().unwrap().len(), 1, "{}", live.1);
+    assert_eq!(merged.1["prs"], serde_json::json!([]));
     assert_eq!(
         (unknown.0, &unknown.1["code"]),
         (400, &serde_json::json!("invalid_request"))
     );
+    assert_eq!(without_repo.1["code"], "queue_needs_repo");
+    assert_eq!(
+        me.1["code"], "me_needs_session",
+        "a token stands for no person"
+    );
+    assert_eq!(bob.1["count"], 1, "the case of a login does not matter");
 
-    let item_id = listed["items"][0]["id"].as_str().unwrap().to_owned();
-    let (_, pr) = call(
-        "GET",
-        format!("{queue}/prs/{number}?include=timeline"),
-        None,
-    )
-    .await;
+    let item_id = pr["id"].as_str().unwrap().to_owned();
+    let (_, read) = call("GET", pr_path.clone(), None).await;
+    let (_, events) = call("GET", format!("{pr_path}/events"), None).await;
 
-    assert_eq!(pr["item"]["id"], item_id.as_str());
-    assert_eq!(pr["timeline"][0]["type"], "item.transitioned");
+    assert_eq!(read["id"], item_id.as_str());
+    assert_eq!(events["events"][0]["type"], "item.transitioned");
+    assert_eq!(events["events"][0]["item_id"], item_id.as_str());
 
     let (_, graph) = call("GET", format!("{queue}/graph"), None).await;
     let run = &graph["runs"][0];
@@ -3342,25 +3379,21 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(run["tested_pr_numbers"], serde_json::json!([number]));
     assert_eq!(run["status"], "in_progress");
 
-    let restart = call("POST", format!("{queue}/prs/{number}/restart"), None).await;
+    let restart = call("POST", format!("{pr_path}/restart"), None).await;
     assert_eq!(restart.0, 202);
     q.settle().await;
 
-    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
+    let cancel = call("POST", format!("{pr_path}/cancel"), None).await;
     assert_eq!(cancel.0, 202);
     q.settle().await;
 
-    let (_, pr) = call("GET", format!("{queue}/prs/{number}"), None).await;
-    assert_eq!(pr["item"]["state"], "cancelled");
-    assert_eq!(pr["item"]["state_reason"], "admin_requested");
-    assert_eq!(
-        pr["item"]["state_description"],
-        "an administrator asked for it"
-    );
+    let (_, pr) = call("GET", pr_path.clone(), None).await;
+    assert_eq!(pr["state"], "cancelled");
+    assert_eq!(pr["state_reason"], "admin_requested");
+    assert_eq!(pr["state_description"], "an administrator asked for it");
 
-    let timeline = format!("{queue}/prs/{number}?include=timeline");
-    let (_, pr) = call("GET", timeline, None).await;
-    let asked = pr["timeline"]
+    let (_, events) = call("GET", format!("{pr_path}/events"), None).await;
+    let asked = events["events"]
         .as_array()
         .unwrap()
         .iter()
@@ -3369,11 +3402,16 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     assert_eq!(asked["actor"], Value::Null, "a token stands for no person");
     assert_eq!(asked["description"], "a cancellation was asked");
+    assert_eq!(
+        every_page(&addr, &token, &format!("{pr_path}/events"), "events").await,
+        events["events"].as_array().unwrap().clone(),
+        "the pages of the events hold them all, in order"
+    );
 
-    let (status, again) = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
+    let (status, again) = call("POST", format!("{pr_path}/cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),
-        (409, &serde_json::json!("invalid_state"))
+        (409, &serde_json::json!("item_ended"))
     );
 
     let paused = call(
@@ -3383,20 +3421,21 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     )
     .await;
 
-    assert_eq!(paused.0, 202);
+    assert_eq!(paused, (202, Value::Null));
     q.settle().await;
 
     let (_, read) = call("GET", queue.to_owned(), None).await;
-    assert_eq!(read["queue"]["state"], "paused");
+    assert_eq!(read["state"], "paused");
     assert_eq!(
-        read["queue"]["state_changed_by"],
+        read["state_changed_by"],
         Value::Null,
         "a token stands for no person"
     );
-    assert_eq!(read["queue"]["strategy"], "pipelined");
-    assert_eq!(read["queue"]["target_head_sha"], main.as_str());
-    assert_eq!(read["queue"]["access"], "ok");
-    assert_eq!(read["queue"]["has_config_file"], true);
+    assert_eq!(read["repo"], "app");
+    assert_eq!(read["strategy"], "pipelined");
+    assert_eq!(read["target_head_sha"], main.as_str());
+    assert_eq!(read["access"], "ok");
+    assert_eq!(read["has_config_file"], true);
     assert_eq!(read["counts"]["testing"], 0);
     assert_eq!(read["live_runs"], 0);
     assert_eq!(
@@ -3404,26 +3443,26 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         serde_json::json!({ "current": 2, "floor": 2, "ceiling": 20 })
     );
     assert_eq!(read["settings"]["merge_method"], "squash");
+    assert_eq!(
+        read["config_check"],
+        serde_json::json!({ "findings": [], "checked_at": null })
+    );
 
     let (_, queues) = call("GET", "/orgs/acme/repos/app/queues".into(), None).await;
     assert_eq!(queues["queues"].as_array().unwrap().len(), 1);
-    let (_, unchecked) = call("GET", format!("{queue}/config-check"), None).await;
-    assert_eq!(
-        unchecked,
-        serde_json::json!({ "findings": [], "checked_at": null })
-    );
+    assert_eq!(queues["count"], 1);
 
     let before_resync = sim.calls().len();
     assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
     q.settle().await;
 
-    let (status, checked) = call("GET", format!("{queue}/config-check"), None).await;
+    let (status, checked) = call("GET", queue.to_owned(), None).await;
     let calls = sim.calls();
-    let (_, read_again) = call("GET", format!("{queue}/config-check"), None).await;
+    let (_, read_again) = call("GET", queue.to_owned(), None).await;
 
     assert_eq!(status, 200, "{checked}");
     assert_eq!(
-        checked["findings"][0]["code"], "update_restriction_missing",
+        checked["config_check"]["findings"][0]["code"], "update_restriction_missing",
         "the simulator restricts no update"
     );
     assert!(
@@ -3432,7 +3471,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
             .any(|call| call.name == "check_setup"),
         "the resync checks the configuration"
     );
-    assert_eq!(read_again, checked);
+    assert_eq!(read_again["config_check"], checked["config_check"]);
     assert_eq!(
         sim.calls().len(),
         calls.len(),
@@ -3462,25 +3501,42 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         serde_json::json!({ "queue_id": crate::queue().to_string(), "pr_number": number })
     );
 
+    let (_, first) = call("GET", "/orgs/acme/audit?limit=3".into(), None).await;
+    let next = first["cursor"].as_str().unwrap();
+    let (_, rest) = call("GET", format!("/orgs/acme/audit?limit=3&from={next}"), None).await;
+    let foreign = call("GET", format!("{prs}&from={next}"), None).await;
+
+    assert_eq!(
+        (&first["has_more"], &first["count"]),
+        (&true.into(), &4.into())
+    );
+    assert_eq!(rest["entries"][0]["action"], "item.restart_requested");
+    assert_eq!(
+        (&rest["has_more"], &rest["cursor"]),
+        (&false.into(), &Value::Null)
+    );
+    assert_eq!(
+        foreign.1["code"], "invalid_cursor",
+        "a cursor of another list is refused"
+    );
+
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
-    let queues = client.queues("acme", "app").await.unwrap().queues;
+    let repo_path = cihub_client::RepoPath {
+        org: "acme",
+        repo: "app",
+    };
+    let queues = client.queues(repo_path).await.unwrap().queues;
 
     assert_eq!(queues.len(), 1);
 
-    let path = cihub_client::QueuePath {
-        org: "acme",
-        repo: "app",
-        queue: "main",
-    };
-    let item = client.pr(path, number, true).await.unwrap();
-    assert_eq!(item.item.state, ItemState::Cancelled);
-    assert_ne!(item.timeline.unwrap(), []);
+    let read = client.pr(repo_path, number).await.unwrap();
+    assert_eq!(read.state, ItemState::Cancelled);
 
-    let refused = client.restart(path, number).await.unwrap_err();
+    let refused = client.restart(repo_path, number).await.unwrap_err();
     assert!(
-        matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::InvalidState),
+        matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::ItemNotInTest),
         "{refused}"
     );
 
@@ -3492,9 +3548,9 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
     q.settle().await;
 
-    let (_, checked) = call("GET", format!("{queue}/config-check"), None).await;
+    let (_, checked) = call("GET", queue.to_owned(), None).await;
     assert_eq!(
-        checked["findings"],
+        checked["config_check"]["findings"],
         serde_json::json!([{
             "code": "target_branch_missing",
             "message": "the branch `main` no longer exists: the queue cannot merge"
@@ -3520,7 +3576,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     q.settle().await;
 
     let (addr, token) = q.serve_api().await;
-    let items = "/orgs/acme/repos/app/queues/main/prs";
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
@@ -3530,19 +3586,19 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     q.deliver().await;
     q.settle().await;
 
-    let (_, submitted) = call(&addr, &token, "GET", items, None).await;
-    let item = &submitted["items"][0];
+    let (_, submitted) = call(&addr, &token, "GET", prs, None).await;
+    let pr = &submitted["prs"][0];
 
-    assert_eq!(item["title"], "pr-1");
-    assert_eq!(item["submitted_by"], "alice");
-    assert_eq!(item["submitted_via"], "comment");
-    assert!(item["run_id"].is_string(), "{item}");
+    assert_eq!(pr["title"], "pr-1");
+    assert_eq!(pr["submitted_by"], "alice");
+    assert_eq!(pr["submitted_via"], "comment");
+    assert!(pr["run_id"].is_string(), "{pr}");
 
-    let timeline = format!("{items}/{number}?include=timeline");
-    let pr = call(&addr, &token, "GET", &timeline, None).await.1;
-    let first = &pr["timeline"][0];
+    let events = format!("/orgs/acme/repos/app/prs/{number}/events");
+    let read = call(&addr, &token, "GET", &events, None).await.1;
+    let first = &read["events"][0];
 
-    assert_eq!(first["actor"], "alice", "the actor of the cause: {pr}");
+    assert_eq!(first["actor"], "alice", "the actor of the cause: {read}");
     assert_eq!(first["description"], "the PR was submitted to the queue");
 
     let page = format!("https://cihub.example.com/orgs/acme/repos/app/queues/main/prs/{number}");
@@ -3557,21 +3613,21 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     q.deliver().await;
     q.settle().await;
 
-    let (_, renamed) = call(&addr, &token, "GET", items, None).await;
-    assert_eq!(renamed["items"][0]["title"], "Fix the login redirect");
+    let (_, renamed) = call(&addr, &token, "GET", prs, None).await;
+    assert_eq!(renamed["prs"][0]["title"], "Fix the login redirect");
 
     // The reads of the cards and of the page of the queue.
     let page = || async {
         let queue = "/orgs/acme/repos/app/queues/main";
         let reads = [
             "/orgs/acme/queues".to_owned(),
-            "/orgs/acme/prs?author=bob".to_owned(),
-            timeline.clone(),
+            "/orgs/acme/prs?author=bob&sort=position".to_owned(),
+            format!("/orgs/acme/repos/app/prs/{number}"),
+            events.clone(),
             queue.to_owned(),
             format!("{queue}/graph"),
-            format!("{queue}/config-check"),
             format!(
-                "{items}?state=not_ready,pending,testing,pending_failure,tests_passed&take=100"
+                "{prs}&state=not_ready,pending,testing,pending_failure,tests_passed&sort=position&limit=100"
             ),
         ];
         let mut answers = Vec::new();
@@ -3594,8 +3650,8 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
 }
 
 /// `GET /orgs/{org}/prs?author=` gives the current items of a person with
-/// the PRs ahead of each one, keeps a merged one for a moment, and the queue
-/// gives the median duration of its runs.
+/// the PRs ahead of each one and an estimate, and the queue gives the median
+/// duration of its runs.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3620,17 +3676,12 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     }
 
     let (first, second) = (numbers[0], numbers[1]);
-    let mine = get("/orgs/acme/prs?author=BOB".into()).await;
+    let mine = get("/orgs/acme/prs?author=BOB&sort=position".into()).await;
     let items: Vec<(u64, Value)> = mine["prs"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|pr| {
-            (
-                pr["item"]["pr_number"].as_u64().unwrap(),
-                pr["ahead"].clone(),
-            )
-        })
+        .map(|pr| (pr["number"].as_u64().unwrap(), pr["ahead"].clone()))
         .collect();
 
     assert_eq!(mine["prs"][0]["repo"], "app");
@@ -3660,58 +3711,66 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
 
-    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    let mine = get("/orgs/acme/prs?author=bob&sort=position".into()).await;
     let queue = "/orgs/acme/repos/app/queues/main";
-    let merged = format!("{queue}/prs?state=merged&state_changed_since=2026-10-01T09:00:00Z");
-    let later = format!("{queue}/prs?state=merged&state_changed_since=2026-10-02T00:00:00Z");
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
+    let merged = format!("{prs}&state=merged&state_changed_since=2026-10-01T09:00:00Z");
+    let later = format!("{prs}&state=merged&state_changed_since=2026-10-02T00:00:00Z");
 
-    assert_eq!(mine["prs"][0]["item"]["state"], "merged", "{mine}");
-    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
+    assert_eq!(
+        mine["prs"][1]["state"], "merged",
+        "an ended PR comes after the live ones: {mine}"
+    );
     assert_eq!(mine["prs"][1]["ahead"], serde_json::json!([]));
+    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
     assert!(get(queue.to_owned()).await["median_run_seconds"].is_u64());
     assert!(
-        mine["prs"][1]["merges_in_seconds"].is_u64(),
+        mine["prs"][0]["merges_in_seconds"].is_u64(),
         "a tested PR merges in about the rest of its run: {mine}"
     );
-    assert_eq!(mine["prs"][0]["merges_in_seconds"], Value::Null);
-    assert_eq!(get(merged).await["items"].as_array().unwrap().len(), 1);
-    assert_eq!(get(later).await["items"], serde_json::json!([]));
+    assert_eq!(mine["prs"][1]["merges_in_seconds"], Value::Null);
+    assert_eq!(get(merged).await["prs"].as_array().unwrap().len(), 1);
+    assert_eq!(get(later).await["prs"], serde_json::json!([]));
 
     // A PR that is not ready has every admitted PR ahead of it; a cancelled PR
-    // leaves the list.
+    // leaves the PRs that are live or merged.
+    let mine_live = "/orgs/acme/prs?author=bob&sort=position\
+                     &state=not_ready,pending,testing,pending_failure,tests_passed,merged";
     let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
     sim.comment(&repo(), third, &alice(), "/cihub merge")
         .unwrap();
     q.deliver().await;
     q.settle().await;
 
-    let mine = get("/orgs/acme/prs?author=bob".into()).await;
-    assert_eq!(mine["prs"][2]["item"]["state"], "not_ready", "{mine}");
+    let mine = get(mine_live.into()).await;
+    assert_eq!(mine["prs"][1]["state"], "not_ready", "{mine}");
     assert_eq!(
-        mine["prs"][2]["ahead"],
+        mine["prs"][1]["ahead"],
         serde_json::json!([{ "pr_number": second, "state": "testing" }])
     );
 
-    let cancel = format!("{queue}/prs/{second}/cancel");
+    for sort in ["newest", "position"] {
+        let path = format!("/orgs/acme/prs?author=bob&sort={sort}");
+        let whole = get(path.clone()).await;
+        let paged = every_page(&addr, &token, &path, "prs").await;
+
+        assert_eq!(&paged, whole["prs"].as_array().unwrap(), "sort={sort}");
+        assert_eq!(whole["count"], 3, "sort={sort}");
+    }
+
+    let cancel = format!("/orgs/acme/repos/app/prs/{second}/cancel");
     assert_eq!(call(&addr, &token, "POST", &cancel, None).await.0, 202);
     q.settle().await;
 
-    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    let mine = get(mine_live.into()).await;
     let numbers: Vec<u64> = mine["prs"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|pr| pr["item"]["pr_number"].as_u64().unwrap())
+        .map(|pr| pr["number"].as_u64().unwrap())
         .collect();
-    assert_eq!(numbers, [first, third]);
-    assert_eq!(mine["prs"][1]["ahead"], serde_json::json!([]));
-
-    // A merged PR stays 10 minutes.
-    q.clock.advance(11);
-
-    let mine = get("/orgs/acme/prs?author=bob".into()).await;
-    assert_eq!(mine["prs"][0]["item"]["pr_number"], third);
-    assert_eq!(mine["prs"].as_array().unwrap().len(), 1);
+    assert_eq!(numbers, [third, first]);
+    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
     q.stop().await;
 }
 
@@ -3821,28 +3880,38 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     q.settle().await;
 
     let (addr, token) = q.serve_api().await;
-    let queue = "/orgs/acme/repos/app/queues/main";
+    let pr_path = "/orgs/acme/repos/app/prs";
     let call = |method: &'static str, path: String, body: Option<serde_json::Value>| {
         let (addr, token) = (addr.clone(), token.clone());
         async move { call(&addr, &token, method, &path, body).await }
     };
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
-    let submit = || Some(serde_json::json!({ "pr_number": number }));
+    let submit = || Some(serde_json::json!({}));
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
     q.deliver().await;
     q.settle().await;
 
-    assert_eq!(call("POST", format!("{queue}/prs"), submit()).await.0, 202);
+    assert_eq!(
+        call("POST", format!("{pr_path}/{number}/submit"), submit())
+            .await
+            .0,
+        202
+    );
     q.settle().await;
-    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
+    let cancel = call("POST", format!("{pr_path}/{number}/cancel"), None).await;
     assert_eq!(cancel.0, 202, "{}", cancel.1);
     q.settle().await;
-    assert_eq!(call("POST", format!("{queue}/prs"), submit()).await.0, 202);
+    assert_eq!(
+        call("POST", format!("{pr_path}/{number}/submit"), submit())
+            .await
+            .0,
+        202
+    );
     q.settle().await;
 
-    let restart = call("POST", format!("{queue}/prs/{number}/restart"), None).await;
+    let restart = call("POST", format!("{pr_path}/{number}/restart"), None).await;
     assert_eq!(
         restart.0, 202,
         "the earlier item is cancelled: {}",
@@ -3850,24 +3919,27 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     );
     q.settle().await;
 
-    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
+    let cancel = call("POST", format!("{pr_path}/{number}/cancel"), None).await;
     assert_eq!(cancel.0, 202, "{}", cancel.1);
     q.settle().await;
 
-    let (_, listed) = call("GET", format!("{queue}/prs"), None).await;
-    let items: Vec<(&str, bool)> = listed["items"]
+    let (_, read) = call("GET", format!("{pr_path}/{number}"), None).await;
+    let (_, events) = call("GET", format!("{pr_path}/{number}/events"), None).await;
+    let mut submissions: Vec<&str> = events["events"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|item| {
-            (
-                item["state"].as_str().unwrap(),
-                item["is_current"].as_bool().unwrap(),
-            )
-        })
+        .map(|event| event["item_id"].as_str().unwrap())
         .collect();
+    submissions.dedup();
 
-    assert_eq!(items, [("cancelled", true), ("cancelled", false)]);
+    assert_eq!(read["state"], "cancelled");
+    assert_eq!(
+        submissions.len(),
+        2,
+        "the events of the PR hold its two submissions: {events}"
+    );
+    assert_eq!(submissions[1], read["id"]);
 
     let mut tx = begin_system(&pool).await.unwrap();
     let restarted: Vec<String> = sqlx::query_scalar(
@@ -3878,7 +3950,7 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     .unwrap();
 
     drop(tx);
-    assert_eq!(restarted, [listed["items"][0]["id"].as_str().unwrap()]);
+    assert_eq!(restarted, [read["id"].as_str().unwrap()]);
     q.stop().await;
 }
 
@@ -3899,44 +3971,97 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
     let (addr, token) = q.serve_api().await;
     let run = RunId::from_ulid(Ulid(51));
     let missing = [
-        ("GET", "/orgs/other/repos".to_owned()),
-        ("GET", "/orgs/other/queues".to_owned()),
-        ("GET", "/orgs/nobody/queues".to_owned()),
-        ("GET", "/orgs/other/repos/app/queues".to_owned()),
-        ("GET", "/orgs/other/repos/app/queues/main".to_owned()),
-        ("GET", "/orgs/other/repos/app/queues/main/prs".to_owned()),
+        ("GET", "/orgs/other".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/repos".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/queues".to_owned(), "org_not_found"),
+        ("GET", "/orgs/nobody/queues".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/prs".to_owned(), "org_not_found"),
         (
-            "POST",
-            "/orgs/other/repos/app/queues/main/prs/1/cancel".to_owned(),
+            "GET",
+            "/orgs/other/repos/app/queues".to_owned(),
+            "org_not_found",
         ),
-        ("GET", "/orgs/other/audit".to_owned()),
-        ("GET", format!("/orgs/other/runs/{run}")),
-        ("GET", "/orgs/nobody/repos/app/queues/main".to_owned()),
-        ("GET", "/orgs/acme/repos/unknown/queues".to_owned()),
-        ("GET", "/orgs/acme/repos/app/queues/unknown".to_owned()),
-        ("GET", "/orgs/acme/repos/app/queues/main/prs/7".to_owned()),
         (
-            "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7/cancel".to_owned(),
+            "GET",
+            "/orgs/other/repos/app/queues/main".to_owned(),
+            "org_not_found",
         ),
         (
             "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7/restart".to_owned(),
+            "/orgs/other/repos/app/prs/1/cancel".to_owned(),
+            "org_not_found",
+        ),
+        ("GET", "/orgs/other/audit".to_owned(), "org_not_found"),
+        ("GET", format!("/orgs/other/runs/{run}"), "org_not_found"),
+        (
+            "GET",
+            "/orgs/nobody/repos/app/queues/main".to_owned(),
+            "org_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/unknown".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/unknown/queues".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/prs?repo=unknown".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/queues/unknown".to_owned(),
+            "queue_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/prs?repo=app&queue=unknown".to_owned(),
+            "queue_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/prs/7".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/prs/7/events".to_owned(),
+            "pr_not_found",
         ),
         (
             "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7/merge".to_owned(),
+            "/orgs/acme/repos/app/prs/7/cancel".to_owned(),
+            "pr_not_found",
         ),
-        ("POST", "/orgs/acme/repos/app/queues/main/delete".to_owned()),
-        ("GET", format!("/orgs/acme/runs/{run}")),
+        (
+            "POST",
+            "/orgs/acme/repos/app/prs/7/restart".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/prs/7/merge".to_owned(),
+            "route_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/queues/main/delete".to_owned(),
+            "route_not_found",
+        ),
+        ("GET", format!("/orgs/acme/runs/{run}"), "run_not_found"),
     ];
 
-    for (method, path) in missing {
+    for (method, path, code) in missing {
         let (status, problem) = call(&addr, &token, method, &path, None).await;
 
         assert_eq!(
             (status, &problem["code"]),
-            (404, &serde_json::json!("not_found")),
+            (404, &serde_json::json!(code)),
             "{method} {path}: {problem}"
         );
     }
@@ -3957,13 +4082,13 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
     let (_, document) = call(&addr, &token, "GET", "/openapi.json", None).await;
     let paths: Vec<&String> = document["paths"].as_object().unwrap().keys().collect();
     assert!(
-        paths
-            .iter()
-            .all(|path| path.starts_with("/orgs/{org}/") || *path == "/me"),
-        "only `/me`, the user of a session, is outside an organization: {paths:?}"
+        paths.iter().all(|path| path.starts_with("/orgs/{org}")
+            || path.starts_with("/user")
+            || *path == "/instance"),
+        "only the person of a session and the instance are outside an organization: {paths:?}"
     );
     assert!(
-        paths.contains(&&"/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel".to_owned()),
+        paths.contains(&&"/orgs/{org}/repos/{repo}/prs/{number}/cancel".to_owned()),
         "{paths:?}"
     );
     assert!(
@@ -4105,18 +4230,20 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
     let cancel = CancellationToken::new();
     let (addr, token) = serve_module_api(&pool, &cancel).await;
 
-    let client =
-        cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
-            .unwrap();
-    let listed = client.org_queues("acme").await.unwrap().queues;
     let (status, document) = call(&addr, &token, "GET", "/orgs/acme/queues", None).await;
+    let listed = serde_json::from_value::<cihub_api_types::QueueList>(document.clone())
+        .unwrap()
+        .queues;
+    let paged = every_page(&addr, &token, "/orgs/acme/queues", "queues").await;
+
+    assert_eq!(&paged, document["queues"].as_array().unwrap());
 
     let counters: Vec<_> = listed
         .iter()
         .map(|entry| {
             (
                 entry.repo.as_str(),
-                entry.queue.name.as_str(),
+                entry.name.as_str(),
                 [
                     entry.counts.not_ready,
                     entry.counts.pending,
@@ -4153,7 +4280,7 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
             ("app", "release", [0, 0, 0, 0, 0], 0, 0, None),
         ]
     );
-    assert_eq!(listed[1].queue.id, app_main);
+    assert_eq!(listed[1].id, app_main);
     assert_eq!(status, 200, "{document}");
     assert_eq!(
         document["queues"][1]["last_merged_at"],
@@ -4162,16 +4289,16 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
     assert_eq!(document["queues"][2]["last_merged_at"], Value::Null);
     assert_eq!(document["queues"][1]["counts"]["pending_failure"], 1);
 
-    let access: Vec<_> = listed.iter().map(|entry| entry.queue.access).collect();
+    let access: Vec<_> = listed.iter().map(|entry| entry.access).collect();
 
     assert_eq!(
         access,
         [QueueAccess::Suspended, QueueAccess::Ok, QueueAccess::Ok]
     );
-    assert_eq!(listed[1].queue.strategy, Strategy::Pipelined, "the default");
-    assert!(!listed[1].queue.has_config_file);
-    assert_eq!(listed[1].queue.state_changed_by.as_deref(), Some("octocat"));
-    assert_eq!(listed[2].queue.state_changed_by, None);
+    assert_eq!(listed[1].strategy, Strategy::Pipelined, "the default");
+    assert!(!listed[1].has_config_file);
+    assert_eq!(listed[1].state_changed_by.as_deref(), Some("octocat"));
+    assert_eq!(listed[2].state_changed_by, None);
 
     cancel.cancel();
 }
@@ -4194,7 +4321,13 @@ async fn the_api_lists_no_queue_for_an_organization_without_one(pool: PgPool) {
 
     let listed = call(&addr, &token, "GET", "/orgs/acme/queues", None).await;
 
-    assert_eq!(listed, (200, serde_json::json!({ "queues": [] })));
+    assert_eq!(
+        listed,
+        (
+            200,
+            serde_json::json!({ "queues": [], "has_more": false, "count": 0, "cursor": null })
+        )
+    );
     cancel.cancel();
 }
 
@@ -5602,7 +5735,7 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
     let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n";
     let queue = "/orgs/acme/repos/app/queues/main";
     let pause = r#"{"state":"paused"}"#;
-    let direct = r#"{"pr_number":1,"direct":true}"#;
+    let direct = r#"{"queue":"main","direct":true}"#;
 
     target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
     q.deliver().await;
@@ -5619,7 +5752,7 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
         &member,
         true,
         "POST",
-        &format!("{queue}/prs"),
+        "/orgs/acme/repos/app/prs/1/submit",
         direct,
     )
     .await;

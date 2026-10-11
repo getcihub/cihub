@@ -7,7 +7,8 @@ use std::io::Write;
 
 use anyhow::{Context, bail};
 use cihub_api_types::{PriorityInput, Queue, RequestedQueueState, SubmitPr};
-use cihub_client::{Client, QueuePath};
+use cihub_client::{Client, QueuePath, RepoPath};
+use cihub_domain::ItemState;
 use clap::{Args, Subcommand};
 use secrecy::SecretString;
 
@@ -39,9 +40,9 @@ enum QueueCommand {
         #[arg(long)]
         no_batch: bool,
     },
-    /// Takes the PR out of the queue.
+    /// Takes the PR out of its queue, whatever `--queue` names.
     Cancel { pr: u64 },
-    /// Tests the PR again.
+    /// Tests the PR again, in its queue, whatever `--queue` names.
     Restart { pr: u64 },
     /// The state of the queue, or of a PR.
     Status { pr: Option<u64> },
@@ -62,7 +63,11 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
         Some(repo) => repo,
         None => repo::from_git()?,
     };
-    let queues = client.queues(&owner, &name).await?.queues;
+    let repo = RepoPath {
+        org: &owner,
+        repo: &name,
+    };
+    let queues = client.queues(repo).await?.queues;
     let queue = pick_queue(queues, args.queue.as_deref(), &format!("{owner}/{name}"))?;
     let path = QueuePath {
         org: &owner,
@@ -81,20 +86,20 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
                 Err(_) => PriorityInput::Name(text),
             });
             let request = SubmitPr {
-                pr_number: pr,
+                queue: Some(queue.name.clone()),
                 priority,
                 no_batch,
                 direct: false,
             };
-            client.submit(path, &request).await?;
+            client.submit(repo, pr, &request).await?;
             writeln!(out, "#{pr} submitted to `{}`", queue.name)?;
         }
         QueueCommand::Cancel { pr } => {
-            client.cancel(path, pr).await?;
+            client.cancel(repo, pr).await?;
             writeln!(out, "#{pr}: cancel asked")?;
         }
         QueueCommand::Restart { pr } => {
-            client.restart(path, pr).await?;
+            client.restart(repo, pr).await?;
             writeln!(out, "#{pr}: restart asked")?;
         }
         QueueCommand::Status { pr } => status(out, &client, path, &queue, pr).await?,
@@ -127,19 +132,29 @@ async fn status(
         if let Some(error) = &queue.config_error {
             writeln!(out, "  configuration file not valid: {error}")?;
         }
-        for item in client.items(path, 100).await?.items {
-            if item.is_current && !item.state.is_terminal() {
-                writeln!(
-                    out,
-                    "  #{} {} ({})",
-                    item.pr_number, item.state, item.state_description
-                )?;
-            }
+        let live = [
+            ItemState::NotReady,
+            ItemState::Pending,
+            ItemState::Testing,
+            ItemState::PendingFailure,
+            ItemState::TestsPassed,
+        ]
+        .map(ItemState::as_str);
+        for pr in client.prs(path, &live).await?.prs {
+            writeln!(
+                out,
+                "  #{} {} ({})",
+                pr.number, pr.state, pr.state_description
+            )?;
         }
         return Ok(());
     };
 
-    let item = client.pr(path, pr, false).await?.item;
+    let repo = RepoPath {
+        org: path.org,
+        repo: path.repo,
+    };
+    let item = client.pr(repo, pr).await?;
     let position = item
         .position
         .map(|p| format!(", position {p}"))
@@ -226,6 +241,15 @@ mod tests {
             "state": "running", "mode": "single", "state_changed_at": "2026-10-01T09:00:00Z",
             "state_changed_by": null, "strategy": "pipelined", "target_head_sha": null,
             "access": "ok", "has_config_file": false, "config_sha": null, "config_error": null,
+            "repo": "app", "merged_last_24h": 0, "failed_last_24h": 0, "last_merged_at": null,
+            "counts": { "not_ready": 0, "pending": 0, "testing": 0, "pending_failure": 0,
+                        "tests_passed": 0 },
+            "live_runs": 0, "median_run_seconds": null,
+            "window": { "current": 1, "floor": 1, "ceiling": 1 },
+            "settings": { "batching_enabled": false, "batching_size": 1,
+                          "batching_max_wait_minutes": 0, "failure_budget_retries": 0,
+                          "merge_method": "squash" },
+            "config_check": { "findings": [], "checked_at": null },
         }))
         .unwrap()
     }

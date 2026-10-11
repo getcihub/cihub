@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
-import type { Me } from "../client/types.gen";
+import type { Me } from "../session";
 import { signOutAndLeave } from "../session";
 import { EmptyState } from "../ui/EmptyState";
 import { LostIllustration } from "../ui/illustrations";

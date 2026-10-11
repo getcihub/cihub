@@ -1,7 +1,7 @@
 //! `GET /orgs/{org}/stream`: the changes of the queues of an organization, as
 //! server-sent events, for the pages of the dashboard.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -12,7 +12,9 @@ use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, QueueChanged};
 use cihub_domain::{ApiScope, OrgId};
-use cihub_platform::{ApiError, ApiGrant, ApiPath, GrantActor, QueueNews, QueueNewsFeed};
+use cihub_platform::{
+    ApiError, ApiGrant, ApiPath, GrantActor, QueueNews, QueueNewsFeed, error_responses,
+};
 use cihub_store::PgPool;
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::sync::broadcast::Receiver;
@@ -20,6 +22,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::time::{Instant, Interval};
 use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
+use utoipa::openapi::{self, RefOr};
 
 /// A ping keeps the proxies from closing a quiet stream.
 const PING_EVERY: Duration = Duration::from_secs(15);
@@ -39,6 +42,15 @@ const BUFFER_BYTES: usize = 16 * 1024;
 
 /// The streams that a token or a person keeps open at once, a few tabs.
 const STREAMS_PER_CALLER: usize = 8;
+
+/// The errors of the stream that a route of the platform does not answer.
+pub(crate) struct StreamErrors;
+
+impl utoipa::IntoResponses for StreamErrors {
+    fn responses() -> BTreeMap<String, RefOr<openapi::Response>> {
+        error_responses(&[ErrorCode::TooManyStreams])
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct Streams {
@@ -62,15 +74,28 @@ impl Drop for Opened {
     }
 }
 
-/// The changes of the queues of the organization: an event `queue_changed`
-/// for each, and a ping. The stream ends when the server stops, when the
-/// server lost changes, and after a few minutes: the browser opens it again
-/// and reads everything.
+/// Follow the queues
+///
+/// The changes of the queues of the organization, as server-sent events: an
+/// event `queue_changed` each time what the pages of a queue show changes,
+/// whose data is a `QueueChanged`, and a comment `: ping` every 15 seconds.
+/// The stream ends after 5 minutes, when the server stops, and when it lost
+/// changes: open it again after `retry` milliseconds, and read the queues
+/// again.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/stream",
-    params(("org" = String, Path, description = "The slug of the organization")),
-    responses((status = 200, content_type = "text/event-stream", body = QueueChanged)),
+    tag = "Live updates",
+    params(("org" = String, Path, description = "The slug of the organization.", example = "acme")),
+    responses(
+        (
+            status = 200,
+            description = "The stream of the changes.",
+            content_type = "text/event-stream",
+            body = QueueChanged
+        ),
+        StreamErrors
+    ),
     security(("token" = ["queues:read"]))
 )]
 pub(crate) async fn stream(
@@ -110,7 +135,7 @@ fn open_for(streams: &Streams, caller: GrantActor) -> Result<Opened, ApiError> {
 
     if *count >= STREAMS_PER_CALLER {
         return Err(ApiError::new(
-            ErrorCode::RateLimited,
+            ErrorCode::TooManyStreams,
             format!("at most {STREAMS_PER_CALLER} streams at once per token or person"),
         ));
     }

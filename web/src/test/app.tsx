@@ -4,6 +4,7 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 
 import { client } from "../client/client.gen";
+import type { ErrorCode } from "../client/types.gen";
 import { routeTree } from "../routeTree.gen";
 import { sendCsrfToken } from "../session";
 
@@ -17,7 +18,7 @@ export type Answer = [number, unknown];
  */
 export type Answers = Record<string, Answer | Answer[]>;
 
-export const problem = (status: number, code: string) => ({
+export const problem = (status: number, code: ErrorCode) => ({
   type: "about:blank",
   title: code,
   status,
@@ -31,7 +32,7 @@ export function renderApp(path: string, answers: Answers) {
   const answerOf = (url: URL): Answer => {
     const key = `${url.pathname}${decodeURIComponent(url.search)}`;
     const found = answers[key] ? key : url.pathname;
-    const answer = answers[found] ?? [404, problem(404, "not_found")];
+    const answer = answers[found] ?? [404, problem(404, "route_not_found")];
     const call = calls.get(found) ?? 0;
     calls.set(found, call + 1);
     if (typeof answer[0] === "number") {

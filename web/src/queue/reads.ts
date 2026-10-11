@@ -1,11 +1,19 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import {
-  configCheckOptions,
   getQueueOptions,
   graphOptions,
-  listItemsOptions,
+  listOrgQueuesOptions,
+  listPrsOptions,
 } from "../client/@tanstack/react-query.gen";
+
+/**
+ * The read of the queues of `org`: one page of the most queues that a page holds, which the frame, the overview
+ * and the stream share.
+ */
+export function orgQueuesOptions(org: string) {
+  return listOrgQueuesOptions({ path: { org }, query: { limit: 100 } });
+}
 
 /** The tabs of the items of a queue. */
 export const TABS = ["live", "merged", "ended"] as const;
@@ -34,12 +42,13 @@ export function sinceOf(now: number): string {
 }
 
 function itemsOf(path: QueuePath, tab: Tab, now: number) {
+  const { org, repo, queue } = path;
   const query =
     tab === "live"
-      ? { state: STATES_OF[tab], take: 100 }
-      : { state: STATES_OF[tab], state_changed_since: sinceOf(now), take: 100 };
+      ? { repo, queue, state: STATES_OF[tab], sort: "position" as const, limit: 100 }
+      : { repo, queue, state: STATES_OF[tab], state_changed_since: sinceOf(now), limit: 100 };
 
-  return listItemsOptions({ path, query });
+  return listPrsOptions({ path: { org }, query });
 }
 
 /**
@@ -49,7 +58,6 @@ export function queueReads(path: QueuePath, tab: Tab, now: number) {
   return {
     detail: getQueueOptions({ path }),
     graph: graphOptions({ path }),
-    check: configCheckOptions({ path }),
     live: itemsOf(path, "live", now),
     tab: itemsOf(path, tab, now),
   };
@@ -59,10 +67,10 @@ export function queueReads(path: QueuePath, tab: Tab, now: number) {
 const READS_OF_A_QUEUE = new Set([
   "getQueue",
   "graph",
-  "listItems",
+  "listPrs",
   "getPr",
-  "testRun",
-  "listOrgPrs",
+  "listEvents",
+  "getRun",
   "listOrgQueues",
 ]);
 

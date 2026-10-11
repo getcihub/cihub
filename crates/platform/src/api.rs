@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 
 use axum::Json;
@@ -10,6 +11,9 @@ use cihub_domain::{ApiScope, ApiTokenId, OrgId, UserId};
 use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::de::DeserializeOwned;
 use tracing::error;
+use utoipa::openapi::example::Example;
+use utoipa::openapi::schema::{ObjectBuilder, Type};
+use utoipa::openapi::{self, Content, Header, Ref, RefOr, Responses};
 
 /// What a request may do in the organization of its URL.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,7 +45,7 @@ impl ApiGrant {
             GrantActor::User(_) => "the role of the user",
         };
         Err(ApiError::new(
-            ErrorCode::Forbidden,
+            ErrorCode::ScopeMissing,
             format!("{who} lacks the scope `{scope}`"),
         ))
     }
@@ -69,7 +73,10 @@ impl ApiGrant {
                 .await?;
 
         if !is_grant_org {
-            return Err(ApiError::not_found("organization"));
+            return Err(ApiError::new(
+                ErrorCode::OrgNotFound,
+                format!("organization `{org}` not found"),
+            ));
         }
 
         Ok(tx)
@@ -108,10 +115,6 @@ impl ApiError {
         }
     }
 
-    pub fn not_found(what: &str) -> Self {
-        Self::new(ErrorCode::NotFound, format!("{what} not found"))
-    }
-
     pub fn invalid(detail: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRequest, detail.into())
     }
@@ -122,15 +125,76 @@ impl ApiError {
     }
 
     pub fn status(&self) -> StatusCode {
-        match self.code {
-            ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            ErrorCode::Forbidden | ErrorCode::CsrfRefused => StatusCode::FORBIDDEN,
-            ErrorCode::NotFound => StatusCode::NOT_FOUND,
-            ErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
-            ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-            ErrorCode::InvalidState => StatusCode::CONFLICT,
-            ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+        status_of(self.code)
+    }
+}
+
+fn status_of(code: ErrorCode) -> StatusCode {
+    StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// The responses of the `OpenAPI` document for the errors `codes`, as an
+/// `IntoResponses` of a route gives them.
+pub fn error_responses(codes: &[ErrorCode]) -> BTreeMap<String, RefOr<openapi::Response>> {
+    let mut responses = Responses::new();
+    for code in codes {
+        document_error(&mut responses, *code);
+    }
+
+    responses.responses
+}
+
+/// Adds the error `code` to the responses of a route in the `OpenAPI`
+/// document: the response of its status lists it, with an example.
+pub fn document_error(responses: &mut Responses, code: ErrorCode) {
+    let status = status_of(code);
+    let entry = responses
+        .responses
+        .entry(status.as_str().to_owned())
+        .or_insert_with(|| RefOr::T(openapi::Response::new("")));
+    let RefOr::T(response) = entry else {
+        return;
+    };
+
+    let entry = response
+        .content
+        .entry(PROBLEM_JSON.to_owned())
+        .or_insert_with(|| RefOr::T(Content::new(Some(Ref::from_schema_name("Problem")))));
+    let RefOr::T(content) = entry else {
+        return;
+    };
+
+    let name = code.to_string();
+
+    if content.examples.contains_key(&name) {
+        return;
+    }
+
+    let problem = Problem {
+        kind: "about:blank".to_owned(),
+        title: status.canonical_reason().unwrap_or_default().to_owned(),
+        status: status.as_u16(),
+        detail: code.sentence().to_owned(),
+        code,
+    };
+    let mut example = Example::new();
+    example.summary.clone_from(&name);
+    example.value = serde_json::to_value(problem).ok();
+    content.examples.insert(name.clone(), RefOr::T(example));
+
+    let line = format!("- `{name}`: {}", code.sentence());
+    response.description = if response.description.is_empty() {
+        line
+    } else {
+        format!("{}\n{line}", response.description)
+    };
+
+    if code == ErrorCode::RateLimited {
+        let mut retry_after = Header::new(ObjectBuilder::new().schema_type(Type::Integer).build());
+        retry_after.description = Some("The seconds to wait before the next request.".to_owned());
+        response
+            .headers
+            .insert("Retry-After".to_owned(), RefOr::T(retry_after));
     }
 }
 

@@ -2,10 +2,9 @@ import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { type ErrorComponentProps, createFileRoute, notFound } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-import { getPrOptions } from "../client/@tanstack/react-query.gen";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
 import { DrawerFrame } from "../queue/DrawerFrame";
-import { PrDrawer } from "../queue/PrDrawer";
+import { PrDrawer, prReads } from "../queue/PrDrawer";
 import { isProblem } from "../session";
 
 /** The page of a PR: the page of its queue, with the drawer of the PR open. */
@@ -22,10 +21,10 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue/prs/$
     stringify: ({ number }) => ({ number: String(number) }),
   },
   loader: async ({ context: { queryClient }, params: { org, repo, queue, number } }) => {
-    // A PR that is not in the queue answers 404: the drawer says so.
-    await queryClient
-      .query(getPrOptions({ path: { org, repo, queue, number }, query: { include: "timeline" } }))
-      .catch(() => undefined);
+    // A PR that the queue never had answers 404: the drawer says so.
+    const [pr, events] = prReads({ org, repo, queue }, number);
+    const ignore = () => undefined;
+    await Promise.all([queryClient.query(pr).catch(ignore), queryClient.query(events).catch(ignore)]);
   },
   component: PrRoute,
   errorComponent: PrError,
@@ -45,7 +44,7 @@ function PrError(props: ErrorComponentProps) {
   // The next visit of the PR reads it again.
   useEffect(() => queries.reset, [queries]);
 
-  if (!isProblem(props.error, "not_found")) {
+  if (!isProblem(props.error, "pr_not_found")) {
     return <ServerErrorPage {...props} />;
   }
 

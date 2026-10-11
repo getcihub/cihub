@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CancelItemData, CancelItemResponses, ConfigCheckData, ConfigCheckResponses, GetPrData, GetPrResponses, GetQueueData, GetQueueResponses, GraphData, GraphResponses, ListAuditData, ListAuditResponses, ListItemsData, ListItemsResponses, ListOrgPrsData, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesResponses, ListQueuesData, ListQueuesResponses, ListReposData, ListReposResponses, MeData, MeResponses, RestartItemData, RestartItemResponses, ResyncQueueData, ResyncQueueResponses, StreamData, StreamResponse, StreamResponses, SubmitData, SubmitResponses, TestRunData, TestRunResponses, UpdateQueueData, UpdateQueueResponses } from './types.gen';
+import type { CancelData, CancelErrors, CancelResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -19,22 +19,49 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 };
 
 /**
- * The user of the session and the organizations that they reach.
+ * Get the instance
+ *
+ * The version of the instance, and the page of the SCM that installs the
+ * App.
+ *
+ * **Access**: any API token or session.
  */
-export const me = <ThrowOnError extends boolean = false>(options?: Options<MeData, ThrowOnError>): RequestResult<MeResponses, unknown, ThrowOnError> => (options?.client ?? client).get<MeResponses, unknown, ThrowOnError>({
-    security: [{
+export const getInstance = <ThrowOnError extends boolean = false>(options?: Options<GetInstanceData, ThrowOnError>): RequestResult<GetInstanceResponses, GetInstanceErrors, ThrowOnError> => (options?.client ?? client).get<GetInstanceResponses, GetInstanceErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/me',
+    url: '/instance',
     ...options
 });
 
 /**
- * The audit log of the organization, newest first.
+ * Get an organization
+ *
+ * The organization, and the role of the person of the session in it.
+ *
+ * **Access**: any API token or session.
  */
-export const listAudit = <ThrowOnError extends boolean = false>(options: Options<ListAuditData, ThrowOnError>): RequestResult<ListAuditResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListAuditResponses, unknown, ThrowOnError>({
+export const getOrg = <ThrowOnError extends boolean = false>(options: Options<GetOrgData, ThrowOnError>): RequestResult<GetOrgResponses, GetOrgErrors, ThrowOnError> => (options.client ?? client).get<GetOrgResponses, GetOrgErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}',
+    ...options
+});
+
+/**
+ * List the audit log
+ *
+ * The changes of the queues and the actions on the PRs that a person or a
+ * token asked for, newest first.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const listAudit = <ThrowOnError extends boolean = false>(options: Options<ListAuditData, ThrowOnError>): RequestResult<ListAuditResponses, ListAuditErrors, ThrowOnError> => (options.client ?? client).get<ListAuditResponses, ListAuditErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -45,11 +72,15 @@ export const listAudit = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
- * The current items of a person in every queue of the organization, and
- * those that merged a moment ago, each with the PRs that merge before it
- * and an estimate: "Your pull requests" in the dashboard.
+ * List PRs
+ *
+ * The PRs in the queues of the organization: the current submission of each
+ * PR in each queue, with the PRs that merge before it and an estimate.
+ * Without a filter, every PR, live or ended.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Options<ListOrgPrsData, ThrowOnError>): RequestResult<ListOrgPrsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListOrgPrsResponses, unknown, ThrowOnError>({
+export const listPrs = <ThrowOnError extends boolean = false>(options: Options<ListPrsData, ThrowOnError>): RequestResult<ListPrsResponses, ListPrsErrors, ThrowOnError> => (options.client ?? client).get<ListPrsResponses, ListPrsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -60,10 +91,15 @@ export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Option
 });
 
 /**
- * Every queue of the organization with its counters, for the overview of
- * the dashboard.
+ * List the queues of the organization
+ *
+ * Every queue of the organization, or of one repository, with its counters
+ * and its settings, by repository name then queue name: the overview of the
+ * dashboard.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Options<ListOrgQueuesData, ThrowOnError>): RequestResult<ListOrgQueuesResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListOrgQueuesResponses, unknown, ThrowOnError>({
+export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Options<ListOrgQueuesData, ThrowOnError>): RequestResult<ListOrgQueuesResponses, ListOrgQueuesErrors, ThrowOnError> => (options.client ?? client).get<ListOrgQueuesResponses, ListOrgQueuesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -74,9 +110,14 @@ export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 /**
- * The repositories of the organization.
+ * List the repositories
+ *
+ * The repositories of the organization that the App reaches, by namespace
+ * then name.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listRepos = <ThrowOnError extends boolean = false>(options: Options<ListReposData, ThrowOnError>): RequestResult<ListReposResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListReposResponses, unknown, ThrowOnError>({
+export const listRepos = <ThrowOnError extends boolean = false>(options: Options<ListReposData, ThrowOnError>): RequestResult<ListReposResponses, ListReposErrors, ThrowOnError> => (options.client ?? client).get<ListReposResponses, ListReposErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -87,9 +128,126 @@ export const listRepos = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
- * The queues of a repository.
+ * Get a repository
+ *
+ * The repository, whatever the case of its name.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listQueues = <ThrowOnError extends boolean = false>(options: Options<ListQueuesData, ThrowOnError>): RequestResult<ListQueuesResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListQueuesResponses, unknown, ThrowOnError>({
+export const getRepo = <ThrowOnError extends boolean = false>(options: Options<GetRepoData, ThrowOnError>): RequestResult<GetRepoResponses, GetRepoErrors, ThrowOnError> => (options.client ?? client).get<GetRepoResponses, GetRepoErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}',
+    ...options
+});
+
+/**
+ * Get a PR
+ *
+ * The last submission of the PR to a queue of the repository, with the PRs
+ * that merge before it and an estimate.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const getPr = <ThrowOnError extends boolean = false>(options: Options<GetPrData, ThrowOnError>): RequestResult<GetPrResponses, GetPrErrors, ThrowOnError> => (options.client ?? client).get<GetPrResponses, GetPrErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs/{number}',
+    ...options
+});
+
+/**
+ * Cancel a PR
+ *
+ * Takes the PR out of its queue: its current submission ends `cancelled`
+ * (`admin_requested`), and stays readable.
+ *
+ * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ */
+export const cancel = <ThrowOnError extends boolean = false>(options: Options<CancelData, ThrowOnError>): RequestResult<CancelResponses, CancelErrors, ThrowOnError> => (options.client ?? client).post<CancelResponses, CancelErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs/{number}/cancel',
+    ...options
+});
+
+/**
+ * List the events of a PR
+ *
+ * The history of the PR in the queues of the repository, every submission
+ * together, oldest first.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listEvents = <ThrowOnError extends boolean = false>(options: Options<ListEventsData, ThrowOnError>): RequestResult<ListEventsResponses, ListEventsErrors, ThrowOnError> => (options.client ?? client).get<ListEventsResponses, ListEventsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs/{number}/events',
+    ...options
+});
+
+/**
+ * Restart the tests of a PR
+ *
+ * Tests again the current submission of the PR, in `testing` or
+ * `pending_failure` (`tests_restarted_by_api_request`).
+ *
+ * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ */
+export const restart = <ThrowOnError extends boolean = false>(options: Options<RestartData, ThrowOnError>): RequestResult<RestartResponses, RestartErrors, ThrowOnError> => (options.client ?? client).post<RestartResponses, RestartErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs/{number}/restart',
+    ...options
+});
+
+/**
+ * Submit a PR
+ *
+ * The queue takes the PR at its next reconciliation. A queue that accepts
+ * nothing, and a PR already in a queue, answer `409` at once; the refusals
+ * that need a read of the SCM come later, on the PR.
+ *
+ * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ */
+export const submit = <ThrowOnError extends boolean = false>(options: Options<SubmitData, ThrowOnError>): RequestResult<SubmitResponses, SubmitErrors, ThrowOnError> => (options.client ?? client).post<SubmitResponses, SubmitErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs/{number}/submit',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * List the queues of a repository
+ *
+ * The queues of the repository with their counters and their settings, by
+ * name. The first `/cihub merge` on a PR of a branch creates its queue.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listRepoQueues = <ThrowOnError extends boolean = false>(options: Options<ListRepoQueuesData, ThrowOnError>): RequestResult<ListRepoQueuesResponses, ListRepoQueuesErrors, ThrowOnError> => (options.client ?? client).get<ListRepoQueuesResponses, ListRepoQueuesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -100,10 +258,14 @@ export const listQueues = <ThrowOnError extends boolean = false>(options: Option
 });
 
 /**
- * The queue with its counters, its window and its settings, for its page
- * in the dashboard.
+ * Get a queue
+ *
+ * The queue with its counters, its window, its settings and the last check
+ * of its configuration: the page of the queue in the dashboard.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const getQueue = <ThrowOnError extends boolean = false>(options: Options<GetQueueData, ThrowOnError>): RequestResult<GetQueueResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetQueueResponses, unknown, ThrowOnError>({
+export const getQueue = <ThrowOnError extends boolean = false>(options: Options<GetQueueData, ThrowOnError>): RequestResult<GetQueueResponses, GetQueueErrors, ThrowOnError> => (options.client ?? client).get<GetQueueResponses, GetQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -114,10 +276,14 @@ export const getQueue = <ThrowOnError extends boolean = false>(options: Options<
 });
 
 /**
- * Asks the queue for a new state; the queue changes it at its next
- * reconciliation.
+ * Change the state of a queue
+ *
+ * Asks the queue for `running`, `paused` or `draining`; the queue changes
+ * at its next reconciliation.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
  */
-export const updateQueue = <ThrowOnError extends boolean = false>(options: Options<UpdateQueueData, ThrowOnError>): RequestResult<UpdateQueueResponses, unknown, ThrowOnError> => (options.client ?? client).patch<UpdateQueueResponses, unknown, ThrowOnError>({
+export const updateQueue = <ThrowOnError extends boolean = false>(options: Options<UpdateQueueData, ThrowOnError>): RequestResult<UpdateQueueResponses, UpdateQueueErrors, ThrowOnError> => (options.client ?? client).patch<UpdateQueueResponses, UpdateQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -132,28 +298,15 @@ export const updateQueue = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
- * What the configuration of the SCM missed for the queue at its last check.
- *
- * The scheduler checks it every hour, and `…/resync` at once.
- */
-export const configCheck = <ThrowOnError extends boolean = false>(options: Options<ConfigCheckData, ThrowOnError>): RequestResult<ConfigCheckResponses, unknown, ThrowOnError> => (options.client ?? client).get<ConfigCheckResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/config-check',
-    ...options
-});
-
-/**
- * The merge graph of the queue, read from its projections only.
+ * Get the merge graph
  *
  * The head of the target branch, the live items in order, the predecessors
  * that the test of each one merges before it, and the last run of each live
  * group.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const graph = <ThrowOnError extends boolean = false>(options: Options<GraphData, ThrowOnError>): RequestResult<GraphResponses, unknown, ThrowOnError> => (options.client ?? client).get<GraphResponses, unknown, ThrowOnError>({
+export const graph = <ThrowOnError extends boolean = false>(options: Options<GraphData, ThrowOnError>): RequestResult<GraphResponses, GraphErrors, ThrowOnError> => (options.client ?? client).get<GraphResponses, GraphErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -164,83 +317,15 @@ export const graph = <ThrowOnError extends boolean = false>(options: Options<Gra
 });
 
 /**
- * The items of a queue, live and past, newest submission first.
- */
-export const listItems = <ThrowOnError extends boolean = false>(options: Options<ListItemsData, ThrowOnError>): RequestResult<ListItemsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListItemsResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs',
-    ...options
-});
-
-/**
- * Submits a PR, which the queue takes at its next reconciliation.
+ * Read a queue again
  *
- * A draining queue, and a PR already in the queue, answer `409` at once; the
- * refusals that need a read of the SCM come later, on the PR.
+ * Reads again from the SCM each live PR, the checks of each live run, the
+ * head of the target branch and its configuration: the way out after an
+ * incident.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
  */
-export const submit = <ThrowOnError extends boolean = false>(options: Options<SubmitData, ThrowOnError>): RequestResult<SubmitResponses, unknown, ThrowOnError> => (options.client ?? client).post<SubmitResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * The last item of a PR in the queue.
- */
-export const getPr = <ThrowOnError extends boolean = false>(options: Options<GetPrData, ThrowOnError>): RequestResult<GetPrResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetPrResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}',
-    ...options
-});
-
-/**
- * Cancels the current item of the PR (`admin_requested`).
- */
-export const cancelItem = <ThrowOnError extends boolean = false>(options: Options<CancelItemData, ThrowOnError>): RequestResult<CancelItemResponses, unknown, ThrowOnError> => (options.client ?? client).post<CancelItemResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel',
-    ...options
-});
-
-/**
- * Restarts the tests of the current item of the PR, in test
- * (`tests_restarted_by_api_request`).
- */
-export const restartItem = <ThrowOnError extends boolean = false>(options: Options<RestartItemData, ThrowOnError>): RequestResult<RestartItemResponses, unknown, ThrowOnError> => (options.client ?? client).post<RestartItemResponses, unknown, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }, {
-            in: 'cookie',
-            name: '__Host-cihub_session',
-            type: 'apiKey'
-        }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/restart',
-    ...options
-});
-
-/**
- * Reads again from the SCM each live PR, the checks of each live run and
- * the head of the target.
- */
-export const resyncQueue = <ThrowOnError extends boolean = false>(options: Options<ResyncQueueData, ThrowOnError>): RequestResult<ResyncQueueResponses, unknown, ThrowOnError> => (options.client ?? client).post<ResyncQueueResponses, unknown, ThrowOnError>({
+export const resyncQueue = <ThrowOnError extends boolean = false>(options: Options<ResyncQueueData, ThrowOnError>): RequestResult<ResyncQueueResponses, ResyncQueueErrors, ThrowOnError> => (options.client ?? client).post<ResyncQueueResponses, ResyncQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -251,9 +336,15 @@ export const resyncQueue = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
- * The detail of a run.
+ * Get a run
+ *
+ * The run, its test branch, the PRs that it tests and their predecessors,
+ * every check observed on it, and the live runs that depend on it. A job of
+ * the CI reads its run identifier in the last segment of its branch.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const testRun = <ThrowOnError extends boolean = false>(options: Options<TestRunData, ThrowOnError>): RequestResult<TestRunResponses, unknown, ThrowOnError> => (options.client ?? client).get<TestRunResponses, unknown, ThrowOnError>({
+export const getRun = <ThrowOnError extends boolean = false>(options: Options<GetRunData, ThrowOnError>): RequestResult<GetRunResponses, GetRunErrors, ThrowOnError> => (options.client ?? client).get<GetRunResponses, GetRunErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -264,17 +355,59 @@ export const testRun = <ThrowOnError extends boolean = false>(options: Options<T
 });
 
 /**
- * The changes of the queues of the organization: an event `queue_changed`
- * for each, and a ping. The stream ends when the server stops, when the
- * server lost changes, and after a few minutes: the browser opens it again
- * and reads everything.
+ * Follow the queues
+ *
+ * The changes of the queues of the organization, as server-sent events: an
+ * event `queue_changed` each time what the pages of a queue show changes,
+ * whose data is a `QueueChanged`, and a comment `: ping` every 15 seconds.
+ * The stream ends after 5 minutes, when the server stops, and when it lost
+ * changes: open it again after `retry` milliseconds, and read the queues
+ * again.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const stream = <ThrowOnError extends boolean = false>(options: Options<StreamData, ThrowOnError, StreamResponse>): Promise<ServerSentEventsResult<StreamResponses>> => (options.client ?? client).sse.get<StreamResponses, unknown, ThrowOnError>({
+export const stream = <ThrowOnError extends boolean = false>(options: Options<StreamData, ThrowOnError, StreamResponse>): Promise<ServerSentEventsResult<StreamResponses>> => (options.client ?? client).sse.get<StreamResponses, StreamErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
     url: '/orgs/{org}/stream',
+    ...options
+});
+
+/**
+ * Get the user
+ *
+ * The person of the session of the dashboard. An API token stands for no
+ * person: it gets `401`.
+ *
+ * **Access**: a session of the dashboard only.
+ */
+export const getUser = <ThrowOnError extends boolean = false>(options?: Options<GetUserData, ThrowOnError>): RequestResult<GetUserResponses, GetUserErrors, ThrowOnError> => (options?.client ?? client).get<GetUserResponses, GetUserErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/user',
+    ...options
+});
+
+/**
+ * List the organizations of the user
+ *
+ * The organizations where the person of the session has a role, by slug;
+ * none before the App is installed on an account of the person.
+ *
+ * **Access**: a session of the dashboard only.
+ */
+export const listUserOrgs = <ThrowOnError extends boolean = false>(options?: Options<ListUserOrgsData, ThrowOnError>): RequestResult<ListUserOrgsResponses, ListUserOrgsErrors, ThrowOnError> => (options?.client ?? client).get<ListUserOrgsResponses, ListUserOrgsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/user/orgs',
     ...options
 });

@@ -3,10 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Answers, problem, renderApp } from "../test/app";
-import { ada, detailOf, itemOf, noGraph, queueOf } from "../test/fixtures";
+import {
+  ada,
+  answersOfMe,
+  answersOfMine,
+  detailOf,
+  itemOf,
+  liveOf,
+  noGraph,
+  pageOf,
+  queueOf,
+} from "../test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
-const LIVE = `${QUEUE}/prs?state=not_ready,pending,testing,pending_failure,tests_passed&take=100`;
+const PR = "/api/v1/orgs/acme/repos/web/prs";
+const LIVE = liveOf();
 const entry = queueOf("web", "main");
 const testing = itemOf(118, "testing", {
   position: 1000,
@@ -16,13 +27,12 @@ const testing = itemOf(118, "testing", {
 
 function answersFor(changes: Answers): Answers {
   return {
-    "/api/v1/me": [200, ada],
-    "/api/v1/orgs/acme/prs": [200, { prs: [] }],
-    "/api/v1/orgs/acme/queues": [200, { queues: [entry] }],
+    ...answersOfMe(ada),
+    ...answersOfMine("acme"),
+    "/api/v1/orgs/acme/queues": [200, pageOf("queues", [entry])],
     [QUEUE]: [200, detailOf(entry)],
     [`${QUEUE}/graph`]: [200, noGraph],
-    [`${QUEUE}/config-check`]: [200, { findings: [], checked_at: null }],
-    [LIVE]: [200, { items: [testing] }],
+    [LIVE]: [200, pageOf("prs", [testing])],
     ...changes,
   };
 }
@@ -103,7 +113,8 @@ describe("the drawer of a PR", () => {
     renderApp(
       "/orgs/acme/repos/web/queues/main/prs/118",
       answersFor({
-        [`${QUEUE}/prs/118?include=timeline`]: [200, { item: testing, timeline }],
+        [`${PR}/118`]: [200, testing],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
         "/api/v1/orgs/acme/runs/run_1": [200, run],
       }),
     );
@@ -125,7 +136,10 @@ describe("the drawer of a PR", () => {
   it("says that a PR is not in the queue, over the page of the queue", async () => {
     renderApp(
       "/orgs/acme/repos/web/queues/main/prs/999",
-      answersFor({ [`${QUEUE}/prs/999?include=timeline`]: [404, problem(404, "not_found")] }),
+      answersFor({
+        [`${PR}/999`]: [404, problem(404, "pr_not_found")],
+        [`${PR}/999/events?limit=100`]: [404, problem(404, "pr_not_found")],
+      }),
     );
 
     expect(await screen.findByRole("heading", { name: "#999 is not in this queue" })).toBeInTheDocument();
@@ -136,7 +150,8 @@ describe("the drawer of a PR", () => {
     const router = renderApp(
       "/orgs/acme/repos/web/queues/main/prs/118",
       answersFor({
-        [`${QUEUE}/prs/118?include=timeline`]: [200, { item: testing, timeline }],
+        [`${PR}/118`]: [200, testing],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
         "/api/v1/orgs/acme/runs/run_1": [200, run],
       }),
     );

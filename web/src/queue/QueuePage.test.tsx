@@ -3,18 +3,28 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Answers, renderApp } from "../test/app";
 import { sinceOf } from "./reads";
-import type { GraphRun, Item } from "../client/types.gen";
-import { ada, detailOf, itemOf, noGraph, queueOf } from "../test/fixtures";
+import type { GraphRun, Pr } from "../client/types.gen";
+import {
+  ada,
+  answersOfMe,
+  answersOfMine,
+  detailOf,
+  itemOf,
+  liveOf,
+  noGraph,
+  pageOf,
+  queueOf,
+} from "../test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
-const LIVE = `${QUEUE}/prs?state=not_ready,pending,testing,pending_failure,tests_passed&take=100`;
+const LIVE = liveOf();
 const entry = queueOf("web", "main");
 
-const nodeOf = ({ id, pr_number, state, position }: Item) => ({ item_id: id, pr_number, state, position });
+const nodeOf = ({ id, number, state, position }: Pr) => ({ item_id: id, pr_number: number, state, position });
 
-function runOf(item: Item, startedAt: string, predecessors: Item[] = []): GraphRun {
+function runOf(item: Pr, startedAt: string, predecessors: Pr[] = []): GraphRun {
   return {
-    run_id: `run_${String(item.pr_number)}`,
+    run_id: `run_${String(item.number)}`,
     item_ids: [item.id],
     predecessor_ids: predecessors.map((predecessor) => predecessor.id),
     attempt: 1,
@@ -25,13 +35,12 @@ function runOf(item: Item, startedAt: string, predecessors: Item[] = []): GraphR
 
 function answersFor(changes: Answers): Answers {
   return {
-    "/api/v1/me": [200, ada],
-    "/api/v1/orgs/acme/prs": [200, { prs: [] }],
-    "/api/v1/orgs/acme/queues": [200, { queues: [entry] }],
+    ...answersOfMe(ada),
+    ...answersOfMine("acme"),
+    "/api/v1/orgs/acme/queues": [200, pageOf("queues", [entry])],
     [QUEUE]: [200, detailOf(entry)],
     [`${QUEUE}/graph`]: [200, noGraph],
-    [`${QUEUE}/config-check`]: [200, { findings: [], checked_at: null }],
-    [LIVE]: [200, { items: [] }],
+    [LIVE]: [200, pageOf("prs", [])],
     ...changes,
   };
 }
@@ -75,7 +84,7 @@ describe("the page of a queue", () => {
       answersFor({
         [QUEUE]: [200, detail],
         [`${QUEUE}/graph`]: [200, graph],
-        [LIVE]: [200, { items: [waiting, pending, testing] }],
+        [LIVE]: [200, pageOf("prs", [testing, pending, waiting])],
       }),
     );
 
@@ -116,7 +125,7 @@ describe("the page of a queue", () => {
       answersFor({
         [QUEUE]: [200, detailOf(entry, { counts: { ...entry.counts, testing: 2 } })],
         [`${QUEUE}/graph`]: [200, graph],
-        [LIVE]: [200, { items: [next, head] }],
+        [LIVE]: [200, pageOf("prs", [head, next])],
       }),
     );
 
@@ -125,29 +134,24 @@ describe("the page of a queue", () => {
   });
 
   it("says who paused it, and what the configuration of the SCM misses", async () => {
-    const paused = { ...entry.queue, state: "paused", state_changed_by: "hugo" };
     const finding = {
       code: "up_to_date_required",
       message: "the rules of `main` ask for branches up to date",
     };
-    renderApp(
-      "/orgs/acme/repos/web/queues/main",
-      answersFor({
-        [QUEUE]: [200, detailOf({ ...entry, queue: paused })],
-        [`${QUEUE}/config-check`]: [200, { findings: [finding], checked_at: new Date().toISOString() }],
-      }),
-    );
+    const paused = detailOf(entry, {
+      state: "paused",
+      state_changed_by: "hugo",
+      config_check: { findings: [finding], checked_at: new Date().toISOString() },
+    });
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, paused] }));
 
     expect(await screen.findByText(/^Paused by @hugo/)).toBeInTheDocument();
     expect(screen.getByText(finding.message)).toBeInTheDocument();
   });
 
   it("says that a lost access stops it, rather than a pause", async () => {
-    const lost = { ...entry.queue, state: "paused", access: "suspended" as const };
-    renderApp(
-      "/orgs/acme/repos/web/queues/main",
-      answersFor({ [QUEUE]: [200, detailOf({ ...entry, queue: lost })] }),
-    );
+    const lost = detailOf(entry, { state: "paused", access: "suspended" });
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, lost] }));
 
     expect(await screen.findByText("CIHub lost its access to acme/web.")).toBeInTheDocument();
     expect(screen.queryByText(/^Paused/)).not.toBeInTheDocument();
@@ -169,10 +173,8 @@ describe("the page of a queue", () => {
       "/orgs/acme/repos/web/queues/main?tab=merged",
       answersFor({
         [QUEUE]: [200, detailOf(entry, { merged_last_24h: 1 })],
-        [`${QUEUE}/prs?state=merged&state_changed_since=${sinceOf(Date.now())}&take=100`]: [
-          200,
-          { items: [merged, old] },
-        ],
+        [`/api/v1/orgs/acme/prs?repo=web&queue=main&state=merged&state_changed_since=${sinceOf(Date.now())}&limit=100`]:
+          [200, pageOf("prs", [merged, old])],
       }),
     );
 

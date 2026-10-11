@@ -1,4 +1,4 @@
-import type { OrgPr } from "../client/types.gen";
+import type { Pr } from "../client/types.gen";
 import { itemStateLabel } from "../ui/StateBadge";
 import { CheckIcon } from "../ui/icons";
 import styles from "./Mine.module.css";
@@ -20,18 +20,18 @@ const CARS: Record<string, string> = {
  * The line in front of a PR, toward the target branch: the PR, then the PRs that merge before it, the nearest
  * first, then the branch.
  */
-export function Train({ pr, branch }: { pr: OrgPr; branch: string }) {
+export function Train({ pr, branch }: { pr: Pr; branch: string }) {
   const nearestFirst = [...pr.ahead].reverse();
   const shown = nearestFirst.slice(-SHOWN);
-  const isMerged = pr.item.state === "merged";
+  const isMerged = pr.state === "merged";
 
   return (
     <div
-      className={`${styles.train} ${pr.item.state === "not_ready" ? styles.outside : ""}`}
+      className={`${styles.train} ${pr.state === "not_ready" ? styles.outside : ""}`}
       role="img"
       aria-label={isMerged ? `Merged into ${branch}` : `${plural(pr.ahead.length)} before it, then ${branch}`}
     >
-      {!isMerged && <span className={`${styles.car} ${styles.me} ${CARS[pr.item.state] ?? ""}`} />}
+      {!isMerged && <span className={`${styles.car} ${styles.me} ${CARS[pr.state] ?? ""}`} />}
       {nearestFirst.length > shown.length && (
         <span className={styles.more}>+{nearestFirst.length - shown.length}</span>
       )}

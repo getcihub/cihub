@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { ConfigCheck, QueueDetail } from "../client/types.gen";
+import type { ConfigCheck, Queue } from "../client/types.gen";
 import { timeAgo } from "../time";
 import { DrainIcon, PauseIcon, WarningIcon } from "../ui/icons";
 import styles from "./queue.module.css";
@@ -37,13 +37,13 @@ export function Banners({
   repo,
   now,
 }: {
-  detail: QueueDetail;
+  detail: Queue;
   check: ConfigCheck;
   org: string;
   repo: string;
   now: number;
 }) {
-  const { queue } = detail;
+  const queue = detail;
   const isAccessLost = queue.access === "suspended";
   const when = timeAgo(queue.state_changed_at, now);
 

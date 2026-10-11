@@ -1,7 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { listOrgQueuesOptions, meOptions } from "../client/@tanstack/react-query.gen";
 import { MinePrs } from "../mine/Mine";
 import { useMinePrs } from "../mine/reads";
 import { QueueCards } from "../overview/QueueCards";
@@ -9,6 +8,8 @@ import { EmptyState } from "../ui/EmptyState";
 import { ArrowIcon } from "../ui/icons";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
 import styles from "../ui/ui.module.css";
+import { useMe } from "../session";
+import { orgQueuesOptions } from "../queue/reads";
 
 export const Route = createFileRoute("/orgs/$org/")({
   component: OrgPage,
@@ -18,9 +19,9 @@ export const Route = createFileRoute("/orgs/$org/")({
 
 function OrgPage() {
   const { org } = Route.useParams();
-  const { data: me } = useSuspenseQuery(meOptions());
-  const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
-  const mine = useMinePrs(org, me.login);
+  const me = useMe();
+  const { data } = useSuspenseQuery(orgQueuesOptions(org));
+  const mine = useMinePrs(org);
 
   if (data.queues.length > 0) {
     return (
