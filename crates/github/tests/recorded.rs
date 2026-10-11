@@ -760,7 +760,7 @@ async fn an_account_neither_organization_nor_person_has_no_member() {
         .unwrap();
 
     replay.finish();
-    assert!(listed.is_empty());
+    assert_eq!(listed, []);
 }
 
 /// Written by hand from the documentation of GitHub, not recorded: the
