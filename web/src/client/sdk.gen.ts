@@ -282,8 +282,9 @@ export const testRun = <ThrowOnError extends boolean = false>(options: Options<T
 
 /**
  * The changes of the queues of the organization: an event `queue_changed`
- * for each, and a ping. The stream ends when the server stops, or when the
- * server lost changes: the browser opens it again and reads everything.
+ * for each, and a ping. The stream ends when the server stops, when the
+ * server lost changes, and after a few minutes: the browser opens it again
+ * and reads everything.
  */
 export const stream = <ThrowOnError extends boolean = false>(options: Options<StreamData, ThrowOnError, StreamResponse>): Promise<ServerSentEventsResult<StreamResponses>> => (options.client ?? client).sse.get<StreamResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {

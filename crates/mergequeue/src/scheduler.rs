@@ -186,7 +186,7 @@ impl Reconciler {
 
         // The pages read the queue again once this transaction commits.
         if written + decisions > 0 {
-            notify_queue_changed(conn, target.org_id, queue).await?;
+            notify_queue_changed(conn, target.org_id, queue, Some(log.seq)).await?;
         }
 
         if written + decisions + requested + deferred > 0 {

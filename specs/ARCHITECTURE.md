@@ -156,7 +156,7 @@ configuration file, behind a load balancer. Each role shares its work between th
 
 | Role        | How the replicas share the work                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `web`       | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received while the delivery waits |
+| `web`       | No state of the queues; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received while the delivery waits. Each replica listens to `cihub_queue_changed` on one connection and serves the streams of the pages open on it |
 | `scheduler` | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
 | `worker`    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
 | `notifier`  | Same principle on the log                                                                                                       |
@@ -174,7 +174,7 @@ a loop: take or renew the leases (`lease_owner` and `lease_expires_at` of `queue
 `pg_try_advisory_xact_lock`, run the reconciliation and reset `dirty` to false. The lease assigns a queue to a
 replica; the transaction-level advisory lock guarantees that only one reconciliation applies at a time, including
 during the takeover of an expired lease. Any write on the items of a queue (by the ingestion, by a
-job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. The reconciliation of a
+job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. A reconciliation that writes the log, the check and the read of the configuration file, and the creation of a queue emit `NOTIFY cihub_queue_changed` in their transaction, which the streams of the dashboard follow. The reconciliation of a
 queue never runs in parallel with itself and waits on no I/O other than Postgres: one replica therefore
 handles hundreds of queues. Between two passes, a replica waits for a notification until the next tick that is
 not due yet, between 1 and 30 seconds, so that a `wake_at` is served on time.

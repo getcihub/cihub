@@ -48,7 +48,9 @@ async fn start_until(pool: &PgPool, sim: Arc<Sim>, cancel: CancellationToken) ->
     let dashboard = Dashboard {
         scm: sim,
         public_url: Some(PUBLIC_URL.to_owned()),
-        news: QueueNewsFeed::start(pool.clone(), cancel.clone()),
+        news: QueueNewsFeed::start(pool.clone(), cancel.clone())
+            .await
+            .unwrap(),
     };
     let router = cihub_web::router(pool.clone(), now, github, Vec::new(), dashboard);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -308,10 +310,10 @@ async fn the_stream_carries_the_changes_of_the_organization_only(pool: PgPool) {
     let other_queue = QueueId::from_ulid(Ulid(31));
     let mut tx = begin_system(&pool).await.unwrap();
 
-    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(8)), other_queue)
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(8)), other_queue, Some(3))
         .await
         .unwrap();
-    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(7)), acme_queue)
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(7)), acme_queue, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -336,6 +338,41 @@ async fn the_stream_carries_the_changes_of_the_organization_only(pool: PgPool) {
             .is_none_or(|end| end.ends_with("\r\n0\r\n\r\n")),
         "{end:?}"
     );
+}
+
+/// The stream answers as the other routes: `404` on another organization,
+/// `403` without `queues:read`, and `429` past the streams of a caller.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_stream_is_refused_as_the_other_routes(pool: PgPool) {
+    let cancel = CancellationToken::new();
+    let addr = start_until(&pool, Arc::new(Sim::new()), cancel.clone()).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
+
+    let other = call(&addr, "GET", "/api/v1/orgs/globex/stream", Some(&reader)).await;
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/stream", Some(&writer)).await;
+
+    assert_eq!(other.status, 404, "{}", other.body);
+    assert_eq!(forbidden.status, 403, "{}", forbidden.body);
+
+    let mut open = Vec::new();
+    for _ in 0..8 {
+        let mut stream = TcpStream::connect(&addr).await.unwrap();
+        let request = format!(
+            "GET /api/v1/orgs/acme/stream HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {reader}\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).await.unwrap();
+        read_until(&mut stream, "retry: 1000").await.unwrap();
+        open.push(stream);
+    }
+
+    let ninth = call(&addr, "GET", "/api/v1/orgs/acme/stream", Some(&reader)).await;
+    assert_eq!(ninth.status, 429, "{}", ninth.body);
+
+    // A page that leaves is seen at the next ping; the server ends the streams
+    // at once when it stops.
+    cancel.cancel();
+    drop(open);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

@@ -116,6 +116,8 @@ pub(crate) async fn load(
 
     query.bind(&request.sha).execute(&mut *tx).await?;
     mark_dirty(&mut tx, target.queue_id).await?;
+    // The page shows the settings and the error of the file.
+    notify_queue_changed(&mut tx, target.org_id, target.queue_id, None).await?;
     tx.commit().await?;
 
     Ok(())
@@ -215,7 +217,7 @@ pub(crate) async fn check(
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    notify_queue_changed(&mut tx, target.org_id, target.queue_id).await?;
+    notify_queue_changed(&mut tx, target.org_id, target.queue_id, None).await?;
     tx.commit().await?;
 
     Ok(())

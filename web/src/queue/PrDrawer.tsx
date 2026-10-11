@@ -1,8 +1,9 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { getPrOptions, graphOptions, testRunOptions } from "../client/@tanstack/react-query.gen";
 import type { Item, TimelineEvent } from "../client/types.gen";
+import { onQueueChanged } from "../live";
 import { ItemStateBadge, itemStateLabel } from "../ui/StateBadge";
 import { PrActions } from "./Actions";
 import { DrawerFrame } from "./DrawerFrame";
@@ -182,6 +183,16 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
   const lastWait = timeline.findLast((event) => event.type === "item.readiness_changed");
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(
+    () =>
+      onQueueChanged((queueId) => {
+        if (queueId === item.queue_id) {
+          setNotice(null);
+        }
+      }),
+    [item.queue_id],
+  );
 
   return (
     <DrawerFrame

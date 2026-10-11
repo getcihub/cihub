@@ -394,6 +394,7 @@ Decisions:
     `acme/api` by the first `/cihub merge`, submits her PR from the dashboard and follows it in "Your pull
     requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
     browser tests passes each test commit of `acme/api`.
+  - The project lead started lot 10d meanwhile: the rest of lot 10c waits for the recording, not for lot 10d.
   - Remaining, with the new recording of the contract: `Item.url`, `TestRun.draft_pr_url`, and the state and
     times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
     lot; the lot is done once they are.
@@ -416,7 +417,11 @@ Decisions:
     of its organization; the stream ends when the server stops, lost changes or lagged, and the browser opens it
     again and reads everything. Written without a new crate: a `tokio::io::duplex` read by `ReaderStream`. The
     dashboard reads again the queue that changed and no longer polls; what changed slides, a new head of the
-    target arrives, and a notice tells the person that one of their PRs moved.
+    target arrives, and a notice tells the person that one of their PRs moved. After the review: the stream
+    ends after 5 minutes so that a revoked grant stops hearing, 8 streams at most per token or person, a write
+    bounded to 30 seconds; the listener keeps its connection after a loss and tells the pages; the dashboard
+    opens a closed stream again with a growing wait, reads everything on each open, and gathers the changes of
+    half a second into one read.
   - Exit criterion: `web/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
     queue in less than 2 seconds), `the_stream_carries_the_changes_of_the_organization_only` (another
     organization, end with the server), `a_reconciliation_that_writes_the_log_tells_the_pages`.

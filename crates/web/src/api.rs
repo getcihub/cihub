@@ -142,6 +142,7 @@ pub(crate) fn router(
     let streams = Streams {
         pool: pool.clone(),
         news,
+        open: Arc::default(),
     };
     let state = ApiState {
         pool,

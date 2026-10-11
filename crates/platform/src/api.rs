@@ -21,7 +21,7 @@ pub struct ApiGrant {
 
 /// Who acts: an API token, or a user through a session of the dashboard,
 /// with the scopes of their role.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum GrantActor {
     Token(ApiTokenId),
     User(UserId),

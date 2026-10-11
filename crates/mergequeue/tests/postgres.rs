@@ -894,7 +894,9 @@ async fn serve_api(
     let dashboard = cihub_web::Dashboard {
         scm: Arc::new(Sim::new()),
         public_url: None,
-        news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone()),
+        news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone())
+            .await
+            .unwrap(),
     };
     let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api], dashboard);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3729,11 +3731,11 @@ async fn a_reconciliation_that_writes_the_log_tells_the_pages(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let main = target_repo(&sim, &[("a.txt", "a")]);
-    let feed = cihub_platform::QueueNewsFeed::start(pool.clone(), q.cancel.clone());
+    let feed = cihub_platform::QueueNewsFeed::start(pool.clone(), q.cancel.clone())
+        .await
+        .unwrap();
     let mut news = feed.subscribe();
 
-    // The listener connects in the background: a moment before the change.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     submit_new_pr(&sim, &main, 1);
     q.deliver().await;
     q.settle().await;
