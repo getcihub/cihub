@@ -1,8 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { listOrgQueuesOptions } from "../client/@tanstack/react-query.gen";
+import { listOrgQueuesOptions, meOptions } from "../client/@tanstack/react-query.gen";
 import { READ_AGAIN_EVERY } from "../live";
+import { MinePrs } from "../mine/Mine";
+import { minePrsOptions } from "../mine/reads";
 import { QueueCards } from "../overview/QueueCards";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
@@ -20,6 +22,8 @@ function RepoPage() {
     ...listOrgQueuesOptions({ path: { org } }),
     refetchInterval: READ_AGAIN_EVERY,
   });
+  const { data: me } = useSuspenseQuery(meOptions());
+  const { data: mine } = useSuspenseQuery(minePrsOptions(org, me.login));
   const queues = data.queues.filter((candidate) => candidate.repo === repo);
 
   if (queues.length === 0) {
@@ -36,6 +40,7 @@ function RepoPage() {
           <h1>Queues</h1>
         </div>
       </div>
+      <MinePrs org={org} prs={mine.prs.filter((pr) => pr.repo === repo)} queues={queues} />
       <QueueCards org={org} queues={queues} />
     </main>
   );

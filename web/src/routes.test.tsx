@@ -6,8 +6,10 @@ import { ada, queueOf } from "./test/fixtures";
 
 const signedIn: Answers = {
   "/api/v1/me": [200, ada],
+  "/api/v1/orgs/acme/prs": [200, { prs: [] }],
   "/api/v1/orgs/acme/queues": [200, { queues: [queueOf("web", "main")] }],
   "/api/v1/orgs/acme-labs/queues": [200, { queues: [] }],
+  "/api/v1/orgs/acme-labs/prs": [200, { prs: [] }],
 };
 
 afterEach(() => {

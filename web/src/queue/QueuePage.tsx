@@ -1,6 +1,10 @@
 import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
 
+import { meOptions } from "../client/@tanstack/react-query.gen";
+
 import type { Item, Queue } from "../client/types.gen";
+import { Spotlight } from "../mine/Mine";
+import { minePrsOptions } from "../mine/reads";
 import { useNow } from "../time";
 import { EmptyState } from "../ui/EmptyState";
 import { QueueStateBadge } from "../ui/StateBadge";
@@ -41,6 +45,9 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
   });
   // The same read as `live` when the tab of the live items is open.
   const opened = useSuspenseQuery(reads.tab);
+  const { data: me } = useSuspenseQuery(meOptions());
+  const { data: mine } = useSuspenseQuery(minePrsOptions(path.org, me.login));
+  const spotlit = mine.prs.filter((pr) => pr.repo === path.repo && pr.queue === path.queue);
   const { queue } = detail.data;
   const items = inQueueOrder(live.data.items);
   // A position is an order, not a rank: the page shows 1, 2, 3 for the items admitted. The graph has every live
@@ -71,6 +78,7 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
           </div>
         </div>
       </div>
+      <Spotlight org={path.org} prs={spotlit} detail={detail.data} />
       <Banners detail={detail.data} check={check.data} org={path.org} repo={path.repo} now={now} />
       {!isQuiet && <Stats detail={detail.data} now={now} />}
       <Settings detail={detail.data} />
