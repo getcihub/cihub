@@ -24,6 +24,9 @@ use crate::{MergeQueueError, parse_id};
 pub(crate) const LOAD_CONFIG: &str = "load_config";
 pub(crate) const CHECK_CONFIG: &str = "check_config";
 
+/// The finding of a check whose target branch no longer exists.
+const TARGET_BRANCH_MISSING: &str = "target_branch_missing";
+
 /// How old a check of the configuration of the SCM gets before the scheduler
 /// asks for another one: the SCM sends no event when a rule changes.
 pub(crate) const CHECK_CONFIG_EVERY: Duration = Duration::hours(1);
@@ -188,25 +191,25 @@ pub(crate) async fn check(
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let target = target_of(pool, job).await?;
-    let findings = match scm
-        .check_setup(&target.repo, &target.target_branch, job.class)
-        .await
-    {
-        Ok(findings) => findings,
+    let branch = &target.target_branch;
+    let findings: Vec<Finding> = match scm.check_setup(&target.repo, branch, job.class).await {
+        Ok(findings) => findings
+            .into_iter()
+            .map(|finding| Finding {
+                code: finding.code().to_owned(),
+                message: finding_text(finding, branch),
+            })
+            .collect(),
+        // The check comes back in an hour, as for a finding of the rules.
         Err(ScmError::NotFound(_)) => {
-            info!("target branch gone: configuration not checked");
-            return Ok(());
+            info!("target branch gone");
+            vec![Finding {
+                code: TARGET_BRANCH_MISSING.to_owned(),
+                message: format!("the branch `{branch}` no longer exists: the queue cannot merge"),
+            }]
         }
         Err(err) => return Err(err.into()),
     };
-
-    let findings: Vec<Finding> = findings
-        .into_iter()
-        .map(|finding| Finding {
-            code: finding.code().to_owned(),
-            message: finding_text(finding, &target.target_branch),
-        })
-        .collect();
     let mut tx = begin_system(pool).await?;
 
     sqlx::query(

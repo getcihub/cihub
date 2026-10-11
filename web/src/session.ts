@@ -34,12 +34,8 @@ export async function readMe(queryClient: QueryClient): Promise<Me | null> {
 }
 
 /** The address that starts a sign-in, then opens `next`. */
-export function signInAddress(next: string, chooseAccount = false): string {
-  const query = new URLSearchParams({ next });
-  if (chooseAccount) {
-    query.set("choose_account", "true");
-  }
-  return `${SIGN_IN_PATH}?${query.toString()}`;
+export function signInAddress(next: string): string {
+  return `${SIGN_IN_PATH}?${new URLSearchParams({ next }).toString()}`;
 }
 
 /**

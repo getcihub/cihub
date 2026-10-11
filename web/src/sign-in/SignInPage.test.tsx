@@ -44,7 +44,7 @@ describe("SignInPage", () => {
     );
   });
 
-  it("signs out, then lets the user choose another account", async () => {
+  it("signs out, and tells how to use another GitHub account", async () => {
     const fetch = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
     const assign = vi.fn();
     vi.stubGlobal("fetch", fetch);
@@ -53,13 +53,18 @@ describe("SignInPage", () => {
     vi.spyOn(document, "cookie", "get").mockReturnValue("theme=dark; __Host-cihub_csrf=token");
     render(<SignInPage me={lonely} hasFailed={false} next="/" />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Sign in with another account" }));
+    expect(screen.getByRole("link", { name: "sign out of GitHub" })).toHaveAttribute(
+      "href",
+      "https://github.com/logout",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(fetch).toHaveBeenCalledWith("/auth/sign-out", {
       method: "POST",
       headers: { "X-CSRF-Token": "token" },
     });
-    expect(assign).toHaveBeenCalledWith("/auth/github?next=%2F&choose_account=true");
+    expect(assign).toHaveBeenCalledWith("/sign-in");
   });
 
   it("stays on the page and says so when the sign-out fails", async () => {
@@ -71,7 +76,7 @@ describe("SignInPage", () => {
     vi.stubGlobal("location", { assign });
     render(<SignInPage me={lonely} hasFailed={false} next="/" />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Sign in with another account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The sign-out failed.");
     expect(assign).not.toHaveBeenCalled();

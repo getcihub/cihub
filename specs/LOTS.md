@@ -292,8 +292,9 @@ Decisions:
     (Playwright, `mise run e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
     a member gets `403` on `PATCH` of a queue, a session gets `404` on another organization and its page, a refused
     sign-in and a person without an organization see their message.
-  - To check on the App of staging: that GitHub shows its account picker for a GitHub App with
-    `prompt=select_account` (documented for an OAuth App only), and the URL of the callback of the App.
+  - Checked on the App of staging (October 11, 2026): GitHub shows no account picker to a GitHub App with
+    `prompt=select_account`; lot 10c removes `?choose_account=true`, and the page of a person without an
+    organization tells them to sign out of GitHub to use another account.
 
 #### Lot 10b: queues and the page of a queue
 

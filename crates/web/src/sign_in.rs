@@ -65,10 +65,6 @@ enum SignInFailure {
 pub(crate) struct Start {
     /// The page of the dashboard to open once signed in.
     next: Option<String>,
-    /// `choose_account=true` lets the person choose another account of the
-    /// SCM.
-    #[serde(default, rename = "choose_account")]
-    asks_for_account: bool,
 }
 
 /// Sends the person to the page of the SCM where they sign in.
@@ -99,7 +95,6 @@ fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String
         redirect_url: format!("{public_url}{SIGN_IN_CALLBACK_PATH}"),
         state: state.expose_secret().to_owned(),
         code_challenge: code_challenge(&verifier),
-        asks_for_account: start.asks_for_account,
     };
 
     let address = sign_in
