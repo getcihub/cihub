@@ -126,19 +126,19 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 }
 
 /// The merge queue module: the executors of its jobs, which call `scm`, and its
-/// scheduler loop, which runs as `owner` and links the PRs to `dashboard`, the
-/// address of the dashboard.
+/// scheduler loop, which runs as `owner` and links the PRs to `dashboard_url`,
+/// the address of the dashboard.
 pub fn module(
     pool: PgPool,
     scm: Arc<dyn Scm>,
     translate: Translate,
     owner: String,
     clock: Clock,
-    dashboard: Option<String>,
+    dashboard_url: Option<String>,
 ) -> Module {
     let reconciler = Reconciler {
         translate,
-        dashboard,
+        dashboard_url,
     };
     Module {
         api: api::api(pool.clone(), clock.clone()),

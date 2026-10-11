@@ -103,7 +103,7 @@ describe("the actions on a queue", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("the PR is already in the queue");
   });
 
-  it("cancel a PR from its drawer, once confirmed", async () => {
+  it("cancel a PR from its drawer, once confirmed; Escape closes the confirmation alone", async () => {
     renderApp(
       "/orgs/acme/repos/web/queues/main/prs/118",
       answersFor({
@@ -114,6 +114,13 @@ describe("the actions on a queue", () => {
     );
 
     const drawer = await screen.findByRole("dialog", { name: "Export invoices as CSV" });
+    await userEvent.click(within(drawer).getByRole("button", { name: "Cancel" }));
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: /out of the queue/ })).not.toBeInTheDocument();
+    expect(drawer).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Cancel" })).toHaveFocus();
+
     await userEvent.click(within(drawer).getByRole("button", { name: "Cancel" }));
     await userEvent.click(screen.getByRole("button", { name: "Cancel the pull request" }));
 

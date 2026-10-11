@@ -476,6 +476,10 @@
   font-size: 12.5px;
 }
 
+.facts {
+  color: var(--muted);
+}
+
 .time {
   color: var(--muted);
   font-size: 12.5px;

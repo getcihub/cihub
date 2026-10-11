@@ -44,7 +44,7 @@ configuration checker, in phase 1).
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
-| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | done, but `url` and the times of a check |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
@@ -381,8 +381,6 @@ Decisions:
     answers `409 invalid_state` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
     already in the queue; `:cancel` and `:restart`
     write the audit log.
-  - Waits on the project lead: `RunCheck.status`, `started_at` and `completed_at` change `CheckReport`, so the
-    log; with `Item.url` and `TestRun.draft_pr_url`, they wait for the new recording of the contract.
   - Decided (October 11, 2026, validated by the project lead): `CheckReport` gains `status`, `started_at` and
     `completed_at` (option 1), with the new recording of the contract; `prompt=select_account` does not show the
     account picker of GitHub for a GitHub App (checked on the App of staging).
@@ -396,8 +394,9 @@ Decisions:
     `acme/api` by the first `/cihub merge`, submits her PR from the dashboard and follows it in "Your pull
     requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
     browser tests passes each test commit of `acme/api`.
-  - Waits for the new recording of the contract: `Item.url`, `TestRun.draft_pr_url`, and the state and times of
-    a check (`RunCheck.status`, `started_at`, `completed_at`).
+  - Remaining, with the new recording of the contract: `Item.url`, `TestRun.draft_pr_url`, and the state and
+    times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
+    lot; the lot is done once they are.
 
 #### Lot 10d: live updates
 

@@ -281,6 +281,7 @@ export function PrActions({
   const cancel = useMutation({ ...cancelItemMutation(), ...options });
   const target = { path: { ...path, number: item.pr_number } };
   const canRestart = item.state === "testing" || item.state === "pending_failure";
+  const isTested = canRestart || item.state === "tests_passed";
   const error = restart.error ?? cancel.error;
 
   return (
@@ -323,7 +324,7 @@ export function PrActions({
             setIsCancelling(false);
           }}
         >
-          <p>The pull requests behind it are tested again without it.</p>
+          {isTested && <p>The pull requests behind it are tested again without it.</p>}
           <div className={ui.buttons}>
             <button
               type="button"

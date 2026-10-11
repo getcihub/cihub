@@ -1260,7 +1260,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
-        dashboard: None,
+        dashboard_url: None,
     };
     let counts = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -2230,7 +2230,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
-        dashboard: None,
+        dashboard_url: None,
     };
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -2408,7 +2408,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
-        dashboard: None,
+        dashboard_url: None,
     };
 
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
@@ -4589,7 +4589,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
-        dashboard: None,
+        dashboard_url: None,
     };
 
     reconciler
@@ -5248,7 +5248,7 @@ impl Chaos {
 
         let reconciler = Reconciler {
             translate: translate(&self.deliveries),
-            dashboard: None,
+            dashboard_url: None,
         };
         let direct = reconciler
             .reconcile(&self.pool, self.queue(), &|| self.clock.now())

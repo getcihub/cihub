@@ -6,6 +6,7 @@ import { Avatar } from "../ui/Avatar";
 import { ItemStateBadge } from "../ui/StateBadge";
 import ui from "../ui/ui.module.css";
 import { PrLink } from "./PrLink";
+import { Prose } from "./Prose";
 import styles from "./queue.module.css";
 import type { QueuePath, Tab } from "./reads";
 import { TABS } from "./reads";
@@ -33,13 +34,22 @@ function priorityOf(item: Item) {
   return <span className={`${styles.priority} ${tone}`}>{name ?? String(item.priority)}</span>;
 }
 
-/** What the row of an item says: where a merge landed, else the sentence of the API. */
-function detailOf(item: Item, branch: string): string {
-  if (item.state === "merged" && item.merged_sha) {
-    const after = durationBetween(item.submitted_at, item.state_changed_at);
-    return `Merged into ${branch} as ${item.merged_sha.slice(0, 7)} after ${after}.`;
-  }
-  return item.state_description;
+/** The sentence of the API, and for a merge where and after how long it landed. */
+function Detail({ item }: { item: Item }) {
+  const landed = item.state === "merged" && item.merged_sha;
+
+  return (
+    <>
+      <Prose text={item.state_description} />
+      {landed && (
+        <span className={styles.facts}>
+          {" "}
+          · <code>{item.merged_sha?.slice(0, 7)}</code> · after{" "}
+          {durationBetween(item.submitted_at, item.state_changed_at)}
+        </span>
+      )}
+    </>
+  );
 }
 
 /** The items of the open tab: the live ones in their order, the others of the last 24 hours. */
@@ -126,7 +136,9 @@ export function ItemTabs({
                 <td>
                   <ItemStateBadge state={item.state} />
                 </td>
-                <td className={styles.detail}>{detailOf(item, detail.queue.target_branch)}</td>
+                <td className={styles.detail}>
+                  <Detail item={item} />
+                </td>
                 <td>{priorityOf(item)}</td>
                 <td className={styles.time}>
                   {timeAgo(tab === "live" ? item.submitted_at : item.state_changed_at, now)}

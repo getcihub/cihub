@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { listOrgQueuesOptions, meOptions, meQueryKey } from "../client/@tanstack/react-query.gen";
 import type { Me } from "../client/types.gen";
 import { Frame } from "../frame/Frame";
-import { minePrsOptions, whereOf } from "../mine/reads";
+import { minePrsOptions, useMinePrs, whereOf } from "../mine/reads";
 import { OrgLostPage } from "../pages/OrgLostPage";
 import { keepLastOrg } from "../preferences";
 import { isProblem, readMe } from "../session";
@@ -68,8 +68,7 @@ function OrgLayout() {
 
 function OrgFrame({ me, org }: { me: Me; org: string }) {
   const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
-  const { data: mine } = useSuspenseQuery(minePrsOptions(org, me.login));
-  const first = mine.prs[0];
+  const [first] = useMinePrs(org, me.login);
   const firstQueue = data.queues.find(
     (candidate) => candidate.repo === first?.repo && candidate.queue.name === first.queue,
   )?.queue;

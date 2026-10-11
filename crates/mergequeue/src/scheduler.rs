@@ -61,7 +61,7 @@ pub struct Reconciler {
     pub translate: Translate,
     /// The address of the dashboard (`http.public_url`), for the links of the
     /// statuses and the comments of the PRs; `None` without it.
-    pub dashboard: Option<String>,
+    pub dashboard_url: Option<String>,
 }
 
 impl Reconciler {
@@ -239,7 +239,7 @@ impl Reconciler {
                 target,
                 converge.settings,
                 &converge.desired.surfaces,
-                self.dashboard.as_deref(),
+                self.dashboard_url.as_deref(),
             )
             .await?,
         );

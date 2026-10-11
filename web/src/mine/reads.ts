@@ -1,3 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
+
 import { listOrgPrsOptions } from "../client/@tanstack/react-query.gen";
 import type { OrgPr } from "../client/types.gen";
 import { READ_AGAIN_EVERY } from "../live";
@@ -8,6 +10,14 @@ export function minePrsOptions(org: string, login: string) {
     ...listOrgPrsOptions({ path: { org }, query: { author: login } }),
     refetchInterval: READ_AGAIN_EVERY,
   };
+}
+
+/**
+ * The PRs of `login` in the queues of `org`; none while they load or when their read fails. They only add to a
+ * page: their read never stops it, unlike the reads that the page needs.
+ */
+export function useMinePrs(org: string, login: string): OrgPr[] {
+  return useQuery(minePrsOptions(org, login)).data?.prs ?? [];
 }
 
 function ordinal(number: number): string {

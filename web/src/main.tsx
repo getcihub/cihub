@@ -8,10 +8,10 @@ import { routeTree } from "./routeTree.gen";
 import { sendCsrfToken } from "./session";
 import "./styles/base.css";
 
-// A read stays fresh for 30 seconds: a click inside an organization reads it
-// again only after that. The stream of lot 10d invalidates what changed.
 sendCsrfToken();
 
+// A read stays fresh for 30 seconds: a click inside an organization reads it
+// again only after that. The stream of lot 10d invalidates what changed.
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
 const router = createRouter({
   routeTree,
