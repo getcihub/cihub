@@ -17,6 +17,7 @@ const testing = itemOf(118, "testing", {
 function answersFor(changes: Answers): Answers {
   return {
     "/api/v1/me": [200, ada],
+    "/api/v1/orgs/acme/prs": [200, { prs: [] }],
     "/api/v1/orgs/acme/queues": [200, { queues: [entry] }],
     [QUEUE]: [200, detailOf(entry)],
     [`${QUEUE}/graph`]: [200, noGraph],

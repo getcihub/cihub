@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { listOrgQueuesOptions, meOptions } from "../client/@tanstack/react-query.gen";
 import { READ_AGAIN_EVERY } from "../live";
+import { MinePrs } from "../mine/Mine";
+import { minePrsOptions } from "../mine/reads";
 import { QueueCards } from "../overview/QueueCards";
 import { EmptyState } from "../ui/EmptyState";
 import { ArrowIcon } from "../ui/icons";
@@ -22,6 +24,7 @@ function OrgPage() {
     ...listOrgQueuesOptions({ path: { org } }),
     refetchInterval: READ_AGAIN_EVERY,
   });
+  const { data: mine } = useSuspenseQuery(minePrsOptions(org, me.login));
 
   if (data.queues.length > 0) {
     return (
@@ -32,6 +35,7 @@ function OrgPage() {
             <h1>Queues</h1>
           </div>
         </div>
+        <MinePrs org={org} prs={mine.prs} queues={data.queues} />
         <QueueCards org={org} queues={data.queues} />
       </main>
     );

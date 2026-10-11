@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { listOrgQueuesOptions, meOptions, meQueryKey } from "../client/@tanstack/react-query.gen";
 import type { Me } from "../client/types.gen";
 import { Frame } from "../frame/Frame";
+import { minePrsOptions, whereOf } from "../mine/reads";
 import { OrgLostPage } from "../pages/OrgLostPage";
 import { keepLastOrg } from "../preferences";
 import { isProblem, readMe } from "../session";
@@ -39,6 +40,11 @@ export const Route = createFileRoute("/orgs/$org")({
       throw redirect({ to: "/sign-in", search: { next: location.href } });
     }
 
+    if (access === "granted") {
+      // The PRs of the person give the title of the tab on every page of the organization.
+      await queryClient.query(minePrsOptions(params.org, me.login)).catch(() => undefined);
+    }
+
     return { hasAccess: access === "granted" };
   },
   component: OrgLayout,
@@ -62,6 +68,14 @@ function OrgLayout() {
 
 function OrgFrame({ me, org }: { me: Me; org: string }) {
   const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
+  const { data: mine } = useSuspenseQuery(minePrsOptions(org, me.login));
+  const first = mine.prs[0];
+  const firstQueue = data.queues.find(
+    (candidate) => candidate.repo === first?.repo && candidate.queue.name === first.queue,
+  )?.queue;
+  const title = first
+    ? `#${String(first.item.pr_number)} ${whereOf(first, firstQueue?.state === "paused", firstQueue?.target_branch ?? first.queue)} · CIHub`
+    : "CIHub";
   const { repo, queue } = useParams({ strict: false });
   const membership = me.orgs.find((candidate) => candidate.slug.toLowerCase() === org.toLowerCase());
   // The frame names only a repository and a queue that exist: a wrong address shows "not found" under it.
@@ -77,6 +91,11 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
       keepLastOrg(membership.slug);
     }
   }, [membership]);
+
+  // The tab says where the first PR of the person is, from any page.
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
 
   return (
     <Frame me={me} org={org} queues={data.queues} repo={knownRepo} queue={knownQueue}>
