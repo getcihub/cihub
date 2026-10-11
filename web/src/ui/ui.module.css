@@ -139,3 +139,51 @@
     flex-direction: column;
   }
 }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.badgeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.blue .badgeDot {
+  background: var(--blue);
+}
+
+.green .badgeDot {
+  background: var(--green);
+}
+
+.amber .badgeDot {
+  background: var(--amber);
+}
+
+.red .badgeDot {
+  background: var(--red);
+}
+
+.grey .badgeDot {
+  background: var(--wait);
+}
+
+.ring .badgeDot {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+  border: 1.5px solid var(--wait);
+}
+
+.blue.ring .badgeDot {
+  border-color: var(--blue);
+}

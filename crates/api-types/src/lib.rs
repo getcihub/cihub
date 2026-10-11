@@ -394,8 +394,8 @@ pub struct BatchGetResponse {
     pub not_found: Vec<u64>,
 }
 
-/// The merge graph: the live items, and the predecessors that their tests
-/// merge before them.
+/// The merge graph: the head of the target branch, the live items, the
+/// predecessors that their tests merge before them, and the live runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Graph {

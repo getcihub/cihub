@@ -1209,7 +1209,7 @@
       },
       "Graph": {
         "type": "object",
-        "description": "The merge graph: the live items, and the predecessors that their tests\nmerge before them.",
+        "description": "The merge graph: the head of the target branch, the live items, the\npredecessors that their tests merge before them, and the live runs.",
         "required": [
           "nodes",
           "edges",

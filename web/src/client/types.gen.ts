@@ -84,8 +84,8 @@ export type Finding = {
 };
 
 /**
- * The merge graph: the live items, and the predecessors that their tests
- * merge before them.
+ * The merge graph: the head of the target branch, the live items, the
+ * predecessors that their tests merge before them, and the live runs.
  */
 export type Graph = {
     edges: Array<GraphEdge>;

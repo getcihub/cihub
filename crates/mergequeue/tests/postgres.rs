@@ -3435,9 +3435,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 }
 
 /// An item gives the title of the PR at its last read, and the person who
-/// submitted it; a replay of the log gives the same items (principle I).
+/// submitted it; the page of the queue calls the SCM zero times (principle
+/// VII), and a replay of the log gives the same answers (principle I).
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn an_item_follows_the_title_of_its_pr_and_survives_a_replay(pool: PgPool) {
+async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
@@ -3475,12 +3476,34 @@ async fn an_item_follows_the_title_of_its_pr_and_survives_a_replay(pool: PgPool)
     let (_, renamed) = call(&addr, &token, "GET", items, None).await;
     assert_eq!(renamed["items"][0]["title"], "Fix the login redirect");
 
+    // The reads of the cards and of the page of the queue.
+    let page = || async {
+        let queue = "/orgs/acme/repos/app/queues/main";
+        let reads = [
+            "/orgs/acme/queues".to_owned(),
+            queue.to_owned(),
+            format!("{queue}/graph"),
+            format!("{queue}/config-check"),
+            format!(
+                "{items}?state=not_ready,pending,testing,pending_failure,tests_passed&take=100"
+            ),
+        ];
+        let mut answers = Vec::new();
+        for path in reads {
+            answers.push(call(&addr, &token, "GET", &path, None).await.1);
+        }
+        answers
+    };
+    let calls = sim.calls().len();
+    let before = page().await;
+
+    assert_eq!(sim.calls().len(), calls, "a page calls the SCM zero times");
+
     let mut tx = begin_system(&pool).await.unwrap();
     rebuild(&mut tx, queue()).await.unwrap();
     tx.commit().await.unwrap();
 
-    let (_, replayed) = call(&addr, &token, "GET", items, None).await;
-    assert_eq!(replayed, renamed);
+    assert_eq!(page().await, before);
     q.stop().await;
 }
 
