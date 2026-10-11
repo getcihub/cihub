@@ -15,6 +15,7 @@ import { Route as OrgsOrgRouteImport } from './routes/orgs.$org'
 import { Route as OrgsOrgIndexRouteImport } from './routes/orgs.$org.index'
 import { Route as OrgsOrgReposRepoIndexRouteImport } from './routes/orgs.$org.repos.$repo.index'
 import { Route as OrgsOrgReposRepoQueuesQueueRouteImport } from './routes/orgs.$org.repos.$repo.queues.$queue'
+import { Route as OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport } from './routes/orgs.$org.repos.$repo.queues.$queue.prs.$number'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -47,6 +48,12 @@ const OrgsOrgReposRepoQueuesQueueRoute =
     path: '/repos/$repo/queues/$queue',
     getParentRoute: () => OrgsOrgRoute,
   } as any)
+const OrgsOrgReposRepoQueuesQueuePrsNumberRoute =
+  OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport.update({
+    id: '/prs/$number',
+    path: '/prs/$number',
+    getParentRoute: () => OrgsOrgReposRepoQueuesQueueRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,14 +61,16 @@ export interface FileRoutesByFullPath {
   '/orgs/$org': typeof OrgsOrgRouteWithChildren
   '/orgs/$org/': typeof OrgsOrgIndexRoute
   '/orgs/$org/repos/$repo/': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sign-in': typeof SignInRoute
   '/orgs/$org': typeof OrgsOrgIndexRoute
   '/orgs/$org/repos/$repo': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -70,7 +79,8 @@ export interface FileRoutesById {
   '/orgs/$org': typeof OrgsOrgRouteWithChildren
   '/orgs/$org/': typeof OrgsOrgIndexRoute
   '/orgs/$org/repos/$repo/': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +91,7 @@ export interface FileRouteTypes {
     | '/orgs/$org/'
     | '/orgs/$org/repos/$repo/'
     | '/orgs/$org/repos/$repo/queues/$queue'
+    | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -88,6 +99,7 @@ export interface FileRouteTypes {
     | '/orgs/$org'
     | '/orgs/$org/repos/$repo'
     | '/orgs/$org/repos/$repo/queues/$queue'
+    | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   id:
     | '__root__'
     | '/'
@@ -96,6 +108,7 @@ export interface FileRouteTypes {
     | '/orgs/$org/'
     | '/orgs/$org/repos/$repo/'
     | '/orgs/$org/repos/$repo/queues/$queue'
+    | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -148,19 +161,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgsOrgReposRepoQueuesQueueRouteImport
       parentRoute: typeof OrgsOrgRoute
     }
+    '/orgs/$org/repos/$repo/queues/$queue/prs/$number': {
+      id: '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
+      path: '/prs/$number'
+      fullPath: '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
+      preLoaderRoute: typeof OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport
+      parentRoute: typeof OrgsOrgReposRepoQueuesQueueRoute
+    }
   }
 }
+
+interface OrgsOrgReposRepoQueuesQueueRouteChildren {
+  OrgsOrgReposRepoQueuesQueuePrsNumberRoute: typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
+}
+
+const OrgsOrgReposRepoQueuesQueueRouteChildren: OrgsOrgReposRepoQueuesQueueRouteChildren =
+  {
+    OrgsOrgReposRepoQueuesQueuePrsNumberRoute:
+      OrgsOrgReposRepoQueuesQueuePrsNumberRoute,
+  }
+
+const OrgsOrgReposRepoQueuesQueueRouteWithChildren =
+  OrgsOrgReposRepoQueuesQueueRoute._addFileChildren(
+    OrgsOrgReposRepoQueuesQueueRouteChildren,
+  )
 
 interface OrgsOrgRouteChildren {
   OrgsOrgIndexRoute: typeof OrgsOrgIndexRoute
   OrgsOrgReposRepoIndexRoute: typeof OrgsOrgReposRepoIndexRoute
-  OrgsOrgReposRepoQueuesQueueRoute: typeof OrgsOrgReposRepoQueuesQueueRoute
+  OrgsOrgReposRepoQueuesQueueRoute: typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
 }
 
 const OrgsOrgRouteChildren: OrgsOrgRouteChildren = {
   OrgsOrgIndexRoute: OrgsOrgIndexRoute,
   OrgsOrgReposRepoIndexRoute: OrgsOrgReposRepoIndexRoute,
-  OrgsOrgReposRepoQueuesQueueRoute: OrgsOrgReposRepoQueuesQueueRoute,
+  OrgsOrgReposRepoQueuesQueueRoute:
+    OrgsOrgReposRepoQueuesQueueRouteWithChildren,
 }
 
 const OrgsOrgRouteWithChildren =

@@ -3,6 +3,7 @@ import { Fragment, type ReactNode } from "react";
 import type { Graph, GraphRun, Item, QueueDetail } from "../client/types.gen";
 import { itemStateLabel } from "../ui/StateBadge";
 import { CheckIcon } from "../ui/icons";
+import { PrLink } from "./PrLink";
 import styles from "./queue.module.css";
 
 type RunLook = "testing" | "failing" | "passed";
@@ -45,11 +46,13 @@ function rankOf(run: GraphRun, ranks: Map<string, number>): number {
 
 function Chip({ item, text, rank }: { item: Item; text: string | null; rank: number | undefined }) {
   return (
-    <li className={styles.chip}>
-      {rank !== undefined && <span className={styles.position}>{rank}</span>}
-      <span className={`${styles.dot} ${DOTS[item.state] ?? ""}`} />
-      <b>#{item.pr_number}</b>
-      {text && <span className={styles.chipText}>{text}</span>}
+    <li>
+      <PrLink className={styles.chip} number={item.pr_number}>
+        {rank !== undefined && <span className={styles.position}>{rank}</span>}
+        <span className={`${styles.dot} ${DOTS[item.state] ?? ""}`} />
+        <b>#{item.pr_number}</b>
+        {text && <span className={styles.chipText}>{text}</span>}
+      </PrLink>
     </li>
   );
 }
