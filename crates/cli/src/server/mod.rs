@@ -123,8 +123,14 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
 }
 
 /// A new module also adds its `OpenAPI` document to `examples/openapi.rs`,
-/// which writes the document of the dashboard.
-fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform::Module {
+/// which writes the document of the dashboard. `public_url` is the address of
+/// the dashboard, which the statuses and the comments of the PRs link to.
+fn merge_queue(
+    pool: &PgPool,
+    github: &Github,
+    process: &str,
+    public_url: Option<&str>,
+) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
@@ -136,6 +142,7 @@ fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform:
         translate,
         process.to_owned(),
         Arc::new(now),
+        public_url.map(str::to_owned),
     )
 }
 

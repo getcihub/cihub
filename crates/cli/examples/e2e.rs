@@ -87,6 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         translate(&deliveries),
         "e2e".to_owned(),
         Arc::new(now),
+        Some(PUBLIC_URL.to_owned()),
     );
     let mut executors = Executors::default();
     (module.executors)(&mut executors);

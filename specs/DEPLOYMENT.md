@@ -55,7 +55,7 @@ startup, with a message that names the key and the file, or the variable.
 | `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
 | `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
 | `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
-| `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in |
+| `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in; the status and the comment of a PR link to its page there |
 | `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
 | `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
 | `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |

@@ -579,6 +579,7 @@ impl SimQueue {
             translate(&deliveries),
             "scheduler".into(),
             clock.shared(),
+            Some("https://cihub.example.com/".into()),
         );
 
         let mut executors = Executors::default();
@@ -1259,6 +1260,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
+        dashboard: None,
     };
     let counts = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -1401,6 +1403,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         translate(&Arc::default()),
         "scheduler".into(),
         Arc::new(clock),
+        None,
     );
     let mut executors = Executors::default();
     (module.executors)(&mut executors);
@@ -2227,6 +2230,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
+        dashboard: None,
     };
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -2404,6 +2408,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
+        dashboard: None,
     };
 
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
@@ -3529,6 +3534,13 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     assert_eq!(first["actor"], "alice", "the actor of the cause: {pr}");
     assert_eq!(first["description"], "the PR was submitted to the queue");
 
+    let page = format!("https://cihub.example.com/orgs/acme/repos/app/queues/main/prs/{number}");
+    let comment = sim.comments(&repo(), number).pop().unwrap_or_default();
+    assert!(
+        comment.contains(&format!("[Open in CIHub]({page})")),
+        "{comment}"
+    );
+
     sim.change_pr(&repo(), number, PrChange::Title("Fix the login redirect"))
         .unwrap();
     q.deliver().await;
@@ -3934,6 +3946,7 @@ async fn serve_module_api(pool: &PgPool, cancel: &CancellationToken) -> (String,
         translate(&deliveries),
         "scheduler".into(),
         fixed,
+        None,
     );
 
     serve_api(pool, module.api, cancel.clone()).await
@@ -4559,6 +4572,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
+        dashboard: None,
     };
 
     reconciler
@@ -5057,6 +5071,7 @@ impl Chaos {
             translate(&self.deliveries),
             format!("scheduler-{}-{}", self.seed, self.generation),
             self.clock.shared(),
+            None,
         );
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
@@ -5216,6 +5231,7 @@ impl Chaos {
 
         let reconciler = Reconciler {
             translate: translate(&self.deliveries),
+            dashboard: None,
         };
         let direct = reconciler
             .reconcile(&self.pool, self.queue(), &|| self.clock.now())
