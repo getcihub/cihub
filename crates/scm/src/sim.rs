@@ -1969,7 +1969,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(members.is_empty());
+        assert_eq!(members, []);
 
         sim.set_access("100", false);
         let lost = sim.members(&repo.connection, JobClass::Repair).await;
