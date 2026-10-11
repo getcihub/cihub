@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
 
 import type { Item, QueueDetail } from "../client/types.gen";
-import { timeAgo } from "../time";
+import { durationBetween, timeAgo } from "../time";
 import { Avatar } from "../ui/Avatar";
 import { ItemStateBadge } from "../ui/StateBadge";
 import ui from "../ui/ui.module.css";
+import { PrLink } from "./PrLink";
 import styles from "./queue.module.css";
 import type { QueuePath, Tab } from "./reads";
 import { TABS } from "./reads";
@@ -30,6 +31,15 @@ function priorityOf(item: Item) {
   const tone = name === "urgent" ? styles.urgent : name === "high" ? styles.high : "";
 
   return <span className={`${styles.priority} ${tone}`}>{name ?? String(item.priority)}</span>;
+}
+
+/** What the row of an item says: where a merge landed, else the sentence of the API. */
+function detailOf(item: Item, branch: string): string {
+  if (item.state === "merged" && item.merged_sha) {
+    const after = durationBetween(item.submitted_at, item.state_changed_at);
+    return `Merged into ${branch} as ${item.merged_sha.slice(0, 7)} after ${after}.`;
+  }
+  return item.state_description;
 }
 
 /** The items of the open tab: the live ones in their order, the others of the last 24 hours. */
@@ -104,7 +114,9 @@ export function ItemTabs({
                   <div className={styles.pr}>
                     <Avatar name={item.author} />
                     <div>
-                      <div className={styles.prTitle}>{item.title ?? `#${String(item.pr_number)}`}</div>
+                      <PrLink className={styles.prTitle} number={item.pr_number}>
+                        {item.title ?? `#${String(item.pr_number)}`}
+                      </PrLink>
                       <div className={styles.meta}>
                         #{item.pr_number} · {item.author}
                       </div>
@@ -114,7 +126,7 @@ export function ItemTabs({
                 <td>
                   <ItemStateBadge state={item.state} />
                 </td>
-                <td className={styles.detail}>{item.state_description}</td>
+                <td className={styles.detail}>{detailOf(item, detail.queue.target_branch)}</td>
                 <td>{priorityOf(item)}</td>
                 <td className={styles.time}>
                   {timeAgo(tab === "live" ? item.submitted_at : item.state_changed_at, now)}

@@ -1,0 +1,281 @@
+/* The drawer of a PR of the mockups v5 (app.css, then refined.css). */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(8, 10, 14, 0.32);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 500px;
+  max-width: 100vw;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.drawer header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
+}
+
+.drawer h2 {
+  margin: 4px 0 8px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.drawer h2:focus {
+  outline: none;
+}
+
+.drawer section {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.drawer h3 {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.drawer p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.close:hover {
+  color: var(--text);
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.note {
+  margin-top: 10px !important;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* Submitted, queued, testing, merged */
+.journey {
+  position: relative;
+}
+
+.journey::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 12.5%;
+  right: 12.5%;
+  height: 2px;
+  background: var(--divider);
+}
+
+.journey ol {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.journey li {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--wait);
+  background: var(--surface);
+}
+
+.done .dot {
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.now {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.now .dot {
+  border-color: var(--blue);
+}
+
+.amber .now .dot {
+  border-color: var(--amber);
+  background: var(--amber);
+}
+
+.muted .now .dot {
+  border-color: var(--wait);
+}
+
+.red .now .dot {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+/* Facts of a run */
+.facts {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.checks {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12.5px;
+}
+
+.checks .note {
+  margin-top: 0 !important;
+}
+
+.checkName {
+  font-weight: 500;
+}
+
+.checkState {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.conclusion {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--blue);
+}
+
+.success {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.failure {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.neutral {
+  border-color: var(--wait);
+  background: var(--wait);
+}
+
+/* History */
+.events {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.events::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 7px;
+  width: 2px;
+  background: var(--divider);
+}
+
+.events li {
+  position: relative;
+  padding: 0 0 14px 28px;
+  font-size: 12.5px;
+}
+
+.events li::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--wait);
+  background: var(--surface);
+}
+
+.when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.what {
+  font-weight: 600;
+}
+
+.why {
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.actor {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .drawer {
+    width: 100vw;
+  }
+}

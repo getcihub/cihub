@@ -21,6 +21,14 @@ export function timeAgo(at: string, now: number): string {
   return "just now";
 }
 
+/** The time from `start` to `end`, two RFC 3339 times, as "22 min" or "3 h 5 min". */
+export function durationBetween(start: string, end: string): string {
+  const minutes = Math.max(1, Math.round((Date.parse(end) - Date.parse(start)) / 60_000));
+  const hours = Math.floor(minutes / 60);
+
+  return hours === 0 ? `${String(minutes)} min` : `${String(hours)} h ${String(minutes % 60)} min`;
+}
+
 /**
  * The time of the page, in milliseconds, which moves as often as the page reads its queue again. In a transition:
  * a read whose key follows the time keeps its page while it loads.

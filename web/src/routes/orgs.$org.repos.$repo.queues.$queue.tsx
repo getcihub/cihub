@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, stripSearchParams } from "@tanstack/react-router";
+import { Outlet, createFileRoute, stripSearchParams } from "@tanstack/react-router";
 import { z } from "zod";
 
 import { listOrgQueuesOptions } from "../client/@tanstack/react-query.gen";
@@ -18,7 +18,9 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
   // The reads leave together. A queue that does not exist answers 404: the page says "not found" in the frame,
   // so a failed read does not stop the loader.
   loader: async ({ context: { queryClient }, params, deps }) => {
-    const reads = queueReads(params, deps.tab, Date.now());
+    // The params of a page of a PR under this one also hold its number.
+    const { org, repo, queue } = params;
+    const reads = queueReads({ org, repo, queue }, deps.tab, Date.now());
     const ignore = () => undefined;
 
     await Promise.all([
@@ -43,5 +45,10 @@ function QueueRoute() {
     return <NotFoundPage />;
   }
 
-  return <QueuePage path={{ org, repo, queue }} tab={tab} />;
+  return (
+    <>
+      <QueuePage path={{ org, repo, queue }} tab={tab} />
+      <Outlet />
+    </>
+  );
 }
