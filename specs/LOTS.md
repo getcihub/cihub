@@ -44,7 +44,7 @@ configuration checker, in phase 1).
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
-| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress                              |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | done, but `url` and the times of a check |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
@@ -388,7 +388,16 @@ Decisions:
     account picker of GitHub for a GitHub App (checked on the App of staging).
   - Done (October 11, 2026): step 4. The status of a PR links to its page in the dashboard, and its comment
     with `Open in CIHub`, from `http.public_url`, which the module of the queue receives.
-  - Remaining: the pages, the browser test.
+  - Done (October 11, 2026): step 5. The drawer of a PR at its address (where it is, why it waits or how it
+    ended, its run and checks, its history), "Your pull requests" on the queues and first on the page of a
+    queue, the title of the tab, the submission (TanStack Form), the cancellation and the restart, pause, drain
+    and resume for an admin; the generated client sends the CSRF token of the session.
+  - Done (October 11, 2026): step 6 and exit criterion. `web/e2e/your-prs.spec.ts`: `ada` creates the queue of
+    `acme/api` by the first `/cihub merge`, submits her PR from the dashboard and follows it in "Your pull
+    requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
+    browser tests passes each test commit of `acme/api`.
+  - Waits for the new recording of the contract: `Item.url`, `TestRun.draft_pr_url`, and the state and times of
+    a check (`RunCheck.status`, `started_at`, `completed_at`).
 
 #### Lot 10d: live updates
 

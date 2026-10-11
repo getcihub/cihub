@@ -7,7 +7,10 @@
 //! The world: `acme` and `globex`, a queue each; `ada` is a member of `acme`,
 //! `grace` of no organization. On `acme/web`, `ada` submits three PRs with
 //! `/cihub merge`: two whose check passed, which the queue tests, and one
-//! whose check waits.
+//! whose check waits. `acme/api` has no queue yet, a PR of `marie` and one
+//! of `ada`, both green, and a CI that passes each test commit; the page
+//! `/sim/merge` comments `/cihub merge` on a PR, `/sim/comment` gives the last
+//! comment of a PR.
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -134,7 +137,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         deliveries,
         cancel.clone(),
     ));
+    tokio::spawn(pass_api_tests(pool.clone(), sim.clone(), cancel.clone()));
     submit_prs(&sim)?;
+    open_api_prs(&sim)?;
 
     let webhooks = GithubWebhooks {
         secret: SecretString::from("e2e"),
@@ -146,6 +151,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sign_in_page = Router::new()
         .route("/sim/authorize", get(authorize_page))
         .route("/sim/sign-in", get(sign_in_as))
+        .route("/sim/merge", get(comment_merge))
+        .route("/sim/comment", get(last_comment))
         .with_state(sim);
     let router =
         cihub_web::router(pool, now, webhooks, vec![module.api], dashboard).merge(sign_in_page);
@@ -199,20 +206,30 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
         .execute(&mut *tx)
         .await?;
     }
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{repo}', '{org}', '{connection}', '1001', 'acme', 'api', 'main');",
+        repo = RepoId::from_ulid(Ulid(3)),
+        org = OrgId::from_ulid(Ulid(1)),
+        connection = ConnectionId::from_ulid(Ulid(1)),
+    )))
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// The repository `acme/web`, as the seed and the simulator name it.
-fn acme_web() -> RepoRef {
+/// A repository of `acme`, as the seed and the simulator name it.
+fn acme_repo(name: &str) -> RepoRef {
+    let external_id = if name == "web" { "1000" } else { "1001" };
     RepoRef {
         connection: ConnectionRef {
             id: ConnectionId::from_ulid(Ulid(1)),
             external_id: "100".into(),
         },
-        external_id: "1000".into(),
+        external_id: external_id.into(),
         namespace: "acme".into(),
-        name: "web".into(),
+        name: name.into(),
     }
 }
 
@@ -229,61 +246,189 @@ fn world(sim: &Sim) -> Result<(), ScmError> {
     }
     sim.set_member("100", &ada, MembershipRole::Member);
 
-    let web = acme_web();
-    sim.add_repo(&web, "main", &[("README.md", "web")]);
-    let rules = RequiredChecks {
-        names: [REQUIRED.to_owned()].into(),
-        up_to_date: false,
-    };
-    sim.set_rules(&web, "main", rules)?;
-    sim.set_permission(&web, &ada, Permission::Write)
+    for name in ["web", "api"] {
+        let repo = acme_repo(name);
+        sim.add_repo(&repo, "main", &[("README.md", name)]);
+        let rules = RequiredChecks {
+            names: [REQUIRED.to_owned()].into(),
+            up_to_date: false,
+        };
+        sim.set_rules(&repo, "main", rules)?;
+        sim.set_permission(&repo, &ada, Permission::Write)?;
+    }
+
+    Ok(())
+}
+
+/// Opens a PR of `author` on `repo` with the title `title`, its check passed
+/// when `is_green`, and returns its number.
+fn open_pr(
+    sim: &Sim,
+    repo: &RepoRef,
+    (branch, title): (&str, &'static str),
+    author: &ScmUser,
+    is_green: bool,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let main = sim
+        .branch(repo, "main")
+        .ok_or("the repository has no main")?;
+    let file = format!("{branch}.txt");
+    let head = sim.commit(repo, &main, &[(&file, Some(title))])?;
+    sim.push(repo, branch, &head, author)?;
+    let number = sim.open_pr(repo, branch, "main", author)?;
+    sim.change_pr(repo, number, PrChange::Title(title))?;
+
+    if is_green {
+        sim.report_check(repo, &head, passed())?;
+    }
+
+    Ok(number)
+}
+
+fn passed() -> CheckReport {
+    CheckReport {
+        name: REQUIRED.into(),
+        kind: CheckKind::Status,
+        conclusion: Some(CheckConclusion::Success),
+        details_url: None,
+    }
 }
 
 /// Opens the PRs of `acme/web`, and `ada` submits each one with a comment.
 fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     let [(ada, _), _] = people();
-    let web = acme_web();
+    let web = acme_repo("web");
     let prs = [
         (
-            "export-csv",
-            "Export invoices as CSV",
+            ("export-csv", "Export invoices as CSV"),
             person("11", "marie"),
             true,
         ),
         (
-            "login-redirect",
-            "Fix the login redirect",
+            ("login-redirect", "Fix the login redirect"),
             person("12", "lea"),
             true,
         ),
         (
-            "install-guide",
-            "Update the install guide",
+            ("install-guide", "Update the install guide"),
             person("13", "alex"),
             false,
         ),
     ];
 
-    for (branch, title, author, is_green) in prs {
-        let main = sim.branch(&web, "main").ok_or("acme/web has no main")?;
-        let file = format!("{branch}.txt");
-        let head = sim.commit(&web, &main, &[(&file, Some(title))])?;
-        sim.push(&web, branch, &head, &author)?;
-        let number = sim.open_pr(&web, branch, "main", &author)?;
-        sim.change_pr(&web, number, PrChange::Title(title))?;
-        if is_green {
-            let check = CheckReport {
-                name: REQUIRED.into(),
-                kind: CheckKind::Status,
-                conclusion: Some(CheckConclusion::Success),
-                details_url: None,
-            };
-            sim.report_check(&web, &head, check)?;
-        }
+    for (pr, author, is_green) in prs {
+        let number = open_pr(sim, &web, pr, &author, is_green)?;
         sim.comment(&web, number, &ada, "/cihub merge")?;
     }
 
     Ok(())
+}
+
+/// Opens the PRs of `acme/api`, which has no queue yet: #1 of `marie`, #2 of
+/// `ada`.
+fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
+    let [(ada, _), _] = people();
+    let api = acme_repo("api");
+
+    open_pr(
+        sim,
+        &api,
+        ("audit-log", "Add the audit log page"),
+        &person("11", "marie"),
+        true,
+    )?;
+    open_pr(
+        sim,
+        &api,
+        ("webhook-sweep", "Retry the webhook sweep"),
+        &ada,
+        true,
+    )?;
+
+    Ok(())
+}
+
+/// The CI of `acme/api`: it passes each test commit of a run in progress,
+/// until `cancel`. The runs of `acme/web` keep testing, for the page of a
+/// queue in test.
+async fn pass_api_tests(pool: PgPool, sim: Arc<Sim>, cancel: CancellationToken) {
+    let api = acme_repo("api");
+    let mut passed_shas = std::collections::HashSet::new();
+
+    while !cancel.is_cancelled() {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let shas = match testing_shas(&pool).await {
+            Ok(shas) => shas,
+            Err(err) => {
+                warn!(
+                    error = &*err as &dyn std::error::Error,
+                    "test commits not read"
+                );
+                continue;
+            }
+        };
+
+        for sha in shas
+            .into_iter()
+            .filter(|sha| passed_shas.insert(sha.clone()))
+        {
+            if let Err(err) = sim.report_check(&api, &sha, passed()) {
+                warn!(error = &err as &dyn std::error::Error, "check not reported");
+            }
+        }
+    }
+}
+
+async fn testing_shas(pool: &PgPool) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let mut tx = begin_system(pool).await?;
+    let shas = sqlx::query_scalar(
+        "SELECT DISTINCT t.test_sha FROM test_runs t
+         JOIN queues q ON q.id = t.queue_id
+         JOIN repos r ON r.id = q.repo_id
+         WHERE t.status = 'in_progress' AND t.test_sha IS NOT NULL AND r.name = 'api'",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(shas)
+}
+
+/// `GET /sim/merge?repo=api&number=1&login=ada`: the person comments
+/// `/cihub merge` on the PR, as on the SCM.
+async fn comment_merge(
+    State(sim): State<Arc<Sim>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let get = |name: &str| query.get(name).cloned().unwrap_or_default();
+    let Some((person, _)) = people()
+        .into_iter()
+        .find(|(person, _)| person.login == get("login"))
+    else {
+        return Html("no such person").into_response();
+    };
+    let Ok(number) = get("number").parse() else {
+        return Html("no such PR").into_response();
+    };
+
+    match sim.comment(&acme_repo(&get("repo")), number, &person, "/cihub merge") {
+        Ok(()) => Html("commented").into_response(),
+        Err(err) => Html(err.to_string()).into_response(),
+    }
+}
+
+/// `GET /sim/comment?repo=api&number=2`: the last comment of the PR.
+async fn last_comment(
+    State(sim): State<Arc<Sim>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> String {
+    let get = |name: &str| query.get(name).cloned().unwrap_or_default();
+    let number = get("number").parse().unwrap_or_default();
+
+    sim.comments(&acme_repo(&get("repo")), number)
+        .pop()
+        .unwrap_or_default()
 }
 
 fn stored_delivery(deliveries: &Deliveries, payload: &Value) -> Option<ScmDelivery> {
