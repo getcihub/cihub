@@ -86,6 +86,9 @@ CREATE TABLE users (
     created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- The PRs of a person, by their login whatever its case.
+CREATE INDEX users_login ON users (lower(login));
+
 CREATE TABLE api_tokens (
     id           text        PRIMARY KEY,
     org_id       text        NOT NULL REFERENCES orgs (id),

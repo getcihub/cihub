@@ -234,6 +234,42 @@ export type Me = {
 };
 
 /**
+ * A current item of a person, in a queue of the organization.
+ */
+export type OrgPr = {
+    /**
+     * The admitted PRs that merge before it, the head of the queue first;
+     * empty for a merged item. For an item not admitted yet, every admitted
+     * PR: a PR of a higher priority goes before some of them.
+     */
+    ahead: Array<PrAhead>;
+    item: Item;
+    /**
+     * About how many seconds until it merges, from the median duration of
+     * the runs of its queue; `None` when it does not move toward the merge,
+     * or when its queue has no run that succeeded in the last 24 hours.
+     */
+    merges_in_seconds?: number | null;
+    /**
+     * The name of the queue, as the routes name it.
+     */
+    queue: string;
+    /**
+     * The name of the repository of the queue, as the routes name it.
+     */
+    repo: string;
+};
+
+/**
+ * `GET /orgs/{org}/prs?author={login}`: the current items of a person in
+ * every queue of the organization, and those that merged in the last 10
+ * minutes, by repository, queue, then position.
+ */
+export type OrgPrList = {
+    prs: Array<OrgPr>;
+};
+
+/**
  * A queue of the organization, with its counters.
  */
 export type OrgQueue = {
@@ -272,6 +308,14 @@ export type OrgQueueList = {
 export type OrgRole = {
     role: string;
     slug: string;
+};
+
+/**
+ * A PR ahead of another one in its queue.
+ */
+export type PrAhead = {
+    pr_number: number;
+    state: string;
 };
 
 /**
@@ -363,6 +407,11 @@ export type QueueDetail = {
      * The runs in progress.
      */
     live_runs: number;
+    /**
+     * The median duration of the runs that succeeded in the last 24 hours,
+     * in seconds; `None` without such a run.
+     */
+    median_run_seconds?: number | null;
     merged_last_24h: number;
     queue: Queue;
     settings: SettingsSummary;
@@ -532,6 +581,29 @@ export type ListAuditResponses = {
 };
 
 export type ListAuditResponse = ListAuditResponses[keyof ListAuditResponses];
+
+export type ListOrgPrsData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization
+         */
+        org: string;
+    };
+    query: {
+        /**
+         * The login of the author of the PRs, whatever its case.
+         */
+        author: string;
+    };
+    url: '/orgs/{org}/prs';
+};
+
+export type ListOrgPrsResponses = {
+    200: OrgPrList;
+};
+
+export type ListOrgPrsResponse = ListOrgPrsResponses[keyof ListOrgPrsResponses];
 
 export type ListOrgQueuesData = {
     body?: never;
@@ -725,6 +797,10 @@ export type ListItemsData = {
          * Submitted before this time (RFC 3339).
          */
         until?: string;
+        /**
+         * Reached their state at or after this time (RFC 3339).
+         */
+        state_changed_since?: string;
         /**
          * The `next_cursor` of the previous page.
          */

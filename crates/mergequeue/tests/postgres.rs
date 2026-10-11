@@ -3481,6 +3481,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
         let queue = "/orgs/acme/repos/app/queues/main";
         let reads = [
             "/orgs/acme/queues".to_owned(),
+            "/orgs/acme/prs?author=bob".to_owned(),
             queue.to_owned(),
             format!("{queue}/graph"),
             format!("{queue}/config-check"),
@@ -3504,6 +3505,128 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     tx.commit().await.unwrap();
 
     assert_eq!(page().await, before);
+    q.stop().await;
+}
+
+/// `GET /orgs/{org}/prs?author=` gives the current items of a person with
+/// the PRs ahead of each one, keeps a merged one for a moment, and the queue
+/// gives the median duration of its runs.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let get = |path: String| {
+        let (addr, token) = (addr.clone(), token.clone());
+        async move { call(&addr, &token, "GET", &path, None).await.1 }
+    };
+
+    let mut numbers = Vec::new();
+
+    for n in 1..=2 {
+        numbers.push(submit_new_pr(&sim, &main, n));
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let (first, second) = (numbers[0], numbers[1]);
+    let mine = get("/orgs/acme/prs?author=BOB".into()).await;
+    let items: Vec<(u64, Value)> = mine["prs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pr| {
+            (
+                pr["item"]["pr_number"].as_u64().unwrap(),
+                pr["ahead"].clone(),
+            )
+        })
+        .collect();
+
+    assert_eq!(mine["prs"][0]["repo"], "app");
+    assert_eq!(mine["prs"][0]["queue"], "main");
+    assert_eq!(
+        items,
+        [
+            (first, serde_json::json!([])),
+            (
+                second,
+                serde_json::json!([{ "pr_number": first, "state": "testing" }])
+            ),
+        ],
+        "the login is read whatever its case"
+    );
+    assert_eq!(
+        get("/orgs/acme/prs?author=alice".into()).await["prs"],
+        serde_json::json!([]),
+        "alice submitted the PRs of bob"
+    );
+
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    q.deliver().await;
+    q.settle().await;
+
+    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let merged = format!("{queue}/prs?state=merged&state_changed_since=2026-10-01T09:00:00Z");
+    let later = format!("{queue}/prs?state=merged&state_changed_since=2026-10-02T00:00:00Z");
+
+    assert_eq!(mine["prs"][0]["item"]["state"], "merged", "{mine}");
+    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
+    assert_eq!(mine["prs"][1]["ahead"], serde_json::json!([]));
+    assert!(get(queue.to_owned()).await["median_run_seconds"].is_u64());
+    assert!(
+        mine["prs"][1]["merges_in_seconds"].is_u64(),
+        "a tested PR merges in about the rest of its run: {mine}"
+    );
+    assert_eq!(mine["prs"][0]["merges_in_seconds"], Value::Null);
+    assert_eq!(get(merged).await["items"].as_array().unwrap().len(), 1);
+    assert_eq!(get(later).await["items"], serde_json::json!([]));
+
+    // A PR that is not ready has every admitted PR ahead of it; a cancelled PR
+    // leaves the list.
+    let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
+    sim.comment(&repo(), third, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    assert_eq!(mine["prs"][2]["item"]["state"], "not_ready", "{mine}");
+    assert_eq!(
+        mine["prs"][2]["ahead"],
+        serde_json::json!([{ "pr_number": second, "state": "testing" }])
+    );
+
+    let cancel = format!("{queue}/prs/{second}:cancel");
+    assert_eq!(call(&addr, &token, "POST", &cancel, None).await.0, 202);
+    q.settle().await;
+
+    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    let numbers: Vec<u64> = mine["prs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pr| pr["item"]["pr_number"].as_u64().unwrap())
+        .collect();
+    assert_eq!(numbers, [first, third]);
+    assert_eq!(mine["prs"][1]["ahead"], serde_json::json!([]));
+
+    // A merged PR stays 10 minutes.
+    q.clock.advance(11);
+
+    let mine = get("/orgs/acme/prs?author=bob".into()).await;
+    assert_eq!(mine["prs"][0]["item"]["pr_number"], third);
+    assert_eq!(mine["prs"].as_array().unwrap().len(), 1);
     q.stop().await;
 }
 

@@ -64,6 +64,11 @@ CREATE UNIQUE INDEX queue_items_current ON queue_items (queue_id, pr_number) WHE
 CREATE INDEX queue_items_pr ON queue_items (queue_id, pr_number);
 CREATE INDEX queue_items_order ON queue_items (queue_id, position)
     WHERE is_current AND state NOT IN ('merged', 'failed', 'cancelled');
+CREATE INDEX queue_items_author_live ON queue_items (pr_author_id)
+    WHERE is_current AND state NOT IN ('merged', 'failed', 'cancelled');
+CREATE INDEX queue_items_author_merged ON queue_items (pr_author_id, state_changed_at)
+    WHERE is_current AND state = 'merged';
+CREATE INDEX queue_items_state_changed ON queue_items (queue_id, state, state_changed_at);
 
 CREATE TABLE test_groups (
     id              text        PRIMARY KEY,
@@ -106,6 +111,7 @@ CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
 CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
 CREATE INDEX test_runs_group_id ON test_runs (group_id);
+CREATE INDEX test_runs_succeeded ON test_runs (queue_id, ended_at) WHERE status = 'succeeded';
 
 CREATE TABLE queue_inbox (
     id            text        PRIMARY KEY,

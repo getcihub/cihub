@@ -4,16 +4,17 @@
 //! through its inbox (`queue_inbox`) or a job: the scheduler stays the only
 //! writer of the log.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use cihub_api_types::{
     Accepted, BatchGet, BatchGetResponse, ConfigCheck, Dependent, ErrorCode, Finding, Graph,
-    GraphEdge, GraphNode, GraphRun, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgQueue,
-    OrgQueueList, PrItem, Queue, QueueAccess, QueueDetail, QueueList, RequestedQueueState,
-    RunCheck, SettingsSummary, SubmitPr, TestRun, TimelineEvent, UpdateQueue, Window,
+    GraphEdge, GraphNode, GraphRun, Item, ItemCounts, ItemPage, MAX_BATCH_GET, MAX_TAKE, OrgPr,
+    OrgPrList, OrgQueue, OrgQueueList, PrAhead, PrItem, Queue, QueueAccess, QueueDetail, QueueList,
+    RequestedQueueState, RunCheck, SettingsSummary, SubmitPr, TestRun, TimelineEvent, UpdateQueue,
+    Window,
 };
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
@@ -29,7 +30,7 @@ use cihub_store::{PgPool, Postgres, Transaction};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use sqlx::PgConnection;
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 use utoipa::OpenApi;
 
 use crate::Clock;
@@ -46,6 +47,7 @@ struct ApiState {
 #[openapi(
     paths(
         list_org_queues,
+        list_org_prs,
         list_queues,
         get_queue,
         update_queue,
@@ -71,8 +73,11 @@ struct ApiState {
         Item,
         ItemCounts,
         ItemPage,
+        OrgPr,
+        OrgPrList,
         OrgQueue,
         OrgQueueList,
+        PrAhead,
         PrItem,
         Queue,
         QueueAccess,
@@ -96,6 +101,7 @@ pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
 pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
     let routes = Router::new()
         .route("/orgs/{org}/queues", get(list_org_queues))
+        .route("/orgs/{org}/prs", get(list_org_prs))
         .route("/orgs/{org}/repos/{repo}/queues", get(list_queues))
         // `POST` on a queue or a PR takes the action after a colon in the last
         // segment: `{queue}:resync`, `{number}:cancel`, `{number}:restart`.
@@ -549,6 +555,7 @@ async fn get_queue(
     .bind(&row.id)
     .fetch_one(&mut *tx)
     .await?;
+    let medians = median_run_seconds(&mut tx, std::slice::from_ref(&row.id), now).await?;
 
     let settings = row.settings()?;
     let window_size = row.window_size.map(u32::try_from).transpose()?;
@@ -571,10 +578,241 @@ async fn get_queue(
         failed_last_24h: u32::try_from(counts.failed_last_24h)?,
         last_merged_at: counts.last_merged_at,
         live_runs: u32::try_from(live_runs)?,
+        median_run_seconds: medians.get(&row.id).copied(),
         window,
         settings: summary,
         queue: row.into_queue_with(&settings)?,
     }))
+}
+
+/// A duration in seconds from Postgres, rounded to the second.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "a run lasts from 0 seconds to a few days"
+)]
+fn seconds_of(seconds: f64) -> u32 {
+    seconds.round().max(0.0) as u32
+}
+
+/// How long a merged item stays in the PRs of its author.
+const MERGED_STAYS: Duration = Duration::minutes(10);
+
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct PrsOf {
+    /// The login of the author of the PRs, whatever its case.
+    author: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct OrgPrRow {
+    repo: String,
+    queue_name: String,
+    #[sqlx(flatten)]
+    item: ItemRow,
+}
+
+/// An admitted PR of a queue of the person.
+#[derive(sqlx::FromRow)]
+struct AdmittedRow {
+    queue_id: String,
+    pr_number: i64,
+    state: String,
+    position: i64,
+}
+
+/// What the estimate of a queue needs: its window and the median duration of
+/// its runs.
+struct QueuePace {
+    window: u32,
+    median_run_seconds: Option<u32>,
+}
+
+/// The current items of a person in every queue of the organization, and
+/// those that merged a moment ago, each with the PRs that merge before it
+/// and an estimate: "Your pull requests" in the dashboard.
+#[utoipa::path(
+    get,
+    path = "/orgs/{org}/prs",
+    params(("org" = String, Path, description = "The slug of the organization"), PrsOf),
+    responses((status = 200, body = OrgPrList)),
+    security(("token" = ["queues:read"]))
+)]
+async fn list_org_prs(
+    grant: ApiGrant,
+    axum::extract::State(state): axum::extract::State<ApiState>,
+    ApiPath(org): ApiPath<String>,
+    ApiQuery(of): ApiQuery<PrsOf>,
+) -> Result<axum::Json<OrgPrList>, ApiError> {
+    grant.require(ApiScope::QueuesRead)?;
+
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
+    let now = (state.clock)();
+    let rows: Vec<OrgPrRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT r.name AS repo, q.name AS queue_name, {ITEM_COLUMNS}
+         FROM {ITEM_SOURCE}
+         JOIN repos r ON r.id = q.repo_id
+         WHERE i.is_current
+           AND i.pr_author_id IN (SELECT id FROM users WHERE lower(login) = lower($1))
+           AND (i.state NOT IN ('merged', 'failed', 'cancelled')
+                OR (i.state = 'merged' AND i.state_changed_at > $2))
+         ORDER BY r.name, q.name, i.position NULLS LAST, i.submitted_at, i.id"
+    )))
+    .bind(&of.author)
+    .bind(now - MERGED_STAYS)
+    .fetch_all(&mut *tx)
+    .await?;
+    let queues: Vec<String> = rows.iter().map(|row| row.item.queue_id.clone()).collect();
+    let admitted: Vec<AdmittedRow> = sqlx::query_as(
+        "SELECT queue_id, pr_number, state::text AS state, position FROM queue_items
+         WHERE queue_id = ANY($1) AND is_current AND position IS NOT NULL
+           AND state NOT IN ('merged', 'failed', 'cancelled')
+         ORDER BY queue_id, position",
+    )
+    .bind(&queues)
+    .fetch_all(&mut *tx)
+    .await?;
+    let paces = paces(&mut tx, &queues, now).await?;
+    let runs: Vec<String> = rows
+        .iter()
+        .filter_map(|row| row.item.run_id.clone())
+        .collect();
+    let started: HashMap<String, OffsetDateTime> =
+        sqlx::query_as("SELECT id, started_at FROM test_runs WHERE id = ANY($1)")
+            .bind(&runs)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+
+    let prs = rows
+        .into_iter()
+        .map(|row| {
+            let pace = paces.get(&row.item.queue_id);
+            let elapsed = row
+                .item
+                .run_id
+                .as_ref()
+                .and_then(|run| started.get(run))
+                .map(|start| seconds_of((now - *start).as_seconds_f64()));
+            org_pr(row, &admitted, pace, elapsed)
+        })
+        .collect::<Result<_, _>>()?;
+
+    Ok(axum::Json(OrgPrList { prs }))
+}
+
+/// The window and the median duration of the runs of each of `queues`.
+async fn paces(
+    conn: &mut PgConnection,
+    queues: &[String],
+    now: OffsetDateTime,
+) -> Result<HashMap<String, QueuePace>, ApiError> {
+    let rows: Vec<QueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT {QUEUE_COLUMNS} FROM {QUEUE_SOURCE} WHERE q.id = ANY($1)"
+    )))
+    .bind(queues)
+    .fetch_all(&mut *conn)
+    .await?;
+    let medians = median_run_seconds(conn, queues, now).await?;
+    let mut paces = HashMap::new();
+
+    for row in rows {
+        let settings = row.settings()?;
+        let window_size = row.window_size.map(u32::try_from).transpose()?;
+        let pace = QueuePace {
+            window: current_window(window_size, &settings),
+            median_run_seconds: medians.get(&row.id).copied(),
+        };
+        paces.insert(row.id, pace);
+    }
+
+    Ok(paces)
+}
+
+/// The median duration of the runs that succeeded in the last 24 hours, in
+/// seconds, of each of `queues` that has one.
+async fn median_run_seconds(
+    conn: &mut PgConnection,
+    queues: &[String],
+    now: OffsetDateTime,
+) -> Result<HashMap<String, u32>, ApiError> {
+    let rows: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT queue_id,
+                percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM ended_at - started_at))
+         FROM test_runs
+         WHERE queue_id = ANY($1) AND status = 'succeeded' AND ended_at > $2
+         GROUP BY queue_id",
+    )
+    .bind(queues)
+    .bind(now - Duration::hours(24))
+    .fetch_all(conn)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(queue, seconds)| (queue, seconds_of(seconds)))
+        .collect())
+}
+
+/// About how many seconds until an item in `state` merges: a pending PR waits
+/// a run for each `window` PRs up to its `rank`, a tested one the rest of its
+/// run. `None` for an item that does not move toward the merge, or for a queue
+/// without a recent run.
+fn merges_in(
+    state: ItemState,
+    rank: u32,
+    pace: &QueuePace,
+    elapsed_seconds: Option<u32>,
+) -> Option<u32> {
+    let median = pace.median_run_seconds?;
+
+    match state {
+        ItemState::Pending => Some(rank.div_ceil(pace.window.max(1)) * median),
+        ItemState::Testing => Some(median.saturating_sub(elapsed_seconds.unwrap_or(0))),
+        ItemState::TestsPassed => Some(0),
+        _ => None,
+    }
+}
+
+/// The item of `row`, the admitted PRs of its queue before it (all of them
+/// for an item not admitted yet, none for a merged one), and its estimate.
+fn org_pr(
+    row: OrgPrRow,
+    admitted: &[AdmittedRow],
+    pace: Option<&QueuePace>,
+    elapsed_seconds: Option<u32>,
+) -> Result<OrgPr, ApiError> {
+    let OrgPrRow {
+        repo,
+        queue_name,
+        item,
+    } = row;
+    let is_merged = item.state == "merged";
+    let before = item.position.unwrap_or(i64::MAX);
+    let ahead = admitted
+        .iter()
+        .filter(|other| !is_merged && other.queue_id == item.queue_id && other.position < before)
+        .map(|other| {
+            Ok(PrAhead {
+                pr_number: u64::try_from(other.pr_number)?,
+                state: other.state.parse()?,
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    let item = item.into_item()?;
+    let rank = u32::try_from(ahead.len() + 1)?;
+    let merges_in_seconds =
+        pace.and_then(|pace| merges_in(item.state, rank, pace, elapsed_seconds));
+
+    Ok(OrgPr {
+        repo,
+        queue: queue_name,
+        item,
+        ahead,
+        merges_in_seconds,
+    })
 }
 
 /// Asks the queue for a new state; the queue changes it at its next
@@ -736,6 +974,10 @@ struct ItemFilter {
     #[serde(default, with = "time::serde::rfc3339::option")]
     #[param(value_type = Option<String>)]
     until: Option<OffsetDateTime>,
+    /// Reached their state at or after this time (RFC 3339).
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>)]
+    state_changed_since: Option<OffsetDateTime>,
     /// The `next_cursor` of the previous page.
     cursor: Option<String>,
     /// At most 100; 50 by default.
@@ -784,6 +1026,7 @@ async fn list_items(
            AND ($4::timestamptz IS NULL OR i.submitted_at < $4)
            AND ($5::text IS NULL OR (i.submitted_at, i.id) <
                 (SELECT submitted_at, id FROM queue_items WHERE id = $5))
+           AND ($7::timestamptz IS NULL OR i.state_changed_at >= $7)
          ORDER BY i.submitted_at DESC, i.id DESC
          LIMIT $6"
     )))
@@ -799,6 +1042,7 @@ async fn list_items(
     .bind(filter.until)
     .bind(&filter.cursor)
     .bind(i64::from(take) + 1)
+    .bind(filter.state_changed_since)
     .fetch_all(&mut *tx)
     .await?;
     let mut page = items(rows)?;
@@ -1457,4 +1701,32 @@ async fn config_check(
             checked_at: None,
         },
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_estimate_counts_a_run_for_each_window_up_to_the_pr() {
+        let pace = QueuePace {
+            window: 2,
+            median_run_seconds: Some(600),
+        };
+        let without_run = QueuePace {
+            window: 2,
+            median_run_seconds: None,
+        };
+
+        assert_eq!(merges_in(ItemState::Pending, 1, &pace, None), Some(600));
+        assert_eq!(merges_in(ItemState::Pending, 3, &pace, None), Some(1200));
+        assert_eq!(
+            merges_in(ItemState::Testing, 1, &pace, Some(240)),
+            Some(360)
+        );
+        assert_eq!(merges_in(ItemState::Testing, 1, &pace, Some(900)), Some(0));
+        assert_eq!(merges_in(ItemState::TestsPassed, 1, &pace, None), Some(0));
+        assert_eq!(merges_in(ItemState::NotReady, 1, &pace, None), None);
+        assert_eq!(merges_in(ItemState::Pending, 1, &without_run, None), None);
+    }
 }

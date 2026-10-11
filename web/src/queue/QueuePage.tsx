@@ -34,13 +34,13 @@ function QuietQueue({ queue }: { queue: Queue }) {
 
 /** The page of a queue: what stops it, its counters and settings, its graph and its items. */
 export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
-  const reads = queueReads(path, tab);
+  const now = useNow();
+  const reads = queueReads(path, tab, now);
   const [detail, graph, check, live] = useSuspenseQueries({
     queries: [reads.detail, reads.graph, reads.check, reads.live],
   });
   // The same read as `live` when the tab of the live items is open.
   const opened = useSuspenseQuery(reads.tab);
-  const now = useNow();
   const { queue } = detail.data;
   const items = inQueueOrder(live.data.items);
   // A position is an order, not a rank: the page shows 1, 2, 3 for the items admitted. The graph has every live

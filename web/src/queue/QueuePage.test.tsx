@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Answers, renderApp } from "../test/app";
+import { sinceOf } from "./reads";
 import type { GraphRun, Item } from "../client/types.gen";
 import { ada, detailOf, itemOf, noGraph, queueOf } from "../test/fixtures";
 
@@ -36,6 +37,7 @@ function answersFor(changes: Answers): Answers {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("the page of a queue", () => {
@@ -158,13 +160,18 @@ describe("the page of a queue", () => {
   });
 
   it("opens the tab of the URL, with the items that ended in the last 24 hours", async () => {
+    // The read of the tab starts at a full hour: the test and the page compute the same one.
+    vi.useFakeTimers({ now: Date.parse("2026-10-11T12:30:00Z"), toFake: ["Date"] });
     const merged = itemOf(116, "merged", { title: "Add the audit log page" });
     const old = itemOf(90, "merged", { state_changed_at: "2026-01-01T00:00:00Z" });
     renderApp(
       "/orgs/acme/repos/web/queues/main?tab=merged",
       answersFor({
         [QUEUE]: [200, detailOf(entry, { merged_last_24h: 1 })],
-        [`${QUEUE}/prs?state=merged&take=100`]: [200, { items: [merged, old] }],
+        [`${QUEUE}/prs?state=merged&state_changed_since=${sinceOf(Date.now())}&take=100`]: [
+          200,
+          { items: [merged, old] },
+        ],
       }),
     );
 

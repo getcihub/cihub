@@ -22,20 +22,34 @@ export interface QueuePath {
   queue: string;
 }
 
-function itemsOf(path: QueuePath, tab: Tab) {
-  return {
-    ...listItemsOptions({ path, query: { state: STATES_OF[tab], take: 100 } }),
-    refetchInterval: READ_AGAIN_EVERY,
-  };
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * The start of the reads of the tabs of the last 24 hours, at `now`: a full hour, so that the read stays the same
+ * for an hour; the page keeps the exact 24 hours.
+ */
+export function sinceOf(now: number): string {
+  return new Date(Math.floor(now / HOUR) * HOUR - 24 * HOUR).toISOString();
 }
 
-/** The reads of the page of a queue: the live items give the titles of the graph, `tab` the open tab. */
-export function queueReads(path: QueuePath, tab: Tab) {
+function itemsOf(path: QueuePath, tab: Tab, now: number) {
+  const query =
+    tab === "live"
+      ? { state: STATES_OF[tab], take: 100 }
+      : { state: STATES_OF[tab], state_changed_since: sinceOf(now), take: 100 };
+
+  return { ...listItemsOptions({ path, query }), refetchInterval: READ_AGAIN_EVERY };
+}
+
+/**
+ * The reads of the page of a queue at `now`: the live items give the titles of the graph, `tab` the open tab.
+ */
+export function queueReads(path: QueuePath, tab: Tab, now: number) {
   return {
     detail: { ...getQueueOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
     graph: { ...graphOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
     check: { ...configCheckOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
-    live: itemsOf(path, "live"),
-    tab: itemsOf(path, tab),
+    live: itemsOf(path, "live", now),
+    tab: itemsOf(path, tab, now),
   };
 }

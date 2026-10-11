@@ -44,7 +44,7 @@ configuration checker, in phase 1).
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
-| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | to do                                    |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress                              |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
@@ -349,19 +349,35 @@ Decisions:
 
 - **Goal**: a person follows their PRs to the merge, and acts on the queue from the dashboard.
 - **Content**: `GET /orgs/{org}/prs?author={login}`: the current items of a person in every queue, those that
-  merged a moment ago, with the states of the PRs ahead of each one; `QueueDetail` gains the median duration of a
-  run, for the estimate "merges in about N min"; "Your pull requests" on the queues, their spotlight on the page of
-  a queue, the title of the tab. `TimelineEvent` gains `actor` and `description`; `RunCheck` gains `status`,
-  `started_at` and `completed_at` (migration of `check_observations`); `TestRun` gains `draft_pr_url`; `Item`
-  gains `url`, read by the adapter with the PR; `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR already in the queue
-  (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
+  merged in the last 10 minutes, with the states of the PRs ahead of each one; `GET …/prs` gains the filter
+  `state_changed_since`, for the tabs of the last 24 hours; `QueueDetail` gains the median duration of the runs
+  that succeeded in the last 24 hours, for the estimate "merges in about N min"; "Your pull requests" on the
+  queues, their spotlight on the page of a queue, the title of the tab. `TimelineEvent` gains `actor` and
+  `description`; `RunCheck` gains `status`, `started_at` and `completed_at` (migration of `check_observations`);
+  `TestRun` gains `draft_pr_url`; `Item` gains `url`, read by the adapter with the PR (the recorded contract is
+  recorded again); `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR
+  already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
   `item.cancelled` and `item.restarted` in the audit log. The comment of CIHub and the status of a PR link to the
-  page of the PR in the dashboard (`http.public_url`). Pages: the drawer of a PR (where it is, run, required and
-  observed checks, history); the submission, cancellation and restart; pause, drain and resume.
+  page of the PR in the dashboard (`http.public_url`), `/orgs/$org/repos/$repo/queues/$queue/prs/$number`. Pages:
+  the drawer of a PR at this address (where it is, run, required and observed checks, history); the submission,
+  with TanStack Form, cancellation and restart; pause, drain and resume.
 - **Frozen interfaces**: the answer of `GET /orgs/{org}/prs`, `TimelineEvent`, `RunCheck`, `Item`.
 - **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
   submits a PR from the dashboard and follows it in "Your pull requests" until the merge; a member pauses
   nothing; the comment of the PR links to its page.
+
+- **Tracking**:
+  - Decided (October 11, 2026, validated by the project lead): `Item.url` read by the adapter, with a new
+    recording of the contract; the address of a PR in the dashboard, `…/queues/$queue/prs/$number`, which the
+    comment links to; TanStack Form for the submission; "a moment ago" is 10 minutes; the median duration of a
+    run is over the runs that succeeded in the last 24 hours; the filter `state_changed_since`.
+  - Done (October 11, 2026): step 1. `GET /orgs/{org}/prs?author={login}` (`OrgPrList`), the filter
+    `state_changed_since` of `GET …/prs`, which the tabs of the last 24 hours now use, and
+    `QueueDetail.median_run_seconds`. `OrgPr` carries `merges_in_seconds`, computed by the server from the
+    median duration of the runs and the window of the queue, so that the dashboard holds no queue logic.
+  - Remaining: the fields of the detail of a PR (`url` waits for the new recording of the contract), the
+    refusals at once and the audit of the actions, the links of the comment and of the status, the pages, the
+    browser test.
 
 #### Lot 10d: live updates
 
