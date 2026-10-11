@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useRef } from "react";
 
 import type { Graph, GraphRun, Item, QueueDetail } from "../client/types.gen";
 import { itemStateLabel } from "../ui/StateBadge";
 import { CheckIcon } from "../ui/icons";
+import { useFlip } from "../ui/motion";
 import { PrLink } from "./PrLink";
 import styles from "./queue.module.css";
 
@@ -46,7 +47,7 @@ function rankOf(run: GraphRun, ranks: Map<string, number>): number {
 
 function Chip({ item, text, rank }: { item: Item; text: string | null; rank: number | undefined }) {
   return (
-    <li>
+    <li data-flip={item.id}>
       <PrLink className={styles.chip} number={item.pr_number}>
         {rank !== undefined && <span className={styles.position}>{rank}</span>}
         <span className={`${styles.dot} ${DOTS[item.state] ?? ""}`} />
@@ -81,6 +82,8 @@ export function QueueGraph({
   items: Item[];
   ranks: Map<string, number>;
 }) {
+  const graphRef = useRef<HTMLDivElement>(null);
+  useFlip(graphRef);
   const byId = new Map(items.map((item) => [item.id, item]));
   const notReady = items.filter((item) => item.state === "not_ready");
   const queued = items.filter((item) => item.state === "pending");
@@ -141,7 +144,7 @@ export function QueueGraph({
         <h2 id="graph-title">Live graph</h2>
         <div className={styles.right}>Each run tests its pull requests on top of the runs on its right.</div>
       </div>
-      <div className={styles.graph}>
+      <div ref={graphRef} className={styles.graph}>
         {lanes.length === 0 && (
           <>
             <p className={styles.idle}>No pull request waits and no run is in progress.</p>
@@ -161,7 +164,8 @@ export function QueueGraph({
         <div className={styles.lane} role="group" aria-label={`Branch ${detail.queue.target_branch}`}>
           <span className={styles.laneLabel}>{detail.queue.target_branch}</span>
           <div className={styles.commits}>
-            <span className={styles.head}>
+            {/* A new head comes in: the merged PR went into its branch. */}
+            <span key={graph.target_head_sha} className={styles.head}>
               <CheckIcon />
             </span>
             {graph.target_head_sha && <code className={styles.sha}>{graph.target_head_sha.slice(0, 7)}</code>}

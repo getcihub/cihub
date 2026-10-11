@@ -19,6 +19,7 @@ mod lease;
 mod maintenance;
 mod members;
 mod module;
+mod news;
 mod routing;
 mod sweep;
 mod tokens;
@@ -49,6 +50,7 @@ pub use members::{
     sync_members_job,
 };
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
+pub use news::{QueueChange, QueueNews, QueueNewsFeed, notify_queue_changed};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
 pub use tokens::create_token;

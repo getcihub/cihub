@@ -45,7 +45,7 @@ configuration checker, in phase 1).
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
-| 10d | Dashboard: live updates                                | 2     | 10b        | —         | to do                                    |
+| 10d | Dashboard: live updates                                | 2     | 10b        | —         | done                                     |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
@@ -401,13 +401,25 @@ Decisions:
 #### Lot 10d: live updates
 
 - **Goal**: the pages follow the queue without a reload.
-- **Content**: `GET /orgs/{org}/stream`, server-sent events built on `NOTIFY cihub_queue`, that carry only
+- **Content**: `GET /orgs/{org}/stream`, server-sent events built on `NOTIFY cihub_queue_changed`, that carry only
   `queue_changed` (queue, sequence number) and a ping; the dashboard invalidates the reads of the queue that
   changed and stops its polling; the motion of the mockups v5 (what changed moves, a merged PR goes into its
   branch) and a notice when a PR of the person moves.
 - **Frozen interfaces**: the event `queue_changed`.
 - **Exit criterion**: a change on the simulator shows on an open page in less than 2 seconds; the stream of an
   organization carries no event of another one (principle VIII); the stream closes when the server stops.
+- **Tracking**:
+  - Done (October 11, 2026). A channel of its own, `cihub_queue_changed`, and not `cihub_queue`, which says that
+    a queue has work before it changes: the reconciliation that writes the log, the check of the configuration
+    and the creation of a queue notify it in their transaction, with the last sequence number of the log. Each
+    web process listens to it once (`QueueNewsFeed` of `cihub-platform`) and passes each change to the streams
+    of its organization; the stream ends when the server stops, lost changes or lagged, and the browser opens it
+    again and reads everything. Written without a new crate: a `tokio::io::duplex` read by `ReaderStream`. The
+    dashboard reads again the queue that changed and no longer polls; what changed slides, a new head of the
+    target arrives, and a notice tells the person that one of their PRs moved.
+  - Exit criterion: `web/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
+    queue in less than 2 seconds), `the_stream_carries_the_changes_of_the_organization_only` (another
+    organization, end with the server), `a_reconciliation_that_writes_the_log_tells_the_pages`.
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 

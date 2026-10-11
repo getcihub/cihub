@@ -8,7 +8,7 @@ use std::error::Error;
 use cihub_api_types::Finding;
 use cihub_config::{ConfigError, FILE_NAMES, RepoConfig, find_config_file};
 use cihub_domain::{JobClass, QueueId};
-use cihub_platform::{Job, enqueue_job, mark_dirty};
+use cihub_platform::{Job, enqueue_job, mark_dirty, notify_queue_changed};
 use cihub_scm::{RepoRef, Scm, ScmError, SetupFinding};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
@@ -215,6 +215,7 @@ pub(crate) async fn check(
     .bind(now)
     .execute(&mut *tx)
     .await?;
+    notify_queue_changed(&mut tx, target.org_id, target.queue_id).await?;
     tx.commit().await?;
 
     Ok(())

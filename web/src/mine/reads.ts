@@ -2,14 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { listOrgPrsOptions } from "../client/@tanstack/react-query.gen";
 import type { OrgPr } from "../client/types.gen";
-import { READ_AGAIN_EVERY } from "../live";
 
 /** The read of the PRs of `login` in the queues of `org`. */
 export function minePrsOptions(org: string, login: string) {
-  return {
-    ...listOrgPrsOptions({ path: { org }, query: { author: login } }),
-    refetchInterval: READ_AGAIN_EVERY,
-  };
+  return listOrgPrsOptions({ path: { org }, query: { author: login } });
 }
 
 /**

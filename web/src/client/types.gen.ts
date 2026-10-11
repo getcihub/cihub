@@ -396,6 +396,19 @@ export type Queue = {
 export type QueueAccess = 'ok' | 'suspended';
 
 /**
+ * The event `queue_changed` of `GET /orgs/{org}/stream`: what the pages of
+ * the queue show changed, and they read it again.
+ */
+export type QueueChanged = {
+    queue_id: string;
+    /**
+     * The sequence number of the last event of the log of the queue; 0
+     * before the first.
+     */
+    seq: number;
+};
+
+/**
  * `GET /orgs/{org}/repos/{repo}/queues/{queue}`: a queue, its counters as
  * in [`OrgQueue`], its runs and the summary of its settings.
  */
@@ -1024,3 +1037,21 @@ export type TestRunResponses = {
 };
 
 export type TestRunResponse = TestRunResponses[keyof TestRunResponses];
+
+export type StreamData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization
+         */
+        org: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/stream';
+};
+
+export type StreamResponses = {
+    200: QueueChanged;
+};
+
+export type StreamResponse = StreamResponses[keyof StreamResponses];

@@ -3,7 +3,6 @@ import { Suspense, useState } from "react";
 
 import { getPrOptions, graphOptions, testRunOptions } from "../client/@tanstack/react-query.gen";
 import type { Item, TimelineEvent } from "../client/types.gen";
-import { READ_AGAIN_EVERY } from "../live";
 import { ItemStateBadge, itemStateLabel } from "../ui/StateBadge";
 import { PrActions } from "./Actions";
 import { DrawerFrame } from "./DrawerFrame";
@@ -111,10 +110,7 @@ function Journey({ item }: { item: Item }) {
 }
 
 function RunSection({ org, runId }: { org: string; runId: string }) {
-  const { data: run } = useSuspenseQuery({
-    ...testRunOptions({ path: { org, run_id: runId } }),
-    refetchInterval: READ_AGAIN_EVERY,
-  });
+  const { data: run } = useSuspenseQuery(testRunOptions({ path: { org, run_id: runId } }));
   const prs = (numbers: number[]) => numbers.map((number) => `#${String(number)}`).join(", ");
 
   return (
@@ -174,11 +170,10 @@ function RunSection({ org, runId }: { org: string; runId: string }) {
  * history. `Escape` closes it.
  */
 export function PrDrawer({ path, number }: { path: QueuePath; number: number }) {
-  const { data } = useSuspenseQuery({
-    ...getPrOptions({ path: { ...path, number }, query: { include: "timeline" } }),
-    refetchInterval: READ_AGAIN_EVERY,
-  });
-  const { data: graph } = useSuspenseQuery({ ...graphOptions({ path }), refetchInterval: READ_AGAIN_EVERY });
+  const { data } = useSuspenseQuery(
+    getPrOptions({ path: { ...path, number }, query: { include: "timeline" } }),
+  );
+  const { data: graph } = useSuspenseQuery(graphOptions({ path }));
   const { item } = data;
   const timeline = data.timeline ?? [];
   const ahead = graph.nodes.filter(

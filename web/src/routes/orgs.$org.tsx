@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import { listOrgQueuesOptions, meOptions, meQueryKey } from "../client/@tanstack/react-query.gen";
 import type { Me } from "../client/types.gen";
 import { Frame } from "../frame/Frame";
+import { useQueueNews } from "../live";
+import { MoveNotice } from "../mine/MoveNotice";
 import { minePrsOptions, useMinePrs, whereOf } from "../mine/reads";
 import { OrgLostPage } from "../pages/OrgLostPage";
 import { keepLastOrg } from "../preferences";
@@ -68,7 +70,8 @@ function OrgLayout() {
 
 function OrgFrame({ me, org }: { me: Me; org: string }) {
   const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
-  const [first] = useMinePrs(org, me.login);
+  const mine = useMinePrs(org, me.login);
+  const [first] = mine;
   const firstQueue = data.queues.find(
     (candidate) => candidate.repo === first?.repo && candidate.queue.name === first.queue,
   )?.queue;
@@ -91,6 +94,8 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
     }
   }, [membership]);
 
+  useQueueNews(org);
+
   // The tab says where the first PR of the person is, from any page.
   useEffect(() => {
     document.title = title;
@@ -99,6 +104,7 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
   return (
     <Frame me={me} org={org} queues={data.queues} repo={knownRepo} queue={knownQueue}>
       <Outlet />
+      <MoveNotice prs={mine} queues={data.queues} />
     </Frame>
   );
 }

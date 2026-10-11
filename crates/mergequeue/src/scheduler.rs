@@ -17,7 +17,8 @@ use cihub_domain::{
 use cihub_mq_core::plan;
 use cihub_platform::{
     Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
-    enqueue_job, mark_dirty, pending_deliveries, release_leases, schedule_tick, until_next_tick,
+    enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries, release_leases,
+    schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
@@ -182,6 +183,11 @@ impl Reconciler {
 
         log.cover(conn, now).await?;
         schedule_tick(conn, queue, plan.wake_at).await?;
+
+        // The pages read the queue again once this transaction commits.
+        if written + decisions > 0 {
+            notify_queue_changed(conn, target.org_id, queue).await?;
+        }
 
         if written + decisions + requested + deferred > 0 {
             info!(

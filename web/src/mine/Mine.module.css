@@ -240,3 +240,21 @@
     justify-items: start;
   }
 }
+
+/* The notice of a PR that moved */
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 70;
+}
+
+.toast {
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--blue-soft);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+}

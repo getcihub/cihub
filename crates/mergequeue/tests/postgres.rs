@@ -894,6 +894,7 @@ async fn serve_api(
     let dashboard = cihub_web::Dashboard {
         scm: Arc::new(Sim::new()),
         public_url: None,
+        news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone()),
     };
     let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api], dashboard);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3718,6 +3719,35 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     let mine = get("/orgs/acme/prs?author=bob".into()).await;
     assert_eq!(mine["prs"][0]["item"]["pr_number"], third);
     assert_eq!(mine["prs"].as_array().unwrap().len(), 1);
+    q.stop().await;
+}
+
+/// A reconciliation that writes the log tells the pages that its queue
+/// changed, with the last sequence number of the log.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_reconciliation_that_writes_the_log_tells_the_pages(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let feed = cihub_platform::QueueNewsFeed::start(pool.clone(), q.cancel.clone());
+    let mut news = feed.subscribe();
+
+    // The listener connects in the background: a moment before the change.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    submit_new_pr(&sim, &main, 1);
+    q.deliver().await;
+    q.settle().await;
+
+    let heard = tokio::time::timeout(std::time::Duration::from_secs(5), news.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let cihub_platform::QueueNews::Changed(change) = heard else {
+        panic!("{heard:?}");
+    };
+    assert_eq!((change.org_id, change.queue_id), (org(), queue()));
+    assert!(change.seq > 0, "{change:?}");
     q.stop().await;
 }
 

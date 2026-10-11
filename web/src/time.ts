@@ -1,7 +1,5 @@
 import { startTransition, useEffect, useState } from "react";
 
-import { READ_AGAIN_EVERY } from "./live";
-
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["day", 86_400],
   ["hour", 3_600],
@@ -29,9 +27,12 @@ export function durationBetween(start: string, end: string): string {
   return hours === 0 ? `${String(minutes)} min` : `${String(hours)} h ${String(minutes % 60)} min`;
 }
 
+/** How often the times of a page ("6 minutes ago") move. */
+const TIME_MOVES_EVERY = 15_000;
+
 /**
- * The time of the page, in milliseconds, which moves as often as the page reads its queue again. In a transition:
- * a read whose key follows the time keeps its page while it loads.
+ * The time of the page, in milliseconds, which moves every few seconds. In a transition: a read whose key follows
+ * the time keeps its page while it loads.
  */
 export function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -41,7 +42,7 @@ export function useNow(): number {
       startTransition(() => {
         setNow(Date.now());
       });
-    }, READ_AGAIN_EVERY);
+    }, TIME_MOVES_EVERY);
     return () => {
       clearInterval(timer);
     };

@@ -310,6 +310,17 @@ pub struct Item {
     pub submitted_at: OffsetDateTime,
 }
 
+/// The event `queue_changed` of `GET /orgs/{org}/stream`: what the pages of
+/// the queue show changed, and they read it again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct QueueChanged {
+    pub queue_id: String,
+    /// The sequence number of the last event of the log of the queue; 0
+    /// before the first.
+    pub seq: i64,
+}
+
 /// `GET /orgs/{org}/prs?author={login}`: the current items of a person in
 /// every queue of the organization, and those that merged in the last 10
 /// minutes, by repository, queue, then position.

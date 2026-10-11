@@ -16,10 +16,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use cihub_api_types::{
-    AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Me, OrgRole, Problem, Repo, RepoList,
+    AuditEntry, AuditPage, ErrorCode, MAX_TAKE, Me, OrgRole, Problem, QueueChanged, Repo, RepoList,
 };
 use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
-use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi};
+use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, QueueNewsFeed};
 use cihub_scm::Scm;
 use cihub_store::{
     PgPool, SessionGrant, authenticate, authenticate_session, login_of, memberships_of,
@@ -35,6 +35,7 @@ use utoipa::openapi::security::{
 use utoipa::{Modify, OpenApi};
 
 use crate::session::{SESSION_COOKIE, cookie, csrf_refused, has_csrf_token, needs_csrf_token};
+use crate::stream::{__path_stream, Streams, stream};
 
 pub const REQUESTS_PER_MINUTE: u32 = 600;
 
@@ -75,8 +76,18 @@ impl Modify for Security {
 #[openapi(
     info(title = "CIHub API", version = "1"),
     servers((url = "/api/v1")),
-    paths(me, list_repos, list_audit),
-    components(schemas(AuditEntry, AuditPage, ErrorCode, Me, OrgRole, Problem, Repo, RepoList)),
+    paths(me, list_repos, list_audit, stream),
+    components(schemas(
+        AuditEntry,
+        AuditPage,
+        ErrorCode,
+        Me,
+        OrgRole,
+        Problem,
+        QueueChanged,
+        Repo,
+        RepoList
+    )),
     modifiers(&Security)
 )]
 struct PlatformApi;
@@ -121,12 +132,17 @@ pub(crate) fn router(
     now: fn() -> OffsetDateTime,
     modules: Vec<ModuleApi>,
     scm: Arc<dyn Scm>,
+    news: QueueNewsFeed,
 ) -> Router {
     let parts: Vec<_> = modules
         .iter()
         .map(|module| module.openapi.clone())
         .collect();
     let document = openapi(&parts);
+    let streams = Streams {
+        pool: pool.clone(),
+        news,
+    };
     let state = ApiState {
         pool,
         now,
@@ -137,7 +153,12 @@ pub(crate) fn router(
         .route("/me", get(me))
         .route("/orgs/{org}/repos", get(list_repos))
         .route("/orgs/{org}/audit", get(list_audit))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .merge(
+            Router::new()
+                .route("/orgs/{org}/stream", get(stream))
+                .with_state(streams),
+        );
 
     for module in modules {
         routes = routes.merge(module.routes);

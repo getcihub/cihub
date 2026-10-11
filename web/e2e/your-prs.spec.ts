@@ -4,7 +4,7 @@
 // of the PR links to its page.
 import { type Page, expect, test } from "@playwright/test";
 
-// The pages read their queue again every 10 seconds.
+// The queue takes a moment to create its queue and to test a PR.
 const READ_AGAIN = { timeout: 30_000 };
 
 async function signInAsAda(page: Page) {
@@ -31,7 +31,7 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   await dialog.getByRole("textbox", { name: /Pull request number/ }).fill("2");
   await dialog.getByRole("button", { name: "Submit" }).click();
 
-  await expect(page.getByRole("status")).toContainText("#2 sent");
+  await expect(page.getByText(/^#2 sent/)).toBeVisible();
 
   await page.goto("/orgs/acme");
   const mine = page.getByRole("region", { name: "Your pull requests" });

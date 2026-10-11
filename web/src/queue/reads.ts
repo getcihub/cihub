@@ -6,7 +6,6 @@ import {
   graphOptions,
   listItemsOptions,
 } from "../client/@tanstack/react-query.gen";
-import { READ_AGAIN_EVERY } from "../live";
 
 /** The tabs of the items of a queue. */
 export const TABS = ["live", "merged", "ended"] as const;
@@ -40,7 +39,7 @@ function itemsOf(path: QueuePath, tab: Tab, now: number) {
       ? { state: STATES_OF[tab], take: 100 }
       : { state: STATES_OF[tab], state_changed_since: sinceOf(now), take: 100 };
 
-  return { ...listItemsOptions({ path, query }), refetchInterval: READ_AGAIN_EVERY };
+  return listItemsOptions({ path, query });
 }
 
 /**
@@ -48,9 +47,9 @@ function itemsOf(path: QueuePath, tab: Tab, now: number) {
  */
 export function queueReads(path: QueuePath, tab: Tab, now: number) {
   return {
-    detail: { ...getQueueOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
-    graph: { ...graphOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
-    check: { ...configCheckOptions({ path }), refetchInterval: READ_AGAIN_EVERY },
+    detail: getQueueOptions({ path }),
+    graph: graphOptions({ path }),
+    check: configCheckOptions({ path }),
     live: itemsOf(path, "live", now),
     tab: itemsOf(path, tab, now),
   };

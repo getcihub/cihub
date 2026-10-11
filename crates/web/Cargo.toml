@@ -22,8 +22,8 @@ serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["net", "time"] }
-tokio-util.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io"] }
 tracing.workspace = true
 utoipa.workspace = true
 
