@@ -18,9 +18,11 @@ declare const styles: {
   readonly muted: string;
   readonly neutral: string;
   readonly note: string;
+  readonly notice: string;
   readonly now: string;
   readonly red: string;
   readonly scrim: string;
+  readonly status: string;
   readonly success: string;
   readonly what: string;
   readonly when: string;

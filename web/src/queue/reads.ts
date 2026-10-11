@@ -1,3 +1,5 @@
+import type { QueryClient } from "@tanstack/react-query";
+
 import {
   configCheckOptions,
   getQueueOptions,
@@ -52,4 +54,25 @@ export function queueReads(path: QueuePath, tab: Tab, now: number) {
     live: itemsOf(path, "live", now),
     tab: itemsOf(path, tab, now),
   };
+}
+
+// The reads that an action on a queue changes.
+const READS_OF_A_QUEUE = new Set([
+  "getQueue",
+  "graph",
+  "listItems",
+  "getPr",
+  "testRun",
+  "listOrgPrs",
+  "listOrgQueues",
+]);
+
+/** Reads again what an action on a queue changes: the queue decides at its next reconciliation. */
+export function readQueueAgain(queryClient: QueryClient): Promise<void> {
+  return queryClient.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey[0] as { _id?: string } | undefined;
+      return READS_OF_A_QUEUE.has(key?._id ?? "");
+    },
+  });
 }

@@ -70,6 +70,23 @@
   color: var(--text);
 }
 
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.notice {
+  margin-top: 10px !important;
+  padding: 8px 10px;
+  border: 1px solid var(--blue-soft);
+  border-radius: 4px;
+  background: var(--blue-bg);
+  font-size: 12.5px;
+}
+
 .meta {
   color: var(--muted);
   font-size: 12.5px;
