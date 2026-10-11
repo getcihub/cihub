@@ -3,7 +3,8 @@
 //! loop, the daily maintenance (lot 3), the budgets of the connections, the
 //! routing and the sweep of the deliveries, the sync of the installations of
 //! the App into organizations and connections, the read of the repositories
-//! of the connections, the API tokens of an operator, the contract of a
+//! of the connections, the roles of the people who sign in and of the members
+//! of each account, the API tokens of an operator, the contract of a
 //! module, and what the routes of the modules share. The roles talk only through these tables and their notifications.
 //! It holds no queue logic: it decides who works on a queue and in which order
 //! its deliveries come, not what the queue does.
@@ -16,6 +17,7 @@ mod installations;
 mod jobs;
 mod lease;
 mod maintenance;
+mod members;
 mod module;
 mod routing;
 mod sweep;
@@ -41,6 +43,10 @@ pub use jobs::{
 pub use lease::{LEASE_TTL, acquire_leases, lock_queue, release_leases};
 pub use maintenance::{
     MAINTENANCE, execute_maintenance, maintenance_job, request_maintenance, run_maintenance,
+};
+pub use members::{
+    SYNC_MEMBERS, record_sign_in, request_member_syncs, run_sync_members, sync_members_executor,
+    sync_members_job,
 };
 pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};

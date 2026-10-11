@@ -243,6 +243,17 @@ Decisions:
     and its scopes, and the form of a session token; `cihub-store` creates, authenticates and deletes a session,
     and records, forgets and lists the memberships of a user. Tests: `tests/postgres.rs` of `cihub-store` and the
     maintenance test of `cihub-platform`.
+  - Done (October 10, 2026): step 2. The `Scm` trait gains `sign_in_url`, `sign_in` and `members` (simulator,
+    GitHub adapter); the token of the person stays in the adapter, which forgets it. `members` reads the
+    installation first, so that a renamed organization is never taken for the account of a person. `record_sign_in`
+    (`cihub-platform`) records the person and their roles in the organizations that CIHub knows, and deletes
+    none; the hourly `sync_members` job converges the members of each connection and alone deletes. New keys `github.client_id` and
+    `github.client_secret`, both or none. Tests: the simulator and the contract suite (`members`), the GitHub
+    adapter on answers written by hand, `tests/postgres.rs` of `cihub-platform`.
+  - Waits on the project lead: a new recording by the `github` example (`record` mode), so that the recorded
+    contract suite also runs `contract::members`; the fixture admin must be an owner of the account. Then
+    `contract::members` moves into `contract::run`.
+  - Step 3 gives the two keys to the chart and to `deploy/compose.yaml`, with the routes that use them.
   - Open: how the build of `web/` enters the binary (a `build.rs` without a dependency, or `rust-embed`); decided
     at step 5.
 

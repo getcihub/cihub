@@ -1346,6 +1346,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         url: rate_limited_github(reset).await,
         app_id: "1".into(),
         private_key: SecretString::from(include_str!("../../github/tests/test-only-key.pem")),
+        sign_in: None,
     };
     let app = Arc::new(GithubApp::new(&config, Arc::new(clock)).unwrap());
     let scm: Arc<dyn Scm> = app.clone();

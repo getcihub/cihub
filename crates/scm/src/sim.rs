@@ -8,17 +8,18 @@ use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, Permission,
-    PrState, ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
+    Permission, PrState, ReviewDecision,
 };
-
+use secrecy::ExposeSecret;
 use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
     RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn,
+    StatusUpdate,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -162,6 +163,13 @@ struct State {
     next_comment: u64,
     repos: BTreeMap<String, Repo>,
     installations: BTreeMap<String, ScmInstallation>,
+    /// The members of the account of each installation, by the external
+    /// identifier of the user.
+    members: BTreeMap<String, BTreeMap<String, ScmMember>>,
+    /// The codes of the sign-ins that wait for their exchange: the person and
+    /// the address that the SCM sends the code to.
+    sign_in_codes: BTreeMap<String, (ScmUser, String)>,
+    next_sign_in_code: u64,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -537,6 +545,45 @@ impl Sim {
             state.lost.insert(connection_external_id.to_owned());
             state.connection_changed(connection_external_id);
         });
+    }
+
+    /// Gives `user` the role `role` in the account of the installation
+    /// `connection_external_id`.
+    pub fn set_member(&self, connection_external_id: &str, user: &ScmUser, role: MembershipRole) {
+        self.with(|state| {
+            let member = ScmMember {
+                user: user.clone(),
+                role,
+            };
+            state
+                .members
+                .entry(connection_external_id.to_owned())
+                .or_default()
+                .insert(user.external_id.clone(), member);
+        });
+    }
+
+    /// Takes `user` out of the account of the installation
+    /// `connection_external_id`.
+    pub fn remove_member(&self, connection_external_id: &str, user: &ScmUser) {
+        self.with(|state| {
+            if let Some(members) = state.members.get_mut(connection_external_id) {
+                members.remove(&user.external_id);
+            }
+        });
+    }
+
+    /// Signs `user` in on the page of the SCM, as after their consent, and
+    /// returns the code that the SCM sends to `redirect_url`.
+    pub fn authorize(&self, user: &ScmUser, redirect_url: &str) -> String {
+        self.with(|state| {
+            state.next_sign_in_code += 1;
+            let code = format!("code-{}", state.next_sign_in_code);
+            state
+                .sign_in_codes
+                .insert(code.clone(), (user.clone(), redirect_url.to_owned()));
+            code
+        })
     }
 
     /// Suspends the connection `connection_external_id`, or makes it active
@@ -1634,6 +1681,56 @@ impl Scm for Sim {
                 .collect())
         })
     }
+
+    fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
+        Some(format!(
+            "sim:authorize?redirect_uri={}&state={}&code_challenge={}",
+            request.redirect_url, request.state, request.code_challenge
+        ))
+    }
+
+    fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn> {
+        self.record_call("sign_in", class, move |state| {
+            let refused = || ScmError::Validation("the code of the sign-in is not valid".into());
+            let (user, redirect_url) = state
+                .sign_in_codes
+                .remove(code.code.expose_secret())
+                .ok_or_else(refused)?;
+            if redirect_url != code.redirect_url {
+                return Err(refused());
+            }
+
+            let memberships = state
+                .members
+                .iter()
+                .filter(|(installation, _)| state.installations.contains_key(*installation))
+                .filter_map(|(installation, members)| {
+                    members.get(&user.external_id).map(|member| ScmMembership {
+                        connection_external_id: installation.clone(),
+                        role: member.role,
+                    })
+                })
+                .collect();
+            Ok(SignedIn { user, memberships })
+        })
+    }
+
+    fn members<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmMember>> {
+        self.record_call("members", class, move |state| {
+            if state.lost.contains(&connection.external_id) {
+                return Err(ScmError::AccessLost("connection suspended".into()));
+            }
+            Ok(state
+                .members
+                .get(&connection.external_id)
+                .map(|members| members.values().cloned().collect())
+                .unwrap_or_default())
+        })
+    }
 }
 
 /// Builds in a new simulator the world of the contract suite, on the
@@ -1706,6 +1803,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         account,
         &[("contents", "write"), ("metadata", "read")],
     );
+    sim.set_member(&repo.connection.external_id, &admin, MembershipRole::Admin);
 
     sim.take_deliveries();
     let fixture = Fixture {
@@ -1756,6 +1854,69 @@ mod tests {
         let repo = repo();
         let (sim, fixture) = contract_world(&repo).unwrap();
         crate::contract::run(&sim, &repo, &fixture).await;
+        crate::contract::members(&sim, &repo, &fixture).await;
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_code_gives_the_roles_of_the_person_once() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+        let person = ScmUser {
+            external_id: "7".into(),
+            login: "ada".into(),
+        };
+        let redirect_url = "https://ci.example.com/auth/callback";
+        let exchange = |code: String, redirect_url: &str| SignInCode {
+            code: code.into(),
+            code_verifier: "verifier".into(),
+            redirect_url: redirect_url.into(),
+        };
+        let member = ScmMembership {
+            connection_external_id: "100".into(),
+            role: MembershipRole::Member,
+        };
+
+        sim.set_member("100", &person, MembershipRole::Member);
+        sim.set_member("999", &person, MembershipRole::Admin);
+        let code = sim.authorize(&person, redirect_url);
+        let signed_in = sim
+            .sign_in(&exchange(code.clone(), redirect_url), JobClass::Interactive)
+            .await
+            .unwrap();
+        let again = sim
+            .sign_in(&exchange(code, redirect_url), JobClass::Interactive)
+            .await;
+        let elsewhere = sim
+            .sign_in(
+                &exchange(sim.authorize(&person, redirect_url), "https://evil.example"),
+                JobClass::Interactive,
+            )
+            .await;
+
+        assert_eq!(signed_in.user, person);
+        assert_eq!(signed_in.memberships, [member]);
+        assert!(matches!(again, Err(ScmError::Validation(_))));
+        assert!(matches!(elsewhere, Err(ScmError::Validation(_))));
+    }
+
+    #[tokio::test]
+    async fn a_member_who_leaves_the_account_is_no_longer_listed() {
+        let repo = repo();
+        let (sim, fixture) = contract_world(&repo).unwrap();
+
+        sim.remove_member("100", &fixture.admin);
+
+        let members = sim
+            .members(&repo.connection, JobClass::Repair)
+            .await
+            .unwrap();
+
+        assert!(members.is_empty());
+
+        sim.set_access("100", false);
+        let lost = sim.members(&repo.connection, JobClass::Repair).await;
+
+        assert!(matches!(lost, Err(ScmError::AccessLost(_))));
     }
 
     #[tokio::test]

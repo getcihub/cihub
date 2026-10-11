@@ -8,12 +8,13 @@ mod auth;
 mod budget;
 mod client;
 mod scm;
+mod sign_in;
 mod signature;
 mod translate;
 mod webhook;
 
 pub use auth::{AppKey, KeyError};
 pub use budget::{Budget, Rate};
-pub use client::{ClientError, Clock, GithubApp, GithubConfig};
+pub use client::{ClientError, Clock, GithubApp, GithubConfig, SignInClient};
 pub use translate::{TranslateError, translate};
 pub use webhook::{ReceivedDelivery, WEBHOOK_PATH, WebhookError, receive};
