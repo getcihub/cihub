@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Me } from "../client/types.gen";
+import type { Me } from "../session";
 import { signInAddress, signOutAndLeave } from "../session";
 import styles from "./SignIn.module.css";
 import { Timeline } from "./Timeline";

@@ -1,8 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
 
-import { getPrOptions, graphOptions, testRunOptions } from "../client/@tanstack/react-query.gen";
-import type { Item, TimelineEvent } from "../client/types.gen";
+import { getPrOptions, getRunOptions, listEventsOptions } from "../client/@tanstack/react-query.gen";
+import type { Pr, Event } from "../client/types.gen";
 import { onQueueChanged } from "../live";
 import { ItemStateBadge, itemStateLabel } from "../ui/StateBadge";
 import { PrActions } from "./Actions";
@@ -69,7 +69,7 @@ function timeOf(at: string): string {
 }
 
 /** The name of an event of the history: the state that a transition reaches, else what happened. */
-function whatOf(event: TimelineEvent): string {
+function whatOf(event: Event): string {
   switch (event.type) {
     case "item.transitioned":
       return itemStateLabel(String(event.payload.to));
@@ -89,7 +89,7 @@ function whatOf(event: TimelineEvent): string {
 }
 
 /** Submitted, queued, testing, merged: where the PR is in its life. */
-function Journey({ item }: { item: Item }) {
+function Journey({ item }: { item: Pr }) {
   const step = STEP_OF[item.state] ?? 0;
 
   return (
@@ -111,7 +111,7 @@ function Journey({ item }: { item: Item }) {
 }
 
 function RunSection({ org, runId }: { org: string; runId: string }) {
-  const { data: run } = useSuspenseQuery(testRunOptions({ path: { org, run_id: runId } }));
+  const { data: run } = useSuspenseQuery(getRunOptions({ path: { org, run_id: runId } }));
   const prs = (numbers: number[]) => numbers.map((number) => `#${String(number)}`).join(", ");
 
   return (
@@ -166,20 +166,22 @@ function RunSection({ org, runId }: { org: string; runId: string }) {
   );
 }
 
+/** The reads of the drawer of the PR `number`: the PR and its first 100 events. */
+export function prReads(path: QueuePath, number: number) {
+  const pr = { org: path.org, repo: path.repo, number };
+  return [getPrOptions({ path: pr }), listEventsOptions({ path: pr, query: { limit: 100 } })] as const;
+}
+
 /**
  * The drawer of a PR over the page of its queue: where it is, why it waits or how it ended, its run and its
  * history. `Escape` closes it.
  */
 export function PrDrawer({ path, number }: { path: QueuePath; number: number }) {
-  const { data } = useSuspenseQuery(
-    getPrOptions({ path: { ...path, number }, query: { include: "timeline" } }),
-  );
-  const { data: graph } = useSuspenseQuery(graphOptions({ path }));
-  const { item } = data;
-  const timeline = data.timeline ?? [];
-  const ahead = graph.nodes.filter(
-    (node) => node.position != null && item.position != null && node.position < item.position,
-  ).length;
+  const [{ data: item }, { data: events }] = useSuspenseQueries({
+    queries: prReads(path, number),
+  });
+  const timeline = events.events;
+  const ahead = item.ahead.length;
   const lastWait = timeline.findLast((event) => event.type === "item.readiness_changed");
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);
@@ -197,10 +199,10 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
   return (
     <DrawerFrame
       path={path}
-      title={item.title ?? `#${String(item.pr_number)}`}
+      title={item.title ?? `#${String(item.number)}`}
       meta={
         <>
-          #{item.pr_number} · {item.author}
+          #{item.number} · {item.author}
           {!TERMINAL.includes(item.state) && item.position != null && ` · position ${String(ahead + 1)}`}
         </>
       }

@@ -1,19 +1,44 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { listOrgPrsOptions } from "../client/@tanstack/react-query.gen";
-import type { OrgPr } from "../client/types.gen";
+import { listPrsOptions } from "../client/@tanstack/react-query.gen";
+import type { Pr } from "../client/types.gen";
 
-/** The read of the PRs of `login` in the queues of `org`. */
-export function minePrsOptions(org: string, login: string) {
-  return listOrgPrsOptions({ path: { org }, query: { author: login } });
+const LIVE = "not_ready,pending,testing,pending_failure,tests_passed";
+
+/** How long a merged PR stays among the PRs of the person: they see it reach its branch. */
+const MERGED_STAYS_MS = 10 * 60 * 1000;
+
+/**
+ * The reads of the PRs of the person of the session in the queues of `org`: the live ones, in the order of their
+ * queues, and the last ones that merged.
+ */
+export function minePrsReads(org: string) {
+  return {
+    live: listPrsOptions({
+      path: { org },
+      query: { author: "@me", state: LIVE, sort: "position", limit: 100 },
+    }),
+    merged: listPrsOptions({ path: { org }, query: { author: "@me", state: "merged", limit: 10 } }),
+  };
+}
+
+/** The PRs of the person: the ones merged a moment ago, then the live ones, by repository and queue. */
+export function minePrsOf(live: Pr[] = [], merged: Pr[] = [], now = Date.now()): Pr[] {
+  const recent = merged.filter((pr) => now - Date.parse(pr.state_changed_at) < MERGED_STAYS_MS);
+  const where = (pr: Pr) => `${pr.repo}/${pr.queue}`;
+
+  return [...recent, ...live].sort((a, b) => (where(a) < where(b) ? -1 : where(a) > where(b) ? 1 : 0));
 }
 
 /**
- * The PRs of `login` in the queues of `org`; none while they load or when their read fails. They only add to a
- * page: their read never stops it, unlike the reads that the page needs.
+ * The PRs of the person of the session in the queues of `org`; none while they load or when their read fails.
+ * They only add to a page: their read never stops it, unlike the reads that the page needs.
  */
-export function useMinePrs(org: string, login: string): OrgPr[] {
-  return useQuery(minePrsOptions(org, login)).data?.prs ?? [];
+export function useMinePrs(org: string): Pr[] {
+  const reads = minePrsReads(org);
+  const live = useQuery(reads.live).data?.prs;
+  const merged = useQuery(reads.merged).data?.prs;
+  return minePrsOf(live, merged);
 }
 
 function ordinal(number: number): string {
@@ -24,8 +49,8 @@ function ordinal(number: number): string {
 }
 
 /** Where the PR is, in a few words: "2nd in line", "testing", "merged into main". */
-export function whereOf(pr: OrgPr, isPaused: boolean, branch: string): string {
-  switch (pr.item.state) {
+export function whereOf(pr: Pr, isPaused: boolean, branch: string): string {
+  switch (pr.state) {
     case "not_ready":
       return "not in line yet";
     case "pending":
@@ -39,12 +64,12 @@ export function whereOf(pr: OrgPr, isPaused: boolean, branch: string): string {
     case "merged":
       return `merged into ${branch}`;
     default:
-      return pr.item.state;
+      return pr.state;
   }
 }
 
 /** The estimate of the server, as "about 12 min"; `null` without one. */
-export function etaOf(pr: OrgPr): string | null {
+export function etaOf(pr: Pr): string | null {
   const seconds = pr.merges_in_seconds;
   if (seconds == null) {
     return null;

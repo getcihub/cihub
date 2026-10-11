@@ -2,8 +2,18 @@ import { screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Answers, renderApp } from "./test/app";
-import type { OrgPr } from "./client/types.gen";
-import { ada, detailOf, itemOf, noGraph, queueOf } from "./test/fixtures";
+import type { ItemState } from "./client/types.gen";
+import {
+  ada,
+  answersOfMe,
+  answersOfMine,
+  detailOf,
+  itemOf,
+  liveOf,
+  noGraph,
+  pageOf,
+  queueOf,
+} from "./test/fixtures";
 
 /** The streams that the page opened, as the browser would. */
 class FakeEventSource {
@@ -33,13 +43,12 @@ const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
 const web = queueOf("web", "main");
 const api = queueOf("api", "main");
 const answers: Answers = {
-  "/api/v1/me": [200, ada],
-  "/api/v1/orgs/acme/prs": [200, { prs: [] }],
-  "/api/v1/orgs/acme/queues": [200, { queues: [api, web] }],
+  ...answersOfMe(ada),
+  ...answersOfMine("acme"),
+  "/api/v1/orgs/acme/queues": [200, pageOf("queues", [api, web])],
   [QUEUE]: [200, detailOf(web)],
   [`${QUEUE}/graph`]: [200, noGraph],
-  [`${QUEUE}/config-check`]: [200, { findings: [], checked_at: null }],
-  [`${QUEUE}/prs`]: [200, { items: [] }],
+  [liveOf()]: [200, pageOf("prs", [])],
 };
 
 /** How many times the page read `path`. */
@@ -60,50 +69,44 @@ describe("the stream of an organization", () => {
     await screen.findByRole("heading", { level: 1, name: "main" });
 
     const [stream] = FakeEventSource.opened;
-    const checks = readsOf(`${QUEUE}/config-check`);
+    const graphs = readsOf(`${QUEUE}/graph`);
 
     expect(stream?.url).toBe("http://localhost/api/v1/orgs/acme/stream");
 
     stream?.onopen?.();
     await waitFor(() => {
-      expect(readsOf(`${QUEUE}/config-check`)).toBe(checks + 1);
+      expect(readsOf(`${QUEUE}/graph`)).toBe(graphs + 1);
     });
 
     const queues = readsOf("/api/v1/orgs/acme/queues");
     const before = readsOf(QUEUE);
-    stream?.emit("queue_changed", { queue_id: api.queue.id, seq: 3 });
+    stream?.emit("queue_changed", { queue_id: api.id, seq: 3 });
     await waitFor(() => {
       expect(readsOf("/api/v1/orgs/acme/queues")).toBe(queues + 1);
     });
 
     expect(readsOf(QUEUE)).toBe(before);
 
-    stream?.emit("queue_changed", { queue_id: web.queue.id, seq: 4 });
-    stream?.emit("queue_changed", { queue_id: web.queue.id, seq: 5 });
+    stream?.emit("queue_changed", { queue_id: web.id, seq: 4 });
+    stream?.emit("queue_changed", { queue_id: web.id, seq: 5 });
     await waitFor(() => {
       expect(readsOf(QUEUE)).toBe(before + 1);
     });
   });
 
   it("tells the person that one of their PRs moved", async () => {
-    const prOf = (state: string): OrgPr => ({
-      repo: "web",
-      queue: "main",
-      item: itemOf(124, state, { author: "ada", title: "Fix the login redirect" }),
-      ahead: [],
-      merges_in_seconds: null,
-    });
+    const prOf = (state: ItemState) => itemOf(124, state, { author: "ada", title: "Fix the login redirect" });
     vi.stubGlobal("EventSource", FakeEventSource);
     renderApp("/orgs/acme/repos/web/queues/main", {
       ...answers,
-      "/api/v1/orgs/acme/prs": [
-        [200, { prs: [prOf("pending")] }],
-        [200, { prs: [prOf("testing")] }],
-      ],
+      ...answersOfMine("acme", [
+        [200, pageOf("prs", [prOf("pending")])],
+        [200, pageOf("prs", [prOf("testing")])],
+      ]),
     });
     await screen.findByText("1st in line");
 
-    FakeEventSource.opened[0]?.emit("queue_changed", { queue_id: web.queue.id, seq: 5 });
+    FakeEventSource.opened[0]?.emit("queue_changed", { queue_id: web.id, seq: 5 });
 
     expect(await screen.findByText("#124 Fix the login redirect: testing")).toBeInTheDocument();
   });

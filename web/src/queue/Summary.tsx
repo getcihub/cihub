@@ -1,4 +1,4 @@
-import type { QueueDetail } from "../client/types.gen";
+import type { Queue } from "../client/types.gen";
 import { timeAgo } from "../time";
 import styles from "./queue.module.css";
 
@@ -24,7 +24,7 @@ function Stat({ label, value, hint }: { label: string; value: number; hint: stri
 }
 
 /** The counters of the queue: what waits, what is tested, and the last 24 hours. */
-export function Stats({ detail, now }: { detail: QueueDetail; now: number }) {
+export function Stats({ detail, now }: { detail: Queue; now: number }) {
   const { counts, live_runs, merged_last_24h, failed_last_24h, last_merged_at } = detail;
   const inQueue =
     counts.not_ready + counts.pending + counts.testing + counts.pending_failure + counts.tests_passed;
@@ -61,8 +61,9 @@ export function Stats({ detail, now }: { detail: QueueDetail; now: number }) {
 }
 
 /** The settings in force, from the last valid file of the queue, or the defaults. */
-export function Settings({ detail }: { detail: QueueDetail }) {
-  const { queue, window, settings } = detail;
+export function Settings({ detail }: { detail: Queue }) {
+  const queue = detail;
+  const { window, settings } = detail;
   const batch = settings.batching_enabled
     ? `Up to ${String(settings.batching_size)}, wait ${String(settings.batching_max_wait_minutes)} min`
     : "Off";

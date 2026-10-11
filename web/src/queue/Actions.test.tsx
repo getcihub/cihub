@@ -2,24 +2,34 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Me } from "../client/types.gen";
+import type { Me } from "../session";
 import { type Answers, problem, renderApp } from "../test/app";
-import { ada, detailOf, itemOf, noGraph, queueOf } from "../test/fixtures";
+import {
+  ada,
+  answersOfMe,
+  answersOfMine,
+  detailOf,
+  itemOf,
+  liveOf,
+  noGraph,
+  pageOf,
+  queueOf,
+} from "../test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
-const LIVE = `${QUEUE}/prs?state=not_ready,pending,testing,pending_failure,tests_passed&take=100`;
+const PR = "/api/v1/orgs/acme/repos/web/prs";
+const LIVE = liveOf();
 const entry = queueOf("web", "main");
 const testing = itemOf(118, "testing", { position: 1000, title: "Export invoices as CSV" });
 
 function answersFor(changes: Answers): Answers {
   return {
-    "/api/v1/me": [200, ada],
-    "/api/v1/orgs/acme/prs": [200, { prs: [] }],
-    "/api/v1/orgs/acme/queues": [200, { queues: [entry] }],
+    ...answersOfMe(ada),
+    ...answersOfMine("acme"),
+    "/api/v1/orgs/acme/queues": [200, pageOf("queues", [entry])],
     [QUEUE]: [200, detailOf(entry)],
     [`${QUEUE}/graph`]: [200, noGraph],
-    [`${QUEUE}/config-check`]: [200, { findings: [], checked_at: null }],
-    [LIVE]: [200, { items: [testing] }],
+    [LIVE]: [200, pageOf("prs", [testing])],
     ...changes,
   };
 }
@@ -62,7 +72,7 @@ describe("the actions on a queue", () => {
 
   it("let a member pause nothing", async () => {
     const member: Me = { ...ada, orgs: [{ slug: "acme", role: "member" }] };
-    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ "/api/v1/me": [200, member] }));
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor(answersOfMe(member)));
 
     expect(await screen.findByRole("button", { name: "Pause" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Pause" })).toHaveAttribute("title", "Needs the admin role");
@@ -70,10 +80,7 @@ describe("the actions on a queue", () => {
   });
 
   it("submit a PR with its priority, after the form checks its number", async () => {
-    renderApp(
-      "/orgs/acme/repos/web/queues/main",
-      answersFor({ [`${QUEUE}/prs`]: [202, { accepted: true }] }),
-    );
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [`${PR}/124/submit`]: [202, null] }));
 
     await userEvent.click(await screen.findByRole("button", { name: "Submit a pull request" }));
     const dialog = screen.getByRole("dialog", { name: "Submit a pull request" });
@@ -87,13 +94,16 @@ describe("the actions on a queue", () => {
 
     expect(await screen.findByText(/^#124 sent/)).toBeInTheDocument();
     expect(await changes()).toEqual([
-      ["POST", `${QUEUE}/prs`, { pr_number: 124, priority: "high", no_batch: false }, "token"],
+      ["POST", `${PR}/124/submit`, { queue: "main", priority: "high", no_batch: false }, "token"],
     ]);
   });
 
   it("say why the queue refuses a submission at once", async () => {
-    const refused = { ...problem(409, "invalid_state"), detail: "the PR is already in the queue, `testing`" };
-    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [`${QUEUE}/prs`]: [409, refused] }));
+    const refused = {
+      ...problem(409, "pr_already_queued"),
+      detail: "the PR is already in the queue, `testing`",
+    };
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [`${PR}/118/submit`]: [409, refused] }));
 
     await userEvent.click(await screen.findByRole("button", { name: "Submit a pull request" }));
     const dialog = screen.getByRole("dialog", { name: "Submit a pull request" });
@@ -107,9 +117,10 @@ describe("the actions on a queue", () => {
     renderApp(
       "/orgs/acme/repos/web/queues/main/prs/118",
       answersFor({
-        [`${QUEUE}/prs/118?include=timeline`]: [200, { item: testing, timeline: [] }],
-        "/api/v1/orgs/acme/runs/run_1": [404, problem(404, "not_found")],
-        [`${QUEUE}/prs/118/cancel`]: [202, { accepted: true }],
+        [`${PR}/118`]: [200, testing],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", [])],
+        "/api/v1/orgs/acme/runs/run_1": [404, problem(404, "run_not_found")],
+        [`${PR}/118/cancel`]: [202, null],
       }),
     );
 
@@ -125,6 +136,6 @@ describe("the actions on a queue", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel the pull request" }));
 
     expect(await within(drawer).findByRole("status")).toHaveTextContent("Cancellation sent");
-    expect(await changes()).toEqual([["POST", `${QUEUE}/prs/118/cancel`, null, "token"]]);
+    expect(await changes()).toEqual([["POST", `${PR}/118/cancel`, null, "token"]]);
   });
 });

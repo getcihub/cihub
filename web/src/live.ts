@@ -2,9 +2,9 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { z } from "zod";
 
-import { listOrgQueuesQueryKey } from "./client/@tanstack/react-query.gen";
 import { client } from "./client/client.gen";
-import type { OrgQueueList } from "./client/types.gen";
+import type { QueueList } from "./client/types.gen";
+import { orgQueuesOptions } from "./queue/reads";
 
 /** The event `queue_changed` of the stream of an organization. */
 const queueChanged = z.object({ queue_id: z.string(), seq: z.number() });
@@ -44,8 +44,8 @@ function readOrgAgain(queryClient: QueryClient, org: string): Promise<void> {
  * it. A read in flight goes on.
  */
 function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<string>): Promise<void> {
-  const queues = queryClient.getQueryData<OrgQueueList>(listOrgQueuesQueryKey({ path: { org } }));
-  const changed = queues?.queues.filter((entry) => queueIds.has(entry.queue.id)) ?? [];
+  const queues = queryClient.getQueryData<QueueList>(orgQueuesOptions(org).queryKey);
+  const changed = queues?.queues.filter((entry) => queueIds.has(entry.id)) ?? [];
 
   return queryClient.invalidateQueries(
     {
@@ -54,10 +54,14 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         if (!isOf(key, org)) {
           return false;
         }
-        if (key._id === "listOrgQueues" || key._id === "listOrgPrs" || key._id === "testRun") {
+        if (key._id === "listOrgQueues" || key._id === "listPrs" || key._id === "getRun") {
           return true;
         }
-        return changed.some((entry) => key.path?.repo === entry.repo && key.path.queue === entry.queue.name);
+        // A read of a queue names it; a read of a PR names its repository.
+        return changed.some(
+          (entry) =>
+            key.path?.repo === entry.repo && (key.path.queue === undefined || key.path.queue === entry.name),
+        );
       },
     },
     { cancelRefetch: false },

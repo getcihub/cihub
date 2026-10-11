@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useRef } from "react";
 
-import type { Graph, GraphRun, Item, QueueDetail } from "../client/types.gen";
+import type { Graph, GraphRun, Pr, Queue } from "../client/types.gen";
 import { itemStateLabel } from "../ui/StateBadge";
 import { CheckIcon } from "../ui/icons";
 import { useFlip } from "../ui/motion";
@@ -24,7 +24,7 @@ const DOTS: Record<string, string> = {
 };
 
 /** The look of a run follows the state of its PRs: the API says what each state means. */
-function lookOf(members: Item[]): RunLook {
+function lookOf(members: Pr[]): RunLook {
   if (members.some((item) => item.state === "pending_failure")) {
     return "failing";
   }
@@ -34,7 +34,7 @@ function lookOf(members: Item[]): RunLook {
   return "testing";
 }
 
-function footOf(look: RunLook, run: GraphRun, members: Item[]): string {
+function footOf(look: RunLook, run: GraphRun, members: Pr[]): string {
   const state = members.find((item) => item.state !== "testing")?.state;
 
   return look === "testing" || !state ? `Testing · attempt ${String(run.attempt)}` : itemStateLabel(state);
@@ -45,13 +45,13 @@ function rankOf(run: GraphRun, ranks: Map<string, number>): number {
   return Math.min(...run.item_ids.map((id) => ranks.get(id) ?? Number.MAX_SAFE_INTEGER));
 }
 
-function Chip({ item, text, rank }: { item: Item; text: string | null; rank: number | undefined }) {
+function Chip({ item, text, rank }: { item: Pr; text: string | null; rank: number | undefined }) {
   return (
     <li data-flip={item.id}>
-      <PrLink className={styles.chip} number={item.pr_number}>
+      <PrLink className={styles.chip} number={item.number}>
         {rank !== undefined && <span className={styles.position}>{rank}</span>}
         <span className={`${styles.dot} ${DOTS[item.state] ?? ""}`} />
-        <b>#{item.pr_number}</b>
+        <b>#{item.number}</b>
         {text && <span className={styles.chipText}>{text}</span>}
       </PrLink>
     </li>
@@ -77,9 +77,9 @@ export function QueueGraph({
   items,
   ranks,
 }: {
-  detail: QueueDetail;
+  detail: Queue;
   graph: Graph;
-  items: Item[];
+  items: Pr[];
   ranks: Map<string, number>;
 }) {
   const graphRef = useRef<HTMLDivElement>(null);
@@ -113,7 +113,7 @@ export function QueueGraph({
           ))}
         </ul>
       ),
-      foot: detail.queue.state === "paused" ? "Paused" : "Waits for room in the window",
+      foot: detail.state === "paused" ? "Paused" : "Waits for room in the window",
     });
   }
 
@@ -161,8 +161,8 @@ export function QueueGraph({
             <span className={`${styles.link} ${index === lanes.length - 1 ? styles.toBranch : ""}`} />
           </Fragment>
         ))}
-        <div className={styles.lane} role="group" aria-label={`Branch ${detail.queue.target_branch}`}>
-          <span className={styles.laneLabel}>{detail.queue.target_branch}</span>
+        <div className={styles.lane} role="group" aria-label={`Branch ${detail.target_branch}`}>
+          <span className={styles.laneLabel}>{detail.target_branch}</span>
           <div className={styles.commits}>
             {/* A new head comes in: the merged PR went into its branch. */}
             <span key={graph.target_head_sha} className={styles.head}>

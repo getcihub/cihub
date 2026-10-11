@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
-import type { Me, OrgQueue } from "../client/types.gen";
+import type { Queue } from "../client/types.gen";
+import type { Me } from "../session";
 import { toggleTheme } from "../preferences";
 import { signOutAndLeave } from "../session";
 import { Avatar } from "../ui/Avatar";
@@ -15,7 +16,7 @@ interface Props {
   /** The organization of the URL. */
   org: string;
   /** Its queues, by repository then name; empty once access is lost. */
-  queues: OrgQueue[];
+  queues: Queue[];
   repo?: string | undefined;
   queue?: string | undefined;
   children: ReactNode;
@@ -107,7 +108,7 @@ function OrgPicker({ me, org }: { me: Me; org: string }) {
   );
 }
 
-function RepoPicker({ org, queues, repo }: { org: string; queues: OrgQueue[]; repo: string | undefined }) {
+function RepoPicker({ org, queues, repo }: { org: string; queues: Queue[]; repo: string | undefined }) {
   const repos = [...new Set(queues.map((candidate) => candidate.repo))];
 
   return (
@@ -140,14 +141,14 @@ function RepoPicker({ org, queues, repo }: { org: string; queues: OrgQueue[]; re
 }
 
 /** The dot of a queue: red for a file that is not valid, green when it runs, amber else. */
-function toneOf({ queue }: OrgQueue): string {
+function toneOf(queue: Queue): string {
   if (queue.config_error) {
     return styles.red;
   }
   return queue.state === "running" ? styles.green : styles.amber;
 }
 
-function liveCountOf({ counts }: OrgQueue): number {
+function liveCountOf({ counts }: Queue): number {
   return counts.not_ready + counts.pending + counts.testing + counts.pending_failure + counts.tests_passed;
 }
 
@@ -159,22 +160,22 @@ function QueuePicker({
 }: {
   org: string;
   repo: string;
-  queues: OrgQueue[];
+  queues: Queue[];
   queue: string;
 }) {
   return (
     <Menu label="Queue" trigger={<PickerLabel text={queue} />} triggerClassName={styles.picker} align="left">
       {queues.map((candidate) => (
         <Link
-          key={candidate.queue.name}
-          className={`${styles.item} ${candidate.queue.name === queue ? styles.current : ""}`}
+          key={candidate.name}
+          className={`${styles.item} ${candidate.name === queue ? styles.current : ""}`}
           to="/orgs/$org/repos/$repo/queues/$queue"
-          params={{ org, repo, queue: candidate.queue.name }}
+          params={{ org, repo, queue: candidate.name }}
         >
           <span className={`${styles.dot} ${toneOf(candidate)}`} />
-          <b>{candidate.queue.name}</b>
+          <b>{candidate.name}</b>
           <span className={styles.hint}>
-            {candidate.queue.config_error ? "invalid" : `${String(liveCountOf(candidate))} in the queue`}
+            {candidate.config_error ? "invalid" : `${String(liveCountOf(candidate))} in the queue`}
           </span>
         </Link>
       ))}

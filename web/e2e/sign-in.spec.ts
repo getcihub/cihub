@@ -34,7 +34,7 @@ test("a member cannot change the state of a queue", async ({ page }) => {
   });
 
   expect(paused.status()).toBe(403);
-  expect(await paused.json()).toMatchObject({ code: "forbidden" });
+  expect(await paused.json()).toMatchObject({ code: "scope_missing" });
 });
 
 test("a session never reaches another organization", async ({ page }) => {

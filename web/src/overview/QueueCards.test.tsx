@@ -10,7 +10,7 @@ describe("QueueCards", () => {
   it("shows the queues that need someone first, then in the order of the API", async () => {
     const running = queueOf("api", "main", 2);
     const paused = queueOf("web", "main");
-    paused.queue.state = "paused";
+    paused.state = "paused";
     const broken = queueOf("web", "release", 0, "unknown key `windw`");
     renderInRouter(<QueueCards org="acme" queues={[running, paused, broken]} />);
 

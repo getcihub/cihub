@@ -1,13 +1,13 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { listOrgQueuesOptions, meOptions } from "../client/@tanstack/react-query.gen";
 import { MinePrs } from "../mine/Mine";
 import { useMinePrs } from "../mine/reads";
 import { QueueCards } from "../overview/QueueCards";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
 import styles from "../ui/ui.module.css";
+import { orgQueuesOptions } from "../queue/reads";
 
 export const Route = createFileRoute("/orgs/$org/repos/$repo/")({
   component: RepoPage,
@@ -17,9 +17,8 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/")({
 
 function RepoPage() {
   const { org, repo } = Route.useParams();
-  const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
-  const { data: me } = useSuspenseQuery(meOptions());
-  const mine = useMinePrs(org, me.login);
+  const { data } = useSuspenseQuery(orgQueuesOptions(org));
+  const mine = useMinePrs(org);
   const queues = data.queues.filter((candidate) => candidate.repo === repo);
 
   if (queues.length === 0) {

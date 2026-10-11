@@ -1,27 +1,27 @@
 import { Link } from "@tanstack/react-router";
 import { useRef } from "react";
 
-import type { OrgPr, OrgQueue, QueueDetail } from "../client/types.gen";
+import type { Pr, Queue } from "../client/types.gen";
 import { Prose } from "../queue/Prose";
 import { useFlip } from "../ui/motion";
 import styles from "./Mine.module.css";
 import { Train } from "./Train";
 import { etaOf, whereOf } from "./reads";
 
-function PrTitle({ org, pr, className }: { org: string; pr: OrgPr; className: string }) {
+function PrTitle({ org, pr, className }: { org: string; pr: Pr; className: string }) {
   return (
     <Link
       className={className}
       to="/orgs/$org/repos/$repo/queues/$queue/prs/$number"
-      params={{ org, repo: pr.repo, queue: pr.queue, number: pr.item.pr_number }}
+      params={{ org, repo: pr.repo, queue: pr.queue, number: pr.number }}
     >
-      #{pr.item.pr_number} {pr.item.title ?? ""}
+      #{pr.number} {pr.title ?? ""}
     </Link>
   );
 }
 
 /** "Your pull requests" on the queues of an organization: where each one is, and when it should merge. */
-export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queues: OrgQueue[] }) {
+export function MinePrs({ org, prs, queues }: { org: string; prs: Pr[]; queues: Queue[] }) {
   const list = useRef<HTMLUListElement>(null);
   useFlip(list);
 
@@ -37,14 +37,12 @@ export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queue
       </div>
       <ul ref={list}>
         {prs.map((pr) => {
-          const queue = queues.find(
-            (entry) => entry.repo === pr.repo && entry.queue.name === pr.queue,
-          )?.queue;
+          const queue = queues.find((entry) => entry.repo === pr.repo && entry.name === pr.queue);
           const branch = queue?.target_branch ?? pr.queue;
           const eta = etaOf(pr);
 
           return (
-            <li key={pr.item.id} className={styles.row} data-flip={pr.item.id}>
+            <li key={pr.id} className={styles.row} data-flip={pr.id}>
               <div>
                 <PrTitle org={org} pr={pr} className={styles.title} />
                 <div className={styles.meta}>
@@ -65,8 +63,8 @@ export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queue
 }
 
 /** The PRs of the person in the queue of the page, first on it. */
-export function Spotlight({ org, prs, detail }: { org: string; prs: OrgPr[]; detail: QueueDetail }) {
-  const { queue } = detail;
+export function Spotlight({ org, prs, detail }: { org: string; prs: Pr[]; detail: Queue }) {
+  const queue = detail;
   const branch = queue.target_branch;
 
   return (
@@ -76,7 +74,7 @@ export function Spotlight({ org, prs, detail }: { org: string; prs: OrgPr[]; det
         const before = pr.ahead.length;
 
         return (
-          <section key={pr.item.id} className={styles.spotlight} aria-label="Your pull request">
+          <section key={pr.id} className={styles.spotlight} aria-label="Your pull request">
             <div className={styles.top}>
               <span className={styles.label}>Your pull request</span>
               <PrTitle org={org} pr={pr} className={styles.title} />
@@ -89,7 +87,7 @@ export function Spotlight({ org, prs, detail }: { org: string; prs: OrgPr[]; det
             <div className={styles.middle}>
               <div className={styles.where}>
                 <b>{whereOf(pr, queue.state === "paused", branch)}</b>
-                {pr.item.state === "pending" && (
+                {pr.state === "pending" && (
                   <span>
                     {before === 0
                       ? "next to be tested"
@@ -99,9 +97,9 @@ export function Spotlight({ org, prs, detail }: { org: string; prs: OrgPr[]; det
               </div>
               <Train pr={pr} branch={branch} />
             </div>
-            {pr.item.state !== "merged" && (
+            {pr.state !== "merged" && (
               <p className={styles.why}>
-                <Prose text={pr.item.state_description} />
+                <Prose text={pr.state_description} />
               </p>
             )}
           </section>

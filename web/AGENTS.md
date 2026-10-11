@@ -28,7 +28,8 @@ does not also check.
 - The URL holds the state that a link must keep: the organization, the queue, the open PR, the tab. Every search
   parameter goes through `validateSearch` with a Zod schema.
 - A link is a typed `<Link to=…>` or `navigate({ to })`; never a path built from strings.
-- The router context carries the `QueryClient`. The layout of the signed-in pages reads `/me` in `beforeLoad`
+- The router context carries the `QueryClient`. The layout of the signed-in pages reads the person of the session
+  (`/user`, `/user/orgs` and `/instance`, the `Me` of `src/session.ts`) in its loader
   and redirects to the sign-in page on `401`.
 
 ## Data of the server
@@ -50,7 +51,7 @@ does not also check.
 
 - The page shows `state_description` and the descriptions that the API gives; it decides on the codes
   (`state_reason`, `kind`, `code`). It never writes its own sentence for a reason of the closed vocabulary.
-- The role of `/me` only hides or disables a button; the server refuses what the role does not allow.
+- The role of the person (`/user/orgs`) only hides or disables a button; the server refuses what the role does not allow.
 - Every text is in English, with the words of `specs/DOMAIN.md`. The texts of the dashboard may name GitHub, as
   the mockups do ("Continue with GitHub"), an exception to the neutral vocabulary of the code that the project
   lead accepted: the name will come from the API when a second SCM arrives.

@@ -1,8 +1,7 @@
 import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { meOptions } from "../client/@tanstack/react-query.gen";
-import type { Item, Queue } from "../client/types.gen";
+import type { Queue } from "../client/types.gen";
 import { onQueueChanged } from "../live";
 import { Spotlight } from "../mine/Mine";
 import { useMinePrs } from "../mine/reads";
@@ -17,15 +16,7 @@ import { QueueGraph } from "./QueueGraph";
 import styles from "./queue.module.css";
 import { type QueuePath, type Tab, queueReads } from "./reads";
 import { Settings, Stats } from "./Summary";
-
-/** The order of the queue: by position, then the items not admitted yet, by arrival. */
-function inQueueOrder(items: Item[]): Item[] {
-  return [...items].sort(
-    (a, b) =>
-      (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
-      Date.parse(a.submitted_at) - Date.parse(b.submitted_at),
-  );
-}
+import { useMe } from "../session";
 
 function QuietQueue({ queue }: { queue: Queue }) {
   return (
@@ -42,19 +33,17 @@ function QuietQueue({ queue }: { queue: Queue }) {
 export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
   const now = useNow();
   const reads = queueReads(path, tab, now);
-  const [detail, graph, check, live] = useSuspenseQueries({
-    queries: [reads.detail, reads.graph, reads.check, reads.live],
+  const [detail, graph, live] = useSuspenseQueries({
+    queries: [reads.detail, reads.graph, reads.live],
   });
   // The same read as `live` when the tab of the live items is open.
   const opened = useSuspenseQuery(reads.tab);
-  const { data: me } = useSuspenseQuery(meOptions());
-  const spotlit = useMinePrs(path.org, me.login).filter(
-    (pr) => pr.repo === path.repo && pr.queue === path.queue,
-  );
+  const me = useMe();
+  const spotlit = useMinePrs(path.org).filter((pr) => pr.repo === path.repo && pr.queue === path.queue);
   const role = me.orgs.find((org) => org.slug.toLowerCase() === path.org.toLowerCase())?.role;
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);
-  const { queue } = detail.data;
+  const queue = detail.data;
 
   useEffect(
     () =>
@@ -66,7 +55,8 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
     [queue.id],
   );
 
-  const items = inQueueOrder(live.data.items);
+  // The server gives them in the order of the queue.
+  const items = live.data.prs;
   // A position is an order, not a rank: the page shows 1, 2, 3 for the items admitted. The graph has every live
   // item, where the read of the items stops at 100.
   const ranks = new Map(
@@ -105,7 +95,13 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
         </p>
       )}
       <Spotlight org={path.org} prs={spotlit} detail={detail.data} />
-      <Banners detail={detail.data} check={check.data} org={path.org} repo={path.repo} now={now} />
+      <Banners
+        detail={detail.data}
+        check={detail.data.config_check}
+        org={path.org}
+        repo={path.repo}
+        now={now}
+      />
       {!isQuiet && <Stats detail={detail.data} now={now} />}
       <Settings detail={detail.data} />
       {isQuiet ? (
@@ -119,8 +115,8 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
             detail={detail.data}
             live={items}
             ranks={ranks}
-            opened={opened.data.items}
-            isCut={opened.data.next_cursor != null}
+            opened={opened.data.prs}
+            isCut={opened.data.has_more}
             now={now}
           />
         </>

@@ -1,22 +1,15 @@
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { OrgPr } from "../client/types.gen";
+import type { ItemState, Pr } from "../client/types.gen";
 import { renderApp } from "../test/app";
-import { ada, itemOf, queueOf } from "../test/fixtures";
+import { ada, answersOfMe, answersOfMine, itemOf, pageOf, queueOf } from "../test/fixtures";
 import { etaOf, whereOf } from "./reads";
 
-const ahead = (...states: string[]) => states.map((state, index) => ({ pr_number: 100 + index, state }));
+const ahead = (...states: ItemState[]) => states.map((state, index) => ({ pr_number: 100 + index, state }));
 
-function prOf(state: string, changes: Partial<OrgPr> = {}): OrgPr {
-  return {
-    repo: "web",
-    queue: "main",
-    item: itemOf(124, state, { author: "ada", title: "Fix the payment webhook retry" }),
-    ahead: [],
-    merges_in_seconds: null,
-    ...changes,
-  };
+function prOf(state: ItemState, changes: Partial<Pr> = {}): Pr {
+  return itemOf(124, state, { author: "ada", title: "Fix the payment webhook retry", ...changes });
 }
 
 afterEach(() => {
@@ -45,9 +38,9 @@ describe("Your pull requests", () => {
   it("lists the PRs of the person on the queues, and names the first one in the tab", async () => {
     const pr = prOf("pending", { ahead: ahead("testing"), merges_in_seconds: 1200 });
     renderApp("/orgs/acme", {
-      "/api/v1/me": [200, ada],
-      "/api/v1/orgs/acme/queues": [200, { queues: [queueOf("web", "main")] }],
-      "/api/v1/orgs/acme/prs": [200, { prs: [pr] }],
+      ...answersOfMe(ada),
+      ...answersOfMine("acme", [pr]),
+      "/api/v1/orgs/acme/queues": [200, pageOf("queues", [queueOf("web", "main")])],
     });
 
     const mine = await screen.findByRole("region", { name: "Your pull requests" });

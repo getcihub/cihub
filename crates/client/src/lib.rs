@@ -5,8 +5,8 @@
 use std::fmt::Write;
 
 use cihub_api_types::{
-    API_PREFIX, Accepted, Graph, ItemPage, OrgQueueList, PrItem, Problem, Queue, QueueList,
-    RequestedQueueState, SubmitPr, UpdateQueue,
+    API_PREFIX, Graph, MAX_LIMIT, Pr, PrList, Problem, QueueList, RequestedQueueState, SubmitPr,
+    UpdateQueue,
 };
 use reqwest::{Method, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -54,12 +54,13 @@ impl Client {
         })
     }
 
-    async fn send<T: DeserializeOwned>(
+    /// Sends the request, and gives the body of a successful answer.
+    async fn send(
         &self,
         method: Method,
         path: &str,
         body: Option<&impl Serialize>,
-    ) -> Result<T, ClientError> {
+    ) -> Result<(StatusCode, String), ClientError> {
         let mut request = self
             .http
             .request(method, format!("{}{path}", self.base))
@@ -77,8 +78,7 @@ impl Client {
         let text = response.text().await.map_err(ClientError::Http)?;
 
         if status.is_success() {
-            return serde_json::from_str(&text)
-                .map_err(|_| ClientError::Unexpected { status, body: text });
+            return Ok((status, text));
         }
 
         Err(match serde_json::from_str::<Problem>(&text) {
@@ -88,26 +88,30 @@ impl Client {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, ClientError> {
-        self.send(Method::GET, path, None::<&()>).await
+        let (status, text) = self.send(Method::GET, path, None::<&()>).await?;
+
+        serde_json::from_str(&text).map_err(|_| ClientError::Unexpected { status, body: text })
     }
 
-    /// Every queue of the organization `org`, with its counters.
+    /// Sends a request that the queue takes later: its answer is `202`,
+    /// without a body.
+    async fn ask(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&impl Serialize>,
+    ) -> Result<(), ClientError> {
+        self.send(method, path, body).await.map(|_| ())
+    }
+
+    /// The first page of the queues of the repository, by name.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn org_queues(&self, org: &str) -> Result<OrgQueueList, ClientError> {
-        self.get(&format!("/orgs/{}/queues", segment(org))).await
-    }
-
-    /// The queues of the repository `repo` of the organization `org`.
-    ///
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn queues(&self, org: &str, repo: &str) -> Result<QueueList, ClientError> {
-        let path = format!("/orgs/{}/repos/{}/queues", segment(org), segment(repo));
-        self.get(&path).await
+    pub async fn queues(&self, repo: RepoPath<'_>) -> Result<QueueList, ClientError> {
+        self.get(&format!("{}/queues?limit={MAX_LIMIT}", repo.path()))
+            .await
     }
 
     /// Asks the queue for `state`.
@@ -119,77 +123,71 @@ impl Client {
         &self,
         queue: QueuePath<'_>,
         state: RequestedQueueState,
-    ) -> Result<Queue, ClientError> {
+    ) -> Result<(), ClientError> {
         let body = UpdateQueue { state };
-        self.send(Method::PATCH, &queue.path(), Some(&body)).await
+        self.ask(Method::PATCH, &queue.path(), Some(&body)).await
     }
 
-    /// The first page of the items of the queue, newest first.
+    /// The first page of the PRs of the queue in `states` (`pending`,
+    /// `testing`…), in the order of the queue.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn items(&self, queue: QueuePath<'_>, take: u32) -> Result<ItemPage, ClientError> {
-        self.get(&format!("{}/prs?take={take}", queue.path())).await
+    pub async fn prs(&self, queue: QueuePath<'_>, states: &[&str]) -> Result<PrList, ClientError> {
+        let path = format!(
+            "/orgs/{}/prs?repo={}&queue={}&state={}&sort=position&limit={MAX_LIMIT}",
+            segment(queue.org),
+            segment(queue.repo),
+            segment(queue.queue),
+            states.join(",")
+        );
+        self.get(&path).await
     }
 
-    /// Submits a PR to the queue.
+    /// The PR `number` of the repository, as its last submission gives it.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub refuses it.
+    pub async fn pr(&self, repo: RepoPath<'_>, number: u64) -> Result<Pr, ClientError> {
+        self.get(&format!("{}/prs/{number}", repo.path())).await
+    }
+
+    /// Submits the PR `number` of the repository.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
     pub async fn submit(
         &self,
-        queue: QueuePath<'_>,
+        repo: RepoPath<'_>,
+        number: u64,
         request: &SubmitPr,
-    ) -> Result<Accepted, ClientError> {
-        let path = format!("{}/prs", queue.path());
-        self.send(Method::POST, &path, Some(request)).await
+    ) -> Result<(), ClientError> {
+        let path = format!("{}/prs/{number}/submit", repo.path());
+        self.ask(Method::POST, &path, Some(request)).await
     }
 
-    /// The last item of the PR `pr_number` in the queue, with its timeline.
+    /// Cancels the current submission of the PR `number` of the repository.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn pr(
-        &self,
-        queue: QueuePath<'_>,
-        pr_number: u64,
-        timeline: bool,
-    ) -> Result<PrItem, ClientError> {
-        let include = if timeline { "?include=timeline" } else { "" };
-        self.get(&format!("{}/prs/{pr_number}{include}", queue.path()))
-            .await
+    pub async fn cancel(&self, repo: RepoPath<'_>, number: u64) -> Result<(), ClientError> {
+        let path = format!("{}/prs/{number}/cancel", repo.path());
+        self.ask(Method::POST, &path, None::<&()>).await
     }
 
-    /// Cancels the current item of the PR `pr_number` in the queue.
+    /// Restarts the tests of the current submission of the PR `number` of
+    /// the repository.
     ///
     /// # Errors
     ///
     /// The request fails, or CIHub refuses it.
-    pub async fn cancel(
-        &self,
-        queue: QueuePath<'_>,
-        pr_number: u64,
-    ) -> Result<Accepted, ClientError> {
-        let path = format!("{}/prs/{pr_number}/cancel", queue.path());
-        self.send(Method::POST, &path, None::<&()>).await
-    }
-
-    /// Restarts the tests of the current item of the PR `pr_number` in the
-    /// queue.
-    ///
-    /// # Errors
-    ///
-    /// The request fails, or CIHub refuses it.
-    pub async fn restart(
-        &self,
-        queue: QueuePath<'_>,
-        pr_number: u64,
-    ) -> Result<Accepted, ClientError> {
-        let path = format!("{}/prs/{pr_number}/restart", queue.path());
-        self.send(Method::POST, &path, None::<&()>).await
+    pub async fn restart(&self, repo: RepoPath<'_>, number: u64) -> Result<(), ClientError> {
+        let path = format!("{}/prs/{number}/restart", repo.path());
+        self.ask(Method::POST, &path, None::<&()>).await
     }
 
     /// # Errors
@@ -197,6 +195,20 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn graph(&self, queue: QueuePath<'_>) -> Result<Graph, ClientError> {
         self.get(&format!("{}/graph", queue.path())).await
+    }
+}
+
+/// A repository as the URL of the API names it (`specs/API.md`): the slug of
+/// the organization, and the name of the repository in it.
+#[derive(Clone, Copy, Debug)]
+pub struct RepoPath<'a> {
+    pub org: &'a str,
+    pub repo: &'a str,
+}
+
+impl RepoPath<'_> {
+    fn path(self) -> String {
+        format!("/orgs/{}/repos/{}", segment(self.org), segment(self.repo))
     }
 }
 
@@ -212,12 +224,11 @@ pub struct QueuePath<'a> {
 
 impl QueuePath<'_> {
     fn path(self) -> String {
-        format!(
-            "/orgs/{}/repos/{}/queues/{}",
-            segment(self.org),
-            segment(self.repo),
-            segment(self.queue)
-        )
+        let repo = RepoPath {
+            org: self.org,
+            repo: self.repo,
+        };
+        format!("{}/queues/{}", repo.path(), segment(self.queue))
     }
 }
 
