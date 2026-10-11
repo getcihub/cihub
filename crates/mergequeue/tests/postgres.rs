@@ -2551,6 +2551,23 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
+    let (addr, token) = q.serve_api().await;
+    let submit = serde_json::json!({ "pr_number": number });
+    let (status, refused) = call(
+        &addr,
+        &token,
+        "POST",
+        "/orgs/acme/repos/app/queues/main/prs",
+        Some(submit),
+    )
+    .await;
+
+    assert_eq!(
+        (status, &refused["code"]),
+        (409, &serde_json::json!("invalid_state")),
+        "the API refuses at once: {refused}"
+    );
+
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
 
@@ -3242,6 +3259,18 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(submitted, (202, serde_json::json!({ "accepted": true })));
     q.settle().await;
 
+    let (status, twice) = call(
+        "POST",
+        format!("{queue}/prs"),
+        Some(serde_json::json!({ "pr_number": number })),
+    )
+    .await;
+    assert_eq!(
+        (status, &twice["code"]),
+        (409, &serde_json::json!("invalid_state")),
+        "the PR waits in the queue: {twice}"
+    );
+
     let (status, listed) = call("GET", format!("{queue}/prs"), None).await;
     let (live_run, _, _) = q.runs_in_progress().await.remove(0);
     let item = &listed["items"][0];
@@ -3330,6 +3359,18 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "an administrator asked for it"
     );
 
+    let timeline = format!("{queue}/prs/{number}?include=timeline");
+    let (_, pr) = call("GET", timeline, None).await;
+    let asked = pr["timeline"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "item.cancel_requested")
+        .unwrap();
+
+    assert_eq!(asked["actor"], Value::Null, "a token stands for no person");
+    assert_eq!(asked["description"], "a cancellation was asked");
+
     let (status, again) = call("POST", format!("{queue}/prs/{number}:cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),
@@ -3407,7 +3448,20 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .map(|entry| entry["action"].as_str().unwrap())
         .collect();
 
-    assert_eq!(actions, ["queue.resync", "queue.state_requested"]);
+    assert_eq!(
+        actions,
+        [
+            "queue.resync",
+            "queue.state_requested",
+            "item.cancel_requested",
+            "item.restart_requested"
+        ]
+    );
+    assert_eq!(audit["entries"][2]["target"], item_id.as_str());
+    assert_eq!(
+        audit["entries"][2]["after"],
+        serde_json::json!({ "queue_id": crate::queue().to_string(), "pr_number": number })
+    );
 
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
@@ -3468,6 +3522,13 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     assert_eq!(item["submitted_via"], "comment");
     assert!(item["run_id"].is_string(), "{item}");
 
+    let timeline = format!("{items}/{number}?include=timeline");
+    let pr = call(&addr, &token, "GET", &timeline, None).await.1;
+    let first = &pr["timeline"][0];
+
+    assert_eq!(first["actor"], "alice", "the actor of the cause: {pr}");
+    assert_eq!(first["description"], "the PR was submitted to the queue");
+
     sim.change_pr(&repo(), number, PrChange::Title("Fix the login redirect"))
         .unwrap();
     q.deliver().await;
@@ -3482,6 +3543,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
         let reads = [
             "/orgs/acme/queues".to_owned(),
             "/orgs/acme/prs?author=bob".to_owned(),
+            timeline.clone(),
             queue.to_owned(),
             format!("{queue}/graph"),
             format!("{queue}/config-check"),

@@ -176,6 +176,12 @@ export const listItems = <ThrowOnError extends boolean = false>(options: Options
     ...options
 });
 
+/**
+ * Submits a PR, which the queue takes at its next reconciliation.
+ *
+ * A draining queue, and a PR already in the queue, answer `409` at once; the
+ * refusals that need a read of the SCM come later, on the PR.
+ */
 export const submit = <ThrowOnError extends boolean = false>(options: Options<SubmitData, ThrowOnError>): RequestResult<SubmitResponses, unknown, ThrowOnError> => (options.client ?? client).post<SubmitResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',

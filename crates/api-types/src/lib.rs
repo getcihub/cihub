@@ -404,9 +404,16 @@ pub struct TimelineEvent {
     #[serde(rename = "type")]
     pub kind: String,
     pub actor_kind: String,
+    /// The login of the person who acted, or whose request caused the
+    /// decision; `None` when CIHub or an API token did.
+    pub actor: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub occurred_at: OffsetDateTime,
+    /// What happened, in English, for a person, where a check or a condition
+    /// is a Markdown code span; it can change without notice, unlike `type`
+    /// and `payload`.
+    pub description: String,
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub payload: Value,
 }

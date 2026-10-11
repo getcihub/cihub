@@ -18,24 +18,25 @@ use cihub_api_types::{
 };
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
-    Actor, ApiScope, EventKind, ItemId, ItemState, Priority, QueueControl, QueueId, Reason, RepoId,
-    RunId, SubmittedVia,
+    Actor, ApiScope, EventKind, ItemId, ItemState, Priority, QueueControl, QueueId, QueueState,
+    Reason, RepoId, RunId, SubmittedVia,
 };
 use cihub_mq_core::current_window;
 use cihub_platform::{
     ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, Job, ModuleApi, enqueue_job,
 };
 use cihub_scm::ScmUser;
-use cihub_store::{PgPool, Postgres, Transaction};
+use cihub_store::{PgPool, Postgres, Transaction, event_kind};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
 use utoipa::OpenApi;
 
-use crate::Clock;
 use crate::jobs::{self, Account, give_back, new_event_id};
+use crate::surfaces::{blocks_sentence, transition_sentence};
 use crate::target::{QueueTarget, queue_settings};
+use crate::{Clock, MergeQueueError};
 
 #[derive(Clone)]
 struct ApiState {
@@ -1059,6 +1060,10 @@ async fn list_items(
     }))
 }
 
+/// Submits a PR, which the queue takes at its next reconciliation.
+///
+/// A draining queue, and a PR already in the queue, answer `409` at once; the
+/// refusals that need a read of the SCM come later, on the PR.
 #[utoipa::path(
     post,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}/prs",
@@ -1085,6 +1090,35 @@ async fn submit(
         })
         .transpose()?;
     let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
+    let current: Option<String> = sqlx::query_scalar(
+        "SELECT state::text FROM queue_items
+         WHERE queue_id = $1 AND pr_number = $2 AND is_current
+           AND state NOT IN ('merged', 'failed', 'cancelled')",
+    )
+    .bind(&row.id)
+    .bind(i64::try_from(request.pr_number).map_err(|_| ApiError::invalid("no such PR number"))?)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    // The refusals that need no read of the SCM; the others come later, on
+    // the PR (principle V).
+    let queue_state: QueueState = row.state.parse()?;
+    if matches!(
+        queue_state,
+        QueueState::Draining | QueueState::SwitchingModes
+    ) {
+        return Err(ApiError::new(
+            ErrorCode::InvalidState,
+            format!("the queue is `{queue_state}`: it accepts no new PR"),
+        ));
+    }
+    if let Some(item_state) = current {
+        return Err(ApiError::new(
+            ErrorCode::InvalidState,
+            format!("the PR is already in the queue, `{item_state}`"),
+        ));
+    }
+
     let id: QueueId = row.id.parse()?;
     let target = QueueTarget::load(&mut tx, id).await?;
     let requested_by = requester(&mut tx, &grant).await?;
@@ -1159,28 +1193,90 @@ async fn timeline(
     queue_id: &str,
     item_id: &str,
 ) -> Result<Vec<TimelineEvent>, ApiError> {
-    type Row = (String, i64, String, String, OffsetDateTime, Value);
+    type Row = (
+        String,
+        i64,
+        String,
+        String,
+        Option<String>,
+        OffsetDateTime,
+        Value,
+    );
+    // A decision acts as CIHub: the person who asked for it is the actor of
+    // its cause.
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT id, seq, type::text, actor_kind::text, occurred_at, payload FROM events
-         WHERE queue_id = $1 AND item_id = $2 ORDER BY seq",
+        "SELECT e.id, e.seq, e.type::text, e.actor_kind::text, coalesce(u.login, cu.login),
+                e.occurred_at, e.payload
+         FROM events e
+         LEFT JOIN users u ON u.id = e.actor_user_id
+         LEFT JOIN events c ON c.queue_id = e.queue_id AND c.id = e.cause_id
+         LEFT JOIN users cu ON cu.id = c.actor_user_id
+         WHERE e.queue_id = $1 AND e.item_id = $2 ORDER BY e.seq",
     )
     .bind(queue_id)
     .bind(item_id)
     .fetch_all(conn)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(
-            |(id, seq, kind, actor_kind, occurred_at, payload)| TimelineEvent {
+
+    rows.into_iter()
+        .map(|(id, seq, kind, actor_kind, actor, occurred_at, payload)| {
+            let read = event_kind(&kind, &payload);
+            let read = read.map_err(|source| MergeQueueError::ReadEvent {
+                id: id.clone(),
+                source,
+            })?;
+            let description = describe(&read);
+            Ok(TimelineEvent {
                 id,
                 seq,
                 kind,
                 actor_kind,
+                actor,
                 occurred_at,
+                description,
                 payload,
-            },
-        )
-        .collect())
+            })
+        })
+        .collect()
+}
+
+/// The sentence of an event of an item, as the history of the dashboard shows
+/// it. Every event is named, so that a new event of an item gets its
+/// sentence.
+fn describe(kind: &EventKind) -> String {
+    match kind {
+        EventKind::ItemTransitioned {
+            reason, merged_sha, ..
+        } => transition_sentence(*reason, merged_sha.as_deref()),
+        EventKind::ItemReadinessChanged { block_reasons, .. } => blocks_sentence(block_reasons)
+            .map_or_else(
+                || "nothing blocks the PR".to_owned(),
+                |blocks| format!("waits: {blocks}"),
+            ),
+        EventKind::ItemCancelRequested { .. } => "a cancellation was asked".to_owned(),
+        EventKind::ItemRestartRequested { .. } => "a new test was asked".to_owned(),
+        EventKind::MergeSucceeded { .. } => "the merge job merged the PR".to_owned(),
+        // The next transition gives the reason.
+        EventKind::MergeFailed { .. } => "the merge job reported an error".to_owned(),
+        // These events name no item: `EventKind::subjects`.
+        EventKind::ItemSubmitted { .. }
+        | EventKind::PrObserved { .. }
+        | EventKind::TargetPushed { .. }
+        | EventKind::CheckObserved { .. }
+        | EventKind::TargetsReceived { .. }
+        | EventKind::QueueControlRequested { .. }
+        | EventKind::QueueSettingsChanged { .. }
+        | EventKind::AccessLost
+        | EventKind::AccessRestored
+        | EventKind::GroupFormed { .. }
+        | EventKind::GroupTransitioned { .. }
+        | EventKind::RunTransitioned { .. }
+        | EventKind::TestBranchAssembled { .. }
+        | EventKind::TestBranchAssemblyFailed { .. }
+        | EventKind::QueueRenumbered { .. }
+        | EventKind::QueueTransitioned { .. }
+        | EventKind::QueueWindowChanged { .. } => kind.event_type().as_str().to_owned(),
+    }
 }
 
 /// The last item of each PR, at most 50 PRs.
@@ -1379,6 +1475,8 @@ async fn give(
     let (mut tx, queue) = begin_queue(state, grant, path).await?;
     let (item_id, item_state) = current_item(&mut tx, &queue.id, number).await?;
     let fact = kind(item_id, item_state)?;
+    // The audit names the request as the log does.
+    let action = fact.event_type().as_str();
     let queue_id: QueueId = queue.id.parse()?;
 
     give_back(
@@ -1390,6 +1488,8 @@ async fn give(
     )
     .await?;
 
+    let after = json!({ "queue_id": queue.id, "pr_number": number });
+    audit(&mut tx, grant, action, &item_id.to_string(), after).await?;
     tx.commit().await?;
 
     Ok(accepted())

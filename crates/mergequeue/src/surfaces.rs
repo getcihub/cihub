@@ -402,12 +402,10 @@ fn event_text(event: &HistoryEvent) -> Option<String> {
             merged_sha,
             ..
         } => {
-            let text = transition_text(*to, *reason);
+            let (icon, label) = state_mark(*to);
             // The SCM links a full SHA.
-            Some(match merged_sha {
-                Some(sha) => format!("{text}, as {sha}"),
-                None => text,
-            })
+            let sentence = transition_sentence(*reason, merged_sha.as_deref());
+            Some(format!("{icon} {label}: {sentence}"))
         }
         EventKind::ItemReadinessChanged { block_reasons, .. } => {
             Some(readiness_text(block_reasons))
@@ -431,9 +429,13 @@ fn by_cell(login: Option<&str>) -> String {
     login.map_or_else(String::new, |login| format!("`@{login}`"))
 }
 
-fn transition_text(to: ItemState, reason: Reason) -> String {
-    let (icon, label) = state_mark(to);
-    format!("{icon} {label}: {}", reason.describe())
+/// The reason of a transition, and the commit of a merge: the sentence of
+/// the history of the comment and of the dashboard.
+pub(crate) fn transition_sentence(reason: Reason, merged_sha: Option<&str>) -> String {
+    match merged_sha {
+        Some(sha) => format!("{}, as {sha}", reason.describe()),
+        None => reason.describe().to_owned(),
+    }
 }
 
 /// Where the CI of a test runs, as the details of the comment say it.
@@ -464,11 +466,22 @@ fn test_branch_text(
 }
 
 fn readiness_text(block_reasons: &[BlockReason]) -> String {
-    if block_reasons.is_empty() {
-        return "✅ Nothing blocks the PR".to_owned();
+    match blocks_sentence(block_reasons) {
+        None => "✅ Nothing blocks the PR".to_owned(),
+        Some(blocks) => format!("⏳ Waiting: {blocks}"),
     }
+}
+
+/// What blocks a PR, for the comment and the dashboard; `None` when nothing
+/// does. A check or a condition is a Markdown code span.
+pub(crate) fn blocks_sentence(block_reasons: &[BlockReason]) -> Option<String> {
+    if block_reasons.is_empty() {
+        return None;
+    }
+
     let reasons: Vec<String> = block_reasons.iter().map(block_text).collect();
-    format!("⏳ Waiting: {}", reasons.join("; "))
+
+    Some(reasons.join("; "))
 }
 
 /// `YYYY-MM-DD HH:MM` in UTC: an absolute time does not go stale between two
