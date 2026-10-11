@@ -70,6 +70,7 @@ does not also check.
 `mise run web-build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web-generate`
 writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;
 `mise run e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
-server on the simulator with a fresh database, which runs the queues and submits PRs of `acme/web` at its start.
+server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
+passes each test commit of `acme/api`, and comments on a PR at `/sim/merge`.
 
 Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d).
