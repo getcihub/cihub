@@ -332,7 +332,7 @@ Decisions:
     group: a group in `pending_failure` keeps its failed run, which the page shows as failing.
   - Done (October 11, 2026): step 4. The job `check_config` keeps the findings of the configuration of the SCM
     and the time of the check in `config_checks`; the scheduler asks for it when the last check is one hour old,
-    and `:resync` asks for it too. `GET …/config-check` reads it: the routes of the queues no longer hold the `Scm`.
+    and `…/resync` asks for it too. `GET …/config-check` reads it: the routes of the queues no longer hold the `Scm`.
   - Done (October 11, 2026): step 5. The cards of the queues of an organization and of a repository (the ones
     that need someone first, a filter from eight queues); the page of a queue: the banners of a lost access, of
     an invalid file, of a pause with its author, of a drain and of each finding of the configuration check; the
@@ -357,7 +357,7 @@ Decisions:
   `description`; `RunCheck` gains `status`, `started_at` and `completed_at` (migration of `check_observations`);
   `TestRun` gains `draft_pr_url`; `Item` gains `url`, read by the adapter with the PR (the recorded contract is
   recorded again); `POST …/prs` refuses at once, with `409 invalid_state`, a queue that accepts nothing and a PR
-  already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `:cancel` and `:restart` write
+  already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `…/cancel` and `…/restart` write
   `item.cancel_requested` and `item.restart_requested` in the audit log. The comment of CIHub and the status of a PR link to the
   page of the PR in the dashboard (`http.public_url`), `/orgs/$org/repos/$repo/queues/$queue/prs/$number`. Pages:
   the drawer of a PR at this address (where it is, run, required and observed checks, history); the submission,
@@ -379,7 +379,7 @@ Decisions:
   - Done (October 11, 2026): part of step 2 and step 3. `TimelineEvent` gains `actor` (the user of the cause
     of a decision) and `description` (the sentences of the blocks are those of the comment); `POST …/prs`
     answers `409 invalid_state` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
-    already in the queue; `:cancel` and `:restart`
+    already in the queue; `…/cancel` and `…/restart`
     write the audit log.
   - Decided (October 11, 2026, validated by the project lead): `CheckReport` gains `status`, `started_at` and
     `completed_at` (option 1), with the new recording of the contract; `prompt=select_account` does not show the
@@ -425,6 +425,9 @@ Decisions:
   - Exit criterion: `web/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
     queue in less than 2 seconds), `the_stream_carries_the_changes_of_the_organization_only` (another
     organization, end with the server), `a_reconciliation_that_writes_the_log_tells_the_pages`.
+  - Decided (October 11, 2026, validated by the project lead): an action takes a segment of its own,
+    `POST …/resync`, `POST …/prs/{number}/cancel` and `POST …/prs/{number}/restart`, and no longer a colon in
+    the last segment; `POST …/prs:batchGet` goes, as no client reads it (`specs/LESSONS.md`).
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 

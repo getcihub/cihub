@@ -109,7 +109,7 @@ describe("the actions on a queue", () => {
       answersFor({
         [`${QUEUE}/prs/118?include=timeline`]: [200, { item: testing, timeline: [] }],
         "/api/v1/orgs/acme/runs/run_1": [404, problem(404, "not_found")],
-        [`${QUEUE}/prs/118:cancel`]: [202, { accepted: true }],
+        [`${QUEUE}/prs/118/cancel`]: [202, { accepted: true }],
       }),
     );
 
@@ -125,6 +125,6 @@ describe("the actions on a queue", () => {
     await userEvent.click(screen.getByRole("button", { name: "Cancel the pull request" }));
 
     expect(await within(drawer).findByRole("status")).toHaveTextContent("Cancellation sent");
-    expect(await changes()).toEqual([["POST", `${QUEUE}/prs/118:cancel`, null, "token"]]);
+    expect(await changes()).toEqual([["POST", `${QUEUE}/prs/118/cancel`, null, "token"]]);
   });
 });

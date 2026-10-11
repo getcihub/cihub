@@ -3322,15 +3322,6 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(pr["item"]["id"], item_id.as_str());
     assert_eq!(pr["timeline"][0]["type"], "item.transitioned");
 
-    let (_, batch) = call(
-        "POST",
-        format!("{queue}/prs:batchGet"),
-        Some(serde_json::json!({ "pr_numbers": [number, 999] })),
-    )
-    .await;
-
-    assert_eq!(batch["not_found"], serde_json::json!([999]));
-
     let (_, graph) = call("GET", format!("{queue}/graph"), None).await;
     let run = &graph["runs"][0];
 
@@ -3351,11 +3342,11 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(run["tested_pr_numbers"], serde_json::json!([number]));
     assert_eq!(run["status"], "in_progress");
 
-    let restart = call("POST", format!("{queue}/prs/{number}:restart"), None).await;
+    let restart = call("POST", format!("{queue}/prs/{number}/restart"), None).await;
     assert_eq!(restart.0, 202);
     q.settle().await;
 
-    let cancel = call("POST", format!("{queue}/prs/{number}:cancel"), None).await;
+    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
     assert_eq!(cancel.0, 202);
     q.settle().await;
 
@@ -3379,7 +3370,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     assert_eq!(asked["actor"], Value::Null, "a token stands for no person");
     assert_eq!(asked["description"], "a cancellation was asked");
 
-    let (status, again) = call("POST", format!("{queue}/prs/{number}:cancel"), None).await;
+    let (status, again) = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),
         (409, &serde_json::json!("invalid_state"))
@@ -3423,7 +3414,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     );
 
     let before_resync = sim.calls().len();
-    assert_eq!(call("POST", format!("{queue}:resync"), None).await.0, 202);
+    assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
     q.settle().await;
 
     let (status, checked) = call("GET", format!("{queue}/config-check"), None).await;
@@ -3498,7 +3489,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .await
         .unwrap();
     q.clock.advance(1);
-    assert_eq!(call("POST", format!("{queue}:resync"), None).await.0, 202);
+    assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
     q.settle().await;
 
     let (_, checked) = call("GET", format!("{queue}/config-check"), None).await;
@@ -3701,7 +3692,7 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
         serde_json::json!([{ "pr_number": second, "state": "testing" }])
     );
 
-    let cancel = format!("{queue}/prs/{second}:cancel");
+    let cancel = format!("{queue}/prs/{second}/cancel");
     assert_eq!(call(&addr, &token, "POST", &cancel, None).await.0, 202);
     q.settle().await;
 
@@ -3845,13 +3836,13 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
 
     assert_eq!(call("POST", format!("{queue}/prs"), submit()).await.0, 202);
     q.settle().await;
-    let cancel = call("POST", format!("{queue}/prs/{number}:cancel"), None).await;
+    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
     assert_eq!(cancel.0, 202, "{}", cancel.1);
     q.settle().await;
     assert_eq!(call("POST", format!("{queue}/prs"), submit()).await.0, 202);
     q.settle().await;
 
-    let restart = call("POST", format!("{queue}/prs/{number}:restart"), None).await;
+    let restart = call("POST", format!("{queue}/prs/{number}/restart"), None).await;
     assert_eq!(
         restart.0, 202,
         "the earlier item is cancelled: {}",
@@ -3859,7 +3850,7 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     );
     q.settle().await;
 
-    let cancel = call("POST", format!("{queue}/prs/{number}:cancel"), None).await;
+    let cancel = call("POST", format!("{queue}/prs/{number}/cancel"), None).await;
     assert_eq!(cancel.0, 202, "{}", cancel.1);
     q.settle().await;
 
@@ -3916,7 +3907,7 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
         ("GET", "/orgs/other/repos/app/queues/main/prs".to_owned()),
         (
             "POST",
-            "/orgs/other/repos/app/queues/main/prs/1:cancel".to_owned(),
+            "/orgs/other/repos/app/queues/main/prs/1/cancel".to_owned(),
         ),
         ("GET", "/orgs/other/audit".to_owned()),
         ("GET", format!("/orgs/other/runs/{run}")),
@@ -3926,17 +3917,17 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
         ("GET", "/orgs/acme/repos/app/queues/main/prs/7".to_owned()),
         (
             "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7:cancel".to_owned(),
+            "/orgs/acme/repos/app/queues/main/prs/7/cancel".to_owned(),
         ),
         (
             "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7:restart".to_owned(),
+            "/orgs/acme/repos/app/queues/main/prs/7/restart".to_owned(),
         ),
         (
             "POST",
-            "/orgs/acme/repos/app/queues/main/prs/7:merge".to_owned(),
+            "/orgs/acme/repos/app/queues/main/prs/7/merge".to_owned(),
         ),
-        ("POST", "/orgs/acme/repos/app/queues/main:delete".to_owned()),
+        ("POST", "/orgs/acme/repos/app/queues/main/delete".to_owned()),
         ("GET", format!("/orgs/acme/runs/{run}")),
     ];
 
@@ -3972,7 +3963,7 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
         "only `/me`, the user of a session, is outside an organization: {paths:?}"
     );
     assert!(
-        paths.contains(&&"/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}:cancel".to_owned()),
+        paths.contains(&&"/orgs/{org}/repos/{repo}/queues/{queue}/prs/{number}/cancel".to_owned()),
         "{paths:?}"
     );
     assert!(

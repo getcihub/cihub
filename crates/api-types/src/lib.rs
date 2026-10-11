@@ -23,9 +23,6 @@ pub const PROBLEM_JSON: &str = "application/problem+json";
 /// The most items that a page of items gives.
 pub const MAX_TAKE: u32 = 100;
 
-/// The most PRs that a `prs:batchGet` reads.
-pub const MAX_BATCH_GET: usize = 50;
-
 /// The machine code of an error.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -436,20 +433,6 @@ pub struct PrItem {
     pub item: Item,
     /// With `?include=timeline`: the events of the item, in their order.
     pub timeline: Option<Vec<TimelineEvent>>,
-}
-
-/// `POST /orgs/{org}/repos/{repo}/queues/{queue}/prs:batchGet`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BatchGet {
-    pub pr_numbers: Vec<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BatchGetResponse {
-    pub items: Vec<Item>,
-    pub not_found: Vec<u64>,
 }
 
 /// The merge graph: the head of the target branch, the live items, the

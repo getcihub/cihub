@@ -173,7 +173,7 @@ impl Client {
         queue: QueuePath<'_>,
         pr_number: u64,
     ) -> Result<Accepted, ClientError> {
-        let path = format!("{}/prs/{pr_number}:cancel", queue.path());
+        let path = format!("{}/prs/{pr_number}/cancel", queue.path());
         self.send(Method::POST, &path, None::<&()>).await
     }
 
@@ -188,7 +188,7 @@ impl Client {
         queue: QueuePath<'_>,
         pr_number: u64,
     ) -> Result<Accepted, ClientError> {
-        let path = format!("{}/prs/{pr_number}:restart", queue.path());
+        let path = format!("{}/prs/{pr_number}/restart", queue.path());
         self.send(Method::POST, &path, None::<&()>).await
     }
 
