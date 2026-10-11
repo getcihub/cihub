@@ -28,7 +28,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         .with_context(|| format!("cannot listen on {http_addr}"))?;
 
     info!(http_addr = %listener.local_addr()?, "public address served");
-    let modules = vec![merge_queue(&pool, &github, &process).api];
+    let modules = vec![merge_queue(&pool, &github, &process, public_url.as_deref()).api];
     let webhooks = GithubWebhooks {
         secret: github.webhook_secret,
     };

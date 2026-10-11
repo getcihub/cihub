@@ -382,7 +382,12 @@ Decisions:
     write the audit log.
   - Waits on the project lead: `RunCheck.status`, `started_at` and `completed_at` change `CheckReport`, so the
     log; with `Item.url` and `TestRun.draft_pr_url`, they wait for the new recording of the contract.
-  - Remaining: the links of the comment and of the status, the pages, the browser test.
+  - Decided (October 11, 2026, validated by the project lead): `CheckReport` gains `status`, `started_at` and
+    `completed_at` (option 1), with the new recording of the contract; `prompt=select_account` does not show the
+    account picker of GitHub for a GitHub App (checked on the App of staging).
+  - Done (October 11, 2026): step 4. The status of a PR links to its page in the dashboard, and its comment
+    with `Open in CIHub`, from `http.public_url`, which the module of the queue receives.
+  - Remaining: the pages, the browser test.
 
 #### Lot 10d: live updates
 

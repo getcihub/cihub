@@ -24,11 +24,12 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let Shared {
         pool,
         process,
+        public_url,
         github,
         cancel,
         ..
     } = shared;
-    let module = merge_queue(&pool, &github, &process);
+    let module = merge_queue(&pool, &github, &process, public_url.as_deref());
     let queues = (module.scheduler)(cancel.clone());
     let maintenance = request_hourly(&pool, &cancel);
     let sweep = request_sweep_regularly(&pool, &cancel);

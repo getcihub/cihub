@@ -20,13 +20,14 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
     let Shared {
         pool,
         process,
+        public_url,
         github,
         cancel,
         ..
     } = shared;
     let mut executors = Executors::default();
     executors.register(MAINTENANCE, execute_maintenance);
-    (merge_queue(&pool, &github, &process).executors)(&mut executors);
+    (merge_queue(&pool, &github, &process, public_url.as_deref()).executors)(&mut executors);
     let scm: Arc<dyn Scm> = github.app.clone();
     executors.register(SWEEP_DELIVERIES, sweep_executor(Arc::clone(&scm)));
     executors.register(SYNC_REPOS, sync_repos_executor(Arc::clone(&scm)));

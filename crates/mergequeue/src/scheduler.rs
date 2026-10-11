@@ -59,6 +59,9 @@ const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
 #[derive(Clone)]
 pub struct Reconciler {
     pub translate: Translate,
+    /// The address of the dashboard (`http.public_url`), for the links of the
+    /// statuses and the comments of the PRs; `None` without it.
+    pub dashboard: Option<String>,
 }
 
 impl Reconciler {
@@ -231,7 +234,14 @@ impl Reconciler {
         }
 
         jobs.extend(
-            converge_surfaces(conn, target, converge.settings, &converge.desired.surfaces).await?,
+            converge_surfaces(
+                conn,
+                target,
+                converge.settings,
+                &converge.desired.surfaces,
+                self.dashboard.as_deref(),
+            )
+            .await?,
         );
 
         for branch in &converge.desired.test_branches {

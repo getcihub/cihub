@@ -56,6 +56,8 @@ struct Rendered {
 struct RenderedStatus {
     pub state: StatusState,
     pub description: String,
+    /// The page of the PR in the dashboard.
+    pub details_url: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,33 +86,35 @@ fn queue_status(
     sha: &str,
     state: StatusState,
     description: &str,
+    details_url: Option<&str>,
 ) -> StatusUpdate {
     StatusUpdate {
         sha: sha.to_owned(),
         context: queue_status_context(target_branch),
         status: state.into(),
         description: description.to_owned(),
-        // The page of the item arrives with the dashboard (lot 10).
-        details_url: None,
+        details_url: details_url.map(str::to_owned),
     }
 }
 
-/// Renders `surface` with the settings of its queue and the logged `history`
-/// of its PR.
+/// Renders `surface` with the settings of its queue, the logged `history` of
+/// its PR, and `page`, the page of the PR in the dashboard.
 fn render(
     surface: &Surface,
     settings: &QueueSettings,
     target_branch: &str,
     history: &[HistoryEvent],
+    page: Option<&str>,
 ) -> Rendered {
     let status = settings.status_check_enabled.value.then(|| RenderedStatus {
         state: status_state(surface.state),
         description: truncate(&description(surface)),
+        details_url: page.map(str::to_owned),
     });
     let comment = settings
         .comments_enabled
         .value
-        .then(|| comment(surface, settings, target_branch, history));
+        .then(|| comment(surface, settings, target_branch, history, page));
     let (add_labels, remove_labels) = labels(surface, settings.state_labels_enabled.value);
 
     Rendered {
@@ -207,6 +211,7 @@ fn comment(
     settings: &QueueSettings,
     target_branch: &str,
     history: &[HistoryEvent],
+    page: Option<&str>,
 ) -> String {
     let commands = settings.commands_enabled.value;
     let mut blocks = vec![state_line(surface, target_branch)];
@@ -260,6 +265,10 @@ fn comment(
 
     if !details.is_empty() {
         blocks.push(details.join("\n"));
+    }
+
+    if let Some(page) = page {
+        blocks.push(format!("[Open in CIHub]({page})"));
     }
 
     blocks.extend(history_block(history));
@@ -561,6 +570,26 @@ fn labels(surface: &Surface, enabled: bool) -> (Vec<String>, Vec<String>) {
     (add, remove)
 }
 
+/// The page of the queue of `target` in the dashboard at `dashboard`, as the
+/// routes of the dashboard name it.
+async fn queue_page(
+    conn: &mut PgConnection,
+    target: &QueueTarget,
+    dashboard: &str,
+) -> Result<String, MergeQueueError> {
+    let slug: String = sqlx::query_scalar("SELECT slug FROM orgs WHERE id = $1")
+        .bind(target.org_id.to_string())
+        .fetch_one(conn)
+        .await?;
+
+    Ok(format!(
+        "{}/orgs/{slug}/repos/{}/queues/{}",
+        dashboard.trim_end_matches('/'),
+        target.repo.name,
+        target.name
+    ))
+}
+
 /// Writes the rendering of each surface that changed in `pr_surfaces`, and
 /// returns the publication jobs of every PR of the queue whose SCM does not
 /// show its last rendering.
@@ -573,6 +602,7 @@ pub(crate) async fn converge_surfaces(
     target: &QueueTarget,
     settings: &QueueSettings,
     surfaces: &[Surface],
+    dashboard: Option<&str>,
 ) -> Result<Vec<Job>, MergeQueueError> {
     let numbers: Vec<i64> = surfaces
         .iter()
@@ -590,9 +620,23 @@ pub(crate) async fn converge_surfaces(
             .fetch_all(&mut *conn)
             .await?;
 
+    let queue_page = match dashboard {
+        Some(dashboard) => Some(queue_page(conn, target, dashboard).await?),
+        None => None,
+    };
+
     for (surface, number) in surfaces.iter().zip(numbers) {
         let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
-        let rendered = render(surface, settings, &target.target_branch, history);
+        let page = queue_page
+            .as_ref()
+            .map(|queue| format!("{queue}/prs/{number}"));
+        let rendered = render(
+            surface,
+            settings,
+            &target.target_branch,
+            history,
+            page.as_deref(),
+        );
         let desired_hash = hash(&rendered);
         if known
             .iter()
@@ -775,6 +819,7 @@ pub(crate) async fn publish(
             &rendered.sha,
             status.state,
             &status.description,
+            status.details_url.as_deref(),
         );
         scm.set_status(repo, &update, class).await?;
     }
@@ -884,11 +929,13 @@ async fn publish_comment(
 /// The status `success` before the merge of the PR: a rule that requires
 /// the status of the queue lets the merge through.
 pub(crate) fn merging_status(target_branch: &str, sha: &str) -> StatusUpdate {
+    // The merge job has no page: GitHub keeps the status, not its link.
     queue_status(
         target_branch,
         sha,
         StatusState::Success,
         "Tests passed, merging",
+        None,
     )
 }
 
@@ -937,7 +984,7 @@ mod tests {
             (ItemState::Cancelled, StatusState::Error),
         ];
         for (state, want) in cases {
-            let rendered = render(&surface(state), &defaults, "main", &[]);
+            let rendered = render(&surface(state), &defaults, "main", &[], None);
             assert_eq!(rendered.status.unwrap().state, want, "{state:?}");
             assert_eq!(rendered.sha, "abc");
         }
@@ -1020,7 +1067,9 @@ mod tests {
         let defaults = settings(|_| {});
 
         for (surface, want) in cases {
-            let comment = render(&surface, &defaults, "main", &[]).comment.unwrap();
+            let comment = render(&surface, &defaults, "main", &[], None)
+                .comment
+                .unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
         }
     }
@@ -1054,7 +1103,7 @@ mod tests {
             queued.predecessors = Vec::new();
             queued.test_sha = None;
             queued.batch_wait = Some(BatchWait { members, closes_at });
-            let rendered = render(&queued, &size_3, "main", &[]);
+            let rendered = render(&queued, &size_3, "main", &[], None);
             assert_eq!(rendered.comment.unwrap(), want, "{members}");
             let status = rendered.status.unwrap().description;
             assert_eq!(status, "Queued, position 1", "the status does not change");
@@ -1065,7 +1114,9 @@ mod tests {
     fn without_commands_the_comment_names_none() {
         let off = settings(|l| l.commands_enabled = Some(Setting::new(false)));
         for state in [ItemState::Testing, ItemState::Failed] {
-            let comment = render(&surface(state), &off, "main", &[]).comment.unwrap();
+            let comment = render(&surface(state), &off, "main", &[], None)
+                .comment
+                .unwrap();
             assert!(!comment.contains("/cihub"), "{comment}");
             assert!(!comment.contains(SUBMIT_BOX), "{comment}");
         }
@@ -1076,7 +1127,7 @@ mod tests {
         let mut failed = surface(ItemState::Failed);
         failed.reason = Reason::PrPushedTo;
 
-        let rendered = render(&failed, &settings(|_| {}), "main", &[]);
+        let rendered = render(&failed, &settings(|_| {}), "main", &[], None);
         let want = "Failed: the PR received a new commit after its submission";
 
         assert_eq!(rendered.status.unwrap().description, want);
@@ -1095,7 +1146,7 @@ mod tests {
             l.status_check_enabled = Some(Setting::new(false));
             l.comments_enabled = Some(Setting::new(false));
         });
-        let rendered = render(&surface(ItemState::Pending), &off, "main", &[]);
+        let rendered = render(&surface(ItemState::Pending), &off, "main", &[], None);
         assert_eq!((rendered.status, rendered.comment), (None, None));
     }
 
@@ -1107,13 +1158,13 @@ mod tests {
         let labels = |rendered: Rendered| (rendered.add_labels, rendered.remove_labels);
 
         assert_eq!(
-            labels(render(&testing, &off, "main", &[])),
+            labels(render(&testing, &off, "main", &[], None)),
             (vec![], vec![])
         );
 
         let others = |labels: &[&str]| labels.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            labels(render(&testing, &on, "main", &[])),
+            labels(render(&testing, &on, "main", &[], None)),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -1123,7 +1174,7 @@ mod tests {
         testing.labels = BTreeSet::from(["cihub:queued".to_owned(), "bug".to_owned()]);
 
         assert_eq!(
-            labels(render(&testing, &off, "main", &[])),
+            labels(render(&testing, &off, "main", &[], None)),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -1134,7 +1185,7 @@ mod tests {
         merged.labels = BTreeSet::from(["cihub:testing".to_owned()]);
 
         assert_eq!(
-            labels(render(&merged, &off, "main", &[])),
+            labels(render(&merged, &off, "main", &[], None)),
             (vec![], others(&STATE_LABELS))
         );
     }
@@ -1146,12 +1197,18 @@ mod tests {
             conditions: vec!["x".repeat(200)],
         }];
 
-        let rendered = render(&blocked, &settings(|_| {}), "main", &[]);
+        let rendered = render(&blocked, &settings(|_| {}), "main", &[], None);
         let description = rendered.status.clone().unwrap().description;
 
         assert_eq!(description.chars().count(), DESCRIPTION_LIMIT);
 
-        let other = render(&surface(ItemState::Pending), &settings(|_| {}), "main", &[]);
+        let other = render(
+            &surface(ItemState::Pending),
+            &settings(|_| {}),
+            "main",
+            &[],
+            None,
+        );
         assert_ne!(hash(&rendered), hash(&other));
         assert_eq!(hash(&rendered), hash(&rendered.clone()));
     }
@@ -1412,6 +1469,7 @@ mod tests {
             &settings(|_| {}),
             "main",
             &history,
+            None,
         );
         let want = "🧪 **Testing** · position 2 in the queue for `main`\n\n\
                     Tested on top of #5 in def456.\n\n\
@@ -1421,7 +1479,13 @@ mod tests {
                     </details>\n\n\
                     <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
         assert_eq!(rendered.comment.as_deref(), Some(want));
-        let bare = render(&surface(ItemState::Testing), &settings(|_| {}), "main", &[]);
+        let bare = render(
+            &surface(ItemState::Testing),
+            &settings(|_| {}),
+            "main",
+            &[],
+            None,
+        );
 
         assert_ne!(hash(&rendered), hash(&bare));
     }
@@ -1434,12 +1498,32 @@ mod tests {
             Some("nlecoy"),
             at(7, 14, 3),
         )];
-        let rendered = render(&surface(ItemState::Testing), &off, "main", &history);
+        let rendered = render(&surface(ItemState::Testing), &off, "main", &history, None);
 
         assert_eq!(rendered.comment, None);
 
         let status = rendered.status.unwrap().description;
         assert_eq!(status, "Testing, position 2", "the status does not change");
+    }
+
+    #[test]
+    fn the_status_and_the_comment_link_to_the_page_of_the_pr() {
+        let page = "https://cihub.example.com/orgs/acme/repos/app/queues/main/prs/7";
+        let rendered = render(
+            &surface(ItemState::Testing),
+            &settings(|_| {}),
+            "main",
+            &[],
+            Some(page),
+        );
+
+        assert_eq!(rendered.status.unwrap().details_url.as_deref(), Some(page));
+        assert!(
+            rendered
+                .comment
+                .unwrap()
+                .contains(&format!("[Open in CIHub]({page})"))
+        );
     }
 }
 
