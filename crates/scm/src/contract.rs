@@ -10,12 +10,13 @@
 )]
 
 use cihub_domain::{
-    CheckKind, JobClass, MergeMethod, Mergeability, Permission, PrState, ReviewDecision,
+    CheckKind, JobClass, MembershipRole, MergeMethod, Mergeability, Permission, PrState,
+    ReviewDecision,
 };
 
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmUser,
-    SetupFinding, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmMember,
+    ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
@@ -34,7 +35,8 @@ pub struct Fixture {
     pub draft_pr: u64,
     /// A PR number that does not exist.
     pub missing_pr: u64,
-    /// A user with the permission `admin` on the repository.
+    /// A user with the permission `admin` on the repository, and an owner of
+    /// the account of the connection.
     pub admin: ScmUser,
     /// A branch that does not exist yet, that the suite creates and deletes.
     pub work_branch: String,
@@ -106,6 +108,26 @@ async fn installations(scm: &dyn Scm, repo: &RepoRef) {
     assert!(
         listed.contains(&installation),
         "the installations of the App list {installation:?}: {listed:?}"
+    );
+}
+
+/// The members of the account of the connection of `repo` list the admin of
+/// the fixture as `admin`. Outside [`run`] until the recorded answers of each
+/// SCM hold the call.
+///
+/// # Panics
+///
+/// When an answer is not the one of the contract.
+pub async fn members(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
+    let members = scm.members(&repo.connection, CLASS).await.unwrap();
+    let admin = ScmMember {
+        user: fixture.admin.clone(),
+        role: MembershipRole::Admin,
+    };
+
+    assert!(
+        members.contains(&admin),
+        "the members list {admin:?}: {members:?}"
     );
 }
 

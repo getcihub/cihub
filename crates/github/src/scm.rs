@@ -12,7 +12,7 @@ use cihub_domain::{
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
     RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
-    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ScmMember, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use serde::Deserialize;
@@ -364,7 +364,7 @@ impl Installation {
 
 /// Encodes a part of a path or of a query, keeping `/`, which the branch
 /// names of GitHub contain.
-fn encode(text: &str) -> String {
+pub(crate) fn encode(text: &str) -> String {
     let mut encoded = String::with_capacity(text.len());
     for byte in text.bytes() {
         match byte {
@@ -404,7 +404,7 @@ fn needs_paid_plan(answer: &Answer) -> bool {
     answer.status == StatusCode::FORBIDDEN && answer.message().contains("Upgrade to GitHub")
 }
 
-fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
+pub(crate) fn expect(answer: Answer, statuses: &[StatusCode]) -> Result<Answer, ScmError> {
     if statuses.contains(&answer.status) {
         Ok(answer)
     } else {
@@ -1509,6 +1509,22 @@ impl Scm for GithubApp {
 
             Ok(repos)
         })
+    }
+
+    fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
+        self.sign_in_address(request)
+    }
+
+    fn sign_in<'a>(&'a self, code: &'a SignInCode, _class: JobClass) -> ScmFuture<'a, SignedIn> {
+        Box::pin(self.sign_in_person(code))
+    }
+
+    fn members<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmMember>> {
+        Box::pin(self.account_members(connection, class))
     }
 }
 

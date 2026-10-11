@@ -1,7 +1,7 @@
 //! The `scheduler` role: the reconciliation loop of the queues, from
 //! `cihub-mergequeue`, and the regular requests of the maintenance, of the
 //! sync of the installations, of the reads of the repositories and of the
-//! sweep of the deliveries.
+//! members of each account, and of the sweep of the deliveries.
 
 use std::error::Error;
 use std::future::Future;
@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use cihub_platform::{
-    SWEEP_EVERY, request_installations_sync, request_maintenance, request_repo_syncs, request_sweep,
+    SWEEP_EVERY, request_installations_sync, request_maintenance, request_member_syncs,
+    request_repo_syncs, request_sweep,
 };
 use cihub_store::{PgPool, Postgres, Transaction, begin_system};
 use tokio_util::sync::CancellationToken;
@@ -86,6 +87,12 @@ async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
                 "reads of the repositories not requested"
             );
         }
+        if let Err(err) = request_member_syncs_now(pool).await {
+            warn!(
+                error = &*err as &dyn Error,
+                "reads of the members not requested"
+            );
+        }
     })
     .await;
 }
@@ -113,6 +120,15 @@ async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
         in_system_transaction(pool, |tx| Box::pin(request_repo_syncs(tx, now()))).await?;
     if requested > 0 {
         info!(requested, "reads of the repositories requested");
+    }
+    Ok(())
+}
+
+async fn request_member_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
+    let requested =
+        in_system_transaction(pool, |tx| Box::pin(request_member_syncs(tx, now()))).await?;
+    if requested > 0 {
+        info!(requested, "reads of the members requested");
     }
     Ok(())
 }

@@ -62,6 +62,8 @@ startup, with a message that names the key and the file, or the variable.
 | `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
 | `github.private_key_file` | `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                 | File that contains the private key, instead of `github.private_key`         |
 | `github.webhook_secret`   | `CIHUB_GITHUB_WEBHOOK_SECRET`   | none                 | Secret that signs the webhooks of the App; required with `github.app_id`   |
+| `github.client_id`        | `CIHUB_GITHUB_CLIENT_ID`        | none                 | Client ID of the App, for the sign-in to the dashboard; with `github.client_secret` or not at all |
+| `github.client_secret`    | `CIHUB_GITHUB_CLIENT_SECRET`    | none                 | Client secret of the App, secret; without both keys, nobody signs in to the dashboard |
 
 ```yaml
 # /etc/cihub/server.yaml
@@ -79,11 +81,14 @@ github:
   app_id: 123456
   private_key_file: /run/secrets/app.pem
   webhook_secret: …
+  client_id: Iv23li…
+  client_secret: …
 ```
 
 One file serves every replica. On Kubernetes, a ConfigMap carries the
-file without its secrets, and a Secret gives `CIHUB_DATABASE_URL` and `CIHUB_GITHUB_WEBHOOK_SECRET`. A file that
-carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`specs/SECURITY.md`).
+file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_GITHUB_WEBHOOK_SECRET` and
+`CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `github.private_key`, `github.webhook_secret` or
+`github.client_secret` is a secret (`specs/SECURITY.md`).
 
 ```sh
 cihub server migrate --config /etc/cihub/server.yaml

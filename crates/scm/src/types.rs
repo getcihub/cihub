@@ -1,8 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cihub_domain::{
-    CheckConclusion, CheckReport, ConnectionId, MergeMethod, Mergeability, PrState, ReviewDecision,
+    CheckConclusion, CheckReport, ConnectionId, MembershipRole, MergeMethod, Mergeability, PrState,
+    ReviewDecision,
 };
+use secrecy::SecretString;
 use time::OffsetDateTime;
 
 /// The connection that a call uses: its quota, its budget and its credentials.
@@ -148,6 +150,51 @@ pub struct ScmInstallation {
     pub account: ScmAccount,
     pub permissions: BTreeMap<String, String>,
     pub is_suspended: bool,
+}
+
+/// What the address of a sign-in carries: the SCM sends the person back to
+/// `redirect_url` with a code and `state`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignInRequest {
+    pub redirect_url: String,
+    /// A random value that the callback checks, against a forged callback.
+    pub state: String,
+    /// The SHA-256 of the code verifier, in base64url without padding
+    /// (PKCE, method `S256`).
+    pub code_challenge: String,
+}
+
+/// The code that the SCM gives on the callback of a sign-in, and the
+/// verifier that proves that CIHub asked for it.
+#[derive(Debug)]
+pub struct SignInCode {
+    pub code: SecretString,
+    pub code_verifier: SecretString,
+    /// The `redirect_url` of the request, which the SCM checks again.
+    pub redirect_url: String,
+}
+
+/// A person who signed in, and the role of the person in each installation
+/// of the App that they reach.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SignedIn {
+    pub user: ScmUser,
+    pub memberships: Vec<ScmMembership>,
+}
+
+/// The role of a person in the account of an installation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmMembership {
+    /// The installation, as the `external_id` of its connection.
+    pub connection_external_id: String,
+    pub role: MembershipRole,
+}
+
+/// A member of the account of a connection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmMember {
+    pub user: ScmUser,
+    pub role: MembershipRole,
 }
 
 /// A repository that a connection reaches, as the SCM lists it.
