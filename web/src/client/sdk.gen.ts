@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { BatchGetData, BatchGetResponses, CancelItemData, CancelItemResponses, ConfigCheckData, ConfigCheckResponses, GetPrData, GetPrResponses, GetQueueData, GetQueueResponses, GraphData, GraphResponses, ListAuditData, ListAuditResponses, ListItemsData, ListItemsResponses, ListOrgQueuesData, ListOrgQueuesResponses, ListQueuesData, ListQueuesResponses, ListReposData, ListReposResponses, MeData, MeResponses, QueueActionData, QueueActionResponses, RestartItemData, RestartItemResponses, SubmitData, SubmitResponses, TestRunData, TestRunResponses, UpdateQueueData, UpdateQueueResponses } from './types.gen';
+import type { BatchGetData, BatchGetResponses, CancelItemData, CancelItemResponses, ConfigCheckData, ConfigCheckResponses, GetPrData, GetPrResponses, GetQueueData, GetQueueResponses, GraphData, GraphResponses, ListAuditData, ListAuditResponses, ListItemsData, ListItemsResponses, ListOrgPrsData, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesResponses, ListQueuesData, ListQueuesResponses, ListReposData, ListReposResponses, MeData, MeResponses, QueueActionData, QueueActionResponses, RestartItemData, RestartItemResponses, SubmitData, SubmitResponses, TestRunData, TestRunResponses, UpdateQueueData, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -41,6 +41,21 @@ export const listAudit = <ThrowOnError extends boolean = false>(options: Options
             type: 'apiKey'
         }],
     url: '/orgs/{org}/audit',
+    ...options
+});
+
+/**
+ * The current items of a person in every queue of the organization, and
+ * those that merged a moment ago, each with the PRs that merge before it
+ * and an estimate: "Your pull requests" in the dashboard.
+ */
+export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Options<ListOrgPrsData, ThrowOnError>): RequestResult<ListOrgPrsResponses, unknown, ThrowOnError> => (options.client ?? client).get<ListOrgPrsResponses, unknown, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/prs',
     ...options
 });
 

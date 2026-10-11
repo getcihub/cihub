@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { batchGet, cancelItem, configCheck, getPr, getQueue, graph, listAudit, listItems, listOrgQueues, listQueues, listRepos, me, type Options, queueAction, restartItem, submit, testRun, updateQueue } from '../sdk.gen';
-import type { BatchGetData, BatchGetResponse2, CancelItemData, CancelItemResponse, ConfigCheckData, ConfigCheckResponse, GetPrData, GetPrResponse, GetQueueData, GetQueueResponse, GraphData, GraphResponse, ListAuditData, ListAuditResponse, ListItemsData, ListItemsResponse, ListOrgQueuesData, ListOrgQueuesResponse, ListQueuesData, ListQueuesResponse, ListReposData, ListReposResponse, MeData, MeResponse, QueueActionData, QueueActionResponse, RestartItemData, RestartItemResponse, SubmitData, SubmitResponse, TestRunData, TestRunResponse, UpdateQueueData, UpdateQueueResponse } from '../types.gen';
+import { batchGet, cancelItem, configCheck, getPr, getQueue, graph, listAudit, listItems, listOrgPrs, listOrgQueues, listQueues, listRepos, me, type Options, queueAction, restartItem, submit, testRun, updateQueue } from '../sdk.gen';
+import type { BatchGetData, BatchGetResponse2, CancelItemData, CancelItemResponse, ConfigCheckData, ConfigCheckResponse, GetPrData, GetPrResponse, GetQueueData, GetQueueResponse, GraphData, GraphResponse, ListAuditData, ListAuditResponse, ListItemsData, ListItemsResponse, ListOrgPrsData, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesResponse, ListQueuesData, ListQueuesResponse, ListReposData, ListReposResponse, MeData, MeResponse, QueueActionData, QueueActionResponse, RestartItemData, RestartItemResponse, SubmitData, SubmitResponse, TestRunData, TestRunResponse, UpdateQueueData, UpdateQueueResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -133,6 +133,26 @@ export const listAuditInfiniteOptions = (options: Options<ListAuditData>) => {
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
+
+export const listOrgPrsQueryKey = (options: Options<ListOrgPrsData>) => createQueryKey('listOrgPrs', options);
+
+/**
+ * The current items of a person in every queue of the organization, and
+ * those that merged a moment ago, each with the PRs that merge before it
+ * and an estimate: "Your pull requests" in the dashboard.
+ */
+export const listOrgPrsOptions = (options: Options<ListOrgPrsData>) => queryOptions<ListOrgPrsResponse, DefaultError, ListOrgPrsResponse, ReturnType<typeof listOrgPrsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listOrgPrs({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listOrgPrsQueryKey(options)
+});
 
 export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => createQueryKey('listOrgQueues', options);
 

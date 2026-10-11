@@ -210,6 +210,9 @@ pub struct QueueDetail {
     pub last_merged_at: Option<OffsetDateTime>,
     /// The runs in progress.
     pub live_runs: u32,
+    /// The median duration of the runs that succeeded in the last 24 hours,
+    /// in seconds; `None` without such a run.
+    pub median_run_seconds: Option<u32>,
     pub window: Window,
     pub settings: SettingsSummary,
 }
@@ -305,6 +308,43 @@ pub struct Item {
     #[serde(with = "time::serde::rfc3339")]
     #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
     pub submitted_at: OffsetDateTime,
+}
+
+/// `GET /orgs/{org}/prs?author={login}`: the current items of a person in
+/// every queue of the organization, and those that merged in the last 10
+/// minutes, by repository, queue, then position.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OrgPrList {
+    pub prs: Vec<OrgPr>,
+}
+
+/// A current item of a person, in a queue of the organization.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OrgPr {
+    /// The name of the repository of the queue, as the routes name it.
+    pub repo: String,
+    /// The name of the queue, as the routes name it.
+    pub queue: String,
+    pub item: Item,
+    /// The admitted PRs that merge before it, the head of the queue first;
+    /// empty for a merged item. For an item not admitted yet, every admitted
+    /// PR: a PR of a higher priority goes before some of them.
+    pub ahead: Vec<PrAhead>,
+    /// About how many seconds until it merges, from the median duration of
+    /// the runs of its queue; `None` when it does not move toward the merge,
+    /// or when its queue has no run that succeeded in the last 24 hours.
+    pub merges_in_seconds: Option<u32>,
+}
+
+/// A PR ahead of another one in its queue.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PrAhead {
+    pub pr_number: u64,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub state: ItemState,
 }
 
 /// A page of items, newest submission first.

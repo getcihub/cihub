@@ -18,7 +18,7 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
   // The reads leave together. A queue that does not exist answers 404: the page says "not found" in the frame,
   // so a failed read does not stop the loader.
   loader: async ({ context: { queryClient }, params, deps }) => {
-    const reads = queueReads(params, deps.tab);
+    const reads = queueReads(params, deps.tab, Date.now());
     const ignore = () => undefined;
 
     await Promise.all([

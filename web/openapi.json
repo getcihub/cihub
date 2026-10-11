@@ -97,6 +97,54 @@
         ]
       }
     },
+    "/orgs/{org}/prs": {
+      "get": {
+        "tags": [],
+        "summary": "The current items of a person in every queue of the organization, and\nthose that merged a moment ago, each with the PRs that merge before it\nand an estimate: \"Your pull requests\" in the dashboard.",
+        "operationId": "list_org_prs",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "description": "The login of the author of the PRs, whatever its case.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPrList"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/orgs/{org}/queues": {
       "get": {
         "tags": [],
@@ -516,6 +564,15 @@
             "name": "until",
             "in": "query",
             "description": "Submitted before this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state_changed_since",
+            "in": "query",
+            "description": "Reached their state at or after this time (RFC 3339).",
             "required": false,
             "schema": {
               "type": "string"
@@ -1544,6 +1601,60 @@
           }
         }
       },
+      "OrgPr": {
+        "type": "object",
+        "description": "A current item of a person, in a queue of the organization.",
+        "required": [
+          "repo",
+          "queue",
+          "item",
+          "ahead"
+        ],
+        "properties": {
+          "ahead": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrAhead"
+            },
+            "description": "The admitted PRs that merge before it, the head of the queue first;\nempty for a merged item. For an item not admitted yet, every admitted\nPR: a PR of a higher priority goes before some of them."
+          },
+          "item": {
+            "$ref": "#/components/schemas/Item"
+          },
+          "merges_in_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "About how many seconds until it merges, from the median duration of\nthe runs of its queue; `None` when it does not move toward the merge,\nor when its queue has no run that succeeded in the last 24 hours.",
+            "minimum": 0
+          },
+          "queue": {
+            "type": "string",
+            "description": "The name of the queue, as the routes name it."
+          },
+          "repo": {
+            "type": "string",
+            "description": "The name of the repository of the queue, as the routes name it."
+          }
+        }
+      },
+      "OrgPrList": {
+        "type": "object",
+        "description": "`GET /orgs/{org}/prs?author={login}`: the current items of a person in\nevery queue of the organization, and those that merged in the last 10\nminutes, by repository, queue, then position.",
+        "required": [
+          "prs"
+        ],
+        "properties": {
+          "prs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgPr"
+            }
+          }
+        }
+      },
       "OrgQueue": {
         "type": "object",
         "description": "A queue of the organization, with its counters.",
@@ -1614,6 +1725,24 @@
             "type": "string"
           },
           "slug": {
+            "type": "string"
+          }
+        }
+      },
+      "PrAhead": {
+        "type": "object",
+        "description": "A PR ahead of another one in its queue.",
+        "required": [
+          "pr_number",
+          "state"
+        ],
+        "properties": {
+          "pr_number": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "state": {
             "type": "string"
           }
         }
@@ -1803,6 +1932,15 @@
             "type": "integer",
             "format": "int32",
             "description": "The runs in progress.",
+            "minimum": 0
+          },
+          "median_run_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The median duration of the runs that succeeded in the last 24 hours,\nin seconds; `None` without such a run.",
             "minimum": 0
           },
           "merged_last_24h": {

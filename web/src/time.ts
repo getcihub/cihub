@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 import { READ_AGAIN_EVERY } from "./live";
 
@@ -21,13 +21,18 @@ export function timeAgo(at: string, now: number): string {
   return "just now";
 }
 
-/** The time of the page, in milliseconds, which moves as often as the page reads its queue again. */
+/**
+ * The time of the page, in milliseconds, which moves as often as the page reads its queue again. In a transition:
+ * a read whose key follows the time keeps its page while it loads.
+ */
 export function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(Date.now());
+      startTransition(() => {
+        setNow(Date.now());
+      });
     }, READ_AGAIN_EVERY);
     return () => {
       clearInterval(timer);

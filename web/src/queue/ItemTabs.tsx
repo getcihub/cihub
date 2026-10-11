@@ -79,7 +79,7 @@ export function ItemTabs({
         </nav>
         <div className={styles.right}>
           {tab === "live" && "By position: priority first, then arrival"}
-          {tab !== "live" && (isCut ? "Last 24 hours, among the 100 latest submissions" : "Last 24 hours")}
+          {tab !== "live" && (isCut ? "Last 24 hours, the 100 latest submissions only" : "Last 24 hours")}
         </div>
       </div>
       {rows.length === 0 ? (
