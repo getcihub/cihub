@@ -2,7 +2,6 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { listOrgQueuesOptions, meOptions } from "../client/@tanstack/react-query.gen";
-import { READ_AGAIN_EVERY } from "../live";
 import { MinePrs } from "../mine/Mine";
 import { useMinePrs } from "../mine/reads";
 import { QueueCards } from "../overview/QueueCards";
@@ -20,10 +19,7 @@ export const Route = createFileRoute("/orgs/$org/")({
 function OrgPage() {
   const { org } = Route.useParams();
   const { data: me } = useSuspenseQuery(meOptions());
-  const { data } = useSuspenseQuery({
-    ...listOrgQueuesOptions({ path: { org } }),
-    refetchInterval: READ_AGAIN_EVERY,
-  });
+  const { data } = useSuspenseQuery(listOrgQueuesOptions({ path: { org } }));
   const mine = useMinePrs(org, me.login);
 
   if (data.queues.length > 0) {

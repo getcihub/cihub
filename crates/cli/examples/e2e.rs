@@ -7,7 +7,7 @@
 //! The world: `acme` and `globex`, a queue each; `ada` is a member of `acme`,
 //! `grace` of no organization. On `acme/web`, `ada` submits three PRs with
 //! `/cihub merge`: two whose check passed, which the queue tests, and one
-//! whose check waits. `acme/api` has no queue yet, a PR of `marie` and one
+//! whose check waits; #4 is open, not submitted. `acme/api` has no queue yet, a PR of `marie` and one
 //! of `ada`, both green, and a CI that passes each test commit; the page
 //! `/sim/merge` comments `/cihub merge` on a PR, `/sim/comment` gives the last
 //! comment of a PR.
@@ -25,7 +25,9 @@ use cihub_domain::{
     CheckConclusion, CheckKind, CheckReport, ConnectionId, MembershipRole, OrgId, Permission,
     QueueId, RepoId,
 };
-use cihub_platform::{Delivery, Executors, find_route, run_router, run_worker, store_delivery};
+use cihub_platform::{
+    Delivery, Executors, QueueNewsFeed, find_route, run_router, run_worker, store_delivery,
+};
 use cihub_scm::sim::{PrChange, Sim};
 use cihub_scm::{
     ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmUser, SignInRequest,
@@ -67,8 +69,9 @@ fn person(id: &str, login: &str) -> ScmUser {
 
 fn people() -> [(ScmUser, &'static str); 2] {
     [
-        (person("1", "ada"), "member of acme"),
-        (person("2", "grace"), "no organization"),
+        // Not `1`: the bot of the simulator is the account `1`.
+        (person("101", "ada"), "member of acme"),
+        (person("102", "grace"), "no organization"),
     ]
 }
 
@@ -146,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dashboard = Dashboard {
         scm: sim.clone(),
         public_url: Some(PUBLIC_URL.to_owned()),
+        news: QueueNewsFeed::start(pool.clone(), cancel.clone()),
     };
     let sign_in_page = Router::new()
         .route("/sim/authorize", get(authorize_page))
@@ -324,6 +328,10 @@ fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
         let number = open_pr(sim, &web, pr, &author, is_green)?;
         sim.comment(&web, number, &ada, "/cihub merge")?;
     }
+
+    // #4, which a browser test submits while the page of the queue is open.
+    let changelog = ("changelog", "Update the changelog");
+    open_pr(sim, &web, changelog, &person("14", "zoe"), true)?;
 
     Ok(())
 }

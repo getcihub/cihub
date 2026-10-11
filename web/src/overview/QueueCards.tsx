@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { OrgQueue } from "../client/types.gen";
 import { timeAgo, useNow } from "../time";
 import { QueueStateBadge } from "../ui/StateBadge";
+import { useFlip } from "../ui/motion";
 import ui from "../ui/ui.module.css";
 import styles from "./QueueCards.module.css";
 
@@ -29,6 +30,8 @@ export function QueueCards({ org, queues }: { org: string; queues: OrgQueue[] })
     .filter(({ repo, queue }) => `${repo} ${queue.name} ${queue.target_branch}`.toLowerCase().includes(words))
     .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)));
   const now = useNow();
+  const grid = useRef<HTMLDivElement>(null);
+  useFlip(grid);
 
   return (
     <>
@@ -45,7 +48,7 @@ export function QueueCards({ org, queues }: { org: string; queues: OrgQueue[] })
         />
       )}
       {shown.length > 0 ? (
-        <div className={styles.grid}>
+        <div ref={grid} className={styles.grid}>
           {shown.map((entry) => (
             <QueueCard key={entry.queue.id} org={org} entry={entry} now={now} />
           ))}
@@ -65,6 +68,7 @@ function QueueCard({ org, entry, now }: { org: string; entry: OrgQueue; now: num
 
   return (
     <Link
+      data-flip={queue.id}
       className={`${ui.card} ${styles.card}`}
       to="/orgs/$org/repos/$repo/queues/$queue"
       params={{ org, repo, queue: queue.name }}

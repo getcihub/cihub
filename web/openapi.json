@@ -1072,6 +1072,45 @@
           }
         ]
       }
+    },
+    "/orgs/{org}/stream": {
+      "get": {
+        "tags": [],
+        "summary": "The changes of the queues of the organization: an event `queue_changed`\nfor each, and a ping. The stream ends when the server stops, or when the\nserver lost changes: the browser opens it again and reads everything.",
+        "operationId": "stream",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueChanged"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1901,6 +1940,24 @@
           "ok",
           "suspended"
         ]
+      },
+      "QueueChanged": {
+        "type": "object",
+        "description": "The event `queue_changed` of `GET /orgs/{org}/stream`: what the pages of\nthe queue show changed, and they read it again.",
+        "required": [
+          "queue_id",
+          "seq"
+        ],
+        "properties": {
+          "queue_id": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The sequence number of the last event of the log of the queue; 0\nbefore the first."
+          }
+        }
       },
       "QueueDetail": {
         "type": "object",

@@ -12,6 +12,8 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use super::start::Shared;
+use cihub_platform::QueueNewsFeed;
+
 use super::{merge_queue, now};
 
 pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
@@ -33,7 +35,12 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         secret: github.webhook_secret,
     };
     let scm: Arc<dyn Scm> = github.app;
-    let dashboard = Dashboard { scm, public_url };
+    let news = QueueNewsFeed::start(pool.clone(), cancel.clone());
+    let dashboard = Dashboard {
+        scm,
+        public_url,
+        news,
+    };
     let router = cihub_web::router(pool.clone(), now, webhooks, modules, dashboard);
     let serve = async {
         cihub_web::serve(listener, router, cancel.clone())

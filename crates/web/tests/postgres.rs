@@ -5,7 +5,8 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, SessionId, UserId};
+use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, QueueId, SessionId, UserId};
+use cihub_platform::{QueueNewsFeed, notify_queue_changed};
 use cihub_scm::sim::Sim;
 use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
 use cihub_store::{
@@ -36,18 +37,24 @@ async fn start(pool: &PgPool) -> String {
 const PUBLIC_URL: &str = "https://ci.example.com";
 
 async fn start_with(pool: &PgPool, sim: Arc<Sim>) -> String {
+    start_until(pool, sim, CancellationToken::new()).await
+}
+
+/// Serves the web role until `cancel`.
+async fn start_until(pool: &PgPool, sim: Arc<Sim>, cancel: CancellationToken) -> String {
     let github = GithubWebhooks {
         secret: SecretString::from(SECRET),
     };
     let dashboard = Dashboard {
         scm: sim,
         public_url: Some(PUBLIC_URL.to_owned()),
+        news: QueueNewsFeed::start(pool.clone(), cancel.clone()),
     };
     let router = cihub_web::router(pool.clone(), now, github, Vec::new(), dashboard);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
 
-    tokio::spawn(cihub_web::serve(listener, router, CancellationToken::new()));
+    tokio::spawn(cihub_web::serve(listener, router, cancel));
     addr
 }
 
@@ -254,6 +261,80 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(
         document["paths"]["/orgs/{org}/repos"]["get"]["security"],
         serde_json::json!([{ "token": ["queues:read"] }, { "session": [] }])
+    );
+}
+
+/// Reads `stream` until its text holds `marker`, at most 5 seconds; `None`
+/// once the server closes it.
+async fn read_until(stream: &mut TcpStream, marker: &str) -> Option<String> {
+    let mut text = String::new();
+    let mut buffer = [0; 4096];
+    let reading = async {
+        while !text.contains(marker) {
+            let read = stream.read(&mut buffer).await.unwrap();
+            if read == 0 {
+                return None;
+            }
+            text.push_str(&String::from_utf8_lossy(&buffer[..read]));
+        }
+        Some(text.clone())
+    };
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), reading)
+        .await
+        .unwrap()
+}
+
+/// The stream of an organization carries the changes of its queues only, and
+/// ends when the server stops.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_stream_carries_the_changes_of_the_organization_only(pool: PgPool) {
+    let cancel = CancellationToken::new();
+    let addr = start_until(&pool, Arc::new(Sim::new()), cancel.clone()).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    let request = format!(
+        "GET /api/v1/orgs/acme/stream HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {reader}\r\n\r\n"
+    );
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+
+    let head = read_until(&mut stream, "retry: 1000").await.unwrap();
+
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(head.contains("content-type: text/event-stream"), "{head}");
+
+    let acme_queue = QueueId::from_ulid(Ulid(30));
+    let other_queue = QueueId::from_ulid(Ulid(31));
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(8)), other_queue)
+        .await
+        .unwrap();
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(7)), acme_queue)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let events = read_until(&mut stream, &acme_queue.to_string())
+        .await
+        .unwrap();
+
+    assert!(events.contains("event: queue_changed"), "{events}");
+    assert!(
+        events.contains(&format!(r#"data: {{"queue_id":"{acme_queue}","seq":0}}"#)),
+        "{events}"
+    );
+    assert!(!events.contains(&other_queue.to_string()), "{events}");
+
+    cancel.cancel();
+
+    // The last chunk of the body, or a closed connection: the stream ended.
+    let end = read_until(&mut stream, "\r\n0\r\n\r\n").await;
+    assert!(
+        end.as_deref()
+            .is_none_or(|end| end.ends_with("\r\n0\r\n\r\n")),
+        "{end:?}"
     );
 }
 

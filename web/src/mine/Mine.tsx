@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { useRef } from "react";
 
 import type { OrgPr, OrgQueue, QueueDetail } from "../client/types.gen";
 import { Prose } from "../queue/Prose";
+import { useFlip } from "../ui/motion";
 import styles from "./Mine.module.css";
 import { Train } from "./Train";
 import { etaOf, whereOf } from "./reads";
@@ -20,6 +22,9 @@ function PrTitle({ org, pr, className }: { org: string; pr: OrgPr; className: st
 
 /** "Your pull requests" on the queues of an organization: where each one is, and when it should merge. */
 export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queues: OrgQueue[] }) {
+  const list = useRef<HTMLUListElement>(null);
+  useFlip(list);
+
   if (prs.length === 0) {
     return null;
   }
@@ -30,7 +35,7 @@ export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queue
         <h2 id="mine-title">Your pull requests</h2>
         <span className={styles.hint}>Where each one is</span>
       </div>
-      <ul>
+      <ul ref={list}>
         {prs.map((pr) => {
           const queue = queues.find(
             (entry) => entry.repo === pr.repo && entry.queue.name === pr.queue,
@@ -39,7 +44,7 @@ export function MinePrs({ org, prs, queues }: { org: string; prs: OrgPr[]; queue
           const eta = etaOf(pr);
 
           return (
-            <li key={pr.item.id} className={styles.row}>
+            <li key={pr.item.id} className={styles.row} data-flip={pr.item.id}>
               <div>
                 <PrTitle org={org} pr={pr} className={styles.title} />
                 <div className={styles.meta}>

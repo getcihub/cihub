@@ -20,6 +20,8 @@ declare const styles: {
   readonly status: string;
   readonly testing: string;
   readonly title: string;
+  readonly toast: string;
+  readonly toasts: string;
   readonly top: string;
   readonly train: string;
   readonly where: string;

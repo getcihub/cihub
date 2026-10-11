@@ -56,7 +56,7 @@ describe("the actions on a queue", () => {
     const dialog = screen.getByRole("dialog", { name: "Pause the queue?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Pause" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Pause sent");
+    expect(await screen.findByText(/^Pause sent/)).toBeInTheDocument();
     expect(await changes()).toEqual([["PATCH", QUEUE, { state: "paused" }, "token"]]);
   });
 
@@ -85,7 +85,7 @@ describe("the actions on a queue", () => {
     await userEvent.selectOptions(within(dialog).getByRole("combobox", { name: "Priority" }), "high");
     await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("#124 sent");
+    expect(await screen.findByText(/^#124 sent/)).toBeInTheDocument();
     expect(await changes()).toEqual([
       ["POST", `${QUEUE}/prs`, { pr_number: 124, priority: "high", no_batch: false }, "token"],
     ]);

@@ -11,6 +11,7 @@ mod api;
 mod dashboard;
 mod session;
 mod sign_in;
+mod stream;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -25,7 +26,7 @@ use cihub_api_types::API_PREFIX;
 use cihub_github::{
     ReceivedDelivery, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH, WEBHOOK_PATH, WebhookError,
 };
-use cihub_platform::{Delivery, ModuleApi, PlatformError, store_delivery};
+use cihub_platform::{Delivery, ModuleApi, PlatformError, QueueNewsFeed, store_delivery};
 use cihub_scm::Scm;
 use cihub_store::{PgPool, begin_system};
 use secrecy::SecretString;
@@ -43,11 +44,13 @@ pub struct GithubWebhooks {
     pub secret: SecretString,
 }
 
-/// What the dashboard needs: the SCM where people sign in, and the root
-/// address of the instance, which the SCM sends them back to.
+/// What the dashboard needs: the SCM where people sign in, the root address
+/// of the instance, which the SCM sends them back to, and the changes of the
+/// queues, which its pages follow.
 pub struct Dashboard {
     pub scm: Arc<dyn Scm>,
     pub public_url: Option<String>,
+    pub news: QueueNewsFeed,
 }
 
 #[derive(Clone)]
@@ -81,7 +84,10 @@ pub fn router(
             post(session::sign_out).with_state(pool.clone()),
         )
         .merge(sign_in_routes(&pool, now, &dashboard))
-        .nest(API_PREFIX, api::router(pool, now, modules, dashboard.scm))
+        .nest(
+            API_PREFIX,
+            api::router(pool, now, modules, dashboard.scm, dashboard.news),
+        )
         .fallback(get(dashboard::serve))
 }
 

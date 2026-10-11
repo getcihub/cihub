@@ -12,7 +12,7 @@ use cihub_domain::{
     Actor, ConnectionId, Event, EventId, EventKind, ItemState, JobClass, Mergeability, OrgId,
     Permission, PrState, Priority, QueueId, RepoId, ReviewDecision, SubmittedVia, UserId,
 };
-use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty};
+use cihub_platform::{Job, Outcome, PlatformError, error_chain, mark_dirty, notify_queue_changed};
 use cihub_scm::{
     MAX_PRS_PER_READ, PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError, ScmUser, check_passed,
 };
@@ -789,6 +789,7 @@ async fn create_queues(
         if inserted.rows_affected() == 1 {
             info!(queue_name = name, target_branch = branch, "queue created");
             mark_dirty(&mut tx, id).await?;
+            notify_queue_changed(&mut tx, repo.org_id, id).await?;
         }
     }
 

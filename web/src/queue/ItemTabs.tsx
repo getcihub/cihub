@@ -1,9 +1,11 @@
 import { Link } from "@tanstack/react-router";
+import { useRef } from "react";
 
 import type { Item, QueueDetail } from "../client/types.gen";
 import { durationBetween, timeAgo } from "../time";
 import { Avatar } from "../ui/Avatar";
 import { ItemStateBadge } from "../ui/StateBadge";
+import { useFlip } from "../ui/motion";
 import ui from "../ui/ui.module.css";
 import { PrLink } from "./PrLink";
 import { Prose } from "./Prose";
@@ -73,6 +75,8 @@ export function ItemTabs({
   isCut: boolean;
   now: number;
 }) {
+  const rowsRef = useRef<HTMLTableSectionElement>(null);
+  useFlip(rowsRef);
   const rows = tab === "live" ? live : opened.filter((item) => now - Date.parse(item.state_changed_at) < DAY);
   const counts: Partial<Record<Tab, number>> = { live: live.length, merged: detail.merged_last_24h };
 
@@ -116,9 +120,9 @@ export function ItemTabs({
               <th>{tab === "live" ? "Since" : "When"}</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={rowsRef}>
             {rows.map((item) => (
-              <tr key={item.id}>
+              <tr key={item.id} data-flip={item.id}>
                 <td className={styles.pos}>{tab === "live" ? (ranks.get(item.id) ?? "–") : ""}</td>
                 <td>
                   <div className={styles.pr}>
