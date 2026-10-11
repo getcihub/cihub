@@ -544,12 +544,18 @@ pub struct Finding {
     pub message: String,
 }
 
-/// `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: no finding means a sound
+/// `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
+/// check of the configuration of the SCM; no finding means a sound
 /// configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ConfigCheck {
     pub findings: Vec<Finding>,
+    /// When CIHub checked the configuration; `None` before the first check,
+    /// which comes within minutes of the creation of the queue.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<String>, format = DateTime))]
+    pub checked_at: Option<OffsetDateTime>,
 }
 
 #[cfg(test)]

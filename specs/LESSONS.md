@@ -282,3 +282,12 @@ reason no longer holds.
 
 - **Tried / considered**: treat a failed `+1` reaction as a job error.
 - **Why not**: the retry would give the facts of the command twice. A failed acknowledgement is a `warn` log.
+
+### Write a job result in a column of `queues`
+
+- **Tried / considered**: keep the check of the configuration of the SCM in `queues.config_findings`, written by
+  the job `check_config`.
+- **Why not**: the lease of the queues takes their rows with `FOR UPDATE SKIP LOCKED`. While the job holds the
+  row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The check has
+  its own table, `config_checks`. A job that must write `queues` calls `mark_dirty` in its transaction, as
+  `load_config` does.

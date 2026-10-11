@@ -348,7 +348,8 @@
     "/orgs/{org}/repos/{repo}/queues/{queue}/config-check": {
       "get": {
         "tags": [],
-        "summary": "What the configuration of the SCM misses for the queue: no finding means a sound configuration.",
+        "summary": "What the configuration of the SCM missed for the queue at its last check.",
+        "description": "The scheduler checks it every hour, and `:resync` at once.",
         "operationId": "config_check",
         "parameters": [
           {
@@ -405,7 +406,8 @@
     "/orgs/{org}/repos/{repo}/queues/{queue}/graph": {
       "get": {
         "tags": [],
-        "summary": "The merge graph of the queue: its live items in order, and the\npredecessors that the test of each one merges before it.",
+        "summary": "The merge graph of the queue, read from its projections only.",
+        "description": "The head of the target branch, the live items in order, the predecessors\nthat the test of each one merges before it, and the last run of each live\ngroup.",
         "operationId": "graph",
         "parameters": [
           {
@@ -1133,11 +1135,19 @@
       },
       "ConfigCheck": {
         "type": "object",
-        "description": "`GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: no finding means a sound\nconfiguration.",
+        "description": "`GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last\ncheck of the configuration of the SCM; no finding means a sound\nconfiguration.",
         "required": [
           "findings"
         ],
         "properties": {
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When CIHub checked the configuration; `None` before the first check,\nwhich comes within minutes of the creation of the queue."
+          },
           "findings": {
             "type": "array",
             "items": {

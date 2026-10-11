@@ -229,7 +229,9 @@ export const updateQueueMutation = (options?: Partial<Options<UpdateQueueData>>)
 export const configCheckQueryKey = (options: Options<ConfigCheckData>) => createQueryKey('configCheck', options);
 
 /**
- * What the configuration of the SCM misses for the queue: no finding means a sound configuration.
+ * What the configuration of the SCM missed for the queue at its last check.
+ *
+ * The scheduler checks it every hour, and `:resync` at once.
  */
 export const configCheckOptions = (options: Options<ConfigCheckData>) => queryOptions<ConfigCheckResponse, DefaultError, ConfigCheckResponse, ReturnType<typeof configCheckQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -247,8 +249,11 @@ export const configCheckOptions = (options: Options<ConfigCheckData>) => queryOp
 export const graphQueryKey = (options: Options<GraphData>) => createQueryKey('graph', options);
 
 /**
- * The merge graph of the queue: its live items in order, and the
- * predecessors that the test of each one merges before it.
+ * The merge graph of the queue, read from its projections only.
+ *
+ * The head of the target branch, the live items in order, the predecessors
+ * that the test of each one merges before it, and the last run of each live
+ * group.
  */
 export const graphOptions = (options: Options<GraphData>) => queryOptions<GraphResponse, DefaultError, GraphResponse, ReturnType<typeof graphQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

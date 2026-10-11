@@ -5,7 +5,6 @@
 //! writer of the log.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use axum::Router;
 use axum::http::StatusCode;
@@ -18,14 +17,14 @@ use cihub_api_types::{
 };
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{
-    Actor, ApiScope, EventKind, ItemId, ItemState, JobClass, Priority, QueueControl, QueueId,
-    Reason, RepoId, RunId, SubmittedVia,
+    Actor, ApiScope, EventKind, ItemId, ItemState, Priority, QueueControl, QueueId, Reason, RepoId,
+    RunId, SubmittedVia,
 };
 use cihub_mq_core::current_window;
 use cihub_platform::{
     ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, Job, ModuleApi, enqueue_job,
 };
-use cihub_scm::{Scm, ScmError, ScmUser, SetupFinding};
+use cihub_scm::ScmUser;
 use cihub_store::{PgPool, Postgres, Transaction};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
@@ -41,7 +40,6 @@ use crate::target::{QueueTarget, queue_settings};
 struct ApiState {
     pool: PgPool,
     clock: Clock,
-    scm: Arc<dyn Scm>,
 }
 
 #[derive(OpenApi)]
@@ -95,7 +93,7 @@ pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
 }
 
 /// The routes of the module and their `OpenAPI` document.
-pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
+pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
     let routes = Router::new()
         .route("/orgs/{org}/queues", get(list_org_queues))
         .route("/orgs/{org}/repos/{repo}/queues", get(list_queues))
@@ -123,7 +121,7 @@ pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
             get(config_check),
         )
         .route("/orgs/{org}/runs/{run_id}", get(test_run))
-        .with_state(ApiState { pool, clock, scm });
+        .with_state(ApiState { pool, clock });
     ModuleApi {
         routes,
         openapi: openapi(),
@@ -993,8 +991,11 @@ async fn batch_get(
     }))
 }
 
-/// The merge graph of the queue: its live items in order, and the
-/// predecessors that the test of each one merges before it.
+/// The merge graph of the queue, read from its projections only.
+///
+/// The head of the target branch, the live items in order, the predecessors
+/// that the test of each one merges before it, and the last run of each live
+/// group.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}/graph",
@@ -1422,7 +1423,9 @@ async fn dependents(
         .collect()
 }
 
-/// What the configuration of the SCM misses for the queue: no finding means a sound configuration.
+/// What the configuration of the SCM missed for the queue at its last check.
+///
+/// The scheduler checks it every hour, and `:resync` at once.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}/config-check",
@@ -1438,46 +1441,20 @@ async fn config_check(
     grant.require(ApiScope::QueuesRead)?;
 
     let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
-    let id: QueueId = row.id.parse()?;
-    let target = QueueTarget::load(&mut tx, id).await?;
+    let check: Option<(sqlx::types::Json<Vec<Finding>>, OffsetDateTime)> =
+        sqlx::query_as("SELECT findings, checked_at FROM config_checks WHERE queue_id = $1")
+            .bind(&row.id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
-    tx.commit().await?;
-
-    let findings = state
-        .scm
-        .check_setup(&target.repo, &target.target_branch, JobClass::Interactive)
-        .await
-        .map_err(|err| match err {
-            ScmError::NotFound(_) => ApiError::not_found("target branch"),
-            err => ApiError::from(err),
-        })?;
-    let findings = findings
-        .into_iter()
-        .map(|finding| Finding {
-            code: finding.code().to_owned(),
-            message: finding_text(finding, &target.target_branch),
-        })
-        .collect();
-
-    Ok(axum::Json(ConfigCheck { findings }))
-}
-
-fn finding_text(finding: SetupFinding, branch: &str) -> String {
-    match finding {
-        SetupFinding::UpdateRestrictionMissing => {
-            format!("no rule restricts the updates of `{branch}`: a PR can merge without the queue")
-        }
-        SetupFinding::AppNotExempt => format!(
-            "a rule restricts the updates of `{branch}` without an exemption for the App of CIHub: \
-             the queue cannot merge"
-        ),
-        SetupFinding::TestBranchesNotExcluded => {
-            "a rule covers `cihub-temp/**` or `cihub-merge/**`: exclude the test branches"
-                .to_owned()
-        }
-        SetupFinding::UpToDateRequired => format!(
-            "the rules of `{branch}` ask for branches up to date: turn it off, unless the queue \
-             merges directly"
-        ),
-    }
+    Ok(axum::Json(match check {
+        Some((findings, checked_at)) => ConfigCheck {
+            findings: findings.0,
+            checked_at: Some(checked_at),
+        },
+        None => ConfigCheck {
+            findings: Vec::new(),
+            checked_at: None,
+        },
+    }))
 }
