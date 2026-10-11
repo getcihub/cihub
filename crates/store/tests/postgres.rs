@@ -64,7 +64,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 18] = [
+const TENANT_TABLES: [&str; 19] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -81,6 +81,7 @@ const TENANT_TABLES: [&str; 18] = [
     "check_observations",
     "pr_surfaces",
     "pr_titles",
+    "config_checks",
     "pr_comments",
     "memberships",
 ];
@@ -140,6 +141,8 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');
          INSERT INTO pr_titles (org_id, repo_id, pr_number, title, read_at)
              VALUES ('{org}', 'repo-{n}', 1, 'Fix the build', '2026-09-15T00:00:00Z');
+         INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+             VALUES ('{org}', '{queue}', '[]', '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role, refreshed_at)
              VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');"
     )

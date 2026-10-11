@@ -117,7 +117,9 @@ export const updateQueue = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
- * What the configuration of the SCM misses for the queue: no finding means a sound configuration.
+ * What the configuration of the SCM missed for the queue at its last check.
+ *
+ * The scheduler checks it every hour, and `:resync` at once.
  */
 export const configCheck = <ThrowOnError extends boolean = false>(options: Options<ConfigCheckData, ThrowOnError>): RequestResult<ConfigCheckResponses, unknown, ThrowOnError> => (options.client ?? client).get<ConfigCheckResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -130,8 +132,11 @@ export const configCheck = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
- * The merge graph of the queue: its live items in order, and the
- * predecessors that the test of each one merges before it.
+ * The merge graph of the queue, read from its projections only.
+ *
+ * The head of the target branch, the live items in order, the predecessors
+ * that the test of each one merges before it, and the last run of each live
+ * group.
  */
 export const graph = <ThrowOnError extends boolean = false>(options: Options<GraphData, ThrowOnError>): RequestResult<GraphResponses, unknown, ThrowOnError> => (options.client ?? client).get<GraphResponses, unknown, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {

@@ -329,7 +329,10 @@ Decisions:
     the contract, which must then be recorded again.
   - Done (October 10, 2026): step 3. `Graph` gains the head of the target branch and the last run of each live
     group: a group in `pending_failure` keeps its failed run, which the page shows as failing.
-  - Remaining: the stored configuration check, the pages, the browser test.
+  - Done (October 11, 2026): step 4. The job `check_config` keeps the findings of the configuration of the SCM
+    and the time of the check in `config_checks`; the scheduler asks for it when the last check is one hour old,
+    and `:resync` asks for it too. `GET …/config-check` reads it: the routes of the queues no longer hold the `Scm`.
+  - Remaining: the pages, the browser test.
 
 #### Lot 10c: your pull requests, drawer and actions
 

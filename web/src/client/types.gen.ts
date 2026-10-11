@@ -49,10 +49,16 @@ export type BatchGetResponse = {
 };
 
 /**
- * `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: no finding means a sound
+ * `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
+ * check of the configuration of the SCM; no finding means a sound
  * configuration.
  */
 export type ConfigCheck = {
+    /**
+     * When CIHub checked the configuration; `None` before the first check,
+     * which comes within minutes of the creation of the queue.
+     */
+    checked_at?: string | null;
     findings: Array<Finding>;
 };
 

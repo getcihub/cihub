@@ -1,23 +1,32 @@
 //! The job `load_config`: it reads the configuration file on the head of the
 //! target branch, and keeps it on the queue when it is valid. The file is the
-//! only source of the settings.
+//! only source of the settings. The job `check_config` reads what the
+//! configuration of the SCM misses for the queue, and keeps it for the pages.
 
 use std::error::Error;
 
+use cihub_api_types::Finding;
 use cihub_config::{ConfigError, FILE_NAMES, RepoConfig, find_config_file};
-use cihub_domain::JobClass;
-use cihub_platform::{Job, mark_dirty};
-use cihub_scm::{RepoRef, Scm, ScmError};
+use cihub_domain::{JobClass, QueueId};
+use cihub_platform::{Job, enqueue_job, mark_dirty};
+use cihub_scm::{RepoRef, Scm, ScmError, SetupFinding};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use time::OffsetDateTime;
+use sqlx::types::Json;
+use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
-use crate::jobs::{Failure, job, read_payload, target_of};
+use crate::jobs::{Failure, job, read_payload, target_of, window};
 use crate::target::QueueTarget;
+use crate::{MergeQueueError, parse_id};
 
 pub(crate) const LOAD_CONFIG: &str = "load_config";
+pub(crate) const CHECK_CONFIG: &str = "check_config";
+
+/// How old a check of the configuration of the SCM gets before the scheduler
+/// asks for another one: the SCM sends no event when a rule changes.
+pub(crate) const CHECK_CONFIG_EVERY: Duration = Duration::hours(1);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct LoadConfig {
@@ -110,4 +119,129 @@ pub(crate) async fn load(
     tx.commit().await?;
 
     Ok(())
+}
+
+/// The check of the configuration of the SCM for `target`, once for
+/// `subject`.
+pub(crate) fn check_config_job(target: &QueueTarget, subject: &str, class: JobClass) -> Job {
+    let key = format!("{CHECK_CONFIG}:{}-{subject}:1", target.queue_id);
+    job(target, key, CHECK_CONFIG, class, json!({}))
+}
+
+/// Asks for a check of the configuration of each queue whose last check is
+/// older than [`CHECK_CONFIG_EVERY`], or that has none, while CIHub reaches its
+/// repository and no check of it waits. Each check runs at a moment of the
+/// hour that its queue keeps, so that the checks of many queues do not come
+/// together. Returns their number.
+///
+/// Like the other sweeps of the scheduler, it reads the queues of every
+/// organization, then acts on each queue alone.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn request_config_checks(
+    pool: &PgPool,
+    now: OffsetDateTime,
+) -> Result<usize, MergeQueueError> {
+    let mut tx = begin_system(pool).await?;
+    let queues: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT q.id, abs(hashtextextended(q.id, 0) % $3) FROM queues q
+         JOIN repos r ON r.id = q.repo_id
+         JOIN scm_connections c ON c.id = r.connection_id
+         LEFT JOIN config_checks k ON k.queue_id = q.id
+         WHERE c.suspended_at IS NULL AND (k.checked_at IS NULL OR k.checked_at <= $1)
+           AND NOT EXISTS (SELECT 1 FROM jobs j
+                           WHERE j.queue_id = q.id AND j.type = $2
+                             AND j.state IN ('queued', 'running'))
+         ORDER BY q.id",
+    )
+    .bind(now - CHECK_CONFIG_EVERY)
+    .bind(CHECK_CONFIG)
+    .bind(CHECK_CONFIG_EVERY.whole_seconds())
+    .fetch_all(&mut *tx)
+    .await?;
+    let subject = window(now);
+    let mut requested = 0;
+
+    for (queue, delay_seconds) in &queues {
+        let queue: QueueId = parse_id(queue, queue)?;
+        let target = QueueTarget::load(&mut tx, queue).await?;
+        let check = check_config_job(&target, &subject, JobClass::Repair);
+        let run_after = now + Duration::seconds(*delay_seconds);
+        if enqueue_job(&mut tx, &check, run_after, now).await? {
+            requested += 1;
+        }
+    }
+
+    tx.commit().await?;
+
+    Ok(requested)
+}
+
+/// Reads what the configuration of the SCM misses for the queue, and keeps
+/// it with the time of the check: a page reads it without a call to the SCM.
+pub(crate) async fn check(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let target = target_of(pool, job).await?;
+    let findings = match scm
+        .check_setup(&target.repo, &target.target_branch, job.class)
+        .await
+    {
+        Ok(findings) => findings,
+        Err(ScmError::NotFound(_)) => {
+            info!("target branch gone: configuration not checked");
+            return Ok(());
+        }
+        Err(err) => return Err(err.into()),
+    };
+
+    let findings: Vec<Finding> = findings
+        .into_iter()
+        .map(|finding| Finding {
+            code: finding.code().to_owned(),
+            message: finding_text(finding, &target.target_branch),
+        })
+        .collect();
+    let mut tx = begin_system(pool).await?;
+
+    sqlx::query(
+        "INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (queue_id) DO UPDATE SET findings = $3, checked_at = $4
+         WHERE config_checks.checked_at <= $4",
+    )
+    .bind(target.org_id.to_string())
+    .bind(target.queue_id.to_string())
+    .bind(Json(findings))
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(())
+}
+
+fn finding_text(finding: SetupFinding, branch: &str) -> String {
+    match finding {
+        SetupFinding::UpdateRestrictionMissing => {
+            format!("no rule restricts the updates of `{branch}`: a PR can merge without the queue")
+        }
+        SetupFinding::AppNotExempt => format!(
+            "a rule restricts the updates of `{branch}` without an exemption for the App of CIHub: \
+             the queue cannot merge"
+        ),
+        SetupFinding::TestBranchesNotExcluded => {
+            "a rule covers `cihub-temp/**` or `cihub-merge/**`: exclude the test branches"
+                .to_owned()
+        }
+        SetupFinding::UpToDateRequired => format!(
+            "the rules of `{branch}` ask for branches up to date: turn it off, unless the queue \
+             merges directly"
+        ),
+    }
 }

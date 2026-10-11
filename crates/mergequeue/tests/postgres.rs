@@ -18,7 +18,7 @@ use cihub_domain::{
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, wake_uncovered,
+    queue_status_context, rebuild, request_config_checks, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -812,16 +812,21 @@ impl SimQueue {
             .collect()
     }
 
-    /// Waits until every delivery, fact and job is done.
+    /// Waits until every delivery, fact and job is done; a check of the
+    /// configuration that waits for its moment of the hour is not work yet.
     async fn settle(&self) {
         for _ in 0..800 {
             let mut tx = begin_system(&self.pool).await.unwrap();
             let busy: bool = sqlx::query_scalar(
                 "SELECT EXISTS (SELECT 1 FROM webhook_inbox)
                      OR EXISTS (SELECT 1 FROM queue_inbox)
-                     OR EXISTS (SELECT 1 FROM jobs WHERE state IN ('queued', 'running'))
+                     OR EXISTS (SELECT 1 FROM jobs
+                                WHERE state = 'running'
+                                   OR (state = 'queued'
+                                       AND (type <> 'check_config' OR run_after <= $1)))
                      OR EXISTS (SELECT 1 FROM queues WHERE dirty)",
             )
+            .bind(self.clock.now())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -3362,13 +3367,36 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     let (_, queues) = call("GET", "/orgs/acme/repos/app/queues".into(), None).await;
     assert_eq!(queues["queues"].as_array().unwrap().len(), 1);
+    let (_, unchecked) = call("GET", format!("{queue}/config-check"), None).await;
+    assert_eq!(
+        unchecked,
+        serde_json::json!({ "findings": [], "checked_at": null })
+    );
+
+    let before_resync = sim.calls().len();
     assert_eq!(call("POST", format!("{queue}:resync"), None).await.0, 202);
+    q.settle().await;
 
     let (status, checked) = call("GET", format!("{queue}/config-check"), None).await;
+    let calls = sim.calls();
+    let (_, read_again) = call("GET", format!("{queue}/config-check"), None).await;
+
     assert_eq!(status, 200, "{checked}");
     assert_eq!(
         checked["findings"][0]["code"], "update_restriction_missing",
         "the simulator restricts no update"
+    );
+    assert!(
+        calls[before_resync..]
+            .iter()
+            .any(|call| call.name == "check_setup"),
+        "the resync checks the configuration"
+    );
+    assert_eq!(read_again, checked);
+    assert_eq!(
+        sim.calls().len(),
+        calls.len(),
+        "a read calls the SCM zero times"
     );
 
     let (_, audit) = call("GET", "/orgs/acme/audit".into(), None).await;
@@ -3463,7 +3491,8 @@ async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    \
+         failure_budget: {{ retries: 0 }}\n    pending_failure_depth: 1\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3500,6 +3529,20 @@ async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
             (serde_json::json!([second]), serde_json::json!([first])),
         ]
     );
+
+    // The second run fails while the first one tests: its PR waits for it, and
+    // the graph keeps the failed run.
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(1);
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, false))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, graph) = call(&addr, &token, "GET", &format!("{queue}/graph"), None).await;
+
+    assert_eq!(graph["nodes"][1]["state"], "pending_failure", "{graph}");
+    assert_eq!(graph["runs"][1]["status"], "failed");
+    assert_eq!(graph["runs"][1]["item_ids"], serde_json::json!([second]));
     q.stop().await;
 }
 
@@ -4196,6 +4239,95 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
         .fetch_one(&mut *tx)
         .await
         .unwrap()
+}
+
+/// The scheduler asks for a check of the configuration of a queue that has
+/// none, or whose check is one hour old, while CIHub reaches its repository.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
+    seed(&pool).await;
+
+    let now = clock();
+    // The check that the job would write, once its job is done.
+    let run_the_check = |at: OffsetDateTime| {
+        let pool = pool.clone();
+        async move {
+            let mut tx = begin_system(&pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+                 VALUES ($1, $2, '[]', $3)
+                 ON CONFLICT (queue_id) DO UPDATE SET checked_at = $3",
+            )
+            .bind(org().to_string())
+            .bind(queue().to_string())
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                "UPDATE jobs SET state = 'done', finished_at = now() WHERE type = 'check_config'",
+            )
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+    };
+
+    assert_eq!(request_config_checks(&pool, now).await.unwrap(), 1);
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(5))
+            .await
+            .unwrap(),
+        0,
+        "a check that waits is not asked again"
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let run_after: OffsetDateTime =
+        sqlx::query_scalar("SELECT run_after FROM jobs WHERE type = 'check_config'")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+
+    assert!(
+        run_after >= now && run_after < now + Duration::hours(1),
+        "{run_after}: within the hour"
+    );
+
+    run_the_check(now).await;
+
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(30))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(61))
+            .await
+            .unwrap(),
+        1
+    );
+
+    run_the_check(now + Duration::minutes(61)).await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE scm_connections SET suspended_at = $1")
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::days(1))
+            .await
+            .unwrap(),
+        0,
+        "no check while the access is lost"
+    );
 }
 
 /// An old partition goes only once a snapshot covers its events, and the log
