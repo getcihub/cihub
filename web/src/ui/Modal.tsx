@@ -1,5 +1,6 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useRef } from "react";
 
+import { useDialog } from "./dialog";
 import styles from "./ui.module.css";
 
 interface Props {
@@ -8,29 +9,10 @@ interface Props {
   children: ReactNode;
 }
 
-/**
- * A modal dialog over the page: the focus goes to its first field or button, and comes back to where it was
- * once it closes; `Escape` and a click beside it close it.
- */
+/** A modal dialog over the page, and over the drawer of a PR: Escape and a click beside it close it alone. */
 export function Modal({ title, onClose, children }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const before = document.activeElement;
-    dialog.current?.querySelector<HTMLElement>("input, select, button")?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      if (before instanceof HTMLElement) {
-        before.focus();
-      }
-    };
-  }, [onClose]);
+  useDialog(dialog, onClose, { isOnTop: true });
 
   return (
     <>

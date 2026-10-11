@@ -583,11 +583,26 @@ async fn queue_page(
         .await?;
 
     Ok(format!(
-        "{}/orgs/{slug}/repos/{}/queues/{}",
+        "{}/orgs/{}/repos/{}/queues/{}",
         dashboard.trim_end_matches('/'),
-        target.repo.name,
-        target.name
+        path_segment(&slug),
+        path_segment(&target.repo.name),
+        path_segment(&target.name)
     ))
+}
+
+/// `text` as one segment of a path: every byte but the unreserved ones of
+/// RFC 3986 is percent-encoded, as a queue name of the file can hold `/` or a
+/// space.
+fn path_segment(text: &str) -> String {
+    text.bytes().fold(String::new(), |mut segment, byte| {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            segment.push(char::from(byte));
+        } else {
+            let _ = write!(segment, "%{byte:02X}");
+        }
+        segment
+    })
 }
 
 /// Writes the rendering of each surface that changed in `pr_surfaces`, and
@@ -602,7 +617,7 @@ pub(crate) async fn converge_surfaces(
     target: &QueueTarget,
     settings: &QueueSettings,
     surfaces: &[Surface],
-    dashboard: Option<&str>,
+    dashboard_url: Option<&str>,
 ) -> Result<Vec<Job>, MergeQueueError> {
     let numbers: Vec<i64> = surfaces
         .iter()
@@ -620,14 +635,14 @@ pub(crate) async fn converge_surfaces(
             .fetch_all(&mut *conn)
             .await?;
 
-    let queue_page = match dashboard {
-        Some(dashboard) => Some(queue_page(conn, target, dashboard).await?),
+    let page_of_queue = match dashboard_url {
+        Some(dashboard_url) => Some(queue_page(conn, target, dashboard_url).await?),
         None => None,
     };
 
     for (surface, number) in surfaces.iter().zip(numbers) {
         let history = histories.get(&number).map_or(&[][..], Vec::as_slice);
-        let page = queue_page
+        let page = page_of_queue
             .as_ref()
             .map(|queue| format!("{queue}/prs/{number}"));
         let rendered = render(
@@ -929,7 +944,8 @@ async fn publish_comment(
 /// The status `success` before the merge of the PR: a rule that requires
 /// the status of the queue lets the merge through.
 pub(crate) fn merging_status(target_branch: &str, sha: &str) -> StatusUpdate {
-    // The merge job has no page: GitHub keeps the status, not its link.
+    // The merge job has no page: the status has no link while the PR merges,
+    // until the rendering of `merged` gives it back.
     queue_status(
         target_branch,
         sha,
@@ -1524,6 +1540,12 @@ mod tests {
                 .unwrap()
                 .contains(&format!("[Open in CIHub]({page})"))
         );
+    }
+
+    #[test]
+    fn a_name_of_the_file_stays_one_segment_of_the_page() {
+        assert_eq!(path_segment("main"), "main");
+        assert_eq!(path_segment("release/2.0 rc"), "release%2F2.0%20rc");
     }
 }
 

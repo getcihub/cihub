@@ -24,9 +24,6 @@ use crate::{MergeQueueError, parse_id};
 pub(crate) const LOAD_CONFIG: &str = "load_config";
 pub(crate) const CHECK_CONFIG: &str = "check_config";
 
-/// The finding of a check whose target branch no longer exists.
-const TARGET_BRANCH_MISSING: &str = "target_branch_missing";
-
 /// How old a check of the configuration of the SCM gets before the scheduler
 /// asks for another one: the SCM sends no event when a rule changes.
 pub(crate) const CHECK_CONFIG_EVERY: Duration = Duration::hours(1);
@@ -192,24 +189,18 @@ pub(crate) async fn check(
 ) -> Result<(), Failure> {
     let target = target_of(pool, job).await?;
     let branch = &target.target_branch;
-    let findings: Vec<Finding> = match scm.check_setup(&target.repo, branch, job.class).await {
-        Ok(findings) => findings
-            .into_iter()
-            .map(|finding| Finding {
-                code: finding.code().to_owned(),
-                message: finding_text(finding, branch),
-            })
-            .collect(),
-        // The check comes back in an hour, as for a finding of the rules.
-        Err(ScmError::NotFound(_)) => {
-            info!("target branch gone");
-            vec![Finding {
-                code: TARGET_BRANCH_MISSING.to_owned(),
-                message: format!("the branch `{branch}` no longer exists: the queue cannot merge"),
-            }]
-        }
+    let found = match scm.check_setup(&target.repo, branch, job.class).await {
+        Ok(findings) => findings.into_iter().map(CheckFinding::Setup).collect(),
+        Err(ScmError::NotFound(what)) => missing_branch(scm, &target, job.class, what).await?,
         Err(err) => return Err(err.into()),
     };
+    let findings: Vec<Finding> = found
+        .into_iter()
+        .map(|finding| Finding {
+            code: finding.code().to_owned(),
+            message: finding.text(branch),
+        })
+        .collect();
     let mut tx = begin_system(pool).await?;
 
     sqlx::query(
@@ -227,6 +218,54 @@ pub(crate) async fn check(
     tx.commit().await?;
 
     Ok(())
+}
+
+/// What a check of the configuration finds: a point of the configuration of
+/// the SCM, or a target branch that no longer exists. Its finding comes back
+/// in an hour, as the others.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CheckFinding {
+    Setup(SetupFinding),
+    TargetBranchMissing,
+}
+
+impl CheckFinding {
+    fn code(self) -> &'static str {
+        match self {
+            Self::Setup(finding) => finding.code(),
+            Self::TargetBranchMissing => "target_branch_missing",
+        }
+    }
+
+    fn text(self, branch: &str) -> String {
+        match self {
+            Self::Setup(finding) => finding_text(finding, branch),
+            Self::TargetBranchMissing => {
+                format!("the branch `{branch}` no longer exists: the queue cannot merge")
+            }
+        }
+    }
+}
+
+/// The finding of a check that the SCM answered `NotFound`: a repository that
+/// is gone answers it too, and only a gone branch is a finding.
+async fn missing_branch(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    class: JobClass,
+    what: String,
+) -> Result<Vec<CheckFinding>, Failure> {
+    if scm
+        .branch_head(&target.repo, &target.target_branch, class)
+        .await?
+        .is_some()
+    {
+        return Err(ScmError::NotFound(what).into());
+    }
+
+    info!("target branch gone");
+
+    Ok(vec![CheckFinding::TargetBranchMissing])
 }
 
 fn finding_text(finding: SetupFinding, branch: &str) -> String {

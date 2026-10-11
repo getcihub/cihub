@@ -12,7 +12,7 @@
 //! `/sim/merge` comments `/cihub merge` on a PR, `/sim/comment` gives the last
 //! comment of a PR.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -28,8 +28,7 @@ use cihub_domain::{
 use cihub_platform::{Delivery, Executors, find_route, run_router, run_worker, store_delivery};
 use cihub_scm::sim::{PrChange, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmError, ScmUser,
-    SignInRequest,
+    ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmUser, SignInRequest,
 };
 use cihub_store::{MIGRATOR, PgPool, begin_system, create_event_partitions, migrate};
 use cihub_web::{Dashboard, GithubWebhooks};
@@ -219,10 +218,15 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// A repository of `acme`, as the seed and the simulator name it.
-fn acme_repo(name: &str) -> RepoRef {
-    let external_id = if name == "web" { "1000" } else { "1001" };
-    RepoRef {
+/// A repository of `acme`, as the seed and the simulator name it; `None` for
+/// another name.
+fn acme_repo(name: &str) -> Option<RepoRef> {
+    let external_id = match name {
+        "web" => "1000",
+        "api" => "1001",
+        _ => return None,
+    };
+    Some(RepoRef {
         connection: ConnectionRef {
             id: ConnectionId::from_ulid(Ulid(1)),
             external_id: "100".into(),
@@ -230,12 +234,12 @@ fn acme_repo(name: &str) -> RepoRef {
         external_id: external_id.into(),
         namespace: "acme".into(),
         name: name.into(),
-    }
+    })
 }
 
 /// The installations of the two organizations on the simulator, who is a
 /// member of which, and `acme/web`, whose branch `main` requires `ci`.
-fn world(sim: &Sim) -> Result<(), ScmError> {
+fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     let [(ada, _), _] = people();
     for (installation, account, slug) in [("100", "10", "acme"), ("200", "20", "globex")] {
         let account = ScmAccount {
@@ -247,7 +251,7 @@ fn world(sim: &Sim) -> Result<(), ScmError> {
     sim.set_member("100", &ada, MembershipRole::Member);
 
     for name in ["web", "api"] {
-        let repo = acme_repo(name);
+        let repo = acme_repo(name).ok_or("unknown repository")?;
         sim.add_repo(&repo, "main", &[("README.md", name)]);
         let rules = RequiredChecks {
             names: [REQUIRED.to_owned()].into(),
@@ -297,7 +301,7 @@ fn passed() -> CheckReport {
 /// Opens the PRs of `acme/web`, and `ada` submits each one with a comment.
 fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     let [(ada, _), _] = people();
-    let web = acme_repo("web");
+    let web = acme_repo("web").ok_or("unknown repository")?;
     let prs = [
         (
             ("export-csv", "Export invoices as CSV"),
@@ -328,7 +332,7 @@ fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 /// `ada`.
 fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     let [(ada, _), _] = people();
-    let api = acme_repo("api");
+    let api = acme_repo("api").ok_or("unknown repository")?;
 
     open_pr(
         sim,
@@ -352,31 +356,43 @@ fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 /// until `cancel`. The runs of `acme/web` keep testing, for the page of a
 /// queue in test.
 async fn pass_api_tests(pool: PgPool, sim: Arc<Sim>, cancel: CancellationToken) {
-    let api = acme_repo("api");
-    let mut passed_shas = std::collections::HashSet::new();
+    let Some(api) = acme_repo("api") else {
+        return;
+    };
+    let mut passed_shas = HashSet::new();
 
-    while !cancel.is_cancelled() {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        let shas = match testing_shas(&pool).await {
-            Ok(shas) => shas,
-            Err(err) => {
-                warn!(
-                    error = &*err as &dyn std::error::Error,
-                    "test commits not read"
-                );
-                continue;
-            }
-        };
-
-        for sha in shas
-            .into_iter()
-            .filter(|sha| passed_shas.insert(sha.clone()))
-        {
-            if let Err(err) = sim.report_check(&api, &sha, passed()) {
-                warn!(error = &err as &dyn std::error::Error, "check not reported");
-            }
+    while pause(&cancel, Duration::from_millis(200)).await {
+        if let Err(err) = pass_new_tests(&pool, &sim, &api, &mut passed_shas).await {
+            warn!(
+                error = &*err as &dyn std::error::Error,
+                "test commits not passed"
+            );
         }
     }
+}
+
+/// Waits `wait`; `false` once `cancel` comes first.
+async fn pause(cancel: &CancellationToken, wait: Duration) -> bool {
+    tokio::select! {
+        () = cancel.cancelled() => false,
+        () = tokio::time::sleep(wait) => true,
+    }
+}
+
+/// Passes each test commit of `acme/api` in progress that it did not pass yet.
+async fn pass_new_tests(
+    pool: &PgPool,
+    sim: &Sim,
+    api: &RepoRef,
+    passed_shas: &mut HashSet<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for sha in testing_shas(pool).await? {
+        if passed_shas.insert(sha.clone()) {
+            sim.report_check(api, &sha, passed())?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn testing_shas(pool: &PgPool) -> Result<Vec<String>, Box<dyn std::error::Error>> {
@@ -412,7 +428,11 @@ async fn comment_merge(
         return Html("no such PR").into_response();
     };
 
-    match sim.comment(&acme_repo(&get("repo")), number, &person, "/cihub merge") {
+    let Some(repo) = acme_repo(&get("repo")) else {
+        return Html("no such repository").into_response();
+    };
+
+    match sim.comment(&repo, number, &person, "/cihub merge") {
         Ok(()) => Html("commented").into_response(),
         Err(err) => Html(err.to_string()).into_response(),
     }
@@ -426,8 +446,8 @@ async fn last_comment(
     let get = |name: &str| query.get(name).cloned().unwrap_or_default();
     let number = get("number").parse().unwrap_or_default();
 
-    sim.comments(&acme_repo(&get("repo")), number)
-        .pop()
+    acme_repo(&get("repo"))
+        .and_then(|repo| sim.comments(&repo, number).pop())
         .unwrap_or_default()
 }
 
@@ -455,8 +475,7 @@ async fn pass_deliveries(
 ) {
     let mut sent = 0;
 
-    while !cancel.is_cancelled() {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    while pause(&cancel, Duration::from_millis(100)).await {
         for delivery in sim.take_deliveries() {
             sent += 1;
             if let Err(err) = store(&pool, &deliveries, format!("delivery-{sent}"), delivery).await

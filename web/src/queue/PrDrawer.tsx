@@ -1,12 +1,12 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useState } from "react";
 
 import { getPrOptions, graphOptions, testRunOptions } from "../client/@tanstack/react-query.gen";
 import type { Item, TimelineEvent } from "../client/types.gen";
 import { READ_AGAIN_EVERY } from "../live";
 import { ItemStateBadge, itemStateLabel } from "../ui/StateBadge";
 import { PrActions } from "./Actions";
+import { DrawerFrame } from "./DrawerFrame";
 import styles from "./PrDrawer.module.css";
 import { Prose } from "./Prose";
 import type { QueuePath } from "./reads";
@@ -42,6 +42,17 @@ const RUN_STATUSES: Record<string, string> = {
 
 const TERMINAL = ["merged", "failed", "cancelled"];
 
+const CONCLUSION_LABELS: Record<string, string> = {
+  success: "passed",
+  failure: "failed",
+  timed_out: "timed out",
+  action_required: "action required",
+  neutral: "neutral",
+  skipped: "skipped",
+  cancelled: "cancelled",
+  stale: "stale",
+};
+
 const CONCLUSIONS: Record<string, string> = {
   success: styles.success,
   failure: styles.failure,
@@ -73,7 +84,7 @@ function whatOf(event: TimelineEvent): string {
     case "merge.failed":
       return "Merge failed";
     default:
-      return event.type;
+      return "Event";
   }
 }
 
@@ -146,7 +157,9 @@ function RunSection({ org, runId }: { org: string; runId: string }) {
                 <span className={`${styles.conclusion} ${CONCLUSIONS[check.conclusion ?? ""] ?? ""}`} />
                 <span className={styles.checkName}>{check.name}</span>
                 {!check.required && <span className={styles.note}>not required</span>}
-                <span className={styles.checkState}>{check.conclusion ?? "running"}</span>
+                <span className={styles.checkState}>
+                  {check.conclusion ? (CONCLUSION_LABELS[check.conclusion] ?? check.conclusion) : "running"}
+                </span>
               </li>
             ))}
           </ul>
@@ -161,8 +174,6 @@ function RunSection({ org, runId }: { org: string; runId: string }) {
  * history. `Escape` closes it.
  */
 export function PrDrawer({ path, number }: { path: QueuePath; number: number }) {
-  const navigate = useNavigate();
-  const heading = useRef<HTMLHeadingElement>(null);
   const { data } = useSuspenseQuery({
     ...getPrOptions({ path: { ...path, number }, query: { include: "timeline" } }),
     refetchInterval: READ_AGAIN_EVERY,
@@ -177,47 +188,18 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);
 
-  useEffect(() => {
-    heading.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        void navigate({ to: "/orgs/$org/repos/$repo/queues/$queue", params: path, search: (kept) => kept });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [navigate, path]);
-
   return (
-    <>
-      {/* A click beside the drawer closes it; the keyboard has Close and Escape. */}
-      <Link
-        className={styles.scrim}
-        to="/orgs/$org/repos/$repo/queues/$queue"
-        params={path}
-        search={(kept) => kept}
-        tabIndex={-1}
-        aria-hidden="true"
-      />
-      <aside className={styles.drawer} role="dialog" aria-labelledby="pr-title">
-        <header>
-          <Link
-            className={styles.close}
-            to="/orgs/$org/repos/$repo/queues/$queue"
-            params={path}
-            search={(kept) => kept}
-          >
-            Close
-          </Link>
-          <div className={styles.meta}>
-            #{item.pr_number} · {item.author}
-            {!TERMINAL.includes(item.state) && item.position != null && ` · position ${String(ahead + 1)}`}
-          </div>
-          <h2 id="pr-title" ref={heading} tabIndex={-1}>
-            {item.title ?? `#${String(item.pr_number)}`}
-          </h2>
+    <DrawerFrame
+      path={path}
+      title={item.title ?? `#${String(item.pr_number)}`}
+      meta={
+        <>
+          #{item.pr_number} · {item.author}
+          {!TERMINAL.includes(item.state) && item.position != null && ` · position ${String(ahead + 1)}`}
+        </>
+      }
+      head={
+        <>
           <div className={styles.status}>
             <ItemStateBadge state={item.state} />
             {!TERMINAL.includes(item.state) && <PrActions path={path} item={item} onSent={setNotice} />}
@@ -227,53 +209,54 @@ export function PrDrawer({ path, number }: { path: QueuePath; number: number }) 
               {notice}
             </p>
           )}
-        </header>
-        <section aria-label="Where it is">
-          <Journey item={item} />
-          {!TERMINAL.includes(item.state) && item.state !== "not_ready" && (
-            <p className={styles.note}>
-              {ahead === 0
-                ? "Nothing merges before it"
-                : `${String(ahead)} pull request${ahead > 1 ? "s" : ""} merge before it`}
-            </p>
-          )}
+        </>
+      }
+    >
+      <section aria-label="Where it is">
+        <Journey item={item} />
+        {!TERMINAL.includes(item.state) && item.state !== "not_ready" && (
+          <p className={styles.note}>
+            {ahead === 0
+              ? "Nothing merges before it"
+              : `${String(ahead)} pull request${ahead > 1 ? "s" : ""} merge before it`}
+          </p>
+        )}
+      </section>
+      {item.state === "not_ready" && (
+        <section aria-labelledby="wait-title">
+          <h3 id="wait-title">Why it waits</h3>
+          <p>
+            <Prose text={lastWait?.description ?? item.state_description} />
+          </p>
+          <p className={styles.note}>It enters the queue by itself once nothing blocks it.</p>
         </section>
-        {item.state === "not_ready" && (
-          <section aria-labelledby="wait-title">
-            <h3 id="wait-title">Why it waits</h3>
-            <p>
-              <Prose text={lastWait?.description ?? item.state_description} />
-            </p>
-            <p className={styles.note}>It enters the queue by itself once nothing blocks it.</p>
-          </section>
-        )}
-        {TERMINAL.includes(item.state) && (
-          <section aria-labelledby="outcome-title">
-            <h3 id="outcome-title">Outcome</h3>
-            <p>{item.state_description}</p>
-          </section>
-        )}
-        {item.run_id && (
-          <Suspense fallback={<p className={styles.note}>Reading the run…</p>}>
-            <RunSection org={path.org} runId={item.run_id} />
-          </Suspense>
-        )}
-        <section aria-labelledby="history-title">
-          <h3 id="history-title">History</h3>
-          <ol className={styles.events}>
-            {timeline.map((event) => (
-              <li key={event.id}>
-                <div className={styles.when}>{timeOf(event.occurred_at)}</div>
-                <div className={styles.what}>{whatOf(event)}</div>
-                <div className={styles.why}>
-                  <Prose text={event.description} />
-                  {event.actor && <span className={styles.actor}> · by @{event.actor}</span>}
-                </div>
-              </li>
-            ))}
-          </ol>
+      )}
+      {TERMINAL.includes(item.state) && (
+        <section aria-labelledby="outcome-title">
+          <h3 id="outcome-title">Outcome</h3>
+          <p>{item.state_description}</p>
         </section>
-      </aside>
-    </>
+      )}
+      {item.run_id && (
+        <Suspense fallback={<p className={styles.note}>Reading the run…</p>}>
+          <RunSection org={path.org} runId={item.run_id} />
+        </Suspense>
+      )}
+      <section aria-labelledby="history-title">
+        <h3 id="history-title">History</h3>
+        <ol className={styles.events}>
+          {timeline.map((event) => (
+            <li key={event.id}>
+              <div className={styles.when}>{timeOf(event.occurred_at)}</div>
+              <div className={styles.what}>{whatOf(event)}</div>
+              <div className={styles.why}>
+                <Prose text={event.description} />
+                {event.actor && <span className={styles.actor}> · by @{event.actor}</span>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </section>
+    </DrawerFrame>
   );
 }

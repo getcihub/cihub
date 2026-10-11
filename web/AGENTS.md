@@ -71,6 +71,7 @@ does not also check.
 writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;
 `mise run e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
-passes each test commit of `acme/api`, and comments on a PR at `/sim/merge`.
+passes each test commit of `acme/api`, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
+comment of a PR at `/sim/comment`.
 
 Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d).

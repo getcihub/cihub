@@ -7,10 +7,6 @@ import { Timeline } from "./Timeline";
 import { Mark } from "../ui/Mark";
 import { ArrowIcon, CheckIcon, ErrorIcon } from "../ui/icons";
 
-// GitHub asks which account to use only when no account is signed in: the App
-// cannot ask for another one (`prompt=select_account` does nothing for it).
-const GITHUB_SIGN_OUT = "https://github.com/logout";
-
 interface Props {
   /** The user of the session; a user without an organization must install the App. */
   me: Me | null;
@@ -111,7 +107,16 @@ function SignIn({ hasFailed, next }: { hasFailed: boolean; next: string }) {
 }
 
 /** A user whose account is in no organization of the App: the way out is to install it. */
+/**
+ * The sign-out page of the GitHub of the App, next to its installation page: GitHub asks which account to use
+ * only when no account is signed in (`prompt=select_account` does nothing for a GitHub App).
+ */
+function signOutOf(installUrl: string | null): string | null {
+  return installUrl ? `${new URL(installUrl).origin}/logout` : null;
+}
+
 function NoOrganization({ installUrl }: { installUrl: string | null }) {
+  const signOutUrl = signOutOf(installUrl);
   const [hasSignOutFailed, setHasSignOutFailed] = useState(false);
   return (
     <>
@@ -129,7 +134,8 @@ function NoOrganization({ installUrl }: { installUrl: string | null }) {
         again.
       </p>
       <p className={styles.note}>
-        To use another GitHub account, <a href={GITHUB_SIGN_OUT}>sign out of GitHub</a>, then sign out here
+        To use another GitHub account,{" "}
+        {signOutUrl ? <a href={signOutUrl}>sign out of GitHub</a> : "sign out of GitHub"}, then sign out here
         and sign in again.
       </p>
       <button

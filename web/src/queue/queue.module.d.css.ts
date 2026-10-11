@@ -19,6 +19,7 @@ declare const styles: {
   readonly dotPendingFailure: string;
   readonly dotTesting: string;
   readonly dotTestsPassed: string;
+  readonly facts: string;
   readonly failing: string;
   readonly graph: string;
   readonly head: string;

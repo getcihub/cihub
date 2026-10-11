@@ -1,12 +1,10 @@
 import { useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
-
-import { meOptions } from "../client/@tanstack/react-query.gen";
-
-import type { Item, Queue } from "../client/types.gen";
 import { useState } from "react";
 
+import { meOptions } from "../client/@tanstack/react-query.gen";
+import type { Item, Queue } from "../client/types.gen";
 import { Spotlight } from "../mine/Mine";
-import { minePrsOptions } from "../mine/reads";
+import { useMinePrs } from "../mine/reads";
 import { useNow } from "../time";
 import { EmptyState } from "../ui/EmptyState";
 import { QueueStateBadge } from "../ui/StateBadge";
@@ -49,8 +47,9 @@ export function QueuePage({ path, tab }: { path: QueuePath; tab: Tab }) {
   // The same read as `live` when the tab of the live items is open.
   const opened = useSuspenseQuery(reads.tab);
   const { data: me } = useSuspenseQuery(meOptions());
-  const { data: mine } = useSuspenseQuery(minePrsOptions(path.org, me.login));
-  const spotlit = mine.prs.filter((pr) => pr.repo === path.repo && pr.queue === path.queue);
+  const spotlit = useMinePrs(path.org, me.login).filter(
+    (pr) => pr.repo === path.repo && pr.queue === path.queue,
+  );
   const role = me.orgs.find((org) => org.slug.toLowerCase() === path.org.toLowerCase())?.role;
   // A request is sent, not done: the queue decides at its next reconciliation.
   const [notice, setNotice] = useState<string | null>(null);

@@ -1,9 +1,11 @@
-import { type ErrorComponentProps, Link, createFileRoute, notFound } from "@tanstack/react-router";
+import { useQueryErrorResetBoundary } from "@tanstack/react-query";
+import { type ErrorComponentProps, createFileRoute, notFound } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import { getPrOptions } from "../client/@tanstack/react-query.gen";
 import { ServerErrorPage } from "../pages/ServerErrorPage";
+import { DrawerFrame } from "../queue/DrawerFrame";
 import { PrDrawer } from "../queue/PrDrawer";
-import styles from "../queue/PrDrawer.module.css";
 import { isProblem } from "../session";
 
 /** The page of a PR: the page of its queue, with the drawer of the PR open. */
@@ -38,24 +40,14 @@ function PrRoute() {
 /** A PR that the queue never had answers 404: the drawer says so over the page of the queue. */
 function PrError(props: ErrorComponentProps) {
   const { org, repo, queue, number } = Route.useParams();
+  const queries = useQueryErrorResetBoundary();
+
+  // The next visit of the PR reads it again.
+  useEffect(() => queries.reset, [queries]);
 
   if (!isProblem(props.error, "not_found")) {
     return <ServerErrorPage {...props} />;
   }
 
-  return (
-    <aside className={styles.drawer} role="dialog" aria-labelledby="pr-title">
-      <header>
-        <Link
-          className={styles.close}
-          to="/orgs/$org/repos/$repo/queues/$queue"
-          params={{ org, repo, queue }}
-          search={(kept) => kept}
-        >
-          Close
-        </Link>
-        <h2 id="pr-title">#{number} is not in this queue</h2>
-      </header>
-    </aside>
-  );
+  return <DrawerFrame path={{ org, repo, queue }} title={`#${String(number)} is not in this queue`} />;
 }
