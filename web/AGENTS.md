@@ -67,7 +67,7 @@ does not also check.
 ## Commands
 
 `mise run lint` and `mise run check` cover the dashboard: type check, ESLint (`typescript-eslint`,
-`react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), Prettier, Vitest.
+`react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), oxfmt, Vitest; `mise run web-fmt` formats it.
 `mise run web-dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
 `mise run web-build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web-generate`
 writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;

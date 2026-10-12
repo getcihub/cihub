@@ -57,6 +57,11 @@ description = "Build the dashboard into web/dist, which the next build of cihub-
 depends = ["web-install"]
 run = "pnpm --dir web build"
 
+[tasks.web-fmt]
+description = "Format the dashboard with oxfmt, its TypeScript, CSS, JSON and Markdown"
+depends = ["web-install"]
+run = "pnpm --dir web format"
+
 # The test server creates the database cihub_e2e next to the one of
 # DATABASE_URL; its build embeds the dashboard that web-build makes.
 [tasks.e2e]
