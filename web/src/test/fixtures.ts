@@ -1,6 +1,7 @@
-import type { Graph, ItemState, Pr, Queue } from "../client/types.gen";
-import type { Me } from "../session";
-import type { Answers } from "./app";
+import type { Graph, ItemState, Pr, Queue } from "@/client/types.gen";
+import { LIVE_STATES } from "@/domain/queue/queries";
+import type { Me } from "@/domain/session/session";
+import { type Answers, problem } from "./app";
 
 export const ada: Me = {
   login: "ada",
@@ -32,18 +33,9 @@ export function answersOfMe(me: Me): Answers {
 
 /** The answers of the reads of the person of a session, when there is none. */
 export const signedOut: Answers = {
-  "/api/v1/user": [
-    401,
-    { type: "about:blank", title: "Unauthorized", status: 401, detail: "", code: "unauthorized" },
-  ],
-  "/api/v1/user/orgs": [
-    401,
-    { type: "about:blank", title: "Unauthorized", status: 401, detail: "", code: "unauthorized" },
-  ],
-  "/api/v1/instance": [
-    401,
-    { type: "about:blank", title: "Unauthorized", status: 401, detail: "", code: "unauthorized" },
-  ],
+  "/api/v1/user": [401, problem(401, "unauthorized")],
+  "/api/v1/user/orgs": [401, problem(401, "unauthorized")],
+  "/api/v1/instance": [401, problem(401, "unauthorized")],
 };
 
 /** A queue of `acme`, running, with `pending` PRs in line, no PR else, and the default settings. */
@@ -116,8 +108,6 @@ export function itemOf(number: number, state: ItemState, changes: Partial<Pr> = 
 
 export const noGraph: Graph = { target_head_sha: null, nodes: [], edges: [], runs: [] };
 
-const LIVE_STATES = "not_ready,pending,testing,pending_failure,tests_passed";
-
 /** The read of the live PRs of the queue `queue` of `acme/web`, as its page asks for it. */
 export function liveOf(queue = "main"): string {
   return `/api/v1/orgs/acme/prs?repo=web&queue=${queue}&state=${LIVE_STATES}&sort=position&limit=100`;
@@ -136,5 +126,18 @@ export function answersOfMine(
       ? (live as [number, unknown][])
       : [200, pageOf("prs", live as Pr[])],
     [`${reads}&state=merged&limit=10`]: [200, pageOf("prs", merged)],
+  };
+}
+
+/** The answers of the page of the queue `main` of `acme/web` for `ada`, with `live` in line. */
+export function answersOfQueuePage(live: Pr[]): Answers {
+  const queue = queueOf("web", "main");
+  return {
+    ...answersOfMe(ada),
+    ...answersOfMine("acme"),
+    "/api/v1/orgs/acme/queues": [200, pageOf("queues", [queue])],
+    "/api/v1/orgs/acme/repos/web/queues/main": [200, detailOf(queue)],
+    "/api/v1/orgs/acme/repos/web/queues/main/graph": [200, noGraph],
+    [liveOf()]: [200, pageOf("prs", live)],
   };
 }

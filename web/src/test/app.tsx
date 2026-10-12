@@ -3,10 +3,11 @@ import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/rea
 import { render } from "@testing-library/react";
 import { vi } from "vitest";
 
-import { client } from "../client/client.gen";
-import type { ErrorCode } from "../client/types.gen";
-import { routeTree } from "../routeTree.gen";
-import { sendCsrfToken } from "../session";
+import { client } from "@/client/client.gen";
+import type { ErrorCode } from "@/client/types.gen";
+import { routeTree } from "@/routeTree.gen";
+import { sendCsrfToken } from "@/domain/session/session";
+import { MotionProvider } from "@/ui/motion";
 
 // As `main.tsx` does, once.
 sendCsrfToken();
@@ -61,8 +62,29 @@ export function renderApp(path: string, answers: Answers) {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <MotionProvider skipAnimations>
+        <RouterProvider router={router} />
+      </MotionProvider>
     </QueryClientProvider>,
   );
   return router;
+}
+
+/** Gives the session the CSRF cookie that the server sets; a script only reads it. */
+export function mockSessionCookie(): void {
+  vi.spyOn(document, "cookie", "get").mockReturnValue("__Host-cihub_csrf=token");
+}
+
+/** The requests of the page that change a state: method, path, body and CSRF token. */
+export async function sentChanges(): Promise<[string, string, unknown, string | null][]> {
+  const calls = vi.mocked(fetch).mock.calls.map(([input]) => input as Request);
+  const sent = calls.filter((request) => request.method !== "GET");
+  return Promise.all(
+    sent.map(async (request) => [
+      request.method,
+      new URL(request.url).pathname,
+      JSON.parse((await request.clone().text()) || "null") as unknown,
+      request.headers.get("X-CSRF-Token"),
+    ]),
+  );
 }

@@ -1,8 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { pageOfThisSite, readMe } from "../session";
-import { SignInPage } from "../sign-in/SignInPage";
+import { ServerErrorPage } from "@/components/errors/ServerErrorPage";
+import { PendingPage } from "@/components/frame/PendingPage";
+import { pageOfThisSite, readMe } from "@/domain/session/session";
+import { SignInPage } from "@/pages/SignInPage";
 
 const search = z.object({
   error: z.literal("failed").optional().catch(undefined),
@@ -20,11 +22,7 @@ export const Route = createFileRoute("/sign-in")({
     }
     return { me };
   },
-  component: SignInRoute,
+  component: SignInPage,
+  pendingComponent: PendingPage,
+  errorComponent: ServerErrorPage,
 });
-
-function SignInRoute() {
-  const { me } = Route.useLoaderData();
-  const { error, next } = Route.useSearch();
-  return <SignInPage me={me} hasFailed={error === "failed"} next={next ?? "/"} />;
-}

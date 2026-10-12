@@ -1,8 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type Answers, problem, renderApp } from "./test/app";
-import { ada, answersOfMe, answersOfMine, pageOf, queueOf, signedOut } from "./test/fixtures";
+import { type Answers, problem, renderApp } from "@/test/app";
+import { ada, answersOfMe, answersOfMine, pageOf, queueOf, signedOut } from "@/test/fixtures";
 
 const signedIn: Answers = {
   ...answersOfMe(ada),
@@ -44,6 +44,23 @@ describe("the routes of the dashboard", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "You have no access to globex" }),
     ).toBeInTheDocument();
+  });
+
+  it("lead an address without a page of its own to the page above it", async () => {
+    const cases: [string, string][] = [
+      ["/orgs", "/orgs/acme"],
+      ["/orgs/acme/repos", "/orgs/acme"],
+      ["/orgs/acme/repos/web/queues", "/orgs/acme/repos/web"],
+    ];
+
+    for (const [address, page] of cases) {
+      const router = renderApp(address, signedIn);
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe(page);
+      });
+      cleanup();
+    }
   });
 
   it("say that a repository that has no queue is not found", async () => {
