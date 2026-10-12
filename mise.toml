@@ -57,6 +57,16 @@ description = "Build the dashboard into web/dist, which the next build of cihub-
 depends = ["web-install"]
 run = "pnpm --dir web build"
 
+[tasks.web-shots]
+description = "Capture the views of the dashboard, with a mocked API, into web/e2e/__screenshots__/head"
+depends = ["web-install"]
+run = "web/e2e/visual/shots.sh"
+
+[tasks.web-shots-diff]
+description = "Compare the views of the dashboard with the ones of a git ref, into web/e2e/__screenshots__/diff"
+depends = ["web-install"]
+run = "web/e2e/visual/shots.sh diff"
+
 [tasks.web-fmt]
 description = "Format the dashboard with oxfmt, its TypeScript, CSS, JSON and Markdown"
 depends = ["web-install"]

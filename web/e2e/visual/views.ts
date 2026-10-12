@@ -1,0 +1,245 @@
+// The views that a change of the dashboard can move: each page, in the states that the simulator cannot show
+// (a paused queue, a failed run, a refusal), its menus and its dialogs.
+import type { Page } from "@playwright/test";
+
+import { type Answer, type ApiRequest, type Person, problem } from "./api";
+
+export type Theme = "light" | "dark";
+
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+export interface View {
+  name: string;
+  url: string;
+  /** A text that shows once the view has read its data, or `skeleton` for a view that loads. */
+  ready: string;
+  person?: Person;
+  themes?: Theme[];
+  viewports?: Viewport[];
+  /** What the person does before the capture: opens a menu, submits a form. */
+  act?: (page: Page) => Promise<unknown>;
+  /** An answer of the API that differs from the fixtures; `null` keeps the one of the fixtures. */
+  answer?: (request: ApiRequest) => Answer | null;
+  /** A read that never answers: the view shows how the page waits for it. */
+  hold?: (request: ApiRequest) => boolean;
+  /** The status of `/auth/sign-out`. */
+  signOutStatus?: number;
+}
+
+export const WIDE: Viewport = { width: 1280, height: 800 };
+const NARROW: Viewport = { width: 700, height: 900 };
+const SIGN_IN_NARROW: Viewport = { width: 850, height: 800 };
+const BOTH: Theme[] = ["light", "dark"];
+
+const QUEUE_PAGE = "/orgs/acme/repos/web/queues/main";
+const QUEUE_READY = "Bump the version";
+const DRAWER = `${QUEUE_PAGE}/prs/118`;
+
+async function submitPr(page: Page, number: string): Promise<void> {
+  await page.getByRole("button", { name: "Submit a pull request" }).click();
+  await page.getByRole("dialog").getByRole("textbox").fill(number);
+  await page.getByRole("dialog").getByRole("button", { name: "Submit" }).click();
+}
+
+export const VIEWS: View[] = [
+  {
+    name: "sign-in",
+    url: "/sign-in",
+    person: "nobody",
+    ready: "Continue with GitHub",
+    themes: BOTH,
+    viewports: [WIDE, SIGN_IN_NARROW],
+  },
+  { name: "sign-in-failed", url: "/sign-in?error=failed", person: "nobody", ready: "The sign-in failed" },
+  { name: "sign-in-no-org", url: "/sign-in", person: "grace", ready: "No organization yet", themes: BOTH },
+  {
+    name: "org-overview",
+    url: "/orgs/acme",
+    ready: "Your pull requests",
+    themes: BOTH,
+    viewports: [WIDE, NARROW],
+  },
+  {
+    name: "org-overview-filtered",
+    url: "/orgs/acme",
+    ready: "Your pull requests",
+    act: (page) => page.getByRole("searchbox").fill("zzz"),
+  },
+  { name: "org-empty", url: "/orgs/acme-labs", ready: "No queue yet", themes: BOTH },
+  { name: "repo-overview", url: "/orgs/acme/repos/web", ready: "release" },
+  { name: "queue-live", url: QUEUE_PAGE, ready: QUEUE_READY, themes: BOTH, viewports: [WIDE, NARROW] },
+  { name: "queue-merged", url: `${QUEUE_PAGE}?tab=merged`, ready: "Add the audit log" },
+  { name: "queue-ended", url: `${QUEUE_PAGE}?tab=ended`, ready: "Remove the old cache", themes: BOTH },
+  { name: "queue-banners", url: "/orgs/acme/repos/web/queues/release", ready: "Paused by", themes: BOTH },
+  { name: "queue-access-lost", url: "/orgs/acme/repos/mobile/queues/main", ready: "lost its access" },
+  { name: "queue-draining", url: "/orgs/acme/repos/api/queues/main", ready: "Draining." },
+  { name: "queue-quiet", url: "/orgs/acme/repos/sdk/queues/main", ready: "No pull request in the queue" },
+  { name: "drawer-testing", url: DRAWER, ready: "History", themes: BOTH, viewports: [WIDE, NARROW] },
+  { name: "drawer-not-ready", url: `${QUEUE_PAGE}/prs/133`, ready: "Why it waits" },
+  { name: "drawer-merged", url: `${QUEUE_PAGE}/prs/110`, ready: "Outcome" },
+  { name: "drawer-not-found", url: `${QUEUE_PAGE}/prs/999`, ready: "is not in this queue" },
+  {
+    name: "drawer-restart-sent",
+    url: DRAWER,
+    ready: "History",
+    act: async (page) => {
+      await page.getByRole("button", { name: "Restart tests" }).click();
+      await page.getByText("Restart sent").waitFor();
+    },
+  },
+  {
+    name: "modal-submit-invalid",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    themes: BOTH,
+    act: async (page) => {
+      await page.getByRole("button", { name: "Submit a pull request" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Submit" }).click();
+    },
+  },
+  {
+    name: "modal-submit-refused",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    answer: ({ method }) =>
+      method === "POST"
+        ? [409, problem(409, "pr_already_queued", "the PR is already in the queue, `testing`")]
+        : null,
+    act: async (page) => {
+      await submitPr(page, "118");
+      await page.getByRole("dialog").getByRole("alert").waitFor();
+    },
+  },
+  {
+    name: "submit-sent",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    act: async (page) => {
+      await submitPr(page, "200");
+      await page.getByText("#200 sent").waitFor();
+    },
+  },
+  {
+    name: "modal-pause",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    themes: BOTH,
+    act: (page) => page.getByRole("button", { name: "Pause" }).click(),
+  },
+  {
+    name: "modal-cancel",
+    url: DRAWER,
+    ready: "History",
+    act: (page) => page.getByRole("button", { name: "Cancel", exact: true }).click(),
+  },
+  {
+    name: "menu-org",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    act: (page) => page.getByRole("button", { name: /^Organization:/ }).click(),
+  },
+  {
+    name: "menu-repo",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    act: (page) => page.getByRole("button", { name: /^Repository:/ }).click(),
+  },
+  {
+    name: "menu-queue",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    themes: BOTH,
+    act: (page) => page.getByRole("button", { name: /^Queue:/ }).click(),
+  },
+  {
+    name: "menu-person",
+    url: "/orgs/acme",
+    ready: "Your pull requests",
+    act: (page) => page.getByRole("button", { name: /^Your account:/ }).click(),
+  },
+  {
+    name: "sign-out-failed",
+    url: "/orgs/acme",
+    ready: "Your pull requests",
+    signOutStatus: 500,
+    act: async (page) => {
+      await page.getByRole("button", { name: /^Your account:/ }).click();
+      await page.getByRole("button", { name: "Sign out" }).click();
+      await page.getByRole("alert").waitFor();
+    },
+  },
+  { name: "org-lost", url: "/orgs/globex", ready: "You have no access", themes: BOTH },
+  { name: "not-found", url: "/orgs/acme/repos/nothing", ready: "Page not found" },
+  // Loading: a read that never answers keeps the skeleton of the page.
+  {
+    name: "org-loading",
+    url: "/orgs/acme",
+    ready: "skeleton",
+    themes: BOTH,
+    hold: ({ path }) => path === "/orgs/acme/queues",
+  },
+  {
+    name: "queue-first-loading",
+    url: QUEUE_PAGE,
+    ready: "skeleton",
+    hold: ({ path }) => path === "/orgs/acme/queues",
+  },
+  {
+    name: "queue-loading",
+    url: QUEUE_PAGE,
+    ready: "skeleton",
+    themes: BOTH,
+    viewports: [WIDE, NARROW],
+    hold: ({ path }) => path.endsWith("/graph"),
+  },
+  { name: "drawer-loading", url: DRAWER, ready: "skeleton", hold: ({ path }) => path.endsWith("/events") },
+  {
+    name: "run-loading",
+    url: DRAWER,
+    ready: "skeleton",
+    hold: ({ path }) => path.startsWith("/orgs/acme/runs/"),
+  },
+  {
+    name: "tab-loading",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    hold: ({ query }) => query.get("state") === "merged" && query.get("repo") === "web",
+    act: async (page) => {
+      await page.getByRole("link", { name: /^Merged/ }).click();
+      await page.waitForTimeout(800);
+    },
+  },
+  {
+    name: "submitting",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    hold: ({ method }) => method === "POST",
+    act: async (page) => {
+      await submitPr(page, "200");
+      await page.getByText("Submitting").waitFor();
+    },
+  },
+  // Errors: the page keeps its head, the drawer its frame.
+  {
+    name: "drawer-error",
+    url: DRAWER,
+    ready: "could not load this page",
+    answer: ({ path }) => (path === "/orgs/acme/repos/web/prs/118" ? [503, problem(503, "internal")] : null),
+  },
+  {
+    name: "org-error",
+    url: "/orgs/acme",
+    ready: "could not load this page",
+    answer: ({ path }) => (path === "/orgs/acme/queues" ? [503, problem(503, "internal")] : null),
+  },
+  {
+    name: "server-error",
+    url: QUEUE_PAGE,
+    ready: "could not load this page",
+    themes: BOTH,
+    answer: ({ path }) => (path.endsWith("/graph") ? [503, problem(503, "internal")] : null),
+  },
+];

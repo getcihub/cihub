@@ -21,7 +21,7 @@ function layer(files, name, forbidden) {
 }
 
 export default defineConfig(
-  { ignores: ["dist/", "src/client/", "src/routeTree.gen.ts"] },
+  { ignores: ["dist/", "src/client/", "src/routeTree.gen.ts", "e2e/__screenshots__/"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
