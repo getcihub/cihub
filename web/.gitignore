@@ -2,3 +2,5 @@ node_modules/
 dist/
 test-results/
 playwright-report/
+# The before/after screenshots of a change of the dashboard: compared, never committed.
+e2e/__screenshots__/
