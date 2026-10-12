@@ -35,7 +35,7 @@ test("the page of a queue shows its PRs in their order and the runs that test th
 
   const table = page.getByRole("table");
   const rows = table.getByRole("row");
-  const positions = table.locator("tbody tr td:first-child");
+  const positions = table.getByTestId("queue-position");
 
   await expect(rows).toHaveCount(4, QUEUE_SETTLES);
   await expect(positions).toHaveText(["1", "2", "–"]);
@@ -66,4 +66,24 @@ test("the page of a queue shows its PRs in their order and the runs that test th
   await expect(page.getByRole("group", { name: "Waiting" })).toContainText("#3");
   await expect(page.getByRole("group", { name: "Branch main" })).toBeVisible();
   await expect(page.getByText("Pipelined")).toBeVisible();
+});
+
+test("the tab of the page of a queue stays in its address", async ({ page }) => {
+  await signInAsAda(page);
+  await page.goto("/orgs/acme/repos/web/queues/main");
+
+  const merged = page.getByRole("link", { name: /^Merged/ });
+  await merged.click();
+
+  await expect(page).toHaveURL(/\/orgs\/acme\/repos\/web\/queues\/main\?tab=merged$/);
+  await expect(page.getByText("Nothing merged in the last 24 hours.")).toBeVisible();
+
+  await page.reload();
+
+  await expect(merged).toHaveAttribute("aria-current", "page");
+
+  await page.getByRole("link", { name: /^In the queue/ }).click();
+
+  await expect(page).toHaveURL(/\/orgs\/acme\/repos\/web\/queues\/main$/);
+  await expect(page.getByRole("table")).toBeVisible();
 });

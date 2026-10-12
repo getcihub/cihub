@@ -8,113 +8,148 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as SignInRouteImport } from './routes/sign-in'
-import { Route as OrgsOrgRouteImport } from './routes/orgs.$org'
-import { Route as OrgsOrgIndexRouteImport } from './routes/orgs.$org.index'
-import { Route as OrgsOrgReposRepoIndexRouteImport } from './routes/orgs.$org.repos.$repo.index'
-import { Route as OrgsOrgReposRepoQueuesQueueRouteImport } from './routes/orgs.$org.repos.$repo.queues.$queue'
-import { Route as OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport } from './routes/orgs.$org.repos.$repo.queues.$queue.prs.$number'
+import { Route as rootRouteImport } from './routes/root'
+import { Route as homeRouteImport } from './routes/home'
+import { Route as signInRouteImport } from './routes/sign-in'
+import { Route as redirectsOrgsRouteImport } from './routes/redirects/orgs'
+import { Route as orgRouteImport } from './routes/org'
+import { Route as orgQueuesRouteImport } from './routes/org-queues'
+import { Route as redirectsReposRouteImport } from './routes/redirects/repos'
+import { Route as repoQueuesRouteImport } from './routes/repo-queues'
+import { Route as redirectsQueuesRouteImport } from './routes/redirects/queues'
+import { Route as queueRouteImport } from './routes/queue'
+import { Route as prRouteImport } from './routes/pr'
 
-const IndexRoute = IndexRouteImport.update({
+const homeRoute = homeRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SignInRoute = SignInRouteImport.update({
+const signInRoute = signInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrgsOrgRoute = OrgsOrgRouteImport.update({
+const redirectsOrgsRoute = redirectsOrgsRouteImport.update({
+  id: '/orgs/',
+  path: '/orgs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const orgRoute = orgRouteImport.update({
   id: '/orgs/$org',
   path: '/orgs/$org',
   getParentRoute: () => rootRouteImport,
 } as any)
-const OrgsOrgIndexRoute = OrgsOrgIndexRouteImport.update({
+const orgQueuesRoute = orgQueuesRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => OrgsOrgRoute,
+  getParentRoute: () => orgRoute,
 } as any)
-const OrgsOrgReposRepoIndexRoute = OrgsOrgReposRepoIndexRouteImport.update({
+const redirectsReposRoute = redirectsReposRouteImport.update({
+  id: '/repos/',
+  path: '/repos/',
+  getParentRoute: () => orgRoute,
+} as any)
+const repoQueuesRoute = repoQueuesRouteImport.update({
   id: '/repos/$repo/',
   path: '/repos/$repo/',
-  getParentRoute: () => OrgsOrgRoute,
+  getParentRoute: () => orgRoute,
 } as any)
-const OrgsOrgReposRepoQueuesQueueRoute =
-  OrgsOrgReposRepoQueuesQueueRouteImport.update({
-    id: '/repos/$repo/queues/$queue',
-    path: '/repos/$repo/queues/$queue',
-    getParentRoute: () => OrgsOrgRoute,
-  } as any)
-const OrgsOrgReposRepoQueuesQueuePrsNumberRoute =
-  OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport.update({
-    id: '/prs/$number',
-    path: '/prs/$number',
-    getParentRoute: () => OrgsOrgReposRepoQueuesQueueRoute,
-  } as any)
+const redirectsQueuesRoute = redirectsQueuesRouteImport.update({
+  id: '/repos/$repo/queues/',
+  path: '/repos/$repo/queues/',
+  getParentRoute: () => orgRoute,
+} as any)
+const queueRoute = queueRouteImport.update({
+  id: '/repos/$repo/queues/$queue',
+  path: '/repos/$repo/queues/$queue',
+  getParentRoute: () => orgRoute,
+} as any)
+const prRoute = prRouteImport.update({
+  id: '/prs/$number',
+  path: '/prs/$number',
+  getParentRoute: () => queueRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/sign-in': typeof SignInRoute
-  '/orgs/$org': typeof OrgsOrgRouteWithChildren
-  '/orgs/$org/': typeof OrgsOrgIndexRoute
-  '/orgs/$org/repos/$repo/': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
-  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
+  '/': typeof homeRoute
+  '/sign-in': typeof signInRoute
+  '/orgs/': typeof redirectsOrgsRoute
+  '/orgs/$org': typeof orgRouteWithChildren
+  '/orgs/$org/': typeof orgQueuesRoute
+  '/orgs/$org/repos/': typeof redirectsReposRoute
+  '/orgs/$org/repos/$repo/': typeof repoQueuesRoute
+  '/orgs/$org/repos/$repo/queues/': typeof redirectsQueuesRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof prRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/sign-in': typeof SignInRoute
-  '/orgs/$org': typeof OrgsOrgIndexRoute
-  '/orgs/$org/repos/$repo': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
-  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
+  '/': typeof homeRoute
+  '/sign-in': typeof signInRoute
+  '/orgs': typeof redirectsOrgsRoute
+  '/orgs/$org': typeof orgQueuesRoute
+  '/orgs/$org/repos': typeof redirectsReposRoute
+  '/orgs/$org/repos/$repo': typeof repoQueuesRoute
+  '/orgs/$org/repos/$repo/queues': typeof redirectsQueuesRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof prRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/sign-in': typeof SignInRoute
-  '/orgs/$org': typeof OrgsOrgRouteWithChildren
-  '/orgs/$org/': typeof OrgsOrgIndexRoute
-  '/orgs/$org/repos/$repo/': typeof OrgsOrgReposRepoIndexRoute
-  '/orgs/$org/repos/$repo/queues/$queue': typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
-  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
+  '/': typeof homeRoute
+  '/sign-in': typeof signInRoute
+  '/orgs/': typeof redirectsOrgsRoute
+  '/orgs/$org': typeof orgRouteWithChildren
+  '/orgs/$org/': typeof orgQueuesRoute
+  '/orgs/$org/repos/': typeof redirectsReposRoute
+  '/orgs/$org/repos/$repo/': typeof repoQueuesRoute
+  '/orgs/$org/repos/$repo/queues/': typeof redirectsQueuesRoute
+  '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteWithChildren
+  '/orgs/$org/repos/$repo/queues/$queue/prs/$number': typeof prRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/sign-in'
+    | '/orgs/'
     | '/orgs/$org'
     | '/orgs/$org/'
+    | '/orgs/$org/repos/'
     | '/orgs/$org/repos/$repo/'
+    | '/orgs/$org/repos/$repo/queues/'
     | '/orgs/$org/repos/$repo/queues/$queue'
     | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/sign-in'
+    | '/orgs'
     | '/orgs/$org'
+    | '/orgs/$org/repos'
     | '/orgs/$org/repos/$repo'
+    | '/orgs/$org/repos/$repo/queues'
     | '/orgs/$org/repos/$repo/queues/$queue'
     | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   id:
     | '__root__'
     | '/'
     | '/sign-in'
+    | '/orgs/'
     | '/orgs/$org'
     | '/orgs/$org/'
+    | '/orgs/$org/repos/'
     | '/orgs/$org/repos/$repo/'
+    | '/orgs/$org/repos/$repo/queues/'
     | '/orgs/$org/repos/$repo/queues/$queue'
     | '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  SignInRoute: typeof SignInRoute
-  OrgsOrgRoute: typeof OrgsOrgRouteWithChildren
+  homeRoute: typeof homeRoute
+  signInRoute: typeof signInRoute
+  redirectsOrgsRoute: typeof redirectsOrgsRoute
+  orgRoute: typeof orgRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -123,89 +158,108 @@ declare module '@tanstack/react-router' {
       id: '/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof homeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
       id: '/sign-in'
       path: '/sign-in'
       fullPath: '/sign-in'
-      preLoaderRoute: typeof SignInRouteImport
+      preLoaderRoute: typeof signInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orgs/': {
+      id: '/orgs/'
+      path: '/orgs'
+      fullPath: '/orgs/'
+      preLoaderRoute: typeof redirectsOrgsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orgs/$org': {
       id: '/orgs/$org'
       path: '/orgs/$org'
       fullPath: '/orgs/$org'
-      preLoaderRoute: typeof OrgsOrgRouteImport
+      preLoaderRoute: typeof orgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orgs/$org/': {
       id: '/orgs/$org/'
       path: '/'
       fullPath: '/orgs/$org/'
-      preLoaderRoute: typeof OrgsOrgIndexRouteImport
-      parentRoute: typeof OrgsOrgRoute
+      preLoaderRoute: typeof orgQueuesRouteImport
+      parentRoute: typeof orgRoute
+    }
+    '/orgs/$org/repos/': {
+      id: '/orgs/$org/repos/'
+      path: '/repos'
+      fullPath: '/orgs/$org/repos/'
+      preLoaderRoute: typeof redirectsReposRouteImport
+      parentRoute: typeof orgRoute
     }
     '/orgs/$org/repos/$repo/': {
       id: '/orgs/$org/repos/$repo/'
       path: '/repos/$repo'
       fullPath: '/orgs/$org/repos/$repo/'
-      preLoaderRoute: typeof OrgsOrgReposRepoIndexRouteImport
-      parentRoute: typeof OrgsOrgRoute
+      preLoaderRoute: typeof repoQueuesRouteImport
+      parentRoute: typeof orgRoute
+    }
+    '/orgs/$org/repos/$repo/queues/': {
+      id: '/orgs/$org/repos/$repo/queues/'
+      path: '/repos/$repo/queues'
+      fullPath: '/orgs/$org/repos/$repo/queues/'
+      preLoaderRoute: typeof redirectsQueuesRouteImport
+      parentRoute: typeof orgRoute
     }
     '/orgs/$org/repos/$repo/queues/$queue': {
       id: '/orgs/$org/repos/$repo/queues/$queue'
       path: '/repos/$repo/queues/$queue'
       fullPath: '/orgs/$org/repos/$repo/queues/$queue'
-      preLoaderRoute: typeof OrgsOrgReposRepoQueuesQueueRouteImport
-      parentRoute: typeof OrgsOrgRoute
+      preLoaderRoute: typeof queueRouteImport
+      parentRoute: typeof orgRoute
     }
     '/orgs/$org/repos/$repo/queues/$queue/prs/$number': {
       id: '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
       path: '/prs/$number'
       fullPath: '/orgs/$org/repos/$repo/queues/$queue/prs/$number'
-      preLoaderRoute: typeof OrgsOrgReposRepoQueuesQueuePrsNumberRouteImport
-      parentRoute: typeof OrgsOrgReposRepoQueuesQueueRoute
+      preLoaderRoute: typeof prRouteImport
+      parentRoute: typeof queueRoute
     }
   }
 }
 
-interface OrgsOrgReposRepoQueuesQueueRouteChildren {
-  OrgsOrgReposRepoQueuesQueuePrsNumberRoute: typeof OrgsOrgReposRepoQueuesQueuePrsNumberRoute
+interface queueRouteChildren {
+  prRoute: typeof prRoute
 }
 
-const OrgsOrgReposRepoQueuesQueueRouteChildren: OrgsOrgReposRepoQueuesQueueRouteChildren =
-  {
-    OrgsOrgReposRepoQueuesQueuePrsNumberRoute:
-      OrgsOrgReposRepoQueuesQueuePrsNumberRoute,
-  }
-
-const OrgsOrgReposRepoQueuesQueueRouteWithChildren =
-  OrgsOrgReposRepoQueuesQueueRoute._addFileChildren(
-    OrgsOrgReposRepoQueuesQueueRouteChildren,
-  )
-
-interface OrgsOrgRouteChildren {
-  OrgsOrgIndexRoute: typeof OrgsOrgIndexRoute
-  OrgsOrgReposRepoIndexRoute: typeof OrgsOrgReposRepoIndexRoute
-  OrgsOrgReposRepoQueuesQueueRoute: typeof OrgsOrgReposRepoQueuesQueueRouteWithChildren
+const queueRouteChildren: queueRouteChildren = {
+  prRoute: prRoute,
 }
 
-const OrgsOrgRouteChildren: OrgsOrgRouteChildren = {
-  OrgsOrgIndexRoute: OrgsOrgIndexRoute,
-  OrgsOrgReposRepoIndexRoute: OrgsOrgReposRepoIndexRoute,
-  OrgsOrgReposRepoQueuesQueueRoute:
-    OrgsOrgReposRepoQueuesQueueRouteWithChildren,
+const queueRouteWithChildren = queueRoute._addFileChildren(queueRouteChildren)
+
+interface orgRouteChildren {
+  orgQueuesRoute: typeof orgQueuesRoute
+  redirectsReposRoute: typeof redirectsReposRoute
+  repoQueuesRoute: typeof repoQueuesRoute
+  redirectsQueuesRoute: typeof redirectsQueuesRoute
+  queueRoute: typeof queueRouteWithChildren
 }
 
-const OrgsOrgRouteWithChildren =
-  OrgsOrgRoute._addFileChildren(OrgsOrgRouteChildren)
+const orgRouteChildren: orgRouteChildren = {
+  orgQueuesRoute: orgQueuesRoute,
+  redirectsReposRoute: redirectsReposRoute,
+  repoQueuesRoute: repoQueuesRoute,
+  redirectsQueuesRoute: redirectsQueuesRoute,
+  queueRoute: queueRouteWithChildren,
+}
+
+const orgRouteWithChildren = orgRoute._addFileChildren(orgRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  SignInRoute: SignInRoute,
-  OrgsOrgRoute: OrgsOrgRouteWithChildren,
+  homeRoute: homeRoute,
+  signInRoute: signInRoute,
+  redirectsOrgsRoute: redirectsOrgsRoute,
+  orgRoute: orgRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

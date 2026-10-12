@@ -2,6 +2,8 @@ import { RouterProvider, createMemoryHistory, createRootRoute, createRouter } fr
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
 
+import { MotionProvider } from "@/ui/motion";
+
 /** Renders `ui` in a router of its own, so that its links work. */
 export function renderInRouter(ui: ReactNode) {
   const root = createRootRoute({ component: () => ui });
@@ -9,5 +11,9 @@ export function renderInRouter(ui: ReactNode) {
     routeTree: root,
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
-  return render(<RouterProvider router={router} />);
+  return render(
+    <MotionProvider skipAnimations>
+      <RouterProvider router={router} />
+    </MotionProvider>,
+  );
 }

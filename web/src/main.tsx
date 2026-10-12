@@ -1,22 +1,24 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { PendingPage } from "./pages/PendingPage";
+import { createQueryClient } from "@/lib/queryClient";
+import { MotionProvider } from "@/ui/motion";
 import { routeTree } from "./routeTree.gen";
-import { sendCsrfToken } from "./session";
-import "./styles/base.css";
+import { sendCsrfToken } from "@/domain/session/session";
+import "@/styles/globals.css";
 
 sendCsrfToken();
 
-// A read stays fresh for 30 seconds: a click inside an organization reads it
-// again only after that. The stream of lot 10d invalidates what changed.
-const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+const queryClient = createQueryClient();
 const router = createRouter({
   routeTree,
   context: { queryClient },
-  defaultPendingComponent: PendingPage,
+  defaultPendingMs: 200,
+  defaultPendingMinMs: 500,
+  defaultPreload: "intent",
+  defaultPreloadStaleTime: 0,
 });
 
 declare module "@tanstack/react-router" {
@@ -30,7 +32,9 @@ if (root) {
   createRoot(root).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <MotionProvider>
+          <RouterProvider router={router} />
+        </MotionProvider>
       </QueryClientProvider>
     </StrictMode>,
   );
