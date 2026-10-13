@@ -479,7 +479,7 @@ pub struct Window {
 
 /// The settings of a queue that its page shows, from its last valid
 /// configuration file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SettingsSummary {
     /// The queue tests several PRs in one run.
@@ -496,6 +496,10 @@ pub struct SettingsSummary {
     /// How the queue merges a PR into the target branch.
     #[cfg_attr(feature = "openapi", schema(value_type = closed::MergeMethod))]
     pub merge_method: MergeMethod,
+    /// The label that submits a PR when someone adds it; `null` when the
+    /// labels do not submit (`label_commands.enabled: false`).
+    #[cfg_attr(feature = "openapi", schema(example = "cihub-merge-queue-submit"))]
+    pub enqueue_label: Option<String>,
 }
 
 /// The state that `PATCH /orgs/{org}/repos/{repo}/queues/{queue}` asks for.

@@ -56,6 +56,7 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
       batching_max_wait_minutes: 5,
       failure_budget_retries: 1,
       merge_method: "squash",
+      enqueue_label: "cihub-merge-queue-submit",
     },
     config_check: { findings: [], checked_at: null },
     ...changes,
@@ -78,6 +79,7 @@ const QUEUES: Queue[] = [
       batching_max_wait_minutes: 5,
       failure_budget_retries: 2,
       merge_method: "merge_commit",
+      enqueue_label: "ready-to-merge",
     },
   }),
   queueOf("web", "release", {

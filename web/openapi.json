@@ -6120,6 +6120,14 @@
             "example": 4,
             "minimum": 0
           },
+          "enqueue_label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The label that submits a PR when someone adds it; `null` when the\nlabels do not submit (`label_commands.enabled: false`).",
+            "example": "cihub-merge-queue-submit"
+          },
           "failure_budget_retries": {
             "type": "integer",
             "format": "int32",

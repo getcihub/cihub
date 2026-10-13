@@ -1,9 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { GraphRun, Pr } from "@/client/types.gen";
 import { sinceOf } from "@/domain/queue/queries";
-import { type Answers, problem, renderApp } from "@/test/app";
+import { type Answers, mockSessionCookie, problem, renderApp } from "@/test/app";
 import {
   ada,
   answersOfMe,
@@ -48,7 +49,15 @@ function answersFor(changes: Answers): Answers {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
+
+async function emptyQueue(): Promise<HTMLElement> {
+  const title = await screen.findByRole("heading", { name: "No pull request in the queue" });
+  const empty = title.closest<HTMLElement>("[data-slot=empty-state]");
+  if (!empty) throw new Error("the empty state holds its title");
+  return empty;
+}
 
 describe("the page of a queue", () => {
   it("shows its counters, its settings, its graph and its items in their order", async () => {
@@ -157,11 +166,66 @@ describe("the page of a queue", () => {
     expect(screen.queryByText(/^Paused/)).not.toBeInTheDocument();
   });
 
-  it("says that a queue with nothing in it and nothing in the last 24 hours is empty", async () => {
+  it("says how a pull request enters a queue with nothing in it and nothing in the last 24 hours", async () => {
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({}));
+    const empty = await emptyQueue();
 
-    expect(await screen.findByRole("heading", { name: "No pull request in the queue" })).toBeInTheDocument();
+    expect(empty).toHaveTextContent("Nothing waits in the queue of main, and nothing merged here yet.");
+    expect(empty).toHaveTextContent("Or add the label cihub-merge-queue-submit to the pull request.");
+    expect(within(empty).getByRole("button", { name: "Submit a pull request" })).toBeEnabled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Tabs of the pull requests" })).not.toBeInTheDocument();
+  });
+
+  it("names no label when the labels of the queue do not submit", async () => {
+    const queue = detailOf(entry, { settings: { ...entry.settings, enqueue_label: null } });
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, queue] }));
+    const empty = await emptyQueue();
+
+    expect(empty).toHaveTextContent("/cihub merge");
+    expect(empty).not.toHaveTextContent("label");
+  });
+
+  it("copies the command that submits a pull request", async () => {
+    // `setup` keeps its clipboard for the whole test: the page writes to it after the click.
+    const user = userEvent.setup();
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({}));
+    const empty = await emptyQueue();
+
+    await user.click(within(empty).getByRole("button", { name: "Copy" }));
+
+    expect(await within(empty).findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    expect(await navigator.clipboard.readText()).toBe("/cihub merge");
+  });
+
+  it("says when the queue last merged, in the tab of an empty queue that merged today", async () => {
+    const fortyMinutesAgo = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+    renderApp(
+      "/orgs/acme/repos/web/queues/main",
+      answersFor({
+        [QUEUE]: [200, detailOf(entry, { merged_last_24h: 1, last_merged_at: fortyMinutesAgo })],
+      }),
+    );
+    const empty = await emptyQueue();
+
+    expect(empty).toHaveTextContent("Nothing waits in the queue of main; the last merge was 40 minutes ago.");
+    expect(screen.getByRole("link", { name: /In the queue/ })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("shows in its head what the empty queue sent", async () => {
+    mockSessionCookie();
+    renderApp(
+      "/orgs/acme/repos/web/queues/main",
+      answersFor({ "/api/v1/orgs/acme/repos/web/prs/124/submit": [202, null] }),
+    );
+    const empty = await emptyQueue();
+
+    await userEvent.click(within(empty).getByRole("button", { name: "Submit a pull request" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit a pull request" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: /Pull request number/ }), "124");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+
+    expect(await screen.findByText(/^#124 sent/)).toBeInTheDocument();
   });
 
   it("opens the tab of the URL, with the items that ended in the last 24 hours", async () => {

@@ -1,3 +1,42 @@
+/** The queue as a line toward its branch: two empty places, then what merged. */
+export function QueueIllustration() {
+  return (
+    <svg className="mb-2.5 block h-auto w-60 max-md:w-50" viewBox="0 0 260 64" fill="none" aria-hidden="true">
+      <path d="M6 32 H160" style={{ stroke: "var(--waiting)" }} strokeWidth="1.5" strokeDasharray="4 5" />
+      <rect
+        x="22.5"
+        y="18.5"
+        width="50"
+        height="27"
+        rx="4"
+        style={{ fill: "var(--card)", stroke: "var(--waiting)" }}
+        strokeDasharray="3 3"
+      />
+      <rect
+        x="88.5"
+        y="18.5"
+        width="50"
+        height="27"
+        rx="4"
+        style={{ fill: "var(--card)", stroke: "var(--waiting)" }}
+        strokeDasharray="3 3"
+      />
+      <path d="M160 32 H240" style={{ stroke: "var(--primary)" }} strokeWidth="1.5" />
+      <circle cx="176" cy="32" r="3.5" style={{ fill: "var(--primary)" }} />
+      <circle cx="198" cy="32" r="3.5" style={{ fill: "var(--primary)" }} />
+      <circle cx="220" cy="32" r="3.5" style={{ fill: "var(--primary)" }} />
+      <circle cx="244" cy="32" r="9" style={{ fill: "var(--primary)" }} />
+      <path
+        d="M240 32.5 L243 35.5 L248.5 29.5"
+        stroke="#fff"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** The queue toward main breaks: a page could not load. */
 export function FailureIllustration() {
   return (

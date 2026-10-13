@@ -26,7 +26,8 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   await expect(card).toBeVisible(READ_AGAIN);
   await card.click();
 
-  await page.getByRole("button", { name: "Submit a pull request" }).click();
+  // The head of the page has the button; an empty queue shows a second one.
+  await page.getByRole("button", { name: "Submit a pull request" }).first().click();
   const dialog = page.getByRole("dialog", { name: "Submit a pull request" });
   await dialog.getByRole("textbox", { name: /Pull request number/ }).fill("2");
   await dialog.getByRole("button", { name: "Submit" }).click();

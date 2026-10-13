@@ -65,6 +65,7 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
       batching_max_wait_minutes: 5,
       failure_budget_retries: 1,
       merge_method: "squash",
+      enqueue_label: "cihub-merge-queue-submit",
     },
     config_check: { findings: [], checked_at: null },
   };
