@@ -3444,6 +3444,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     );
     assert_eq!(read["settings"]["merge_method"], "squash");
     assert_eq!(
+        read["settings"]["enqueue_label"],
+        "cihub-merge-queue-submit"
+    );
+    assert_eq!(
         read["config_check"],
         serde_json::json!({ "findings": [], "checked_at": null })
     );

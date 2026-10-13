@@ -935,6 +935,11 @@ export type SettingsSummary = {
      */
     batching_size: number;
     /**
+     * The label that submits a PR when someone adds it; `null` when the
+     * labels do not submit (`label_commands.enabled: false`).
+     */
+    enqueue_label?: string | null;
+    /**
      * How many times a run that fails is tested again before its PRs fail.
      */
     failure_budget_retries: number;

@@ -236,6 +236,10 @@ impl QueueFacts {
                 batching_max_wait_minutes: settings.batching_max_wait_minutes.value,
                 failure_budget_retries: settings.failure_budget_retries.value,
                 merge_method: settings.merge_method.value,
+                enqueue_label: settings
+                    .label_commands_enabled
+                    .value
+                    .then(|| settings.enqueue_label.value.clone()),
             },
             config_check,
             state_changed_at: row.state_changed_at,

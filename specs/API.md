@@ -57,7 +57,8 @@ not terminal), `merged_last_24h` and `failed_last_24h` (the items that reached `
 before the request, not in a calendar day; a PR that failed, then came back, still counts its failure),
 `last_merged_at`, `live_runs`, `median_run_seconds` (the median duration of the runs that succeeded in the last 24
 hours, `null` without one); the `window` with its `current`, `floor` and `ceiling`; `settings`: `batching_enabled`,
-`batching_size`, `batching_max_wait_minutes`, `failure_budget_retries`, `merge_method`; and `config_check`, what the
+`batching_size`, `batching_max_wait_minutes`, `failure_budget_retries`, `merge_method`, `enqueue_label` (the label
+that submits a PR, `null` when the labels do not submit); and `config_check`, what the
 configuration of the SCM missed at its last check (`checked_at`, `null` before the first; no finding means a sound
 configuration). Every field comes from Postgres: showing a queue calls the SCM zero times.
 
