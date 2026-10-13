@@ -3,8 +3,8 @@ import { useRef, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
 import { cardVariants } from "@/components/ui/card";
+import { useFlip } from "@/components/ui/hooks/use-flip";
 import { Input } from "@/components/ui/input";
-import { useFlip } from "@/components/ui/motion";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/cn";

@@ -180,7 +180,7 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
 5. Each part carries `data-slot` (`alert`, `alert-title`), and the root `data-variant`: a test finds it without a
    class.
 6. It has the role of what it is (`Alert` is `role="alert"`; a caller that informs without interrupting passes
-   `role="status"`), and the keyboard of `src/components/ui/dialog.ts` for what opens over the page.
+   `role="status"`), and the keyboard of `src/components/ui/hooks/use-dialog.ts` for what opens over the page.
 7. It imports `@/lib/` only: no route, no read of the API, no type of `@/client/`, no word of `specs/DOMAIN.md`. A
    component that knows the domain (the badge of a state) goes in another folder of `@/components/` and gives the generic one its
    variant.

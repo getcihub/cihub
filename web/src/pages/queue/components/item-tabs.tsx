@@ -6,7 +6,7 @@ import { ItemStateBadge } from "@/components/pr/item-state-badge";
 import { ItemRowsSkeleton } from "@/components/queue/queue-skeleton";
 import { Avatar } from "@/components/ui/avatar";
 import { CardHeader, CardHint, cardVariants } from "@/components/ui/card";
-import { useFlip } from "@/components/ui/motion";
+import { useFlip } from "@/components/ui/hooks/use-flip";
 import { Prose } from "@/components/ui/prose";
 import { type QueuePath, TABS, type Tab } from "@/domain/queue/queries";
 import { cn } from "@/lib/cn";

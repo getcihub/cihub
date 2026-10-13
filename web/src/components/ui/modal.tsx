@@ -2,7 +2,7 @@ import { m } from "motion/react";
 import { type ComponentProps, type ReactNode, useRef } from "react";
 
 import { cn } from "@/lib/cn";
-import { useDialog } from "./dialog";
+import { useDialog } from "./hooks/use-dialog";
 import { transitions } from "./motion";
 
 interface Props {
