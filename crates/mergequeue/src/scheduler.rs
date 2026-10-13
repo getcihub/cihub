@@ -986,11 +986,16 @@ const CONFIG_CHECKS_SWEEP_EVERY: time::Duration = time::Duration::minutes(5);
 /// Postgres fails.
 pub async fn wake_uncovered(pool: &PgPool, now: OffsetDateTime) -> Result<usize, MergeQueueError> {
     let mut tx = begin_system(pool).await?;
+    // By queue, the events after its snapshot through the index of its log,
+    // rather than a scan of the whole log; a queue without a snapshot has
+    // its own branch, as `coalesce` would keep the index out.
     let queues: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT e.queue_id FROM events e
-         WHERE e.occurred_at <= $1
-           AND e.seq > coalesce(
-               (SELECT q.snapshot_seq FROM queues q WHERE q.id = e.queue_id), 0)",
+        "SELECT q.id FROM queues q
+         WHERE EXISTS (SELECT 1 FROM events e
+                       WHERE e.queue_id = q.id AND e.seq > q.snapshot_seq AND e.occurred_at <= $1)
+            OR (q.snapshot_seq IS NULL
+                AND EXISTS (SELECT 1 FROM events e
+                            WHERE e.queue_id = q.id AND e.occurred_at <= $1))",
     )
     .bind(now - COVER_AFTER)
     .fetch_all(&mut *tx)
@@ -1022,7 +1027,8 @@ pub async fn wake_live_queues(pool: &PgPool) -> Result<usize, MergeQueueError> {
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT q.id FROM queues q
          WHERE EXISTS (SELECT 1 FROM queue_items i
-                       WHERE i.queue_id = q.id AND i.state NOT IN ('merged', 'failed', 'cancelled'))
+                       WHERE i.queue_id = q.id AND i.is_current
+                         AND i.state NOT IN ('merged', 'failed', 'cancelled'))
          ORDER BY q.id",
     )
     .fetch_all(&mut *tx)

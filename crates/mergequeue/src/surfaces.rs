@@ -629,11 +629,16 @@ pub(crate) async fn converge_surfaces(
     } else {
         BTreeMap::new()
     };
-    let known: Vec<(i64, String)> =
-        sqlx::query_as("SELECT pr_number, desired_hash FROM pr_surfaces WHERE queue_id = $1")
-            .bind(target.queue_id.to_string())
-            .fetch_all(&mut *conn)
-            .await?;
+    // The surfaces of these PRs only: the queue keeps the surfaces of every PR
+    // that it ever saw.
+    let known: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT pr_number, desired_hash FROM pr_surfaces
+         WHERE queue_id = $1 AND pr_number = ANY($2)",
+    )
+    .bind(target.queue_id.to_string())
+    .bind(&numbers)
+    .fetch_all(&mut *conn)
+    .await?;
 
     let page_of_queue = match dashboard_url {
         Some(dashboard_url) => Some(queue_page(conn, target, dashboard_url).await?),
@@ -709,7 +714,10 @@ type HistoryRow = (
 /// The reading starts from these items: their events come through
 /// `events.item_id`. A decision has the system as actor; the user is the
 /// actor of its cause. The test branches come through the runs that tested
-/// the PR.
+/// the PR, which started after its first submission: the bound reads the
+/// recent runs of the queue rather than all of them. The two times come from
+/// the clocks of two replicas, so the bound keeps an hour of margin; the
+/// leases of the queues already need these clocks within seconds.
 async fn read_histories(
     conn: &mut PgConnection,
     target: &QueueTarget,
@@ -738,7 +746,11 @@ async fn read_histories(
          CROSS JOIN LATERAL unnest(r.tested_pr_numbers) AS n (pr_number)
          JOIN test_groups g ON g.id = r.group_id
          JOIN events e ON e.run_id = r.id AND e.type = 'test_branch.assembled'
-         WHERE r.queue_id = $1 AND r.tested_pr_numbers && $3 AND n.pr_number = ANY($3)
+         WHERE r.queue_id = $1
+           AND r.started_at >= (SELECT min(f.submitted_at) FROM queue_items f
+                                WHERE f.queue_id = $1 AND f.pr_number = ANY($3))
+                               - interval '1 hour'
+           AND r.tested_pr_numbers && $3 AND n.pr_number = ANY($3)
          ) history
          ORDER BY seq",
     )

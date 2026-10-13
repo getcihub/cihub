@@ -120,6 +120,17 @@ reason no longer holds.
 - **Why not**: a deployment reads one SCM configuration (one URL, one App), so the column had the same value in
   every row. A GitHub Enterprise Server gets its own deployment.
 
+### A state filter as a bind parameter, or as an index column, under row level security
+
+- **Tried / considered**: `state = ANY($n::text[]::item_state[])` in the lists of PRs, and indexes that carry
+  `state` as a column, such as `queue_items (queue_id, state, state_changed_at)`.
+- **Why not**: on a table with row level security, a condition whose operator is not `LEAKPROOF` is applied after
+  the policy, never as an index condition, and its statistics are not used. The equality of a Postgres enum is not
+  `LEAKPROOF`, so every `state` filter read the whole history of a queue or an organization. A state filter is
+  written with literals of the closed vocabulary (`ItemState::as_str`), and the index is partial on the states:
+  the predicate of a partial index matches literals, not a parameter. Measured on 300,000 items, the list of the
+  queues went from 140 ms to 2 ms.
+
 ## Event log
 
 ### A separate outbox table

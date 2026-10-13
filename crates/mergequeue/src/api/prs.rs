@@ -15,7 +15,7 @@ use cihub_platform::{
 use cihub_store::event_kind;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
-use sqlx::PgConnection;
+use sqlx::{PgConnection, Postgres, QueryBuilder};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
@@ -56,21 +56,24 @@ struct ItemRow {
     author: String,
 }
 
-/// The columns of [`ItemRow`], read from [`ITEM_SOURCE`].
+/// The columns of [`ItemRow`], read from the items `i` and [`ITEM_JOINS`]. The
+/// title is a lookup by PR rather than a join, which would read every title
+/// of the organization.
 const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.name AS queue_name,
     i.pr_number, i.pr_head_sha, i.state::text AS state, i.state_reason::text AS state_reason,
     i.state_changed_at, i.priority_value, i.position, i.block_reasons, i.group_id,
     (SELECT run.id FROM test_runs run WHERE run.group_id = i.group_id
      ORDER BY run.attempt DESC LIMIT 1) AS run_id,
     i.merged_sha, i.no_batch, submitter.login AS submitted_by,
-    i.submitted_via::text AS submitted_via, i.submitted_at, t.title, author.login AS author";
+    i.submitted_via::text AS submitted_via, i.submitted_at,
+    (SELECT t.title FROM pr_titles t WHERE t.repo_id = q.repo_id AND t.pr_number = i.pr_number)
+        AS title,
+    author.login AS author";
 
-const ITEM_SOURCE: &str = "queue_items i
-    JOIN queues q ON q.id = i.queue_id
+const ITEM_JOINS: &str = "JOIN queues q ON q.id = i.queue_id
     JOIN repos r ON r.id = q.repo_id
     JOIN users author ON author.id = i.pr_author_id
-    LEFT JOIN users submitter ON submitter.id = i.submitted_by
-    LEFT JOIN pr_titles t ON t.repo_id = q.repo_id AND t.pr_number = i.pr_number";
+    LEFT JOIN users submitter ON submitter.id = i.submitted_by";
 
 /// An admitted PR of a queue of the page.
 #[derive(sqlx::FromRow)]
@@ -300,46 +303,72 @@ fn item_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<ItemSta
         .collect()
 }
 
-/// The filters of a list of PRs, as `$1` to `$7`; only the current item of
-/// each PR in each queue.
-const PR_FILTER: &str = "i.is_current
-    AND ($1::text IS NULL OR i.pr_author_id IN (SELECT id FROM users WHERE lower(login) = lower($1)))
-    AND ($2::text IS NULL OR q.repo_id = $2)
-    AND ($3::text IS NULL OR q.id = $3)
-    AND (cardinality($4::text[]) = 0 OR i.state = ANY($4::text[]::item_state[]))
-    AND ($5::timestamptz IS NULL OR i.submitted_at >= $5)
-    AND ($6::timestamptz IS NULL OR i.submitted_at < $6)
-    AND ($7::timestamptz IS NULL OR i.state_changed_at >= $7)";
-
 /// The sort key of a PR in a list: by `newest`, its submission and its
 /// identifier; by `position`, its repository, its queue and its position
 /// before them.
 type NewestKey = (String, String);
 type PositionKey = (String, String, i64, String, String);
 
-/// The filters of a list of PRs, as [`PR_FILTER`] reads them.
-struct PrFilter<'a> {
+/// The filters of a list of PRs, which [`push_filter`] writes.
+struct PrFilter {
+    org: String,
     author: Option<String>,
     repo: Option<String>,
     queue: Option<String>,
-    states: Vec<&'a str>,
+    states: Vec<ItemState>,
     submitted_since: Option<OffsetDateTime>,
     submitted_until: Option<OffsetDateTime>,
     state_changed_since: Option<OffsetDateTime>,
 }
 
-/// Binds the filters of [`PR_FILTER`] as `$1` to `$7`.
-macro_rules! bind_filter {
-    ($query:expr, $filter:expr) => {
-        $query
-            .bind(&$filter.author)
-            .bind(&$filter.repo)
-            .bind(&$filter.queue)
-            .bind(&$filter.states)
-            .bind($filter.submitted_since)
-            .bind($filter.submitted_until)
-            .bind($filter.state_changed_since)
-    };
+/// The conditions of `filter` on the items `i`: the current item of each PR
+/// in each queue, then only the filters that the request gives, so that the
+/// plan has no `$n IS NULL OR` to keep. The states are literals of the closed
+/// vocabulary: the partial indexes of `queue_items` match only literals.
+fn push_filter(sql: &mut QueryBuilder<Postgres>, filter: &PrFilter) {
+    // Row level security keeps the organization. The condition serves only the
+    // index of the newest items of the organization: with a narrower filter,
+    // the planner would take that index instead of the narrower one.
+    if filter.author.is_none() && filter.repo.is_none() && filter.queue.is_none() {
+        sql.push("i.org_id = ")
+            .push_bind(filter.org.clone())
+            .push(" AND ");
+    }
+    sql.push("i.is_current");
+    if let Some(author) = &filter.author {
+        // An array that Postgres computes once, then looks up in the index of
+        // the authors.
+        sql.push(
+            " AND i.pr_author_id = ANY (ARRAY(SELECT id FROM users WHERE lower(login) = lower(",
+        )
+        .push_bind(author.clone())
+        .push(")))");
+    }
+    if let Some(repo) = &filter.repo {
+        sql.push(" AND i.queue_id IN (SELECT id FROM queues WHERE repo_id = ")
+            .push_bind(repo.clone())
+            .push(")");
+    }
+    if let Some(queue) = &filter.queue {
+        sql.push(" AND i.queue_id = ").push_bind(queue.clone());
+    }
+    if !filter.states.is_empty() {
+        sql.push(" AND i.state IN (");
+        let mut states = sql.separated(", ");
+        for state in &filter.states {
+            states.push(format_args!("'{}'", state.as_str()));
+        }
+        sql.push(")");
+    }
+    if let Some(since) = filter.submitted_since {
+        sql.push(" AND i.submitted_at >= ").push_bind(since);
+    }
+    if let Some(until) = filter.submitted_until {
+        sql.push(" AND i.submitted_at < ").push_bind(until);
+    }
+    if let Some(since) = filter.state_changed_since {
+        sql.push(" AND i.state_changed_at >= ").push_bind(since);
+    }
 }
 
 /// List PRs
@@ -382,24 +411,19 @@ pub(super) async fn list_prs(
         (Some(repo), Some(name)) => Some(queue_row(&mut tx, repo, name).await?.id),
         _ => None,
     };
-    let states: Vec<&str> = query.state.iter().map(|state| state.as_str()).collect();
     let filter = PrFilter {
+        org: grant.org_id.to_string(),
         author,
         repo: repo.map(|repo| repo.to_string()),
         queue,
-        states,
+        states: query.state.clone(),
         submitted_since: query.submitted_since,
         submitted_until: query.submitted_until,
         state_changed_since: query.state_changed_since,
     };
-    let count: i64 = bind_filter!(
-        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT count(*) FROM {ITEM_SOURCE} WHERE {PR_FILTER}"
-        ))),
-        filter
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+    let mut count = QueryBuilder::new("SELECT count(*) FROM queue_items i WHERE ");
+    push_filter(&mut count, &filter);
+    let count: i64 = count.build_query_scalar().fetch_one(&mut *tx).await?;
     let now = (state.clock)();
 
     let (prs, has_more) = pr_page(&mut tx, &filter, &query).await?;
@@ -441,60 +465,64 @@ fn place_of(pr: &Pr) -> i64 {
 /// for, and whether another page follows.
 async fn pr_page(
     conn: &mut PgConnection,
-    filter: &PrFilter<'_>,
+    filter: &PrFilter,
     query: &PrQuery,
 ) -> Result<(Vec<ItemRow>, bool), ApiError> {
     match query.sort {
         PrSort::Newest => {
             let page: Page<NewestKey> =
                 Page::read("prs.newest", query.from.as_deref(), query.limit)?;
-            let (after_at, after_id) = page.after.clone().unzip();
-            let rows: Vec<ItemRow> = bind_filter!(
-                sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                    "SELECT {ITEM_COLUMNS} FROM {ITEM_SOURCE}
-                     WHERE {PR_FILTER}
-                       AND ($8::text IS NULL OR (i.submitted_at, i.id) < ($8::timestamptz, $9))
-                     ORDER BY i.submitted_at DESC, i.id DESC
-                     LIMIT $10"
-                ))),
-                filter
-            )
-            .bind(after_at)
-            .bind(after_id)
-            .bind(page.rows())
-            .fetch_all(&mut *conn)
-            .await?;
+
+            // The page of the items first, by the index of the newest ones;
+            // then what the page shows of them.
+            let mut sql = QueryBuilder::new(format!(
+                "SELECT {ITEM_COLUMNS} FROM (SELECT * FROM queue_items i WHERE "
+            ));
+            push_filter(&mut sql, filter);
+            if let Some((at, id)) = page.after.clone() {
+                sql.push(" AND (i.submitted_at, i.id) < (")
+                    .push_bind(at)
+                    .push("::timestamptz, ")
+                    .push_bind(id)
+                    .push(")");
+            }
+            sql.push(" ORDER BY i.submitted_at DESC, i.id DESC LIMIT ")
+                .push_bind(page.rows())
+                .push(format_args!(
+                    ") i {ITEM_JOINS} ORDER BY i.submitted_at DESC, i.id DESC"
+                ));
+            let rows: Vec<ItemRow> = sql.build_query_as().fetch_all(&mut *conn).await?;
             Ok(page.split(rows))
         }
         PrSort::Position => {
             let page: Page<PositionKey> =
                 Page::read("prs.position", query.from.as_deref(), query.limit)?;
-            let (repo, queue, position, at, id) = match page.after.clone() {
-                Some((repo, queue, position, at, id)) => {
-                    (Some(repo), Some(queue), Some(position), Some(at), Some(id))
-                }
-                None => (None, None, None, None, None),
-            };
-            let rows: Vec<ItemRow> = bind_filter!(
-                sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                    "SELECT {ITEM_COLUMNS} FROM {ITEM_SOURCE}
-                     WHERE {PR_FILTER}
-                       AND ($8::text IS NULL OR
-                            (r.name, q.name, {PLACE}, i.submitted_at, i.id)
-                            > ($8, $9, $10, $11::timestamptz, $12))
-                     ORDER BY r.name, q.name, {PLACE}, i.submitted_at, i.id
-                     LIMIT $13"
-                ))),
-                filter
-            )
-            .bind(repo)
-            .bind(queue)
-            .bind(position)
-            .bind(at)
-            .bind(id)
-            .bind(page.rows())
-            .fetch_all(&mut *conn)
-            .await?;
+
+            // The items of the filter first: the sort needs the names of
+            // their repositories and queues, and a join first would make the
+            // plan guess how many PRs an author has.
+            let mut sql =
+                QueryBuilder::new("WITH i AS MATERIALIZED (SELECT * FROM queue_items i WHERE ");
+            push_filter(&mut sql, filter);
+            sql.push(format_args!(") SELECT {ITEM_COLUMNS} FROM i {ITEM_JOINS}"));
+            if let Some((repo, queue, position, at, id)) = page.after.clone() {
+                sql.push(format_args!(
+                    " WHERE (r.name, q.name, {PLACE}, i.submitted_at, i.id) > ("
+                ));
+                let mut key = sql.separated(", ");
+                key.push_bind(repo)
+                    .push_bind(queue)
+                    .push_bind(position)
+                    .push_bind(at)
+                    .push_unseparated("::timestamptz")
+                    .push_bind(id);
+                sql.push(")");
+            }
+            sql.push(format_args!(
+                " ORDER BY r.name, q.name, {PLACE}, i.submitted_at, i.id LIMIT "
+            ))
+            .push_bind(page.rows());
+            let rows: Vec<ItemRow> = sql.build_query_as().fetch_all(&mut *conn).await?;
             Ok(page.split(rows))
         }
     }
@@ -572,7 +600,7 @@ pub(super) async fn get_pr(
 
     let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
     let row: Option<ItemRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {ITEM_COLUMNS} FROM {ITEM_SOURCE} WHERE q.repo_id = $1 AND i.pr_number = $2
+        "SELECT {ITEM_COLUMNS} FROM queue_items i {ITEM_JOINS} WHERE q.repo_id = $1 AND i.pr_number = $2
          ORDER BY i.submitted_at DESC, i.id DESC LIMIT 1"
     )))
     .bind(repo.to_string())
