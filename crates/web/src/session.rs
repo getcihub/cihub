@@ -60,14 +60,10 @@ pub(crate) fn needs_csrf_token(method: &Method) -> bool {
 }
 
 pub(crate) fn has_csrf_token(headers: &HeaderMap, secret: &SecretString) -> bool {
-    let Some(sent) = headers
+    headers
         .get(CSRF_HEADER)
         .and_then(|value| value.to_str().ok())
-    else {
-        return false;
-    };
-
-    is_same_text(sent, &csrf_token(secret))
+        .is_some_and(|sent| is_same_text(sent, &csrf_token(secret)))
 }
 
 /// Compares every byte, so that the time of the answer does not tell how
