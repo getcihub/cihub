@@ -80,7 +80,7 @@ export function DrawerFrame({ path, title, meta, head, children }: Props) {
       >
         <header className="sticky top-0 z-1 border-b border-divider bg-card px-5 py-4">
           <Link
-            className="absolute top-4 right-4 text-base text-secondary-foreground hover:text-foreground"
+            className="absolute top-4 right-4 text-md font-medium text-secondary-foreground hover:text-foreground"
             to="/orgs/$org/repos/$repo/queues/$queue"
             params={path}
             search={(kept) => kept}
@@ -95,12 +95,12 @@ export function DrawerFrame({ path, title, meta, head, children }: Props) {
           >
             Close
           </Link>
-          {meta && <div className="text-md text-muted-foreground">{meta}</div>}
+          {meta && <div className="text-lg text-muted-foreground">{meta}</div>}
           <h2
             id="pr-title"
             ref={heading}
             tabIndex={-1}
-            className="mt-1 mb-2 text-4xl font-medium focus:outline-none"
+            className="mt-1 mb-2 text-4xl font-medium tracking-[-0.3px] focus:outline-none"
           >
             {title}
           </h2>
@@ -122,10 +122,10 @@ export function DrawerSectionTitle({ className, ...props }: ComponentProps<"h3">
 }
 
 export function DrawerText({ className, ...props }: ComponentProps<"p">) {
-  return <p className={cn("text-base", className)} {...props} />;
+  return <p className={cn("text-md", className)} {...props} />;
 }
 
 /** A detail under a part of the drawer, in the color of a hint. */
 export function DrawerNote({ className, ...props }: ComponentProps<"p">) {
-  return <p className={cn("mt-2.5 text-base text-muted-foreground", className)} {...props} />;
+  return <p className={cn("mt-2.5 text-md text-muted-foreground", className)} {...props} />;
 }

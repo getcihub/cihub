@@ -51,7 +51,7 @@ export function ModalDescription({ className, ...props }: ComponentProps<"p">) {
   return (
     <p
       data-slot="modal-description"
-      className={cn("text-base text-secondary-foreground", className)}
+      className={cn("text-lg text-secondary-foreground", className)}
       {...props}
     />
   );

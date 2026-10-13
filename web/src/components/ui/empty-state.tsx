@@ -16,7 +16,7 @@ export function EmptyState({ illustration, title, heading: Heading = "h3", child
   return (
     <div data-slot="empty-state" className="grid justify-items-center gap-2 px-6 py-11 text-center">
       {illustration}
-      <Heading className="text-2xl font-medium">{title}</Heading>
+      <Heading className="text-2xl font-medium tracking-[-0.2px]">{title}</Heading>
       <p className="max-w-115 text-lg text-secondary-foreground">{children}</p>
       {actions && <div className="mt-3 flex items-center gap-2 max-md:flex-col">{actions}</div>}
       {foot && <p className="mt-0.5 text-md text-muted-foreground">{foot}</p>}

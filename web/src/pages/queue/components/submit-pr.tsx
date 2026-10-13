@@ -84,8 +84,8 @@ export function SubmitPr({
           >
             <form.Field name="number">
               {(field) => (
-                <label className="grid gap-1.5 text-base">
-                  Pull request number
+                <label className="grid gap-1.5 text-lg">
+                  <span className="text-md font-medium">Pull request number</span>
                   <Input
                     type="text"
                     inputMode="numeric"
@@ -97,7 +97,7 @@ export function SubmitPr({
                     aria-invalid={field.state.meta.errors.length > 0}
                   />
                   {field.state.meta.errors.map((error) => (
-                    <span key={error?.message} className="text-md text-destructive">
+                    <span key={error?.message} className="text-sm font-medium text-destructive">
                       {error?.message}
                     </span>
                   ))}
@@ -106,8 +106,8 @@ export function SubmitPr({
             </form.Field>
             <form.Field name="priority">
               {(field) => (
-                <label className="grid gap-1.5 text-base">
-                  Priority
+                <label className="grid gap-1.5 text-lg">
+                  <span className="text-md font-medium">Priority</span>
                   <Select
                     name={field.name}
                     value={field.state.value}
@@ -126,7 +126,7 @@ export function SubmitPr({
             </form.Field>
             <form.Field name="isAlone">
               {(field) => (
-                <label className="flex items-center gap-2 text-base">
+                <label className="flex items-center gap-2 text-lg">
                   <input
                     // The margin of a checkbox in the browser, which the reset of the styles removes.
                     className="my-0.75 mr-0.75 ml-1"

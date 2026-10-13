@@ -101,7 +101,7 @@ export function ItemTabs({
             <Link
               key={candidate}
               className={cn(
-                "rounded-sm px-2.5 py-1 text-base font-medium text-secondary-foreground hover:text-foreground",
+                "rounded-sm px-2.5 py-1 text-base text-secondary-foreground hover:text-foreground",
                 candidate === tab && "bg-muted text-primary",
               )}
               to="/orgs/$org/repos/$repo/queues/$queue"

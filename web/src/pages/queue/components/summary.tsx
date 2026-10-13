@@ -17,7 +17,7 @@ const MERGE_METHODS: Record<string, string> = {
 function Stat({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
     <Card className="px-3.5 py-3">
-      <div className="text-md text-secondary-foreground">{label}</div>
+      <div className="text-sm text-secondary-foreground">{label}</div>
       <div className="mt-0.5 text-5xl font-medium tracking-[-0.3px] tabular-nums">{value}</div>
       <div className="text-md text-muted-foreground">{hint}</div>
     </Card>
@@ -77,7 +77,9 @@ export function Settings({ queue }: { queue: Queue }) {
       <Setting label="Merge method">{MERGE_METHODS[settings.merge_method] ?? settings.merge_method}</Setting>
       <Setting className="ml-auto" label="Configuration">
         {queue.has_config_file ? (
-          <code>.cihub.yaml{queue.config_sha && ` @ ${shortSha(queue.config_sha)}`}</code>
+          <span className="font-mono">
+            .cihub.yaml{queue.config_sha && ` @ ${shortSha(queue.config_sha)}`}
+          </span>
         ) : (
           <>
             Defaults · no <code>.cihub.yaml</code>
@@ -91,7 +93,7 @@ export function Settings({ queue }: { queue: Queue }) {
 function Setting({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
   return (
     <div className={cn("border-r border-divider px-3.5 py-2.5 last:border-r-0", className)}>
-      <dt className="text-md text-secondary-foreground">{label}</dt>
+      <dt className="text-sm text-secondary-foreground">{label}</dt>
       <dd className="mt-px text-base font-medium">{children}</dd>
     </div>
   );

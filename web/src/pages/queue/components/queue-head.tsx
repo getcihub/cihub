@@ -32,7 +32,7 @@ export function QueueHead({
           <PageLocation>
             {path.org}/{path.repo}
           </PageLocation>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 tracking-[-0.3px]">
             <PageTitle>{queue.name}</PageTitle>
             <QueueStateBadge queue={queue} />
           </div>
