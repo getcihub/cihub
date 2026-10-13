@@ -1,15 +1,20 @@
 // Compares the captures of two builds, pixel by pixel: `node e2e/visual/compare.ts BASE HEAD OUT [LABEL]`. For each
-// view that differs, OUT gets an image (base | head | the changed pixels in red), and OUT/report.md lists them.
+// view that differs, OUT/changes gets the head dimmed with the changed pixels in red; OUT/report.md lists the views,
+// and OUT/index.html shows each view before and after, with the viewer that shots.sh builds into OUT/viewer.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { chromium } from "@playwright/test";
+
+import type { Box, ViewerData } from "./viewer/data";
 
 interface Difference {
   name: string;
   /** The number of pixels that changed; `null` when the size of the view changed. */
   pixels: number | null;
   region: string;
+  /** The smallest rectangle that holds the changed pixels; `null` when the size of the view changed. */
+  box: Box | null;
 }
 
 const [baseDir, headDir, outDir, label = "the base"] = process.argv.slice(2);
@@ -23,13 +28,10 @@ const pngs = (dir: string): string[] =>
 const dataUrl = (file: string): string => `data:image/png;base64,${readFileSync(file).toString("base64")}`;
 
 // The page compares the two images on canvases, and draws the head dimmed with the changed pixels in red.
-const PAGE = `<body style="margin:0;font:14px sans-serif;background:#fff">
-<div style="display:flex;gap:16px;padding:8px;align-items:flex-start">
-  <div><b>base</b><br><img id="base"></div><div><b>head</b><br><img id="head"></div>
-  <div><b>changes</b><br><canvas id="changes"></canvas></div>
-</div></body>`;
+const PAGE = `<body style="margin:0;background:#fff"><img id="base" hidden><img id="head" hidden>
+<canvas id="changes" style="display:block"></canvas></body>`;
 
-function compareInPage(): { pixels: number | null; region: string } {
+function compareInPage(): Omit<Difference, "name"> {
   const base = document.getElementById("base") as HTMLImageElement;
   const head = document.getElementById("head") as HTMLImageElement;
   const changes = document.getElementById("changes") as HTMLCanvasElement;
@@ -38,6 +40,7 @@ function compareInPage(): { pixels: number | null; region: string } {
   if (base.naturalWidth !== width || base.naturalHeight !== height) {
     return {
       pixels: null,
+      box: null,
       region: `size ${String(base.naturalWidth)}×${String(base.naturalHeight)} → ${String(width)}×${String(height)}`,
     };
   }
@@ -82,6 +85,7 @@ function compareInPage(): { pixels: number | null; region: string } {
 
   return {
     pixels: count,
+    box: { left, top, right, bottom },
     region: count === 0 ? "" : `x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`,
   };
 }
@@ -121,11 +125,12 @@ const headNames = pngs(headDir);
 const shared = headNames.filter((name) => baseNames.includes(name)).sort();
 const added = headNames.filter((name) => !baseNames.includes(name)).sort();
 const removed = baseNames.filter((name) => !headNames.includes(name)).sort();
-mkdirSync(outDir, { recursive: true });
+mkdirSync(join(outDir, "changes"), { recursive: true });
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const differences: Difference[] = [];
+const unchanged: string[] = [];
 
 for (const name of shared) {
   await page.setContent(PAGE);
@@ -141,11 +146,15 @@ for (const name of shared) {
     },
     [dataUrl(join(baseDir, name)), dataUrl(join(headDir, name))],
   );
-  const { pixels, region } = await page.evaluate(compareInPage);
+  const difference = await page.evaluate(compareInPage);
 
-  if (pixels !== 0) {
-    differences.push({ name, pixels, region });
-    await page.screenshot({ path: join(outDir, name), fullPage: true });
+  if (difference.pixels === 0) {
+    unchanged.push(name);
+  } else {
+    differences.push({ name, ...difference });
+  }
+  if (difference.pixels) {
+    await page.locator("#changes").screenshot({ path: join(outDir, "changes", name) });
   }
 }
 await browser.close();
@@ -153,3 +162,36 @@ await browser.close();
 const report = reportOf(differences, added, removed, shared.length);
 writeFileSync(join(outDir, "report.md"), report);
 console.log(report);
+
+const viewerData: ViewerData = {
+  label,
+  before: relative(outDir, baseDir),
+  after: relative(outDir, headDir),
+  views: [
+    ...differences.map(({ name, pixels, box }) => ({ name, status: "changed" as const, pixels, box })),
+    ...added.map((name) => ({ name, status: "added" as const, pixels: null, box: null })),
+    ...removed.map((name) => ({ name, status: "removed" as const, pixels: null, box: null })),
+    ...unchanged.map((name) => ({ name, status: "unchanged" as const, pixels: null, box: null })),
+  ],
+};
+// The theme is set before the first paint, as the dashboard does (index.html).
+const viewer = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual changes</title>
+<script>
+document.documentElement.dataset.theme = localStorage.getItem("theme") ??
+  (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+</script>
+<link rel="stylesheet" href="viewer/viewer.css">
+</head>
+<body>
+<div id="root"></div>
+<script id="viewer-data" type="application/json">${JSON.stringify(viewerData).replaceAll("<", "\\u003c")}</script>
+<script src="viewer/viewer.js"></script>
+</body>
+</html>
+`;
+writeFileSync(join(outDir, "index.html"), viewer);
