@@ -182,12 +182,16 @@ delivery does not get `202`. The App does not exist and `github.url` does not re
 kubeconfig of the cluster is `$TMPDIR/kind-cihub-smoke.kubeconfig` (`/tmp` without `TMPDIR`), never `~/.kube`. A run
 on a kept cluster keeps its Secrets, and restarts the replicas, as the tag of the image does not change.
 
-With `CIHUB_SMOKE_GITHUB=1`, the script uses the development App of `mise.local.toml`
-(`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and `CIHUB_GITHUB_URL` when it
-is set) instead of a false App, and also fails when no installation of the App is synced within 2 minutes. It is a
-development use, as `mise run dev`, never a test of the CI. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that
-bring the webhooks of the App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the
-webhook URL of the App.
+With `CIHUB_SMOKE_GITHUB=1`, the script uses the development App of `mise.local.toml` instead of a false App, and
+also fails when no installation of the App is synced within 2 minutes. It is a development use, as `mise run dev`,
+never a test of the CI. It then takes from the environment every variable of the server configuration that the chart
+carries: `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET`, `CIHUB_GITHUB_PRIVATE_KEY_FILE` or
+`CIHUB_GITHUB_PRIVATE_KEY`, and, when they are set, `CIHUB_GITHUB_URL`, `CIHUB_GITHUB_CLIENT_ID` with
+`CIHUB_GITHUB_CLIENT_SECRET` for the sign-in, `CIHUB_HTTP_PUBLIC_URL`, `CIHUB_LOG_FILTER` and `CIHUB_LOG_FORMAT`. The
+cluster has its own Postgres and the chart fixes the addresses of the pod: `CIHUB_DATABASE_URL`, `CIHUB_HTTP_ADDR` and
+`CIHUB_INTERNAL_ADDR` stay out. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that bring the webhooks of the
+App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the webhook URL of the App; with
+the sign-in, the Callback URL that the App must have.
 
 ```sh
 CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run smoke
