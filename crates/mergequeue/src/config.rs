@@ -242,7 +242,23 @@ impl CheckFinding {
 
     fn text(self, branch: &str) -> String {
         match self {
-            Self::Setup(finding) => finding_text(finding, branch),
+            Self::Setup(SetupFinding::UpdateRestrictionMissing) => {
+                format!(
+                    "no rule restricts the updates of `{branch}`: a PR can merge without the queue"
+                )
+            }
+            Self::Setup(SetupFinding::AppNotExempt) => format!(
+                "a rule restricts the updates of `{branch}` without an exemption for the App of CIHub: \
+                 the queue cannot merge"
+            ),
+            Self::Setup(SetupFinding::TestBranchesNotExcluded) => {
+                "a rule covers `cihub-temp/**` or `cihub-merge/**`: exclude the test branches"
+                    .to_owned()
+            }
+            Self::Setup(SetupFinding::UpToDateRequired) => format!(
+                "the rules of `{branch}` ask for branches up to date: turn it off, unless the queue \
+                 merges directly"
+            ),
             Self::TargetBranchMissing => {
                 format!("the branch `{branch}` no longer exists: the queue cannot merge")
             }
@@ -269,24 +285,4 @@ async fn missing_branch(
     info!("target branch gone");
 
     Ok(vec![CheckFinding::TargetBranchMissing])
-}
-
-fn finding_text(finding: SetupFinding, branch: &str) -> String {
-    match finding {
-        SetupFinding::UpdateRestrictionMissing => {
-            format!("no rule restricts the updates of `{branch}`: a PR can merge without the queue")
-        }
-        SetupFinding::AppNotExempt => format!(
-            "a rule restricts the updates of `{branch}` without an exemption for the App of CIHub: \
-             the queue cannot merge"
-        ),
-        SetupFinding::TestBranchesNotExcluded => {
-            "a rule covers `cihub-temp/**` or `cihub-merge/**`: exclude the test branches"
-                .to_owned()
-        }
-        SetupFinding::UpToDateRequired => format!(
-            "the rules of `{branch}` ask for branches up to date: turn it off, unless the queue \
-             merges directly"
-        ),
-    }
 }

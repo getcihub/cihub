@@ -222,13 +222,17 @@ pub struct QueuePath<'a> {
     pub queue: &'a str,
 }
 
-impl QueuePath<'_> {
-    fn path(self) -> String {
-        let repo = RepoPath {
+impl<'a> QueuePath<'a> {
+    /// The repository of the queue.
+    pub fn repo(self) -> RepoPath<'a> {
+        RepoPath {
             org: self.org,
             repo: self.repo,
-        };
-        format!("{}/queues/{}", repo.path(), segment(self.queue))
+        }
+    }
+
+    fn path(self) -> String {
+        format!("{}/queues/{}", self.repo().path(), segment(self.queue))
     }
 }
 

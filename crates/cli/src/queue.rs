@@ -150,11 +150,7 @@ async fn status(
         return Ok(());
     };
 
-    let repo = RepoPath {
-        org: path.org,
-        repo: path.repo,
-    };
-    let item = client.pr(repo, pr).await?;
+    let item = client.pr(path.repo(), pr).await?;
     let position = item
         .position
         .map(|p| format!(", position {p}"))
@@ -210,24 +206,24 @@ async fn set_state(
     Ok(())
 }
 
-fn pick_queue(queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyhow::Result<Queue> {
-    let names: Vec<String> = queues.iter().map(|q| q.name.clone()).collect();
+fn pick_queue(mut queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyhow::Result<Queue> {
+    let names = queues
+        .iter()
+        .map(|q| q.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     if let Some(wanted) = wanted {
         return queues
             .into_iter()
             .find(|q| q.name == wanted)
-            .with_context(|| format!("{repo} has no queue `{wanted}`: {}", names.join(", ")));
+            .with_context(|| format!("{repo} has no queue `{wanted}`: {names}"));
     }
-    let mut queues = queues;
     match queues.len() {
         0 => bail!(
             "{repo} has no queue yet: comment `/cihub merge` on a PR of its default branch to create one"
         ),
         1 => Ok(queues.remove(0)),
-        _ => bail!(
-            "{repo} has more than one queue: choose one with `--queue` ({})",
-            names.join(", ")
-        ),
+        _ => bail!("{repo} has more than one queue: choose one with `--queue` ({names})"),
     }
 }
 

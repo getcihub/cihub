@@ -368,13 +368,6 @@ impl Authenticated {
     }
 }
 
-fn unauthorized() -> ApiError {
-    ApiError::new(
-        ErrorCode::Unauthorized,
-        "no valid API token or session".into(),
-    )
-}
-
 async fn by_token(
     state: &ApiState,
     secret: &SecretString,
@@ -382,7 +375,7 @@ async fn by_token(
 ) -> Result<Authenticated, ApiError> {
     let grant = authenticate(&state.pool, secret, now)
         .await?
-        .ok_or_else(unauthorized)?;
+        .ok_or_else(ApiError::unauthorized)?;
 
     Ok(Authenticated::Token(
         grant.id,
@@ -404,10 +397,10 @@ async fn by_session(
     path: &str,
     now: OffsetDateTime,
 ) -> Result<Authenticated, ApiError> {
-    let secret = cookie(headers, SESSION_COOKIE).ok_or_else(unauthorized)?;
+    let secret = cookie(headers, SESSION_COOKIE).ok_or_else(ApiError::unauthorized)?;
     let session = authenticate_session(&state.pool, &secret, now)
         .await?
-        .ok_or_else(unauthorized)?;
+        .ok_or_else(ApiError::unauthorized)?;
 
     if needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
         return Err(csrf_refused());
@@ -489,7 +482,7 @@ async fn get_user(
 
     let login = login_of(&state.pool, session.user_id)
         .await?
-        .ok_or_else(unauthorized)?;
+        .ok_or_else(ApiError::unauthorized)?;
 
     Ok(Json(User { login }))
 }
@@ -553,9 +546,10 @@ async fn list_user_orgs(
         })
         .collect();
     let (orgs, has_more) = page.split(rows);
-    let cursor = has_more
-        .then(|| orgs.last().map(|org| cursor_of("orgs", &org.slug)))
-        .flatten();
+    let cursor = orgs
+        .last()
+        .filter(|_| has_more)
+        .map(|org| cursor_of("orgs", &org.slug));
 
     Ok(Json(OrgList {
         orgs,
@@ -577,16 +571,17 @@ async fn list_user_orgs(
     security(("token" = []))
 )]
 async fn get_instance(State(state): State<ApiState>) -> Json<Instance> {
-    let app_install_url = match state.scm.app_install_url(JobClass::Interactive).await {
-        Ok(url) => Some(url),
-        Err(err) => {
+    let app_install_url = state
+        .scm
+        .app_install_url(JobClass::Interactive)
+        .await
+        .inspect_err(|err| {
             warn!(
-                error = &err as &dyn Error,
+                error = err as &dyn Error,
                 "install page of the App not read"
             );
-            None
-        }
-    };
+        })
+        .ok();
 
     Json(Instance {
         version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -680,13 +675,10 @@ async fn list_repos(
     .await?;
     let repos = rows.into_iter().map(repo_of).collect();
     let (repos, has_more): (Vec<Repo>, bool) = page.split(repos);
-    let cursor = has_more
-        .then(|| {
-            repos
-                .last()
-                .map(|repo| cursor_of("repos", (&repo.namespace, &repo.name, &repo.id)))
-        })
-        .flatten();
+    let cursor = repos
+        .last()
+        .filter(|_| has_more)
+        .map(|repo| cursor_of("repos", (&repo.namespace, &repo.name, &repo.id)));
 
     Ok(Json(RepoList {
         repos,
@@ -810,9 +802,10 @@ async fn list_audit(
         )
         .collect();
     let (entries, has_more): (Vec<AuditEntry>, bool) = page.split(entries);
-    let cursor = has_more
-        .then(|| entries.last().map(audit_cursor))
-        .flatten()
+    let cursor = entries
+        .last()
+        .filter(|_| has_more)
+        .map(audit_cursor)
         .transpose()?;
 
     Ok(Json(AuditList {

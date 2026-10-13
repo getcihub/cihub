@@ -5,14 +5,15 @@ import { vi } from "vitest";
 
 import { client } from "@/client/client.gen";
 import type { ErrorCode } from "@/client/types.gen";
-import { routeTree } from "@/routeTree.gen";
+import { MotionProvider } from "@/components/ui/motion";
 import { sendCsrfToken } from "@/domain/session/session";
-import { MotionProvider } from "@/ui/motion";
+import { routeTree } from "@/routeTree.gen";
 
 // As `main.tsx` does, once.
 sendCsrfToken();
 
-export type Answer = [number, unknown];
+/** A status and a body, or `null` for an empty body. */
+export type Answer = [number, object | null];
 /**
  * The answers of the API by path, or by path and query when the query tells two reads apart; a list answers its
  * items in order, then its last one.
@@ -76,14 +77,14 @@ export function mockSessionCookie(): void {
 }
 
 /** The requests of the page that change a state: method, path, body and CSRF token. */
-export async function sentChanges(): Promise<[string, string, unknown, string | null][]> {
+export async function sentChanges(): Promise<[string, string, object | null, string | null][]> {
   const calls = vi.mocked(fetch).mock.calls.map(([input]) => input as Request);
   const sent = calls.filter((request) => request.method !== "GET");
   return Promise.all(
     sent.map(async (request) => [
       request.method,
       new URL(request.url).pathname,
-      JSON.parse((await request.clone().text()) || "null") as unknown,
+      JSON.parse((await request.clone().text()) || "null") as object | null,
       request.headers.get("X-CSRF-Token"),
     ]),
   );

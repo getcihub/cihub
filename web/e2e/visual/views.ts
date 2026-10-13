@@ -20,7 +20,7 @@ export interface View {
   themes?: Theme[];
   viewports?: Viewport[];
   /** What the person does before the capture: opens a menu, submits a form. */
-  act?: (page: Page) => Promise<unknown>;
+  act?: (page: Page) => Promise<void>;
   /** An answer of the API that differs from the fixtures; `null` keeps the one of the fixtures. */
   answer?: (request: ApiRequest) => Answer | null;
   /** A read that never answers: the view shows how the page waits for it. */
