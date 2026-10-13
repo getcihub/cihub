@@ -17,7 +17,7 @@ export const buttonVariants = cva(
         "destructive-outline": "border-border bg-card text-destructive hover:border-muted-foreground",
       },
       size: {
-        default: "h-7 text-base",
+        default: "h-7 text-base [&>svg]:size-3.5",
         lg: "h-9 w-full justify-center text-xl [&_svg]:size-3.5",
       },
     },

@@ -1,5 +1,5 @@
 import type { ItemState, Pr } from "@/client/types.gen";
-import { CheckIcon } from "@/components/ui/icons";
+import { CheckIcon } from "@/components/icons/check-icon";
 import { itemStateLabel } from "@/domain/pr/words";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/text";

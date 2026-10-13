@@ -1,8 +1,10 @@
 import type { ComponentProps, ReactNode } from "react";
 
 import type { Queue } from "@/client/types.gen";
+import { DrainIcon } from "@/components/icons/drain-icon";
+import { PauseIcon } from "@/components/icons/pause-icon";
+import { WarningIcon } from "@/components/icons/warning-icon";
 import { Alert, AlertContent, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { DrainIcon, PauseIcon, WarningIcon } from "@/components/ui/icons";
 import { timeAgo } from "@/lib/time";
 
 function Banner({

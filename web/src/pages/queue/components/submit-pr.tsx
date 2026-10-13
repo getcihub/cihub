@@ -3,6 +3,7 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { submitMutation } from "@/client/@tanstack/react-query.gen";
+import { PlusIcon } from "@/components/icons/plus-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Modal, ModalFooter } from "@/components/ui/modal";
@@ -63,6 +64,7 @@ export function SubmitPr({
           setIsOpen(true);
         }}
       >
+        <PlusIcon />
         Submit a pull request
       </Button>
 

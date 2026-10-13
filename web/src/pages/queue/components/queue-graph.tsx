@@ -1,8 +1,8 @@
 import { Fragment, useRef } from "react";
 
 import type { Graph, GraphRun, Pr, Queue } from "@/client/types.gen";
+import { CheckIcon } from "@/components/icons/check-icon";
 import { CardHeader, CardHint, CardTitle, cardVariants } from "@/components/ui/card";
-import { CheckIcon } from "@/components/ui/icons";
 import { useFlip } from "@/components/ui/motion";
 import { itemStateLabel } from "@/domain/pr/words";
 import { cn } from "@/lib/cn";

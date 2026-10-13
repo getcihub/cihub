@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
+import { ErrorIcon } from "@/components/icons/error-icon";
 import { Alert } from "@/components/ui/alert";
-import { ErrorIcon } from "@/components/ui/icons";
 import { Mark } from "@/components/ui/mark";
 import { cn } from "@/lib/cn";
 
