@@ -76,7 +76,18 @@ export const VIEWS: View[] = [
   { name: "queue-banners", url: "/orgs/acme/repos/web/queues/release", ready: "Paused by", themes: BOTH },
   { name: "queue-access-lost", url: "/orgs/acme/repos/mobile/queues/main", ready: "lost its access" },
   { name: "queue-draining", url: "/orgs/acme/repos/api/queues/main", ready: "Draining." },
-  { name: "queue-quiet", url: "/orgs/acme/repos/sdk/queues/main", ready: "No pull request in the queue" },
+  {
+    name: "queue-quiet",
+    url: "/orgs/acme/repos/sdk/queues/main",
+    ready: "No pull request in the queue",
+    themes: BOTH,
+  },
+  // Nothing in the queue, but a merge in the last 24 hours: the tabs stay, and the tab of the queue is empty.
+  {
+    name: "queue-empty-tab",
+    url: "/orgs/acme/repos/infra/queues/main",
+    ready: "No pull request in the queue",
+  },
   { name: "drawer-testing", url: DRAWER, ready: "History", themes: BOTH, viewports: [WIDE, NARROW] },
   { name: "drawer-not-ready", url: `${QUEUE_PAGE}/prs/133`, ready: "Why it waits" },
   { name: "drawer-merged", url: `${QUEUE_PAGE}/prs/110`, ready: "Outcome" },

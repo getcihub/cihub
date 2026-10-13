@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { shortSha } from "@/lib/text";
 import { durationBetween, timeAgo } from "@/lib/time";
 import { useTabItems } from "@/pages/queue/use-tab-items";
+import { EmptyQueue } from "./empty-queue";
 import { PrLink } from "./pr-link";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -23,8 +24,7 @@ const TAB_LABELS: Record<Tab, string> = {
   ended: "Failed and cancelled",
 };
 
-const NONE: Record<Tab, string> = {
-  live: "No pull request in the queue.",
+const NONE: Record<Exclude<Tab, "live">, string> = {
   merged: "Nothing merged in the last 24 hours.",
   ended: "Nothing failed or cancelled in the last 24 hours.",
 };
@@ -77,6 +77,7 @@ export function ItemTabs({
   live,
   ranks,
   now,
+  onSent,
 }: {
   path: QueuePath;
   tab: Tab;
@@ -84,6 +85,8 @@ export function ItemTabs({
   live: Pr[];
   ranks: Map<string, number>;
   now: number;
+  /** What the page shows once the empty queue submitted a pull request. */
+  onSent: (notice: string) => void;
 }) {
   const counts: Partial<Record<Tab, number>> = { live: live.length, merged: queue.merged_last_24h };
 
@@ -118,7 +121,7 @@ export function ItemTabs({
         </Suspense>
       </CardHeader>
       <Suspense fallback={<ItemRowsSkeleton />}>
-        <TabRows path={path} tab={tab} ranks={ranks} now={now} />
+        <TabRows path={path} tab={tab} queue={queue} ranks={ranks} now={now} onSent={onSent} />
       </Suspense>
     </section>
   );
@@ -137,26 +140,39 @@ function TabHint({ path, tab, now }: { path: QueuePath; tab: Tab; now: number })
   );
 }
 
-/** The rows of the open tab: its read is the one of the live items for the tab of the live ones. */
+/**
+ * The rows of the open tab: its read is the one of the live items for the tab of the live ones. With no live item,
+ * the tab says how a pull request enters the queue.
+ */
 function TabRows({
   path,
   tab,
+  queue,
   ranks,
   now,
+  onSent,
 }: {
   path: QueuePath;
   tab: Tab;
+  queue: Queue;
   ranks: Map<string, number>;
   now: number;
+  onSent: (notice: string) => void;
 }) {
   const items = useTabItems(path, tab, now).prs;
   const rowsRef = useRef<HTMLTableSectionElement>(null);
   useFlip(rowsRef);
   const rows = tab === "live" ? items : items.filter((item) => now - Date.parse(item.state_changed_at) < DAY);
 
-  return rows.length === 0 ? (
-    <p className="p-7 text-center text-secondary-foreground">{NONE[tab]}</p>
-  ) : (
+  if (rows.length === 0) {
+    return tab === "live" ? (
+      <EmptyQueue path={path} queue={queue} now={now} onSent={onSent} />
+    ) : (
+      <p className="p-7 text-center text-secondary-foreground">{NONE[tab]}</p>
+    );
+  }
+
+  return (
     <table className="w-full">
       <thead>
         <tr>

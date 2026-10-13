@@ -5,18 +5,25 @@ import { PageHeader, PageLocation, PageTitle } from "@/components/ui/page";
 import type { QueuePath } from "@/domain/queue/queries";
 import { membershipOf } from "@/domain/session/session";
 import { useMe } from "@/hooks/use-me";
-import { useSentNotice } from "@/hooks/use-sent-notice";
+import type { SentNotice } from "@/hooks/use-sent-notice";
 import { QueueActions } from "./queue-actions";
 import { SubmitPr } from "./submit-pr";
 
 /**
- * The head of the page of a queue: where it is, its name and state, and its actions; then what an action sent,
- * until the queue changes. The page shows it even when its other reads fail.
+ * The head of the page of a queue: where it is, its name and state, and its actions; then what an action of the
+ * page sent, until the queue changes. The page shows it even when its other reads fail.
  */
-export function QueueHead({ path, queue }: { path: QueuePath; queue: Queue }) {
+export function QueueHead({
+  path,
+  queue,
+  sent: { notice, showNotice },
+}: {
+  path: QueuePath;
+  queue: Queue;
+  sent: SentNotice;
+}) {
   const me = useMe();
   const isAdmin = membershipOf(me, path.org)?.role === "admin";
-  const { notice, showNotice } = useSentNotice(queue.id);
 
   return (
     <>
