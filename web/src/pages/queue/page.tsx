@@ -29,7 +29,10 @@ export function QueuePage() {
   const ranks = ranksOf(graph);
   // A tab that the address opens shows its items, even in a queue with nothing live.
   const isQuiet =
-    tab === "live" && live.length === 0 && queue.merged_last_24h === 0 && queue.failed_last_24h === 0;
+    tab === "live" &&
+    live.length === 0 &&
+    queue.merged_last_24h === 0 &&
+    queue.failed_or_cancelled_last_24h === 0;
 
   return (
     <>

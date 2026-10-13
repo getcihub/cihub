@@ -116,6 +116,7 @@ struct CountsRow {
     tests_passed: i64,
     merged_last_24h: i64,
     failed_last_24h: i64,
+    failed_or_cancelled_last_24h: i64,
     last_merged_at: Option<OffsetDateTime>,
 }
 
@@ -130,8 +131,12 @@ const COUNT_COLUMNS: &str =
      count(*) FILTER (WHERE i.is_current AND i.state = 'tests_passed') AS tests_passed,
      count(*) FILTER (WHERE i.state = 'merged' AND i.state_changed_at > $1 - interval '24 hours')
          AS merged_last_24h,
-     count(*) FILTER (WHERE i.state = 'failed' AND i.state_changed_at > $1 - interval '24 hours')
+     count(*) FILTER (WHERE i.is_current AND i.state = 'failed'
+                        AND i.state_changed_at > $1 - interval '24 hours')
          AS failed_last_24h,
+     count(*) FILTER (WHERE i.is_current AND i.state IN ('failed', 'cancelled')
+                        AND i.state_changed_at > $1 - interval '24 hours')
+         AS failed_or_cancelled_last_24h,
      max(i.state_changed_at) FILTER (WHERE i.state = 'merged') AS last_merged_at";
 
 #[derive(sqlx::FromRow)]
@@ -222,6 +227,7 @@ impl QueueFacts {
             },
             merged_last_24h: u32::try_from(counts.merged_last_24h)?,
             failed_last_24h: u32::try_from(counts.failed_last_24h)?,
+            failed_or_cancelled_last_24h: u32::try_from(counts.failed_or_cancelled_last_24h)?,
             last_merged_at: counts.last_merged_at,
             live_runs: u32::try_from(self.live_runs.get(&row.id).copied().unwrap_or(0))?,
             median_run_seconds: self.medians.get(&row.id).copied(),

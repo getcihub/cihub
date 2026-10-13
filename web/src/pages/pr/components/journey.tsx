@@ -17,10 +17,14 @@ const STEP_OF: Record<string, number> = {
 
 /** The dot of the current step, in the color of how the PR stands. */
 const CURRENT_DOTS: Record<string, string> = {
+  merged: "border-primary bg-primary",
   pending_failure: "border-warning bg-warning",
   failed: "border-destructive bg-destructive",
   cancelled: "border-waiting",
 };
+
+/** The states whose current step glows: the PR still moves toward its merge. */
+const MOVING = new Set(["not_ready", "pending", "testing", "pending_failure", "tests_passed"]);
 
 /** Submitted, queued, testing, merged: where the PR is in its life. */
 export function Journey({ item }: { item: Pr }) {
@@ -43,6 +47,7 @@ export function Journey({ item }: { item: Pr }) {
                 "size-3 rounded-full border-2 border-waiting bg-card",
                 index < step && "border-primary bg-primary",
                 index === step && (CURRENT_DOTS[item.state] ?? "border-primary"),
+                index === step && MOVING.has(item.state) && "motion-safe:animate-beacon",
               )}
             />
             {index === step ? itemStateLabel(item.state) : label}

@@ -114,6 +114,16 @@
 
   --animate-arrive: arrive 0.4s ease-out;
   --animate-shimmer: shimmer 1.2s linear infinite;
+  --animate-beacon: beacon 1.6s ease-out infinite;
+
+  @keyframes beacon {
+    from {
+      box-shadow: 0 0 0 0 var(--primary-border);
+    }
+    to {
+      box-shadow: 0 0 0 7px transparent;
+    }
+  }
 
   @keyframes shimmer {
     to {

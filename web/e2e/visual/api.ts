@@ -1,6 +1,16 @@
 // The API of the visual views: an organization with queues in every state, PRs, runs and a history, answered at a
 // fixed time so that two captures of the same build are the same.
-import type { ErrorCode, Event, Graph, ItemState, Pr, Problem, Queue, Run } from "@/client/types.gen";
+import type {
+  ErrorCode,
+  Event,
+  Graph,
+  GraphNode,
+  ItemState,
+  Pr,
+  Problem,
+  Queue,
+  Run,
+} from "@/client/types.gen";
 
 export const NOW = Date.parse("2026-10-12T10:00:00Z");
 
@@ -47,6 +57,7 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
     counts: { not_ready: 0, pending: 0, testing: 0, pending_failure: 0, tests_passed: 0 },
     merged_last_24h: 0,
     failed_last_24h: 0,
+    failed_or_cancelled_last_24h: 0,
     last_merged_at: null,
     live_runs: 0,
     window: { current: 2, floor: 2, ceiling: 20 },
@@ -71,6 +82,7 @@ const QUEUES: Queue[] = [
     counts: { not_ready: 1, pending: 1, testing: 1, pending_failure: 1, tests_passed: 1 },
     merged_last_24h: 3,
     failed_last_24h: 1,
+    failed_or_cancelled_last_24h: 2,
     last_merged_at: ago(14),
     live_runs: 3,
     settings: {
@@ -102,6 +114,7 @@ const QUEUES: Queue[] = [
     counts: { not_ready: 0, pending: 1, testing: 1, pending_failure: 1, tests_passed: 0 },
     merged_last_24h: 12,
     last_merged_at: ago(90),
+    live_runs: 2,
   }),
   queueOf("docs", "main", { config_error: "line 1: unknown key `strategy2`" }),
   queueOf("mobile", "main", { access: "suspended" }),
@@ -215,6 +228,21 @@ const PRS: Pr[] = [
     state_changed_at: ago(2),
     submitted_at: ago(32),
   }),
+  prOf("api", 75, "testing", {
+    title: "Log the slow queries",
+    author: "hugo",
+    position: 1000,
+    run_id: "run_api_1",
+    state_description: "a test run started",
+  }),
+  prOf("api", 76, "pending_failure", {
+    title: "Drop the old token table",
+    author: "lea",
+    position: 1500,
+    run_id: "run_api_2",
+    state_description: "the tests failed; the PRs ahead may explain it",
+    ahead: [{ pr_number: 75, state: "testing" }],
+  }),
   prOf("api", 77, "pending", {
     title: "Retry the webhook sweep",
     author: "ada",
@@ -227,15 +255,22 @@ const PRS: Pr[] = [
   }),
 ];
 
-const GRAPHS: Record<string, Graph> = {
-  "web/main": {
-    target_head_sha: "9c1e2a4f00aa",
-    nodes: PRS.filter((pr) => pr.repo === "web" && LIVE_STATES.includes(pr.state)).map((pr) => ({
+/** The live PRs of the queue `name` of `repo`, as the nodes of its graph: the server gives every one. */
+function nodesOf(repo: string, name: string): GraphNode[] {
+  return PRS.filter((pr) => pr.repo === repo && pr.queue === name && LIVE_STATES.includes(pr.state)).map(
+    (pr) => ({
       item_id: pr.id,
       pr_number: pr.number,
       state: pr.state,
       position: pr.position,
-    })),
+    }),
+  );
+}
+
+const GRAPHS: Record<string, Graph> = {
+  "web/main": {
+    target_head_sha: "9c1e2a4f00aa",
+    nodes: nodesOf("web", "main"),
     edges: [],
     runs: [
       {
@@ -261,6 +296,29 @@ const GRAPHS: Record<string, Graph> = {
         attempt: 1,
         status: "succeeded",
         started_at: ago(6),
+      },
+    ],
+  },
+  "api/main": {
+    target_head_sha: "51d0c8e0bb",
+    nodes: nodesOf("api", "main"),
+    edges: [],
+    runs: [
+      {
+        run_id: "run_api_1",
+        item_ids: ["item_api_75"],
+        predecessor_ids: [],
+        attempt: 1,
+        status: "in_progress",
+        started_at: ago(9),
+      },
+      {
+        run_id: "run_api_2",
+        item_ids: ["item_api_76"],
+        predecessor_ids: ["item_api_75"],
+        attempt: 1,
+        status: "failed",
+        started_at: ago(8),
       },
     ],
   },
@@ -380,6 +438,7 @@ const EVENTS: Record<string, Event[]> = {
       type: "item.readiness_changed",
       occurred_at: ago(3),
       description: "waits: the required check `ci` is in_progress",
+      payload: { block_reasons: [{ kind: "check_pending", check: "ci" }] },
     }),
   ],
 };
@@ -430,7 +489,12 @@ function answerOfQueue(path: string): Answer | null {
   if (isGraph) {
     return [
       200,
-      GRAPHS[`${repo ?? ""}/${name ?? ""}`] ?? { target_head_sha: null, nodes: [], edges: [], runs: [] },
+      GRAPHS[`${repo ?? ""}/${name ?? ""}`] ?? {
+        target_head_sha: "c7f2210ab4",
+        nodes: nodesOf(queue.repo, queue.name),
+        edges: [],
+        runs: [],
+      },
     ];
   }
   return [200, queue];

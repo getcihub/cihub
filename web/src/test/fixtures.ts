@@ -56,6 +56,7 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
     counts: { not_ready: 0, pending, testing: 0, pending_failure: 0, tests_passed: 0 },
     merged_last_24h: 0,
     failed_last_24h: 0,
+    failed_or_cancelled_last_24h: 0,
     last_merged_at: null,
     live_runs: 0,
     window: { current: 2, floor: 2, ceiling: 20 },

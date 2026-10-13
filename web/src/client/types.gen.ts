@@ -594,6 +594,11 @@ export type Queue = {
      */
     failed_last_24h: number;
     /**
+     * The current items that reached `failed` or `cancelled` in the 24 hours
+     * before the request, as the list of the PRs gives them.
+     */
+    failed_or_cancelled_last_24h: number;
+    /**
      * The target branch has a configuration file, valid or not; without
      * it, the queue takes the defaults.
      */

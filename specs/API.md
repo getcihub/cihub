@@ -53,9 +53,9 @@ first change) and `state_changed_by`, the login of the person who asked for the 
 or a token asked for it); the `strategy` of its last valid file; `target_head_sha`, the head of the target branch
 that the log saw last; `access`, `ok` or `suspended` when the installation of the App is suspended or removed;
 `has_config_file`, `config_sha` and `config_error`; its counters: `counts` (the current items in each state that is
-not terminal), `merged_last_24h` and `failed_last_24h` (the items that reached `merged` or `failed` in the 24 hours
-before the request, not in a calendar day; a PR that failed, then came back, still counts its failure),
-`last_merged_at`, `live_runs`, `median_run_seconds` (the median duration of the runs that succeeded in the last 24
+not terminal), `merged_last_24h`, `failed_last_24h` and `failed_or_cancelled_last_24h` (the current items that reached
+`merged`, `failed`, or `failed` or `cancelled`, in the 24 hours before the request, not in a calendar day: the ones
+that the list of the PRs gives; a PR that failed, then came back, counts only its current item), `last_merged_at`, `live_runs`, `median_run_seconds` (the median duration of the runs that succeeded in the last 24
 hours, `null` without one); the `window` with its `current`, `floor` and `ceiling`; `settings`: `batching_enabled`,
 `batching_size`, `batching_max_wait_minutes`, `failure_budget_retries`, `merge_method`, `enqueue_label` (the label
 that submits a PR, `null` when the labels do not submit); and `config_check`, what the
