@@ -65,6 +65,7 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
     let Config {
         internal_addr,
         http_addr,
+        public_url,
         database_url,
         logs,
         github,
@@ -78,7 +79,7 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
         ServerCommand::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
         ServerCommand::Start => {
             let github = start_github(&pool, github).await?;
-            start::run(internal_addr, http_addr, pool, github).await
+            start::run(internal_addr, http_addr, public_url, pool, github).await
         }
     }
 }
@@ -121,7 +122,15 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
     })
 }
 
-fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform::Module {
+/// A new module also adds its `OpenAPI` document to `examples/openapi.rs`,
+/// which writes the document of the dashboard. `public_url` is the address of
+/// the dashboard, which the statuses and the comments of the PRs link to.
+fn merge_queue(
+    pool: &PgPool,
+    github: &Github,
+    process: &str,
+    public_url: Option<&str>,
+) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
@@ -133,6 +142,7 @@ fn merge_queue(pool: &PgPool, github: &Github, process: &str) -> cihub_platform:
         translate,
         process.to_owned(),
         Arc::new(now),
+        public_url.map(str::to_owned),
     )
 }
 

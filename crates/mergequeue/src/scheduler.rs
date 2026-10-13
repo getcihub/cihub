@@ -17,7 +17,8 @@ use cihub_domain::{
 use cihub_mq_core::plan;
 use cihub_platform::{
     Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
-    enqueue_job, mark_dirty, pending_deliveries, release_leases, schedule_tick, until_next_tick,
+    enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries, release_leases,
+    schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
@@ -29,7 +30,7 @@ use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
 use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
-use crate::config::load_config;
+use crate::config::{load_config, request_config_checks};
 use crate::jobs::{
     SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
 };
@@ -59,6 +60,9 @@ const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
 #[derive(Clone)]
 pub struct Reconciler {
     pub translate: Translate,
+    /// The address of the dashboard (`http.public_url`), for the links of the
+    /// statuses and the comments of the PRs; `None` without it.
+    pub dashboard_url: Option<String>,
 }
 
 impl Reconciler {
@@ -180,6 +184,11 @@ impl Reconciler {
         log.cover(conn, now).await?;
         schedule_tick(conn, queue, plan.wake_at).await?;
 
+        // The pages read the queue again once this transaction commits.
+        if written + decisions > 0 {
+            notify_queue_changed(conn, target.org_id, queue, Some(log.seq)).await?;
+        }
+
         if written + decisions + requested + deferred > 0 {
             info!(
                 deliveries = deliveries.len(),
@@ -231,7 +240,14 @@ impl Reconciler {
         }
 
         jobs.extend(
-            converge_surfaces(conn, target, converge.settings, &converge.desired.surfaces).await?,
+            converge_surfaces(
+                conn,
+                target,
+                converge.settings,
+                &converge.desired.surfaces,
+                self.dashboard_url.as_deref(),
+            )
+            .await?,
         );
 
         for branch in &converge.desired.test_branches {
@@ -957,6 +973,10 @@ async fn request_submission(
 /// The scheduler looks for the queues to cover this often.
 const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
+/// How often the scheduler looks for the queues whose configuration check
+/// is due; often enough that a check comes soon after a new queue.
+const CONFIG_CHECKS_SWEEP_EVERY: time::Duration = time::Duration::minutes(5);
+
 /// Marks dirty the queues whose oldest event after their last snapshot is
 /// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that
 /// the old partitions of `events` can go. Returns their number.
@@ -1032,9 +1052,12 @@ pub(crate) async fn run_scheduler(
     }
 
     let mut next_cover = clock();
+    // The checks of a start would compete with the work that waited for it.
+    let mut next_config_checks = clock() + CONFIG_CHECKS_SWEEP_EVERY;
     while !cancel.is_cancelled() {
         let now = clock();
         cover_if_due(&pool, now, &mut next_cover).await;
+        check_configs_if_due(&pool, now, &mut next_config_checks).await;
 
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
@@ -1073,6 +1096,26 @@ async fn cover_if_due(pool: &PgPool, now: OffsetDateTime, next_cover: &mut Offse
         Ok(0) => {}
         Ok(queues) => info!(queues, "queues woken for their snapshot"),
         Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
+    }
+}
+
+async fn check_configs_if_due(
+    pool: &PgPool,
+    now: OffsetDateTime,
+    next_checks: &mut OffsetDateTime,
+) {
+    if now < *next_checks {
+        return;
+    }
+
+    *next_checks = now + CONFIG_CHECKS_SWEEP_EVERY;
+    match request_config_checks(pool, now).await {
+        Ok(0) => {}
+        Ok(queues) => info!(queues, "checks of the configuration requested"),
+        Err(err) => warn!(
+            error = &err as &dyn Error,
+            "checks of the configuration not requested"
+        ),
     }
 }
 

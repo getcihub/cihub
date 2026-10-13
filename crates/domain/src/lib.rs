@@ -23,7 +23,6 @@ macro_rules! closed_enum {
     };
 }
 
-mod api_token;
 mod branch;
 mod event;
 mod id;
@@ -36,14 +35,14 @@ mod run;
 mod settings;
 mod state;
 mod tenancy;
+mod token;
 mod transition;
 
-pub use api_token::{API_TOKEN_PREFIX, format_api_token, is_api_token};
 pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
     ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
-    RepoId, RunId, UserId,
+    RepoId, RunId, SessionId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
@@ -57,5 +56,9 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode};
+pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, MembershipRole};
+pub use token::{
+    API_TOKEN_PREFIX, SESSION_TOKEN_PREFIX, format_api_token, format_session_token, is_api_token,
+    is_session_token,
+};
 pub use transition::{Lifecycle, TransitionError, check_transition};

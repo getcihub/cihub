@@ -8,14 +8,15 @@ use std::net::SocketAddr;
 use std::path::Path;
 
 use anyhow::{Context, bail};
-use cihub_github::GithubConfig;
+use cihub_github::{GithubConfig, SignInClient};
 use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-const KEYS: [&str; 10] = [
+const KEYS: [&str; 13] = [
     "database.url",
     "http.addr",
+    "http.public_url",
     "internal.addr",
     "log.filter",
     "log.format",
@@ -24,12 +25,17 @@ const KEYS: [&str; 10] = [
     "github.private_key",
     "github.private_key_file",
     "github.webhook_secret",
+    "github.client_id",
+    "github.client_secret",
 ];
 
 #[derive(Debug)]
 pub struct Config {
     pub internal_addr: SocketAddr,
     pub http_addr: SocketAddr,
+    /// The address where people reach the instance, such as
+    /// `https://ci.example.com`; without it, nobody signs in to the dashboard.
+    pub public_url: Option<String>,
     pub database_url: SecretString,
     pub logs: Logs,
     pub github: Option<GithubApp>,
@@ -71,6 +77,11 @@ impl Config {
         };
         let internal_addr = sources.addr("internal.addr", DEFAULT_INTERNAL_ADDR)?;
         let http_addr = sources.addr("http.addr", DEFAULT_HTTP_ADDR)?;
+        let public_url = sources
+            .get("http.public_url")
+            .filter(|url| !url.value.is_empty())
+            .map(|found| public_url(&found))
+            .transpose()?;
         let Some(database_url) = sources
             .get("database.url")
             .filter(|url| !url.value.is_empty())
@@ -96,10 +107,28 @@ impl Config {
         Ok(Self {
             internal_addr,
             http_addr,
+            public_url,
             database_url: database_url.value.into(),
             logs,
             github: github_app(&sources)?,
         })
+    }
+}
+
+/// The root address of the instance, without its last `/`: the sign-in
+/// builds its addresses from it.
+fn public_url(found: &Found) -> anyhow::Result<String> {
+    let url = found.value.trim_end_matches('/');
+    let host = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    match host {
+        Some(host) if !host.is_empty() && !host.contains('/') => Ok(url.to_owned()),
+        _ => bail!(
+            "{} `{}` must be the root address of the instance, such as https://ci.example.com",
+            found.origin,
+            found.value
+        ),
     }
 }
 
@@ -219,9 +248,33 @@ fn github_app(
             url: url.trim_end_matches('/').to_owned(),
             app_id: app_id.value,
             private_key: private_key.into(),
+            sign_in: sign_in_client(sources)?,
         },
         webhook_secret: webhook_secret.value.into(),
     }))
+}
+
+/// The client of the App for the sign-in to the dashboard: both keys, or
+/// none, and then nobody signs in.
+fn sign_in_client(
+    sources: &Sources<impl Fn(&str) -> Option<String>>,
+) -> anyhow::Result<Option<SignInClient>> {
+    let non_empty = |key| sources.get(key).filter(|found| !found.value.is_empty());
+    match (
+        non_empty("github.client_id"),
+        non_empty("github.client_secret"),
+    ) {
+        (Some(client_id), Some(client_secret)) => Ok(Some(SignInClient {
+            client_id: client_id.value,
+            client_secret: client_secret.value.into(),
+        })),
+        (None, None) => Ok(None),
+        _ => bail!(
+            "the sign-in needs both {} and {}",
+            names("github.client_id"),
+            names("github.client_secret")
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -250,6 +303,7 @@ mod tests {
             [
                 "CIHUB_DATABASE_URL",
                 "CIHUB_HTTP_ADDR",
+                "CIHUB_HTTP_PUBLIC_URL",
                 "CIHUB_INTERNAL_ADDR",
                 "CIHUB_LOG_FILTER",
                 "CIHUB_LOG_FORMAT",
@@ -258,6 +312,8 @@ mod tests {
                 "CIHUB_GITHUB_PRIVATE_KEY",
                 "CIHUB_GITHUB_PRIVATE_KEY_FILE",
                 "CIHUB_GITHUB_WEBHOOK_SECRET",
+                "CIHUB_GITHUB_CLIENT_ID",
+                "CIHUB_GITHUB_CLIENT_SECRET",
             ]
         );
     }
@@ -412,5 +468,42 @@ github:
 
         assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
         assert_eq!(app.config.app_id, "123");
+        assert!(app.config.sign_in.is_none());
+    }
+
+    #[test]
+    fn the_public_url_is_the_root_address_of_the_instance() {
+        let url = |value| load(None, &[DATABASE, ("CIHUB_HTTP_PUBLIC_URL", value)]);
+
+        assert_eq!(
+            url("https://ci.example.com/")
+                .unwrap()
+                .public_url
+                .as_deref(),
+            Some("https://ci.example.com")
+        );
+        assert!(load(None, &[DATABASE]).unwrap().public_url.is_none());
+        for wrong in ["ci.example.com", "https://ci.example.com/cihub", "https://"] {
+            let err = url(wrong).unwrap_err().to_string();
+            assert!(err.contains("must be the root address"), "{wrong}: {err}");
+        }
+    }
+
+    #[test]
+    fn the_sign_in_needs_the_client_id_and_its_secret() {
+        let app = "github:\n  app_id: 123\n  private_key: key\n  webhook_secret: s\n";
+        let client_id = ("CIHUB_GITHUB_CLIENT_ID", "Iv1.client");
+        let client_secret = ("CIHUB_GITHUB_CLIENT_SECRET", "secret");
+
+        let both = load(Some(app), &[DATABASE, client_id, client_secret]).unwrap();
+        let alone = load(Some(app), &[DATABASE, client_id]).unwrap_err();
+
+        let sign_in = both.github.unwrap().config.sign_in.unwrap();
+        assert_eq!(sign_in.client_id, "Iv1.client");
+        assert_eq!(sign_in.client_secret.expose_secret(), "secret");
+        assert!(
+            alone.to_string().starts_with("the sign-in needs both"),
+            "{alone}"
+        );
     }
 }

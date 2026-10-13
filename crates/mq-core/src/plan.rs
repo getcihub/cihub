@@ -625,7 +625,7 @@ fn group_follows_run(
 
             let mut kinds = vec![group_to(group, to, reason)];
             if to == GroupState::TestsPassed && group.kind != GroupKind::Bisection {
-                let wider = current_window(s, settings).saturating_add(1);
+                let wider = current_window(s.window, settings).saturating_add(1);
                 kinds.extend(window_to(s, settings, wider));
             }
 
@@ -877,7 +877,11 @@ fn pending_failure(
 
             let mut kinds = vec![group_to(group, GroupState::Failed, run.failure_reason?)];
             if group.kind != GroupKind::Bisection {
-                kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+                kinds.extend(window_to(
+                    s,
+                    settings,
+                    current_window(s.window, settings) / 2,
+                ));
             }
 
             Some(Step { cause, kinds })
@@ -1029,7 +1033,11 @@ fn bisection(
                         }),
                 );
                 if group.kind == GroupKind::Batch {
-                    kinds.extend(window_to(s, settings, current_window(s, settings) / 2));
+                    kinds.extend(window_to(
+                        s,
+                        settings,
+                        current_window(s.window, settings) / 2,
+                    ));
                 }
             }
 
@@ -1406,22 +1414,23 @@ fn next_group<'a>(
     }
 }
 
-/// The speculation window: the floor until its first change.
-fn current_window(s: &Snapshot, settings: &QueueSettings) -> u32 {
-    s.window.unwrap_or(settings.window_floor.value)
+/// The speculation window of a queue whose last change set it to `window`:
+/// the floor until its first change.
+pub fn current_window(window: Option<u32>, settings: &QueueSettings) -> u32 {
+    window.unwrap_or(settings.window_floor.value)
 }
 
 /// The decision that moves the window to `after`, within the bounds of the
 /// settings, or `None` when the window does not change.
 fn window_to(s: &Snapshot, settings: &QueueSettings, after: u32) -> Option<EventKind> {
-    let before = current_window(s, settings);
+    let before = current_window(s.window, settings);
     let after = after.clamp(settings.window_floor.value, settings.window_ceiling.value);
     (after != before).then_some(EventKind::QueueWindowChanged { before, after })
 }
 
 /// The window is the number of runs in progress outside bisections.
 fn window_has_room(s: &Snapshot, settings: &QueueSettings) -> bool {
-    let window = current_window(s, settings);
+    let window = current_window(s.window, settings);
     let running = s
         .live_groups()
         .filter(|g| g.kind != GroupKind::Bisection && s.live_run(g.id).is_some())

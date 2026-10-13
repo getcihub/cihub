@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use cihub_domain::{ConnectionId, JobClass, Permission};
-use cihub_scm::{ConnectionRef, ScmError};
+use cihub_scm::{ConnectionRef, ScmError, SignInCode};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -37,6 +37,16 @@ pub struct GithubConfig {
     pub url: String,
     pub app_id: String,
     pub private_key: SecretString,
+    /// Without it, nobody signs in to the dashboard; the API tokens still
+    /// work.
+    pub sign_in: Option<SignInClient>,
+}
+
+/// The OAuth client of the App, with which a person signs in.
+#[derive(Clone, Debug)]
+pub struct SignInClient {
+    pub client_id: String,
+    pub client_secret: SecretString,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +94,12 @@ pub(crate) struct Request<'a> {
 pub struct GithubApp {
     api_url: String,
     graphql_url: String,
+    /// The address of the pages of GitHub, where a person signs in.
+    web_url: String,
+    sign_in: Option<SignInClient>,
+    /// The page that installs the App, read once: its slug does not change
+    /// while the server runs.
+    install_url: Mutex<Option<String>>,
     app_id: String,
     key: AppKey,
     http: Client,
@@ -130,6 +146,30 @@ pub(crate) type PermissionKey = (ConnectionId, String, String);
 impl GithubApp {
     pub(crate) fn app_id(&self) -> &str {
         &self.app_id
+    }
+
+    pub(crate) fn web_url(&self) -> &str {
+        &self.web_url
+    }
+
+    pub(crate) fn sign_in_client(&self) -> Option<&SignInClient> {
+        self.sign_in.as_ref()
+    }
+
+    pub(crate) fn kept_install_url(&self) -> Option<String> {
+        let kept = self
+            .install_url
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        kept.clone()
+    }
+
+    pub(crate) fn keep_install_url(&self, url: &str) {
+        let mut kept = self
+            .install_url
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        *kept = Some(url.to_owned());
     }
 
     pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
@@ -180,6 +220,9 @@ impl GithubApp {
         Ok(Self {
             api_url,
             graphql_url,
+            web_url: url.to_owned(),
+            sign_in: config.sign_in.clone(),
+            install_url: Mutex::new(None),
             app_id: config.app_id.clone(),
             key: AppKey::from_pem(&config.private_key)?,
             http,
@@ -246,17 +289,68 @@ impl GithubApp {
         path: &str,
     ) -> Result<(Answer, Option<String>), ScmError> {
         let now = (self.clock)();
-        let (status, headers, body) = fetch(self.as_app(method, path, now)?).await?;
-        let answer = Answer { status, body };
-        if let (_, Some(error)) = classify(&answer, &headers, now) {
-            return Err(error);
+        page_outside_budgets(self.as_app(method, path, now)?, path, now).await
+    }
+
+    /// A `GET` of `path` with the token of a person, outside the budget of
+    /// any connection, and the path of its next page.
+    pub(crate) async fn get_as_person(
+        &self,
+        token: &SecretString,
+        path: &str,
+    ) -> Result<(Answer, Option<String>), ScmError> {
+        let now = (self.clock)();
+        let request = self
+            .http
+            .get(format!("{}{path}", self.api_url))
+            .header(AUTHORIZATION, format!("Bearer {}", token.expose_secret()))
+            .header(ACCEPT, JSON)
+            .header("X-GitHub-Api-Version", API_VERSION);
+        page_outside_budgets(request, path, now).await
+    }
+
+    /// Exchanges the code of a sign-in for the token of the person. GitHub
+    /// answers a refused code with `200` and an `error` field.
+    pub(crate) async fn exchange_sign_in_code(
+        &self,
+        code: &SignInCode,
+    ) -> Result<SecretString, ScmError> {
+        #[derive(Deserialize)]
+        struct Exchanged {
+            access_token: Option<String>,
+            error: Option<String>,
         }
 
-        let next = headers
-            .get("link")
-            .and_then(|link| link.to_str().ok())
-            .and_then(|link| next_page(link, path));
-        Ok((answer, next))
+        let client = self.sign_in_client().ok_or_else(|| {
+            ScmError::Forbidden("the GitHub App has no client for the sign-in".into())
+        })?;
+        let body = serde_json::json!({
+            "client_id": client.client_id,
+            "client_secret": client.client_secret.expose_secret(),
+            "code": code.code.expose_secret(),
+            "code_verifier": code.code_verifier.expose_secret(),
+            "redirect_uri": code.redirect_url,
+        });
+        let request = self
+            .http
+            .post(format!("{}/login/oauth/access_token", self.web_url))
+            .header(ACCEPT, "application/json")
+            .header(CONTENT_TYPE, "application/json")
+            .body(body.to_string());
+        let (status, _, body) = fetch(request).await?;
+        let answer = Answer { status, body };
+        if status.is_server_error() {
+            return Err(ScmError::Unavailable(answer.message()));
+        }
+
+        let exchanged: Exchanged = answer.json()?;
+        match (exchanged.access_token, exchanged.error) {
+            (Some(token), None) => Ok(SecretString::from(token)),
+            (_, error) => Err(ScmError::Validation(format!(
+                "the code of the sign-in is refused: {}",
+                error.as_deref().unwrap_or("no token")
+            ))),
+        }
     }
 
     fn as_app(
@@ -393,6 +487,26 @@ impl std::fmt::Debug for GithubApp {
             .field("app_id", &self.app_id)
             .finish_non_exhaustive()
     }
+}
+
+/// The answer of a call that no budget of a connection counts, and the path
+/// of its next page.
+async fn page_outside_budgets(
+    request: RequestBuilder,
+    path: &str,
+    now: OffsetDateTime,
+) -> Result<(Answer, Option<String>), ScmError> {
+    let (status, headers, body) = fetch(request).await?;
+    let answer = Answer { status, body };
+    if let (_, Some(error)) = classify(&answer, &headers, now) {
+        return Err(error);
+    }
+
+    let next = headers
+        .get("link")
+        .and_then(|link| link.to_str().ok())
+        .and_then(|link| next_page(link, path));
+    Ok((answer, next))
 }
 
 async fn fetch(request: RequestBuilder) -> Result<(StatusCode, HeaderMap, Vec<u8>), ScmError> {

@@ -117,6 +117,7 @@ fn config() -> Result<GithubConfig> {
         url: env("CIHUB_GITHUB_URL").unwrap_or_else(|| "https://github.com".into()),
         app_id: env("CIHUB_GITHUB_APP_ID").ok_or("set CIHUB_GITHUB_APP_ID")?,
         private_key: SecretString::from(private_key),
+        sign_in: None,
     })
 }
 

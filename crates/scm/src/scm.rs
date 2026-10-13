@@ -6,7 +6,8 @@ use time::OffsetDateTime;
 
 use crate::{
     ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
-    ScmError, ScmInstallation, ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ScmError, ScmInstallation, ScmMember, ScmRepo, ScmUser, SetupFinding, SignInCode,
+    SignInRequest, SignedIn, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -260,4 +261,28 @@ pub trait Scm: Send + Sync {
         connection: &'a ConnectionRef,
         class: JobClass,
     ) -> ScmFuture<'a, Vec<ScmRepo>>;
+
+    /// The page of the SCM where an owner installs the App on an account, or
+    /// chooses the repositories of its installation. No connection makes the
+    /// call, so no budget of a connection applies.
+    fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String>;
+
+    /// The address of the SCM where a person signs in to CIHub, or `None`
+    /// when the operator configured no sign-in.
+    fn sign_in_url(&self, request: &SignInRequest) -> Option<String>;
+
+    /// Exchanges the code of a sign-in, reads the person and the
+    /// installations of the App that they reach, with their role in each,
+    /// then forgets the credentials of the person: CIHub never keeps them. An
+    /// installation where the person has no role is absent. No connection
+    /// makes the calls, so no budget of a connection applies.
+    fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn>;
+
+    /// The members of the account of `connection`, with their role. The
+    /// owner of the account of a person is its only member, as `admin`.
+    fn members<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmMember>>;
 }

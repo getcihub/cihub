@@ -1,12 +1,17 @@
 //! The HTTP server of the public address of the `web` role. It serves the
 //! webhooks of the SCM: it checks the signature, stores the delivery without
-//! routing it, and answers within 2 s; and the API v1 under `/api/v1`, with
-//! the routes of the modules. The dashboard arrives with lot 10.
+//! routing it, and answers within 2 s; the API v1 under `/api/v1`, with the
+//! routes of the modules; the sign-in and the sessions of the dashboard, and
+//! its files, embedded at the build (lot 10a).
 //!
 //! It holds no queue logic and makes no decision on a delivery: the routing
 //! loop reads it later. The adapter reads what is proper to its SCM.
 
 mod api;
+mod dashboard;
+mod session;
+mod sign_in;
+mod stream;
 
 use std::error::Error;
 use std::sync::Arc;
@@ -16,10 +21,13 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::routing::post;
+use axum::routing::{get, post};
 use cihub_api_types::API_PREFIX;
-use cihub_github::{ReceivedDelivery, WEBHOOK_PATH, WebhookError};
-use cihub_platform::{Delivery, ModuleApi, PlatformError, store_delivery};
+use cihub_github::{
+    ReceivedDelivery, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH, WEBHOOK_PATH, WebhookError,
+};
+use cihub_platform::{Delivery, ModuleApi, PlatformError, QueueNewsFeed, store_delivery};
+use cihub_scm::Scm;
 use cihub_store::{PgPool, begin_system};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -36,6 +44,15 @@ pub struct GithubWebhooks {
     pub secret: SecretString,
 }
 
+/// What the dashboard needs: the SCM where people sign in, the root address
+/// of the instance, which the SCM sends them back to, and the changes of the
+/// queues, which its pages follow.
+pub struct Dashboard {
+    pub scm: Arc<dyn Scm>,
+    pub public_url: Option<String>,
+    pub news: QueueNewsFeed,
+}
+
 #[derive(Clone)]
 struct Webhooks {
     pool: PgPool,
@@ -43,13 +60,15 @@ struct Webhooks {
     github: Arc<GithubWebhooks>,
 }
 
-pub use api::REQUESTS_PER_MINUTE;
+pub use api::{REQUESTS_PER_MINUTE, openapi};
+pub use session::SIGN_OUT_PATH;
 
 pub fn router(
     pool: PgPool,
     now: fn() -> OffsetDateTime,
     github: GithubWebhooks,
     modules: Vec<ModuleApi>,
+    dashboard: Dashboard,
 ) -> Router {
     let webhooks = Webhooks {
         pool: pool.clone(),
@@ -60,7 +79,29 @@ pub fn router(
         .route(WEBHOOK_PATH, post(github_webhook))
         .layer(DefaultBodyLimit::max(MAX_DELIVERY_BYTES))
         .with_state(webhooks)
-        .nest(API_PREFIX, api::router(pool, now, modules))
+        .route(
+            SIGN_OUT_PATH,
+            post(session::sign_out).with_state(pool.clone()),
+        )
+        .merge(sign_in_routes(&pool, now, &dashboard))
+        .nest(
+            API_PREFIX,
+            api::router(pool, now, modules, dashboard.scm, dashboard.news),
+        )
+        .fallback(get(dashboard::serve))
+}
+
+fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashboard) -> Router {
+    let state = sign_in::SignIn {
+        pool: pool.clone(),
+        now,
+        scm: Arc::clone(&dashboard.scm),
+        public_url: dashboard.public_url.clone(),
+    };
+    Router::new()
+        .route(SIGN_IN_PATH, get(sign_in::start))
+        .route(SIGN_IN_CALLBACK_PATH, get(sign_in::callback))
+        .with_state(state)
 }
 
 /// # Errors

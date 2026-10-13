@@ -4,23 +4,24 @@
 
 use std::path::Path;
 
-use cihub_domain::ApiTokenId;
 use cihub_domain::{
     Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
     EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState, OrgId,
     Permission, Priority, QueueId, QueueMode, QueueState, Reason, RequiredStatusesSource,
     RunStatus, SubmittedVia, UserId,
 };
+use cihub_domain::{ApiTokenId, MembershipRole, SessionId};
 use cihub_store::{
-    ApiTokenGrant, NewApiToken, append_events, authenticate, begin_org, begin_system,
-    create_api_token, create_event_partitions, load_events, migrate, missing_migrations,
-    new_api_token_secret,
+    ApiTokenGrant, Membership, NewApiToken, NewSession, SessionGrant, append_events, authenticate,
+    authenticate_session, begin_org, begin_system, create_api_token, create_event_partitions,
+    create_session, delete_session, forget_memberships_before, load_events, memberships_of,
+    migrate, missing_migrations, new_api_token_secret, new_session_secret, record_membership,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use strum::IntoEnumIterator;
-use time::{Date, Month, OffsetDateTime};
+use time::{Date, Duration, Month, OffsetDateTime};
 use ulid::Ulid;
 
 async fn fixtures(name: &str) -> Migrator {
@@ -63,7 +64,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 16] = [
+const TENANT_TABLES: [&str; 19] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -79,7 +80,10 @@ const TENANT_TABLES: [&str; 16] = [
     "queue_inbox",
     "check_observations",
     "pr_surfaces",
+    "pr_titles",
+    "config_checks",
     "pr_comments",
+    "memberships",
 ];
 
 fn september() -> Date {
@@ -134,7 +138,13 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO pr_surfaces (org_id, queue_id, pr_number, desired, desired_hash)
              VALUES ('{org}', '{queue}', 1, '{{}}', 'h');
          INSERT INTO pr_comments (org_id, repo_id, pr_number, comment_external_id)
-             VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');"
+             VALUES ('{org}', 'repo-{n}', 1, 'comment-{n}');
+         INSERT INTO pr_titles (org_id, repo_id, pr_number, title, read_at)
+             VALUES ('{org}', 'repo-{n}', 1, 'Fix the build', '2026-09-15T00:00:00Z');
+         INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+             VALUES ('{org}', '{queue}', '[]', '2026-09-15T00:00:00Z');
+         INSERT INTO memberships (org_id, user_id, role, refreshed_at)
+             VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');"
     )
 }
 
@@ -311,6 +321,7 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("item_state", values::<ItemState>()),
         ("job_class", values::<JobClass>()),
         ("job_state", values::<JobState>()),
+        ("membership_role", values::<MembershipRole>()),
         ("permission", values::<Permission>()),
         ("queue_mode", values::<QueueMode>()),
         ("queue_state", values::<QueueState>()),
@@ -364,14 +375,8 @@ fn event(n: u128, actor: Actor, cause_id: Option<EventId>, kind: EventKind) -> E
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_log_reads_back_in_order(pool: PgPool) {
     seed(&pool).await;
-    let user_id = UserId::from_ulid(Ulid(7));
     let mut tx = begin_system(&pool).await.unwrap();
-
-    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
-        .bind(user_id.to_string())
-        .execute(&mut *tx)
-        .await
-        .unwrap();
+    let user_id = insert_user(&mut tx).await;
 
     sqlx::query(
         "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
@@ -564,4 +569,101 @@ async fn a_token_authenticates_until_it_expires(pool: PgPool) {
     assert_eq!(authenticate(&pool, &other, at(0)).await.unwrap(), None);
     let malformed = SecretString::from("Bearer cht_");
     assert_eq!(authenticate(&pool, &malformed, at(0)).await.unwrap(), None);
+}
+
+async fn insert_user(conn: &mut PgConnection) -> UserId {
+    let user_id = UserId::from_ulid(Ulid(7));
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ($1, '7', 'hubot')")
+        .bind(user_id.to_string())
+        .execute(conn)
+        .await
+        .unwrap();
+    user_id
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_authenticates_until_it_expires_or_signs_out(pool: PgPool) {
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    let secret = new_session_secret().unwrap();
+    let other = new_session_secret().unwrap();
+    let session = NewSession {
+        id: SessionId::from_ulid(Ulid(1)),
+        user_id,
+        created_at: at(0),
+        expires_at: at(3600),
+    };
+    let grant = SessionGrant {
+        id: session.id,
+        user_id,
+        expires_at: at(3600),
+    };
+
+    create_session(&mut tx, &session, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert!(secret.expose_secret().starts_with("chs_"));
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
+        Some(grant)
+    );
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(3600))
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(authenticate(&pool, &secret, at(0)).await.unwrap(), None);
+    assert_eq!(
+        authenticate_session(&pool, &other, at(0)).await.unwrap(),
+        None
+    );
+
+    delete_session(&pool, &secret).await.unwrap();
+
+    assert_eq!(
+        authenticate_session(&pool, &secret, at(0)).await.unwrap(),
+        None
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
+    seed(&pool).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    let user_id = insert_user(&mut tx).await;
+    let now = at(30 * 86_400);
+    let expected =
+        [(1, MembershipRole::Admin), (2, MembershipRole::Member)].map(|(n, role)| Membership {
+            org_id: org(n),
+            org_slug: format!("org-{n}"),
+            role,
+        });
+
+    tx.commit().await.unwrap();
+    for n in [1, 2] {
+        let mut tx = begin_org(&pool, org(n)).await.unwrap();
+        record_membership(&mut tx, org(n), user_id, MembershipRole::Member, now)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    let mut tx = begin_org(&pool, org(1)).await.unwrap();
+    record_membership(
+        &mut tx,
+        org(1),
+        user_id,
+        MembershipRole::Admin,
+        now + Duration::minutes(1),
+    )
+    .await
+    .unwrap();
+    let forgotten = forget_memberships_before(&mut tx, org(1), now + Duration::minutes(1))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(forgotten, 1, "the refresh of org 1 did not see user-1");
+    assert_eq!(memberships_of(&pool, user_id).await.unwrap(), expected);
 }

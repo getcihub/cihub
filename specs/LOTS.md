@@ -42,7 +42,10 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
-| 10  | Dashboard                                              | 2     | 9          | Q9        | to do                                    |
+| 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
+| 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
+| 10d | Dashboard: live updates                                | 2     | 10b        | —         | done                                     |
 | 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
@@ -62,7 +65,10 @@ flowchart LR
   L6 --> L8[8 Policy]
   L7 --> L9[9 Surfaces]
   L8 --> L9
-  L9 --> L10[10 Dashboard]
+  L9 --> L10a[10a Session]
+  L10a --> L10b[10b Queues]
+  L10b --> L10c[10c PR and actions]
+  L10b --> L10d[10d Live]
   L9 --> L11[11 Analytics]
   L9 --> L12[12 batched]
   L9 --> L14[14 flakytests]
@@ -71,8 +77,8 @@ flowchart LR
   L13 --> L15
 ```
 
-Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, and lots 10, 11, 12 and 14
-after lot 9.
+Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11, 12 and 14
+after lot 9, and lots 10c and 10d after lot 10b.
 
 ---
 
@@ -188,17 +194,258 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ## Phase 2: throughput and visibility
 
-### Lot 10: dashboard
+### Lots 10a to 10d: dashboard
 
-- **Content**: `web/` (Q9), served and embedded by the `web` role; GitHub OAuth login, sessions, CSRF; pages for
-  the queue, the PR and its timeline, the run (required statuses against observed statuses), live graph;
-  configuration checker and assistant; form that writes `.cihub.yaml` and opens it as a PR on the repository, never
-  as a direct commit.
-- **Exit criterion**: component tests and an end-to-end browser test on `docker compose`: login, creation of a
-  queue, submission, follow-up until the merge; the assistant reports each configuration point of
-  `specs/GITHUB.md` on a misconfigured repository.
-- **Open questions**:
-  - **Q9** Dashboard stack: React with the generated TypeScript client is the hypothesis; to be confirmed.
+The dashboard follows the mockups v3: the list of the queues of an organization, the page of a queue (counters,
+settings, live graph, items), the drawer of a PR (run, checks, history), the settings (configuration, branch
+protection, audit log). It is split in five lots of about one week; each lot brings its routes, its migrations
+and its pages together, and starts from the routes by name of `/orgs/{org}/…`.
+
+Decisions:
+
+- **Q9** (decided October 10, 2026): TypeScript, React, Vite and the TanStack libraries (Router, Query, Form),
+  with a client generated from the OpenAPI document. The stack and its rules are in `web/AGENTS.md`.
+- The roles are `admin` and `member`, from the SCM membership. The `viewer` role and the change of a role by an
+  admin come after lot 10d (see "Next").
+- The mockups v5 (October 10, 2026, validated by the project lead) drop the pages of the settings (configuration,
+  branch protection, audit log), the form that changes `.cihub.yaml` and the search, which go to "Next", and add
+  "Your pull requests": where each PR of the person is, and when it should merge. Lot 10e disappears; what remains
+  of it, the configuration check stored for the banner of a queue, goes to lot 10b.
+
+#### Lot 10a: session, roles and frame
+
+- **Goal**: a person signs in with the SCM and sees the organizations that the App serves for them.
+- **Content**: `GET /auth/github`, `GET /auth/github/callback` and `POST /auth/sign-out`, outside `/api/v1`;
+  `sessions` table (14 days, revocable) and `memberships` table, filled from the SCM membership and refreshed
+  every hour (`specs/SCHEMA_PLAN.md`); same-site cookie and CSRF token on every `POST`, `PATCH` and `DELETE` of a
+  session; `GET /api/v1/me` (login, organizations with their role, version of the instance, installation URL of
+  the App); a session is a second authentication of every route, and its role gives the scopes (`member`:
+  `queues:read`, `prs:write`; `admin`: every scope); the sign-in flow in the simulator; a server on the
+  simulator for the browser tests. `web/`: Vite, the generated client, the router, the sign-in page and its
+  two errors, the frame (navigation, organization switcher, user menu), the pages "not found" and "server
+  error"; the build embedded by the `web` role; the dashboard in `mise run lint`, `mise run check` and the CI.
+- **Frozen interfaces**: the session cookie and the CSRF token; `GET /me`; the scopes of each role.
+- **Exit criterion**: a browser test on the simulator signs in and sees its organization; a `member` gets
+  `403` on `PATCH` of a queue; a session of another organization gets `404` (principle VIII); a failed sign-in
+  and a user without an organization see their message.
+- **Tracking**:
+  - Steps: 1. `sessions` and `memberships` tables; 2. sign-in through the SCM, in `cihub-github` and in the
+    simulator, and the refresh of the roles; 3. session in `cihub-web` (cookie, CSRF, scopes of a role, `/auth/*`,
+    `GET /me`); 4. `web/` (tools, Vite, router, generated client, lint and tests in `mise` and the CI); 5. pages and
+    the build embedded in the binary; 6. server on the simulator and browser test of the exit criterion.
+  - Decided (October 10, 2026): the sign-in goes through the App that exists (authorization of a user by the
+    App), coded with `reqwest`, without an OAuth crate: the App lists the installations that the user reaches
+    and already reads the members. A session is a row of `sessions` that keeps the hash of its token, as
+    `api_tokens`, so that a sign-out revokes it; the table is global, as `users`, because a session covers
+    several organizations. The client is generated by `@hey-api/openapi-ts` at a pinned version. The tools of
+    the dashboard are Node and pnpm, pinned in `mise.toml`.
+  - Done (October 10, 2026): step 1. Migration `sessions`: the `memberships` table (tenant, `refreshed_at` so
+    that a refresh deletes the rows that it no longer sees) and the `sessions` table (global, hash of a `chs_`
+    secret, deleted by the daily maintenance once expired). `cihub-domain` gains `SessionId`, `MembershipRole`
+    and its scopes, and the form of a session token; `cihub-store` creates, authenticates and deletes a session,
+    and records, forgets and lists the memberships of a user. Tests: `tests/postgres.rs` of `cihub-store` and the
+    maintenance test of `cihub-platform`.
+  - Done (October 10, 2026): step 2. The `Scm` trait gains `sign_in_url`, `sign_in` and `members` (simulator,
+    GitHub adapter); the token of the person stays in the adapter, which forgets it. `members` reads the
+    installation first, so that a renamed organization is never taken for the account of a person. `record_sign_in`
+    (`cihub-platform`) records the person and their roles in the organizations that CIHub knows, and deletes
+    none; the hourly `sync_members` job converges the members of each connection and alone deletes. New keys `github.client_id` and
+    `github.client_secret`, both or none. Tests: the simulator and the contract suite (`members`), the GitHub
+    adapter on answers written by hand, `tests/postgres.rs` of `cihub-platform`.
+  - Done (October 10, 2026): the simulator checks PKCE: a code is refused when the verifier does not give the
+    challenge of its request. `code_challenge` (`cihub-scm`) computes it, for the simulator and for `cihub-web`.
+  - Waits on the project lead: a new recording by the `github` example (`record` mode), so that the recorded
+    contract suite also runs `contract::members`; the fixture admin must be an owner of the account. Then
+    `contract::members` moves into `contract::run`.
+  - Done (October 10, 2026): step 3. A session is a second authentication of `/api/v1`: the cookie
+    `__Host-cihub_session`, the role in the organization of the URL as scopes, `404` for an organization without a
+    role, the header `X-CSRF-Token` (a SHA-256 of the secret of the session, which the server keeps nowhere) on a
+    request that can change a state, refused with the code `csrf_refused`; one rate limit per token or session.
+    `ApiGrant` names its actor, a token or a user: the audit log and the log of the queue record the user, and a
+    submission carries their account, so that the job checks their permission on the repository. The OpenAPI
+    document gives the scheme `session` to every route. `GET /auth/github` and its callback, with the new key
+    `http.public_url`; `GET /api/v1/me` (with the page that installs the App, from the new `Scm` method
+    `app_install_url`); `POST /auth/sign-out`. The chart and `deploy/compose.yaml` give the three keys of the
+    sign-in.
+  - Changed by the mockups v5 (October 10, 2026, validated by the project lead): a person without an organization
+    gets a session, and the dashboard asks them to install the App, instead of an error of the sign-in.
+  - Done (October 10, 2026): step 4. `web/`: TypeScript 6 (`typescript-eslint` does not take 7 yet), React 19,
+    Vite 8, TanStack Router and Query, Zod 4, the client of `@hey-api/openapi-ts` from `web/openapi.json`, which
+    the example `openapi` of `cihub-cli` writes without a database; ESLint, Prettier and Vitest in `mise run lint`
+    and `mise run test`; Node 24 and pnpm 12 in `mise.toml`.
+  - Done (October 10, 2026), part of step 5: the sign-in page of the mockups v5 (sign-in, failure, no
+    organization, another account with `prompt=select_account`), and the build embedded in the binary by
+    `crates/web/build.rs`, without a dependency (decided by the project lead); `index.html` answers every path of
+    the dashboard. The image builds the dashboard in a stage of its own.
+  - Done (October 10, 2026): end of step 5. The frame of the mockups v5: the top bar with the pickers of the
+    organization (with the role of the person, and the page that installs the App), of the repository and of the
+    queue, and the menu of the person (theme, sign-out); the routes `/orgs/$org`, `/orgs/$org/repos/$repo` and
+    `/orgs/$org/repos/$repo/queues/$queue`, as the API names them, whose content comes with lot 10b; `/` opens the
+    organization that the person opened last. The pages "not found", "server error" and "no access" (the API
+    answers `404` on an organization where the person has no role, or that does not exist; an organization that
+    the App left keeps its members, and its queues say that the access is lost, lot 10b). The pages read the data of
+    the server from the cache of the queries (fresh 30 seconds), and a `401` drops `/me` from it, so that the
+    sign-in does not send the person back.
+  - Done (October 10, 2026): step 6 and exit criterion. `crates/cli/examples/e2e.rs` serves the API, the dashboard
+    and the sign-in on the simulator, with a fresh database `cihub_e2e` (`acme` and `globex`); the simulator serves
+    its sign-in on a page that a browser opens, and signs in the person chosen there. `web/e2e/sign-in.spec.ts`
+    (Playwright, `mise run e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
+    a member gets `403` on `PATCH` of a queue, a session gets `404` on another organization and its page, a refused
+    sign-in and a person without an organization see their message.
+  - Checked on the App of staging (October 11, 2026): GitHub shows no account picker to a GitHub App with
+    `prompt=select_account`; lot 10c removes `?choose_account=true`, and the page of a person without an
+    organization tells them to sign out of GitHub to use another account.
+
+#### Lot 10b: queues and the page of a queue
+
+- **Goal**: read the state of every queue and of the items of one queue.
+- **Content**: `Queue` gains `strategy`, `state_changed_at`, `state_changed_by` (the login, for "Paused by
+  @hugo"), `target_head_sha`, `access` (`ok`, `suspended`) and `has_config_file`; `GET …/queues/{queue}` gives the
+  counters of `GET /orgs/{org}/queues`, the number of live runs, the window (current, floor, ceiling) and the
+  summary of the settings (strategy, batching, failure budget, merge method); `Item` gains `title`, `author`,
+  `run_id`, `no_batch`, `submitted_by` and `submitted_via`; the filter `state` of `GET …/prs` takes
+  several states; `Graph` gains the head of the target branch and the live runs (members, predecessors, attempt,
+  status); the configuration check is stored with its time, refreshed by the repair loop, and `GET …/config-check`
+  reads it without a call to the SCM. Migrations: the title of the PR, kept up to date by the reads of the PRs;
+  the time and the author of the last state of a queue; the stored configuration check. Pages: the queues of an
+  organization and of a repository (cards, the queues that need someone first, a filter from eight queues, the
+  empty states); the page of a queue (banners of pause, drain, lost access, invalid file and up-to-date rule;
+  counters; settings; live graph; the tabs of the items, live, merged, failed and cancelled). The pages read again
+  every 10 seconds until lot 10d.
+- **Frozen interfaces**: `Queue`, `Pr`, `Graph`, `ConfigCheck` (the forms of the decision of October 11, 2026, in
+  lot 10d).
+- **Exit criterion**: a browser test on the simulator shows the cards of the queues and the page of a queue with
+  the PRs submitted by comment, their title, author and position, and the runs of the graph; the routes give the
+  same answers after a replay of the log (principle I); showing a page calls the SCM zero times (principle VII).
+- **Tracking**:
+  - Done (October 10, 2026): step 1. `Queue` gains its fields, read from Postgres only: the log projects in
+    `queues` the time of the last state, its author (the user of the cause of `queue.transitioned`, since a
+    decision acts as CIHub), the head of the target and the window; the replay rebuilds them. `GET
+    …/queues/{queue}` answers `QueueDetail`. The migration of `queues` is rewritten, as before the first version:
+    a development database needs `mise run db-reset`.
+  - Done (October 10, 2026): step 2. `Item` gains `title`, `author`, `run_id`, `no_batch`,
+    `submitted_by` and `submitted_via`; the filter `state` takes several states, separated by commas. The title
+    of a PR is kept in `pr_titles` at each read of the PR by a job, outside the log.
+  - Changed (October 10, 2026, validated by the project lead): the `url` of an item goes to lot 10c, with the
+    drawer that links to the PR. The adapter does not read it yet, and reading it changes the recorded answers of
+    the contract, which must then be recorded again.
+  - Done (October 10, 2026): step 3. `Graph` gains the head of the target branch and the last run of each live
+    group: a group in `pending_failure` keeps its failed run, which the page shows as failing.
+  - Done (October 11, 2026): step 4. The job `check_config` keeps the findings of the configuration of the SCM
+    and the time of the check in `config_checks`; the scheduler asks for it when the last check is one hour old,
+    and `…/resync` asks for it too. `GET …/config-check` reads it: the routes of the queues no longer hold the `Scm`.
+  - Done (October 11, 2026): step 5. The cards of the queues of an organization and of a repository (the ones
+    that need someone first, a filter from eight queues); the page of a queue: the banners of a lost access, of
+    an invalid file, of a pause with its author, of a drain and of each finding of the configuration check; the
+    counters; the settings; the live graph (the items that wait, then the runs, the run of the head of the queue next to the branch);
+    the tabs of the live items in their order, and of the items merged, failed or cancelled in the last 24 hours,
+    the tab in the address. The pages read their queue again every 10 seconds. "Your pull requests" and the
+    actions stay for lot 10c.
+  - Done (October 11, 2026): step 6 and exit criterion. The server of the browser tests runs the worker, the
+    router and the scheduler of the queues on the simulator, where `ada` submits three PRs of `acme/web` by
+    comment; `web/e2e/queues.spec.ts` checks the cards and the page of the queue (titles, authors, positions,
+    runs). `the_page_of_a_queue_follows_its_prs_and_survives_a_replay` checks that the page calls the SCM zero
+    times and gives the same answers after a replay.
+
+#### Lot 10c: your pull requests, drawer and actions
+
+- **Goal**: a person follows their PRs to the merge, and acts on the queue from the dashboard.
+- **Content**: `GET /orgs/{org}/prs?author={login}`: the current items of a person in every queue, those that
+  merged in the last 10 minutes, with the states of the PRs ahead of each one; `GET …/prs` gains the filter
+  `state_changed_since`, for the tabs of the last 24 hours; `QueueDetail` gains the median duration of the runs
+  that succeeded in the last 24 hours, for the estimate "merges in about N min"; "Your pull requests" on the
+  queues, their spotlight on the page of a queue, the title of the tab. `TimelineEvent` gains `actor` and
+  `description`; `RunCheck` gains `status`, `started_at` and `completed_at` (migration of `check_observations`);
+  `TestRun` gains `draft_pr_url`; `Item` gains `url`, read by the adapter with the PR (the recorded contract is
+  recorded again); `POST …/prs` refuses at once, with `409`, a queue that accepts nothing and a PR
+  already in the queue (the refusals that need a read of the SCM stay asynchronous, principle V); `…/cancel` and `…/restart` write
+  `item.cancel_requested` and `item.restart_requested` in the audit log. The comment of CIHub and the status of a PR link to the
+  page of the PR in the dashboard (`http.public_url`), `/orgs/$org/repos/$repo/queues/$queue/prs/$number`. Pages:
+  the drawer of a PR at this address (where it is, run, required and observed checks, history); the submission,
+  with TanStack Form, cancellation and restart; pause, drain and resume.
+- **Frozen interfaces**: `PrList`, `Event`, `RunCheck`, `Pr` (the forms of the decision of October 11, 2026, in
+  lot 10d).
+- **Exit criterion**: a browser test on the simulator signs in, creates a queue by the first `/cihub merge`,
+  submits a PR from the dashboard and follows it in "Your pull requests" until the merge; a member pauses
+  nothing; the comment of the PR links to its page.
+
+- **Tracking**:
+  - Decided (October 11, 2026, validated by the project lead): `Item.url` read by the adapter, with a new
+    recording of the contract; the address of a PR in the dashboard, `…/queues/$queue/prs/$number`, which the
+    comment links to; TanStack Form for the submission; "a moment ago" is 10 minutes; the median duration of a
+    run is over the runs that succeeded in the last 24 hours; the filter `state_changed_since`.
+  - Done (October 11, 2026): step 1. `GET /orgs/{org}/prs?author={login}` (`OrgPrList`), the filter
+    `state_changed_since` of `GET …/prs`, which the tabs of the last 24 hours now use, and
+    `QueueDetail.median_run_seconds`. `OrgPr` carries `merges_in_seconds`, computed by the server from the
+    median duration of the runs and the window of the queue, so that the dashboard holds no queue logic.
+  - Done (October 11, 2026): part of step 2 and step 3. `TimelineEvent` gains `actor` (the user of the cause
+    of a decision) and `description` (the sentences of the blocks are those of the comment); `POST …/prs`
+    answers `409` for a queue that accepts nothing (`draining`, `switching_modes`) and a PR
+    already in the queue; `…/cancel` and `…/restart`
+    write the audit log.
+  - Decided (October 11, 2026, validated by the project lead): `CheckReport` gains `status`, `started_at` and
+    `completed_at` (option 1), with the new recording of the contract; `prompt=select_account` does not show the
+    account picker of GitHub for a GitHub App (checked on the App of staging).
+  - Done (October 11, 2026): step 4. The status of a PR links to its page in the dashboard, and its comment
+    with `Open in CIHub`, from `http.public_url`, which the module of the queue receives.
+  - Done (October 11, 2026): step 5. The drawer of a PR at its address (where it is, why it waits or how it
+    ended, its run and checks, its history), "Your pull requests" on the queues and first on the page of a
+    queue, the title of the tab, the submission (TanStack Form), the cancellation and the restart, pause, drain
+    and resume for an admin; the generated client sends the CSRF token of the session.
+  - Done (October 11, 2026): step 6 and exit criterion. `web/e2e/your-prs.spec.ts`: `ada` creates the queue of
+    `acme/api` by the first `/cihub merge`, submits her PR from the dashboard and follows it in "Your pull
+    requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
+    browser tests passes each test commit of `acme/api`.
+  - The project lead started lot 10d meanwhile: the rest of lot 10c waits for the recording, not for lot 10d.
+  - Remaining, with the new recording of the contract: `Pr.url`, `Run.draft_pr_url`, and the state and
+    times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
+    lot; the lot is done once they are.
+
+#### Lot 10d: live updates
+
+- **Goal**: the pages follow the queue without a reload.
+- **Content**: `GET /orgs/{org}/stream`, server-sent events built on `NOTIFY cihub_queue_changed`, that carry only
+  `queue_changed` (queue, sequence number) and a ping; the dashboard invalidates the reads of the queue that
+  changed and stops its polling; the motion of the mockups v5 (what changed moves, a merged PR goes into its
+  branch) and a notice when a PR of the person moves.
+- **Frozen interfaces**: the event `queue_changed`.
+- **Exit criterion**: a change on the simulator shows on an open page in less than 2 seconds; the stream of an
+  organization carries no event of another one (principle VIII); the stream closes when the server stops.
+- **Tracking**:
+  - Done (October 11, 2026). A channel of its own, `cihub_queue_changed`, and not `cihub_queue`, which says that
+    a queue has work before it changes: the reconciliation that writes the log, the check of the configuration
+    and the creation of a queue notify it in their transaction, with the last sequence number of the log. Each
+    web process listens to it once (`QueueNewsFeed` of `cihub-platform`) and passes each change to the streams
+    of its organization; the stream ends when the server stops, lost changes or lagged, and the browser opens it
+    again and reads everything. Written without a new crate: a `tokio::io::duplex` read by `ReaderStream`. The
+    dashboard reads again the queue that changed and no longer polls; what changed slides, a new head of the
+    target arrives, and a notice tells the person that one of their PRs moved. After the review: the stream
+    ends after 5 minutes so that a revoked grant stops hearing, 8 streams at most per token or person, a write
+    bounded to 30 seconds; the listener keeps its connection after a loss and tells the pages; the dashboard
+    opens a closed stream again with a growing wait, reads everything on each open, and gathers the changes of
+    half a second into one read.
+  - Exit criterion: `web/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
+    queue in less than 2 seconds), `the_stream_carries_the_changes_of_the_organization_only` (another
+    organization, end with the server), `a_reconciliation_that_writes_the_log_tells_the_pages`.
+  - Decided (October 11, 2026, validated by the project lead): an action takes a segment of its own,
+    `POST …/resync`, `POST …/prs/{number}/cancel` and `POST …/prs/{number}/restart`, and no longer a colon in
+    the last segment; `POST …/prs:batchGet` goes, as no client reads it (`specs/LESSONS.md`).
+  - Decided (October 11, 2026, validated by the project lead): the error codes name their cause
+    (`queue_not_found`, `pr_already_queued`, `item_not_in_test`, …) instead of `not_found`, `forbidden` and
+    `invalid_state`, whose cause was only in `detail` (principle VI). Done: the OpenAPI document reads as a
+    reference: an introduction with every code, a tag, a title and a description for each route, every error
+    of each route with an example, a description and an example for every field, the closed enums as named
+    schemas; `crates/cli/tests/openapi.rs` keeps it so.
+  - Decided (October 11, 2026, validated by the project lead), it changes the frozen interfaces of lots 10a to
+    10c: one contract for the lists (`from` and `limit`; `has_more`, `count` and an opaque base64 `cursor`); a PR
+    belongs to its repository (`/orgs/{org}/repos/{repo}/prs/{number}`, with `…/events`, `…/submit`, `…/cancel` and
+    `…/restart`), and `GET /orgs/{org}/prs` lists PRs with filters (`author`, `@me` for the person of a session,
+    `repo`, `queue`, `state`, times, `sort`), in place of `…/queues/{queue}/prs` and of the PRs of a person;
+    `GET /orgs/{org}`, `GET /orgs/{org}/repos/{repo}`; `/me` becomes `/user`, `/user/orgs` and `/instance`; one
+    form per resource (`Queue` holds the counters, the settings and the check of the configuration, which leaves
+    `…/config-check`; `Pr` in place of `Item`, `OrgPr` and `PrItem`; `Event`, `Run`); a `202` has no body. Done
+    with it: the server, `cihub-client`, the CLI, the dashboard (the person of the session is `Me` in
+    `src/session.ts`; "Your pull requests" reads the live PRs of `@me` and the last ones merged) and the tests.
 
 ### Lot 11: analytics, metrics and outgoing webhooks
 
@@ -311,7 +558,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ### Lot 13: `parallel` strategy
 
-- **Content**: `POST /repos/{owner}/{name}/prs/{pr}/impacted-targets` (`targets:write` token or GitHub Actions
+- **Content**: `POST /orgs/{org}/repos/{repo}/prs/{number}/impacted-targets` (`targets:write` token or GitHub Actions
   run for forks, 20 MB limit); lanes by overlap; batches per lane; `parallel` strategy;
   example actions for Bazel and Nx.
 - **Exit criterion**: on the simulator, PRs with disjoint targets are tested and merged in
@@ -329,5 +576,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 
 ### Next
 
-Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`. These lots are
-split when phase 4 starts.
+Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`; the `viewer` role
+and the change of a role by an admin (`specs/SECURITY.md`); from the mockups v3, the pages of the settings
+(configuration and its sources, branch protection with "Check again", audit log), the form that changes
+`.cihub.yaml` through a PR, and the search of a PR. These lots are split when phase 4 starts.

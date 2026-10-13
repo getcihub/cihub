@@ -10,6 +10,7 @@ publish.workspace = true
 
 [dependencies]
 axum = { workspace = true, features = ["json", "query"] }
+base64.workspace = true
 cihub-api-types.workspace = true
 cihub-domain.workspace = true
 cihub-scm.workspace = true
