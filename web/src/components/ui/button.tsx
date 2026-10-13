@@ -6,7 +6,7 @@ import { Spinner } from "./spinner";
 
 /** The classes of a button, for a `<Link>` or an `<a>` that looks like one. */
 export const buttonVariants = cva(
-  "inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 font-medium whitespace-nowrap aria-disabled:pointer-events-none aria-disabled:opacity-60",
+  "inline-flex cursor-pointer items-center gap-1.5 rounded-sm border px-2.5 font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:pointer-events-none aria-disabled:opacity-60",
   {
     variants: {
       variant: {
