@@ -22,10 +22,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
-  HELM_UNITTEST_VERSION: "v1.2.1"
-
 # Every job runs on a runner hosted by GitHub: the repository is public, and a
 # self-hosted runner would run the code of the pull requests of forks.
 jobs:
@@ -63,7 +59,7 @@ jobs:
         run: mise run lint
 
       - name: Check that the API client of the dashboard is up to date
-        run: mise run web-generate-check
+        run: mise run web:generate-check
 
   rust-test:
     if: >-
@@ -197,12 +193,12 @@ jobs:
 
       # The system libraries of Chromium: the task installs only the browser.
       - name: Install Chromium and its libraries
-        run: mise run web-install && pnpm --dir web exec playwright install --with-deps chromium
+        run: mise run web:install && pnpm --dir web exec playwright install --with-deps chromium
 
       # Starts the Postgres of compose.yaml, builds the dashboard, then runs
       # Playwright against the server on the simulator (crates/cli/examples/e2e.rs).
       - name: Run the browser tests of the dashboard
-        run: mise run e2e
+        run: mise run web:e2e
 
   workflow-lint:
     if: >-
@@ -224,7 +220,7 @@ jobs:
           install_args: --locked
 
       - name: Lint workflows
-        run: mise run lint-workflows
+        run: mise run workflows:lint
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -248,10 +244,10 @@ jobs:
           install_args: --locked
 
       - name: Run helm lint
-        run: mise run helm-lint
+        run: mise run helm:lint
 
       - name: Check that the generated files of the chart are up to date
-        run: mise run generate-check
+        run: mise run helm:generate-check
 
   helm-unittest:
     if: >-
@@ -273,9 +269,7 @@ jobs:
           install_args: --locked
 
       - name: Run helm unit tests
-        run: |-
-          helm plugin install https://github.com/helm-unittest/helm-unittest --version "${HELM_UNITTEST_VERSION}" --verify=false
-          mise run helm-unittest
+        run: mise run helm:unittest
 
   smoke:
     if: >-

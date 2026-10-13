@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// The browser tests of the dashboard (`mise run e2e`): one server on the
+// The browser tests of the dashboard (`mise run web:e2e`): one server on the
 // simulator, `cargo run --example e2e`, with a fresh database at each start.
 // The tests run one by one, as they share this server.
 export default defineConfig({

@@ -4,7 +4,7 @@
 #
 # Usage:
 #   mise run db          # start Postgres, then create or update the cihub role
-#   mise run db-reset    # delete the data, then mise run db
+#   mise run db:reset    # delete the data, then mise run db
 #   docker compose down  # stop Postgres, keep the data
 #
 # postgres/postgres is the superuser. cihub server connects as cihub/cihub,
