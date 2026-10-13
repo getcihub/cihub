@@ -1,5 +1,3 @@
-import { startTransition, useEffect, useState } from "react";
-
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["day", 86_400],
   ["hour", 3_600],
@@ -30,28 +28,4 @@ export function durationBetween(start: string, end: string): string {
 /** `at`, an RFC 3339 time, as a date and a time: "Oct 11, 2026, 9:30 PM". */
 export function dateAndTime(at: string): string {
   return new Date(at).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });
-}
-
-/** How often the times of a page ("6 minutes ago") move. */
-const TIME_MOVES_EVERY = 15_000;
-
-/**
- * The time of the page, in milliseconds, which moves every few seconds. In a transition: a read whose key follows
- * the time keeps its page while it loads.
- */
-export function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      startTransition(() => {
-        setNow(Date.now());
-      });
-    }, TIME_MOVES_EVERY);
-    return () => {
-      clearInterval(timer);
-    };
-  }, []);
-
-  return now;
 }

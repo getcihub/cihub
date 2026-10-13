@@ -1,5 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
-
 import { listPrsOptions } from "@/client/@tanstack/react-query.gen";
 import type { Pr } from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
@@ -26,16 +24,5 @@ export function minePrsOf(live: Pr[] = [], merged: Pr[] = [], now = Date.now()):
   const recent = merged.filter((pr) => now - Date.parse(pr.state_changed_at) < MERGED_STAYS_MS);
   const where = (pr: Pr) => `${pr.repo}/${pr.queue}`;
 
-  return [...recent, ...live].sort((a, b) => (where(a) < where(b) ? -1 : where(a) > where(b) ? 1 : 0));
-}
-
-/**
- * The PRs of the person of the session in the queues of `org`; none while they load or when their read fails.
- * They only add to a page: their read never stops it, unlike the reads that the page needs.
- */
-export function useMinePrs(org: string): Pr[] {
-  const reads = minePrsReads(org);
-  const live = useQuery(reads.live).data?.prs;
-  const merged = useQuery(reads.merged).data?.prs;
-  return minePrsOf(live, merged);
+  return [...recent, ...live].sort((a, b) => where(a).localeCompare(where(b)));
 }
