@@ -25,6 +25,8 @@ export interface View {
   answer?: (request: ApiRequest) => Answer | null;
   /** A read that never answers: the view shows how the page waits for it. */
   hold?: (request: ApiRequest) => boolean;
+  /** The stream of the organization never opens: the graph shows as not live. */
+  isStreamClosed?: boolean;
   /** The status of `/auth/sign-out`. */
   signOutStatus?: number;
 }
@@ -71,6 +73,7 @@ export const VIEWS: View[] = [
   { name: "org-empty", url: "/orgs/acme-labs", ready: "No queue yet", themes: BOTH },
   { name: "repo-overview", url: "/orgs/acme/repos/web", ready: "release" },
   { name: "queue-live", url: QUEUE_PAGE, ready: QUEUE_READY, themes: BOTH, viewports: [WIDE, NARROW] },
+  { name: "queue-not-live", url: QUEUE_PAGE, ready: QUEUE_READY, isStreamClosed: true },
   { name: "queue-merged", url: `${QUEUE_PAGE}?tab=merged`, ready: "Add the audit log" },
   { name: "queue-ended", url: `${QUEUE_PAGE}?tab=ended`, ready: "Remove the old cache", themes: BOTH },
   { name: "queue-banners", url: "/orgs/acme/repos/web/queues/release", ready: "Paused by", themes: BOTH },

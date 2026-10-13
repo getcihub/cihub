@@ -65,6 +65,21 @@ async function openView(context: BrowserContext, view: View, theme: Theme): Prom
   await page.addInitScript((value) => {
     localStorage.setItem("theme", value);
   }, theme);
+  if (!view.isStreamClosed) {
+    // A stream that opens and stays quiet: the fixtures already hold the state of the queues.
+    await page.addInitScript(() => {
+      window.EventSource = class {
+        onopen: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => this.onopen?.());
+        }
+
+        addEventListener = () => undefined;
+        close = () => undefined;
+      } as unknown as typeof EventSource;
+    });
+  }
   await page.route(`${ORIGIN}/**`, (route) => answerRoute(route, view));
 
   await page.goto(`${ORIGIN}${view.url}`);

@@ -21,6 +21,28 @@ function isReadOfOrg(key: ReadKey, org: string): boolean {
 // The pages that wait for a change of a queue: a request shows as sent until then.
 const listeners = new Set<(queueId: string) => void>();
 
+// The pages that show whether the stream is open: a closed stream shows the queue as it was.
+const openListeners = new Set<() => void>();
+let isOpen = false;
+
+function setIsOpen(value: boolean): void {
+  isOpen = value;
+  openListeners.forEach((listener) => {
+    listener();
+  });
+}
+
+/** Whether the stream of the organization is open, so that the page follows the changes as they come. */
+export function isStreamOpen(): boolean {
+  return isOpen;
+}
+
+/** Calls `listener` when the stream opens or closes, until the returned function. */
+export function onStreamOpenChanged(listener: () => void): () => void {
+  openListeners.add(listener);
+  return () => openListeners.delete(listener);
+}
+
 /** Calls `listener` at each change of a queue that the stream signals, until the returned function. */
 export function onQueueChanged(listener: (queueId: string) => void): () => void {
   listeners.add(listener);
@@ -81,9 +103,11 @@ export function followQueueNews(queryClient: QueryClient, org: string): () => vo
     source = new EventSource(`${client.getConfig().baseUrl ?? ""}/orgs/${encodeURIComponent(org)}/stream`);
     source.onopen = () => {
       failures = 0;
+      setIsOpen(true);
       void readOrgAgain(queryClient, org);
     };
     source.onerror = () => {
+      setIsOpen(false);
       // The browser opens again a stream that ended; not one that the server refused.
       if (source?.readyState === EventSource.CLOSED) {
         source.close();
@@ -116,5 +140,6 @@ export function followQueueNews(queryClient: QueryClient, org: string): () => vo
     clearTimeout(reopening);
     clearTimeout(gathering);
     source?.close();
+    setIsOpen(false);
   };
 }

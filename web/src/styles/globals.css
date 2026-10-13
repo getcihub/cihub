@@ -115,6 +115,13 @@
   --animate-arrive: arrive 0.4s ease-out;
   --animate-shimmer: shimmer 1.2s linear infinite;
   --animate-beacon: beacon 1.6s ease-out infinite;
+  --animate-live: live 1.6s infinite;
+
+  @keyframes live {
+    50% {
+      box-shadow: 0 0 0 6px transparent;
+    }
+  }
 
   @keyframes beacon {
     from {
@@ -171,6 +178,7 @@
   --color-waiting: var(--waiting);
 
   --shadow-lg: var(--overlay-shadow);
+  --shadow-live: 0 0 0 2px var(--success-muted);
 }
 
 /* The padding that aligns the top bar and its alerts with the content of a page (`Page`). */

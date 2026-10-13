@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ItemState } from "@/client/types.gen";
@@ -19,6 +19,7 @@ import {
 class FakeEventSource {
   static opened: FakeEventSource[] = [];
   onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
   isClosed = false;
   readonly listeners = new Map<string, (event: { data: string }) => void>();
 
@@ -92,6 +93,27 @@ describe("the stream of an organization", () => {
     await waitFor(() => {
       expect(readsOf(QUEUE)).toBe(before + 1);
     });
+  });
+
+  it("shows the graph as live while the stream is open", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    renderApp("/orgs/acme/repos/web/queues/main", {
+      ...answers,
+      [liveOf()]: [200, pageOf("prs", [itemOf(124, "pending")])],
+    });
+    await screen.findByRole("heading", { level: 2, name: "Live graph" });
+
+    const [stream] = FakeEventSource.opened;
+
+    expect(screen.getByText("Not live")).toBeInTheDocument();
+
+    act(() => stream?.onopen?.());
+
+    expect(screen.getByText("Live")).toBeInTheDocument();
+
+    act(() => stream?.onerror?.());
+
+    expect(screen.getByText("Not live")).toBeInTheDocument();
   });
 
   it("tells the person that one of their PRs moved", async () => {

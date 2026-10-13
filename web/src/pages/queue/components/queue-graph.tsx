@@ -1,10 +1,11 @@
-import { Fragment, useRef } from "react";
+import { Fragment, useRef, useSyncExternalStore } from "react";
 
 import type { Graph, GraphRun, Pr, Queue } from "@/client/types.gen";
 import { CheckIcon } from "@/components/icons/check-icon";
 import { CardHeader, CardHint, CardTitle, cardVariants } from "@/components/ui/card";
 import { useFlip } from "@/components/ui/hooks/use-flip";
 import { itemStateLabel } from "@/domain/pr/words";
+import { isStreamOpen, onStreamOpenChanged } from "@/domain/queue/live";
 import { cn } from "@/lib/cn";
 import { shortSha } from "@/lib/text";
 import { PrLink } from "./pr-link";
@@ -61,6 +62,28 @@ function footOf(look: RunLook, run: GraphRun, members: Pr[]): string {
 /** The smallest rank of the PRs of `run`: the run of the head of the queue merges first. */
 function rankOf(run: GraphRun, ranks: Map<string, number>): number {
   return Math.min(...run.item_ids.map((id) => ranks.get(id) ?? Number.MAX_SAFE_INTEGER));
+}
+
+/** Whether the graph follows the queue: without the stream, it shows the queue at its last read. */
+function LiveMark() {
+  const isLive = useSyncExternalStore(onStreamOpenChanged, isStreamOpen);
+
+  return (
+    <span
+      className={cn(
+        "flex items-center gap-1.5 text-xs font-semibold uppercase",
+        isLive ? "text-success" : "text-muted-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          isLive ? "bg-success shadow-live motion-safe:animate-live" : "bg-muted-foreground",
+        )}
+      />
+      {isLive ? "Live" : "Not live"}
+    </span>
+  );
 }
 
 function Chip({ item, text, rank }: { item: Pr; text: string | null; rank: number | undefined }) {
@@ -149,6 +172,7 @@ export function QueueGraph({
     <section className={cn(cardVariants(), "min-w-0")} aria-labelledby="graph-title">
       <CardHeader>
         <CardTitle id="graph-title">Live graph</CardTitle>
+        <LiveMark />
         <CardHint className="max-md:hidden">
           Each run tests its pull requests on top of the runs on its right.
         </CardHint>
