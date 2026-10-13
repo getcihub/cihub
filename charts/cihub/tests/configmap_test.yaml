@@ -23,3 +23,24 @@ tests:
             log:
               filter: info
               format: pretty
+  - it: gives the address and the client of the sign-in when they are set
+    set:
+      publicUrl: https://ci.example.com
+      github.clientId: Iv23li.client
+    asserts:
+      - equal:
+          path: data["server.yaml"]
+          value: |
+            github:
+              app_id: "123456"
+              client_id: Iv23li.client
+              private_key_file: /etc/cihub/github/private-key.pem
+              url: https://github.com
+            http:
+              addr: 0.0.0.0:8080
+              public_url: https://ci.example.com
+            internal:
+              addr: 0.0.0.0:8081
+            log:
+              filter: info
+              format: json

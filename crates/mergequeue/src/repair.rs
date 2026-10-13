@@ -17,6 +17,7 @@ use tracing::info;
 
 use crate::MergeQueueError;
 use crate::QueueLog;
+use crate::config::check_config_job;
 use crate::jobs::{
     Failure, give_back_facts, job, read_payload, refresh_reads, subject, target_of, window,
 };
@@ -219,6 +220,7 @@ pub async fn resync(
     }
 
     jobs.push(refresh_target_job(&target, &subject, JobClass::Interactive));
+    jobs.push(check_config_job(&target, &subject, JobClass::Interactive));
 
     let mut requested = 0;
     for job in &jobs {

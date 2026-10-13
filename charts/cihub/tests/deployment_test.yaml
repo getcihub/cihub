@@ -40,6 +40,27 @@ tests:
               - key: private-key.pem
                 path: private-key.pem
 
+  - it: takes the client secret of the sign-in only with a client ID
+    template: deployment.tpl
+    set:
+      github.clientId: Iv23li.client
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_GITHUB_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef: { name: cihub-github, key: client-secret }
+
+  - it: has no client secret without a client ID
+    template: deployment.tpl
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_GITHUB_CLIENT_SECRET
+          any: true
+
   - it: probes the internal address
     template: deployment.tpl
     asserts:

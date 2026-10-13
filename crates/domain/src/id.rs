@@ -90,6 +90,8 @@ id_type!(
     /// The row of an API token; the secret itself is `cht_…`.
     ApiTokenId => "apitoken",
     AuditEntryId => "audit",
+    /// A dashboard session of a user, global; the secret itself is `chs_…`.
+    SessionId => "session",
 );
 
 /// Parse errors, in the order the checks run. The first five match the

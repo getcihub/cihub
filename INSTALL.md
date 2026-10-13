@@ -18,7 +18,9 @@ procedure is in [`specs/GITHUB.md`](specs/GITHUB.md); in short:
   protection rule, Repository.
 - **Where can this GitHub App be installed?**: *Only on this account*. Keep the App private: any account that
   installs a public App gets an organization in your CIHub.
-- After the creation, note the **App ID** and generate a **private key** (`.pem` file).
+- **Callback URL**, for the sign-in to the dashboard: `https://<your CIHub host>/auth/github/callback`.
+- After the creation, note the **App ID** and generate a **private key** (`.pem` file); for the dashboard, note
+  the **Client ID** and generate a **client secret**.
 
 ## 2. Configure and start
 
@@ -27,7 +29,8 @@ From a clone of this repository:
 ```sh
 cp deploy/.env.example deploy/.env
 # Fill in deploy/.env: two Postgres passwords, the App ID, the webhook secret,
-# and the path of the private key.
+# the path of the private key and, for the dashboard, the address of this
+# instance, the Client ID and the client secret.
 docker compose -f deploy/compose.yaml up -d
 ```
 
@@ -74,8 +77,8 @@ commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high
 CIHub checks the protection of the branch for you, once the queue exists:
 
 ```sh
-curl https://<your CIHub host>/api/v1/repos/<owner>/<repo>/queues -H "Authorization: Bearer <token>"
-curl https://<your CIHub host>/api/v1/queues/<queue id>/config-check -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues/<queue>/config-check -H "Authorization: Bearer <token>"
 ```
 
 An empty list of `findings` means a sound configuration.

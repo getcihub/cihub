@@ -77,7 +77,7 @@ crates/
   cli/                   cihub-cli            (exists, the cihub binary)
   ...                    the other crates of the table, with their lot
 migrations/              Postgres migrations embedded in the cihub binary (Lot 2)
-web/                     dashboard, embedded by the web role (Lot 10)
+web/                     dashboard (React, Vite, TanStack), embedded in the binary by crates/web/build.rs (Lots 10a to 10d)
 ```
 
 | Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |
@@ -90,10 +90,10 @@ web/                     dashboard, embedded by the web role (Lot 10)
 | `cihub-flaky-core` | Detection signals, `stable` / `suspect` / `flaky` / `broken` classification, `case_key` (pure)                                                                         | `domain`                                                         | 14  | target |
 | `cihub-store`      | Postgres pool, transactions of an organization or of the system (RLS), tenancy, log and partitions, API tokens, locks, leases, embedded migrations, test of the Postgres enums | `domain`                                                         | 2   | exists |
 | `cihub-telemetry`  | Logs, then OpenTelemetry traces and Prometheus registry                                                                                              | —                                                                | 2   | exists |
-| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance; sync of the installations of the App into organizations and connections, and reading of the repositories of the connections; API tokens created by an operator; `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), log cursors (Lot 11) | `domain`, `store`, `scm`                       | 3–5 | exists |
+| `cihub-platform`   | Queue leases, wake-up, inbox, routing and sweeping of deliveries, connection budgets, jobs, worker loop and executor registry, maintenance; sync of the installations of the App into organizations and connections, and reading of the repositories of the connections and of the members of their accounts; the roles of a person who signs in (Lot 10a); API tokens created by an operator; `Module` contract (Lot 5) and its routes, `problem+json` error and route authorization (Lot 9), log cursors (Lot 11) | `domain`, `store`, `scm`                       | 3–5 | exists |
 | `cihub-scm`        | `Scm` trait, normalized SCM types, call priority classes; GitHub simulator with fault injection, `sim` feature | `domain`                                                         | 4   | exists |
 | `cihub-github`     | App auth, installation tokens, REST and GraphQL client, budget per connection, degraded modes, HMAC verification and translation of webhooks into facts             | `scm`, `domain`                                                  | 4   | exists |
-| `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage); token authentication, rate limit, `/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9); then sessions, CSRF and dashboard (Lot 10) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
+| `cihub-web`        | HTTP server of the public address of the `web` role: SCM webhooks (signature by the adapter, unrouted storage); token authentication, rate limit, `/orgs/{org}/repos` and `/orgs/{org}/audit` routes, module routes under `/api/v1`, `/api/v1/openapi.json` (Lot 9); then sessions, CSRF and dashboard (Lots 10a to 10d) | `domain`, `store`, `platform`, `github`, `api-types` | 4   | exists |
 | `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors (Lots 5 and 6); `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands (Lot 9) | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm`, `conditions`; `contracts` at Lot 14, `analytics` at Lot 11 | 5   | exists |
 | `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature                                                                                                            | `domain`                                                         | 9   | exists |
 | `cihub-client`     | Typed client of the public API, for `cihub queue` and the end-to-end tests                                                                                             | `api-types`                                                      | 9   | exists |
@@ -156,7 +156,7 @@ configuration file, behind a load balancer. Each role shares its work between th
 
 | Role        | How the replicas share the work                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `web`       | No state; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received while the delivery waits |
+| `web`       | No state of the queues; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received while the delivery waits. Each replica listens to `cihub_queue_changed` on one connection and serves the streams of the pages open on it |
 | `scheduler` | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
 | `worker`    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
 | `notifier`  | Same principle on the log                                                                                                       |
@@ -174,7 +174,7 @@ a loop: take or renew the leases (`lease_owner` and `lease_expires_at` of `queue
 `pg_try_advisory_xact_lock`, run the reconciliation and reset `dirty` to false. The lease assigns a queue to a
 replica; the transaction-level advisory lock guarantees that only one reconciliation applies at a time, including
 during the takeover of an expired lease. Any write on the items of a queue (by the ingestion, by a
-job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. The reconciliation of a
+job result, by the API) sets `dirty` and emits `NOTIFY cihub_queue, '<queue_id>'`. A reconciliation that writes the log, the check and the read of the configuration file, and the creation of a queue emit `NOTIFY cihub_queue_changed` in their transaction, which the streams of the dashboard follow. The reconciliation of a
 queue never runs in parallel with itself and waits on no I/O other than Postgres: one replica therefore
 handles hundreds of queues. Between two passes, a replica waits for a notification until the next tick that is
 not due yet, between 1 and 30 seconds, so that a `wake_at` is served on time.

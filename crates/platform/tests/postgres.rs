@@ -5,22 +5,27 @@
 use std::sync::Arc;
 
 use cihub_domain::{
-    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, OrgId, QueueId,
+    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, MembershipRole, OrgId,
+    QueueId,
 };
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
     MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
     backoff, begin_reconciliation, claim_jobs, complete_job, create_token, delete_delivery,
     enqueue_job, fail_job, find_route, lock_queue, maintenance_job, pending_deliveries,
-    record_budgets, release_leases, request_installations_sync,
-    request_installations_sync_at_start, request_maintenance, request_repo_syncs,
-    run_budget_writer, run_maintenance, run_router, run_sync_installation, run_sync_installations,
-    run_sync_repos, run_worker, schedule_tick, store_delivery, sync_installation_executor,
-    sync_installation_job, sync_repos_job, until_next_tick,
+    record_budgets, record_sign_in, release_leases, request_installations_sync,
+    request_installations_sync_at_start, request_maintenance, request_member_syncs,
+    request_repo_syncs, run_budget_writer, run_maintenance, run_router, run_sync_installation,
+    run_sync_installations, run_sync_members, run_sync_repos, run_worker, schedule_tick,
+    store_delivery, sync_installation_executor, sync_installation_job, sync_members_job,
+    sync_repos_job, until_next_tick,
 };
 use cihub_scm::sim::Sim;
-use cihub_scm::{ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmUser};
-use cihub_store::{authenticate, begin_org, begin_system};
+use cihub_scm::{
+    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmMembership, ScmUser,
+    SignedIn,
+};
+use cihub_store::{Membership, authenticate, begin_org, begin_system, memberships_of};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
 use time::{Duration, OffsetDateTime};
@@ -769,6 +774,23 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         tx.commit().await.unwrap();
     }
 
+    sqlx::query("INSERT INTO users (id, external_id, login) VALUES ('user-9', '9', 'hubot')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (id, expires_at) in [("expired", now), ("live", now + Duration::days(1))] {
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at)
+             VALUES ($1, 'user-9', sha256($1::bytea), $2, $3)",
+        )
+        .bind(id)
+        .bind(now - Duration::days(14))
+        .bind(expires_at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
     run_maintenance(&pool, now).await.unwrap();
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -785,6 +807,12 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .unwrap();
 
     assert_eq!(jobs, ["maintenance:2026-10-10:1", "recent"]);
+    let sessions: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(sessions, ["live"]);
     let partitions: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
          WHERE i.inhparent = 'events'::regclass ORDER BY 1",
@@ -1513,4 +1541,144 @@ async fn each_active_connection_is_read_once_an_hour(pool: PgPool) {
             format!("sync_repos:{}-20260910T01:1", connection()),
         ]
     );
+}
+
+fn person(external_id: &str, login: &str) -> ScmUser {
+    ScmUser {
+        external_id: external_id.into(),
+        login: login.into(),
+    }
+}
+
+/// The login and the role of each membership, by login.
+async fn roles(pool: &PgPool) -> Vec<(String, String)> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as(
+        "SELECT u.login, m.role::text FROM memberships m JOIN users u ON u.id = m.user_id
+         ORDER BY u.login",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPool) {
+    seed(&pool).await;
+    let globex = OrgId::from_ulid(Ulid(2));
+    let membership = |installation: &str, role| ScmMembership {
+        connection_external_id: installation.into(),
+        role,
+    };
+    let signed_in = |memberships| SignedIn {
+        user: person("5", "ada"),
+        memberships,
+    };
+    let first = signed_in(vec![
+        membership("1", MembershipRole::Admin),
+        membership("99", MembershipRole::Member),
+    ]);
+    let second = signed_in(vec![membership("2", MembershipRole::Member)]);
+    let in_org = Membership {
+        org_id: org(),
+        org_slug: "org".into(),
+        role: MembershipRole::Admin,
+    };
+    let in_globex = Membership {
+        org_id: globex,
+        org_slug: "globex".into(),
+        role: MembershipRole::Member,
+    };
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('{globex}', 'globex');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{c}', '{globex}', '2', 'github_app', '2', '{at}', '{{}}');",
+        c = ConnectionId::from_ulid(Ulid(2)),
+        at = at(0),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+
+    let user_id = record_sign_in(&pool, &first, at(0)).await.unwrap();
+
+    assert_eq!(
+        memberships_of(&pool, user_id).await.unwrap(),
+        std::slice::from_ref(&in_org)
+    );
+
+    let again = record_sign_in(&pool, &second, at(60)).await.unwrap();
+
+    assert_eq!(again, user_id);
+    assert_eq!(
+        memberships_of(&pool, user_id).await.unwrap(),
+        [in_globex, in_org]
+    );
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_hourly_read_of_the_members_follows_the_account(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let (ada, grace) = (person("5", "ada"), person("6", "grace"));
+    let job = sync_members_job(org(), connection(), "20260910T00");
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    assert_eq!(request_member_syncs(&mut tx, at(0)).await.unwrap(), 1);
+    assert_eq!(request_member_syncs(&mut tx, at(60)).await.unwrap(), 0);
+    tx.commit().await.unwrap();
+
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Admin);
+    sim.set_member("1", &grace, MembershipRole::Member);
+
+    let read = run_sync_members(&pool, &sim, &job, at(0)).await.unwrap();
+
+    assert_eq!(read, 2);
+    assert_eq!(
+        roles(&pool).await,
+        [
+            ("ada".to_owned(), "admin".to_owned()),
+            ("grace".to_owned(), "member".to_owned()),
+        ]
+    );
+
+    sim.remove_member("1", &grace);
+    let read = run_sync_members(&pool, &sim, &job, at(3600)).await.unwrap();
+
+    assert_eq!(read, 1);
+    assert_eq!(roles(&pool).await, [("ada".to_owned(), "admin".to_owned())]);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_lost_access_keeps_the_members_and_syncs_the_installation(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let job = sync_members_job(org(), connection(), "20260910T00");
+
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &person("5", "ada"), MembershipRole::Admin);
+    run_sync_members(&pool, &sim, &job, at(0)).await.unwrap();
+    sim.set_access("1", false);
+
+    let lost = run_sync_members(&pool, &sim, &job, at(60)).await;
+
+    assert!(matches!(
+        lost,
+        Err(PlatformError::Scm(ScmError::AccessLost(_)))
+    ));
+    assert_eq!(roles(&pool).await.len(), 1);
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let syncs: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM jobs WHERE type = 'sync_installation'")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+
+    assert_eq!(syncs, 1);
 }

@@ -2,9 +2,12 @@
 //! the API of the modules), and the routing of the stored
 //! deliveries.
 
+use std::sync::Arc;
+
 use anyhow::Context;
-use cihub_platform::{ROUTE_POLL, run_router};
-use cihub_web::GithubWebhooks;
+use cihub_platform::{QueueNewsFeed, ROUTE_POLL, run_router};
+use cihub_scm::Scm;
+use cihub_web::{Dashboard, GithubWebhooks};
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -16,6 +19,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         pool,
         process,
         http_addr,
+        public_url,
         github,
         cancel,
     } = shared;
@@ -24,11 +28,20 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         .with_context(|| format!("cannot listen on {http_addr}"))?;
 
     info!(http_addr = %listener.local_addr()?, "public address served");
-    let modules = vec![merge_queue(&pool, &github, &process).api];
+    let modules = vec![merge_queue(&pool, &github, &process, public_url.as_deref()).api];
     let webhooks = GithubWebhooks {
         secret: github.webhook_secret,
     };
-    let router = cihub_web::router(pool.clone(), now, webhooks, modules);
+    let scm: Arc<dyn Scm> = github.app;
+    let news = QueueNewsFeed::start(pool.clone(), cancel.clone())
+        .await
+        .context("the changes of the queues cannot be heard")?;
+    let dashboard = Dashboard {
+        scm,
+        public_url,
+        news,
+    };
+    let router = cihub_web::router(pool.clone(), now, webhooks, modules, dashboard);
     let serve = async {
         cihub_web::serve(listener, router, cancel.clone())
             .await

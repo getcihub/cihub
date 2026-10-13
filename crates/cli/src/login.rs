@@ -1,11 +1,10 @@
-//! `cihub login`: keeps the address of the instance and an API token.
+//! `cihub login`: keeps the address of the instance and an API token. Every
+//! route of the API names its organization, which `cihub login` does not know:
+//! the first `cihub queue` command checks the token.
 
 use std::io::Write;
 
-use anyhow::Context;
-use cihub_client::Client;
 use clap::Args;
-use secrecy::SecretString;
 
 use crate::credentials::Credentials;
 
@@ -19,7 +18,7 @@ pub(crate) struct LoginArgs {
     token: Option<String>,
 }
 
-pub(crate) async fn run(out: &mut impl Write, args: LoginArgs) -> anyhow::Result<()> {
+pub(crate) fn run(out: &mut impl Write, args: LoginArgs) -> anyhow::Result<()> {
     let LoginArgs { url, token } = args;
     let token = if let Some(token) = token {
         token
@@ -29,19 +28,9 @@ pub(crate) async fn run(out: &mut impl Write, args: LoginArgs) -> anyhow::Result
         std::io::stdin().read_line(&mut line)?;
         line.trim().to_owned()
     };
-    let client = Client::new(&url, SecretString::from(token.clone()))?;
-    let repos = client
-        .repos()
-        .await
-        .context("the token does not open the API")?;
     let path = Credentials { url, token }.save()?;
 
-    writeln!(
-        out,
-        "logged in: {} repositories, credentials in {}",
-        repos.repos.len(),
-        path.display()
-    )?;
+    writeln!(out, "credentials in {}", path.display())?;
 
     Ok(())
 }

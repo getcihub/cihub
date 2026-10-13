@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 
 use axum::Json;
@@ -6,30 +7,79 @@ use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, PROBLEM_JSON, Problem};
-use cihub_domain::{ApiScope, ApiTokenId, OrgId};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId, UserId};
+use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::de::DeserializeOwned;
 use tracing::error;
+use utoipa::openapi::example::Example;
+use utoipa::openapi::schema::{ObjectBuilder, Type};
+use utoipa::openapi::{self, Content, Header, Ref, RefOr, Responses};
 
+/// What a request may do in the organization of its URL.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApiGrant {
     pub org_id: OrgId,
-    pub token_id: ApiTokenId,
+    pub actor: GrantActor,
     pub scopes: Vec<ApiScope>,
+}
+
+/// Who acts: an API token, or a user through a session of the dashboard,
+/// with the scopes of their role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GrantActor {
+    Token(ApiTokenId),
+    User(UserId),
 }
 
 impl ApiGrant {
     /// # Errors
     ///
-    /// The token lacks `scope`.
+    /// The token, or the role of the user, lacks `scope`.
     pub fn require(&self, scope: ApiScope) -> Result<(), ApiError> {
         if self.scopes.contains(&scope) {
-            Ok(())
-        } else {
-            Err(ApiError::new(
-                ErrorCode::Forbidden,
-                format!("the token lacks the scope `{scope}`"),
-            ))
+            return Ok(());
         }
+
+        let who = match self.actor {
+            GrantActor::Token(_) => "the token",
+            GrantActor::User(_) => "the role of the user",
+        };
+        Err(ApiError::new(
+            ErrorCode::ScopeMissing,
+            format!("{who} lacks the scope `{scope}`"),
+        ))
+    }
+
+    /// A transaction of the organization whose slug is `org`, which the URL
+    /// names (`specs/API.md`).
+    ///
+    /// # Errors
+    ///
+    /// Not found when the grant does not belong to `org`, never forbidden: a
+    /// caller does not learn that another organization exists. Postgres fails.
+    pub async fn begin_in_org(
+        &self,
+        pool: &PgPool,
+        org: &str,
+    ) -> Result<Transaction<'static, Postgres>, ApiError> {
+        let mut tx = begin_org(pool, self.org_id).await?;
+
+        // Row level security shows only the organization of the grant; the SCM
+        // does not tell names apart by their case.
+        let is_grant_org: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM orgs WHERE lower(slug) = lower($1))")
+                .bind(org)
+                .fetch_one(&mut *tx)
+                .await?;
+
+        if !is_grant_org {
+            return Err(ApiError::new(
+                ErrorCode::OrgNotFound,
+                format!("organization `{org}` not found"),
+            ));
+        }
+
+        Ok(tx)
     }
 }
 
@@ -40,13 +90,12 @@ impl<S: Send + Sync> FromRequestParts<S> for ApiGrant {
         parts: &mut Parts,
         _: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        std::future::ready(
-            parts
-                .extensions
-                .get::<Self>()
-                .cloned()
-                .ok_or_else(|| ApiError::new(ErrorCode::Unauthorized, "no valid API token".into())),
-        )
+        std::future::ready(parts.extensions.get::<Self>().cloned().ok_or_else(|| {
+            ApiError::new(
+                ErrorCode::Unauthorized,
+                "no valid API token or session".into(),
+            )
+        }))
     }
 }
 
@@ -66,10 +115,6 @@ impl ApiError {
         }
     }
 
-    pub fn not_found(what: &str) -> Self {
-        Self::new(ErrorCode::NotFound, format!("{what} not found"))
-    }
-
     pub fn invalid(detail: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRequest, detail.into())
     }
@@ -80,15 +125,76 @@ impl ApiError {
     }
 
     pub fn status(&self) -> StatusCode {
-        match self.code {
-            ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-            ErrorCode::Forbidden => StatusCode::FORBIDDEN,
-            ErrorCode::NotFound => StatusCode::NOT_FOUND,
-            ErrorCode::InvalidRequest => StatusCode::BAD_REQUEST,
-            ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-            ErrorCode::InvalidState => StatusCode::CONFLICT,
-            ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+        status_of(self.code)
+    }
+}
+
+fn status_of(code: ErrorCode) -> StatusCode {
+    StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+/// The responses of the `OpenAPI` document for the errors `codes`, as an
+/// `IntoResponses` of a route gives them.
+pub fn error_responses(codes: &[ErrorCode]) -> BTreeMap<String, RefOr<openapi::Response>> {
+    let mut responses = Responses::new();
+    for code in codes {
+        document_error(&mut responses, *code);
+    }
+
+    responses.responses
+}
+
+/// Adds the error `code` to the responses of a route in the `OpenAPI`
+/// document: the response of its status lists it, with an example.
+pub fn document_error(responses: &mut Responses, code: ErrorCode) {
+    let status = status_of(code);
+    let entry = responses
+        .responses
+        .entry(status.as_str().to_owned())
+        .or_insert_with(|| RefOr::T(openapi::Response::new("")));
+    let RefOr::T(response) = entry else {
+        return;
+    };
+
+    let entry = response
+        .content
+        .entry(PROBLEM_JSON.to_owned())
+        .or_insert_with(|| RefOr::T(Content::new(Some(Ref::from_schema_name("Problem")))));
+    let RefOr::T(content) = entry else {
+        return;
+    };
+
+    let name = code.to_string();
+
+    if content.examples.contains_key(&name) {
+        return;
+    }
+
+    let problem = Problem {
+        kind: "about:blank".to_owned(),
+        title: status.canonical_reason().unwrap_or_default().to_owned(),
+        status: status.as_u16(),
+        detail: code.sentence().to_owned(),
+        code,
+    };
+    let mut example = Example::new();
+    example.summary.clone_from(&name);
+    example.value = serde_json::to_value(problem).ok();
+    content.examples.insert(name.clone(), RefOr::T(example));
+
+    let line = format!("- `{name}`: {}", code.sentence());
+    response.description = if response.description.is_empty() {
+        line
+    } else {
+        format!("{}\n{line}", response.description)
+    };
+
+    if code == ErrorCode::RateLimited {
+        let mut retry_after = Header::new(ObjectBuilder::new().schema_type(Type::Integer).build());
+        retry_after.description = Some("The seconds to wait before the next request.".to_owned());
+        response
+            .headers
+            .insert("Retry-After".to_owned(), RefOr::T(retry_after));
     }
 }
 

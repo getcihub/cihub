@@ -1,5 +1,5 @@
 use cihub_domain::UserId;
-use sqlx::PgConnection;
+use sqlx::{PgConnection, PgPool};
 
 use crate::StoreError;
 
@@ -28,4 +28,18 @@ pub async fn ensure_user(
     .await
     .map_err(StoreError::Query)?;
     id.parse().map_err(StoreError::read("user", &id))
+}
+
+/// The login of the user `user_id`, or `None` when no user has it. Users are
+/// global: no context of an organization applies.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn login_of(pool: &PgPool, user_id: UserId) -> Result<Option<String>, StoreError> {
+    sqlx::query_scalar("SELECT login FROM users WHERE id = $1")
+        .bind(user_id.to_string())
+        .fetch_optional(pool)
+        .await
+        .map_err(StoreError::Query)
 }

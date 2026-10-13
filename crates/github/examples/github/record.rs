@@ -185,6 +185,7 @@ pub async fn record(
         url: proxy.url.clone(),
         app_id: config.app_id.clone(),
         private_key: config.private_key.clone(),
+        sign_in: None,
     };
     let recording_app = GithubApp::new(&through_proxy, Arc::new(now))?;
     let world = World {

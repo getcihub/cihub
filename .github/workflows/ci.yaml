@@ -62,6 +62,9 @@ jobs:
       - name: Run linters
         run: mise run lint
 
+      - name: Check that the API client of the dashboard is up to date
+        run: mise run web-generate-check
+
   rust-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
@@ -161,6 +164,45 @@ jobs:
 
       - name: Check coverage of the pure crates
         run: mise run cover
+
+  dashboard-e2e:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Dashboard E2E
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Cache Cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-e2e-${{ hashFiles('Cargo.lock', 'mise.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-e2e-
+
+      # The system libraries of Chromium: the task installs only the browser.
+      - name: Install Chromium and its libraries
+        run: mise run web-install && pnpm --dir web exec playwright install --with-deps chromium
+
+      # Starts the Postgres of compose.yaml, builds the dashboard, then runs
+      # Playwright against the server on the simulator (crates/cli/examples/e2e.rs).
+      - name: Run the browser tests of the dashboard
+        run: mise run e2e
 
   workflow-lint:
     if: >-
@@ -268,6 +310,7 @@ jobs:
       - rust-test
       - rust-integration
       - rust-cover
+      - dashboard-e2e
       - workflow-lint
       - helm-lint
       - helm-unittest

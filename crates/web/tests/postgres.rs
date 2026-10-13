@@ -3,10 +3,17 @@
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::fmt::Write;
+use std::sync::Arc;
 
-use cihub_domain::{ApiScope, ApiTokenId, OrgId};
-use cihub_store::{NewApiToken, begin_system, create_api_token, new_api_token_secret};
-use cihub_web::GithubWebhooks;
+use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, QueueId, SessionId, UserId};
+use cihub_platform::{QueueNewsFeed, notify_queue_changed};
+use cihub_scm::sim::Sim;
+use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
+use cihub_store::{
+    NewApiToken, NewSession, begin_org, begin_system, create_api_token, create_session, csrf_token,
+    ensure_user, new_api_token_secret, new_session_secret, record_membership,
+};
+use cihub_web::{Dashboard, GithubWebhooks};
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
@@ -24,14 +31,32 @@ fn now() -> OffsetDateTime {
 }
 
 async fn start(pool: &PgPool) -> String {
+    start_with(pool, Arc::new(Sim::new())).await
+}
+
+const PUBLIC_URL: &str = "https://ci.example.com";
+
+async fn start_with(pool: &PgPool, sim: Arc<Sim>) -> String {
+    start_until(pool, sim, CancellationToken::new()).await
+}
+
+/// Serves the web role until `cancel`.
+async fn start_until(pool: &PgPool, sim: Arc<Sim>, cancel: CancellationToken) -> String {
     let github = GithubWebhooks {
         secret: SecretString::from(SECRET),
     };
-    let router = cihub_web::router(pool.clone(), now, github, Vec::new());
+    let dashboard = Dashboard {
+        scm: sim,
+        public_url: Some(PUBLIC_URL.to_owned()),
+        news: QueueNewsFeed::start(pool.clone(), cancel.clone())
+            .await
+            .unwrap(),
+    };
+    let router = cihub_web::router(pool.clone(), now, github, Vec::new(), dashboard);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
 
-    tokio::spawn(cihub_web::serve(listener, router, CancellationToken::new()));
+    tokio::spawn(cihub_web::serve(listener, router, cancel));
     addr
 }
 
@@ -127,16 +152,30 @@ async fn a_delivery_without_a_valid_signature_or_its_headers_is_refused(pool: Pg
 
 struct Answer {
     status: u16,
+    /// The head in lower case, to compare the names of the headers.
     head: String,
+    /// The head as the server sent it: a value keeps its case.
+    raw_head: String,
     body: String,
 }
 
 async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answer {
-    let mut stream = TcpStream::connect(addr).await.unwrap();
-    let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    let authorization = token.map(|token| format!("Bearer {token}"));
+    let headers: Vec<(&str, &str)> = authorization
+        .iter()
+        .map(|value| ("Authorization", value.as_str()))
+        .collect();
+    call_with(addr, method, path, &headers).await
+}
 
-    if let Some(token) = token {
-        let _ = write!(request, "Authorization: Bearer {token}\r\n");
+async fn call_with(addr: &str, method: &str, path: &str, headers: &[(&str, &str)]) -> Answer {
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let mut request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: 0\r\n"
+    );
+
+    for (name, value) in headers {
+        let _ = write!(request, "{name}: {value}\r\n");
     }
 
     request.push_str("\r\n");
@@ -147,6 +186,7 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
     Answer {
         status: head.split(' ').nth(1).unwrap().parse().unwrap(),
         head: head.to_lowercase(),
+        raw_head: head.to_owned(),
         body: body.to_owned(),
     }
 }
@@ -187,7 +227,7 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
     let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
 
-    let anonymous = call(&addr, "GET", "/api/v1/repos", None).await;
+    let anonymous = call(&addr, "GET", "/api/v1/orgs/acme/repos", None).await;
 
     assert_eq!(anonymous.status, 401);
     assert!(
@@ -199,15 +239,15 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(problem["code"], "unauthorized");
     assert_eq!(problem["status"], 401);
     assert_eq!(
-        call(&addr, "GET", "/api/v1/repos", Some("cht_unknown"))
+        call(&addr, "GET", "/api/v1/orgs/acme/repos", Some("cht_unknown"))
             .await
             .status,
         401
     );
 
-    let forbidden = call(&addr, "GET", "/api/v1/repos", Some(&writer)).await;
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&writer)).await;
     assert_eq!(forbidden.status, 403, "{}", forbidden.body);
-    let repos = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    let repos = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
     assert_eq!(repos.status, 200, "{}", repos.body);
     let repos: serde_json::Value = serde_json::from_str(&repos.body).unwrap();
     assert_eq!(repos["repos"][0]["name"], "app");
@@ -220,7 +260,119 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(document.status, 200);
     let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
     assert!(document["openapi"].as_str().unwrap().starts_with("3.1"));
-    assert!(document["paths"]["/repos"]["get"].is_object());
+    assert_eq!(
+        document["paths"]["/orgs/{org}/repos"]["get"]["security"],
+        serde_json::json!([{ "token": ["queues:read"] }, { "session": [] }])
+    );
+}
+
+/// Reads `stream` until its text holds `marker`, at most 5 seconds; `None`
+/// once the server closes it.
+async fn read_until(stream: &mut TcpStream, marker: &str) -> Option<String> {
+    let mut text = String::new();
+    let mut buffer = [0; 4096];
+    let reading = async {
+        while !text.contains(marker) {
+            let read = stream.read(&mut buffer).await.unwrap();
+            if read == 0 {
+                return None;
+            }
+            text.push_str(&String::from_utf8_lossy(&buffer[..read]));
+        }
+        Some(text.clone())
+    };
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), reading)
+        .await
+        .unwrap()
+}
+
+/// The stream of an organization carries the changes of its queues only, and
+/// ends when the server stops.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_stream_carries_the_changes_of_the_organization_only(pool: PgPool) {
+    let cancel = CancellationToken::new();
+    let addr = start_until(&pool, Arc::new(Sim::new()), cancel.clone()).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    let request = format!(
+        "GET /api/v1/orgs/acme/stream HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {reader}\r\n\r\n"
+    );
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+
+    let head = read_until(&mut stream, "retry: 1000").await.unwrap();
+
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(head.contains("content-type: text/event-stream"), "{head}");
+
+    let acme_queue = QueueId::from_ulid(Ulid(30));
+    let other_queue = QueueId::from_ulid(Ulid(31));
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(8)), other_queue, Some(3))
+        .await
+        .unwrap();
+    notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(7)), acme_queue, None)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let events = read_until(&mut stream, &acme_queue.to_string())
+        .await
+        .unwrap();
+
+    assert!(events.contains("event: queue_changed"), "{events}");
+    assert!(
+        events.contains(&format!(r#"data: {{"queue_id":"{acme_queue}","seq":0}}"#)),
+        "{events}"
+    );
+    assert!(!events.contains(&other_queue.to_string()), "{events}");
+
+    cancel.cancel();
+
+    // The last chunk of the body, or a closed connection: the stream ended.
+    let end = read_until(&mut stream, "\r\n0\r\n\r\n").await;
+    assert!(
+        end.as_deref()
+            .is_none_or(|end| end.ends_with("\r\n0\r\n\r\n")),
+        "{end:?}"
+    );
+}
+
+/// The stream answers as the other routes: `404` on another organization,
+/// `403` without `queues:read`, and `429` past the streams of a caller.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_stream_is_refused_as_the_other_routes(pool: PgPool) {
+    let cancel = CancellationToken::new();
+    let addr = start_until(&pool, Arc::new(Sim::new()), cancel.clone()).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
+
+    let other = call(&addr, "GET", "/api/v1/orgs/globex/stream", Some(&reader)).await;
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/stream", Some(&writer)).await;
+
+    assert_eq!(other.status, 404, "{}", other.body);
+    assert_eq!(forbidden.status, 403, "{}", forbidden.body);
+
+    let mut open = Vec::new();
+    for _ in 0..8 {
+        let mut stream = TcpStream::connect(&addr).await.unwrap();
+        let request = format!(
+            "GET /api/v1/orgs/acme/stream HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {reader}\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).await.unwrap();
+        read_until(&mut stream, "retry: 1000").await.unwrap();
+        open.push(stream);
+    }
+
+    let ninth = call(&addr, "GET", "/api/v1/orgs/acme/stream", Some(&reader)).await;
+    assert_eq!(ninth.status, 429, "{}", ninth.body);
+
+    // A page that leaves is seen at the next ping; the server ends the streams
+    // at once when it stops.
+    cancel.cancel();
+    drop(open);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -230,16 +382,302 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
 
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
-            call(&addr, "GET", "/api/v1/repos", Some(&reader))
+            call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader))
                 .await
                 .status,
             200
         );
     }
 
-    let limited = call(&addr, "GET", "/api/v1/repos", Some(&reader)).await;
+    let limited = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
     assert_eq!(limited.status, 429);
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
     let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();
     assert_eq!(problem["code"], "rate_limited");
+}
+
+/// A session of a user with `role` in `acme`, and its secret.
+async fn session(pool: &PgPool, role: MembershipRole) -> SecretString {
+    token(pool, 9, &[]).await;
+    let org = OrgId::from_ulid(Ulid(7));
+    let user_id = UserId::from_ulid(Ulid(5));
+    let secret = new_session_secret().unwrap();
+    let session = NewSession {
+        id: SessionId::from_ulid(Ulid(1)),
+        user_id,
+        created_at: now(),
+        expires_at: now() + time::Duration::days(14),
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+
+    ensure_user(&mut tx, user_id, "5", "ada").await.unwrap();
+    create_session(&mut tx, &session, &secret).await.unwrap();
+    tx.commit().await.unwrap();
+    let mut tx = begin_org(pool, org).await.unwrap();
+    record_membership(&mut tx, org, user_id, role, now())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret
+}
+
+fn session_cookie(secret: &SecretString) -> String {
+    format!(
+        "theme=dark; __Host-cihub_session={}",
+        secret.expose_secret()
+    )
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Member).await;
+    let cookie = session_cookie(&secret);
+    let with_session = [("Cookie", cookie.as_str())];
+    let unknown = [("Cookie", "__Host-cihub_session=chs_unknown")];
+
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let org = call_with(&addr, "GET", "/api/v1/orgs/acme", &with_session).await;
+    let repos = call_with(&addr, "GET", "/api/v1/orgs/ACME/repos", &with_session).await;
+    let repo = call_with(&addr, "GET", "/api/v1/orgs/acme/repos/APP", &with_session).await;
+    let audit = call_with(&addr, "GET", "/api/v1/orgs/acme/audit", &with_session).await;
+    let other = call_with(&addr, "GET", "/api/v1/orgs/globex/repos", &with_session).await;
+    let anonymous = call_with(&addr, "GET", "/api/v1/user", &unknown).await;
+
+    assert_eq!(me.status, 200, "{}", me.body);
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+    let org: serde_json::Value = serde_json::from_str(&org.body).unwrap();
+    let repo: serde_json::Value = serde_json::from_str(&repo.body).unwrap();
+    assert_eq!(me, serde_json::json!({ "login": "ada" }));
+    assert_eq!(
+        orgs,
+        serde_json::json!({
+            "orgs": [{ "slug": "acme", "role": "member" }],
+            "has_more": false, "count": 1, "cursor": null
+        })
+    );
+    assert_eq!(org, serde_json::json!({ "slug": "acme", "role": "member" }));
+    assert_eq!(repo["name"], "app", "the case of a name does not matter");
+    assert_eq!(repos.status, 200, "{}", repos.body);
+    assert_eq!(audit.status, 403, "{}", audit.body);
+    assert_eq!(other.status, 404, "{}", other.body);
+    assert_eq!(anonymous.status, 401);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Admin).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+    let cookie = session_cookie(&secret);
+    let csrf = csrf_token(&secret);
+    let forged = [("Cookie", cookie.as_str()), ("X-CSRF-Token", "guess")];
+    let signed = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
+
+    let refused = call_with(&addr, "POST", "/auth/sign-out", &forged).await;
+    let by_token = call(&addr, "GET", "/api/v1/user", Some(&reader)).await;
+    let instance = call(&addr, "GET", "/api/v1/instance", Some(&reader)).await;
+    let org = call(&addr, "GET", "/api/v1/orgs/acme", Some(&reader)).await;
+    let signed_out = call_with(&addr, "POST", "/auth/sign-out", &signed).await;
+    let after = call_with(&addr, "GET", "/api/v1/user", &signed).await;
+
+    assert_eq!(refused.status, 403, "{}", refused.body);
+    assert_eq!(by_token.status, 401, "{}", by_token.body);
+    assert_eq!(instance.status, 200, "{}", instance.body);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&org.body).unwrap(),
+        serde_json::json!({ "slug": "acme", "role": null }),
+        "a token has no role"
+    );
+    assert_eq!(signed_out.status, 204);
+    assert!(
+        signed_out.head.contains(
+            "set-cookie: __host-cihub_session=; path=/; secure; samesite=lax; max-age=0; httponly"
+        ),
+        "{}",
+        signed_out.head
+    );
+    assert!(
+        signed_out
+            .head
+            .contains("set-cookie: __host-cihub_csrf=; path=/; secure; samesite=lax; max-age=0\r"),
+        "{}",
+        signed_out.head
+    );
+    assert_eq!(after.status, 401);
+}
+
+/// `text` with each `%XX` of a query decoded.
+fn percent_decode(text: &str) -> String {
+    let mut bytes = Vec::new();
+    let mut rest = text.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%' && tail.len() >= 2 {
+            let hex = std::str::from_utf8(&tail[..2]).unwrap();
+            bytes.push(u8::from_str_radix(hex, 16).unwrap());
+            rest = &tail[2..];
+        } else {
+            bytes.push(byte);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).unwrap()
+}
+
+/// The values of the header `name` of the raw head of an answer.
+fn header_values(raw_head: &str, name: &str) -> Vec<String> {
+    raw_head
+        .lines()
+        .filter_map(|line| line.split_once(": "))
+        .filter(|(header, _)| header.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.to_owned())
+        .collect()
+}
+
+/// The value that a `Set-Cookie` header gives to the cookie `name`.
+fn cookie_set(raw_head: &str, name: &str) -> Option<String> {
+    let prefix = format!("{name}=");
+    header_values(raw_head, "set-cookie")
+        .iter()
+        .find_map(|cookie| {
+            cookie
+                .strip_prefix(&prefix)?
+                .split(';')
+                .next()
+                .map(str::to_owned)
+        })
+}
+
+/// Starts a sign-in, signs `person` in on the simulator, and returns the
+/// answer of the callback.
+async fn sign_in(addr: &str, sim: &Sim, person: &ScmUser, next: &str) -> Answer {
+    let started = call_with(addr, "GET", &format!("/auth/github?next={next}"), &[]).await;
+    let location = header_values(&started.raw_head, "location").pop().unwrap();
+    let query = location.split_once('?').unwrap().1;
+    let param = |name: &str| {
+        let value = query
+            .split('&')
+            .find_map(|pair| pair.strip_prefix(&format!("{name}=")))
+            .unwrap();
+        percent_decode(value)
+    };
+    let request = SignInRequest {
+        redirect_url: param("redirect_uri"),
+        state: param("state"),
+        code_challenge: param("code_challenge"),
+    };
+    let kept = cookie_set(&started.raw_head, "__Host-cihub_sign_in").unwrap();
+    let code = sim.authorize(person, &request);
+    let cookie = format!("__Host-cihub_sign_in={kept}");
+    let path = format!("/auth/github/callback?code={code}&state={}", request.state);
+
+    assert_eq!(started.status, 303);
+    assert_eq!(
+        request.redirect_url,
+        format!("{PUBLIC_URL}/auth/github/callback")
+    );
+    call_with(addr, "GET", &path, &[("Cookie", cookie.as_str())]).await
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgPool) {
+    token(&pool, 9, &[]).await;
+    let sim = Arc::new(Sim::new());
+    let ada = ScmUser {
+        external_id: "5".into(),
+        login: "ada".into(),
+    };
+    let account = ScmAccount {
+        external_id: "1".into(),
+        path: "acme".into(),
+    };
+
+    sim.add_installation("1", account, &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+
+    let callback = sign_in(&addr, &sim, &ada, "/orgs/acme").await;
+
+    assert_eq!(callback.status, 303, "{}", callback.head);
+    assert_eq!(
+        header_values(&callback.raw_head, "location"),
+        ["/orgs/acme"]
+    );
+    let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
+    let csrf = cookie_set(&callback.raw_head, "__Host-cihub_csrf").unwrap();
+    assert_eq!(csrf, csrf_token(&SecretString::from(session.clone())));
+    assert_eq!(
+        cookie_set(&callback.raw_head, "__Host-cihub_sign_in").as_deref(),
+        Some("")
+    );
+
+    let cookie = format!("__Host-cihub_session={session}");
+    let with_session = [("Cookie", cookie.as_str())];
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let instance = call_with(&addr, "GET", "/api/v1/instance", &with_session).await;
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+    let instance: serde_json::Value = serde_json::from_str(&instance.body).unwrap();
+
+    assert_eq!(me["login"], "ada");
+    assert_eq!(
+        orgs["orgs"],
+        serde_json::json!([{ "slug": "acme", "role": "member" }])
+    );
+    assert_eq!(instance["app_install_url"], "sim:install");
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_person_without_an_organization_gets_a_session_to_install_the_app(pool: PgPool) {
+    let sim = Arc::new(Sim::new());
+    let grace = ScmUser {
+        external_id: "6".into(),
+        login: "grace".into(),
+    };
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+
+    let callback = sign_in(&addr, &sim, &grace, "/").await;
+
+    assert_eq!(header_values(&callback.raw_head, "location"), ["/"]);
+    let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
+    let cookie = format!("__Host-cihub_session={session}");
+    let with_session = [("Cookie", cookie.as_str())];
+    let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+
+    assert_eq!(me["login"], "grace");
+    assert_eq!(orgs["orgs"], serde_json::json!([]));
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_callback_that_is_not_the_one_of_the_sign_in_fails(pool: PgPool) {
+    let sim = Arc::new(Sim::new());
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+    let started = call_with(&addr, "GET", "/auth/github", &[]).await;
+    let kept = cookie_set(&started.raw_head, "__Host-cihub_sign_in").unwrap();
+    let cookie = format!("__Host-cihub_sign_in={kept}");
+
+    let without_sign_in =
+        call_with(&addr, "GET", "/auth/github/callback?code=c&state=s", &[]).await;
+    let other_state = call_with(
+        &addr,
+        "GET",
+        "/auth/github/callback?code=c&state=forged",
+        &[("Cookie", cookie.as_str())],
+    )
+    .await;
+
+    for failed in [without_sign_in, other_state] {
+        assert_eq!(failed.status, 303);
+        assert_eq!(
+            header_values(&failed.raw_head, "location"),
+            ["/sign-in?error=failed"]
+        );
+        assert!(cookie_set(&failed.raw_head, "__Host-cihub_session").is_none());
+    }
 }

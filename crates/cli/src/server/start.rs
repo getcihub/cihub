@@ -42,6 +42,7 @@ pub(super) struct Shared {
     pub pool: PgPool,
     pub process: String,
     pub http_addr: SocketAddr,
+    pub public_url: Option<String>,
     pub github: Github,
     pub cancel: CancellationToken,
 }
@@ -49,6 +50,7 @@ pub(super) struct Shared {
 pub(super) async fn run(
     internal_addr: SocketAddr,
     http_addr: SocketAddr,
+    public_url: Option<String>,
     pool: PgPool,
     github: Github,
 ) -> anyhow::Result<()> {
@@ -71,6 +73,7 @@ pub(super) async fn run(
         pool,
         process: process_name(),
         http_addr,
+        public_url,
         github,
         cancel: cancel.clone(),
     };

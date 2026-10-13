@@ -27,6 +27,7 @@ use cihub_scm::Scm;
 use cihub_store::PgPool;
 use time::OffsetDateTime;
 
+pub use config::request_config_checks;
 pub use jobs::{REFRESH_PRS, queue_status_context};
 pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::resync;
@@ -36,7 +37,7 @@ pub use scheduler::{
 
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
 use crate::command::PR_COMMAND;
-use crate::config::LOAD_CONFIG;
+use crate::config::{CHECK_CONFIG, LOAD_CONFIG};
 use crate::jobs::SUBMIT_PR;
 use crate::merge::MERGE_PR;
 use crate::repair::{REFRESH_CHECKS, REFRESH_TARGET};
@@ -119,18 +120,28 @@ macro_rules! register {
     }};
 }
 
+/// The part of the API document that the routes of the queues give.
+pub fn openapi() -> utoipa::openapi::OpenApi {
+    api::openapi()
+}
+
 /// The merge queue module: the executors of its jobs, which call `scm`, and its
-/// scheduler loop, which runs as `owner`.
+/// scheduler loop, which runs as `owner` and links the PRs to `dashboard_url`,
+/// the address of the dashboard.
 pub fn module(
     pool: PgPool,
     scm: Arc<dyn Scm>,
     translate: Translate,
     owner: String,
     clock: Clock,
+    dashboard_url: Option<String>,
 ) -> Module {
-    let reconciler = Reconciler { translate };
+    let reconciler = Reconciler {
+        translate,
+        dashboard_url,
+    };
     Module {
-        api: api::api(pool.clone(), clock.clone(), scm.clone()),
+        api: api::api(pool.clone(), clock.clone()),
         executors: Box::new(move |executors| {
             register!(executors, scm, REFRESH_PRS, jobs::refresh);
             register!(executors, scm, SUBMIT_PR, jobs::submit_pr);
@@ -140,6 +151,7 @@ pub fn module(
             register!(executors, scm, REFRESH_CHECKS, repair::read_checks);
             register!(executors, scm, REFRESH_TARGET, repair::read_target);
             register!(executors, scm, LOAD_CONFIG, config::load);
+            register!(executors, scm, CHECK_CONFIG, config::check);
             register!(executors, scm, PR_COMMAND, command::run_pr_command);
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);

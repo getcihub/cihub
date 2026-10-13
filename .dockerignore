@@ -6,3 +6,5 @@ mise.local.toml
 .env
 .env.*
 deploy/
+web/node_modules/
+web/dist/
