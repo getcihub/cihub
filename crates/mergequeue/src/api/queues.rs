@@ -106,7 +106,7 @@ async fn begin_queue(
     Ok((tx, row))
 }
 
-/// The counters of the items of a queue, read with [`COUNT_COLUMNS`].
+/// The counters of the items of a queue, read from [`COUNT_SOURCE`].
 #[derive(sqlx::FromRow)]
 struct CountsRow {
     not_ready: i64,
@@ -120,24 +120,37 @@ struct CountsRow {
     last_merged_at: Option<OffsetDateTime>,
 }
 
-/// The aggregates of [`CountsRow`] over the items `i`, with the time of the
-/// request as `$1`. Like the graph and the commands, the counters read only
-/// the current item of each PR.
-const COUNT_COLUMNS: &str =
-    "count(*) FILTER (WHERE i.is_current AND i.state = 'not_ready') AS not_ready,
-     count(*) FILTER (WHERE i.is_current AND i.state = 'pending') AS pending,
-     count(*) FILTER (WHERE i.is_current AND i.state = 'testing') AS testing,
-     count(*) FILTER (WHERE i.is_current AND i.state = 'pending_failure') AS pending_failure,
-     count(*) FILTER (WHERE i.is_current AND i.state = 'tests_passed') AS tests_passed,
-     count(*) FILTER (WHERE i.state = 'merged' AND i.state_changed_at > $1 - interval '24 hours')
-         AS merged_last_24h,
-     count(*) FILTER (WHERE i.is_current AND i.state = 'failed'
-                        AND i.state_changed_at > $1 - interval '24 hours')
-         AS failed_last_24h,
-     count(*) FILTER (WHERE i.is_current AND i.state IN ('failed', 'cancelled')
-                        AND i.state_changed_at > $1 - interval '24 hours')
-         AS failed_or_cancelled_last_24h,
-     max(i.state_changed_at) FILTER (WHERE i.state = 'merged') AS last_merged_at";
+/// The lookups of [`CountsRow`] for each queue `q`, with the time of the
+/// request as `$1`, to write after `q`. Like the graph and the commands, the
+/// counters read only the current item of each PR. Each lookup reads one
+/// index rather than the history of the queue, `queue_items_order` or
+/// `queue_items_ended`: their predicates match only states written as
+/// literals.
+const COUNT_SOURCE: &str = "CROSS JOIN LATERAL (
+         SELECT count(*) FILTER (WHERE i.state = 'not_ready') AS not_ready,
+                count(*) FILTER (WHERE i.state = 'pending') AS pending,
+                count(*) FILTER (WHERE i.state = 'testing') AS testing,
+                count(*) FILTER (WHERE i.state = 'pending_failure') AS pending_failure,
+                count(*) FILTER (WHERE i.state = 'tests_passed') AS tests_passed
+         FROM queue_items i
+         WHERE i.queue_id = q.id AND i.is_current
+           AND i.state NOT IN ('merged', 'failed', 'cancelled')
+     ) live
+     CROSS JOIN LATERAL (
+         SELECT count(*) FILTER (WHERE i.state = 'merged') AS merged_last_24h,
+                count(*) FILTER (WHERE i.state = 'failed') AS failed_last_24h,
+                count(*) FILTER (WHERE i.state IN ('failed', 'cancelled'))
+                    AS failed_or_cancelled_last_24h
+         FROM queue_items i
+         WHERE i.queue_id = q.id AND i.is_current
+           AND i.state IN ('merged', 'failed', 'cancelled')
+           AND i.state_changed_at > $1 - interval '24 hours'
+     ) ended
+     CROSS JOIN LATERAL (
+         SELECT max(i.state_changed_at) AS last_merged_at
+         FROM queue_items i
+         WHERE i.queue_id = q.id AND i.is_current AND i.state = 'merged'
+     ) merged";
 
 #[derive(sqlx::FromRow)]
 struct CountedQueueRow {
@@ -367,15 +380,19 @@ async fn queue_list(
         Some((repo, name, id)) => (Some(repo), Some(name), Some(id)),
         None => (None, None, None),
     };
+    // The page first: the counters of a queue cost a few lookups each.
     let rows: Vec<CountedQueueRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {QUEUE_COLUMNS}, {COUNT_COLUMNS}
-         FROM {QUEUE_SOURCE}
-         LEFT JOIN queue_items i ON i.queue_id = q.id
-         WHERE ($2::text IS NULL OR q.repo_id = $2)
-           AND ($3::text IS NULL OR (r.name, q.name, q.id) > ($3, $4, $5))
-         GROUP BY q.id, r.id, c.id, u.id
-         ORDER BY r.name, q.name, q.id
-         LIMIT $6"
+        "SELECT q.*, live.*, ended.*, merged.*
+         FROM (
+             SELECT {QUEUE_COLUMNS}
+             FROM {QUEUE_SOURCE}
+             WHERE ($2::text IS NULL OR q.repo_id = $2)
+               AND ($3::text IS NULL OR (r.name, q.name, q.id) > ($3, $4, $5))
+             ORDER BY r.name, q.name, q.id
+             LIMIT $6
+         ) q
+         {COUNT_SOURCE}
+         ORDER BY q.repo, q.name, q.id"
     )))
     .bind(now)
     .bind(&repo)
@@ -427,7 +444,7 @@ pub(super) async fn get_queue(
     let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let now = (state.clock)();
     let counts: CountsRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {COUNT_COLUMNS} FROM queue_items i WHERE i.queue_id = $2"
+        "SELECT live.*, ended.*, merged.* FROM (SELECT $2::text AS id) q {COUNT_SOURCE}"
     )))
     .bind(now)
     .bind(&queue.id)
@@ -573,16 +590,18 @@ pub(super) async fn graph(
         })
         .collect();
 
+    // The last run of each live group, looked up by group rather than joined
+    // with every run of the organization.
     let rows: Vec<GraphRunRow> = sqlx::query_as(
-        "SELECT * FROM (
-             SELECT DISTINCT ON (g.id) r.id AS run_id, g.item_ids, g.predecessor_ids, r.attempt,
-                    r.status::text AS status, r.started_at
-             FROM test_groups g
-             JOIN test_runs r ON r.group_id = g.id
-             WHERE g.queue_id = $1 AND g.state NOT IN ('merged', 'failed', 'bisected', 'dissolved')
-             ORDER BY g.id, r.attempt DESC
-         ) AS last_runs
-         ORDER BY started_at, run_id",
+        "SELECT r.id AS run_id, g.item_ids, g.predecessor_ids, r.attempt,
+                r.status::text AS status, r.started_at
+         FROM test_groups g
+         CROSS JOIN LATERAL (
+             SELECT run.id, run.attempt, run.status, run.started_at FROM test_runs run
+             WHERE run.group_id = g.id ORDER BY run.attempt DESC LIMIT 1
+         ) r
+         WHERE g.queue_id = $1 AND g.state NOT IN ('merged', 'failed', 'bisected', 'dissolved')
+         ORDER BY r.started_at, r.id",
     )
     .bind(&queue.id)
     .fetch_all(&mut *tx)

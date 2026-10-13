@@ -3753,13 +3753,23 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
         serde_json::json!([{ "pr_number": second, "state": "testing" }])
     );
 
-    for sort in ["newest", "position"] {
-        let path = format!("/orgs/acme/prs?author=bob&sort={sort}");
-        let whole = get(path.clone()).await;
-        let paged = every_page(&addr, &token, &path, "prs").await;
+    // Each filter writes its own SQL: the organization alone, a repository
+    // alone, a state, an author.
+    let filters = [
+        ("", 3),
+        ("repo=app&", 3),
+        ("state=merged&", 1),
+        ("author=bob&", 3),
+    ];
+    for (filter, count) in filters {
+        for sort in ["newest", "position"] {
+            let path = format!("/orgs/acme/prs?{filter}sort={sort}");
+            let whole = get(path.clone()).await;
+            let paged = every_page(&addr, &token, &path, "prs").await;
 
-        assert_eq!(&paged, whole["prs"].as_array().unwrap(), "sort={sort}");
-        assert_eq!(whole["count"], 3, "sort={sort}");
+            assert_eq!(&paged, whole["prs"].as_array().unwrap(), "{path}");
+            assert_eq!(whole["count"], count, "{path}");
+        }
     }
 
     let cancel = format!("/orgs/acme/repos/app/prs/{second}/cancel");

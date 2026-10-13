@@ -68,7 +68,11 @@ CREATE INDEX queue_items_author_live ON queue_items (pr_author_id)
     WHERE is_current AND state NOT IN ('merged', 'failed', 'cancelled');
 CREATE INDEX queue_items_author_merged ON queue_items (pr_author_id, state_changed_at)
     WHERE is_current AND state = 'merged';
-CREATE INDEX queue_items_state_changed ON queue_items (queue_id, state, state_changed_at);
+-- The counters of the last 24 hours, the last merge and the tabs of the ended items.
+CREATE INDEX queue_items_ended ON queue_items (queue_id, state_changed_at)
+    WHERE is_current AND state IN ('merged', 'failed', 'cancelled');
+-- The lists of the PRs of an organization, the newest first.
+CREATE INDEX queue_items_newest ON queue_items (org_id, submitted_at DESC, id DESC) WHERE is_current;
 
 CREATE TABLE test_groups (
     id              text        PRIMARY KEY,
@@ -82,6 +86,9 @@ CREATE TABLE test_groups (
 );
 
 CREATE INDEX test_groups_queue_id ON test_groups (queue_id);
+-- The live groups of a queue: the graph.
+CREATE INDEX test_groups_live ON test_groups (queue_id)
+    WHERE state NOT IN ('merged', 'failed', 'bisected', 'dissolved');
 
 CREATE TABLE test_runs (
     id                       text                     PRIMARY KEY,
@@ -109,7 +116,10 @@ CREATE TABLE test_runs (
 
 CREATE INDEX test_runs_live ON test_runs (queue_id, status)
     WHERE status IN ('assembling', 'in_progress');
-CREATE INDEX test_runs_tested_pr_numbers ON test_runs USING gin (tested_pr_numbers);
+-- The recent runs of a queue: the runs that tested a PR, for its history.
+CREATE INDEX test_runs_queue_started ON test_runs (queue_id, started_at);
+-- The run of a test commit, at each report of a check.
+CREATE INDEX test_runs_test_sha ON test_runs (test_sha);
 CREATE INDEX test_runs_group_id ON test_runs (group_id);
 CREATE INDEX test_runs_succeeded ON test_runs (queue_id, ended_at) WHERE status = 'succeeded';
 

@@ -28,4 +28,7 @@ CREATE INDEX jobs_ready ON jobs (class, run_after) WHERE state = 'queued';
 
 CREATE INDEX jobs_running ON jobs (connection_id, locked_until) WHERE state = 'running';
 
+-- Whether a queue already has a job of a type in flight: the merge, the check of the configuration.
+CREATE INDEX jobs_in_flight ON jobs (queue_id, type) WHERE state IN ('queued', 'running');
+
 SELECT cihub_tenant_table('jobs');
