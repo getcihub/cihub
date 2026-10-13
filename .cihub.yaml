@@ -21,3 +21,8 @@ queues:
       - check-success = Build Success
     merge_conditions:
       - check-success = Build Success
+priority_rules:
+  - name: renovate
+    conditions:
+      - author = cihub-renovate[bot]
+    priority: low
