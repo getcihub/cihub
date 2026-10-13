@@ -1,5 +1,5 @@
 // The client of the API, generated from the document that the server serves
-// (`mise run generate`): never edited by hand.
+// (`mise run web:generate`): never edited by hand.
 import { defineConfig } from "@hey-api/openapi-ts";
 
 export default defineConfig({

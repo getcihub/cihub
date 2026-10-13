@@ -103,4 +103,4 @@ Kubernetes: `>=1.25.0-0`
 ---
 
 _helm-docs generates this README from `Chart.yaml`, `values.yaml` and `README.md.gotmpl`; edit them, then run
-`mise run generate`._
+`mise run helm:generate`._

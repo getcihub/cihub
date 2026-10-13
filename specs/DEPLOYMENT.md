@@ -16,7 +16,7 @@ only.
 
 ```sh
 mise run db            # Postgres, then postgres-setup
-mise run db-reset      # erases the data, then mise run db (after a migration is rewritten)
+mise run db:reset      # erases the data, then mise run db (after a migration is rewritten)
 mise run migrate       # Postgres, then cihub server migrate
 mise run dev           # migrate, then cihub server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
@@ -37,7 +37,8 @@ CIHUB_GITHUB_WEBHOOK_SECRET = "<the webhook secret of the App>"
 The first time, `mise trust mise.local.toml` authorizes the file. To receive webhooks locally, the webhook URL
 of the App points to a tunnel that leads to port 8080.
 
-`mise tasks` lists the project tasks and their description.
+`mise tasks` lists the project tasks and their description. A task of one part carries its prefix (`rust:`, `web:`,
+`helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
 
 ## Server configuration
 
@@ -166,9 +167,9 @@ role of the URL owns the database, as the migration Job uses the same URL. The p
 CIHub does not call the Kubernetes API. `charts/cihub/README.md`, generated, lists the values.
 
 ```sh
-mise run helm-lint       # helm lint with charts/cihub/ci/lint-values.yaml
-mise run helm-unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
-mise run generate        # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
+mise run helm:lint       # helm lint with charts/cihub/ci/lint-values.yaml
+mise run helm:unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
+mise run helm:generate   # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
 mise run smoke           # the chart in a throwaway kind cluster (needs Docker)
 ```
 
@@ -234,15 +235,15 @@ Migrations are explicit:
 `mise install` installs the whole suite: Rust (version pinned in `mise.toml`, with `clippy`,
 `rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
 `lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml`: `cargo fmt`, `actionlint` and `zizmor` at
-commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
+commit, `mise run lint` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
 ## Project CI
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
 test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise run cover`), `Workflow Lint`
-(`mise run lint-workflows`), `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm Unittest`
-(`mise run helm-unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
+(`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run helm:generate-check`), `Helm Unittest`
+(`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
 of the `main` branch: it fails when one of these jobs failed or was cancelled.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each
