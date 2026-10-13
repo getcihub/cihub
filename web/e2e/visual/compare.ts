@@ -10,11 +10,13 @@ import type { Box, ViewerData } from "./viewer/data";
 
 interface Difference {
   name: string;
-  /** The number of pixels that changed; `null` when the size of the view changed. */
-  pixels: number | null;
+  /** The number of pixels that changed, the pixels that only one capture has included. */
+  pixels: number;
   region: string;
-  /** The smallest rectangle that holds the changed pixels; `null` when the size of the view changed. */
-  box: Box | null;
+  /** The smallest rectangle that holds the changed pixels. */
+  box: Box;
+  /** The size before and after, when it changed: "1280×800 → 1280×923". */
+  resized: string | null;
 }
 
 const [baseDir, headDir, outDir, label = "the base"] = process.argv.slice(2);
@@ -27,7 +29,8 @@ const pngs = (dir: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".png")) : [];
 const dataUrl = (file: string): string => `data:image/png;base64,${readFileSync(file).toString("base64")}`;
 
-// The page compares the two images on canvases, and draws the head dimmed with the changed pixels in red.
+// The page compares the two images on canvases of the larger of their sizes, and draws the head dimmed with the
+// changed pixels in red: a pixel that only one image has is transparent in the other one, so it counts as changed.
 const PAGE = `<body style="margin:0;background:#fff"><img id="base" hidden><img id="head" hidden>
 <canvas id="changes" style="display:block"></canvas></body>`;
 
@@ -35,15 +38,11 @@ function compareInPage(): Omit<Difference, "name"> {
   const base = document.getElementById("base") as HTMLImageElement;
   const head = document.getElementById("head") as HTMLImageElement;
   const changes = document.getElementById("changes") as HTMLCanvasElement;
-  const { naturalWidth: width, naturalHeight: height } = head;
-
-  if (base.naturalWidth !== width || base.naturalHeight !== height) {
-    return {
-      pixels: null,
-      box: null,
-      region: `size ${String(base.naturalWidth)}×${String(base.naturalHeight)} → ${String(width)}×${String(height)}`,
-    };
-  }
+  const width = Math.max(base.naturalWidth, head.naturalWidth);
+  const height = Math.max(base.naturalHeight, head.naturalHeight);
+  const sizeOf = (image: HTMLImageElement): string =>
+    `${String(image.naturalWidth)}×${String(image.naturalHeight)}`;
+  const resized = sizeOf(base) === sizeOf(head) ? null : `${sizeOf(base)} → ${sizeOf(head)}`;
 
   const pixelsOf = (image: HTMLImageElement): Uint8ClampedArray => {
     const canvas = new OffscreenCanvas(width, height);
@@ -63,7 +62,8 @@ function compareInPage(): Omit<Difference, "name"> {
     const isChanged =
       before[index] !== after[index] ||
       before[index + 1] !== after[index + 1] ||
-      before[index + 2] !== after[index + 2];
+      before[index + 2] !== after[index + 2] ||
+      before[index + 3] !== after[index + 3];
     const pixel = index / 4;
     const [x, y] = [pixel % width, Math.floor(pixel / width)];
 
@@ -83,10 +83,12 @@ function compareInPage(): Omit<Difference, "name"> {
   }
   context?.putImageData(out, 0, 0);
 
+  const area = `x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`;
   return {
     pixels: count,
     box: { left, top, right, bottom },
-    region: count === 0 ? "" : `x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`,
+    region: count === 0 ? "" : resized ? `${area}; size ${resized}` : area,
+    resized,
   };
 }
 
@@ -106,8 +108,7 @@ function reportOf(differences: Difference[], added: string[], removed: string[],
   }
   if (differences.length > 0) {
     const rows = differences.map(
-      ({ name, pixels, region }) =>
-        `| \`${name.replace(/\.png$/, "")}\` | ${pixels === null ? "–" : String(pixels)} | ${region} |`,
+      ({ name, pixels, region }) => `| \`${name.replace(/\.png$/, "")}\` | ${String(pixels)} | ${region} |`,
     );
     sections.push(["| View | Changed pixels | Region |", "| --- | ---: | --- |", ...rows].join("\n"));
   }
@@ -168,10 +169,22 @@ const viewerData: ViewerData = {
   before: relative(outDir, baseDir),
   after: relative(outDir, headDir),
   views: [
-    ...differences.map(({ name, pixels, box }) => ({ name, status: "changed" as const, pixels, box })),
-    ...added.map((name) => ({ name, status: "added" as const, pixels: null, box: null })),
-    ...removed.map((name) => ({ name, status: "removed" as const, pixels: null, box: null })),
-    ...unchanged.map((name) => ({ name, status: "unchanged" as const, pixels: null, box: null })),
+    ...differences.map(({ name, pixels, box, resized }) => ({
+      name,
+      status: "changed" as const,
+      pixels,
+      box,
+      resized,
+    })),
+    ...added.map((name) => ({ name, status: "added" as const, pixels: null, box: null, resized: null })),
+    ...removed.map((name) => ({ name, status: "removed" as const, pixels: null, box: null, resized: null })),
+    ...unchanged.map((name) => ({
+      name,
+      status: "unchanged" as const,
+      pixels: null,
+      box: null,
+      resized: null,
+    })),
   ],
 };
 // The theme is set before the first paint, as the dashboard does (index.html).

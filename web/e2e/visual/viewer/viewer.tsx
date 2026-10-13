@@ -75,11 +75,13 @@ function detailOf(view: ViewDifference): string {
     return STATUSES.find(({ status }) => status === view.status)?.label ?? "";
   }
   if (!view.box || view.pixels === null) {
-    return "The size of the view changed";
+    return "";
   }
 
   const { left, right, top, bottom } = view.box;
-  return `${view.pixels.toLocaleString("en")} pixels changed · x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`;
+  const area = `x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`;
+  const size = view.resized ? ` · size ${view.resized}` : "";
+  return `${view.pixels.toLocaleString("en")} pixels changed · ${area}${size}`;
 }
 
 /** The captures of two builds, view by view: what changed first, before and after. */
@@ -101,7 +103,7 @@ export function Viewer({ data }: { data: ViewerData }) {
   const [side, setSide] = useState<Side | null>(null);
   const shown = views.filter((view) => view.name.includes(filter.trim()));
   const view = views.find((candidate) => candidate.name === selected) ?? views[0];
-  const isCompared = view?.status === "changed" && view.box !== null;
+  const isCompared = view?.status === "changed";
 
   const select = (name: string) => {
     setSelected(name);
