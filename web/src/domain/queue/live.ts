@@ -1,5 +1,4 @@
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 import { client } from "@/client/client.gen";
@@ -23,35 +22,9 @@ function isReadOfOrg(key: ReadKey, org: string): boolean {
 const listeners = new Set<(queueId: string) => void>();
 
 /** Calls `listener` at each change of a queue that the stream signals, until the returned function. */
-function onQueueChanged(listener: (queueId: string) => void): () => void {
+export function onQueueChanged(listener: (queueId: string) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
-}
-
-export interface SentNotice {
-  /** What the page sent on the queue, until the stream signals a change of it; `null` else. */
-  notice: string | null;
-  showNotice: (notice: string) => void;
-}
-
-/**
- * The notice of a request that the page sent on the queue `queueId`. A request is sent, not done: the queue decides
- * at its next reconciliation, and the notice stays until the stream signals a change of the queue.
- */
-export function useSentNotice(queueId: string): SentNotice {
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(
-    () =>
-      onQueueChanged((changedQueueId) => {
-        if (changedQueueId === queueId) {
-          setNotice(null);
-        }
-      }),
-    [queueId],
-  );
-
-  return { notice, showNotice: setNotice };
 }
 
 /** Reads again every read of `org`: when a stream opens, as the page may have missed changes. */
@@ -90,62 +63,58 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
 }
 
 /**
- * Follows the changes of the queues of `org` while one of its pages is open, and opens the stream again when the
- * browser closes it.
+ * Follows the changes of the queues of `org`, and opens the stream again when the browser closes it, until the
+ * returned function.
  */
-export function useQueueNews(org: string): void {
-  const queryClient = useQueryClient();
+export function followQueueNews(queryClient: QueryClient, org: string): () => void {
+  if (typeof EventSource === "undefined") {
+    return () => undefined;
+  }
 
-  useEffect(() => {
-    if (typeof EventSource === "undefined") {
-      return;
-    }
+  let source: EventSource | null = null;
+  let reopening: ReturnType<typeof setTimeout> | undefined;
+  let gathering: ReturnType<typeof setTimeout> | undefined;
+  let failures = 0;
+  const gathered = new Set<string>();
 
-    let source: EventSource | null = null;
-    let reopening: ReturnType<typeof setTimeout> | undefined;
-    let gathering: ReturnType<typeof setTimeout> | undefined;
-    let failures = 0;
-    const gathered = new Set<string>();
-
-    const open = () => {
-      source = new EventSource(`${client.getConfig().baseUrl ?? ""}/orgs/${encodeURIComponent(org)}/stream`);
-      source.onopen = () => {
-        failures = 0;
-        void readOrgAgain(queryClient, org);
-      };
-      source.onerror = () => {
-        // The browser opens again a stream that ended; not one that the server refused.
-        if (source?.readyState === EventSource.CLOSED) {
-          source.close();
-          reopening = setTimeout(open, REOPEN_AFTER_MS[Math.min(failures, REOPEN_AFTER_MS.length - 1)]);
-          failures += 1;
-        }
-      };
-      source.addEventListener("queue_changed", (event) => {
-        const change = queueChanged.safeParse(JSON.parse(String(event.data)));
-        if (!change.success) {
-          return;
-        }
-        gathered.add(change.data.queue_id);
-        gathering ??= setTimeout(() => {
-          gathering = undefined;
-          const queueIds = new Set(gathered);
-          gathered.clear();
-          void readQueuesAgain(queryClient, org, queueIds);
-          for (const queueId of queueIds) {
-            listeners.forEach((listener) => {
-              listener(queueId);
-            });
-          }
-        }, GATHER_MS);
-      });
+  const open = () => {
+    source = new EventSource(`${client.getConfig().baseUrl ?? ""}/orgs/${encodeURIComponent(org)}/stream`);
+    source.onopen = () => {
+      failures = 0;
+      void readOrgAgain(queryClient, org);
     };
-    open();
-
-    return () => {
-      clearTimeout(reopening);
-      clearTimeout(gathering);
-      source?.close();
+    source.onerror = () => {
+      // The browser opens again a stream that ended; not one that the server refused.
+      if (source?.readyState === EventSource.CLOSED) {
+        source.close();
+        reopening = setTimeout(open, REOPEN_AFTER_MS[Math.min(failures, REOPEN_AFTER_MS.length - 1)]);
+        failures += 1;
+      }
     };
-  }, [org, queryClient]);
+    source.addEventListener("queue_changed", (event) => {
+      const change = queueChanged.safeParse(JSON.parse(String(event.data)));
+      if (!change.success) {
+        return;
+      }
+      gathered.add(change.data.queue_id);
+      gathering ??= setTimeout(() => {
+        gathering = undefined;
+        const queueIds = new Set(gathered);
+        gathered.clear();
+        void readQueuesAgain(queryClient, org, queueIds);
+        for (const queueId of queueIds) {
+          listeners.forEach((listener) => {
+            listener(queueId);
+          });
+        }
+      }, GATHER_MS);
+    });
+  };
+  open();
+
+  return () => {
+    clearTimeout(reopening);
+    clearTimeout(gathering);
+    source?.close();
+  };
 }

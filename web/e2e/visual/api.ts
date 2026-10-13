@@ -9,7 +9,7 @@ const ago = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOS
 const LIVE_STATES: ItemState[] = ["not_ready", "pending", "testing", "pending_failure", "tests_passed"];
 
 /** A status and a body, or `null` for an empty body. */
-export type Answer = [number, unknown];
+export type Answer = [number, object | null];
 
 /** The request of the page to the API: the path after `/api/v1`, the query and the method. */
 export interface ApiRequest {
@@ -25,7 +25,7 @@ export function problem(status: number, code: ErrorCode, detail = ""): Problem {
   return { type: "about:blank", title: code, status, detail, code };
 }
 
-function listOf(name: string, entries: unknown[]): Record<string, unknown> {
+function listOf(name: string, entries: object[]): object {
   return { [name]: entries, has_more: false, count: entries.length, cursor: null };
 }
 

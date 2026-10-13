@@ -1,4 +1,4 @@
-import { type QueryKey, useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query";
+import type { QueryKey } from "@tanstack/react-query";
 
 import {
   getQueueOptions,
@@ -6,7 +6,7 @@ import {
   listOrgQueuesOptions,
   listPrsOptions,
 } from "@/client/@tanstack/react-query.gen";
-import type { Graph, Pr, PrList, Queue } from "@/client/types.gen";
+import type { Graph } from "@/client/types.gen";
 
 /**
  * The read of the queues of `org`: one page of the most queues that a page holds, which the frame, the overview
@@ -14,11 +14,6 @@ import type { Graph, Pr, PrList, Queue } from "@/client/types.gen";
  */
 export function orgQueuesOptions(org: string): ReturnType<typeof listOrgQueuesOptions> {
   return listOrgQueuesOptions({ path: { org }, query: { limit: 100 } });
-}
-
-/** The queues of `org`, from the read that the layout of the organization starts. */
-export function useOrgQueues(org: string): Queue[] {
-  return useSuspenseQuery(orgQueuesOptions(org)).data.queues;
 }
 
 /** The states of a PR in the queue, as a filter of the API: waiting to enter, in line, tested, or passed. */
@@ -88,31 +83,6 @@ export function queueReads(path: QueuePath, tab: Tab, now: number): QueueReads {
     live: itemsOf(path, "live", now),
     tab: itemsOf(path, tab, now),
   };
-}
-
-export interface QueuePageData {
-  queue: Queue;
-  graph: Graph;
-  /** The live items, in the order of the queue, as the server gives them. */
-  live: Pr[];
-}
-
-/** The data of the page of a queue at `now`, from the reads that its loader awaits. */
-export function useQueuePageData(path: QueuePath, now: number): QueuePageData {
-  const reads = queueReads(path, "live", now);
-  const [detail, graph, live] = useSuspenseQueries({
-    queries: [reads.detail, reads.graph, reads.live],
-  });
-
-  return { queue: detail.data, graph: graph.data, live: live.data.prs };
-}
-
-/**
- * The items of the tab `tab` at `now`: the same read as the live items for the tab of the live ones. Its loader
- * starts it without waiting: the items of a tab load under its tabs, and a change of tab never hides the page.
- */
-export function useTabItems(path: QueuePath, tab: Tab, now: number): PrList {
-  return useSuspenseQuery(queueReads(path, tab, now).tab).data;
 }
 
 /**

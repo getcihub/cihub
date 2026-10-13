@@ -1,7 +1,6 @@
 // The session of the dashboard: who signs in, and the routes of the server
 // outside the API (`specs/API.md`, `specs/SECURITY.md`).
-import { type QueryClient, useSuspenseQueries } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 import {
@@ -12,8 +11,8 @@ import {
   listUserOrgsQueryKey,
 } from "@/client/@tanstack/react-query.gen";
 import { client } from "@/client/client.gen";
-import type { ErrorCode, Org } from "@/client/types.gen";
-import { keepLastOrg } from "@/lib/preferences";
+import type { Org } from "@/client/types.gen";
+import { failureOf, isProblem } from "@/domain/problem";
 
 const SIGN_IN_PATH = "/auth/github";
 const SIGN_OUT_PATH = "/auth/sign-out";
@@ -44,11 +43,6 @@ export function sendCsrfToken(): void {
   });
 }
 
-/** Whether `error` is a problem of the API with the code `code`. */
-export function isProblem(error: unknown, code: ErrorCode): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === code;
-}
-
 /** The person of the session, their organizations, and the instance: `/user`, `/user/orgs` and `/instance`. */
 export interface Me {
   login: string;
@@ -62,55 +56,28 @@ export function membershipOf(me: Me, org: string): Org | undefined {
   return me.orgs.find((membership) => membership.slug.toLowerCase() === org.toLowerCase());
 }
 
-/** Keeps `org` as the organization that `/` opens next time, once the person has a role in it. */
-export function useRememberOrg(me: Me, org: string): void {
-  const membership = membershipOf(me, org);
-
-  useEffect(() => {
-    if (membership) {
-      keepLastOrg(membership.slug);
-    }
-  }, [membership]);
-}
-
 /** A person has a few organizations: one page holds them all. */
 const ORGS_OF_THE_USER = { query: { limit: 100 } };
 
-const readsOfMe = () =>
+/** The reads of the person of the session, which `readMe` starts and `useMe` reads. */
+export const readsOfMe = () =>
   [getUserOptions(), listUserOrgsOptions(ORGS_OF_THE_USER), getInstanceOptions()] as const;
 
-/** The person of the session, or `null` without a session. */
+/** The person of the session, or `null` without a session; another failure of a read throws. */
 export async function readMe(queryClient: QueryClient): Promise<Me | null> {
   const [user, orgs, instance] = readsOfMe();
-  const [readUser, readOrgs, readInstance] = await Promise.allSettled([
-    queryClient.query(user),
-    queryClient.query(orgs),
-    queryClient.query(instance),
-  ]);
-  const failures = [readUser, readOrgs, readInstance].flatMap((read) =>
-    read.status === "rejected" ? [read.reason as unknown] : [],
-  );
+  const reads = [queryClient.query(user), queryClient.query(orgs), queryClient.query(instance)] as const;
+  const settled = await Promise.allSettled(reads);
 
-  if (failures.some((error) => isProblem(error, "unauthorized"))) {
+  if (
+    settled.some((read) => read.status === "rejected" && isProblem(failureOf(read.reason), "unauthorized"))
+  ) {
     return null;
   }
-  if (
-    readUser.status === "rejected" ||
-    readOrgs.status === "rejected" ||
-    readInstance.status === "rejected"
-  ) {
-    throw failures[0];
-  }
-  return meOf(readUser.value, readOrgs.value, readInstance.value);
+  return meOf(...(await Promise.all(reads)));
 }
 
-/** The person of the session, from the reads of `readMe` in the cache. */
-export function useMe(): Me {
-  const [user, orgs, instance] = useSuspenseQueries({ queries: readsOfMe() });
-  return meOf(user.data, orgs.data, instance.data);
-}
-
-function meOf(
+export function meOf(
   user: { login: string },
   orgs: { orgs: Org[] },
   instance: { version: string; app_install_url?: string | null },
@@ -138,7 +105,7 @@ export function signInAddress(next: string): string {
  * Ends the session; the CSRF token comes from its cookie. Whether the server
  * ended it: without that, the old session stays valid.
  */
-async function signOut(): Promise<boolean> {
+export async function signOut(): Promise<boolean> {
   const csrf = csrfToken();
   try {
     const response = await fetch(SIGN_OUT_PATH, {
@@ -149,38 +116,4 @@ async function signOut(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-/**
- * Ends the session, then opens the sign-in page. A full load, and not a
- * navigation of the router, clears the data of the old session from the
- * cache of the queries. Whether the server ended it: without that, the page
- * stays and says so.
- */
-async function signOutAndLeave(): Promise<boolean> {
-  const hasSignedOut = await signOut();
-  if (hasSignedOut) {
-    window.location.assign("/sign-in");
-  }
-  return hasSignedOut;
-}
-
-export interface SignOut {
-  /** Ends the session, then opens the sign-in page. */
-  startSignOut: () => void;
-  /** The server did not end the session: the old one stays valid, and the page says so. */
-  hasSignOutFailed: boolean;
-}
-
-/** The sign-out of a page, and whether it failed. */
-export function useSignOut(): SignOut {
-  const [hasSignOutFailed, setHasSignOutFailed] = useState(false);
-
-  const startSignOut = () => {
-    void signOutAndLeave().then((hasSignedOut) => {
-      setHasSignOutFailed(!hasSignedOut);
-    });
-  };
-
-  return { startSignOut, hasSignOutFailed };
 }
