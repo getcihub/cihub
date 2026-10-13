@@ -1,7 +1,7 @@
 import { useState } from "react";
 
+import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { buttonVariants } from "@/components/ui/button";
-import { ArrowIcon } from "@/components/ui/icons";
 import { Spinner } from "@/components/ui/spinner";
 import { signInAddress } from "@/domain/session/session";
 import { Failure, Lead, Note, Title } from "./parts";

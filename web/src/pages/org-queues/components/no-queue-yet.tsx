@@ -1,7 +1,7 @@
+import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ArrowIcon } from "@/components/ui/icons";
 
 /** An organization without a queue: the first `/cihub merge` creates one, on a repository that the App reaches. */
 export function NoQueueYet({ org, installUrl }: { org: string; installUrl?: string | null | undefined }) {

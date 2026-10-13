@@ -2,8 +2,8 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { Queue } from "@/client/types.gen";
+import { UpDownIcon } from "@/components/icons/up-down-icon";
 import { Avatar } from "@/components/ui/avatar";
-import { UpDownIcon } from "@/components/ui/icons";
 import { Mark } from "@/components/ui/mark";
 import { Menu, MenuHint, MenuItem, MenuSeparator, menuItemVariants } from "@/components/ui/menu";
 import { inQueueCount } from "@/domain/queue/counts";

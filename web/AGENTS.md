@@ -48,6 +48,8 @@ imported through `@/` (`@/domain/queue/queries`).
 and its test sit side by side. A component or a hook that only one page uses sits in the folder of that page; it
 moves to `components/` or `hooks/` when a second page needs it. Every file name is in kebab-case
 (`queue-graph.tsx`, `use-org-queues.ts`). There is no barrel file (`index.ts`): an import names the file.
+`components/icons/` holds the icons, one file per icon (`pause-icon.tsx`), each an `<svg>` in `currentColor`
+that its slot sizes.
 
 ## Pages
 

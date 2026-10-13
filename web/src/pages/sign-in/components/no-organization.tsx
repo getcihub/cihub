@@ -1,5 +1,5 @@
+import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { ArrowIcon } from "@/components/ui/icons";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { Failure, Lead, Note, Title } from "./parts";
 

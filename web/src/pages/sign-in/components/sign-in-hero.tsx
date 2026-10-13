@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { CheckIcon } from "@/components/ui/icons";
+import { CheckIcon } from "@/components/icons/check-icon";
 import { Brand } from "./parts";
 import { Timeline } from "./timeline";
 

@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { updateQueueMutation } from "@/client/@tanstack/react-query.gen";
 import type { Queue, RequestedQueueState } from "@/client/types.gen";
+import { DrainIcon } from "@/components/icons/drain-icon";
+import { PauseIcon } from "@/components/icons/pause-icon";
+import { PlayIcon } from "@/components/icons/play-icon";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalDescription, ModalFooter } from "@/components/ui/modal";
 import { refusalOf } from "@/domain/queue/actions";
@@ -11,6 +14,7 @@ import { useQueueMutation } from "@/hooks/use-queue-mutation";
 interface StateRequest {
   /** The button, and the confirmation in the modal: "Pause". */
   verb: string;
+  icon: ReactNode;
   /** The confirmation while the request leaves: "Pausing". */
   pending: string;
   question: string;
@@ -20,18 +24,21 @@ interface StateRequest {
 const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
   paused: {
     verb: "Pause",
+    icon: <PauseIcon />,
     pending: "Pausing",
     question: "Pause the queue?",
     consequence: "It starts no test and merges nothing, and keeps its order.",
   },
   draining: {
     verb: "Drain",
+    icon: <DrainIcon />,
     pending: "Draining",
     question: "Drain the queue?",
     consequence: "It accepts no new pull request and lets the ones in it merge.",
   },
   running: {
     verb: "Resume",
+    icon: <PlayIcon />,
     pending: "Resuming",
     question: "Resume the queue?",
     consequence: "It starts where it stopped.",
@@ -68,6 +75,7 @@ export function QueueActions({
             setAsked(state);
           }}
         >
+          {STATE_REQUESTS[state].icon}
           {STATE_REQUESTS[state].verb}
         </Button>
       ))}
