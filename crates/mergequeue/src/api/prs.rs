@@ -201,19 +201,18 @@ async fn paces(
     .fetch_all(&mut *conn)
     .await?;
     let medians = median_run_seconds(conn, queues, now).await?;
-    let mut paces = HashMap::new();
 
-    for row in rows {
-        let settings = row.settings()?;
-        let window_size = row.window_size.map(u32::try_from).transpose()?;
-        let pace = QueuePace {
-            window: current_window(window_size, &settings),
-            median_run_seconds: medians.get(&row.id).copied(),
-        };
-        paces.insert(row.id, pace);
-    }
-
-    Ok(paces)
+    rows.into_iter()
+        .map(|row| {
+            let settings = row.settings()?;
+            let window_size = row.window_size.map(u32::try_from).transpose()?;
+            let pace = QueuePace {
+                window: current_window(window_size, &settings),
+                median_run_seconds: medians.get(&row.id).copied(),
+            };
+            Ok((row.id, pace))
+        })
+        .collect()
 }
 
 /// About how many seconds until an item in `state` merges: a pending PR waits
@@ -410,9 +409,10 @@ pub(super) async fn list_prs(
         .into_iter()
         .map(|row| progress.pr(row))
         .collect::<Result<Vec<_>, _>>()?;
-    let cursor = has_more
-        .then(|| prs.last().map(|pr| pr_cursor(pr, query.sort)))
-        .flatten()
+    let cursor = prs
+        .last()
+        .filter(|_| has_more)
+        .map(|pr| pr_cursor(pr, query.sort))
         .transpose()?;
     Ok(Json(PrList {
         prs,
@@ -650,9 +650,10 @@ pub(super) async fn list_events(
         .into_iter()
         .map(event_of)
         .collect::<Result<Vec<_>, _>>()?;
-    let cursor = has_more
-        .then(|| events.last().map(event_cursor))
-        .flatten()
+    let cursor = events
+        .last()
+        .filter(|_| has_more)
+        .map(event_cursor)
         .transpose()?;
     Ok(Json(EventList {
         events,
