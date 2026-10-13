@@ -8,6 +8,9 @@ import { refusalOf } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useQueueMutation } from "@/hooks/use-queue-mutation";
 
+// The small buttons of the head of the drawer, a size that no other page has.
+const SMALL_BUTTON = "h-6 px-2 text-md";
+
 /** Restarts the tests of a PR, or takes it out of the queue: the queue decides at its next reconciliation. */
 export function PrActions({
   path,
@@ -30,6 +33,7 @@ export function PrActions({
     <div className="flex justify-end gap-2">
       {canRestart && (
         <Button
+          className={SMALL_BUTTON}
           isPending={restart.isPending}
           pendingText="Restarting"
           onClick={() => {
@@ -44,6 +48,7 @@ export function PrActions({
         </Button>
       )}
       <Button
+        className={SMALL_BUTTON}
         variant="destructive-outline"
         onClick={() => {
           cancel.reset();

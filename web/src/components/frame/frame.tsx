@@ -218,12 +218,16 @@ function PersonMenu({ login, onSignOut }: { login: string; onSignOut: () => void
       triggerClassName="flex cursor-pointer items-center gap-2 rounded-sm px-1.5 py-0.5 text-base font-medium text-foreground hover:bg-muted"
       align="right"
     >
-      <MenuItem disabled>Signed in as @{login}</MenuItem>
-      <MenuItem onClick={toggleTheme}>
+      <MenuItem className="font-medium" disabled>
+        Signed in as @{login}
+      </MenuItem>
+      <MenuItem className="font-medium" onClick={toggleTheme}>
         Light / dark<MenuHint>theme</MenuHint>
       </MenuItem>
       <MenuSeparator />
-      <MenuItem onClick={onSignOut}>Sign out</MenuItem>
+      <MenuItem className="font-medium" onClick={onSignOut}>
+        Sign out
+      </MenuItem>
     </Menu>
   );
 }

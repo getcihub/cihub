@@ -10,14 +10,14 @@ import { cn } from "@/lib/cn";
 import { plural } from "@/lib/text";
 import { Train } from "./train";
 
-function PrTitle({ org, pr }: { org: string; pr: Pr }) {
+function PrTitle({ org, pr, isNumberBold = false }: { org: string; pr: Pr; isNumberBold?: boolean }) {
   return (
     <Link
       className="font-medium text-foreground hover:text-primary focus-visible:text-primary"
       to="/orgs/$org/repos/$repo/queues/$queue/prs/$number"
       params={{ org, repo: pr.repo, queue: pr.queue, number: pr.number }}
     >
-      #{pr.number} {pr.title ?? ""}
+      {isNumberBold ? <b className="font-bold">#{pr.number}</b> : `#${String(pr.number)}`} {pr.title ?? ""}
     </Link>
   );
 }
@@ -85,7 +85,7 @@ export function Spotlight({ org, prs, queue }: { org: string; prs: Pr[]; queue: 
           >
             <div className="flex flex-wrap items-baseline gap-2.5">
               <span className="text-sm font-medium text-primary">Your pull request</span>
-              <PrTitle org={org} pr={pr} />
+              <PrTitle org={org} pr={pr} isNumberBold />
               {eta && (
                 <span className="ml-auto text-md text-muted-foreground">
                   Merges in <b className="font-medium text-foreground">{eta}</b>
