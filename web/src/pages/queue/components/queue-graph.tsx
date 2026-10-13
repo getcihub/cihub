@@ -3,7 +3,7 @@ import { Fragment, useRef } from "react";
 import type { Graph, GraphRun, Pr, Queue } from "@/client/types.gen";
 import { CheckIcon } from "@/components/icons/check-icon";
 import { CardHeader, CardHint, CardTitle, cardVariants } from "@/components/ui/card";
-import { useFlip } from "@/components/ui/motion";
+import { useFlip } from "@/components/ui/hooks/use-flip";
 import { itemStateLabel } from "@/domain/pr/words";
 import { cn } from "@/lib/cn";
 import { shortSha } from "@/lib/text";

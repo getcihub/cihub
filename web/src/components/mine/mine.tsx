@@ -3,7 +3,7 @@ import { useRef } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
 import { CardHeader, CardHint, CardTitle, cardVariants } from "@/components/ui/card";
-import { useFlip } from "@/components/ui/motion";
+import { useFlip } from "@/components/ui/hooks/use-flip";
 import { Prose } from "@/components/ui/prose";
 import { etaOf, queueOfPr, whereAmong, whereOf } from "@/domain/pr/words";
 import { cn } from "@/lib/cn";
