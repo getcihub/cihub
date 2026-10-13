@@ -22,7 +22,7 @@ does not also check.
   `tailwind-merge` for `cn()` (decided October 12, 2026, by the project lead). No CSS module, no CSS file other
   than `src/styles/globals.css`.
 - `motion` for the animations (decided October 12, 2026, by the project lead), through `m.*` components under
-  `LazyMotion strict` (`src/ui/motion.tsx`): a `motion.*` component throws.
+  `LazyMotion strict` (`src/components/ui/motion.tsx`): a `motion.*` component throws.
 - oxfmt formats every file of the dashboard (`.oxfmtrc.json`) and sorts the Tailwind classes, in `className`,
   `cn()` and `cva()` (decided October 12, 2026, by the project lead). Its version is exact: a new one can change
   the format, so its update shows the files that it changes. It skips the generated files (`src/client/`,
@@ -31,39 +31,57 @@ does not also check.
 
 ## Layout
 
-`src/` has five layers; an import goes down, never up, and a page never imports another page. ESLint
+`src/` has six layers; an import goes down, never up, and a page never imports another page. ESLint
 (`no-restricted-imports`) refuses the others, and a relative import that leaves its folder: another folder is
 imported through `@/` (`@/domain/queue/queries`).
 
-| Folder        | What it holds                                                                                                    | It imports                                             |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `routes/`     | one file per route, its configuration only (see "Routes"); `src/routes.ts` gives the tree                        | `pages/` and everything below, and `client/`           |
-| `pages/`      | one file per page: the page and its error, which put the components together; their skeletons in `skeletons.tsx` | `components/`, `domain/`, `ui/`, `lib/`, `client/`     |
-| `components/` | the pieces of the pages, by subject (`frame/`, `queue/`, `pr/`, `mine/`, `sign-in/`, `errors/`)                  | another component, `domain/`, `ui/`, `lib/`, `client/` |
-| `domain/`     | one folder per resource of the API (`queue/`, `pr/`, `session/`, `mine/`): its reads, actions, words             | `lib/`, `client/`, another `domain/` folder            |
-| `ui/`         | the components of the design system, which know nothing of CIHub (see "Interface")                               | `lib/`                                                 |
-| `lib/`        | the functions that know nothing of CIHub: `cn`, the query client, the times, the plurals                         | nothing of `src/`                                      |
+| Folder           | What it holds                                                                                                  | It imports                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `pages/`         | one folder per page (see "Pages"): its route, its states, and the components and hooks that only it uses       | its own folder, `components/`, `hooks/`, `domain/`, `lib/`, `client/` |
+| `components/`    | the components that two pages or more share, by subject (`frame/`, `queue/`, `pr/`, `mine/`, `errors/`)        | another component, `hooks/`, `domain/`, `lib/`, `client/`             |
+| `hooks/`         | the hooks (`use-*.ts`) that two pages or more share: the reads of the API, the session, the time               | `domain/`, `lib/`, `client/`                                          |
+| `domain/`        | one folder per resource of the API (`queue/`, `pr/`, `session/`, `mine/`): its reads, actions, words; no React | `lib/`, `client/`, another `domain/` folder                           |
+| `components/ui/` | the components of the design system, which know nothing of CIHub (see "Interface")                             | `lib/`                                                                |
+| `lib/`           | the functions that know nothing of CIHub: `cn`, the query client, the times, the plurals                       | nothing of `src/`                                                     |
 
 `client/` is generated, `styles/` holds the design system, `test/` the helpers of the tests. A component or a page
-and its test sit side by side. There is no barrel file (`index.ts`): an import names the file.
+and its test sit side by side. A component or a hook that only one page uses sits in the folder of that page; it
+moves to `components/` or `hooks/` when a second page needs it. Every file name is in kebab-case
+(`queue-graph.tsx`, `use-org-queues.ts`). There is no barrel file (`index.ts`): an import names the file.
+
+## Pages
+
+A page is a folder of `src/pages/`, named after the page (`queue/`, `org-queues/`), with these files:
+
+| File            | What it holds                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `route.tsx`     | the route: `validateSearch`, the `loader` (its reads, `redirect()`, `notFound()`), and the file of each state |
+| `page.tsx`      | `component`, the page, which puts the components together; `layout.tsx` instead for a layout (`org/`)         |
+| `loading.tsx`   | `pendingComponent`, the skeleton of the page                                                                  |
+| `error.tsx`     | `errorComponent`, what the page keeps when a read fails                                                       |
+| `not-found.tsx` | `notFoundComponent`, when the page has its own                                                                |
+| `components/`   | the components that only this page uses                                                                       |
+| `use-*.ts`      | the hooks that only this page uses                                                                            |
+
+A state that the page shares with others comes from `components/` (`NotFoundPage`, `ServerErrorPage`,
+`QueueSkeleton`), and the page has no file for it. `src/pages/redirects/` holds the routes that only redirect.
 
 ## Routes
 
 - `src/routes.ts` is the tree of the addresses (`@tanstack/virtual-file-routes`, decided October 12, 2026, by the
-  project lead): each address and the file of its route in `src/routes/`. `@tanstack/router-plugin/vite`, placed
-  before `@vitejs/plugin-react`, generates `routeTree.gen.ts` from it, with `autoCodeSplitting`. A new page adds its
-  line to `routes.ts` and its file.
-- A route file holds the configuration of its route, never a component: `validateSearch`, the `loader` (its reads,
-  `redirect()`, `notFound()`), then the components of `src/pages/` for each state: `component`,
-  `pendingComponent`, `errorComponent`, `notFoundComponent`. A page reads the params and the search of its route
-  with `getRouteApi(id)`, never by importing the route.
-- An address without a page of its own redirects to the page above it (`src/routes/redirects/`).
+  project lead): each address and the `route.tsx` of its page, in `src/pages/` (`routesDirectory`).
+  `@tanstack/router-plugin/vite`, placed before `@vitejs/plugin-react`, generates `routeTree.gen.ts` from it, with
+  `autoCodeSplitting`. A new page adds its line to `routes.ts` and its folder. The layout of a page is the route
+  above it in the tree (`org/layout.tsx` for the pages of an organization).
+- A `route.tsx` holds the configuration of its route, never a component. A page reads the params and the search of
+  its route with `getRouteApi(id)`, never by importing the route.
+- An address without a page of its own redirects to the page above it (`src/pages/redirects/`).
 - The URL holds the state that a link must keep: the organization, the queue, the open PR, the tab. Every search
   parameter goes through `validateSearch` with a Zod schema.
 - A link is a typed `<Link to=…>` or `navigate({ to })`; never a path built from strings.
-- The router context carries the `QueryClient`. The layout of the signed-in pages (`src/routes/org.tsx`) reads the
-  person of the session (`/user`, `/user/orgs` and `/instance`, the `Me` of `src/domain/session/session.ts`) in its
-  loader, and redirects to the sign-in page on `401`.
+- The router context carries the `QueryClient`. The layout of the signed-in pages (`src/pages/org/route.tsx`) reads
+  the person of the session (`/user`, `/user/orgs` and `/instance`, the `Me` of `src/domain/session/session.ts`) in
+  its loader, and redirects to the sign-in page on `401`.
 
 ## Data of the server
 
@@ -76,7 +94,7 @@ and its test sit side by side. There is no barrel file (`index.ts`): an import n
   own.
 - A link starts the reads of its page when the pointer rests on it (`defaultPreload: "intent"`); TanStack Query
   says what is still fresh (`defaultPreloadStaleTime: 0`).
-- The stream `/orgs/{org}/stream` (`src/domain/queue/live.ts`) invalidates the query keys of the queue that
+- The stream `/orgs/{org}/stream` (`src/domain/queue/live.ts`, followed by `src/pages/org/use-queue-news.ts`) invalidates the query keys of the queue that
   changed, gathered over half a second, and every read of the organization each time it opens; it opens again
   after an error; no polling.
 - A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
@@ -86,26 +104,26 @@ and its test sit side by side. There is no barrel file (`index.ts`): an import n
 
 ## Loading, errors and actions
 
-- A page shows its skeleton (`ui/skeleton.tsx`, the shapes of the mockups v5) when its reads take more than 200
+- A page shows its skeleton (`components/ui/skeleton.tsx`, the shapes of the mockups v5) when its reads take more than 200
   ms, then for 500 ms at least, so that it never flashes (`defaultPendingMs`, `defaultPendingMinMs`). The frame
   stays: only the page waits. While the frame of an organization loads, it shows the skeleton of the page that the
   address opens. A part that waits on its own (a tab, the run of a PR) shows the skeleton of that part.
 - A failed read keeps what the page can still show (the frame, the head of a queue, the drawer) and says, in a card,
-  what the server answered, with "Try again" (`components/errors/ServerError.tsx`). A `401` sends the person to the
+  what the server answered, with "Try again" (`components/errors/server-error.tsx`). A `401` sends the person to the
   sign-in and back to the page, once a new read of the person says that the session ended; else it shows as a
   failure, so that the sign-in never loops.
 - An action that runs says so in its button: a spinner and what runs ("Submitting"), with `isPending` and
   `pendingText` of `Button`.
-- The skeletons of the pages sit in `src/pages/skeletons.tsx`, which never imports a page: `autoCodeSplitting`
-  keeps a `pendingComponent` in the entry chunk, and a skeleton imported from the file of its page would bring the
-  whole page into it.
+- The skeleton of a page sits in its `loading.tsx`, which never imports `page.tsx`, `layout.tsx` or `error.tsx`:
+  `autoCodeSplitting` keeps a `pendingComponent` in the entry chunk, and a skeleton imported from the file of its
+  page would bring the whole page into it.
 - `mise run web:shots` captures these states too: a view whose read never answers shows the skeleton.
 
 ## Animations
 
 - The animations follow the mockups v5: the drawer of a PR slides in from the right and its scrim fades in; a page
   fades in as it opens; a menu fades in and out; a modal fades in; a notice slides in and out. Their timings are
-  the `transitions` of `src/ui/motion.tsx` (the `ease` of CSS, 120 to 200 ms); a component never writes its own.
+  the `transitions` of `src/components/ui/motion.tsx` (the `ease` of CSS, 120 to 200 ms); a component never writes its own.
 - An element that leaves animates out with `<AnimatePresence>` when its component owns its state (a menu, a
   notice). The drawer is a route: Close, Escape and a click beside it slide it out first, then go back to the page.
 - A person who asks for less motion gets no animation at all, fades included (`skipAnimations` of
@@ -138,16 +156,15 @@ and its test sit side by side. There is no barrel file (`index.ts`): an import n
   has (`grid-cols-[auto_1fr]`).
 - A class goes on the element that it styles, never on a parent through a descendant selector (`[&_p]:`), but for
   the icons that a component sizes in its own slot (`[&>svg]:size-4`): a part that repeats is a component
-  (`DrawerSection`, `Setting`). A repeated look is a component of `src/ui/`, not a list
+  (`DrawerSection`, `Setting`). A repeated look is a component of `src/components/ui/`, not a list
   of classes copied from page to page.
 - Every action works with the keyboard; `Escape` closes a menu, a drawer or a modal. A page has its loading, empty
   and error states.
 
-### A component of `src/ui/`
+### A component of `src/components/ui/`
 
-`src/ui/` holds the components that every page shares (`alert`, `badge`, `button`, `card`, `menu`, `modal`,
-`page`…), which know nothing of CIHub. Their files are in lowercase (`alert.tsx`, `empty-state.tsx`); `alert.tsx`
-is the reference.
+`src/components/ui/` holds the components that every page shares (`alert`, `badge`, `button`, `card`, `menu`, `modal`,
+`page`…), which know nothing of CIHub. `alert.tsx` is the reference.
 
 1. One file per component, with its parts as functions of their own: `Alert`, `AlertContent`, `AlertTitle`,
    `AlertDescription`. The caller composes the parts; no `title=` prop does it for them.
@@ -161,9 +178,9 @@ is the reference.
 5. Each part carries `data-slot` (`alert`, `alert-title`), and the root `data-variant`: a test finds it without a
    class.
 6. It has the role of what it is (`Alert` is `role="alert"`; a caller that informs without interrupting passes
-   `role="status"`), and the keyboard of `src/ui/dialog.ts` for what opens over the page.
+   `role="status"`), and the keyboard of `src/components/ui/dialog.ts` for what opens over the page.
 7. It imports `@/lib/` only: no route, no read of the API, no type of `@/client/`, no word of `specs/DOMAIN.md`. A
-   component that knows the domain (the badge of a state) goes in `@/components/` and gives the generic one its
+   component that knows the domain (the badge of a state) goes in another folder of `@/components/` and gives the generic one its
    variant.
 
 When a component does not fit: pass `className`; compose it in the page that needs it; add a variant here only

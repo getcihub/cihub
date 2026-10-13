@@ -85,14 +85,11 @@ pub(crate) async fn start(State(sign_in): State<SignIn>, Query(start): Query<Sta
 /// The address of the sign-in on the SCM, and the value of the cookie that
 /// keeps what the callback checks.
 fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String), SignInFailure> {
-    let public_url = sign_in
-        .public_url
-        .as_deref()
-        .ok_or(SignInFailure::NotConfigured)?;
+    let redirect_url = callback_url(sign_in)?;
     let state = new_sign_in_secret().map_err(SignInFailure::Store)?;
     let verifier = new_sign_in_secret().map_err(SignInFailure::Store)?;
     let request = SignInRequest {
-        redirect_url: format!("{public_url}{SIGN_IN_CALLBACK_PATH}"),
+        redirect_url,
         state: state.expose_secret().to_owned(),
         code_challenge: code_challenge(&verifier),
     };
@@ -108,6 +105,16 @@ fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String
         page_after(start.next.as_deref())
     );
     Ok((address, kept))
+}
+
+/// The address where the SCM sends the person back.
+fn callback_url(sign_in: &SignIn) -> Result<String, SignInFailure> {
+    let public_url = sign_in
+        .public_url
+        .as_deref()
+        .ok_or(SignInFailure::NotConfigured)?;
+
+    Ok(format!("{public_url}{SIGN_IN_CALLBACK_PATH}"))
 }
 
 #[derive(Deserialize)]
@@ -126,13 +133,7 @@ pub(crate) async fn callback(
     let cleared = set_cookie(SIGN_IN_COOKIE, "", 0);
     let (secret, next) = match session_of_callback(&sign_in, &headers, callback).await {
         Ok(signed_in) => signed_in,
-        Err(err) => {
-            let mut response = failed(&err);
-            if let Ok(cleared) = cleared.parse() {
-                response.headers_mut().append(SET_COOKIE, cleared);
-            }
-            return response;
-        }
+        Err(err) => return (AppendHeaders([(SET_COOKIE, cleared)]), failed(&err)).into_response(),
     };
 
     let max_age = SESSION_LIFETIME.whole_seconds();
@@ -169,14 +170,10 @@ async fn session_of_callback(
         return Err(SignInFailure::OtherState);
     }
 
-    let public_url = sign_in
-        .public_url
-        .as_deref()
-        .ok_or(SignInFailure::NotConfigured)?;
     let code = SignInCode {
         code: code.into(),
         code_verifier: verifier.to_owned().into(),
-        redirect_url: format!("{public_url}{SIGN_IN_CALLBACK_PATH}"),
+        redirect_url: callback_url(sign_in)?,
     };
     let signed_in = sign_in
         .scm

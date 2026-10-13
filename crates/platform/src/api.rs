@@ -90,12 +90,13 @@ impl<S: Send + Sync> FromRequestParts<S> for ApiGrant {
         parts: &mut Parts,
         _: &S,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        std::future::ready(parts.extensions.get::<Self>().cloned().ok_or_else(|| {
-            ApiError::new(
-                ErrorCode::Unauthorized,
-                "no valid API token or session".into(),
-            )
-        }))
+        std::future::ready(
+            parts
+                .extensions
+                .get::<Self>()
+                .cloned()
+                .ok_or_else(ApiError::unauthorized),
+        )
     }
 }
 
@@ -115,6 +116,13 @@ impl ApiError {
         }
     }
 
+    pub fn unauthorized() -> Self {
+        Self::new(
+            ErrorCode::Unauthorized,
+            "no valid API token or session".into(),
+        )
+    }
+
     pub fn invalid(detail: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidRequest, detail.into())
     }
@@ -131,6 +139,18 @@ impl ApiError {
 
 fn status_of(code: ErrorCode) -> StatusCode {
     StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn problem(code: ErrorCode, detail: String) -> Problem {
+    let status = status_of(code);
+
+    Problem {
+        kind: "about:blank".to_owned(),
+        title: status.canonical_reason().unwrap_or_default().to_owned(),
+        status: status.as_u16(),
+        detail,
+        code,
+    }
 }
 
 /// The responses of the `OpenAPI` document for the errors `codes`, as an
@@ -170,16 +190,9 @@ pub fn document_error(responses: &mut Responses, code: ErrorCode) {
         return;
     }
 
-    let problem = Problem {
-        kind: "about:blank".to_owned(),
-        title: status.canonical_reason().unwrap_or_default().to_owned(),
-        status: status.as_u16(),
-        detail: code.sentence().to_owned(),
-        code,
-    };
     let mut example = Example::new();
     example.summary.clone_from(&name);
-    example.value = serde_json::to_value(problem).ok();
+    example.value = serde_json::to_value(problem(code, code.sentence().to_owned())).ok();
     content.examples.insert(name.clone(), RefOr::T(example));
 
     let line = format!("- `{name}`: {}", code.sentence());
@@ -206,15 +219,7 @@ impl<E: Error + 'static> From<E> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let status = self.status();
-        let problem = Problem {
-            kind: "about:blank".to_owned(),
-            title: status.canonical_reason().unwrap_or_default().to_owned(),
-            status: status.as_u16(),
-            detail: self.detail,
-            code: self.code,
-        };
-        let mut response = (status, Json(problem)).into_response();
+        let mut response = (self.status(), Json(problem(self.code, self.detail))).into_response();
         let headers = response.headers_mut();
 
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));

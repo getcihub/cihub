@@ -14,8 +14,9 @@ export default defineConfig({
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,
-      // The tree of the addresses, and the file of each route.
+      // The tree of the addresses, and the route file of each page.
       virtualRouteConfig: "./src/routes.ts",
+      routesDirectory: "./src/pages",
     }),
     react(),
     tailwindcss(),

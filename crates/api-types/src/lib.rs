@@ -3,8 +3,6 @@
 //! clients. Pure: no I/O and no server code. The feature `openapi` derives
 //! the `OpenAPI` schemas, for the server only.
 
-use std::fmt;
-
 use cihub_domain::{
     BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole,
     MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
@@ -25,6 +23,36 @@ pub const DEFAULT_LIMIT: u32 = 50;
 
 /// The largest `limit` of a page.
 pub const MAX_LIMIT: u32 = 100;
+
+/// A page of a list: its entries, then the fields that every list shares.
+macro_rules! page {
+    (
+        $(#[$doc:meta])*
+        pub struct $name:ident {
+            $(#[$entries_doc:meta])*
+            pub $entries:ident: Vec<$entry:ty>,
+        }
+    ) => {
+        $(#[$doc])*
+        #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+        pub struct $name {
+            $(#[$entries_doc])*
+            pub $entries: Vec<$entry>,
+            /// More entries follow this page.
+            pub has_more: bool,
+            /// How many entries the list has, every page together.
+            #[cfg_attr(feature = "openapi", schema(example = 137))]
+            pub count: u64,
+            /// The `from` of the next page; `null` on the last page.
+            #[cfg_attr(
+                feature = "openapi",
+                schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
+            )]
+            pub cursor: Option<String>,
+        }
+    };
+}
 
 /// The `OpenAPI` schemas of the closed enums of the domain, which does not
 /// derive them: a component each, whose values are those of the enum.
@@ -79,9 +107,12 @@ mod closed {
 
 /// The machine code of an error: a client decides on it, never on
 /// `detail`. Each code has one HTTP status.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, strum::EnumIter, strum::Display,
+)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ErrorCode {
     InvalidRequest,
     LimitOutOfRange,
@@ -187,15 +218,6 @@ impl ErrorCode {
     }
 }
 
-impl fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match serde_json::to_value(self) {
-            Ok(Value::String(name)) => f.write_str(&name),
-            _ => Err(fmt::Error),
-        }
-    }
-}
-
 /// An error, as `application/problem+json` (RFC 9457).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -257,23 +279,12 @@ pub struct Org {
     pub role: Option<MembershipRole>,
 }
 
-/// A page of the organizations of the person, by slug.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct OrgList {
-    /// The organizations of the page.
-    pub orgs: Vec<Org>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of the organizations of the person, by slug.
+    pub struct OrgList {
+        /// The organizations of the page.
+        pub orgs: Vec<Org>,
+    }
 }
 
 /// A repository of the organization.
@@ -297,23 +308,12 @@ pub struct Repo {
     pub default_branch: String,
 }
 
-/// A page of repositories, by namespace then name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RepoList {
-    /// The repositories of the page.
-    pub repos: Vec<Repo>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of repositories, by namespace then name.
+    pub struct RepoList {
+        /// The repositories of the page.
+        pub repos: Vec<Repo>,
+    }
 }
 
 /// A queue of a target branch, with its counters and its settings.
@@ -433,23 +433,12 @@ pub enum QueueAccess {
     Suspended,
 }
 
-/// A page of queues, by repository name then queue name.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct QueueList {
-    /// The queues of the page.
-    pub queues: Vec<Queue>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of queues, by repository name then queue name.
+    pub struct QueueList {
+        /// The queues of the page.
+        pub queues: Vec<Queue>,
+    }
 }
 
 /// The current items of a queue in each state that is not terminal.
@@ -686,23 +675,12 @@ pub struct PrAhead {
     pub state: ItemState,
 }
 
-/// A page of PRs.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct PrList {
-    /// The PRs of the page.
-    pub prs: Vec<Pr>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of PRs.
+    pub struct PrList {
+        /// The PRs of the page.
+        pub prs: Vec<Pr>,
+    }
 }
 
 /// The priority of a submission: a name (`urgent`, `high`, `medium`, `low`)
@@ -798,23 +776,12 @@ pub struct Event {
     pub payload: Value,
 }
 
-/// A page of the events of a PR, oldest first.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct EventList {
-    /// The events of the page.
-    pub events: Vec<Event>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of the events of a PR, oldest first.
+    pub struct EventList {
+        /// The events of the page.
+        pub events: Vec<Event>,
+    }
 }
 
 /// The merge graph: the head of the target branch, the live items, the
@@ -1128,23 +1095,12 @@ pub struct AuditEntry {
     pub occurred_at: OffsetDateTime,
 }
 
-/// A page of the audit log, newest first.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AuditList {
-    /// The entries of the page.
-    pub entries: Vec<AuditEntry>,
-    /// More entries follow this page.
-    pub has_more: bool,
-    /// How many entries the list has, every page together.
-    #[cfg_attr(feature = "openapi", schema(example = 137))]
-    pub count: u64,
-    /// The `from` of the next page; `null` on the last page.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0")
-    )]
-    pub cursor: Option<String>,
+page! {
+    /// A page of the audit log, newest first.
+    pub struct AuditList {
+        /// The entries of the page.
+        pub entries: Vec<AuditEntry>,
+    }
 }
 
 /// A point of the configuration of the SCM that the queue needs.

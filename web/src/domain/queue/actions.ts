@@ -1,28 +1,15 @@
-import {
-  type QueryClient,
-  type UseMutationOptions,
-  type UseMutationResult,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 
+import { type Failure, problemOf } from "@/domain/problem";
 import { readKeyOf } from "./queries";
 
-/** An action on a queue: once it settles, the page reads again what it changes. */
-export function useQueueMutation<TData, TError, TVariables>(
-  options: UseMutationOptions<TData, TError, TVariables>,
-): UseMutationResult<TData, TError, TVariables> {
-  const queryClient = useQueryClient();
-
-  return useMutation({ ...options, onSettled: () => readQueueAgain(queryClient) });
-}
-
 /** What the API answered to a refused action: its problem, else that it did not answer. */
-export function refusalOf(error: unknown): string {
-  if (typeof error === "object" && error !== null && "detail" in error && typeof error.detail === "string") {
-    return error.detail || "The server refused the request.";
+export function refusalOf(failure: Failure): string {
+  const problem = problemOf(failure);
+  if (!problem) {
+    return "The server did not answer. Try again.";
   }
-  return "The server did not answer. Try again.";
+  return problem.detail || "The server refused the request.";
 }
 
 // The reads that an action on a queue changes.

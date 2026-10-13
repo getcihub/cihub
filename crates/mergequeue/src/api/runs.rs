@@ -89,36 +89,29 @@ pub(super) async fn get_run(
             .await?
             .into_iter()
             .collect();
-    let predecessor_pr_numbers = predecessors
-        .iter()
-        .filter_map(|id| numbers.get(id))
-        .map(|n| u64::try_from(*n).map_err(ApiError::from))
-        .collect::<Result<_, _>>()?;
+    let predecessor_pr_numbers = pr_numbers(
+        predecessors
+            .iter()
+            .filter_map(|id| numbers.get(id).copied()),
+    )?;
     let checks = run_checks(&mut tx, &run_id).await?;
     let dependents = dependents(&mut tx, &run.queue_id, &run_id, &members).await?;
-    let unsigned = |n: i64| u64::try_from(n).map_err(ApiError::from);
 
     Ok(Json(Run {
         attempt: u32::try_from(run.attempt)?,
         status: run.status.parse()?,
         status_reason: run.status_reason.parse()?,
-        draft_pr_number: run.draft_pr_number.map(unsigned).transpose()?,
-        tested_pr_numbers: run
-            .tested_pr_numbers
-            .into_iter()
-            .map(unsigned)
-            .collect::<Result<_, _>>()?,
+        draft_pr_number: run.draft_pr_number.map(u64::try_from).transpose()?,
+        tested_pr_numbers: pr_numbers(run.tested_pr_numbers)?,
         required_statuses_source: run
             .required_statuses_source
-            .map(|s| s.parse().map_err(ApiError::from))
+            .as_deref()
+            .map(str::parse)
             .transpose()?,
-        failure_reason: run
-            .failure_reason
-            .map(|s| s.parse().map_err(ApiError::from))
-            .transpose()?,
+        failure_reason: run.failure_reason.as_deref().map(str::parse).transpose()?,
         conflict_culprit: run
             .conflict_culprit
-            .map(|value| serde_json::from_value(value).map_err(ApiError::from))
+            .map(serde_json::from_value)
             .transpose()?,
         id: run.id,
         queue_id: run.queue_id,
@@ -162,9 +155,7 @@ async fn run_checks(conn: &mut PgConnection, run_id: &str) -> Result<Vec<RunChec
                     name,
                     kind: kind.parse()?,
                     required,
-                    conclusion: conclusion
-                        .map(|c| c.parse().map_err(ApiError::from))
-                        .transpose()?,
+                    conclusion: conclusion.as_deref().map(str::parse).transpose()?,
                     details_url,
                     observed_at,
                 })
@@ -196,11 +187,16 @@ async fn dependents(
         .map(|(run_id, numbers)| {
             Ok(Dependent {
                 run_id,
-                pr_numbers: numbers
-                    .into_iter()
-                    .map(|n| u64::try_from(n).map_err(ApiError::from))
-                    .collect::<Result<_, _>>()?,
+                pr_numbers: pr_numbers(numbers)?,
             })
         })
+        .collect()
+}
+
+/// The PR numbers that Postgres keeps, as the API gives them.
+fn pr_numbers(numbers: impl IntoIterator<Item = i64>) -> Result<Vec<u64>, ApiError> {
+    numbers
+        .into_iter()
+        .map(|number| Ok(u64::try_from(number)?))
         .collect()
 }

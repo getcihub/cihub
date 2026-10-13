@@ -1,7 +1,7 @@
 import type { Graph, ItemState, Pr, Queue } from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
 import type { Me } from "@/domain/session/session";
-import { type Answers, problem } from "./app";
+import { type Answer, type Answers, problem } from "./app";
 
 export const ada: Me = {
   login: "ada",
@@ -114,16 +114,12 @@ export function liveOf(queue = "main"): string {
 }
 
 /** The answers of the reads of the PRs of the person in `org`: the live ones, then the ones merged lately. */
-export function answersOfMine(
-  org: string,
-  live: Pr[] | [number, unknown][] = [],
-  merged: Pr[] = [],
-): Answers {
+export function answersOfMine(org: string, live: Pr[] | Answer[] = [], merged: Pr[] = []): Answers {
   const reads = `/api/v1/orgs/${org}/prs?author=@me`;
   const isSequence = live.length > 0 && Array.isArray(live[0]);
   return {
     [`${reads}&state=${LIVE_STATES}&sort=position&limit=100`]: isSequence
-      ? (live as [number, unknown][])
+      ? (live as Answer[])
       : [200, pageOf("prs", live as Pr[])],
     [`${reads}&state=merged&limit=10`]: [200, pageOf("prs", merged)],
   };
