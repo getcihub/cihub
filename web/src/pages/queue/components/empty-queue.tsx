@@ -1,19 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
 import { CopyIcon } from "@/components/icons/copy-icon";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueueIllustration } from "@/components/ui/illustrations";
+import { Toast } from "@/components/ui/toast";
 import type { QueuePath } from "@/domain/queue/queries";
 import { timeAgo } from "@/lib/time";
 import { SubmitPr } from "./submit-pr";
 
 const COMMAND = "/cihub merge";
 
+/** How long the button says what the copy did, and the toast says that it copied. */
+const RESULT_SHOWN_MS = 2_000;
+
 /** The command that submits a PR, and a button that copies it. */
 function CopyCommand() {
   const [result, setResult] = useState<"copied" | "failed" | null>(null);
+
+  useEffect(() => {
+    if (!result) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setResult(null);
+    }, RESULT_SHOWN_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [result]);
 
   return (
     <span className="inline-flex items-center gap-2.5 rounded-sm border border-border bg-muted py-1 pr-1 pl-3 font-mono text-base">
@@ -37,6 +55,7 @@ function CopyCommand() {
         <CopyIcon />
         {result === "copied" ? "Copied" : result === "failed" ? "Copy failed" : "Copy"}
       </Button>
+      <Toast className="font-sans">{result === "copied" && <>Copied {COMMAND} to the clipboard.</>}</Toast>
     </span>
   );
 }

@@ -1,10 +1,9 @@
 import { hashKey, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, m } from "motion/react";
 import { useEffect, useState } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
 import { Button } from "@/components/ui/button";
-import { transitions } from "@/components/ui/motion";
+import { Toast } from "@/components/ui/toast";
 import { minePrsOf, minePrsReads } from "@/domain/mine/queries";
 import { whereAmong } from "@/domain/pr/words";
 
@@ -74,28 +73,19 @@ export function MoveNotice({ org, queues }: { org: string; queues: Queue[] }) {
   }, [notice]);
 
   return (
-    <div className="fixed right-5 bottom-5 z-70" role="status">
-      <AnimatePresence>
-        {notice && (
-          <m.p
-            key="notice"
-            className="rounded-md border border-primary-border bg-card px-3 py-2.25 text-base shadow-lg"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            transition={transitions.slide}
+    <Toast>
+      {notice && (
+        <>
+          {notice}{" "}
+          <Button
+            onClick={() => {
+              setNotice(null);
+            }}
           >
-            {notice}{" "}
-            <Button
-              onClick={() => {
-                setNotice(null);
-              }}
-            >
-              Dismiss
-            </Button>
-          </m.p>
-        )}
-      </AnimatePresence>
-    </div>
+            Dismiss
+          </Button>
+        </>
+      )}
+    </Toast>
   );
 }

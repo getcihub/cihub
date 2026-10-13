@@ -195,7 +195,24 @@ describe("the page of a queue", () => {
     await user.click(within(empty).getByRole("button", { name: "Copy" }));
 
     expect(await within(empty).findByRole("button", { name: "Copied" })).toBeInTheDocument();
+    expect(screen.getByText("Copied /cihub merge to the clipboard.")).toBeInTheDocument();
     expect(await navigator.clipboard.readText()).toBe("/cihub merge");
+  });
+
+  it("says that it copied the command for a moment only", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+    renderApp("/orgs/acme/repos/web/queues/main", answersFor({}));
+    const empty = await emptyQueue();
+
+    await user.click(within(empty).getByRole("button", { name: "Copy" }));
+    await within(empty).findByRole("button", { name: "Copied" });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(await within(empty).findByRole("button", { name: "Copy" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Copied /cihub merge to the clipboard.")).not.toBeInTheDocument();
+    });
   });
 
   it("says when the queue last merged, in the tab of an empty queue that merged today", async () => {

@@ -82,6 +82,19 @@ export const VIEWS: View[] = [
     ready: "No pull request in the queue",
     themes: BOTH,
   },
+  {
+    name: "queue-quiet-copied",
+    url: "/orgs/acme/repos/sdk/queues/main",
+    ready: "No pull request in the queue",
+    act: async (page) => {
+      // The views are served over plain HTTP, which has no clipboard.
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.resolve() } });
+      });
+      await page.getByRole("button", { name: "Copy" }).click();
+      await page.getByText("Copied /cihub merge to the clipboard.").waitFor();
+    },
+  },
   // Nothing in the queue, but a merge in the last 24 hours: the tabs stay, and the tab of the queue is empty.
   {
     name: "queue-empty-tab",
