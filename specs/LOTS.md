@@ -289,7 +289,7 @@ Decisions:
   - Done (October 10, 2026): step 6 and exit criterion. `crates/cli/examples/e2e.rs` serves the API, the dashboard
     and the sign-in on the simulator, with a fresh database `cihub_e2e` (`acme` and `globex`); the simulator serves
     its sign-in on a page that a browser opens, and signs in the person chosen there. `web/e2e/sign-in.spec.ts`
-    (Playwright, `mise run e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
+    (Playwright, `mise run web:e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
     a member gets `403` on `PATCH` of a queue, a session gets `404` on another organization and its page, a refused
     sign-in and a person without an organization see their message.
   - Checked on the App of staging (October 11, 2026): GitHub shows no account picker to a GitHub App with
@@ -322,7 +322,7 @@ Decisions:
     `queues` the time of the last state, its author (the user of the cause of `queue.transitioned`, since a
     decision acts as CIHub), the head of the target and the window; the replay rebuilds them. `GET
     …/queues/{queue}` answers `QueueDetail`. The migration of `queues` is rewritten, as before the first version:
-    a development database needs `mise run db-reset`.
+    a development database needs `mise run db:reset`.
   - Done (October 10, 2026): step 2. `Item` gains `title`, `author`, `run_id`, `no_batch`,
     `submitted_by` and `submitted_via`; the filter `state` takes several states, separated by commas. The title
     of a PR is kept in `pr_titles` at each read of the PR by a job, outside the log.

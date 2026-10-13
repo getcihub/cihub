@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.svg">
-    <img alt="CIHub: never break main again" src=".github/assets/banner-light.svg" width="100%">
+    <img alt="CIHub, the self-hosted merge queue for GitHub: never break main again" src=".github/assets/banner-light.svg" width="100%">
   </picture>
 </p>
 
@@ -14,10 +14,12 @@
 
 <p align="center">
   <a href="INSTALL.md"><b>Install</b></a> ·
-  <a href="#how-it-works"><b>How it works</b></a> ·
+  <a href="#how-the-merge-queue-works"><b>How it works</b></a> ·
   <a href="GOAL.md"><b>Why</b></a> ·
   <a href="AGENTS.md"><b>Contribute</b></a>
 </p>
+
+**CIHub is a self-hosted merge queue for GitHub.** It keeps `main` green with the CI you already have.
 
 Two pull requests pass CI on their own. You merge both. `main` is red, and nobody knows why.
 
@@ -26,25 +28,33 @@ behind the others, tests it together with everything that lands before it, and m
 passes. No rebase loop, no broken `main`, no "who merged that?".
 
 - **Green by design.** What gets tested is exactly what lands.
-- **Your CI, unchanged.** GitHub Actions, Buildkite, Jenkins: if it reports a check, CIHub waits for it.
+- **Your CI, unchanged.** GitHub Actions, Buildkite, CircleCI, Jenkins: if it reports a check, CIHub waits for it.
 - **Yours to run.** One container and a Postgres. Your code stays on your infrastructure.
 - **Never a mystery.** Each pull request says where it stands in the queue and what it waits for.
 - **Quick when it gets busy.** Pull requests are tested in parallel or in batches, and one flaky failure does
   not kick anyone out.
 
-## How it works
+## How the merge queue works
 
 | 1. Approve | 2. Queue | 3. Merge |
 | --- | --- | --- |
 | A pull request is approved and its checks are green. | Comment `/cihub merge`. CIHub tests it on top of everything ahead of it, alone or in a batch. | If that exact combination passes, CIHub merges it. If not, the pull request leaves the queue, with the reason on it. |
 
-## Get started
+## Install
 
-[`INSTALL.md`](INSTALL.md) takes you from zero to your first merged pull request in about 30 minutes.
+[`INSTALL.md`](INSTALL.md) takes you from zero to your first merged pull request in about 30 minutes, with Docker
+Compose or the Helm chart.
+
+## Compared with other merge queues
+
+If you use the GitHub merge queue, Mergify, Trunk, Aviator, Graphite or bors,
+[`specs/COMPETITION.md`](specs/COMPETITION.md) compares them with CIHub: the ideas that CIHub takes from each one,
+and where it is different.
 
 ## Status
 
-Early days: v0.1. The queue works; a dashboard, metrics and flaky test detection come next.
+Early days: v0.2. The queue, its batches and its dashboard work; metrics, parallel queues for monorepos and flaky
+test detection come next.
 
 CIHub is in active development. Do not use it in production yet: its behavior, its configuration and its data
 can change without notice from one version to the next.

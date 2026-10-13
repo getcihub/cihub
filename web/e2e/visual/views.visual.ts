@@ -1,5 +1,5 @@
 // Captures each view of `views.ts` from a build of the dashboard, with the API of `api.ts` and a fixed start time:
-// `mise run web-shots`. No server: the page reads the files of the build and the answers of the fixtures.
+// `mise run web:shots`. No server: the page reads the files of the build and the answers of the fixtures.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 
