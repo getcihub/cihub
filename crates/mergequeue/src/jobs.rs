@@ -448,11 +448,7 @@ pub(crate) async fn give_back_facts(
     facts: Vec<(Actor, EventKind)>,
     now: OffsetDateTime,
 ) -> Result<(), Failure> {
-    let mut tx = begin_system(pool).await?;
-    give_back(&mut tx, target.org_id, target.queue_id, facts, now).await?;
-    tx.commit().await?;
-
-    Ok(())
+    give_back_with_titles(pool, target, &[], facts, now).await
 }
 
 /// Gives back the facts of the PRs read at `now`, with their titles, for the

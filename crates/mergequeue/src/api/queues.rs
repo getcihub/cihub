@@ -383,13 +383,10 @@ async fn queue_list(
         .into_iter()
         .map(|row| facts.queue(row))
         .collect::<Result<Vec<_>, _>>()?;
-    let cursor = has_more
-        .then(|| {
-            queues
-                .last()
-                .map(|queue| cursor_of("queues", (&queue.repo, &queue.name, &queue.id)))
-        })
-        .flatten();
+    let cursor = queues
+        .last()
+        .filter(|_| has_more)
+        .map(|queue| cursor_of("queues", (&queue.repo, &queue.name, &queue.id)));
     Ok(QueueList {
         queues,
         has_more,
@@ -554,18 +551,17 @@ pub(super) async fn graph(
     .bind(&queue.id)
     .fetch_all(&mut *tx)
     .await?;
-    let mut edges = Vec::new();
-
-    for (members, predecessors) in groups {
-        for to in &members {
-            for from in &predecessors {
-                edges.push(GraphEdge {
+    let edges = groups
+        .iter()
+        .flat_map(|(members, predecessors)| {
+            members.iter().flat_map(move |to| {
+                predecessors.iter().map(move |from| GraphEdge {
                     from: from.clone(),
                     to: to.clone(),
-                });
-            }
-        }
-    }
+                })
+            })
+        })
+        .collect();
 
     let rows: Vec<GraphRunRow> = sqlx::query_as(
         "SELECT * FROM (
