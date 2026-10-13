@@ -15,7 +15,10 @@ const CARS: Record<string, string> = {
   tests_passed: "border-success bg-success-muted",
 };
 
-/** The car of the PR itself: a round one, amber when its tests failed, an outline before it enters the line. */
+/**
+ * The car of the PR itself: a round one, amber when its tests failed, an outline before it enters the line; it
+ * glows while its run tests it and until it merges.
+ */
 function ownCarOf(state: ItemState): string {
   const own = "mr-1.5 size-5 rounded-full border-primary bg-primary ring-3 ring-primary-muted";
 
@@ -24,6 +27,9 @@ function ownCarOf(state: ItemState): string {
   }
   if (state === "not_ready") {
     return cn(own, "border-dashed bg-card ring-0");
+  }
+  if (state === "testing" || state === "tests_passed") {
+    return cn(own, "motion-safe:animate-beacon");
   }
   return own;
 }

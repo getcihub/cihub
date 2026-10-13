@@ -5448,6 +5448,7 @@
           "counts",
           "merged_last_24h",
           "failed_last_24h",
+          "failed_or_cancelled_last_24h",
           "live_runs",
           "window",
           "settings",
@@ -5487,6 +5488,13 @@
             "format": "int32",
             "description": "The current items that reached `failed` in the 24 hours before the\nrequest.",
             "example": 1,
+            "minimum": 0
+          },
+          "failed_or_cancelled_last_24h": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The current items that reached `failed` or `cancelled` in the 24 hours\nbefore the request, as the list of the PRs gives them.",
+            "example": 2,
             "minimum": 0
           },
           "has_config_file": {

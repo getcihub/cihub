@@ -228,7 +228,7 @@ describe("the page of a queue", () => {
     expect(await screen.findByText(/^#124 sent/)).toBeInTheDocument();
   });
 
-  it("opens the tab of the URL, with the items that ended in the last 24 hours", async () => {
+  it("opens the tab of the URL, with the items that ended in the last 24 hours and the count of each tab", async () => {
     // The read of the tab starts at a full hour: the test and the page compute the same one.
     vi.useFakeTimers({ now: Date.parse("2026-10-11T12:30:00Z"), toFake: ["Date"] });
     const merged = itemOf(116, "merged", { title: "Add the audit log page" });
@@ -236,7 +236,10 @@ describe("the page of a queue", () => {
     renderApp(
       "/orgs/acme/repos/web/queues/main?tab=merged",
       answersFor({
-        [QUEUE]: [200, detailOf(entry, { merged_last_24h: 1 })],
+        [QUEUE]: [
+          200,
+          detailOf(entry, { merged_last_24h: 1, failed_last_24h: 4, failed_or_cancelled_last_24h: 3 }),
+        ],
         [`/api/v1/orgs/acme/prs?repo=web&queue=main&state=merged&state_changed_since=${sinceOf(Date.now())}&limit=100`]:
           [200, pageOf("prs", [merged, old])],
       }),
@@ -245,6 +248,7 @@ describe("the page of a queue", () => {
     expect(await screen.findByText("Add the audit log page")).toBeInTheDocument();
     expect(screen.queryByText("Change 90")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Merged/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: /^Failed and cancelled\s*3$/ })).toBeInTheDocument();
   });
 
   it("keeps its head when a read of the page fails, and says what the server answered", async () => {

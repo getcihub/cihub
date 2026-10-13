@@ -4160,8 +4160,8 @@ async fn insert_item(conn: &mut PgConnection, item: &ItemFixture<'_>) {
 
 /// `GET /orgs/{org}/queues` gives every queue of the organization in the
 /// order of the repository names, then of the queue names, with the current
-/// items in each live state and the merges and failures of the 24 hours
-/// before the request.
+/// items in each live state and the current items that merged, failed or were
+/// cancelled in the 24 hours before the request.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: PgPool) {
     seed(&pool).await;
@@ -4214,8 +4214,9 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
         current(&app_main, 10, "failed", 2),
         current(&app_main, 11, "failed", 30),
         current(&app_main, 12, "cancelled", 1),
-        // The PR 13 failed, then came back: its failure still counts, and only its
-        // current item counts in its state.
+        current(&app_main, 14, "cancelled", 25),
+        // The PR 13 failed, then came back: only its current item counts, as the
+        // list of the PRs gives it.
         ItemFixture {
             is_current: false,
             ..current(&app_main, 13, "failed", 3)
@@ -4257,6 +4258,7 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
                 ],
                 entry.merged_last_24h,
                 entry.failed_last_24h,
+                entry.failed_or_cancelled_last_24h,
                 entry.last_merged_at,
             )
         })
@@ -4271,6 +4273,7 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
                 [0, 0, 1, 0, 0],
                 0,
                 0,
+                0,
                 Some(now - Duration::hours(26))
             ),
             (
@@ -4278,10 +4281,11 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
                 "main",
                 [1, 2, 2, 1, 1],
                 2,
+                1,
                 2,
                 Some(now - Duration::hours(1))
             ),
-            ("app", "release", [0, 0, 0, 0, 0], 0, 0, None),
+            ("app", "release", [0, 0, 0, 0, 0], 0, 0, 0, None),
         ]
     );
     assert_eq!(listed[1].id, app_main);

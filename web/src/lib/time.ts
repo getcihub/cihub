@@ -25,6 +25,11 @@ export function durationBetween(start: string, end: string): string {
   return hours === 0 ? `${String(minutes)} min` : `${String(hours)} h ${String(minutes % 60)} min`;
 }
 
+/** `at`, an RFC 3339 time, as a time of the day: "9:30 PM". */
+export function timeOfDay(at: string): string {
+  return new Date(at).toLocaleTimeString("en", { timeStyle: "short" });
+}
+
 /** `at`, an RFC 3339 time, as a date and a time: "Oct 11, 2026, 9:30 PM". */
 export function dateAndTime(at: string): string {
   return new Date(at).toLocaleString("en", { dateStyle: "medium", timeStyle: "short" });

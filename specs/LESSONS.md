@@ -301,3 +301,11 @@ reason no longer holds.
 - **Why not**: axum routes whole segments only. A handler took every `POST` on the queue or the PR and cut the
   segment by hand, a wrong method answered `404` instead of `405`, and the paths of the `OpenAPI` document were
   not those of the router. An action is a segment of its own: `…/resync`, `…/prs/{number}/cancel`.
+
+### A counter of failures that keeps the failure of a PR that came back
+
+- **Tried / considered**: `failed_last_24h` counted every item that reached `failed` in the 24 hours, the earlier
+  submissions of a PR too, so that a failure stays visible after the PR comes back.
+- **Why not**: the list of the PRs gives only the current item of each PR. The dashboard showed "Failed in 24 h 3"
+  above a tab of 2 failures, and nothing on the page said which failure was missing. A counter counts what its list
+  shows; the history of the PR keeps its earlier failures.

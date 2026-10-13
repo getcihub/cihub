@@ -88,7 +88,11 @@ export function ItemTabs({
   /** What the page shows once the empty queue submitted a pull request. */
   onSent: (notice: string) => void;
 }) {
-  const counts: Partial<Record<Tab, number>> = { live: live.length, merged: queue.merged_last_24h };
+  const counts: Record<Tab, number> = {
+    live: live.length,
+    merged: queue.merged_last_24h,
+    ended: queue.failed_or_cancelled_last_24h,
+  };
 
   return (
     <section className={cn(cardVariants(), "min-w-0")} aria-labelledby="items-title">
@@ -110,9 +114,7 @@ export function ItemTabs({
               aria-current={candidate === tab ? "page" : undefined}
             >
               {TAB_LABELS[candidate]}
-              {counts[candidate] !== undefined && (
-                <span className="ml-1 text-muted-foreground">{counts[candidate]}</span>
-              )}
+              <span className="ml-1 text-muted-foreground">{counts[candidate]}</span>
             </Link>
           ))}
         </nav>

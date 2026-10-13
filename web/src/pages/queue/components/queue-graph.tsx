@@ -35,6 +35,9 @@ const LANE = "relative flex flex-col justify-center gap-2 py-6.5";
 
 const LANE_LABEL = "absolute top-0 left-0 text-xs font-medium whitespace-nowrap text-muted-foreground";
 
+/** The commits of the branch before its head, which fade: a picture of the branch, as the API does not count them. */
+const OLDER_COMMITS = ["opacity-100", "opacity-86", "opacity-72"];
+
 /** The link between two lanes; the last one stretches to the branch. */
 const LINK = "w-7 self-center border-t-[1.5px] border-dashed border-waiting";
 
@@ -154,7 +157,7 @@ export function QueueGraph({
         {lanes.length === 0 && (
           <>
             <p className="mr-3 self-center text-muted-foreground">
-              No pull request waits and no run is in progress.
+              No run in progress: <code>{queue.target_branch}</code> is up to date and green.
             </p>
             <span className={cn(LINK, "flex-[1_0_28px]")} />
           </>
@@ -192,8 +195,14 @@ export function QueueGraph({
             >
               <CheckIcon />
             </span>
+            {OLDER_COMMITS.map((opacity) => (
+              <Fragment key={opacity}>
+                <span className={cn("h-[1.5px] w-5 bg-primary", opacity)} />
+                <span className={cn("size-2 flex-none rounded-full bg-primary", opacity)} />
+              </Fragment>
+            ))}
             {graph.target_head_sha && (
-              <code className="absolute right-0 bottom-1 bg-transparent p-0 font-mono text-2xs text-muted-foreground">
+              <code className="absolute bottom-1 left-0 bg-transparent p-0 font-mono text-2xs text-muted-foreground">
                 {shortSha(graph.target_head_sha)}
               </code>
             )}

@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { getRunOptions } from "@/client/@tanstack/react-query.gen";
+import type { CheckConclusion } from "@/client/types.gen";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { shortSha } from "@/lib/text";
@@ -29,16 +30,59 @@ const CONCLUSION_LABELS: Record<string, string> = {
   stale: "stale",
 };
 
-const CONCLUSIONS: Record<string, string> = {
-  success: "border-success bg-success",
-  failure: "border-destructive bg-destructive",
-  timed_out: "border-destructive bg-destructive",
-  action_required: "border-destructive bg-destructive",
-  neutral: "border-waiting bg-waiting",
-  skipped: "border-waiting bg-waiting",
-  cancelled: "border-waiting bg-waiting",
-  stale: "border-waiting bg-waiting",
-};
+const FAILURES = new Set<CheckConclusion>(["failure", "error", "timed_out", "action_required"]);
+
+/** The mark of a check: passed, failed, running (it turns), or ended without a verdict. */
+function CheckMark({ conclusion }: { conclusion: CheckConclusion | null | undefined }) {
+  const mark = "size-4 flex-none";
+
+  if (!conclusion) {
+    return (
+      <svg
+        className={cn(mark, "motion-safe:animate-spin")}
+        viewBox="0 0 16 16"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="8" cy="8" r="6" className="stroke-warning-border" strokeWidth="2" />
+        <path d="M8 2 A6 6 0 0 1 14 8" className="stroke-warning" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (conclusion === "success") {
+    return (
+      <svg className={mark} viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="7" className="fill-success" />
+        <path
+          d="M5 8.3 L7 10.3 L11 6"
+          className="stroke-primary-foreground"
+          strokeWidth="1.8"
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (FAILURES.has(conclusion)) {
+    return (
+      <svg className={mark} viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="8" cy="8" r="7" className="fill-destructive" />
+        <path
+          d="M5.5 5.5 L10.5 10.5 M10.5 5.5 L5.5 10.5"
+          className="stroke-primary-foreground"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg className={mark} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" className="stroke-waiting" strokeWidth="2" strokeDasharray="3 3" />
+    </svg>
+  );
+}
 
 /** The run of a PR in its drawer: what it tests, on top of what, and the checks of its test commit. */
 export function RunSection({ org, runId }: { org: string; runId: string }) {
@@ -74,12 +118,7 @@ export function RunSection({ org, runId }: { org: string; runId: string }) {
           <ul className="grid gap-0.5">
             {run.checks.map((check) => (
               <li key={`${check.kind}-${check.name}`} className="flex items-center gap-2.5 py-1.25 text-md">
-                <span
-                  className={cn(
-                    "size-2 flex-none rounded-full border-2 border-primary",
-                    CONCLUSIONS[check.conclusion ?? ""],
-                  )}
-                />
+                <CheckMark conclusion={check.conclusion} />
                 <span className="font-medium">{check.name}</span>
                 {!check.required && <span className="text-muted-foreground">not required</span>}
                 <span className="ml-auto text-muted-foreground">

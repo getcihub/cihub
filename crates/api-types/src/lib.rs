@@ -400,6 +400,10 @@ pub struct Queue {
     /// request.
     #[cfg_attr(feature = "openapi", schema(example = 1))]
     pub failed_last_24h: u32,
+    /// The current items that reached `failed` or `cancelled` in the 24 hours
+    /// before the request, as the list of the PRs gives them.
+    #[cfg_attr(feature = "openapi", schema(example = 2))]
+    pub failed_or_cancelled_last_24h: u32,
     /// When the last current item reached `merged`; `null` if no item merged.
     #[serde(with = "time::serde::rfc3339::option")]
     #[cfg_attr(

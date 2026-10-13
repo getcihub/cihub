@@ -69,7 +69,7 @@ const timeline = [
     actor: "marie",
     occurred_at: "2026-10-11T12:00:00Z",
     description: "waits: the required check `ci` is in_progress",
-    payload: {},
+    payload: { block_reasons: [{ kind: "check_pending", check: "ci" }] },
   },
   {
     id: "event_2",
@@ -108,8 +108,15 @@ describe("the drawer of a PR", () => {
     expect(drawer).toHaveTextContent("On top of#117");
     expect(within(drawer).getByText("not required")).toBeInTheDocument();
     expect(within(drawer).getByText("ci", { selector: "code" })).toBeInTheDocument();
-    expect(drawer).toHaveTextContent("· by @marie");
-    expect(within(drawer).getAllByText("Testing").length).toBeGreaterThan(0);
+    expect(drawer).toHaveTextContent(", by @marie");
+
+    const history = within(drawer).getByRole("region", { name: "History" });
+    const events = within(history).getAllByRole("listitem");
+
+    expect(events.map((event) => within(event).getByText(/^(Testing|Waiting)$/).textContent)).toEqual([
+      "Testing",
+      "Waiting",
+    ]);
   });
 
   it("says that a PR is not in the queue, over the page of the queue", async () => {
