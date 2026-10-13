@@ -13,7 +13,7 @@ does not also check.
 - The client of the API is generated from `web/openapi.json`, the document that `/api/v1/openapi.json` serves,
   by `@hey-api/openapi-ts`, with its plugin `@tanstack/react-query` (`queryOptions`, `mutationOptions`, query
   keys). The generated files are never edited by hand; a change of the API regenerates them in the same change
-  (`mise run web-generate`), and `mise run web-generate-check` fails otherwise. The routes outside the API
+  (`mise run web:generate`), and `mise run web:generate-check` fails otherwise. The routes outside the API
   (`/auth/*`, `specs/API.md`) are called with `fetch` in `src/domain/session/session.ts` only.
 - Zod 4 for the search parameters and the forms, without adapter (Standard Schema).
 - Vitest and Testing Library for the components; Playwright for the browser tests, against a server on the
@@ -99,7 +99,7 @@ and its test sit side by side. There is no barrel file (`index.ts`): an import n
 - The skeletons of the pages sit in `src/pages/skeletons.tsx`, which never imports a page: `autoCodeSplitting`
   keeps a `pendingComponent` in the entry chunk, and a skeleton imported from the file of its page would bring the
   whole page into it.
-- `mise run web-shots` captures these states too: a view whose read never answers shows the skeleton.
+- `mise run web:shots` captures these states too: a view whose read never answers shows the skeleton.
 
 ## Animations
 
@@ -109,7 +109,7 @@ and its test sit side by side. There is no barrel file (`index.ts`): an import n
 - An element that leaves animates out with `<AnimatePresence>` when its component owns its state (a menu, a
   notice). The drawer is a route: Close, Escape and a click beside it slide it out first, then go back to the page.
 - A person who asks for less motion gets no animation at all, fades included (`skipAnimations` of
-  `MotionProvider`); the tests and `mise run web-shots` ask for it too, so that a capture never depends on a frame.
+  `MotionProvider`); the tests and `mise run web:shots` ask for it too, so that a capture never depends on a frame.
 - The features of `motion` load with the first page: a page and the drawer start hidden until they animate, and a
   later chunk would leave them hidden. They cost about 27 kB gzip at start.
 
@@ -168,27 +168,27 @@ is the reference.
 
 When a component does not fit: pass `className`; compose it in the page that needs it; add a variant here only
 when a second page needs it. A change of a component is a change of every page that shows it: compare the views
-before and after with `mise run web-shots-diff`, and explain each view that differs.
+before and after with `mise run web:shots-diff`, and explain each view that differs.
 
 ## Commands
 
 `mise run lint` and `mise run check` cover the dashboard: type check, ESLint (`typescript-eslint`,
 `react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), `oxfmt --check`, Vitest.
-`mise run web-fmt` formats the dashboard; the pre-commit hook (`.lefthook.toml`) formats the files that a
+`mise run web:fmt` formats the dashboard; the pre-commit hook (`.lefthook.toml`) formats the files that a
 commit stages, as `cargo fmt` does for the Rust code.
-`mise run web-dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
-`mise run web-build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web-generate`
+`mise run web:dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
+`mise run web:build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web:generate`
 writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;
-`mise run e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
+`mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
 passes each test commit of `acme/api`, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
 comment of a PR at `/sim/comment`.
 
-`mise run web-shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator
+`mise run web:shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator
 cannot show, in both themes and in a narrow window) from a build of the dashboard, against the API of
 `e2e/visual/api.ts` and a fixed clock, into `e2e/__screenshots__/head`, which git ignores: two captures of the
 same
-build are the same. `mise run web-shots-diff [REF]` (`origin/main` by default) builds REF in a worktree, captures
+build are the same. `mise run web:shots-diff [REF]` (`origin/main` by default) builds REF in a worktree, captures
 both, and writes into `e2e/__screenshots__/diff` an image (base | head | the changed pixels) per view that
 differs, and `report.md`. The fixtures use the types of `src/client`: a change of the API that they no longer
 follow fails the type check. A new page or a new state adds its view to `views.ts`.

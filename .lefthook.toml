@@ -17,7 +17,7 @@ stage_fixed = true
 
 [pre-commit.commands.mise-lock]
 glob = ["mise.toml"]
-run = "mise lock -p linux-x64,linux-arm64,macos-arm64 && git add mise.lock"
+run = "mise lock -p linux-x64,linux-arm64,macos-x64,macos-arm64 && git add mise.lock"
 
 [pre-commit.commands.actionlint]
 glob = [".github/workflows/*.yaml", ".github/workflows/*.yml"]

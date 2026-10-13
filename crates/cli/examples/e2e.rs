@@ -1,4 +1,4 @@
-//! The server of the browser tests of the dashboard (`mise run e2e`): the API,
+//! The server of the browser tests of the dashboard (`mise run web:e2e`): the API,
 //! the dashboard of `web/dist`, the sign-in, and the worker, the router and
 //! the scheduler of the queues, on the simulator and on a fresh database
 //! `cihub_e2e`, next to the one of `DATABASE_URL`. Its sign-in page signs

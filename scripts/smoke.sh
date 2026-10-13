@@ -14,7 +14,12 @@
 #                        keeps its Secrets and restarts the replicas
 #   CIHUB_SMOKE_GITHUB=1 use the GitHub App of mise.local.toml instead of a
 #                        false one, and also check that its installations are
-#                        synced: a development use, never in the CI
+#                        synced: a development use, never in the CI. Every
+#                        variable of server.yaml that the chart carries comes
+#                        from the environment then; the cluster has its own
+#                        Postgres, and the chart fixes the addresses of the pod,
+#                        so CIHUB_DATABASE_URL, CIHUB_HTTP_ADDR and
+#                        CIHUB_INTERNAL_ADDR stay out
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,9 +37,17 @@ log() { echo "==> $*"; }
 
 github="${CIHUB_SMOKE_GITHUB:-}"
 if [ "$github" = 1 ]; then
-  for name in CIHUB_GITHUB_APP_ID CIHUB_GITHUB_PRIVATE_KEY_FILE CIHUB_GITHUB_WEBHOOK_SECRET; do
+  for name in CIHUB_GITHUB_APP_ID CIHUB_GITHUB_WEBHOOK_SECRET; do
     [ -n "${!name:-}" ] || { echo "CIHUB_SMOKE_GITHUB=1 needs $name, from mise.local.toml (specs/DEPLOYMENT.md)"; exit 1; }
   done
+  [ -n "${CIHUB_GITHUB_PRIVATE_KEY:-}${CIHUB_GITHUB_PRIVATE_KEY_FILE:-}" ] ||
+    { echo "CIHUB_SMOKE_GITHUB=1 needs CIHUB_GITHUB_PRIVATE_KEY or CIHUB_GITHUB_PRIVATE_KEY_FILE, from mise.local.toml (specs/DEPLOYMENT.md)"; exit 1; }
+  # The chart reads the client secret only with the client ID, and a pod whose
+  # Secret lacks a key never starts, so the server never says which one.
+  if [ -n "${CIHUB_GITHUB_CLIENT_ID:-}" ] && [ -z "${CIHUB_GITHUB_CLIENT_SECRET:-}" ]; then
+    echo "CIHUB_GITHUB_CLIENT_ID needs CIHUB_GITHUB_CLIENT_SECRET, from mise.local.toml (specs/DEPLOYMENT.md)"
+    exit 1
+  fi
 fi
 
 # Everything worth reading when a step fails, before the cluster goes.
@@ -107,9 +120,16 @@ if ! secret_exists cihub-postgres; then
 fi
 if [ "$github" = 1 ]; then
   webhook_secret="$CIHUB_GITHUB_WEBHOOK_SECRET"
-  kubectl -n "$ns" create secret generic cihub-github \
-    --from-file=private-key.pem="$CIHUB_GITHUB_PRIVATE_KEY_FILE" \
-    --from-literal=webhook-secret="$webhook_secret" \
+  github_keys=(--from-literal=webhook-secret="$webhook_secret")
+  if [ -n "${CIHUB_GITHUB_PRIVATE_KEY_FILE:-}" ]; then
+    github_keys+=(--from-file=private-key.pem="$CIHUB_GITHUB_PRIVATE_KEY_FILE")
+  else
+    github_keys+=(--from-literal=private-key.pem="$CIHUB_GITHUB_PRIVATE_KEY")
+  fi
+  if [ -n "${CIHUB_GITHUB_CLIENT_ID:-}" ]; then
+    github_keys+=(--from-literal=client-secret="$CIHUB_GITHUB_CLIENT_SECRET")
+  fi
+  kubectl -n "$ns" create secret generic cihub-github "${github_keys[@]}" \
     --dry-run=client -o yaml | kubectl apply -f -
 elif secret_exists cihub-github; then
   webhook_secret="$(kubectl -n "$ns" get secret cihub-github -o go-template='{{index .data "webhook-secret"}}' | base64 --decode)"
@@ -144,9 +164,15 @@ MANIFEST
 kubectl -n "$ns" wait cluster/cihub-postgres --for=condition=Ready --timeout=5m
 
 log "installing the chart"
-github_values=()
+local_values=()
 if [ "$github" = 1 ]; then
-  github_values=(--set github.url="${CIHUB_GITHUB_URL:-https://github.com}" --set-string github.appId="$CIHUB_GITHUB_APP_ID")
+  local_values=(--set github.url="${CIHUB_GITHUB_URL:-https://github.com}" --set-string github.appId="$CIHUB_GITHUB_APP_ID")
+  # --set-literal, as a log filter separates its directives with commas.
+  for value_and_variable in github.clientId=CIHUB_GITHUB_CLIENT_ID publicUrl=CIHUB_HTTP_PUBLIC_URL \
+    log.filter=CIHUB_LOG_FILTER log.format=CIHUB_LOG_FORMAT; do
+    variable="${value_and_variable#*=}"
+    [ -z "${!variable:-}" ] || local_values+=(--set-literal "${value_and_variable%%=*}=${!variable}")
+  done
 fi
 installed=""
 helm status cihub -n "$ns" >/dev/null 2>&1 && installed=1
@@ -154,7 +180,7 @@ helm status cihub -n "$ns" >/dev/null 2>&1 && installed=1
 # replicas are ready: each one has read its file and reached the database.
 helm upgrade --install cihub charts/cihub -n "$ns" --values scripts/smoke/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
-  ${github_values[@]+"${github_values[@]}"} \
+  ${local_values[@]+"${local_values[@]}"} \
   --wait --timeout 5m
 if [ -n "$installed" ]; then
   # The tag of the image does not change, so a new build or a new Secret
@@ -222,4 +248,7 @@ To receive the webhooks of the App:
   KUBECONFIG=$KUBECONFIG kubectl -n $ns port-forward svc/cihub 8080:8080
 then a tunnel to localhost:8080, and https://<tunnel>/webhooks/github as the webhook URL of the App.
 NEXT
+  if [ -n "${CIHUB_GITHUB_CLIENT_ID:-}" ]; then
+    echo "The sign-in sends back to ${CIHUB_HTTP_PUBLIC_URL:-<CIHUB_HTTP_PUBLIC_URL, not set>}/auth/github/callback, the Callback URL of the App."
+  fi
 fi

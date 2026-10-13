@@ -16,7 +16,7 @@ only.
 
 ```sh
 mise run db            # Postgres, then postgres-setup
-mise run db-reset      # erases the data, then mise run db (after a migration is rewritten)
+mise run db:reset      # erases the data, then mise run db (after a migration is rewritten)
 mise run migrate       # Postgres, then cihub server migrate
 mise run dev           # migrate, then cihub server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
@@ -37,7 +37,8 @@ CIHUB_GITHUB_WEBHOOK_SECRET = "<the webhook secret of the App>"
 The first time, `mise trust mise.local.toml` authorizes the file. To receive webhooks locally, the webhook URL
 of the App points to a tunnel that leads to port 8080.
 
-`mise tasks` lists the project tasks and their description.
+`mise tasks` lists the project tasks and their description. A task of one part carries its prefix (`rust:`, `web:`,
+`helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
 
 ## Server configuration
 
@@ -166,9 +167,9 @@ role of the URL owns the database, as the migration Job uses the same URL. The p
 CIHub does not call the Kubernetes API. `charts/cihub/README.md`, generated, lists the values.
 
 ```sh
-mise run helm-lint       # helm lint with charts/cihub/ci/lint-values.yaml
-mise run helm-unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
-mise run generate        # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
+mise run helm:lint       # helm lint with charts/cihub/ci/lint-values.yaml
+mise run helm:unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
+mise run helm:generate   # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
 mise run smoke           # the chart in a throwaway kind cluster (needs Docker)
 ```
 
@@ -181,12 +182,16 @@ delivery does not get `202`. The App does not exist and `github.url` does not re
 kubeconfig of the cluster is `$TMPDIR/kind-cihub-smoke.kubeconfig` (`/tmp` without `TMPDIR`), never `~/.kube`. A run
 on a kept cluster keeps its Secrets, and restarts the replicas, as the tag of the image does not change.
 
-With `CIHUB_SMOKE_GITHUB=1`, the script uses the development App of `mise.local.toml`
-(`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY_FILE`, `CIHUB_GITHUB_WEBHOOK_SECRET`, and `CIHUB_GITHUB_URL` when it
-is set) instead of a false App, and also fails when no installation of the App is synced within 2 minutes. It is a
-development use, as `mise run dev`, never a test of the CI. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that
-bring the webhooks of the App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the
-webhook URL of the App.
+With `CIHUB_SMOKE_GITHUB=1`, the script uses the development App of `mise.local.toml` instead of a false App, and
+also fails when no installation of the App is synced within 2 minutes. It is a development use, as `mise run dev`,
+never a test of the CI. It then takes from the environment every variable of the server configuration that the chart
+carries: `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET`, `CIHUB_GITHUB_PRIVATE_KEY_FILE` or
+`CIHUB_GITHUB_PRIVATE_KEY`, and, when they are set, `CIHUB_GITHUB_URL`, `CIHUB_GITHUB_CLIENT_ID` with
+`CIHUB_GITHUB_CLIENT_SECRET` for the sign-in, `CIHUB_HTTP_PUBLIC_URL`, `CIHUB_LOG_FILTER` and `CIHUB_LOG_FORMAT`. The
+cluster has its own Postgres and the chart fixes the addresses of the pod: `CIHUB_DATABASE_URL`, `CIHUB_HTTP_ADDR` and
+`CIHUB_INTERNAL_ADDR` stay out. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that bring the webhooks of the
+App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the webhook URL of the App; with
+the sign-in, the Callback URL that the App must have.
 
 ```sh
 CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run smoke
@@ -234,15 +239,15 @@ Migrations are explicit:
 `mise install` installs the whole suite: Rust (version pinned in `mise.toml`, with `clippy`,
 `rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
 `lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml`: `cargo fmt`, `actionlint` and `zizmor` at
-commit, `mise run check` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
+commit, `mise run lint` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
 ## Project CI
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
 test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise run cover`), `Workflow Lint`
-(`mise run lint-workflows`), `Helm Lint` (`mise run helm-lint`, then `mise run generate-check`), `Helm Unittest`
-(`mise run helm-unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
+(`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run helm:generate-check`), `Helm Unittest`
+(`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
 of the `main` branch: it fails when one of these jobs failed or was cancelled.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each

@@ -181,7 +181,7 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 ## Order, verification, documents
 
 Order: step 1, then 2, 3 and 4 in one change each, step 5 as the lots arrive. Each change rewrites the
-migration files that create the objects (no new file for a drop), then `mise run db-reset`.
+migration files that create the objects (no new file for a drop), then `mise run db:reset`.
 
 Verification for each change:
 

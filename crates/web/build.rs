@@ -1,4 +1,4 @@
-//! Embeds the build of the dashboard (`web/dist`, `mise run web-build`) in
+//! Embeds the build of the dashboard (`web/dist`, `mise run web:build`) in
 //! the binary, as a table of paths and contents. Without a build, the table is
 //! empty and the server answers 404 on the pages of the dashboard: a build of
 //! the Rust code alone does not need Node. The script creates `web/dist`

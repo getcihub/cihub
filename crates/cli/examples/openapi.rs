@@ -1,6 +1,6 @@
 //! Writes the `OpenAPI` document of the API v1 on the standard output, as the
 //! server serves it on `/api/v1/openapi.json`, without a database: the client
-//! of the dashboard is generated from it (`mise run generate`).
+//! of the dashboard is generated from it (`mise run web:generate`).
 
 fn main() -> Result<(), serde_json::Error> {
     // The modules that `server::merge_queue` mounts: a new module adds its
