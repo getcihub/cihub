@@ -15,12 +15,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
-use cihub_domain::{ConnectionId, JobClass, MergeMethod, Permission};
-use cihub_github::{GithubApp, GithubConfig};
+use cihub_domain::{ConnectionId, JobClass, MembershipRole, MergeMethod, Permission};
+use cihub_github::{GithubApp, GithubConfig, SignInClient};
 use cihub_scm::contract;
 use cihub_scm::{
     ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmInstallation,
-    ScmRepo, ScmUser, SetupFinding,
+    ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest,
 };
 use secrecy::SecretString;
 use serde_json::json;
@@ -38,6 +38,7 @@ fn app(url: &str, now: OffsetDateTime) -> GithubApp {
         url: url.to_owned(),
         app_id: "1".to_owned(),
         private_key: SecretString::from(TEST_KEY),
+        sign_in: None,
     };
     GithubApp::new(&config, Arc::new(move || now)).unwrap()
 }
@@ -319,6 +320,7 @@ async fn a_permission_is_kept_five_minutes() {
         url: replay.url.clone(),
         app_id: "1".to_owned(),
         private_key: SecretString::from(TEST_KEY),
+        sign_in: None,
     };
     let app = GithubApp::new(&config, Arc::new(move || *at.lock().unwrap())).unwrap();
     let repo = repo("7", "acme", "app");
@@ -541,4 +543,242 @@ async fn the_installations_of_the_app_come_from_every_page() {
     assert_eq!(installations, [acme_installation(), globex]);
 
     replay.finish();
+}
+
+fn app_with_sign_in(url: &str, now: OffsetDateTime) -> GithubApp {
+    let config = GithubConfig {
+        url: url.to_owned(),
+        app_id: "1".to_owned(),
+        private_key: SecretString::from(TEST_KEY),
+        sign_in: Some(SignInClient {
+            client_id: "Iv1.client".to_owned(),
+            client_secret: SecretString::from("secret"),
+        }),
+    };
+    GithubApp::new(&config, Arc::new(move || now)).unwrap()
+}
+
+fn sign_in_code() -> SignInCode {
+    SignInCode {
+        code: SecretString::from("code"),
+        code_verifier: SecretString::from("verifier"),
+        redirect_url: "https://ci.example.com/auth/github/callback".into(),
+    }
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: a
+/// sign-in needs the consent of a person in a browser.
+#[tokio::test]
+async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let installation = |id: u64, account: u64, login: &str, kind: &str| json!({ "id": id, "account": { "id": account, "login": login, "type": kind } });
+    let installations = json!({
+        "total_count": 3,
+        "installations": [
+            installation(7, 70, "acme", "Organization"),
+            installation(8, 5, "octocat", "User"),
+            installation(9, 90, "globex", "Organization"),
+        ],
+    });
+    let exchanges = vec![
+        answer(
+            "POST",
+            "/login/oauth/access_token",
+            200,
+            json!({ "access_token": "ghu_person", "token_type": "bearer" }),
+        ),
+        answer("GET", "/user", 200, json!({ "id": 5, "login": "octocat" })),
+        answer(
+            "GET",
+            "/user/installations?per_page=100",
+            200,
+            installations,
+        ),
+        answer(
+            "GET",
+            "/user/memberships/orgs/acme",
+            200,
+            json!({ "state": "active", "role": "admin" }),
+        ),
+        answer(
+            "GET",
+            "/user/memberships/orgs/globex",
+            404,
+            json!({ "message": "Not Found" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app_with_sign_in(&replay.url, now);
+    let membership = |installation: &str| ScmMembership {
+        connection_external_id: installation.into(),
+        role: MembershipRole::Admin,
+    };
+
+    let signed_in = app
+        .sign_in(&sign_in_code(), JobClass::Interactive)
+        .await
+        .unwrap();
+
+    replay.finish();
+    let octocat = ScmUser {
+        external_id: "5".into(),
+        login: "octocat".into(),
+    };
+    assert_eq!(signed_in.user, octocat);
+    assert_eq!(signed_in.memberships, [membership("7"), membership("8")]);
+}
+
+#[tokio::test]
+async fn a_refused_sign_in_code_is_not_valid() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let refused = json!({ "error": "bad_verification_code" });
+    let replay = Replay::start(vec![answer(
+        "POST",
+        "/login/oauth/access_token",
+        200,
+        refused,
+    )])
+    .await;
+    let app = app_with_sign_in(&replay.url, now);
+
+    let signed_in = app.sign_in(&sign_in_code(), JobClass::Interactive).await;
+
+    replay.finish();
+    assert!(
+        matches!(&signed_in, Err(ScmError::Validation(message)) if message.contains("bad_verification_code")),
+        "{signed_in:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_sign_in_address_carries_the_client_and_the_challenge() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let request = SignInRequest {
+        redirect_url: "https://ci.example.com/auth/github/callback".into(),
+        state: "state".into(),
+        code_challenge: "challenge".into(),
+    };
+
+    let address = app_with_sign_in("https://github.example.com", now).sign_in_url(&request);
+    let without_client = app("https://github.example.com", now).sign_in_url(&request);
+
+    assert_eq!(
+        address.as_deref(),
+        Some(
+            "https://github.example.com/login/oauth/authorize?client_id=Iv1.client\
+             &redirect_uri=https%3A%2F%2Fci.example.com%2Fauth%2Fgithub%2Fcallback\
+             &state=state&code_challenge=challenge&code_challenge_method=S256"
+        )
+    );
+    assert_eq!(without_client, None);
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording by the `github` example does not read the members yet.
+#[tokio::test]
+async fn the_members_of_an_organization_come_with_their_role() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let members = |role: &str| format!("/orgs/acme/members?role={role}&per_page=100&page=1");
+    let acme = json!({ "id": 7, "account": { "id": 70, "login": "acme", "type": "Organization" } });
+    let exchanges = vec![
+        answer("GET", "/app/installations/7", 200, acme),
+        token("7", now),
+        answer(
+            "GET",
+            &members("admin"),
+            200,
+            json!([{ "id": 5, "login": "octocat" }]),
+        ),
+        answer(
+            "GET",
+            &members("member"),
+            200,
+            json!([{ "id": 6, "login": "hubot" }]),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let member = |id: &str, login: &str, role| ScmMember {
+        user: ScmUser {
+            external_id: id.into(),
+            login: login.into(),
+        },
+        role,
+    };
+
+    let listed = app
+        .members(&repo("7", "acme", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(
+        listed,
+        [
+            member("5", "octocat", MembershipRole::Admin),
+            member("6", "hubot", MembershipRole::Member),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_owner_of_the_account_of_a_person_is_its_only_admin() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let octocat = json!({ "id": 8, "account": { "id": 5, "login": "octocat", "type": "User" } });
+    let exchanges = vec![answer("GET", "/app/installations/8", 200, octocat)];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let owner = ScmMember {
+        user: ScmUser {
+            external_id: "5".into(),
+            login: "octocat".into(),
+        },
+        role: MembershipRole::Admin,
+    };
+
+    let listed = app
+        .members(&repo("8", "octocat", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(listed, [owner]);
+}
+
+#[tokio::test]
+async fn an_account_neither_organization_nor_person_has_no_member() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let enterprise =
+        json!({ "id": 9, "account": { "id": 5, "login": "megacorp", "type": "Enterprise" } });
+    let exchanges = vec![answer("GET", "/app/installations/9", 200, enterprise)];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let listed = app
+        .members(&repo("9", "megacorp", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(listed, []);
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording by the `github` example does not read the App yet.
+#[tokio::test]
+async fn the_install_page_of_the_app_is_read_once() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let app_page = json!({ "html_url": "https://github.example.com/apps/cihub-acme" });
+    let replay = Replay::start(vec![answer("GET", "/app", 200, app_page)]).await;
+    let app = app(&replay.url, now);
+
+    let first = app.app_install_url(JobClass::Interactive).await.unwrap();
+    let second = app.app_install_url(JobClass::Interactive).await.unwrap();
+
+    replay.finish();
+    assert_eq!(
+        first,
+        "https://github.example.com/apps/cihub-acme/installations/new"
+    );
+    assert_eq!(second, first);
 }

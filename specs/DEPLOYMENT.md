@@ -55,6 +55,7 @@ startup, with a message that names the key and the file, or the variable.
 | `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
 | `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
 | `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
+| `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in; the status and the comment of a PR link to its page there |
 | `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
 | `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
 | `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |
@@ -62,6 +63,8 @@ startup, with a message that names the key and the file, or the variable.
 | `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
 | `github.private_key_file` | `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                 | File that contains the private key, instead of `github.private_key`         |
 | `github.webhook_secret`   | `CIHUB_GITHUB_WEBHOOK_SECRET`   | none                 | Secret that signs the webhooks of the App; required with `github.app_id`   |
+| `github.client_id`        | `CIHUB_GITHUB_CLIENT_ID`        | none                 | Client ID of the App, for the sign-in to the dashboard; with `github.client_secret` or not at all |
+| `github.client_secret`    | `CIHUB_GITHUB_CLIENT_SECRET`    | none                 | Client secret of the App, secret; without both keys, nobody signs in to the dashboard |
 
 ```yaml
 # /etc/cihub/server.yaml
@@ -79,11 +82,14 @@ github:
   app_id: 123456
   private_key_file: /run/secrets/app.pem
   webhook_secret: …
+  client_id: Iv23li…
+  client_secret: …
 ```
 
 One file serves every replica. On Kubernetes, a ConfigMap carries the
-file without its secrets, and a Secret gives `CIHUB_DATABASE_URL` and `CIHUB_GITHUB_WEBHOOK_SECRET`. A file that
-carries `database.url`, `github.private_key` or `github.webhook_secret` is a secret (`specs/SECURITY.md`).
+file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_GITHUB_WEBHOOK_SECRET` and
+`CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `github.private_key`, `github.webhook_secret` or
+`github.client_secret` is a secret (`specs/SECURITY.md`).
 
 ```sh
 cihub server migrate --config /etc/cihub/server.yaml
@@ -98,10 +104,12 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 
 ## Image
 
-`Dockerfile`, at the root, builds the `cihub` image in two stages: compilation on
-`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), then execution on
-`gcr.io/distroless/cc-debian12:nonroot`. Both images are pinned by their digest, with the tag as a
-comment. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
+`Dockerfile`, at the root, builds the `cihub` image in three stages: the dashboard on
+`node:24.21.0-bookworm-slim` (the Node of `mise.toml`, pnpm by corepack from `web/package.json`), compilation on
+`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), which embeds `web/dist` in the
+binary (`crates/web/build.rs`), then execution on `gcr.io/distroless/cc-debian12:nonroot`. The images are pinned
+by their digest, with the tag as a comment. A build of the Rust code without `web/dist` serves no dashboard: its
+pages answer `404`, and the API works. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
 image starts the four roles, and an argument replaces it (`server migrate`). The project
 license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
@@ -147,12 +155,13 @@ docker compose -f deploy/compose.yaml run --rm cihub-server server token create 
 | ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
 | Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
-| Ingress or HTTPRoute        | Optional, to the Service                                                                                  |
+| Ingress or HTTPRoute        | Optional, to the Service; it must not buffer the stream `/api/v1/orgs/{org}/stream` (CIHub sends `X-Accel-Buffering: no`) and must keep it open past 15 seconds of silence, the ping; HTTP/2 to the browser, else each open tab holds one of the 6 connections that a browser opens to a site |
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 
 The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL`, and
-`github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET` and the private key of the App, mounted as a file. The
+`github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and,
+when `github.clientId` is set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
 CIHub does not call the Kubernetes API. `charts/cihub/README.md`, generated, lists the values.
 

@@ -4,21 +4,23 @@
 //! no clock: a test gives every time.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::fmt::Write;
 use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, Permission,
-    PrState, ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
+    Permission, PrState, ReviewDecision,
 };
-
+use secrecy::ExposeSecret;
 use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
     RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmRepo, ScmUser, SetupFinding, StatusUpdate,
+    ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn,
+    StatusUpdate, code_challenge,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -162,6 +164,16 @@ struct State {
     next_comment: u64,
     repos: BTreeMap<String, Repo>,
     installations: BTreeMap<String, ScmInstallation>,
+    /// The members of the account of each installation, by the external
+    /// identifier of the user.
+    members: BTreeMap<String, BTreeMap<String, ScmMember>>,
+    /// The sign-ins that wait for the exchange of their code: the person and
+    /// the request of CIHub.
+    sign_in_codes: BTreeMap<String, (ScmUser, SignInRequest)>,
+    next_sign_in_code: u64,
+    /// The page that a browser opens to sign in, for a test in a browser;
+    /// `sim:authorize` without it.
+    sign_in_page: Option<String>,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -316,6 +328,7 @@ impl Sim {
                 PrChange::Draft(draft) => pr.draft = draft,
                 PrChange::Review(decision) => pr.review_decision = decision,
                 PrChange::Mergeability(mergeability) => pr.mergeability = mergeability,
+                PrChange::Title(title) => title.clone_into(&mut pr.title),
                 PrChange::Close => pr.state = PrState::Closed,
             }
 
@@ -539,6 +552,52 @@ impl Sim {
         });
     }
 
+    /// Gives `user` the role `role` in the account of the installation
+    /// `connection_external_id`.
+    pub fn set_member(&self, connection_external_id: &str, user: &ScmUser, role: MembershipRole) {
+        self.with(|state| {
+            let member = ScmMember {
+                user: user.clone(),
+                role,
+            };
+            state
+                .members
+                .entry(connection_external_id.to_owned())
+                .or_default()
+                .insert(user.external_id.clone(), member);
+        });
+    }
+
+    /// Takes `user` out of the account of the installation
+    /// `connection_external_id`.
+    pub fn remove_member(&self, connection_external_id: &str, user: &ScmUser) {
+        self.with(|state| {
+            if let Some(members) = state.members.get_mut(connection_external_id) {
+                members.remove(&user.external_id);
+            }
+        });
+    }
+
+    /// Makes the address of a sign-in a page that a browser opens: a test
+    /// server serves it, and signs a person in with [`Sim::authorize`].
+    pub fn serve_sign_in_at(&self, page: &str) {
+        self.with(|state| state.sign_in_page = Some(page.to_owned()));
+    }
+
+    /// Signs `user` in on the page of the SCM for `request`, as after their
+    /// consent, and returns the code that the SCM sends to its
+    /// `redirect_url`.
+    pub fn authorize(&self, user: &ScmUser, request: &SignInRequest) -> String {
+        self.with(|state| {
+            state.next_sign_in_code += 1;
+            let code = format!("code-{}", state.next_sign_in_code);
+            state
+                .sign_in_codes
+                .insert(code.clone(), (user.clone(), request.clone()));
+            code
+        })
+    }
+
     /// Suspends the connection `connection_external_id`, or makes it active
     /// again: a suspended connection fails every call with `AccessLost`.
     pub fn set_access(&self, connection_external_id: &str, active: bool) {
@@ -678,7 +737,22 @@ pub enum PrChange {
     Review(ReviewDecision),
     /// Forces the mergeability, or computes it again with `None`.
     Mergeability(Option<Mergeability>),
+    Title(&'static str),
     Close,
+}
+
+/// `text` for the query of an address: every byte but the unreserved ones
+/// of RFC 3986 is percent-encoded.
+fn encode_query(text: &str) -> String {
+    text.bytes()
+        .fold(String::with_capacity(text.len()), |mut encoded, byte| {
+            if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                encoded.push(char::from(byte));
+            } else {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
+            encoded
+        })
 }
 
 fn permission_levels(permissions: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1634,6 +1708,67 @@ impl Scm for Sim {
                 .collect())
         })
     }
+
+    fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String> {
+        self.record_call("app_install_url", class, |_| Ok("sim:install".to_owned()))
+    }
+
+    fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
+        let page = self
+            .with(|state| state.sign_in_page.clone())
+            .unwrap_or_else(|| "sim:authorize".to_owned());
+        Some(format!(
+            "{page}?redirect_uri={}&state={}&code_challenge={}",
+            encode_query(&request.redirect_url),
+            encode_query(&request.state),
+            encode_query(&request.code_challenge)
+        ))
+    }
+
+    fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn> {
+        self.record_call("sign_in", class, move |state| {
+            let refused = || ScmError::Validation("the code of the sign-in is not valid".into());
+            let (user, request) = state
+                .sign_in_codes
+                .remove(code.code.expose_secret())
+                .ok_or_else(refused)?;
+            let is_same_request = request.redirect_url == code.redirect_url
+                && request.code_challenge == code_challenge(&code.code_verifier);
+            if !is_same_request {
+                return Err(refused());
+            }
+
+            let memberships = state
+                .members
+                .iter()
+                .filter(|(installation, _)| state.installations.contains_key(*installation))
+                .filter_map(|(installation, members)| {
+                    members.get(&user.external_id).map(|member| ScmMembership {
+                        connection_external_id: installation.clone(),
+                        role: member.role,
+                    })
+                })
+                .collect();
+            Ok(SignedIn { user, memberships })
+        })
+    }
+
+    fn members<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<ScmMember>> {
+        self.record_call("members", class, move |state| {
+            if state.lost.contains(&connection.external_id) {
+                return Err(ScmError::AccessLost("connection suspended".into()));
+            }
+            Ok(state
+                .members
+                .get(&connection.external_id)
+                .map(|members| members.values().cloned().collect())
+                .unwrap_or_default())
+        })
+    }
 }
 
 /// Builds in a new simulator the world of the contract suite, on the
@@ -1706,6 +1841,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
         account,
         &[("contents", "write"), ("metadata", "read")],
     );
+    sim.set_member(&repo.connection.external_id, &admin, MembershipRole::Admin);
 
     sim.take_deliveries();
     let fixture = Fixture {
@@ -1756,6 +1892,89 @@ mod tests {
         let repo = repo();
         let (sim, fixture) = contract_world(&repo).unwrap();
         crate::contract::run(&sim, &repo, &fixture).await;
+        crate::contract::members(&sim, &repo, &fixture).await;
+        crate::contract::install_page(&sim).await;
+    }
+
+    #[tokio::test]
+    async fn a_sign_in_code_gives_the_roles_of_the_person_once() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+        let person = ScmUser {
+            external_id: "7".into(),
+            login: "ada".into(),
+        };
+        let request = SignInRequest {
+            redirect_url: "https://ci.example.com/auth/callback".into(),
+            state: "state".into(),
+            code_challenge: code_challenge(&"verifier".into()),
+        };
+        let exchange = |code: String, verifier: &str, redirect_url: &str| SignInCode {
+            code: code.into(),
+            code_verifier: verifier.into(),
+            redirect_url: redirect_url.into(),
+        };
+        let member = ScmMembership {
+            connection_external_id: "100".into(),
+            role: MembershipRole::Member,
+        };
+        let url = request.redirect_url.as_str();
+
+        sim.set_member("100", &person, MembershipRole::Member);
+        sim.set_member("999", &person, MembershipRole::Admin);
+        let code = sim.authorize(&person, &request);
+        let first = exchange(code.clone(), "verifier", url);
+        let replayed = exchange(code, "verifier", url);
+        let elsewhere = exchange(
+            sim.authorize(&person, &request),
+            "verifier",
+            "https://evil.example",
+        );
+        let forged = exchange(sim.authorize(&person, &request), "other", url);
+        let signed_in = sim.sign_in(&first, JobClass::Interactive).await.unwrap();
+        let mut refused = Vec::new();
+        for code in [&replayed, &elsewhere, &forged] {
+            refused.push(sim.sign_in(code, JobClass::Interactive).await);
+        }
+
+        assert_eq!(signed_in.user, person);
+        assert_eq!(signed_in.memberships, [member]);
+        for refused in refused {
+            assert!(
+                matches!(refused, Err(ScmError::Validation(_))),
+                "{refused:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_code_challenge_is_the_one_of_rfc_7636() {
+        let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into();
+
+        assert_eq!(
+            code_challenge(&verifier),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_member_who_leaves_the_account_is_no_longer_listed() {
+        let repo = repo();
+        let (sim, fixture) = contract_world(&repo).unwrap();
+
+        sim.remove_member("100", &fixture.admin);
+
+        let members = sim
+            .members(&repo.connection, JobClass::Repair)
+            .await
+            .unwrap();
+
+        assert_eq!(members, []);
+
+        sim.set_access("100", false);
+        let lost = sim.members(&repo.connection, JobClass::Repair).await;
+
+        assert!(matches!(lost, Err(ScmError::AccessLost(_))));
     }
 
     #[tokio::test]

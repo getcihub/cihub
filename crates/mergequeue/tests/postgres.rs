@@ -6,17 +6,19 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use cihub_api_types::QueueAccess;
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
     ConflictCulprit, ConnectionId, ConnectionKind, Event, EventId, EventKind, ItemState, JobClass,
-    Mergeability, OrgId, Permission, PrState, Priority, QueueId, Reason, RepoId,
-    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId, temp_branch,
+    MembershipRole, Mergeability, OrgId, Permission, PrState, Priority, QueueControl, QueueId,
+    Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SessionId, Strategy,
+    SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, wake_uncovered,
+    queue_status_context, rebuild, request_config_checks, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -318,7 +320,11 @@ async fn projections(conn: &mut PgConnection) -> Vec<Value> {
         "SELECT to_jsonb(c) FROM check_observations c
          WHERE run_id IN (SELECT id FROM test_runs WHERE queue_id = $1)
          ORDER BY run_id, name, kind",
-        "SELECT jsonb_build_object('state', state, 'mode', mode) FROM queues WHERE id = $1",
+        "SELECT jsonb_build_object('state', state, 'mode', mode,
+                                   'state_changed_at', state_changed_at,
+                                   'state_changed_by', state_changed_by,
+                                   'target_head_sha', target_head_sha, 'window_size', window_size)
+         FROM queues WHERE id = $1",
     ] {
         let found: Vec<Value> = sqlx::query_scalar(query)
             .bind(queue().to_string())
@@ -349,9 +355,39 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
         w.merge_all().await;
     }
 
+    let pause = EventKind::QueueControlRequested {
+        control: QueueControl::Pause,
+    };
+    w.fact(Actor::User { user_id: user() }, pause).await;
+
     assert!(w.log.seq > SNAPSHOT_EVERY, "{} events only", w.log.seq);
 
     let mut tx = begin_system(&pool).await.unwrap();
+    let queue_row: (
+        String,
+        Option<OffsetDateTime>,
+        Option<String>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT state::text, state_changed_at, state_changed_by, target_head_sha
+             FROM queues WHERE id = $1",
+    )
+    .bind(queue().to_string())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        queue_row,
+        (
+            "paused".into(),
+            Some(w.now),
+            Some(user().to_string()),
+            Some(format!("target-{}", w.target))
+        ),
+        "the person who asked for the pause, not CIHub that decided it"
+    );
+
     let states: Vec<(String, i64)> = sqlx::query_as(
         "SELECT state::text, count(*) FROM queue_items WHERE queue_id = $1
          GROUP BY state ORDER BY state",
@@ -543,6 +579,7 @@ impl SimQueue {
             translate(&deliveries),
             "scheduler".into(),
             clock.shared(),
+            Some("https://cihub.example.com/".into()),
         );
 
         let mut executors = Executors::default();
@@ -599,38 +636,9 @@ impl SimQueue {
     /// Serves the API of the module behind the web role, and returns its
     /// address and a token of the organization with every scope.
     async fn serve_api(&mut self) -> (String, String) {
-        let secret = cihub_store::new_api_token_secret().unwrap();
-        let scopes = [
-            ApiScope::QueuesRead,
-            ApiScope::QueuesWrite,
-            ApiScope::PrsWrite,
-        ];
-        let token = cihub_store::NewApiToken {
-            id: ApiTokenId::from_ulid(Ulid(40)),
-            org_id: org(),
-            name: "test",
-            scopes: &scopes,
-            expires_at: None,
-        };
-        let mut tx = begin_system(&self.pool).await.unwrap();
-        cihub_store::create_api_token(&mut tx, &token, &secret)
-            .await
-            .unwrap();
-
-        tx.commit().await.unwrap();
-
-        let webhooks = cihub_web::GithubWebhooks {
-            secret: SecretString::from("unused"),
-        };
-        let fixed = || OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
         let api = self.api.take().unwrap();
-        let router = cihub_web::router(self.pool.clone(), fixed, webhooks, vec![api]);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap().to_string();
 
-        tokio::spawn(cihub_web::serve(listener, router, self.cancel.clone()));
-
-        (addr, secret.expose_secret().to_owned())
+        serve_api(&self.pool, api, self.cancel.clone()).await
     }
 
     /// Stores the deliveries of the simulator, routed as the web role does.
@@ -805,16 +813,21 @@ impl SimQueue {
             .collect()
     }
 
-    /// Waits until every delivery, fact and job is done.
+    /// Waits until every delivery, fact and job is done; a check of the
+    /// configuration that waits for its moment of the hour is not work yet.
     async fn settle(&self) {
         for _ in 0..800 {
             let mut tx = begin_system(&self.pool).await.unwrap();
             let busy: bool = sqlx::query_scalar(
                 "SELECT EXISTS (SELECT 1 FROM webhook_inbox)
                      OR EXISTS (SELECT 1 FROM queue_inbox)
-                     OR EXISTS (SELECT 1 FROM jobs WHERE state IN ('queued', 'running'))
+                     OR EXISTS (SELECT 1 FROM jobs
+                                WHERE state = 'running'
+                                   OR (state = 'queued'
+                                       AND (type <> 'check_config' OR run_after <= $1)))
                      OR EXISTS (SELECT 1 FROM queues WHERE dirty)",
             )
+            .bind(self.clock.now())
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -845,6 +858,53 @@ impl SimQueue {
             running.await.unwrap();
         }
     }
+}
+
+/// Serves `api` behind the web role until `cancel`, and returns its address
+/// and a token of the organization with every scope.
+async fn serve_api(
+    pool: &PgPool,
+    api: cihub_platform::ModuleApi,
+    cancel: CancellationToken,
+) -> (String, String) {
+    let secret = cihub_store::new_api_token_secret().unwrap();
+    let scopes = [
+        ApiScope::QueuesRead,
+        ApiScope::QueuesWrite,
+        ApiScope::PrsWrite,
+    ];
+    let token = cihub_store::NewApiToken {
+        id: ApiTokenId::from_ulid(Ulid(40)),
+        org_id: org(),
+        name: "test",
+        scopes: &scopes,
+        expires_at: None,
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+    cihub_store::create_api_token(&mut tx, &token, &secret)
+        .await
+        .unwrap();
+
+    tx.commit().await.unwrap();
+
+    let webhooks = cihub_web::GithubWebhooks {
+        secret: SecretString::from("unused"),
+    };
+    let fixed = || OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
+    let dashboard = cihub_web::Dashboard {
+        scm: Arc::new(Sim::new()),
+        public_url: None,
+        news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone())
+            .await
+            .unwrap(),
+    };
+    let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api], dashboard);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+
+    tokio::spawn(cihub_web::serve(listener, router, cancel));
+
+    (addr, secret.expose_secret().to_owned())
 }
 
 /// What a test does to a PR of the simulator before its submission.
@@ -1203,6 +1263,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
+        dashboard_url: None,
     };
     let counts = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -1335,6 +1396,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         url: rate_limited_github(reset).await,
         app_id: "1".into(),
         private_key: SecretString::from(include_str!("../../github/tests/test-only-key.pem")),
+        sign_in: None,
     };
     let app = Arc::new(GithubApp::new(&config, Arc::new(clock)).unwrap());
     let scm: Arc<dyn Scm> = app.clone();
@@ -1344,6 +1406,7 @@ async fn a_rate_limit_pauses_the_jobs_of_the_connection_until_its_reset(pool: Pg
         translate(&Arc::default()),
         "scheduler".into(),
         Arc::new(clock),
+        None,
     );
     let mut executors = Executors::default();
     (module.executors)(&mut executors);
@@ -2170,6 +2233,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&deliveries),
+        dashboard_url: None,
     };
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -2347,6 +2411,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
+        dashboard_url: None,
     };
 
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
@@ -2493,6 +2558,23 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
+
+    let (addr, token) = q.serve_api().await;
+    let submit = serde_json::json!({ "queue": "main" });
+    let (status, refused) = call(
+        &addr,
+        &token,
+        "POST",
+        &format!("/orgs/acme/repos/app/prs/{number}/submit"),
+        Some(submit),
+    )
+    .await;
+
+    assert_eq!(
+        (status, &refused["code"]),
+        (409, &serde_json::json!("queue_not_accepting")),
+        "the API refuses at once: {refused}"
+    );
 
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
@@ -3144,9 +3226,29 @@ async fn call(
     )
 }
 
-/// The API v1 reads and changes a queue: a submission, its item, its
-/// timeline and its run, the graph, a restart and a cancel, a pause, a new
-/// queue, a resync and the audit log.
+/// Every entry of the list at `path`, read one page of one entry at a time:
+/// the pages hold the list in order, each entry once.
+async fn every_page(addr: &str, token: &str, path: &str, entries: &str) -> Vec<Value> {
+    let separator = if path.contains('?') { '&' } else { '?' };
+    let mut every = Vec::new();
+    let mut from = String::new();
+
+    loop {
+        let page_path = format!("{path}{separator}limit=1{from}");
+        let (status, page) = call(addr, token, "GET", &page_path, None).await;
+        assert_eq!(status, 200, "{page_path}: {page}");
+        every.extend(page[entries].as_array().unwrap().iter().cloned());
+        let Some(cursor) = page["cursor"].as_str() else {
+            return every;
+        };
+        from = format!("&from={cursor}");
+    }
+}
+
+/// The API v1 reads and changes a queue, named by the organization, the
+/// repository and the queue: a submission, its item, its timeline and its run,
+/// the graph, a restart and a cancel by PR number on the current item, a
+/// pause, a resync and the audit log.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -3160,13 +3262,15 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     q.settle().await;
 
     let (addr, token) = q.serve_api().await;
-    let queue = queue().to_string();
+    let queue = "/orgs/acme/repos/app/queues/main";
     let call = |method: &'static str, path: String, body: Option<serde_json::Value>| {
         let (addr, token) = (addr.clone(), token.clone());
         async move { call(&addr, &token, method, &path, body).await }
     };
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let pr_path = format!("/orgs/acme/repos/app/prs/{number}");
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
@@ -3176,104 +3280,202 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     let submitted = call(
         "POST",
-        format!("/queues/{queue}/items"),
-        Some(serde_json::json!({ "pr_number": number, "priority": "high" })),
+        format!("{pr_path}/submit"),
+        Some(serde_json::json!({ "priority": "high" })),
     )
     .await;
 
-    assert_eq!(submitted, (202, serde_json::json!({ "accepted": true })));
+    assert_eq!(
+        submitted,
+        (202, Value::Null),
+        "no body: the queue acts later"
+    );
     q.settle().await;
 
-    let (status, listed) = call("GET", format!("/queues/{queue}/items"), None).await;
-    assert_eq!(status, 200, "{listed}");
-    assert_eq!(listed["items"][0]["state"], "testing");
-    assert_eq!(listed["items"][0]["priority"], 10);
-
-    let item_id = listed["items"][0]["id"].as_str().unwrap().to_owned();
-    let (_, pr) = call(
-        "GET",
-        format!("/queues/{queue}/prs/{number}?include=timeline"),
-        None,
-    )
-    .await;
-
-    assert_eq!(pr["item"]["id"], item_id.as_str());
-    assert_eq!(pr["timeline"][0]["type"], "item.transitioned");
-
-    let (_, batch) = call(
+    let (status, twice) = call(
         "POST",
-        format!("/queues/{queue}/prs:batchGet"),
-        Some(serde_json::json!({ "pr_numbers": [number, 999] })),
+        format!("{pr_path}/submit"),
+        Some(serde_json::json!({})),
     )
     .await;
+    assert_eq!(
+        (status, &twice["code"]),
+        (409, &serde_json::json!("pr_already_queued")),
+        "the PR waits in the queue: {twice}"
+    );
 
-    assert_eq!(batch["not_found"], serde_json::json!([999]));
+    let (status, listed) = call("GET", prs.to_owned(), None).await;
+    let (live_run, _, _) = q.runs_in_progress().await.remove(0);
+    let pr = &listed["prs"][0];
 
-    let (_, graph) = call("GET", format!("/queues/{queue}/graph"), None).await;
+    assert_eq!(status, 200, "{listed}");
+    assert_eq!(
+        (&listed["count"], &listed["has_more"], &listed["cursor"]),
+        (&1.into(), &false.into(), &Value::Null)
+    );
+    assert_eq!(pr["number"], number);
+    assert_eq!((&pr["repo"], &pr["queue"]), (&"app".into(), &"main".into()));
+    assert_eq!(pr["state"], "testing");
+    assert_eq!(pr["priority"], 10);
+    assert_eq!(
+        pr["title"], "pr-1",
+        "the simulator names a PR after its branch"
+    );
+    assert_eq!(pr["author"], "bob");
+    assert_eq!(pr["run_id"], live_run.to_string().as_str());
+    assert_eq!(pr["no_batch"], false);
+    assert_eq!(pr["submitted_via"], "api");
+    assert_eq!(
+        pr["submitted_by"],
+        Value::Null,
+        "a token stands for no person"
+    );
+
+    let live = call("GET", format!("{prs}&state=pending,testing"), None).await;
+    let merged = call("GET", format!("{prs}&state=merged"), None).await;
+    let unknown = call("GET", format!("{prs}&state=testing,lost"), None).await;
+    let without_repo = call("GET", "/orgs/acme/prs?queue=main".into(), None).await;
+    let me = call("GET", "/orgs/acme/prs?author=@me".into(), None).await;
+    let bob = call("GET", "/orgs/acme/prs?author=BOB".into(), None).await;
+
+    assert_eq!(live.1["prs"].as_array().unwrap().len(), 1, "{}", live.1);
+    assert_eq!(merged.1["prs"], serde_json::json!([]));
+    assert_eq!(
+        (unknown.0, &unknown.1["code"]),
+        (400, &serde_json::json!("invalid_request"))
+    );
+    assert_eq!(without_repo.1["code"], "queue_needs_repo");
+    assert_eq!(
+        me.1["code"], "me_needs_session",
+        "a token stands for no person"
+    );
+    assert_eq!(bob.1["count"], 1, "the case of a login does not matter");
+
+    let item_id = pr["id"].as_str().unwrap().to_owned();
+    let (_, read) = call("GET", pr_path.clone(), None).await;
+    let (_, events) = call("GET", format!("{pr_path}/events"), None).await;
+
+    assert_eq!(read["id"], item_id.as_str());
+    assert_eq!(events["events"][0]["type"], "item.transitioned");
+    assert_eq!(events["events"][0]["item_id"], item_id.as_str());
+
+    let (_, graph) = call("GET", format!("{queue}/graph"), None).await;
+    let run = &graph["runs"][0];
+
     assert_eq!(graph["nodes"][0]["pr_number"], number);
+    assert_eq!(graph["target_head_sha"], main.as_str());
+    assert_eq!(run["run_id"], live_run.to_string().as_str());
+    assert_eq!(run["item_ids"], serde_json::json!([item_id]));
+    assert_eq!(run["predecessor_ids"], serde_json::json!([]));
+    assert_eq!(
+        (&run["attempt"], &run["status"]),
+        (&1.into(), &"in_progress".into())
+    );
 
     let (run_id, _, _) = q.runs_in_progress().await.remove(0);
-    let (status, run) = call("GET", format!("/test-runs/{run_id}"), None).await;
+    let (status, run) = call("GET", format!("/orgs/acme/runs/{run_id}"), None).await;
 
     assert_eq!(status, 200, "{run}");
     assert_eq!(run["tested_pr_numbers"], serde_json::json!([number]));
     assert_eq!(run["status"], "in_progress");
 
-    let restart = call("POST", format!("/items/{item_id}/restart"), None).await;
+    let restart = call("POST", format!("{pr_path}/restart"), None).await;
     assert_eq!(restart.0, 202);
     q.settle().await;
 
-    let cancel = call("POST", format!("/items/{item_id}/cancel"), None).await;
+    let cancel = call("POST", format!("{pr_path}/cancel"), None).await;
     assert_eq!(cancel.0, 202);
     q.settle().await;
 
-    let (_, pr) = call("GET", format!("/queues/{queue}/prs/{number}"), None).await;
-    assert_eq!(pr["item"]["state"], "cancelled");
-    assert_eq!(pr["item"]["state_reason"], "admin_requested");
+    let (_, pr) = call("GET", pr_path.clone(), None).await;
+    assert_eq!(pr["state"], "cancelled");
+    assert_eq!(pr["state_reason"], "admin_requested");
+    assert_eq!(pr["state_description"], "an administrator asked for it");
+
+    let (_, events) = call("GET", format!("{pr_path}/events"), None).await;
+    let asked = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["type"] == "item.cancel_requested")
+        .unwrap();
+
+    assert_eq!(asked["actor"], Value::Null, "a token stands for no person");
+    assert_eq!(asked["description"], "a cancellation was asked");
     assert_eq!(
-        pr["item"]["state_description"],
-        "an administrator asked for it"
+        every_page(&addr, &token, &format!("{pr_path}/events"), "events").await,
+        events["events"].as_array().unwrap().clone(),
+        "the pages of the events hold them all, in order"
     );
 
-    let (status, again) = call("POST", format!("/items/{item_id}/cancel"), None).await;
+    let (status, again) = call("POST", format!("{pr_path}/cancel"), None).await;
     assert_eq!(
         (status, &again["code"]),
-        (409, &serde_json::json!("invalid_state"))
+        (409, &serde_json::json!("item_ended"))
     );
 
     let paused = call(
         "PATCH",
-        format!("/queues/{queue}"),
+        queue.to_owned(),
         Some(serde_json::json!({ "state": "paused" })),
     )
     .await;
 
-    assert_eq!(paused.0, 202);
+    assert_eq!(paused, (202, Value::Null));
     q.settle().await;
 
-    let (_, read) = call("GET", format!("/queues/{queue}"), None).await;
+    let (_, read) = call("GET", queue.to_owned(), None).await;
     assert_eq!(read["state"], "paused");
+    assert_eq!(
+        read["state_changed_by"],
+        Value::Null,
+        "a token stands for no person"
+    );
+    assert_eq!(read["repo"], "app");
+    assert_eq!(read["strategy"], "pipelined");
+    assert_eq!(read["target_head_sha"], main.as_str());
+    assert_eq!(read["access"], "ok");
+    assert_eq!(read["has_config_file"], true);
+    assert_eq!(read["counts"]["testing"], 0);
+    assert_eq!(read["live_runs"], 0);
+    assert_eq!(
+        read["window"],
+        serde_json::json!({ "current": 2, "floor": 2, "ceiling": 20 })
+    );
+    assert_eq!(read["settings"]["merge_method"], "squash");
+    assert_eq!(
+        read["config_check"],
+        serde_json::json!({ "findings": [], "checked_at": null })
+    );
 
-    let (_, queues) = call("GET", "/repos/acme/app/queues".into(), None).await;
+    let (_, queues) = call("GET", "/orgs/acme/repos/app/queues".into(), None).await;
     assert_eq!(queues["queues"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        call("POST", format!("/queues/{queue}:resync"), None)
-            .await
-            .0,
-        202
-    );
+    assert_eq!(queues["count"], 1);
 
-    let (status, missing) = call("GET", "/queues/queue_unknown".into(), None).await;
-    assert_eq!(
-        (status, &missing["code"]),
-        (404, &serde_json::json!("not_found"))
-    );
+    let before_resync = sim.calls().len();
+    assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
+    q.settle().await;
 
-    let (status, checked) = call("GET", format!("/queues/{queue}/config-check"), None).await;
+    let (status, checked) = call("GET", queue.to_owned(), None).await;
+    let calls = sim.calls();
+    let (_, read_again) = call("GET", queue.to_owned(), None).await;
+
     assert_eq!(status, 200, "{checked}");
     assert_eq!(
-        checked["findings"][0]["code"], "update_restriction_missing",
+        checked["config_check"]["findings"][0]["code"], "update_restriction_missing",
         "the simulator restricts no update"
+    );
+    assert!(
+        calls[before_resync..]
+            .iter()
+            .any(|call| call.name == "check_setup"),
+        "the resync checks the configuration"
+    );
+    assert_eq!(read_again["config_check"], checked["config_check"]);
+    assert_eq!(
+        sim.calls().len(),
+        calls.len(),
+        "a read calls the SCM zero times"
     );
 
     let (_, audit) = call("GET", "/orgs/acme/audit".into(), None).await;
@@ -3284,26 +3486,849 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         .map(|entry| entry["action"].as_str().unwrap())
         .collect();
 
-    assert_eq!(actions, ["queue.resync", "queue.state_requested"]);
+    assert_eq!(
+        actions,
+        [
+            "queue.resync",
+            "queue.state_requested",
+            "item.cancel_requested",
+            "item.restart_requested"
+        ]
+    );
+    assert_eq!(audit["entries"][2]["target"], item_id.as_str());
+    assert_eq!(
+        audit["entries"][2]["after"],
+        serde_json::json!({ "queue_id": crate::queue().to_string(), "pr_number": number })
+    );
+
+    let (_, first) = call("GET", "/orgs/acme/audit?limit=3".into(), None).await;
+    let next = first["cursor"].as_str().unwrap();
+    let (_, rest) = call("GET", format!("/orgs/acme/audit?limit=3&from={next}"), None).await;
+    let foreign = call("GET", format!("{prs}&from={next}"), None).await;
+
+    assert_eq!(
+        (&first["has_more"], &first["count"]),
+        (&true.into(), &4.into())
+    );
+    assert_eq!(rest["entries"][0]["action"], "item.restart_requested");
+    assert_eq!(
+        (&rest["has_more"], &rest["cursor"]),
+        (&false.into(), &Value::Null)
+    );
+    assert_eq!(
+        foreign.1["code"], "invalid_cursor",
+        "a cursor of another list is refused"
+    );
 
     let client =
         cihub_client::Client::new(&format!("http://{addr}"), SecretString::from(token.clone()))
             .unwrap();
-    let queues = client.queues("acme", "app").await.unwrap().queues;
+    let repo_path = cihub_client::RepoPath {
+        org: "acme",
+        repo: "app",
+    };
+    let queues = client.queues(repo_path).await.unwrap().queues;
 
     assert_eq!(queues.len(), 1);
 
-    let item = client.pr(&queue, number, true).await.unwrap();
-    assert_eq!(item.item.state, ItemState::Cancelled);
-    assert_ne!(item.timeline.unwrap(), []);
+    let read = client.pr(repo_path, number).await.unwrap();
+    assert_eq!(read.state, ItemState::Cancelled);
 
-    let refused = client.restart(&item_id).await.unwrap_err();
+    let refused = client.restart(repo_path, number).await.unwrap_err();
     assert!(
-        matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::InvalidState),
+        matches!(&refused, cihub_client::ClientError::Api(problem) if problem.code == cihub_api_types::ErrorCode::ItemNotInTest),
         "{refused}"
     );
 
+    // A target branch that no longer exists is a finding of the check.
+    sim.delete_branch(&repo(), "main", JobClass::Interactive)
+        .await
+        .unwrap();
+    q.clock.advance(1);
+    assert_eq!(call("POST", format!("{queue}/resync"), None).await.0, 202);
+    q.settle().await;
+
+    let (_, checked) = call("GET", queue.to_owned(), None).await;
+    assert_eq!(
+        checked["config_check"]["findings"],
+        serde_json::json!([{
+            "code": "target_branch_missing",
+            "message": "the branch `main` no longer exists: the queue cannot merge"
+        }])
+    );
+
     q.stop().await;
+}
+
+/// An item gives the title of the PR at its last read, and the person who
+/// submitted it; the page of the queue calls the SCM zero times (principle
+/// VII), and a replay of the log gives the same answers (principle I).
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, submitted) = call(&addr, &token, "GET", prs, None).await;
+    let pr = &submitted["prs"][0];
+
+    assert_eq!(pr["title"], "pr-1");
+    assert_eq!(pr["submitted_by"], "alice");
+    assert_eq!(pr["submitted_via"], "comment");
+    assert!(pr["run_id"].is_string(), "{pr}");
+
+    let events = format!("/orgs/acme/repos/app/prs/{number}/events");
+    let read = call(&addr, &token, "GET", &events, None).await.1;
+    let first = &read["events"][0];
+
+    assert_eq!(first["actor"], "alice", "the actor of the cause: {read}");
+    assert_eq!(first["description"], "the PR was submitted to the queue");
+
+    let page = format!("https://cihub.example.com/orgs/acme/repos/app/queues/main/prs/{number}");
+    let comment = sim.comments(&repo(), number).pop().unwrap_or_default();
+    assert!(
+        comment.contains(&format!("[Open in CIHub]({page})")),
+        "{comment}"
+    );
+
+    sim.change_pr(&repo(), number, PrChange::Title("Fix the login redirect"))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, renamed) = call(&addr, &token, "GET", prs, None).await;
+    assert_eq!(renamed["prs"][0]["title"], "Fix the login redirect");
+
+    // The reads of the cards and of the page of the queue.
+    let page = || async {
+        let queue = "/orgs/acme/repos/app/queues/main";
+        let reads = [
+            "/orgs/acme/queues".to_owned(),
+            "/orgs/acme/prs?author=bob&sort=position".to_owned(),
+            format!("/orgs/acme/repos/app/prs/{number}"),
+            events.clone(),
+            queue.to_owned(),
+            format!("{queue}/graph"),
+            format!(
+                "{prs}&state=not_ready,pending,testing,pending_failure,tests_passed&sort=position&limit=100"
+            ),
+        ];
+        let mut answers = Vec::new();
+        for path in reads {
+            answers.push(call(&addr, &token, "GET", &path, None).await.1);
+        }
+        answers
+    };
+    let calls = sim.calls().len();
+    let before = page().await;
+
+    assert_eq!(sim.calls().len(), calls, "a page calls the SCM zero times");
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    rebuild(&mut tx, queue()).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(page().await, before);
+    q.stop().await;
+}
+
+/// `GET /orgs/{org}/prs?author=` gives the current items of a person with
+/// the PRs ahead of each one and an estimate, and the queue gives the median
+/// duration of its runs.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let get = |path: String| {
+        let (addr, token) = (addr.clone(), token.clone());
+        async move { call(&addr, &token, "GET", &path, None).await.1 }
+    };
+
+    let mut numbers = Vec::new();
+
+    for n in 1..=2 {
+        numbers.push(submit_new_pr(&sim, &main, n));
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let (first, second) = (numbers[0], numbers[1]);
+    let mine = get("/orgs/acme/prs?author=BOB&sort=position".into()).await;
+    let items: Vec<(u64, Value)> = mine["prs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pr| (pr["number"].as_u64().unwrap(), pr["ahead"].clone()))
+        .collect();
+
+    assert_eq!(mine["prs"][0]["repo"], "app");
+    assert_eq!(mine["prs"][0]["queue"], "main");
+    assert_eq!(
+        items,
+        [
+            (first, serde_json::json!([])),
+            (
+                second,
+                serde_json::json!([{ "pr_number": first, "state": "testing" }])
+            ),
+        ],
+        "the login is read whatever its case"
+    );
+    assert_eq!(
+        get("/orgs/acme/prs?author=alice".into()).await["prs"],
+        serde_json::json!([]),
+        "alice submitted the PRs of bob"
+    );
+
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    q.deliver().await;
+    q.settle().await;
+
+    let mine = get("/orgs/acme/prs?author=bob&sort=position".into()).await;
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let prs = "/orgs/acme/prs?repo=app&queue=main";
+    let merged = format!("{prs}&state=merged&state_changed_since=2026-10-01T09:00:00Z");
+    let later = format!("{prs}&state=merged&state_changed_since=2026-10-02T00:00:00Z");
+
+    assert_eq!(
+        mine["prs"][1]["state"], "merged",
+        "an ended PR comes after the live ones: {mine}"
+    );
+    assert_eq!(mine["prs"][1]["ahead"], serde_json::json!([]));
+    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
+    assert!(get(queue.to_owned()).await["median_run_seconds"].is_u64());
+    assert!(
+        mine["prs"][0]["merges_in_seconds"].is_u64(),
+        "a tested PR merges in about the rest of its run: {mine}"
+    );
+    assert_eq!(mine["prs"][1]["merges_in_seconds"], Value::Null);
+    assert_eq!(get(merged).await["prs"].as_array().unwrap().len(), 1);
+    assert_eq!(get(later).await["prs"], serde_json::json!([]));
+
+    // A PR that is not ready has every admitted PR ahead of it; a cancelled PR
+    // leaves the PRs that are live or merged.
+    let mine_live = "/orgs/acme/prs?author=bob&sort=position\
+                     &state=not_ready,pending,testing,pending_failure,tests_passed,merged";
+    let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
+    sim.comment(&repo(), third, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let mine = get(mine_live.into()).await;
+    assert_eq!(mine["prs"][1]["state"], "not_ready", "{mine}");
+    assert_eq!(
+        mine["prs"][1]["ahead"],
+        serde_json::json!([{ "pr_number": second, "state": "testing" }])
+    );
+
+    for sort in ["newest", "position"] {
+        let path = format!("/orgs/acme/prs?author=bob&sort={sort}");
+        let whole = get(path.clone()).await;
+        let paged = every_page(&addr, &token, &path, "prs").await;
+
+        assert_eq!(&paged, whole["prs"].as_array().unwrap(), "sort={sort}");
+        assert_eq!(whole["count"], 3, "sort={sort}");
+    }
+
+    let cancel = format!("/orgs/acme/repos/app/prs/{second}/cancel");
+    assert_eq!(call(&addr, &token, "POST", &cancel, None).await.0, 202);
+    q.settle().await;
+
+    let mine = get(mine_live.into()).await;
+    let numbers: Vec<u64> = mine["prs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pr| pr["number"].as_u64().unwrap())
+        .collect();
+    assert_eq!(numbers, [third, first]);
+    assert_eq!(mine["prs"][0]["ahead"], serde_json::json!([]));
+    q.stop().await;
+}
+
+/// A reconciliation that writes the log tells the pages that its queue
+/// changed, with the last sequence number of the log.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_reconciliation_that_writes_the_log_tells_the_pages(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let feed = cihub_platform::QueueNewsFeed::start(pool.clone(), q.cancel.clone())
+        .await
+        .unwrap();
+    let mut news = feed.subscribe();
+
+    submit_new_pr(&sim, &main, 1);
+    q.deliver().await;
+    q.settle().await;
+
+    let heard = tokio::time::timeout(std::time::Duration::from_secs(5), news.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let cihub_platform::QueueNews::Changed(change) = heard else {
+        panic!("{heard:?}");
+    };
+    assert_eq!((change.org_id, change.queue_id), (org(), queue()));
+    assert!(change.seq > 0, "{change:?}");
+    q.stop().await;
+}
+
+/// The graph gives each live run with the items that it tests on top of
+/// their predecessors, the oldest run first.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    \
+         failure_budget: {{ retries: 0 }}\n    pending_failure_depth: 1\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+
+    for n in 1..=2 {
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+    }
+
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let (_, graph) = call(&addr, &token, "GET", &format!("{queue}/graph"), None).await;
+    let first = graph["nodes"][0]["item_id"].clone();
+    let second = graph["nodes"][1]["item_id"].clone();
+    let runs: Vec<(Value, Value)> = graph["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["item_ids"].clone(), run["predecessor_ids"].clone()))
+        .collect();
+
+    assert_eq!(
+        runs,
+        [
+            (serde_json::json!([first]), serde_json::json!([])),
+            (serde_json::json!([second]), serde_json::json!([first])),
+        ]
+    );
+
+    // The second run fails while the first one tests: its PR waits for it, and
+    // the graph keeps the failed run.
+    let (_, test_sha, _) = q.runs_in_progress().await.remove(1);
+    sim.report_check(&repo(), &test_sha, check(REQUIRED, false))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, graph) = call(&addr, &token, "GET", &format!("{queue}/graph"), None).await;
+
+    assert_eq!(graph["nodes"][1]["state"], "pending_failure", "{graph}");
+    assert_eq!(graph["runs"][1]["status"], "failed");
+    assert_eq!(graph["runs"][1]["item_ids"], serde_json::json!([second]));
+    q.stop().await;
+}
+
+/// Cancel and restart by PR number act on the current item of the PR, not on
+/// an earlier one.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let pr_path = "/orgs/acme/repos/app/prs";
+    let call = |method: &'static str, path: String, body: Option<serde_json::Value>| {
+        let (addr, token) = (addr.clone(), token.clone());
+        async move { call(&addr, &token, method, &path, body).await }
+    };
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let submit = || Some(serde_json::json!({}));
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        call("POST", format!("{pr_path}/{number}/submit"), submit())
+            .await
+            .0,
+        202
+    );
+    q.settle().await;
+    let cancel = call("POST", format!("{pr_path}/{number}/cancel"), None).await;
+    assert_eq!(cancel.0, 202, "{}", cancel.1);
+    q.settle().await;
+    assert_eq!(
+        call("POST", format!("{pr_path}/{number}/submit"), submit())
+            .await
+            .0,
+        202
+    );
+    q.settle().await;
+
+    let restart = call("POST", format!("{pr_path}/{number}/restart"), None).await;
+    assert_eq!(
+        restart.0, 202,
+        "the earlier item is cancelled: {}",
+        restart.1
+    );
+    q.settle().await;
+
+    let cancel = call("POST", format!("{pr_path}/{number}/cancel"), None).await;
+    assert_eq!(cancel.0, 202, "{}", cancel.1);
+    q.settle().await;
+
+    let (_, read) = call("GET", format!("{pr_path}/{number}"), None).await;
+    let (_, events) = call("GET", format!("{pr_path}/{number}/events"), None).await;
+    let mut submissions: Vec<&str> = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["item_id"].as_str().unwrap())
+        .collect();
+    submissions.dedup();
+
+    assert_eq!(read["state"], "cancelled");
+    assert_eq!(
+        submissions.len(),
+        2,
+        "the events of the PR hold its two submissions: {events}"
+    );
+    assert_eq!(submissions[1], read["id"]);
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let restarted: Vec<String> = sqlx::query_scalar(
+        "SELECT item_id FROM events WHERE type = 'item.restart_requested' ORDER BY seq",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+
+    drop(tx);
+    assert_eq!(restarted, [read["id"].as_str().unwrap()]);
+    q.stop().await;
+}
+
+/// The URL names the organization: a token answers 404 on another
+/// organization, as on an unknown repository, queue, PR, run or action.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    sqlx::query("INSERT INTO orgs (id, slug) VALUES ($1, 'other')")
+        .bind(OrgId::from_ulid(Ulid(50)).to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let (addr, token) = q.serve_api().await;
+    let run = RunId::from_ulid(Ulid(51));
+    let missing = [
+        ("GET", "/orgs/other".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/repos".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/queues".to_owned(), "org_not_found"),
+        ("GET", "/orgs/nobody/queues".to_owned(), "org_not_found"),
+        ("GET", "/orgs/other/prs".to_owned(), "org_not_found"),
+        (
+            "GET",
+            "/orgs/other/repos/app/queues".to_owned(),
+            "org_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/other/repos/app/queues/main".to_owned(),
+            "org_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/other/repos/app/prs/1/cancel".to_owned(),
+            "org_not_found",
+        ),
+        ("GET", "/orgs/other/audit".to_owned(), "org_not_found"),
+        ("GET", format!("/orgs/other/runs/{run}"), "org_not_found"),
+        (
+            "GET",
+            "/orgs/nobody/repos/app/queues/main".to_owned(),
+            "org_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/unknown".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/unknown/queues".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/prs?repo=unknown".to_owned(),
+            "repo_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/queues/unknown".to_owned(),
+            "queue_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/prs?repo=app&queue=unknown".to_owned(),
+            "queue_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/prs/7".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "GET",
+            "/orgs/acme/repos/app/prs/7/events".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/prs/7/cancel".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/prs/7/restart".to_owned(),
+            "pr_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/prs/7/merge".to_owned(),
+            "route_not_found",
+        ),
+        (
+            "POST",
+            "/orgs/acme/repos/app/queues/main/delete".to_owned(),
+            "route_not_found",
+        ),
+        ("GET", format!("/orgs/acme/runs/{run}"), "run_not_found"),
+    ];
+
+    for (method, path, code) in missing {
+        let (status, problem) = call(&addr, &token, method, &path, None).await;
+
+        assert_eq!(
+            (status, &problem["code"]),
+            (404, &serde_json::json!(code)),
+            "{method} {path}: {problem}"
+        );
+    }
+
+    let (status, found) = call(
+        &addr,
+        &token,
+        "GET",
+        "/orgs/ACME/repos/APP/queues/main",
+        None,
+    )
+    .await;
+    assert_eq!(
+        status, 200,
+        "the SCM does not tell names apart by their case: {found}"
+    );
+
+    let (_, document) = call(&addr, &token, "GET", "/openapi.json", None).await;
+    let paths: Vec<&String> = document["paths"].as_object().unwrap().keys().collect();
+    assert!(
+        paths.iter().all(|path| path.starts_with("/orgs/{org}")
+            || path.starts_with("/user")
+            || *path == "/instance"),
+        "only the person of a session and the instance are outside an organization: {paths:?}"
+    );
+    assert!(
+        paths.contains(&&"/orgs/{org}/repos/{repo}/prs/{number}/cancel".to_owned()),
+        "{paths:?}"
+    );
+    assert!(
+        paths.contains(&&"/orgs/{org}/queues".to_owned()),
+        "{paths:?}"
+    );
+
+    q.stop().await;
+}
+
+/// Serves the API of the module without its loops, with the clock fixed at
+/// `clock()`: no reconciliation changes the rows that a test writes.
+async fn serve_module_api(pool: &PgPool, cancel: &CancellationToken) -> (String, String) {
+    let scm: Arc<dyn Scm> = Arc::new(Sim::new());
+    let deliveries = Arc::new(Mutex::new(HashMap::new()));
+    let fixed: Clock = Arc::new(clock);
+    let module = cihub_mergequeue::module(
+        pool.clone(),
+        scm,
+        translate(&deliveries),
+        "scheduler".into(),
+        fixed,
+        None,
+    );
+
+    serve_api(pool, module.api, cancel.clone()).await
+}
+
+/// An item of the PR `pr_number` in the queue `queue_id`, which reached
+/// `state` at `changed_at`.
+struct ItemFixture<'a> {
+    queue_id: &'a str,
+    pr_number: i64,
+    state: &'a str,
+    changed_at: OffsetDateTime,
+    is_current: bool,
+}
+
+async fn insert_item(conn: &mut PgConnection, item: &ItemFixture<'_>) {
+    let id = format!(
+        "item-{}-{}-{}",
+        item.queue_id, item.pr_number, item.is_current
+    );
+
+    sqlx::query(
+        "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
+                                  state, state_reason, state_changed_at, priority_value, no_batch,
+                                  force_enqueued, submitted_via, submitted_at, block_reasons,
+                                  is_current)
+         VALUES ($1, $2, $3, $4, 'abc', $5, $6::item_state, 'submitted', $7, 100, false, false,
+                 'api', $7, '[]', $8)",
+    )
+    .bind(id)
+    .bind(org().to_string())
+    .bind(item.queue_id)
+    .bind(item.pr_number)
+    .bind(user().to_string())
+    .bind(item.state)
+    .bind(item.changed_at)
+    .bind(item.is_current)
+    .execute(conn)
+    .await
+    .unwrap();
+}
+
+/// `GET /orgs/{org}/queues` gives every queue of the organization in the
+/// order of the repository names, then of the queue names, with the current
+/// items in each live state and the merges and failures of the 24 hours
+/// before the request.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: PgPool) {
+    seed(&pool).await;
+
+    let now = clock();
+    let app_main = queue().to_string();
+    let app_release = QueueId::from_ulid(Ulid(60)).to_string();
+    let api_main = QueueId::from_ulid(Ulid(62)).to_string();
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    // The repository `api` comes from a second installation, suspended; a
+    // person paused the queue `main` of `app`.
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions, suspended_at)
+             VALUES ('{suspended}', '{org}', '2', 'github_app', '2', '{now}', '{{}}', '{now}');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{api_repo}', '{org}', '{suspended}', '201', 'acme', 'api', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
+             VALUES ('{app_release}', '{org}', '{app_repo}', 'release', 'release'),
+                    ('{api_main}', '{org}', '{api_repo}', 'main', 'main');
+         UPDATE queues SET state = 'paused', state_changed_by = '{user}' WHERE id = '{app_main}';",
+        suspended = ConnectionId::from_ulid(Ulid(63)),
+        user = user(),
+        api_repo = RepoId::from_ulid(Ulid(61)),
+        app_repo = RepoId::from_ulid(Ulid(12)),
+        org = org(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    let current = |queue_id, pr_number, state, hours_ago| ItemFixture {
+        queue_id,
+        pr_number,
+        state,
+        changed_at: now - Duration::hours(hours_ago),
+        is_current: true,
+    };
+    let items = [
+        current(&app_main, 1, "not_ready", 1),
+        current(&app_main, 2, "pending", 1),
+        current(&app_main, 3, "testing", 1),
+        current(&app_main, 4, "testing", 1),
+        current(&app_main, 5, "pending_failure", 1),
+        current(&app_main, 6, "tests_passed", 1),
+        current(&app_main, 7, "merged", 1),
+        current(&app_main, 8, "merged", 23),
+        current(&app_main, 9, "merged", 25),
+        current(&app_main, 10, "failed", 2),
+        current(&app_main, 11, "failed", 30),
+        current(&app_main, 12, "cancelled", 1),
+        // The PR 13 failed, then came back: its failure still counts, and only its
+        // current item counts in its state.
+        ItemFixture {
+            is_current: false,
+            ..current(&app_main, 13, "failed", 3)
+        },
+        current(&app_main, 13, "pending", 1),
+        current(&api_main, 1, "merged", 26),
+        current(&api_main, 2, "testing", 1),
+    ];
+
+    for item in &items {
+        insert_item(&mut tx, item).await;
+    }
+
+    tx.commit().await.unwrap();
+
+    let cancel = CancellationToken::new();
+    let (addr, token) = serve_module_api(&pool, &cancel).await;
+
+    let (status, document) = call(&addr, &token, "GET", "/orgs/acme/queues", None).await;
+    let listed = serde_json::from_value::<cihub_api_types::QueueList>(document.clone())
+        .unwrap()
+        .queues;
+    let paged = every_page(&addr, &token, "/orgs/acme/queues", "queues").await;
+
+    assert_eq!(&paged, document["queues"].as_array().unwrap());
+
+    let counters: Vec<_> = listed
+        .iter()
+        .map(|entry| {
+            (
+                entry.repo.as_str(),
+                entry.name.as_str(),
+                [
+                    entry.counts.not_ready,
+                    entry.counts.pending,
+                    entry.counts.testing,
+                    entry.counts.pending_failure,
+                    entry.counts.tests_passed,
+                ],
+                entry.merged_last_24h,
+                entry.failed_last_24h,
+                entry.last_merged_at,
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        counters,
+        [
+            (
+                "api",
+                "main",
+                [0, 0, 1, 0, 0],
+                0,
+                0,
+                Some(now - Duration::hours(26))
+            ),
+            (
+                "app",
+                "main",
+                [1, 2, 2, 1, 1],
+                2,
+                2,
+                Some(now - Duration::hours(1))
+            ),
+            ("app", "release", [0, 0, 0, 0, 0], 0, 0, None),
+        ]
+    );
+    assert_eq!(listed[1].id, app_main);
+    assert_eq!(status, 200, "{document}");
+    assert_eq!(
+        document["queues"][1]["last_merged_at"],
+        "2026-10-01T09:00:00Z"
+    );
+    assert_eq!(document["queues"][2]["last_merged_at"], Value::Null);
+    assert_eq!(document["queues"][1]["counts"]["pending_failure"], 1);
+
+    let access: Vec<_> = listed.iter().map(|entry| entry.access).collect();
+
+    assert_eq!(
+        access,
+        [QueueAccess::Suspended, QueueAccess::Ok, QueueAccess::Ok]
+    );
+    assert_eq!(listed[1].strategy, Strategy::Pipelined, "the default");
+    assert!(!listed[1].has_config_file);
+    assert_eq!(listed[1].state_changed_by.as_deref(), Some("octocat"));
+    assert_eq!(listed[2].state_changed_by, None);
+
+    cancel.cancel();
+}
+
+/// An organization without a queue gets an empty list, not an error.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_lists_no_queue_for_an_organization_without_one(pool: PgPool) {
+    seed(&pool).await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+
+    sqlx::query("DELETE FROM queues")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let cancel = CancellationToken::new();
+    let (addr, token) = serve_module_api(&pool, &cancel).await;
+
+    let listed = call(&addr, &token, "GET", "/orgs/acme/queues", None).await;
+
+    assert_eq!(
+        listed,
+        (
+            200,
+            serde_json::json!({ "queues": [], "has_more": false, "count": 0, "cursor": null })
+        )
+    );
+    cancel.cancel();
 }
 
 /// A new PR gets the welcome comment of the queue, whose box submits it: an
@@ -3610,6 +4635,95 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
         .unwrap()
 }
 
+/// The scheduler asks for a check of the configuration of a queue that has
+/// none, or whose check is one hour old, while CIHub reaches its repository.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
+    seed(&pool).await;
+
+    let now = clock();
+    // The check that the job would write, once its job is done.
+    let run_the_check = |at: OffsetDateTime| {
+        let pool = pool.clone();
+        async move {
+            let mut tx = begin_system(&pool).await.unwrap();
+            sqlx::query(
+                "INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+                 VALUES ($1, $2, '[]', $3)
+                 ON CONFLICT (queue_id) DO UPDATE SET checked_at = $3",
+            )
+            .bind(org().to_string())
+            .bind(queue().to_string())
+            .bind(at)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                "UPDATE jobs SET state = 'done', finished_at = now() WHERE type = 'check_config'",
+            )
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+    };
+
+    assert_eq!(request_config_checks(&pool, now).await.unwrap(), 1);
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(5))
+            .await
+            .unwrap(),
+        0,
+        "a check that waits is not asked again"
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let run_after: OffsetDateTime =
+        sqlx::query_scalar("SELECT run_after FROM jobs WHERE type = 'check_config'")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    drop(tx);
+
+    assert!(
+        run_after >= now && run_after < now + Duration::hours(1),
+        "{run_after}: within the hour"
+    );
+
+    run_the_check(now).await;
+
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(30))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::minutes(61))
+            .await
+            .unwrap(),
+        1
+    );
+
+    run_the_check(now + Duration::minutes(61)).await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE scm_connections SET suspended_at = $1")
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(
+        request_config_checks(&pool, now + Duration::days(1))
+            .await
+            .unwrap(),
+        0,
+        "no check while the access is lost"
+    );
+}
+
 /// An old partition goes only once a snapshot covers its events, and the log
 /// of the queue goes on from the snapshot.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -3631,6 +4745,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
 
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
+        dashboard_url: None,
     };
 
     reconciler
@@ -4129,6 +5244,7 @@ impl Chaos {
             translate(&self.deliveries),
             format!("scheduler-{}-{}", self.seed, self.generation),
             self.clock.shared(),
+            None,
         );
         let mut executors = Executors::default();
         (module.executors)(&mut executors);
@@ -4288,6 +5404,7 @@ impl Chaos {
 
         let reconciler = Reconciler {
             translate: translate(&self.deliveries),
+            dashboard_url: None,
         };
         let direct = reconciler
             .reconcile(&self.pool, self.queue(), &|| self.clock.now())
@@ -4547,4 +5664,131 @@ async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
         let mut chaos = Chaos::new(pool.clone(), seed, clock.clone(), config).await;
         chaos.play().await;
     }
+}
+
+/// A session of the dashboard of `login`, with `role` in the organization,
+/// and its secret.
+async fn session_of(pool: &PgPool, n: u128, login: &str, role: MembershipRole) -> SecretString {
+    let user_id = UserId::from_ulid(Ulid(n));
+    let secret = cihub_store::new_session_secret().unwrap();
+    let session = cihub_store::NewSession {
+        id: SessionId::from_ulid(Ulid(n)),
+        user_id,
+        created_at: OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+        expires_at: OffsetDateTime::from_unix_timestamp(1_790_100_000).unwrap(),
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+
+    cihub_store::ensure_user(&mut tx, user_id, &n.to_string(), login)
+        .await
+        .unwrap();
+    cihub_store::create_session(&mut tx, &session, &secret)
+        .await
+        .unwrap();
+    cihub_store::record_membership(&mut tx, org(), user_id, role, session.created_at)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret
+}
+
+/// Sends `method path` with the session of `secret`, with its CSRF token or
+/// without it, and returns the status of the answer.
+async fn call_as(
+    addr: &str,
+    secret: &SecretString,
+    with_csrf: bool,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> u16 {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let csrf = if with_csrf {
+        format!("X-CSRF-Token: {}\r\n", cihub_store::csrf_token(secret))
+    } else {
+        String::new()
+    };
+    let request = format!(
+        "{method} /api/v1{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\
+         Cookie: __Host-cihub_session={}\r\n{csrf}Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\r\n{body}",
+        secret.expose_secret(),
+        body.len()
+    );
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).await.unwrap();
+    response.split(' ').nth(1).unwrap().parse().unwrap()
+}
+
+/// A session acts on a queue with the role of its user: a member cannot
+/// pause it, an admin needs the CSRF token, and the log and the audit log
+/// name the user. A submission from a session carries the account of its
+/// user, so that the job checks their permission on the repository, as for
+/// a command in a comment.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n";
+    let queue = "/orgs/acme/repos/app/queues/main";
+    let pause = r#"{"state":"paused"}"#;
+    let direct = r#"{"queue":"main","direct":true}"#;
+
+    target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    q.deliver().await;
+    q.settle().await;
+    let (addr, _) = q.serve_api().await;
+    let admin = session_of(&pool, 70, "ada", MembershipRole::Admin).await;
+    let member = session_of(&pool, 71, "grace", MembershipRole::Member).await;
+
+    let by_member = call_as(&addr, &member, true, "PATCH", queue, pause).await;
+    let without_csrf = call_as(&addr, &admin, false, "PATCH", queue, pause).await;
+    let by_admin = call_as(&addr, &admin, true, "PATCH", queue, pause).await;
+    let submitted = call_as(
+        &addr,
+        &member,
+        true,
+        "POST",
+        "/orgs/acme/repos/app/prs/1/submit",
+        direct,
+    )
+    .await;
+
+    assert_eq!(
+        (by_member, without_csrf, by_admin, submitted),
+        (403, 403, 202, 202)
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let actors: Vec<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT actor_user_id, actor_token_id FROM audit_log")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    let controls: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT actor_kind::text, actor_user_id FROM queue_inbox
+         WHERE type = 'queue.control_requested'
+         UNION ALL
+         SELECT actor_kind::text, actor_user_id FROM events WHERE type = 'queue.control_requested'",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    let requested_by: Vec<serde_json::Value> =
+        sqlx::query_scalar("SELECT payload -> 'requested_by' FROM jobs WHERE type = 'submit_pr'")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+
+    let ada = UserId::from_ulid(Ulid(70)).to_string();
+    assert_eq!(actors, [(Some(ada.clone()), None)]);
+    assert_eq!(controls, [("user".to_owned(), Some(ada))]);
+    assert_eq!(
+        requested_by,
+        [serde_json::json!({ "external_id": "71", "login": "grace" })]
+    );
+    q.stop().await;
 }

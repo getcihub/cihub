@@ -39,7 +39,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let mut out = std::io::stdout();
     match Cli::parse().command {
-        Command::Login(args) => login::run(&mut out, args).await,
+        Command::Login(args) => login::run(&mut out, args),
         Command::Queue(args) => queue::run(&mut out, args).await,
         Command::Server(args) => server::run(args).await,
     }

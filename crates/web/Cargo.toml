@@ -14,18 +14,21 @@ cihub-api-types = { workspace = true, features = ["openapi"] }
 cihub-domain.workspace = true
 cihub-github.workspace = true
 cihub-platform.workspace = true
+cihub-scm.workspace = true
 cihub-store.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["net", "time"] }
-tokio-util.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io"] }
 tracing.workspace = true
 utoipa.workspace = true
 
 [dev-dependencies]
+cihub-scm = { workspace = true, features = ["sim"] }
 ring.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
 ulid.workspace = true

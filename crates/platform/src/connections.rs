@@ -51,6 +51,16 @@ pub async fn request_repo_syncs(
     conn: &mut PgConnection,
     now: OffsetDateTime,
 ) -> Result<usize, PlatformError> {
+    request_for_each_connection(conn, now, sync_repos_job).await
+}
+
+/// Requests the job that `job` makes, for the hour of `now`, for each
+/// connection that is not suspended, and returns the number of new requests.
+pub(crate) async fn request_for_each_connection(
+    conn: &mut PgConnection,
+    now: OffsetDateTime,
+    job: fn(OrgId, ConnectionId, &str) -> Job,
+) -> Result<usize, PlatformError> {
     let connections: Vec<(String, String)> = sqlx::query_as(
         "SELECT org_id, id FROM scm_connections
          WHERE suspended_at IS NULL ORDER BY id",
@@ -63,7 +73,7 @@ pub async fn request_repo_syncs(
 
     for (org, connection) in connections {
         let read = || PlatformError::read("connection", &connection);
-        let job = sync_repos_job(
+        let job = job(
             org.parse().map_err(read())?,
             connection.parse().map_err(read())?,
             &window,
@@ -98,41 +108,13 @@ pub async fn run_sync_repos(
         ));
     };
 
-    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-    let external_id: Option<String> = sqlx::query_scalar(
-        "SELECT external_id FROM scm_connections WHERE id = $1 AND suspended_at IS NULL",
-    )
-    .bind(connection_id.to_string())
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(PlatformError::Query)?;
-
-    tx.commit().await.map_err(PlatformError::Query)?;
-    let Some(external_id) = external_id else {
+    let Some(connection) = active_connection(pool, connection_id).await? else {
         return Ok(0);
-    };
-
-    let connection = ConnectionRef {
-        id: connection_id,
-        external_id,
     };
 
     let listed = scm.list_repos(&connection, job.class).await;
 
-    if matches!(listed, Err(ScmError::AccessLost(_) | ScmError::NotFound(_))) {
-        let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-        let cause = hour_window(now);
-        request_installation_sync(
-            &mut tx,
-            &connection.external_id,
-            &cause,
-            JobClass::Repair,
-            now,
-        )
-        .await?;
-        tx.commit().await.map_err(PlatformError::Query)?;
-    }
-
+    resync_installation_after(pool, &connection, &listed, now).await?;
     let repos = listed.map_err(PlatformError::Scm)?;
 
     #[expect(
@@ -177,6 +159,54 @@ pub async fn run_sync_repos(
     Ok(written)
 }
 
+/// The connection `connection_id`, or `None` when it is suspended.
+pub(crate) async fn active_connection(
+    pool: &PgPool,
+    connection_id: ConnectionId,
+) -> Result<Option<ConnectionRef>, PlatformError> {
+    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    let external_id: Option<String> = sqlx::query_scalar(
+        "SELECT external_id FROM scm_connections WHERE id = $1 AND suspended_at IS NULL",
+    )
+    .bind(connection_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?;
+
+    tx.commit().await.map_err(PlatformError::Query)?;
+    Ok(external_id.map(|external_id| ConnectionRef {
+        id: connection_id,
+        external_id,
+    }))
+}
+
+/// When the SCM answered that the access is lost or the installation is not
+/// found, requests the sync of the installation, which records it.
+pub(crate) async fn resync_installation_after<T>(
+    pool: &PgPool,
+    connection: &ConnectionRef,
+    answer: &Result<T, ScmError>,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    if !matches!(answer, Err(ScmError::AccessLost(_) | ScmError::NotFound(_))) {
+        return Ok(());
+    }
+
+    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    let cause = hour_window(now);
+
+    request_installation_sync(
+        &mut tx,
+        &connection.external_id,
+        &cause,
+        JobClass::Repair,
+        now,
+    )
+    .await?;
+    tx.commit().await.map_err(PlatformError::Query)?;
+    Ok(())
+}
+
 pub fn sync_repos_executor(
     scm: Arc<dyn Scm>,
 ) -> impl Fn(PgPool, Job, OffsetDateTime) -> Pin<Box<dyn Future<Output = Outcome> + Send>>
@@ -185,15 +215,20 @@ pub fn sync_repos_executor(
 + 'static {
     move |pool, job, now| {
         let scm = Arc::clone(&scm);
-        Box::pin(async move {
-            match run_sync_repos(&pool, scm.as_ref(), &job, now).await {
-                Ok(_) => Outcome::Done,
-                Err(err @ PlatformError::Scm(ScmError::AccessLost(_) | ScmError::NotFound(_))) => {
-                    Outcome::Failed(error_chain(&err))
-                }
-                Err(err) => Outcome::Retry(error_chain(&err)),
-            }
-        })
+        Box::pin(async move { outcome_of(run_sync_repos(&pool, scm.as_ref(), &job, now).await) })
+    }
+}
+
+/// The outcome of a read of a connection: a lost access or a missing
+/// installation does not come back by itself, and the sync of the
+/// installation records it.
+pub(crate) fn outcome_of<T>(result: Result<T, PlatformError>) -> Outcome {
+    match result {
+        Ok(_) => Outcome::Done,
+        Err(err @ PlatformError::Scm(ScmError::AccessLost(_) | ScmError::NotFound(_))) => {
+            Outcome::Failed(error_chain(&err))
+        }
+        Err(err) => Outcome::Retry(error_chain(&err)),
     }
 }
 
