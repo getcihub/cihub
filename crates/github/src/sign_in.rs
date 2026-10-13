@@ -61,22 +61,21 @@ impl GithubApp {
             html_url: String,
         }
 
-        if let Some(url) = self.kept_install_url() {
-            return Ok(url);
+        if let Some(url) = self.install_url.get() {
+            return Ok(url.clone());
         }
 
         let (answer, _) = self.send_as_app(Method::GET, "/app").await?;
         let app: App = expect(answer, &[StatusCode::OK])?.json()?;
         let url = format!("{}/installations/new", app.html_url.trim_end_matches('/'));
 
-        self.keep_install_url(&url);
-        Ok(url)
+        Ok(self.install_url.get_or_init(|| url).clone())
     }
 
     pub(crate) fn sign_in_address(&self, request: &SignInRequest) -> Option<String> {
-        let client = self.sign_in_client()?;
+        let client = self.sign_in.as_ref()?;
         let address = Url::parse_with_params(
-            &format!("{}/login/oauth/authorize", self.web_url()),
+            &format!("{}/login/oauth/authorize", self.web_url),
             [
                 ("client_id", client.client_id.as_str()),
                 ("redirect_uri", request.redirect_url.as_str()),

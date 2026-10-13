@@ -2,7 +2,7 @@
 //! each connection, and the errors of GitHub in the terms of CIHub.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use cihub_domain::{ConnectionId, JobClass, Permission};
 use cihub_scm::{ConnectionRef, ScmError, SignInCode};
@@ -95,11 +95,11 @@ pub struct GithubApp {
     api_url: String,
     graphql_url: String,
     /// The address of the pages of GitHub, where a person signs in.
-    web_url: String,
-    sign_in: Option<SignInClient>,
+    pub(crate) web_url: String,
+    pub(crate) sign_in: Option<SignInClient>,
     /// The page that installs the App, read once: its slug does not change
     /// while the server runs.
-    install_url: Mutex<Option<String>>,
+    pub(crate) install_url: OnceLock<String>,
     app_id: String,
     key: AppKey,
     http: Client,
@@ -146,30 +146,6 @@ pub(crate) type PermissionKey = (ConnectionId, String, String);
 impl GithubApp {
     pub(crate) fn app_id(&self) -> &str {
         &self.app_id
-    }
-
-    pub(crate) fn web_url(&self) -> &str {
-        &self.web_url
-    }
-
-    pub(crate) fn sign_in_client(&self) -> Option<&SignInClient> {
-        self.sign_in.as_ref()
-    }
-
-    pub(crate) fn kept_install_url(&self) -> Option<String> {
-        let kept = self
-            .install_url
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        kept.clone()
-    }
-
-    pub(crate) fn keep_install_url(&self, url: &str) {
-        let mut kept = self
-            .install_url
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        *kept = Some(url.to_owned());
     }
 
     pub(crate) fn kept_permission(&self, key: &PermissionKey) -> Option<Permission> {
@@ -222,7 +198,7 @@ impl GithubApp {
             graphql_url,
             web_url: url.to_owned(),
             sign_in: config.sign_in.clone(),
-            install_url: Mutex::new(None),
+            install_url: OnceLock::new(),
             app_id: config.app_id.clone(),
             key: AppKey::from_pem(&config.private_key)?,
             http,
@@ -300,12 +276,8 @@ impl GithubApp {
         path: &str,
     ) -> Result<(Answer, Option<String>), ScmError> {
         let now = (self.clock)();
-        let request = self
-            .http
-            .get(format!("{}{path}", self.api_url))
-            .header(AUTHORIZATION, format!("Bearer {}", token.expose_secret()))
-            .header(ACCEPT, JSON)
-            .header("X-GitHub-Api-Version", API_VERSION);
+        let url = format!("{}{path}", self.api_url);
+        let request = self.api_request(Method::GET, url, token.expose_secret(), JSON);
         page_outside_budgets(request, path, now).await
     }
 
@@ -321,7 +293,7 @@ impl GithubApp {
             error: Option<String>,
         }
 
-        let client = self.sign_in_client().ok_or_else(|| {
+        let client = self.sign_in.as_ref().ok_or_else(|| {
             ScmError::Forbidden("the GitHub App has no client for the sign-in".into())
         })?;
         let body = serde_json::json!({
@@ -363,24 +335,31 @@ impl GithubApp {
             .key
             .jwt(&self.app_id, now)
             .map_err(|err| ScmError::Protocol(err.to_string()))?;
-        Ok(self
-            .http
-            .request(method, format!("{}{path}", self.api_url))
-            .header(AUTHORIZATION, format!("Bearer {jwt}"))
-            .header(ACCEPT, JSON)
-            .header("X-GitHub-Api-Version", API_VERSION))
+        let url = format!("{}{path}", self.api_url);
+        Ok(self.api_request(method, url, &jwt, JSON))
+    }
+
+    /// A call to the API of GitHub at `url`, authenticated by `bearer`.
+    fn api_request(
+        &self,
+        method: Method,
+        url: String,
+        bearer: &str,
+        accept: &str,
+    ) -> RequestBuilder {
+        self.http
+            .request(method, url)
+            .header(AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(ACCEPT, accept)
+            .header("X-GitHub-Api-Version", API_VERSION)
     }
 
     async fn send_to(&self, request: Request<'_>, url: String) -> Result<Answer, ScmError> {
         let connection = request.connection.id;
         self.admit(connection, request.class)?;
         let token = self.token(request.connection).await?;
-        let mut builder = self
-            .http
-            .request(request.method, url)
-            .header(AUTHORIZATION, format!("Bearer {}", token.expose_secret()))
-            .header(ACCEPT, request.accept)
-            .header("X-GitHub-Api-Version", API_VERSION);
+        let mut builder =
+            self.api_request(request.method, url, token.expose_secret(), request.accept);
         if let Some(body) = &request.body {
             builder = builder
                 .header(CONTENT_TYPE, "application/json")
