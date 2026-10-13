@@ -13,10 +13,12 @@ export interface ViewDifference {
   /** The file of the capture: `queue-live-light-1280.png`. */
   name: string;
   status: ViewStatus;
-  /** The number of pixels that changed; `null` when the view is not changed, or when its size changed. */
+  /** The number of pixels that changed; `null` when the view is not changed. */
   pixels: number | null;
-  /** The smallest rectangle that holds the changed pixels; `null` when there is none to compare. */
+  /** The smallest rectangle that holds the changed pixels; `null` when the view is not changed. */
   box: Box | null;
+  /** The size before and after, when it changed: "1280×800 → 1280×923". */
+  resized: string | null;
 }
 
 export interface ViewerData {
