@@ -21,15 +21,8 @@ use super::start::Shared;
 use super::{merge_queue, now};
 
 pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
-    let Shared {
-        pool,
-        process,
-        public_url,
-        github,
-        cancel,
-        ..
-    } = shared;
-    let module = merge_queue(&pool, &github, &process, public_url.as_deref());
+    let module = merge_queue(&shared);
+    let Shared { pool, cancel, .. } = shared;
     let queues = (module.scheduler)(cancel.clone());
     let maintenance = request_hourly(&pool, &cancel);
     let sweep = request_sweep_regularly(&pool, &cancel);
@@ -73,80 +66,57 @@ where
 
 async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
     repeat_every(Duration::from_hours(1), cancel, || async move {
-        if let Err(err) = request_maintenance_now(pool).await {
-            warn!(error = &*err as &dyn Error, "maintenance not requested");
+        let maintenance =
+            in_system_transaction(pool, |tx| Box::pin(request_maintenance(tx, now()))).await;
+        match maintenance {
+            Ok(true) => info!("maintenance requested"),
+            Ok(false) => {}
+            Err(err) => warn!(error = &*err as &dyn Error, "maintenance not requested"),
         }
-        if let Err(err) = request_installations_sync_now(pool).await {
-            warn!(
+
+        let installations =
+            in_system_transaction(pool, |tx| Box::pin(request_installations_sync(tx, now()))).await;
+        match installations {
+            Ok(true) => info!("sync of the installations requested"),
+            Ok(false) => {}
+            Err(err) => warn!(
                 error = &*err as &dyn Error,
                 "sync of the installations not requested"
-            );
+            ),
         }
-        if let Err(err) = request_repo_syncs_now(pool).await {
-            warn!(
+
+        let repos = in_system_transaction(pool, |tx| Box::pin(request_repo_syncs(tx, now()))).await;
+        match repos {
+            Ok(0) => {}
+            Ok(requested) => info!(requested, "reads of the repositories requested"),
+            Err(err) => warn!(
                 error = &*err as &dyn Error,
                 "reads of the repositories not requested"
-            );
+            ),
         }
-        if let Err(err) = request_member_syncs_now(pool).await {
-            warn!(
+
+        let members =
+            in_system_transaction(pool, |tx| Box::pin(request_member_syncs(tx, now()))).await;
+        match members {
+            Ok(0) => {}
+            Ok(requested) => info!(requested, "reads of the members requested"),
+            Err(err) => warn!(
                 error = &*err as &dyn Error,
                 "reads of the members not requested"
-            );
+            ),
         }
     })
     .await;
-}
-
-async fn request_maintenance_now(pool: &PgPool) -> anyhow::Result<()> {
-    let requested =
-        in_system_transaction(pool, |tx| Box::pin(request_maintenance(tx, now()))).await?;
-    if requested {
-        info!("maintenance requested");
-    }
-    Ok(())
-}
-
-async fn request_installations_sync_now(pool: &PgPool) -> anyhow::Result<()> {
-    let requested =
-        in_system_transaction(pool, |tx| Box::pin(request_installations_sync(tx, now()))).await?;
-    if requested {
-        info!("sync of the installations requested");
-    }
-    Ok(())
-}
-
-async fn request_repo_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
-    let requested =
-        in_system_transaction(pool, |tx| Box::pin(request_repo_syncs(tx, now()))).await?;
-    if requested > 0 {
-        info!(requested, "reads of the repositories requested");
-    }
-    Ok(())
-}
-
-async fn request_member_syncs_now(pool: &PgPool) -> anyhow::Result<()> {
-    let requested =
-        in_system_transaction(pool, |tx| Box::pin(request_member_syncs(tx, now()))).await?;
-    if requested > 0 {
-        info!(requested, "reads of the members requested");
-    }
-    Ok(())
 }
 
 async fn request_sweep_regularly(pool: &PgPool, cancel: &CancellationToken) {
     repeat_every(SWEEP_EVERY, cancel, || async move {
-        if let Err(err) = request_sweep_now(pool).await {
-            warn!(error = &*err as &dyn Error, "sweep not requested");
+        let sweep = in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, now()))).await;
+        match sweep {
+            Ok(true) => info!("sweep of the deliveries requested"),
+            Ok(false) => {}
+            Err(err) => warn!(error = &*err as &dyn Error, "sweep not requested"),
         }
     })
     .await;
-}
-
-async fn request_sweep_now(pool: &PgPool) -> anyhow::Result<()> {
-    let requested = in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, now()))).await?;
-    if requested {
-        info!("sweep of the deliveries requested");
-    }
-    Ok(())
 }

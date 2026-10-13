@@ -78,14 +78,10 @@ impl Config {
         let internal_addr = sources.addr("internal.addr", DEFAULT_INTERNAL_ADDR)?;
         let http_addr = sources.addr("http.addr", DEFAULT_HTTP_ADDR)?;
         let public_url = sources
-            .get("http.public_url")
-            .filter(|url| !url.value.is_empty())
+            .non_empty("http.public_url")
             .map(|found| public_url(&found))
             .transpose()?;
-        let Some(database_url) = sources
-            .get("database.url")
-            .filter(|url| !url.value.is_empty())
-        else {
+        let Some(database_url) = sources.non_empty("database.url") else {
             bail!("{} is required", names("database.url"));
         };
 
@@ -190,6 +186,10 @@ impl<G: Fn(&str) -> Option<String>> Sources<G> {
         })
     }
 
+    fn non_empty(&self, key: &str) -> Option<Found> {
+        self.get(key).filter(|found| !found.value.is_empty())
+    }
+
     fn addr(&self, key: &str, default: &str) -> anyhow::Result<SocketAddr> {
         let Some(addr) = self.get(key) else {
             return Ok(default.parse()?);
@@ -211,10 +211,7 @@ fn variable(key: &str) -> String {
 fn github_app(
     sources: &Sources<impl Fn(&str) -> Option<String>>,
 ) -> anyhow::Result<Option<GithubApp>> {
-    let Some(app_id) = sources
-        .get("github.app_id")
-        .filter(|id| !id.value.is_empty())
-    else {
+    let Some(app_id) = sources.non_empty("github.app_id") else {
         return Ok(None);
     };
 
@@ -232,10 +229,7 @@ fn github_app(
             names("github.private_key_file")
         ),
     };
-    let Some(webhook_secret) = sources
-        .get("github.webhook_secret")
-        .filter(|s| !s.value.is_empty())
-    else {
+    let Some(webhook_secret) = sources.non_empty("github.webhook_secret") else {
         bail!("{app} needs {}", names("github.webhook_secret"));
     };
 
@@ -259,10 +253,9 @@ fn github_app(
 fn sign_in_client(
     sources: &Sources<impl Fn(&str) -> Option<String>>,
 ) -> anyhow::Result<Option<SignInClient>> {
-    let non_empty = |key| sources.get(key).filter(|found| !found.value.is_empty());
     match (
-        non_empty("github.client_id"),
-        non_empty("github.client_secret"),
+        sources.non_empty("github.client_id"),
+        sources.non_empty("github.client_secret"),
     ) {
         (Some(client_id), Some(client_secret)) => Ok(Some(SignInClient {
             client_id: client_id.value,

@@ -28,6 +28,7 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use self::config::Config;
+use self::start::Shared;
 
 #[derive(Args)]
 #[command(arg_required_else_help = true)]
@@ -123,26 +124,21 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
 }
 
 /// A new module also adds its `OpenAPI` document to `examples/openapi.rs`,
-/// which writes the document of the dashboard. `public_url` is the address of
-/// the dashboard, which the statuses and the comments of the PRs link to.
-fn merge_queue(
-    pool: &PgPool,
-    github: &Github,
-    process: &str,
-    public_url: Option<&str>,
-) -> cihub_platform::Module {
+/// which writes the document of the dashboard. Its `public_url` is the address
+/// of the dashboard, which the statuses and the comments of the PRs link to.
+fn merge_queue(shared: &Shared) -> cihub_platform::Module {
     let translate: Translate = Arc::new(|event, payload| {
         cihub_github::translate(event, payload)
             .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)
     });
-    let scm: Arc<dyn Scm> = github.app.clone();
+    let scm: Arc<dyn Scm> = shared.github.app.clone();
     cihub_mergequeue::module(
-        pool.clone(),
+        shared.pool.clone(),
         scm,
         translate,
-        process.to_owned(),
+        shared.process.clone(),
         Arc::new(now),
-        public_url.map(str::to_owned),
+        shared.public_url.clone(),
     )
 }
 

@@ -75,6 +75,13 @@ fn people() -> [(ScmUser, &'static str); 2] {
     ]
 }
 
+fn person_named(login: &str) -> Option<ScmUser> {
+    people()
+        .into_iter()
+        .map(|(person, _)| person)
+        .find(|person| person.login == login)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cihub_telemetry::Logs::new("warn", cihub_telemetry::LogFormat::Pretty)?.init()?;
@@ -426,10 +433,7 @@ async fn comment_merge(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     let get = |name: &str| query.get(name).cloned().unwrap_or_default();
-    let Some((person, _)) = people()
-        .into_iter()
-        .find(|(person, _)| person.login == get("login"))
-    else {
+    let Some(person) = person_named(&get("login")) else {
         return Html("no such person").into_response();
     };
     let Ok(number) = get("number").parse() else {
@@ -565,11 +569,7 @@ async fn sign_in_as(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     let get = |name: &str| query.get(name).cloned().unwrap_or_default();
-    let login = get("login");
-    let Some((person, _)) = people()
-        .into_iter()
-        .find(|(person, _)| person.login == login)
-    else {
+    let Some(person) = person_named(&get("login")) else {
         return Html("no such person").into_response();
     };
 
