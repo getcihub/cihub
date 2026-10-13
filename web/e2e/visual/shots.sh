@@ -50,4 +50,6 @@ build_and_capture "$web" head
 
 rm -rf "${shots:?}/diff"
 node "$web/e2e/visual/compare.ts" "$shots/base" "$shots/head" "$shots/diff" "\`$ref\` ($(git -C "$web" rev-parse --short "$ref"))"
-echo "The images of the views that differ are in $shots/diff."
+pnpm --dir "$web" exec vite build --config e2e/visual/viewer/vite.config.ts --outDir "$shots/diff/viewer" \
+  --emptyOutDir --logLevel warn
+echo "The views that differ, before and after: open $shots/diff/index.html"
