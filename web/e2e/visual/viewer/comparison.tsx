@@ -107,6 +107,7 @@ function cropOf(view: ViewDifference, image: ImageSize, size: Size, room: ImageS
 interface Layer {
   src: string;
   alt: string;
+  /** The style of the layer in the frame: a clip or an opacity, in the place that the frame shows. */
   style?: CSSProperties;
 }
 
@@ -118,23 +119,25 @@ function Frame({ crop, layers, children }: { crop: Crop; layers: Layer[]; childr
       style={{ width: crop.width * crop.scale, height: crop.height * crop.scale }}
     >
       {layers.map(({ src, alt, style }) => (
-        <img
-          key={src}
-          src={src}
-          alt={alt}
-          draggable={false}
-          className="absolute max-w-none select-none"
-          style={{
-            // Each capture keeps its own size: the two of a view differ when the page grew or shrank.
-            transform: `scale(${String(crop.scale)})`,
-            transformOrigin: "0 0",
-            left: -crop.x * crop.scale,
-            top: -crop.y * crop.scale,
-            // A zoomed capture shows its pixels, not a blur of them.
-            imageRendering: crop.scale > 1 ? "pixelated" : "auto",
-            ...style,
-          }}
-        />
+        // The style goes on a box of the size of the frame, not on the image: a clip of 50% then cuts the part that
+        // the frame shows in its middle, under the divider, even when the frame shows a part of the image only.
+        <div key={src} className="absolute inset-0" style={style}>
+          <img
+            src={src}
+            alt={alt}
+            draggable={false}
+            className="absolute max-w-none select-none"
+            style={{
+              // Each capture keeps its own size: the two of a view differ when the page grew or shrank.
+              transform: `scale(${String(crop.scale)})`,
+              transformOrigin: "0 0",
+              left: -crop.x * crop.scale,
+              top: -crop.y * crop.scale,
+              // A zoomed capture shows its pixels, not a blur of them.
+              imageRendering: crop.scale > 1 ? "pixelated" : "auto",
+            }}
+          />
+        </div>
       ))}
       {children}
     </div>
