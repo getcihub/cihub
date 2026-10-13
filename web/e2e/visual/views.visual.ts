@@ -8,9 +8,11 @@ import { type BrowserContext, type Page, type Route, test } from "@playwright/te
 import { NOW, answerOf } from "./api";
 import { type Theme, VIEWS, type View, type Viewport, WIDE } from "./views";
 
+const BASE_VIEW_TIMEOUT_MS = 5_000;
 const BUILD = resolve(process.env.CIHUB_VISUAL_BUILD ?? "dist");
-const OUT = resolve(process.env.CIHUB_VISUAL_OUT ?? "e2e/__screenshots__/head");
+const IS_BASE = process.env.CIHUB_VISUAL_LABEL === "base";
 const ORIGIN = "http://cihub.test";
+const OUT = resolve(process.env.CIHUB_VISUAL_OUT ?? "e2e/__screenshots__/head");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -103,7 +105,13 @@ for (const view of VIEWS) {
       test(name, async ({ browser }) => {
         // Less motion, as a person may ask: a capture shows a state, and nothing moves under it.
         const context = await browser.newContext({ viewport, reducedMotion: "reduce" });
-        const page = await openView(context, view, theme);
+        if (IS_BASE) {
+          context.setDefaultTimeout(BASE_VIEW_TIMEOUT_MS);
+        }
+        const page = await openView(context, view, theme).catch((error: unknown) => {
+          test.skip(IS_BASE, "The build of the base does not show this view.");
+          throw error;
+        });
 
         await page.screenshot({
           path: join(OUT, name),

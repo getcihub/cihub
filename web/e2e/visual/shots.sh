@@ -15,8 +15,8 @@ build_and_capture() {
 
   rm -rf "${shots:?}/$label" "${shots:?}/builds/$label"
   pnpm --dir "$source" exec vite build --outDir "$shots/builds/$label" --emptyOutDir --logLevel warn
-  # A view that the build cannot show fails its test; the others are still captured, and compared.
-  CIHUB_VISUAL_BUILD="$shots/builds/$label" CIHUB_VISUAL_OUT="$shots/$label" \
+  # A view that the base cannot show is skipped, and listed as new; in the head, it fails its test.
+  CIHUB_VISUAL_BUILD="$shots/builds/$label" CIHUB_VISUAL_OUT="$shots/$label" CIHUB_VISUAL_LABEL="$label" \
     pnpm --dir "$web" exec playwright test --config playwright.visual.config.ts \
     || echo "Some views of $label did not render: the comparison lists them."
 }
