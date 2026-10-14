@@ -85,8 +85,8 @@ settings! {
     failure_budget_retries: u32 = 1;
     optimistic_merging: bool = false;
     pending_failure_depth: u32 = 0;
-    /// `off` by default, in every strategy.
-    direct_merge_mode: DirectMergeMode = DirectMergeMode::Off;
+    /// `always` by default, in every strategy.
+    direct_merge_mode: DirectMergeMode = DirectMergeMode::Always;
     optimization_mode: OptimizationMode = OptimizationMode::BisectionSkipRedundantTests;
     comments_enabled: bool = true;
     commands_enabled: bool = true;
@@ -346,6 +346,7 @@ mod tests {
         assert_eq!(settings.batching_size.source, Source::Strategy);
         assert_eq!(settings.testing_timeout_minutes.source, Source::Default);
         assert_eq!(settings.bisection_concurrency.value, 20);
+        assert_eq!(settings.direct_merge_mode.value, DirectMergeMode::Always);
     }
 
     #[test]

@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
-    Actor, CheckConclusion, CheckKind, CheckReport, Event, EventId, EventKind, Item, ItemState,
-    JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, Reason,
+    Actor, CheckConclusion, CheckKind, CheckReport, DirectMergeMode, Event, EventId, EventKind,
+    Item, ItemState, JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, Reason,
     RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
 };
 use cihub_mq_core::{Outcome, Plan, Snapshot, apply, check, plan};
@@ -41,8 +41,13 @@ impl Rng {
     }
 }
 
+/// Direct merge is `off`: most tests drive the test path, and a test of the
+/// direct merge sets `always`.
 pub fn settings(edit: impl FnOnce(&mut Layer)) -> QueueSettings {
-    let mut queue = Layer::default();
+    let mut queue = Layer {
+        direct_merge_mode: Some(Setting::new(DirectMergeMode::Off)),
+        ..Layer::default()
+    };
     edit(&mut queue);
     QueueSettings::resolve(&queue, &Layer::default()).unwrap()
 }

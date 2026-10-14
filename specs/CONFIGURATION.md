@@ -96,7 +96,7 @@ follow. A strategy is a table of default values, with no code in the core:
 | `batched`    | `single`   | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 | `parallel`   | `parallel` | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 
-All strategies keep direct merge disabled (`direct_merge_mode: off`) and give one
+All strategies enable direct merge (`direct_merge_mode: always`) and give one
 failure budget retry.
 
 ## Settings
@@ -117,7 +117,7 @@ failure budget retry.
 | `failure_budget.retries`                                       | 1                                   | 0–10                                                                       |
 | `optimistic_merging`                                           | disabled                            | boolean                                                                    |
 | `pending_failure_depth`                                        | 0                                   | 0–10                                                                       |
-| `direct_merge_mode`                                            | `off`                               | `off`, `always`                                                            |
+| `direct_merge_mode`                                            | `always`                            | `off`, `always`                                                            |
 | `optimization_mode`                                            | `bisection_skip_redundant_tests`    | `off`, `bisection_skip_redundant_tests`                                    |
 | `comments_enabled`, `commands_enabled`, `status_check_enabled` | enabled                             | boolean                                                                    |
 | `label_commands.enabled` / `enqueue_label`                     | enabled / `cihub-merge-queue-submit` | non-empty string                                                           |
