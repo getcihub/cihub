@@ -117,7 +117,8 @@ describe("the stream of an organization", () => {
   });
 
   it("tells the person that one of their PRs moved", async () => {
-    const prOf = (state: ItemState) => itemOf(124, state, { author: "ada", title: "Fix the login redirect" });
+    const prOf = (state: ItemState) =>
+      itemOf(124, state, { author: { login: "ada" }, title: "Fix the login redirect" });
     vi.stubGlobal("EventSource", FakeEventSource);
     renderApp("/orgs/acme/repos/web/queues/main", {
       ...answers,

@@ -134,7 +134,7 @@ function prOf(repo: string, number: number, state: ItemState, changes: Partial<P
     queue: "main",
     number,
     title: `Change ${String(number)}`,
-    author: "marie",
+    author: { login: "marie" },
     head_sha: "abc",
     state,
     state_reason: "submitted",
@@ -167,7 +167,7 @@ const PRS: Pr[] = [
   }),
   prOf("web", 121, "pending_failure", {
     title: "Fix the login redirect",
-    author: "lea",
+    author: { login: "lea" },
     position: 2000,
     priority: 10,
     run_id: "run_2",
@@ -176,7 +176,7 @@ const PRS: Pr[] = [
   }),
   prOf("web", 124, "tests_passed", {
     title: "Fix the payment webhook retry",
-    author: "ada",
+    author: { login: "ada" },
     position: 3000,
     run_id: "run_3",
     state_description: "the tests passed; it merges after the PRs ahead",
@@ -188,7 +188,7 @@ const PRS: Pr[] = [
   }),
   prOf("web", 130, "pending", {
     title: "Bump the version of the parser to 4.2",
-    author: "alex",
+    author: { login: "alex" },
     position: 4000,
     priority: 200,
     ahead: [
@@ -199,7 +199,7 @@ const PRS: Pr[] = [
   }),
   prOf("web", 133, "not_ready", {
     title: "Update the install guide",
-    author: "grace",
+    author: { login: "grace" },
     state_description: "waits: the required check `ci` is in_progress",
   }),
   prOf("web", 110, "merged", {
@@ -211,33 +211,33 @@ const PRS: Pr[] = [
   }),
   prOf("web", 111, "failed", {
     title: "Remove the old cache",
-    author: "lea",
+    author: { login: "lea" },
     state_description: "the tests failed: `ci/test`",
     state_changed_at: ago(120),
   }),
   prOf("web", 112, "cancelled", {
     title: "Try the new runner",
-    author: "alex",
+    author: { login: "alex" },
     state_description: "cancelled by @alex",
     state_changed_at: ago(200),
   }),
   prOf("web", 70, "merged", {
     title: "Speed up the sign-in",
-    author: "ada",
+    author: { login: "ada" },
     merged_sha: "1234567abc",
     state_changed_at: ago(2),
     submitted_at: ago(32),
   }),
   prOf("api", 75, "testing", {
     title: "Log the slow queries",
-    author: "hugo",
+    author: { login: "hugo" },
     position: 1000,
     run_id: "run_api_1",
     state_description: "a test run started",
   }),
   prOf("api", 76, "pending_failure", {
     title: "Drop the old token table",
-    author: "lea",
+    author: { login: "lea" },
     position: 1500,
     run_id: "run_api_2",
     state_description: "the tests failed; the PRs ahead may explain it",
@@ -245,7 +245,7 @@ const PRS: Pr[] = [
   }),
   prOf("api", 77, "pending", {
     title: "Retry the webhook sweep",
-    author: "ada",
+    author: { login: "ada" },
     position: 2000,
     merges_in_seconds: 1500,
     ahead: [
@@ -524,7 +524,7 @@ function answerOfPrList(query: URLSearchParams, org: string): Answer {
     (pr) =>
       org === "acme" &&
       states.includes(pr.state) &&
-      (query.get("author") !== "@me" || pr.author === "ada") &&
+      (query.get("author") !== "@me" || pr.author.login === "ada") &&
       (!repo || pr.repo === repo) &&
       (!queue || pr.queue === queue) &&
       (!since || Date.parse(pr.state_changed_at) >= Date.parse(since)),

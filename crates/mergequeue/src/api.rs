@@ -14,8 +14,8 @@ use axum::Router;
 use axum::routing::{get, post};
 use cihub_api_types::{
     ConfigCheck, Dependent, ErrorCode, Event, EventList, Finding, Graph, GraphEdge, GraphNode,
-    GraphRun, ItemCounts, Pr, PrAhead, PrList, Queue, QueueAccess, QueueList, RequestedQueueState,
-    Run, RunCheck, SettingsSummary, SubmitPr, UpdateQueue, Window,
+    GraphRun, ItemCounts, Person, Pr, PrAhead, PrList, Queue, QueueAccess, QueueList,
+    RequestedQueueState, Run, RunCheck, SettingsSummary, SubmitPr, UpdateQueue, Window,
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
@@ -81,6 +81,7 @@ struct ApiState {
         GraphNode,
         GraphRun,
         ItemCounts,
+        Person,
         Pr,
         PrAhead,
         PrList,

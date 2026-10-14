@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use cihub_api_types::{ErrorCode, Event, EventList, Pr, PrAhead, PrList, SubmitPr};
+use cihub_api_types::{ErrorCode, Event, EventList, Person, Pr, PrAhead, PrList, SubmitPr};
 use cihub_domain::{
     ApiScope, EventKind, ItemId, ItemState, Priority, QueueId, QueueState, Reason, RepoId,
     SubmittedVia,
@@ -54,6 +54,7 @@ struct ItemRow {
     submitted_at: OffsetDateTime,
     title: Option<String>,
     author: String,
+    author_avatar_url: Option<String>,
 }
 
 /// The columns of [`ItemRow`], read from the items `i` and [`ITEM_JOINS`]. The
@@ -68,7 +69,7 @@ const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.name AS queue_na
     i.submitted_via::text AS submitted_via, i.submitted_at,
     (SELECT t.title FROM pr_titles t WHERE t.repo_id = q.repo_id AND t.pr_number = i.pr_number)
         AS title,
-    author.login AS author";
+    author.login AS author, author.avatar_url AS author_avatar_url";
 
 const ITEM_JOINS: &str = "JOIN queues q ON q.id = i.queue_id
     JOIN repos r ON r.id = q.repo_id
@@ -186,7 +187,10 @@ impl Progress {
             submitted_by: row.submitted_by,
             submitted_at: row.submitted_at,
             title: row.title,
-            author: row.author,
+            author: Person {
+                login: row.author,
+                avatar_url: row.author_avatar_url,
+            },
         })
     }
 }

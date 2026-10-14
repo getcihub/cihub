@@ -47,7 +47,7 @@ the `redirect_uri` `<http.public_url>/auth/github/callback` (GitHub shows no acc
 <url>/login/oauth/access_token` with the client secret. Without `http.public_url` or the client of the App, and
 on any failure, the person comes back to `/sign-in?error=failed`. A person without an organization gets a session
 too: the dashboard asks them to install the App, whose page comes from `GET /app` (`html_url`, then
-`/installations/new`), read once. With the token of the person, CIHub reads `GET /user`, every page of
+`/installations/new`), read once. With the token of the person, CIHub reads `GET /user` (the login, the name and the avatar), every page of
 `GET /user/installations`, and, for each installation on an organization, `GET /user/memberships/orgs/{org}`: an
 active membership gives `admin` or `member`; on the account of a person, only its owner is `admin`; another kind
 of account gives no role. CIHub then forgets the token: it never stores it. An installation that CIHub has not
@@ -57,7 +57,7 @@ membership (single sign-on not authorized, allow list of addresses); the hourly 
 of each connection reads `GET /app/installations/{id}` (the kind and the login of the account now) and every page
 of `GET /orgs/{org}/members?role=admin`, then `role=member`, with the token of the installation, and deletes the
 memberships that it no longer reads; the account of a person has its owner as its only member, and another kind
-of account has none. A lost access or a missing installation requests the sync of the installation, as for
+of account has none. Each member gives its avatar, never its name: the name changes only at a sign-in. A lost access or a missing installation requests the sync of the installation, as for
 `sync_repos`. These calls are
 written by hand from the documentation: the contract suite reads the members on the simulator only, until a new
 recording by the `github` example holds them.

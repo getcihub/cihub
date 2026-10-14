@@ -26,7 +26,7 @@ a resource has one form, the same in a list and alone.
 
 | Method             | Path                                                     | Role                                                                                                                                                                                                                                           |
 | ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET                | `/user`                                                  | The person of a session (`login`); a token stands for no person and answers `401`                                                                                                                                                              |
+| GET                | `/user`                                                  | The person of a session (`login`, `name`, `avatar_url`); a token stands for no person and answers `401`                                                                                                                                                              |
 | GET                | `/user/orgs`                                             | The organizations of the person of a session, with their role, by slug (none before the App is installed on an account of theirs); a list; a token answers `401`                                                                                |
 | GET                | `/instance`                                              | The version of the instance and the page of the SCM that installs the App (`null` when the SCM did not answer); any token or session                                                                                                           |
 | GET                | `/orgs/{org}`                                            | The organization (`slug`) and the `role` of the person of the session in it, `null` for a token; any token or session of the organization                                                                                                     |
@@ -66,7 +66,8 @@ A PR (`Pr` in `cihub-api-types`) is its last submission (an item of `specs/DOMAI
 of the item, its `number`, `repo` and `queue`. It carries `state_reason`, the code of the closed vocabulary, and
 `state_description`, its sentence for a person (`Reason::describe`, `specs/DOMAIN.md`). A client shows the
 sentence and decides on the code: the sentence can change without notice. It also carries the `title` of the PR at
-its last read (`pr_titles`), its `author`, the `run_id` of the last run of its group, `no_batch`, `submitted_via`,
+its last read (`pr_titles`), its `author`, a `Person` (`login`, and `avatar_url`, `null` until a sign-in or the members of an account give
+it), the `run_id` of the last run of its group, `no_batch`, `submitted_via`,
 `submitted_by`, the login of the person who submitted it (`null` for CIHub or a token), `ahead`, the admitted PRs
 that merge before it (number and state), the head of the queue first, empty for a merged PR, and
 `merges_in_seconds`, an estimate from the median duration of the runs and the window of its queue. An event of the

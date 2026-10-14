@@ -188,7 +188,15 @@ pub struct SignInCode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedIn {
     pub user: ScmUser,
+    pub profile: ScmProfile,
     pub memberships: Vec<ScmMembership>,
+}
+
+/// What a person shows of themselves on the SCM.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScmProfile {
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 /// The role of a person in the account of an installation.
@@ -204,6 +212,8 @@ pub struct ScmMembership {
 pub struct ScmMember {
     pub user: ScmUser,
     pub role: MembershipRole,
+    /// The list of the members does not give the name.
+    pub avatar_url: Option<String>,
 }
 
 /// A repository that a connection reaches, as the SCM lists it.

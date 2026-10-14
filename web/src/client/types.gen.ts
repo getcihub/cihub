@@ -371,6 +371,21 @@ export type OrgList = {
 };
 
 /**
+ * A person on the SCM.
+ */
+export type Person = {
+    /**
+     * The address of the image of the person on the SCM, `null` until CIHub
+     * reads it at their sign-in or in the members of an account.
+     */
+    avatar_url?: string | null;
+    /**
+     * The login of the person on the SCM.
+     */
+    login: string;
+};
+
+/**
  * A PR in a queue: its last submission. A PR submitted again gets a new
  * submission, whose history its events keep.
  */
@@ -382,9 +397,9 @@ export type Pr = {
      */
     ahead: Array<PrAhead>;
     /**
-     * The login of the author of the PR.
+     * The author of the PR.
      */
-    author: string;
+    author: Person;
     /**
      * What keeps a `not_ready` item out of the queue. Each one has a `kind`:
      * `review_required` (`have`, `need`), `changes_requested`,
@@ -996,9 +1011,18 @@ export type UpdateQueue = {
  */
 export type User = {
     /**
+     * The address of the image of the person on the SCM, `null` when the SCM
+     * gives none.
+     */
+    avatar_url?: string | null;
+    /**
      * The login of the person on the SCM.
      */
     login: string;
+    /**
+     * The name that the person gives on the SCM, `null` when they give none.
+     */
+    name?: string | null;
 };
 
 /**

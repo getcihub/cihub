@@ -39,7 +39,7 @@ export function PrDrawer() {
       title={item.title ?? `#${String(item.number)}`}
       meta={
         <>
-          #{item.number} · {item.author}
+          #{item.number} · {item.author.login}
           {!hasEnded && item.position != null && ` · position ${String(ahead + 1)}`}
         </>
       }

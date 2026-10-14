@@ -7,7 +7,7 @@ import { etaOf, whereOf } from "./words";
 const ahead = (...states: ItemState[]) => states.map((state, index) => ({ pr_number: 100 + index, state }));
 
 function prOf(state: ItemState, changes: Partial<Pr> = {}): Pr {
-  return itemOf(124, state, { author: "ada", title: "Fix the payment webhook retry", ...changes });
+  return itemOf(124, state, { author: { login: "ada" }, title: "Fix the payment webhook retry", ...changes });
 }
 
 describe("the words of the PRs of a person", () => {

@@ -20,7 +20,8 @@ use cihub_github::{GithubApp, GithubConfig, SignInClient};
 use cihub_scm::contract;
 use cihub_scm::{
     ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmInstallation,
-    ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest,
+    ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode,
+    SignInRequest,
 };
 use secrecy::SecretString;
 use serde_json::json;
@@ -587,7 +588,17 @@ async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
             200,
             json!({ "access_token": "ghu_person", "token_type": "bearer" }),
         ),
-        answer("GET", "/user", 200, json!({ "id": 5, "login": "octocat" })),
+        answer(
+            "GET",
+            "/user",
+            200,
+            json!({
+                "id": 5,
+                "login": "octocat",
+                "name": "The Octocat",
+                "avatar_url": "https://avatars.example.com/u/5",
+            }),
+        ),
         answer(
             "GET",
             "/user/installations?per_page=100",
@@ -624,7 +635,12 @@ async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
         external_id: "5".into(),
         login: "octocat".into(),
     };
+    let profile = ScmProfile {
+        name: Some("The Octocat".into()),
+        avatar_url: Some("https://avatars.example.com/u/5".into()),
+    };
     assert_eq!(signed_in.user, octocat);
+    assert_eq!(signed_in.profile, profile);
     assert_eq!(signed_in.memberships, [membership("7"), membership("8")]);
 }
 
@@ -687,7 +703,7 @@ async fn the_members_of_an_organization_come_with_their_role() {
             "GET",
             &members("admin"),
             200,
-            json!([{ "id": 5, "login": "octocat" }]),
+            json!([{ "id": 5, "login": "octocat", "avatar_url": "https://avatars.example.com/u/5" }]),
         ),
         answer(
             "GET",
@@ -698,12 +714,13 @@ async fn the_members_of_an_organization_come_with_their_role() {
     ];
     let replay = Replay::start(exchanges).await;
     let app = app(&replay.url, now);
-    let member = |id: &str, login: &str, role| ScmMember {
+    let member = |id: &str, login: &str, role, avatar_url: Option<&str>| ScmMember {
         user: ScmUser {
             external_id: id.into(),
             login: login.into(),
         },
         role,
+        avatar_url: avatar_url.map(Into::into),
     };
 
     let listed = app
@@ -715,8 +732,13 @@ async fn the_members_of_an_organization_come_with_their_role() {
     assert_eq!(
         listed,
         [
-            member("5", "octocat", MembershipRole::Admin),
-            member("6", "hubot", MembershipRole::Member),
+            member(
+                "5",
+                "octocat",
+                MembershipRole::Admin,
+                Some("https://avatars.example.com/u/5")
+            ),
+            member("6", "hubot", MembershipRole::Member, None),
         ]
     );
 }
@@ -724,7 +746,15 @@ async fn the_members_of_an_organization_come_with_their_role() {
 #[tokio::test]
 async fn the_owner_of_the_account_of_a_person_is_its_only_admin() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
-    let octocat = json!({ "id": 8, "account": { "id": 5, "login": "octocat", "type": "User" } });
+    let octocat = json!({
+        "id": 8,
+        "account": {
+            "id": 5,
+            "login": "octocat",
+            "type": "User",
+            "avatar_url": "https://avatars.example.com/u/5",
+        },
+    });
     let exchanges = vec![answer("GET", "/app/installations/8", 200, octocat)];
     let replay = Replay::start(exchanges).await;
     let app = app(&replay.url, now);
@@ -734,6 +764,7 @@ async fn the_owner_of_the_account_of_a_person_is_its_only_admin() {
             login: "octocat".into(),
         },
         role: MembershipRole::Admin,
+        avatar_url: Some("https://avatars.example.com/u/5".into()),
     };
 
     let listed = app

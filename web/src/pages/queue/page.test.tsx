@@ -66,7 +66,11 @@ describe("the page of a queue", () => {
       run_id: "run_1",
       title: "Export invoices as CSV",
     });
-    const pending = itemOf(124, "pending", { position: 2000, priority: 10, author: "lea" });
+    const pending = itemOf(124, "pending", {
+      position: 2000,
+      priority: 10,
+      author: { login: "lea", avatar_url: "https://avatars.example.com/u/3" },
+    });
     const waiting = itemOf(125, "not_ready", { state_description: "a required check is in progress" });
     const detail = detailOf(entry, {
       counts: { not_ready: 1, pending: 1, testing: 1, pending_failure: 0, tests_passed: 0 },
@@ -109,13 +113,17 @@ describe("the page of a queue", () => {
     expect(within(run).getByText("Testing · attempt 1")).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Branch main" })).toHaveTextContent("9c1e2a4");
 
-    // The cell of a PR starts with the letter of the avatar of its author.
+    // The cell of a PR starts with the avatar of its author: their image, else the letter of their login.
     const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
     expect(rows.map((row) => within(row).getAllByRole("cell")[1]?.textContent)).toEqual([
       "MExport invoices as CSV#118 · marie",
-      "LChange 124#124 · lea",
+      "Change 124#124 · lea",
       "MChange 125#125 · marie",
     ]);
+    expect(rows[1]?.querySelector("img[data-slot=avatar]")).toHaveAttribute(
+      "src",
+      "https://avatars.example.com/u/3",
+    );
     expect(rows.map((row) => within(row).getAllByRole("cell")[0]?.textContent)).toEqual(["1", "2", "–"]);
     expect(rows[1]).toHaveTextContent("high");
     expect(rows[2]).toHaveTextContent("a required check is in progress");

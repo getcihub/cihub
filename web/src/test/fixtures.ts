@@ -86,7 +86,7 @@ export function itemOf(number: number, state: ItemState, changes: Partial<Pr> = 
     queue: "main",
     number,
     title: `Change ${String(number)}`,
-    author: "marie",
+    author: { login: "marie" },
     head_sha: "abc",
     state,
     state_reason: "submitted",

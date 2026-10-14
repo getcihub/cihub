@@ -247,6 +247,16 @@ pub struct User {
     /// The login of the person on the SCM.
     #[cfg_attr(feature = "openapi", schema(example = "ada"))]
     pub login: String,
+    /// The name that the person gives on the SCM, `null` when they give none.
+    #[cfg_attr(feature = "openapi", schema(example = "Ada Lovelace"))]
+    pub name: Option<String>,
+    /// The address of the image of the person on the SCM, `null` when the SCM
+    /// gives none.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://avatars.example.com/u/1")
+    )]
+    pub avatar_url: Option<String>,
 }
 
 /// `GET /instance`: the instance of CIHub.
@@ -555,9 +565,8 @@ pub struct Pr {
     /// The title at the last read of the PR; `null` before the first.
     #[cfg_attr(feature = "openapi", schema(example = "Export invoices as CSV"))]
     pub title: Option<String>,
-    /// The login of the author of the PR.
-    #[cfg_attr(feature = "openapi", schema(example = "ada"))]
-    pub author: String,
+    /// The author of the PR.
+    pub author: Person,
     /// The head of the PR that the item tests.
     #[cfg_attr(
         feature = "openapi",
@@ -669,6 +678,22 @@ pub struct QueueChanged {
     /// before the first.
     #[cfg_attr(feature = "openapi", schema(example = 4182))]
     pub seq: i64,
+}
+
+/// A person on the SCM.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Person {
+    /// The login of the person on the SCM.
+    #[cfg_attr(feature = "openapi", schema(example = "ada"))]
+    pub login: String,
+    /// The address of the image of the person on the SCM, `null` until CIHub
+    /// reads it at their sign-in or in the members of an account.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://avatars.example.com/u/1")
+    )]
+    pub avatar_url: Option<String>,
 }
 
 /// A PR ahead of another one in its queue.

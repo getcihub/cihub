@@ -11,7 +11,7 @@ import {
   listUserOrgsQueryKey,
 } from "@/client/@tanstack/react-query.gen";
 import { client } from "@/client/client.gen";
-import type { Org } from "@/client/types.gen";
+import type { Org, User } from "@/client/types.gen";
 import { failureOf, isProblem } from "@/domain/problem";
 
 const SIGN_IN_PATH = "/auth/github";
@@ -46,6 +46,8 @@ export function sendCsrfToken(): void {
 /** The person of the session, their organizations, and the instance: `/user`, `/user/orgs` and `/instance`. */
 export interface Me {
   login: string;
+  name?: string | null;
+  avatar_url?: string | null;
   orgs: Org[];
   version: string;
   app_install_url?: string | null;
@@ -78,12 +80,14 @@ export async function readMe(queryClient: QueryClient): Promise<Me | null> {
 }
 
 export function meOf(
-  user: { login: string },
+  user: User,
   orgs: { orgs: Org[] },
   instance: { version: string; app_install_url?: string | null },
 ): Me {
   return {
     login: user.login,
+    name: user.name,
+    avatar_url: user.avatar_url,
     orgs: orgs.orgs,
     version: instance.version,
     app_install_url: instance.app_install_url,

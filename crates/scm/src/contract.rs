@@ -15,8 +15,8 @@ use cihub_domain::{
 };
 
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmMember,
-    ScmUser, SetupFinding, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmUser,
+    SetupFinding, StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
@@ -120,14 +120,13 @@ async fn installations(scm: &dyn Scm, repo: &RepoRef) {
 /// When an answer is not the one of the contract.
 pub async fn members(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let members = scm.members(&repo.connection, CLASS).await.unwrap();
-    let admin = ScmMember {
-        user: fixture.admin.clone(),
-        role: MembershipRole::Admin,
-    };
 
     assert!(
-        members.contains(&admin),
-        "the members list {admin:?}: {members:?}"
+        members
+            .iter()
+            .any(|member| member.user == fixture.admin && member.role == MembershipRole::Admin),
+        "the members list {:?} as admin: {members:?}",
+        fixture.admin
     );
 }
 

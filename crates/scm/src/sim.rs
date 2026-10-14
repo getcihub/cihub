@@ -19,8 +19,8 @@ use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
     RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmMember, ScmMembership, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn,
-    StatusUpdate, code_challenge,
+    ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode,
+    SignInRequest, SignedIn, StatusUpdate, code_challenge,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -167,6 +167,8 @@ struct State {
     /// The members of the account of each installation, by the external
     /// identifier of the user.
     members: BTreeMap<String, BTreeMap<String, ScmMember>>,
+    /// The profile of each user, by their external identifier.
+    profiles: BTreeMap<String, ScmProfile>,
     /// The sign-ins that wait for the exchange of their code: the person and
     /// the request of CIHub.
     sign_in_codes: BTreeMap<String, (ScmUser, SignInRequest)>,
@@ -559,12 +561,21 @@ impl Sim {
             let member = ScmMember {
                 user: user.clone(),
                 role,
+                avatar_url: None,
             };
             state
                 .members
                 .entry(connection_external_id.to_owned())
                 .or_default()
                 .insert(user.external_id.clone(), member);
+        });
+    }
+
+    /// Gives `user` the name and the avatar of `profile`, at their next
+    /// sign-in and in the list of the members.
+    pub fn set_profile(&self, user: &ScmUser, profile: ScmProfile) {
+        self.with(|state| {
+            state.profiles.insert(user.external_id.clone(), profile);
         });
     }
 
@@ -1749,7 +1760,16 @@ impl Scm for Sim {
                     })
                 })
                 .collect();
-            Ok(SignedIn { user, memberships })
+            let profile = state
+                .profiles
+                .get(&user.external_id)
+                .cloned()
+                .unwrap_or_default();
+            Ok(SignedIn {
+                user,
+                profile,
+                memberships,
+            })
         })
     }
 
@@ -1762,10 +1782,24 @@ impl Scm for Sim {
             if state.lost.contains(&connection.external_id) {
                 return Err(ScmError::AccessLost("connection suspended".into()));
             }
+            let avatar_of = |user: &ScmUser| {
+                state
+                    .profiles
+                    .get(&user.external_id)
+                    .and_then(|profile| profile.avatar_url.clone())
+            };
             Ok(state
                 .members
                 .get(&connection.external_id)
-                .map(|members| members.values().cloned().collect())
+                .map(|members| {
+                    members
+                        .values()
+                        .map(|member| ScmMember {
+                            avatar_url: avatar_of(&member.user),
+                            ..member.clone()
+                        })
+                        .collect()
+                })
                 .unwrap_or_default())
         })
     }
@@ -1919,7 +1953,12 @@ mod tests {
             role: MembershipRole::Member,
         };
         let url = request.redirect_url.as_str();
+        let profile = ScmProfile {
+            name: Some("Ada Lovelace".into()),
+            avatar_url: Some("https://avatars.example.com/u/7".into()),
+        };
 
+        sim.set_profile(&person, profile.clone());
         sim.set_member("100", &person, MembershipRole::Member);
         sim.set_member("999", &person, MembershipRole::Admin);
         let code = sim.authorize(&person, &request);
@@ -1938,6 +1977,7 @@ mod tests {
         }
 
         assert_eq!(signed_in.user, person);
+        assert_eq!(signed_in.profile, profile);
         assert_eq!(signed_in.memberships, [member]);
         for refused in refused {
             assert!(

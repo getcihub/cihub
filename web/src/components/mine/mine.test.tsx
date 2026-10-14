@@ -8,7 +8,7 @@ import { ada, answersOfMe, answersOfMine, itemOf, pageOf, queueOf } from "@/test
 const ahead = (...states: ItemState[]) => states.map((state, index) => ({ pr_number: 100 + index, state }));
 
 function prOf(state: ItemState, changes: Partial<Pr> = {}): Pr {
-  return itemOf(124, state, { author: "ada", title: "Fix the payment webhook retry", ...changes });
+  return itemOf(124, state, { author: { login: "ada" }, title: "Fix the payment webhook retry", ...changes });
 }
 
 afterEach(() => {

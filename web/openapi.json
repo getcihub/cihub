@@ -5138,6 +5138,28 @@
           }
         }
       },
+      "Person": {
+        "type": "object",
+        "description": "A person on the SCM.",
+        "required": [
+          "login"
+        ],
+        "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address of the image of the person on the SCM, `null` until CIHub\nreads it at their sign-in or in the members of an account.",
+            "example": "https://avatars.example.com/u/1"
+          },
+          "login": {
+            "type": "string",
+            "description": "The login of the person on the SCM.",
+            "example": "ada"
+          }
+        }
+      },
       "Pr": {
         "type": "object",
         "description": "A PR in a queue: its last submission. A PR submitted again gets a new\nsubmission, whose history its events keep.",
@@ -5169,9 +5191,8 @@
             "description": "The admitted PRs that merge before it, the head of the queue first;\nempty for a merged item. For an item not admitted yet, every admitted\nPR: a PR of a higher priority goes before some of them."
           },
           "author": {
-            "type": "string",
-            "description": "The login of the author of the PR.",
-            "example": "ada"
+            "$ref": "#/components/schemas/Person",
+            "description": "The author of the PR."
           },
           "block_reasons": {
             "type": "array",
@@ -6219,10 +6240,26 @@
           "login"
         ],
         "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address of the image of the person on the SCM, `null` when the SCM\ngives none.",
+            "example": "https://avatars.example.com/u/1"
+          },
           "login": {
             "type": "string",
             "description": "The login of the person on the SCM.",
             "example": "ada"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name that the person gives on the SCM, `null` when they give none.",
+            "example": "Ada Lovelace"
           }
         }
       },

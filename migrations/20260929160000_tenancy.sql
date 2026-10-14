@@ -79,11 +79,16 @@ CREATE TABLE repos (
 
 CREATE INDEX repos_org_id ON repos (org_id);
 
+-- `name` and `avatar_url` come from a sign-in or from the members of an
+-- account: a person that CIHub only met in a delivery has neither.
 CREATE TABLE users (
     id          text        PRIMARY KEY,
     external_id text        NOT NULL UNIQUE,
     login       text        NOT NULL,
-    created_at  timestamptz NOT NULL DEFAULT now()
+    name        text,
+    avatar_url  text,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 -- The PRs of a person, by their login whatever its case.
