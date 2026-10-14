@@ -699,11 +699,23 @@ impl SimQueue {
         stored
     }
 
+    /// Whether a PR whose head is `sha` shows its conditions status.
+    async fn shows_conditions(&self, sha: &str) -> bool {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pr_conditions WHERE head_sha = $1)")
+            .bind(sha)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap()
+    }
+
     /// Delivers the deliveries of the simulator, then processes each one
     /// again, one at a time: the log of the queue and the jobs stay the same,
     /// except for a PR opened, which is in the queue now and asks one read of
     /// the PR, keyed by the delivery, and the `pr.observed` facts of that
-    /// read. Returns the events of the deliveries.
+    /// read, and for a check on the head of a PR, which shows its conditions
+    /// status now and asks one read of it. Returns the events of the
+    /// deliveries.
     async fn deliver_and_process_again(&mut self) -> Vec<ScmEvent> {
         let first = self.sent + 1;
         self.deliver().await;
@@ -721,6 +733,19 @@ impl SimQueue {
             let is_opened_pr = matches!(event, ScmEvent::PrChanged { opened: true, .. });
             if is_opened_pr {
                 jobs.push(format!("refresh_prs:{}-{id}:1", queue()));
+                jobs.sort();
+            }
+            let observe = format!("observe_pr:{}-{id}-0:1", queue());
+            let reads_a_status = match &event {
+                ScmEvent::CheckChanged { sha, check, .. } => {
+                    check.conclusion.is_some()
+                        && !check.name.starts_with("CIHub ")
+                        && self.shows_conditions(sha).await
+                }
+                _ => false,
+            };
+            if reads_a_status && !jobs.contains(&observe) {
+                jobs.push(observe);
                 jobs.sort();
             }
             assert_eq!(jobs_again, jobs, "{id}");
@@ -1323,7 +1348,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
-        (1, 2, 0, 0, false)
+        (1, 3, 0, 0, false)
     );
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1336,6 +1361,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         keys,
         [
             format!("load_config:{}-{root}:1", queue()),
+            format!("observe_pr:{}-delivery-0-0:1", queue()),
             "submit_pr:delivery-0:1".to_owned()
         ]
     );

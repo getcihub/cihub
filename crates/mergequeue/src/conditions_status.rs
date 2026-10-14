@@ -6,7 +6,7 @@
 use cihub_domain::{BlockReason, JobClass, PrState, run_of_test_branch};
 use cihub_mq_core::{PrObservation, conditions_of};
 use cihub_platform::{Job, enqueue_job};
-use cihub_scm::{MAX_PRS_PER_READ, PrSnapshot, RequiredChecks, Scm, StatusUpdate};
+use cihub_scm::{MAX_PRS_PER_READ, PrSnapshot, RequiredChecks, Scm, ScmError, StatusUpdate};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -156,9 +156,15 @@ pub(crate) async fn observe(
         return Ok(());
     }
 
-    let required = scm
+    let required = match scm
         .required_checks(&target.repo, &target.target_branch, job.class)
-        .await?;
+        .await
+    {
+        Ok(required) => required,
+        // The target is gone: `check_config` reports it, and no PR can enter.
+        Err(ScmError::NotFound(_)) => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
     let prs = scm
         .pull_requests(&target.repo, &request.prs, job.class)
         .await?;

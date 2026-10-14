@@ -362,7 +362,14 @@ impl Work<'_> {
                         base_branch,
                     ));
                 }
-                jobs.extend(observe_jobs(self.target, &subject(delivery_id), &[number]));
+                // The draft PR of a run is the queue's own: it shows no status.
+                let is_run_draft = snapshot
+                    .runs
+                    .values()
+                    .any(|run| run.draft_pr_number == Some(number));
+                if !is_run_draft {
+                    jobs.extend(observe_jobs(self.target, &subject(delivery_id), &[number]));
+                }
                 let tracked = snapshot.current_item(number).is_some()
                     || snapshot.requests.values().any(|r| {
                         matches!(r, cihub_mq_core::Request::Submit { pr_number, .. } if *pr_number == number)
@@ -657,13 +664,11 @@ async fn pass_delivery(
             sha,
             check,
             ..
-        } if check.conclusion.is_some() => {
+        // A status of CIHub changes no condition: reading the PR again after
+        // each of its publications would only spend points.
+        } if check.conclusion.is_some() && !is_own_context(&check.name) => {
             read_waiting_prs(conn, delivery, &repo_external_id, &sha, now).await?;
-            // A status of CIHub changes no condition: reading the PR again
-            // after each publication would only spend points.
-            if !is_own_context(&check.name) {
-                observe_checked_prs(conn, delivery, &repo_external_id, &sha, now).await?;
-            }
+            observe_checked_prs(conn, delivery, &repo_external_id, &sha, now).await?;
         }
         _ => {}
     }
@@ -806,8 +811,18 @@ async fn route_pr_change(
     };
 
     let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
+    let number = i64::try_from(change.number).unwrap_or(i64::MAX);
+    // The draft PR of a run is the queue's own: it shows no status.
+    let is_run_draft: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM test_runs r JOIN queues q ON q.id = r.queue_id
+                        WHERE q.repo_id = $1 AND r.draft_pr_number = $2)",
+    )
+    .bind(repo.to_string())
+    .bind(number)
+    .fetch_one(&mut *conn)
+    .await?;
     // Each queue reads the PR: its routing says which one shows the status.
-    for queue in &queues {
+    for queue in queues.iter().filter(|_| !is_run_draft) {
         for job in observe_jobs(queue, &subject(&delivery.delivery_id), &[change.number]) {
             enqueue_job(conn, &job, now, now).await?;
         }
@@ -833,7 +848,7 @@ async fn route_pr_change(
            AND i.state NOT IN ('merged', 'failed', 'cancelled')",
     )
     .bind(repo.to_string())
-    .bind(i64::try_from(change.number).unwrap_or(i64::MAX))
+    .bind(number)
     .fetch_optional(&mut *conn)
     .await?;
 
