@@ -3,20 +3,20 @@
 # server with its four roles.
 #
 # Usage, from the root of the repository:
-#   cp deploy/.env.example deploy/.env   # then fill it in
-#   docker compose -f deploy/compose.yaml up -d
-#   docker compose -f deploy/compose.yaml run --rm cihub-server server bootstrap --installation <id>
+#   cp deploy/compose/.env.example deploy/compose/.env   # then fill it in
+#   docker compose -f deploy/compose/compose.yaml up -d
+#   docker compose -f deploy/compose/compose.yaml run --rm cihub-server server bootstrap --installation <id>
 
 name: cihub
 
 x-cihub: &cihub
   image: ${CIHUB_IMAGE:-ghcr.io/getcihub/cihub:latest}
   environment:
-    CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DB_PASSWORD:?set CIHUB_DB_PASSWORD in deploy/.env}@postgres:5432/cihub
+    CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DB_PASSWORD:?set CIHUB_DB_PASSWORD in deploy/compose/.env}@postgres:5432/cihub
     CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
-    CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:?set CIHUB_GITHUB_APP_ID in deploy/.env}
+    CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:?set CIHUB_GITHUB_APP_ID in deploy/compose/.env}
     CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
-    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:?set CIHUB_GITHUB_WEBHOOK_SECRET in deploy/.env}
+    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:?set CIHUB_GITHUB_WEBHOOK_SECRET in deploy/compose/.env}
     # The sign-in to the dashboard: all three, or none.
     CIHUB_HTTP_PUBLIC_URL: ${CIHUB_HTTP_PUBLIC_URL:-}
     CIHUB_GITHUB_CLIENT_ID: ${CIHUB_GITHUB_CLIENT_ID:-}
@@ -24,13 +24,13 @@ x-cihub: &cihub
     CIHUB_LOG_FILTER: ${CIHUB_LOG_FILTER:-info}
   volumes:
     # The user of the image (65532) must be able to read this file.
-    - ${CIHUB_GITHUB_PRIVATE_KEY_PATH:?set CIHUB_GITHUB_PRIVATE_KEY_PATH in deploy/.env}:/run/secrets/github-app.pem:ro
+    - ${CIHUB_GITHUB_PRIVATE_KEY_PATH:?set CIHUB_GITHUB_PRIVATE_KEY_PATH in deploy/compose/.env}:/run/secrets/github-app.pem:ro
 
 services:
   postgres:
     image: postgres:17.5-alpine
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/compose/.env}
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:

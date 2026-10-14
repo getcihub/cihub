@@ -178,7 +178,7 @@ installed=""
 helm status cihub -n "$ns" >/dev/null 2>&1 && installed=1
 # The migration Job runs first, as a hook; --wait then returns once both
 # replicas are ready: each one has read its file and reached the database.
-helm upgrade --install cihub charts/cihub -n "$ns" --values scripts/smoke/values.yaml \
+helm upgrade --install cihub deploy/charts/cihub -n "$ns" --values scripts/smoke/values.yaml \
   --set image.repository="${image%:*}" --set image.tag="${image##*:}" \
   ${local_values[@]+"${local_values[@]}"} \
   --wait --timeout 5m
