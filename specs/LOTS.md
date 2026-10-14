@@ -20,7 +20,7 @@ rewrites.
 | Phase                       | Lots            | Scope                                                                                                                                                                                                                                                                                                                                                             | Exit criterion                                                                                                                                                                |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following `INSTALL.md`; measured in lot 15 |
-| 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
+| 2. Throughput and visibility | 9b, 10 to 12   | Conditions status of a PR, dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
 | 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                                            | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
@@ -42,6 +42,7 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
+| 9b  | Conditions status of a PR                              | 2     | 9          | —         | to do                                    |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
@@ -71,6 +72,7 @@ flowchart LR
   L10a --> L10b[10b Queues]
   L10b --> L10c[10c PR and actions]
   L10b --> L10d[10d Live]
+  L9 --> L9b[9b Conditions]
   L9 --> L11a[11a Analytics]
   L11a --> L11b[11b Prometheus]
   L11a --> L11c[11c Webhooks]
@@ -81,8 +83,8 @@ flowchart LR
   L13 --> L15
 ```
 
-Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11a, 12 and 14
-after lot 9, lots 10c and 10d after lot 10b, and lots 11b and 11c after lot 11a.
+Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 9b, 10a, 11a, 12
+and 14 after lot 9, lots 10c and 10d after lot 10b, and lots 11b and 11c after lot 11a.
 
 ---
 
@@ -214,6 +216,30 @@ Lots 0 to 8 are done; the git history keeps their tracking.
 ---
 
 ## Phase 2: throughput and visibility
+
+### Lot 9b: the conditions status of a PR
+
+Decisions (October 14, 2026, validated by the project lead):
+
+- A PR shows from its opening whether it can enter its queue, in a status of its own,
+  `CIHub Conditions (<branch>)`, next to `CIHub Merge Queue (<branch>)`. The queue status cannot turn green
+  before the submission: a team that requires it would then merge PRs outside the queue. Mergify shows the same
+  answer with one check on every PR, its merge protections (`specs/COMPETITION.md`).
+- The welcome comment stays as it is: posted at the opening, whatever the conditions.
+
+- **Goal**: a person sees on GitHub, before the submission, whether their PR can enter the queue and what blocks
+  it.
+- **Content**: the `CIHub Conditions (<branch>)` status of `specs/GITHUB.md`; the `observe_pr` job for an open
+  PR without a live item, which writes in `pr_surfaces` without an event; the finding
+  `conditions_status_required` of `check_config`.
+- **Frozen interfaces**: the context `CIHub Conditions (<branch>)`, its states and what each one means; the
+  finding `conditions_status_required`.
+- **Exit criterion**: on the simulator, a PR opened without its review shows `failure` with the reason, then
+  `success` once reviewed, without a submission, and the log of its queue does not change; a submitted PR keeps
+  its status until it closes; with `status_check_enabled: false`, neither status; 50 open PRs not submitted
+  stay under 300 GraphQL points per hour.
+- **Tracking**:
+  - To validate: whether a PR not submitted needs the polling of the tick, or only the events and `…/resync`.
 
 ### Lots 10a to 10d: dashboard
 
