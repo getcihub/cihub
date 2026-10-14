@@ -210,7 +210,9 @@ same
 build are the same. `mise run web:shots-diff [REF]` (`origin/main` by default) builds REF in a worktree, captures
 both, and writes into `e2e/__screenshots__/diff` the changed pixels of each view that differs (`changes/`),
 `report.md`, and `index.html`, which shows each view before and after: side by side, split, blend, or its changed
-pixels, zoomed on the change. Its viewer (`e2e/visual/viewer/`) uses the design system and the components of
+pixels, zoomed on the change. On a pull request that changes `web/`, the job `Dashboard Visual` of the CI runs it
+against the base, writes `report.md` into the summary of the run, and uploads the three folders as the artifact
+`dashboard-visual`: download it and open `diff/index.html`. It gates nothing. Its viewer (`e2e/visual/viewer/`) uses the design system and the components of
 `src/`, built as one script, as a page opened from the disk runs no module. The fixtures use the types of `src/client`: a change of the API that they no longer
 follow fails the type check. A new page or a new state adds its view to `views.ts`.
 
