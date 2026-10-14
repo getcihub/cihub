@@ -94,7 +94,7 @@ async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
         Role::Web => web::run(shared).await?,
         Role::Scheduler => scheduler::run(shared).await?,
         Role::Worker => worker::run(shared).await?,
-        Role::Notifier => notifier::run(shared).await,
+        Role::Notifier => notifier::run(shared).await?,
     }
     info!("role stopped");
     Ok(())

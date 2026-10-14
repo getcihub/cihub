@@ -98,7 +98,7 @@ web/                     dashboard (React, Vite, TanStack), embedded in cihub-se
 | `cihub-mergequeue` | Merge queue module: log of each queue, projections, snapshots and replay; reconciliation loop and job executors (Lots 5 and 6); `/api/v1` routes of the queues, PR surfaces (status, comment, labels) and commands (Lot 9) | `domain`, `mq-core`, `store`, then `config`, `platform`, `scm`, `conditions`; `contracts` at Lot 14, `analytics` at Lot 11 | 5   | exists |
 | `cihub-api-types`  | Requests and responses of the public API, error codes, `problem+json` body; OpenAPI schemas behind the `openapi` feature                                                                                                            | `domain`                                                         | 9   | exists |
 | `cihub-client`     | Typed client of the public API, for `cihub queue` and the end-to-end tests                                                                                             | `api-types`                                                      | 9   | exists |
-| `cihub-analytics`  | `AnalyticsStore` trait, Postgres implementation, then ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | target |
+| `cihub-analytics`  | Facts derived from the log and Health of a queue on Postgres (Lot 11a); `AnalyticsStore` trait with ClickHouse (Lot 15)                                                | `domain`, `store`                                                | 11a | exists |
 | `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by `cihub`                                                                                                | `domain`                                                         | 14  | target |
 | `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | target |
 | `cihub-cli`        | `cihub` binary, the command line of the users: `login` and `queue`, one file per command; no server crate                                                              | `client`, `api-types`, `domain`                                  | 9   | exists |
@@ -138,7 +138,7 @@ which starts loops whose code is in the library crates.
 | `web`       | HTTP server: API, webhooks, OTLP, dashboard     | `cihub-web`         |
 | `scheduler` | reconciliation loop of the queues               | `cihub-mergequeue`      |
 | `worker`    | execution of the modules' jobs                  | `cihub-platform`        |
-| `notifier`  | dispatch of the log (Lot 11)              | `cihub-platform`        |
+| `notifier`  | subscriptions of the modules to the log: the facts of the analytics (Lot 11a), then the webhooks (Lot 11c) | `cihub-platform` |
 
 `main` reads the configuration, starts the logs and the Postgres pool, checks that the schema is up to date, then starts one
 `tokio` task per role in a `JoinSet`, with a single `CancellationToken`. On `SIGTERM`, it cancels the token:
@@ -161,7 +161,7 @@ configuration file, behind a load balancer. Each role shares its work between th
 | `web`       | No state of the queues; each webhook goes into the inbox, and deduplication by `delivery_id` discards a duplicate received while the delivery waits. Each replica listens to `cihub_queue_changed` on one connection and serves the streams of the pages open on it |
 | `scheduler` | A queue is processed by a single replica at a time (lease and lock); the queues are spread across the replicas                |
 | `worker`    | Each replica claims and locks jobs; a job of a stopped replica is taken over when `locked_until` expires                       |
-| `notifier`  | Same principle on the log                                                                                                       |
+| `notifier`  | Each replica takes the cursor of a queue and of a subscription with `FOR UPDATE SKIP LOCKED`, which the others skip              |
 
 The limits: a queue is processed by only one replica at a time, to keep the order, so adding
 replicas increases the number of queues processed in parallel, not the speed of one queue; beyond a certain

@@ -67,7 +67,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 19] = [
+const TENANT_TABLES: [&str; 24] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -87,6 +87,11 @@ const TENANT_TABLES: [&str; 19] = [
     "config_checks",
     "pr_comments",
     "memberships",
+    "log_cursors",
+    "an_item_conclusions",
+    "an_state_durations",
+    "an_test_run_results",
+    "an_check_results",
 ];
 
 fn september() -> Date {
@@ -147,7 +152,23 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
              VALUES ('{org}', '{queue}', '[]', '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role, refreshed_at)
-             VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');"
+             VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');
+         INSERT INTO log_cursors (org_id, queue_id, subscription, seq)
+             VALUES ('{org}', '{queue}', 'analytics', 1);
+         INSERT INTO an_item_conclusions (item_id, org_id, queue_id, conclusion, reason,
+                                          submitted_at, concluded_at)
+             VALUES ('item-{n}', '{org}', '{queue}', 'merged', 'merge_graph_merge',
+                     '2026-09-15T00:00:00Z', '2026-09-15T00:10:00Z');
+         INSERT INTO an_state_durations (org_id, queue_id, item_id, pass, state, entered_at,
+                                         left_at, exit_reason)
+             VALUES ('{org}', '{queue}', 'item-{n}', 0, 'pending', '2026-09-15T00:00:00Z',
+                     '2026-09-15T00:10:00Z', 'merge_graph_merge');
+         INSERT INTO an_test_run_results (run_id, org_id, queue_id, group_id, attempt, status,
+                                          reason, started_at, ended_at)
+             VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'succeeded',
+                     'test_run_passed', '2026-09-15T00:00:00Z', '2026-09-15T00:05:00Z');
+         INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion)
+             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, 'success');"
     )
 }
 

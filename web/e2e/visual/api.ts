@@ -5,10 +5,12 @@ import type {
   Event,
   Graph,
   GraphNode,
+  HealthBucket,
   ItemState,
   Pr,
   Problem,
   Queue,
+  QueueHealth,
   Run,
 } from "@/client/types.gen";
 
@@ -475,18 +477,106 @@ function answerOfSession(path: string, person: Person): Answer | null {
   return [200, { version: "0.2.0", app_install_url: "https://github.com/apps/cihub/installations/new" }];
 }
 
-function answerOfQueue(path: string): Answer | null {
-  const match = /^\/orgs\/acme\/repos\/([^/]+)\/queues\/([^/]+)(\/graph)?$/.exec(path);
+/** The hours of the last 24 hours, the oldest first: a busy day, quiet at night. */
+function bucketsOf(merged: number[], failed: number[]): HealthBucket[] {
+  return merged.map((count, index) => ({
+    start: new Date(NOW - (23 - index) * 3_600_000 - 3_600_000).toISOString(),
+    merged: count,
+    failed: failed[index] ?? 0,
+    time_to_merge: count > 0 ? { median_seconds: 1_200 + index * 40, p90_seconds: 2_400 + index * 90 } : null,
+  }));
+}
+
+/** The Health of `web/main`: a check that passes on a retry; the other queues ended nothing. */
+function healthOf(repo: string, name: string, range: string): QueueHealth {
+  const isBusy = repo === "web" && name === "main";
+  const empty = { merged: 0, failed: 0, cancelled: 0, time_to_merge: null };
+  const from = new Date(NOW - 24 * 3_600_000).toISOString();
+
+  if (!isBusy) {
+    return {
+      from,
+      to: new Date(NOW).toISOString(),
+      verdict: { kind: "quiet" },
+      current: empty,
+      previous: empty,
+      buckets: bucketsOf(Array<number>(24).fill(0), []),
+      time_in_states: [],
+      left_without_merge: [],
+      checks: [],
+    };
+  }
+  return {
+    from,
+    to: new Date(NOW).toISOString(),
+    verdict: { kind: "check_passes_on_retry", check: "ci / e2e", times: range === "24h" ? 4 : 19 },
+    current: {
+      merged: 31,
+      failed: 3,
+      cancelled: 2,
+      time_to_merge: { median_seconds: 1_380, p90_seconds: 2_940 },
+    },
+    previous: {
+      merged: 27,
+      failed: 2,
+      cancelled: 1,
+      time_to_merge: { median_seconds: 1_560, p90_seconds: 3_120 },
+    },
+    buckets: bucketsOf(
+      [0, 0, 0, 0, 0, 0, 0, 1, 3, 4, 3, 2, 4, 3, 2, 3, 2, 1, 1, 0, 0, 0, 1, 1],
+      [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+    ),
+    time_in_states: [
+      { state: "not_ready", median_seconds: 420 },
+      { state: "pending", median_seconds: 240 },
+      { state: "testing", median_seconds: 660 },
+      { state: "pending_failure", median_seconds: 0 },
+      { state: "tests_passed", median_seconds: 60 },
+    ],
+    left_without_merge: [
+      {
+        conclusion: "failed",
+        reason: "test_run_required_status_failed",
+        description: "a required check failed",
+        count: 2,
+      },
+      {
+        conclusion: "cancelled",
+        reason: "pr_pushed_to",
+        description: "the PR received a new commit after its submission",
+        count: 2,
+      },
+      {
+        conclusion: "failed",
+        reason: "start_test_run_merge_conflict",
+        description: "the PR conflicts with the target branch or with a PR ahead of it",
+        count: 1,
+      },
+    ],
+    checks: [
+      { name: "ci / build", kind: "check", required: true, runs: 41, failed: 1, passed_on_retry: 0 },
+      { name: "ci / coverage", kind: "check", required: false, runs: 41, failed: 0, passed_on_retry: 0 },
+      { name: "ci / e2e", kind: "check", required: true, runs: 45, failed: 6, passed_on_retry: 4 },
+      { name: "ci / lint", kind: "check", required: true, runs: 41, failed: 0, passed_on_retry: 0 },
+    ],
+  };
+}
+
+function answerOfQueue(path: string, query: URLSearchParams): Answer | null {
+  const match = /^\/orgs\/acme\/repos\/([^/]+)\/queues\/([^/]+)(\/graph|\/health)?$/.exec(path);
   if (!match) {
     return null;
   }
 
-  const [, repo, name, isGraph] = match;
+  const [, repo, name, part] = match;
   const queue = QUEUES.find((entry) => entry.repo === repo && entry.name === name);
   if (!queue) {
     return [404, problem(404, "queue_not_found")];
   }
-  if (isGraph) {
+  if (part === "/health") {
+    return [200, healthOf(queue.repo, queue.name, query.get("range") ?? "24h")];
+  }
+  if (part === "/graph") {
     return [
       200,
       GRAPHS[`${repo ?? ""}/${name ?? ""}`] ?? {
@@ -561,7 +651,9 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
     return answerOfPrList(query, prList[1] ?? "");
   }
   return (
-    answerOfQueue(path) ?? answerOfPr(path) ?? answerOfRun(path) ?? [404, problem(404, "route_not_found")]
+    answerOfQueue(path, query) ??
+    answerOfPr(path) ??
+    answerOfRun(path) ?? [404, problem(404, "route_not_found")]
   );
 }
 

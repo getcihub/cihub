@@ -212,6 +212,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cihub-analytics"
+version = "0.2.1"
+dependencies = [
+ "cihub-domain",
+ "cihub-store",
+ "serde_json",
+ "sqlx",
+ "strum",
+ "thiserror",
+ "time",
+]
+
+[[package]]
 name = "cihub-api-types"
 version = "0.2.1"
 dependencies = [
@@ -306,6 +319,7 @@ name = "cihub-mergequeue"
 version = "0.2.1"
 dependencies = [
  "axum",
+ "cihub-analytics",
  "cihub-api-types",
  "cihub-client",
  "cihub-conditions",

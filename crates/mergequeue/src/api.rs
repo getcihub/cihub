@@ -4,6 +4,7 @@
 //! through its inbox (`queue_inbox`) or a job: the scheduler stays the only
 //! writer of the log.
 
+mod health;
 mod prs;
 mod queues;
 mod runs;
@@ -13,9 +14,10 @@ use std::collections::BTreeMap;
 use axum::Router;
 use axum::routing::{get, post};
 use cihub_api_types::{
-    ConfigCheck, Dependent, ErrorCode, Event, EventList, Finding, Graph, GraphEdge, GraphNode,
-    GraphRun, ItemCounts, Person, Pr, PrAhead, PrList, Queue, QueueAccess, QueueList,
-    RequestedQueueState, Run, RunCheck, SettingsSummary, SubmitPr, UpdateQueue, Window,
+    CheckHealth, ConfigCheck, Dependent, ErrorCode, Event, EventList, Finding, Graph, GraphEdge,
+    GraphNode, GraphRun, HealthBucket, HealthTotals, HealthVerdict, ItemCounts, Person, Pr,
+    PrAhead, PrList, Queue, QueueAccess, QueueHealth, QueueList, ReasonCount, RequestedQueueState,
+    Run, RunCheck, SettingsSummary, StateTime, SubmitPr, TimeToMerge, UpdateQueue, Window,
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
@@ -62,6 +64,7 @@ struct ApiState {
         queues::update_queue,
         queues::resync_queue,
         queues::graph,
+        health::get_health,
         prs::list_prs,
         prs::get_pr,
         prs::list_events,
@@ -71,6 +74,7 @@ struct ApiState {
         runs::get_run
     ),
     components(schemas(
+        CheckHealth,
         ConfigCheck,
         Dependent,
         Event,
@@ -80,6 +84,9 @@ struct ApiState {
         GraphEdge,
         GraphNode,
         GraphRun,
+        HealthBucket,
+        HealthTotals,
+        HealthVerdict,
         ItemCounts,
         Person,
         Pr,
@@ -87,12 +94,16 @@ struct ApiState {
         PrList,
         Queue,
         QueueAccess,
+        QueueHealth,
         QueueList,
+        ReasonCount,
         RequestedQueueState,
         Run,
         RunCheck,
         SettingsSummary,
+        StateTime,
         SubmitPr,
+        TimeToMerge,
         UpdateQueue,
         Window
     ))
@@ -123,6 +134,10 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
         .route(
             "/orgs/{org}/repos/{repo}/queues/{queue}/graph",
             get(queues::graph),
+        )
+        .route(
+            "/orgs/{org}/repos/{repo}/queues/{queue}/health",
+            get(health::get_health),
         )
         .route("/orgs/{org}/prs", get(prs::list_prs))
         .route("/orgs/{org}/repos/{repo}/prs/{number}", get(prs::get_pr))

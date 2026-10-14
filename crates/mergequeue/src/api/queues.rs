@@ -95,7 +95,7 @@ pub(super) async fn queue_row(
 
 /// A transaction of the organization of the URL, and the queue that the URL
 /// names, read in it.
-async fn begin_queue(
+pub(super) async fn begin_queue(
     state: &ApiState,
     grant: &ApiGrant,
     path: &QueuePath,

@@ -1,6 +1,7 @@
 import type { QueryKey } from "@tanstack/react-query";
 
 import {
+  getHealthOptions,
   getQueueOptions,
   graphOptions,
   listOrgQueuesOptions,
@@ -28,6 +29,14 @@ const STATES_OF: Record<Tab, string> = {
   merged: "merged",
   ended: "failed,cancelled",
 };
+
+/** The panes of the page of a queue: the queue now, and what it did over a period. */
+export const PANES = ["graph", "health"] as const;
+export type Pane = (typeof PANES)[number];
+
+/** The periods of the Health of a queue. */
+export const RANGES = ["24h", "7d", "30d"] as const;
+export type Range = (typeof RANGES)[number];
 
 export interface QueuePath {
   org: string;
@@ -83,6 +92,11 @@ export function queueReads(path: QueuePath, tab: Tab, now: number): QueueReads {
     live: itemsOf(path, "live", now),
     tab: itemsOf(path, tab, now),
   };
+}
+
+/** The read of the Health of a queue over `range`. */
+export function healthOptions(path: QueuePath, range: Range): ReturnType<typeof getHealthOptions> {
+  return getHealthOptions({ path, query: { range } });
 }
 
 /**

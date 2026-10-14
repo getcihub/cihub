@@ -149,7 +149,7 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 
 - **No enable flag**, per organization, per repository or per offer. A module that needs a setting reads
   `.cihub.yaml` (`specs/CONFIGURATION.md`).
-- **One table for the time series** (lot 11): `measurements (org_id, repo_id, queue_id, name, bucket, value)`
+- **One table for the time series** (after lot 11a, when a range passes 30 days): `measurements (org_id, repo_id, queue_id, name, bucket, value)`
   behind `AnalyticsStore`. Codecov has eight aggregate tables of the same shape (hourly and daily, crossed with
   repository, branch and test); one table with a `grain` column and nullable `branch` and `test_id` does the
   same.

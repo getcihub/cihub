@@ -903,6 +903,171 @@ page! {
     }
 }
 
+/// What a queue did over a period, against the period of the same length
+/// before it: the PRs that ended, how long they took to merge, why the others
+/// left, and the checks of its runs. A period ends with the hour, or the UTC
+/// day, that holds now.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct QueueHealth {
+    /// The start of the period.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-13T10:00:00Z")
+    )]
+    pub from: OffsetDateTime,
+    /// The end of the period, excluded.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-14T10:00:00Z")
+    )]
+    pub to: OffsetDateTime,
+    /// The first thing to know about the queue over the period.
+    pub verdict: HealthVerdict,
+    /// The PRs that ended in the period.
+    pub current: HealthTotals,
+    /// The PRs that ended in the period before.
+    pub previous: HealthTotals,
+    /// The period cut in hours (`24h`) or in UTC days (`7d`, `30d`), the oldest first.
+    pub buckets: Vec<HealthBucket>,
+    /// The median time that the PRs merged in the period spent in each
+    /// state before their merge, in the order of the states.
+    pub time_in_states: Vec<StateTime>,
+    /// Why the other PRs ended without a merge, the most frequent reason first.
+    pub left_without_merge: Vec<ReasonCount>,
+    /// The checks of the runs that ended in the period, by name.
+    pub checks: Vec<CheckHealth>,
+}
+
+/// The first thing to know about a queue over the period.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HealthVerdict {
+    /// No PR merged or failed.
+    Quiet,
+    /// The PRs merge, and few fail.
+    Healthy,
+    /// More than 15 % of the PRs that merged or failed failed.
+    ManyFailures,
+    /// A check failed, then passed on the next attempt of its run, at least 3
+    /// times: each retry costs a run and makes the PRs behind wait.
+    CheckPassesOnRetry {
+        /// The name of the check.
+        #[cfg_attr(feature = "openapi", schema(example = "ci / test"))]
+        check: String,
+        /// How many times it passed on a retry.
+        #[cfg_attr(feature = "openapi", schema(example = 4))]
+        times: u64,
+    },
+}
+
+/// The PRs that ended in a period.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HealthTotals {
+    /// The PRs that merged.
+    #[cfg_attr(feature = "openapi", schema(example = 42))]
+    pub merged: u64,
+    /// The PRs that failed.
+    #[cfg_attr(feature = "openapi", schema(example = 3))]
+    pub failed: u64,
+    /// The PRs that a person cancelled, or that left the queue on a change of the PR.
+    #[cfg_attr(feature = "openapi", schema(example = 2))]
+    pub cancelled: u64,
+    /// `null` when no PR merged.
+    pub time_to_merge: Option<TimeToMerge>,
+}
+
+/// The time from the submission of a PR to its merge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TimeToMerge {
+    /// Half of the PRs merged within this time, in seconds.
+    #[cfg_attr(feature = "openapi", schema(example = 1380))]
+    pub median_seconds: u64,
+    /// 90 % of the PRs merged within this time, in seconds.
+    #[cfg_attr(feature = "openapi", schema(example = 2940))]
+    pub p90_seconds: u64,
+}
+
+/// The PRs that ended in an hour or a day of the period.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct HealthBucket {
+    /// The start of the hour or of the day.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-14T09:00:00Z")
+    )]
+    pub start: OffsetDateTime,
+    /// The PRs that merged in the bucket.
+    #[cfg_attr(feature = "openapi", schema(example = 4))]
+    pub merged: u64,
+    /// The PRs that failed in the bucket.
+    #[cfg_attr(feature = "openapi", schema(example = 1))]
+    pub failed: u64,
+    /// `null` when no PR merged.
+    pub time_to_merge: Option<TimeToMerge>,
+}
+
+/// The median time in a state of the PRs merged in a period; a PR that did
+/// not pass through the state counts as 0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct StateTime {
+    /// A state before the merge.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::ItemState))]
+    pub state: ItemState,
+    /// The median time in the state, in seconds.
+    #[cfg_attr(feature = "openapi", schema(example = 420))]
+    pub median_seconds: u64,
+}
+
+/// How many PRs ended for a reason.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ReasonCount {
+    /// `failed` or `cancelled`.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::ItemState, example = "failed"))]
+    pub conclusion: ItemState,
+    /// Why the PRs ended.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::Reason))]
+    pub reason: Reason,
+    /// The reason for a person, as the comment of a PR gives it.
+    #[cfg_attr(feature = "openapi", schema(example = "a required check failed"))]
+    pub description: String,
+    /// How many PRs ended for this reason.
+    #[cfg_attr(feature = "openapi", schema(example = 3))]
+    pub count: u64,
+}
+
+/// A check over the runs that ended in a period.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CheckHealth {
+    /// The name of the check or of the status.
+    #[cfg_attr(feature = "openapi", schema(example = "ci / test"))]
+    pub name: String,
+    /// `check` for a check with a run, `status` for a commit status.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::CheckKind))]
+    pub kind: CheckKind,
+    /// A run needs it to pass.
+    pub required: bool,
+    /// The runs that reported it.
+    #[cfg_attr(feature = "openapi", schema(example = 48))]
+    pub runs: u64,
+    /// The runs where it failed.
+    #[cfg_attr(feature = "openapi", schema(example = 6))]
+    pub failed: u64,
+    /// The runs where it passed after it failed on the attempt before.
+    #[cfg_attr(feature = "openapi", schema(example = 4))]
+    pub passed_on_retry: u64,
+}
+
 /// The merge graph: the head of the target branch, the live items, the
 /// predecessors that their tests merge before them, and the live runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

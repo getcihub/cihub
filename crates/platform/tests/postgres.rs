@@ -2,18 +2,19 @@
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use cihub_domain::{
-    ApiScope, ConnectionId, ConnectionKind, ConnectionMode, JobClass, MembershipRole, OrgId,
-    QueueId,
+    Actor, ApiScope, ConnectionId, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
+    JobClass, MembershipRole, OrgId, QueueId,
 };
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
-    MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, TICK, Wake, acquire_leases,
-    backoff, begin_reconciliation, claim_jobs, complete_job, create_token, delete_delivery,
-    enqueue_job, fail_job, find_route, lock_queue, maintenance_job, pending_deliveries,
-    record_budgets, record_sign_in, release_leases, request_installations_sync,
+    MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, Subscription, TICK, Wake,
+    acquire_leases, backoff, begin_reconciliation, claim_jobs, complete_job, create_token,
+    delete_delivery, deliver_all, enqueue_job, fail_job, find_route, lock_queue, maintenance_job,
+    pending_deliveries, record_budgets, record_sign_in, release_leases, request_installations_sync,
     request_installations_sync_at_start, request_maintenance, request_member_syncs,
     request_repo_syncs, run_budget_writer, run_maintenance, run_router, run_sync_installation,
     run_sync_installations, run_sync_members, run_sync_repos, run_worker, schedule_tick,
@@ -26,7 +27,8 @@ use cihub_scm::{
     ScmUser, SignedIn,
 };
 use cihub_store::{
-    Membership, UserProfile, authenticate, begin_org, begin_system, memberships_of, profile_of,
+    Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
+    create_event_partitions, memberships_of, profile_of,
 };
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
@@ -1744,4 +1746,72 @@ async fn a_lost_access_keeps_the_members_and_syncs_the_installation(pool: PgPool
             .unwrap();
 
     assert_eq!(syncs, 1);
+}
+
+fn queue_event(n: u128, kind: EventKind) -> Event {
+    Event {
+        id: EventId::from_ulid(Ulid(n)),
+        org_id: org(),
+        queue_id: queue(1),
+        actor: Actor::System,
+        occurred_at: at(i64::try_from(n).unwrap()),
+        cause_id: None,
+        kind,
+    }
+}
+
+async fn cursor(pool: &PgPool) -> Option<i64> {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT seq FROM log_cursors WHERE queue_id = $1 AND subscription = 'test'")
+        .bind(queue(1).to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// The cursor of a subscription advances in the transaction of its effect: a
+/// subscription that fails reads the same events again at its next pass.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_subscription_that_fails_reads_its_events_again(pool: PgPool) {
+    seed(&pool).await;
+    create_event_partitions(&pool, at(0).date()).await.unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    let events = [
+        queue_event(1, EventKind::AccessLost),
+        queue_event(2, EventKind::AccessRestored),
+    ];
+    append_events(&mut tx, &events).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let fails = Arc::new(AtomicBool::new(true));
+    let (handler_seen, handler_fails) = (seen.clone(), fails.clone());
+    let subscription = Subscription {
+        name: "test",
+        handle: Box::new(move |_, events| {
+            handler_seen
+                .lock()
+                .unwrap()
+                .extend(events.iter().map(|(seq, _)| *seq));
+            let fails = handler_fails.load(Ordering::SeqCst);
+            Box::pin(async move {
+                if fails {
+                    return Err("the effect failed".into());
+                }
+                Ok(())
+            })
+        }),
+    };
+
+    let failed = deliver_all(&pool, &subscription).await;
+
+    assert!(matches!(failed, Err(PlatformError::Subscription { .. })));
+    assert_eq!(cursor(&pool).await, None);
+
+    fails.store(false, Ordering::SeqCst);
+    deliver_all(&pool, &subscription).await.unwrap();
+    deliver_all(&pool, &subscription).await.unwrap();
+
+    assert_eq!(*seen.lock().unwrap(), [1, 2, 1, 2]);
+    assert_eq!(cursor(&pool).await, Some(2));
 }

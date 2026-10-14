@@ -3,8 +3,8 @@
 import { queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
 
 /**
  * Start a sign-in of the command line
@@ -493,6 +493,31 @@ export const graphOptions = (options: Options<GraphData>) => queryOptions<GraphR
         return data;
     },
     queryKey: graphQueryKey(options)
+});
+
+export const getHealthQueryKey = (options: Options<GetHealthData>) => createQueryKey('getHealth', options);
+
+/**
+ * Get the Health of a queue
+ *
+ * What the queue did over the period: the PRs that merged and failed, their
+ * time to merge, why the others left, and the checks of its runs, each
+ * against the period before. Read from the facts of the log, which arrive a
+ * few seconds after the log.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const getHealthOptions = (options: Options<GetHealthData>) => queryOptions<GetHealthResponse, GetHealthError, GetHealthResponse, ReturnType<typeof getHealthQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getHealth({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getHealthQueryKey(options)
 });
 
 /**

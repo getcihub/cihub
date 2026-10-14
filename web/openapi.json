@@ -4154,6 +4154,223 @@
         ]
       }
     },
+    "/orgs/{org}/repos/{repo}/queues/{queue}/health": {
+      "get": {
+        "tags": [
+          "Queues"
+        ],
+        "summary": "Get the Health of a queue",
+        "description": "What the queue did over the period: the PRs that merged and failed, their\ntime to merge, why the others left, and the checks of its runs, each\nagainst the period before. Read from the facts of the log, which arrive a\nfew seconds after the log.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "operationId": "get_health",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme"
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "web"
+          },
+          {
+            "name": "queue",
+            "in": "path",
+            "description": "The name of the queue in the repository.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "`24h` (by default), `7d` or `30d`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The period of the Health of a queue.",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Health of the queue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueHealth"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "summary": "unauthorized",
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "No API token or session, or one that is unknown or expired.",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "- `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "scope_missing": {
+                    "summary": "scope_missing",
+                    "value": {
+                      "code": "scope_missing",
+                      "detail": "The token, or the role of the user of the session, lacks the scope of the route.",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `queue_not_found`: The repository has no queue with this name.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "org_not_found": {
+                    "summary": "org_not_found",
+                    "value": {
+                      "code": "org_not_found",
+                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "queue_not_found": {
+                    "summary": "queue_not_found",
+                    "value": {
+                      "code": "queue_not_found",
+                      "detail": "The repository has no queue with this name.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "repo_not_found": {
+                    "summary": "repo_not_found",
+                    "value": {
+                      "code": "repo_not_found",
+                      "detail": "The organization has no repository with this name.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "The seconds to wait before the next request."
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "rate_limited": {
+                    "summary": "rate_limited",
+                    "value": {
+                      "code": "rate_limited",
+                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+                      "status": 429,
+                      "title": "Too Many Requests",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "- `internal`: The server failed; the logs of the instance say why.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "internal": {
+                    "summary": "internal",
+                    "value": {
+                      "code": "internal",
+                      "detail": "The server failed; the logs of the instance say why.",
+                      "status": 500,
+                      "title": "Internal Server Error",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/orgs/{org}/repos/{repo}/queues/{queue}/resync": {
       "post": {
         "tags": [
@@ -5212,6 +5429,54 @@
           "stale"
         ]
       },
+      "CheckHealth": {
+        "type": "object",
+        "description": "A check over the runs that ended in a period.",
+        "required": [
+          "name",
+          "kind",
+          "required",
+          "runs",
+          "failed",
+          "passed_on_retry"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The runs where it failed.",
+            "example": 6,
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/CheckKind",
+            "description": "`check` for a check with a run, `status` for a commit status."
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the check or of the status.",
+            "example": "ci / test"
+          },
+          "passed_on_retry": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The runs where it passed after it failed on the attempt before.",
+            "example": 4,
+            "minimum": 0
+          },
+          "required": {
+            "type": "boolean",
+            "description": "A run needs it to pass."
+          },
+          "runs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The runs that reported it.",
+            "example": 48,
+            "minimum": 0
+          }
+        }
+      },
       "CheckKind": {
         "type": "string",
         "enum": [
@@ -5680,6 +5945,170 @@
             "description": "The status of the run."
           }
         }
+      },
+      "HealthBucket": {
+        "type": "object",
+        "description": "The PRs that ended in an hour or a day of the period.",
+        "required": [
+          "start",
+          "merged",
+          "failed"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The PRs that failed in the bucket.",
+            "example": 1,
+            "minimum": 0
+          },
+          "merged": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The PRs that merged in the bucket.",
+            "example": 4,
+            "minimum": 0
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The start of the hour or of the day.",
+            "example": "2026-10-14T09:00:00Z"
+          },
+          "time_to_merge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimeToMerge",
+                "description": "`null` when no PR merged."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HealthTotals": {
+        "type": "object",
+        "description": "The PRs that ended in a period.",
+        "required": [
+          "merged",
+          "failed",
+          "cancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The PRs that a person cancelled, or that left the queue on a change of the PR.",
+            "example": 2,
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The PRs that failed.",
+            "example": 3,
+            "minimum": 0
+          },
+          "merged": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The PRs that merged.",
+            "example": 42,
+            "minimum": 0
+          },
+          "time_to_merge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TimeToMerge",
+                "description": "`null` when no PR merged."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "HealthVerdict": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "No PR merged or failed.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "quiet"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The PRs merge, and few fail.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "healthy"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "More than 15 % of the PRs that merged or failed failed.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "many_failures"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A check failed, then passed on the next attempt of its run, at least 3\ntimes: each retry costs a run and makes the PRs behind wait.",
+            "required": [
+              "check",
+              "times",
+              "kind"
+            ],
+            "properties": {
+              "check": {
+                "type": "string",
+                "description": "The name of the check.",
+                "example": "ci / test"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "check_passes_on_retry"
+                ]
+              },
+              "times": {
+                "type": "integer",
+                "format": "int64",
+                "description": "How many times it passed on a retry.",
+                "example": 4,
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "The first thing to know about a queue over the period."
       },
       "Instance": {
         "type": "object",
@@ -6357,6 +6786,75 @@
           }
         }
       },
+      "QueueHealth": {
+        "type": "object",
+        "description": "What a queue did over a period, against the period of the same length\nbefore it: the PRs that ended, how long they took to merge, why the others\nleft, and the checks of its runs. A period ends with the hour, or the UTC\nday, that holds now.",
+        "required": [
+          "from",
+          "to",
+          "verdict",
+          "current",
+          "previous",
+          "buckets",
+          "time_in_states",
+          "left_without_merge",
+          "checks"
+        ],
+        "properties": {
+          "buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthBucket"
+            },
+            "description": "The period cut in hours (`24h`) or in UTC days (`7d`, `30d`), the oldest first."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckHealth"
+            },
+            "description": "The checks of the runs that ended in the period, by name."
+          },
+          "current": {
+            "$ref": "#/components/schemas/HealthTotals",
+            "description": "The PRs that ended in the period."
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The start of the period.",
+            "example": "2026-10-13T10:00:00Z"
+          },
+          "left_without_merge": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReasonCount"
+            },
+            "description": "Why the other PRs ended without a merge, the most frequent reason first."
+          },
+          "previous": {
+            "$ref": "#/components/schemas/HealthTotals",
+            "description": "The PRs that ended in the period before."
+          },
+          "time_in_states": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StateTime"
+            },
+            "description": "The median time that the PRs merged in the period spent in each\nstate before their merge, in the order of the states."
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The end of the period, excluded.",
+            "example": "2026-10-14T10:00:00Z"
+          },
+          "verdict": {
+            "$ref": "#/components/schemas/HealthVerdict",
+            "description": "The first thing to know about the queue over the period."
+          }
+        }
+      },
       "QueueList": {
         "type": "object",
         "description": "A page of queues, by repository name then queue name.",
@@ -6468,6 +6966,38 @@
           "queue_draining",
           "queue_switching_modes"
         ]
+      },
+      "ReasonCount": {
+        "type": "object",
+        "description": "How many PRs ended for a reason.",
+        "required": [
+          "conclusion",
+          "reason",
+          "description",
+          "count"
+        ],
+        "properties": {
+          "conclusion": {
+            "$ref": "#/components/schemas/ItemState",
+            "description": "`failed` or `cancelled`."
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many PRs ended for this reason.",
+            "example": 3,
+            "minimum": 0
+          },
+          "description": {
+            "type": "string",
+            "description": "The reason for a person, as the comment of a PR gives it.",
+            "example": "a required check failed"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/Reason",
+            "description": "Why the PRs ended."
+          }
+        }
       },
       "Repo": {
         "type": "object",
@@ -6874,6 +7404,27 @@
           }
         }
       },
+      "StateTime": {
+        "type": "object",
+        "description": "The median time in a state of the PRs merged in a period; a PR that did\nnot pass through the state counts as 0.",
+        "required": [
+          "state",
+          "median_seconds"
+        ],
+        "properties": {
+          "median_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The median time in the state, in seconds.",
+            "example": 420,
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/ItemState",
+            "description": "A state before the merge."
+          }
+        }
+      },
       "Strategy": {
         "type": "string",
         "enum": [
@@ -6923,6 +7474,30 @@
           "label",
           "api"
         ]
+      },
+      "TimeToMerge": {
+        "type": "object",
+        "description": "The time from the submission of a PR to its merge.",
+        "required": [
+          "median_seconds",
+          "p90_seconds"
+        ],
+        "properties": {
+          "median_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Half of the PRs merged within this time, in seconds.",
+            "example": 1380,
+            "minimum": 0
+          },
+          "p90_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "90 % of the PRs merged within this time, in seconds.",
+            "example": 2940,
+            "minimum": 0
+          }
+        }
       },
       "UpdateQueue": {
         "type": "object",

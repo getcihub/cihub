@@ -46,11 +46,13 @@ configuration checker, in phase 1).
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | done                                     |
-| 11  | Analytics, metrics and outgoing webhooks               | 2     | 9          | —         | to do                                    |
+| 11a | Analytics and the Health view                          | 2     | 9          | —         | in progress                              |
+| 11b | Prometheus                                             | 2     | 11a        | —         | to do                                    |
+| 11c | Outgoing webhooks                                      | 2     | 11a        | —         | to do                                    |
 | 12  | `batched` strategy                                     | 2     | 9          | —         | done                                     |
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
-| 15  | Scale: ClickHouse, hardening                           | 4     | 11, 13     | Q8        | to do                                    |
+| 15  | Scale: ClickHouse, hardening                           | 4     | 11b, 13    | Q8        | to do                                    |
 
 ```mermaid
 flowchart LR
@@ -69,16 +71,18 @@ flowchart LR
   L10a --> L10b[10b Queues]
   L10b --> L10c[10c PR and actions]
   L10b --> L10d[10d Live]
-  L9 --> L11[11 Analytics]
+  L9 --> L11a[11a Analytics]
+  L11a --> L11b[11b Prometheus]
+  L11a --> L11c[11c Webhooks]
   L9 --> L12[12 batched]
   L9 --> L14[14 flakytests]
   L12 --> L13[13 parallel]
-  L11 --> L15[15 Scale]
+  L11b --> L15[15 Scale]
   L13 --> L15
 ```
 
-Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11, 12 and 14
-after lot 9, and lots 10c and 10d after lot 10b.
+Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11a, 12 and 14
+after lot 9, lots 10c and 10d after lot 10b, and lots 11b and 11c after lot 11a.
 
 ---
 
@@ -469,15 +473,66 @@ Decisions:
     with it: the server, `cihub-client`, the CLI, the dashboard (the person of the session is `Me` in
     `src/session.ts`; "Your pull requests" reads the live PRs of `@me` and the last ones merged) and the tests.
 
-### Lot 11: analytics, metrics and outgoing webhooks
+### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
-- **Content**: `AnalyticsStore` trait and its Postgres implementation (`cihub-analytics`, `an_*` tables); the
-  `notifier` role; the subscriptions and their cursors on the log `events`, which is the outbox; `/metrics` on the internal address; Health view; `GET /api/v1/metrics`; Standard Webhooks
-  outgoing webhooks with the CIHub vocabulary; `/orgs/{org}/webhooks` endpoints.
-- **Exit criterion**: a consumer advances its cursor in the transaction of its effect; the fact tables rebuilt
-  from `events` equal those written continuously;
-  each webhook type is emitted exactly once per transition, signed, and retried after a failure; `rate()`
-  works on the exposed counters.
+Decisions (October 14, 2026, validated by the project lead):
+
+- Lot 11 is split in three lots with their own exit criterion: 11a (analytics and the Health view of the
+  mockups v8), 11b (Prometheus), 11c (outgoing webhooks).
+- `cihub-analytics` is a new crate. The facts are four tables, `an_item_conclusions`, `an_state_durations`,
+  `an_test_run_results` and `an_check_results`; the hourly aggregate (`an_hourly_queue_stats`, or the
+  `measurements` table of `specs/SCHEMA_PLAN.md`) comes when a range is longer than 30 days.
+- A route per view: the server computes the Health of a queue, its verdict included, and the dashboard holds no
+  queue logic.
+- Lot 11a does not wait for lot 10c: the duration of the checks and the CI time stay empty until the times of a
+  check are recorded.
+
+#### Lot 11a: analytics and the Health view
+
+- **Goal**: a person sees what a queue did over 24 hours, 7 days or 30 days, and why its PRs did not merge.
+- **Content**: the `notifier` role runs the subscriptions of the modules on the log `events`, the outbox: one
+  cursor per queue and per subscription (`log_cursors`), advanced in the transaction of the effect, woken by
+  `cihub_queue_changed`. The merge queue subscribes `cihub-analytics`, which derives the facts from the events of
+  the log only: one row per concluded item, per pass of an item through a state, per ended run and per check of
+  an ended run. `GET /orgs/{org}/repos/{repo}/queues/{queue}/health?range=24h|7d|30d` (`QueueHealth`): the
+  verdict (a closed vocabulary), the merged and failed PRs, the time to merge (median and 90 %), each against
+  the period before; the buckets of the charts (an hour for `24h`, a day otherwise, in UTC); the median time in
+  each state of a merged PR; the reasons of the PRs that left without a merge; and per check, its runs, its
+  failures and the times it passed on a retry. Page: the Health tab of a queue.
+- **Frozen interfaces**: `QueueHealth`, the `an_*` tables, the `Module` subscriptions.
+- **Exit criterion**: a subscription whose effect fails leaves its cursor where it was; the facts rebuilt from
+  `events` equal those written continuously; the Health of an organization reads no fact of another one
+  (principle VIII); a browser test on the simulator shows the Health of a queue with a merged PR and a failed one.
+- **Tracking**:
+  - To validate: the `AnalyticsStore` trait comes with its second implementation, ClickHouse (lot 15); until
+    then, `cihub-analytics` gives functions on Postgres. The fact tables are not partitioned and keep everything:
+    their retention comes with lot 15.
+  - Done (October 14, 2026): the migration of `log_cursors` and of the four fact tables; `Module.subscriptions`
+    and `run_subscriptions` in `cihub-platform`, which the `notifier` role runs; `cihub-analytics`, whose facts
+    read the log only (the transitions of an item at its end; the creation, the assembly and the reports of the
+    checks of a run at its end); `GET …/queues/{queue}/health` (`QueueHealth`), whose verdict the server computes,
+    and whose reasons carry their conclusion, so that the page colors a failure and a cancellation apart; the
+    Graph and Health panes of the page of a queue (`?pane=health&range=7d`), after the mockups v8, without the
+    CI time and the duration of a check, which wait for lot 10c, and without the Config pane.
+  - Exit criterion: `a_subscription_that_fails_reads_its_events_again`,
+    `the_health_of_a_queue_reads_the_facts_of_its_log` (a PR merged after its check passed on a retry, a PR
+    failed; the facts rebuilt from the log are the same; another organization reads none of them),
+    `web/e2e/health.spec.ts`.
+  - Remaining: the page reads the Health again at each change of its queue, which can come before the notifier
+    writes its facts; the next change shows them.
+
+#### Lot 11b: Prometheus
+
+- **Content**: `/metrics` on the internal address; `GET /api/v1/metrics`; the service and product series of
+  `specs/OBSERVABILITY.md`.
+- **Exit criterion**: `rate()` works on the exposed counters.
+
+#### Lot 11c: outgoing webhooks
+
+- **Content**: Standard Webhooks outgoing webhooks with the CIHub vocabulary, a subscription of the `notifier`;
+  `/orgs/{org}/webhooks` endpoints.
+- **Exit criterion**: each webhook type is emitted exactly once per transition, signed, and retried after a
+  failure.
 
 ### Lot 12: `batched` strategy
 

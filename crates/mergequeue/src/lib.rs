@@ -22,7 +22,7 @@ mod target;
 
 use std::sync::Arc;
 
-use cihub_platform::{LoopError, Module};
+use cihub_platform::{LoopError, Module, Subscription};
 use cihub_scm::Scm;
 use cihub_store::PgPool;
 use time::OffsetDateTime;
@@ -156,6 +156,16 @@ pub fn module(
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);
         }),
+        subscriptions: vec![Subscription {
+            name: cihub_analytics::SUBSCRIPTION,
+            handle: Box::new(|conn, events| {
+                Box::pin(async move {
+                    cihub_analytics::record_facts(conn, events)
+                        .await
+                        .map_err(|err| Box::new(err) as LoopError)
+                })
+            }),
+        }],
         scheduler: Box::new(move |cancel| {
             Box::pin(async move {
                 run_scheduler(pool, owner, reconciler, move || clock(), cancel)

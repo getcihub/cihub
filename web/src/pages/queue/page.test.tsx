@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { GraphRun, Pr } from "@/client/types.gen";
+import type { GraphRun, HealthBucket, Pr, QueueHealth } from "@/client/types.gen";
 import { sinceOf } from "@/domain/queue/queries";
 import { type Answers, mockSessionCookie, problem, renderApp } from "@/test/app";
 import {
@@ -317,5 +317,91 @@ describe("the page of a queue", () => {
 
     expect(await screen.findByText("401 unauthorized")).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/orgs/acme/repos/web/queues/main");
+  });
+});
+
+function healthOf(changes: Partial<QueueHealth> = {}): QueueHealth {
+  const bucket = (hour: number, merged: number, failed: number): HealthBucket => ({
+    start: `2026-10-14T${String(hour).padStart(2, "0")}:00:00Z`,
+    merged,
+    failed,
+    time_to_merge: merged > 0 ? { median_seconds: 1380, p90_seconds: 2940 } : null,
+  });
+
+  return {
+    from: "2026-10-13T10:00:00Z",
+    to: "2026-10-14T10:00:00Z",
+    verdict: { kind: "check_passes_on_retry", check: "ci / test", times: 4 },
+    current: {
+      merged: 9,
+      failed: 1,
+      cancelled: 1,
+      time_to_merge: { median_seconds: 1380, p90_seconds: 2940 },
+    },
+    previous: {
+      merged: 6,
+      failed: 1,
+      cancelled: 0,
+      time_to_merge: { median_seconds: 1500, p90_seconds: 3000 },
+    },
+    buckets: [bucket(8, 4, 1), bucket(9, 5, 0)],
+    time_in_states: [
+      { state: "not_ready", median_seconds: 300 },
+      { state: "pending", median_seconds: 180 },
+      { state: "testing", median_seconds: 840 },
+      { state: "pending_failure", median_seconds: 0 },
+      { state: "tests_passed", median_seconds: 60 },
+    ],
+    left_without_merge: [
+      {
+        conclusion: "failed",
+        reason: "test_run_required_status_failed",
+        description: "a required check failed",
+        count: 1,
+      },
+      { conclusion: "cancelled", reason: "pr_closed", description: "the PR was closed", count: 1 },
+    ],
+    checks: [
+      { name: "ci / lint", kind: "check", required: false, runs: 12, failed: 0, passed_on_retry: 0 },
+      { name: "ci / test", kind: "check", required: true, runs: 14, failed: 5, passed_on_retry: 4 },
+    ],
+    ...changes,
+  };
+}
+
+describe("the Health of a queue", () => {
+  it("says what the queue did, against the period before, and which check looks flaky", async () => {
+    renderApp(
+      "/orgs/acme/repos/web/queues/main?pane=health",
+      answersFor({ [`${QUEUE}/health?range=24h`]: [200, healthOf()] }),
+    );
+
+    expect(await screen.findByText("looks flaky")).toBeInTheDocument();
+    expect(screen.getByText(/passed on a retry, 4 times in the last 24 hours/)).toBeInTheDocument();
+    expect(screen.getByText("6 in the previous 24 hours")).toBeInTheDocument();
+    expect(screen.getByText("23 min")).toBeInTheDocument();
+    expect(screen.getByText("A required check failed")).toBeInTheDocument();
+    expect(screen.getByText("The PR was closed")).toBeInTheDocument();
+    const test = screen.getByRole("row", { name: /ci \/ test/ });
+    expect(within(test).getByText("flaky")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("row", { name: /ci \/ lint/ })).getByText("not required"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Health" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "Tabs of the pull requests" })).not.toBeInTheDocument();
+  });
+
+  it("offers a longer period when nothing ended in this one", async () => {
+    const quiet = healthOf({
+      verdict: { kind: "quiet" },
+      current: { merged: 0, failed: 0, cancelled: 0, time_to_merge: null },
+    });
+    renderApp(
+      "/orgs/acme/repos/web/queues/main?pane=health&range=7d",
+      answersFor({ [`${QUEUE}/health?range=7d`]: [200, quiet] }),
+    );
+
+    expect(await screen.findByText("Nothing merged or failed in the last 7 days.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Show the last 30 days" })).toBeInTheDocument();
   });
 });
