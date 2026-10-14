@@ -119,7 +119,7 @@ failure budget retry.
 | `pending_failure_depth`                                        | 0                                   | 0–10                                                                       |
 | `direct_merge_mode`                                            | `always`                            | `off`, `always`                                                            |
 | `optimization_mode`                                            | `bisection_skip_redundant_tests`    | `off`, `bisection_skip_redundant_tests`                                    |
-| `comments_enabled`, `commands_enabled`, `status_check_enabled` | enabled                             | boolean                                                                    |
+| `comments_enabled`, `commands_enabled`, `status_check_enabled` | enabled                             | boolean; `status_check_enabled` turns off both statuses, the queue one and the conditions one |
 | `label_commands.enabled` / `enqueue_label`                     | enabled / `cihub-merge-queue-submit` | non-empty string                                                           |
 | `state_labels_enabled`                                         | disabled                            | boolean                                                                    |
 | `resubmit_on_push`                                             | disabled                            | boolean; a push on a queued PR resubmits it at the end of the queue |

@@ -239,15 +239,21 @@ Decisions (October 14, 2026, validated by the project lead):
   its status until it closes; with `status_check_enabled: false`, neither status; 50 open PRs not submitted
   stay under 300 GraphQL points per hour.
 - **Tracking**:
-  - Done (October 15, 2026), but the budget of the exit criterion. `conditions_of` in `cihub-mq-core` gives the
+  - Done (October 14, 2026), but the budget of the exit criterion. `conditions_of` in `cihub-mq-core` gives the
     reasons that the PR alone gives, the ones of `readiness_of` without the impacted targets. `observe_pr` reads
     every open PR of the queue, submitted or not, so that one writer gives the status before and after the
     submission; a table of its own, `pr_conditions`, rather than `pr_surfaces`, which the reconciliation writes
     whole. The status has no link: a PR not submitted has no page. The draft PR of a run shows none. The statuses
     of CIHub, `CIHub Merge Queue` and `CIHub Conditions`, count as the queue's own wherever the first one did
     (mergeability, injected conditions, required checks of a test commit), and their deliveries read no PR again.
-  - Decided: no polling for a PR not submitted; its events and `…/resync` are enough, and a lost delivery leaves
-    the status behind until the next event of the PR.
+  - Decided: no polling for a PR not submitted; a lost delivery leaves the status behind until the next event
+    of the PR.
+  - To validate (principle V): `…/resync` reads again only the PRs that show a status. A PR whose opening was
+    lost, or that was open before CIHub watched its branch, shows none until its next event: catching it up needs
+    a read of the open PRs of a branch, a new method of `Scm`.
+  - To validate (principle VII): the key of `observe_pr` is per delivery, so N concluded checks of a push read
+    the PR N times, a `not_ready` item is read by `refresh_prs` and `observe_pr`, and a branch with K queues
+    reads it K times. A key per head and per minute would gather them.
   - Exit criterion: `a_pr_shows_whether_it_can_enter_its_queue` (`failure` without its review, `success` once
     reviewed, the log unchanged, the status kept under test, no row once closed),
     `the_conditions_status_follows_its_setting_and_is_never_required`, `conditions_of` in

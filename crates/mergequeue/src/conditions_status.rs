@@ -188,6 +188,7 @@ pub(crate) async fn observe(
         if !is_ours {
             continue;
         }
+
         let unmet = unmet_conditions(scm, &target, config.as_ref(), pr, &reading).await?;
         let blocks = conditions_of(&observation(pr, &required, &own, unmet));
         let (state, description) = status_of(&blocks);
@@ -209,22 +210,22 @@ pub(crate) async fn observe(
         .collect();
     let mut tx = begin_system(pool).await?;
 
-    sqlx::query("DELETE FROM pr_conditions WHERE queue_id = $1 AND pr_number = ANY($2)")
-        .bind(target.queue_id.to_string())
-        .bind(&gone)
-        .execute(&mut *tx)
-        .await?;
+    // A newer read of a reopened PR keeps its row.
+    sqlx::query(
+        "DELETE FROM pr_conditions
+         WHERE queue_id = $1 AND pr_number = ANY($2) AND observed_at <= $3",
+    )
+    .bind(target.queue_id.to_string())
+    .bind(&gone)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
 
     for (number, status) in &statuses {
         let number = i64::try_from(*number).unwrap_or(i64::MAX);
         if let Some(desired_hash) = keep_status(&mut tx, &target, number, status, now).await? {
-            enqueue_job(
-                &mut tx,
-                &publish_job(&target, number, &desired_hash),
-                now,
-                now,
-            )
-            .await?;
+            let publish = publish_job(&target, number, &desired_hash, &job.idempotency_key);
+            enqueue_job(&mut tx, &publish, now, now).await?;
         }
     }
 
@@ -234,7 +235,8 @@ pub(crate) async fn observe(
 }
 
 /// Keeps `status` as the one the PR `number` must show, unless a newer read
-/// wrote its row. Returns its hash when it changed.
+/// wrote its row. Returns its hash while the SCM does not show it: a status
+/// that changed, or one whose publication has not ended yet.
 async fn keep_status(
     conn: &mut PgConnection,
     target: &QueueTarget,
@@ -244,7 +246,7 @@ async fn keep_status(
 ) -> Result<Option<String>, Failure> {
     let desired = serde_json::to_value(status).map_err(|err| Failure::Never(err.to_string()))?;
     let desired_hash = hash(status);
-    let changed: Option<i64> = sqlx::query_scalar(
+    let is_unpublished: Option<bool> = sqlx::query_scalar(
         "INSERT INTO pr_conditions (org_id, queue_id, pr_number, head_sha, desired, desired_hash,
                                     observed_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -252,8 +254,7 @@ async fn keep_status(
          SET head_sha = EXCLUDED.head_sha, desired = EXCLUDED.desired,
              desired_hash = EXCLUDED.desired_hash, observed_at = EXCLUDED.observed_at
          WHERE pr_conditions.observed_at <= EXCLUDED.observed_at
-           AND pr_conditions.desired_hash IS DISTINCT FROM EXCLUDED.desired_hash
-         RETURNING pr_number",
+         RETURNING published_hash IS DISTINCT FROM desired_hash",
     )
     .bind(target.org_id.to_string())
     .bind(target.queue_id.to_string())
@@ -265,22 +266,19 @@ async fn keep_status(
     .fetch_optional(conn)
     .await?;
 
-    Ok(changed.map(|_| desired_hash))
+    Ok(is_unpublished.unwrap_or_default().then_some(desired_hash))
 }
 
-fn publish_job(target: &QueueTarget, pr_number: i64, hash: &str) -> Job {
+/// The publication of the status `status_hash` after the read `read`, the key of
+/// its job: a status that comes back to an earlier value is published again.
+fn publish_job(target: &QueueTarget, pr_number: i64, status_hash: &str, read: &str) -> Job {
     let key = format!(
-        "{PUBLISH_CONDITIONS}:{}-{pr_number}-{hash}:1",
-        target.queue_id
+        "{PUBLISH_CONDITIONS}:{}-{pr_number}-{}:1",
+        target.queue_id,
+        hash(&(status_hash, read))
     );
     let payload = json!(PublishConditions { pr_number });
-    job(
-        target,
-        key,
-        PUBLISH_CONDITIONS,
-        JobClass::Interactive,
-        payload,
-    )
+    job(target, key, PUBLISH_CONDITIONS, JobClass::Repair, payload)
 }
 
 /// Makes the SCM show the last status of the PR. One job at a time publishes
@@ -295,13 +293,13 @@ pub(crate) async fn publish(
     let request: PublishConditions = read_payload(job)?;
     let target = target_of(pool, job).await?;
     let mut lock = begin_system(pool).await?;
-    let locked: bool =
+    let is_locked: bool =
         sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtext($1), $2::integer)")
             .bind(format!("pr_conditions:{}", target.queue_id))
             .bind(request.pr_number)
             .fetch_one(&mut *lock)
             .await?;
-    if !locked {
+    if !is_locked {
         return Err(Failure::Retry(
             "another job publishes the status of this PR".into(),
         ));
@@ -318,6 +316,7 @@ pub(crate) async fn publish(
     let Some((desired, desired_hash, published)) = row else {
         return Ok(());
     };
+
     if published.as_deref() == Some(desired_hash.as_str()) {
         return Ok(());
     }

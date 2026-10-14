@@ -6075,6 +6075,19 @@ async fn conditions_status(sim: &Sim, head: &str) -> Option<Option<CheckConclusi
         .map(|check| check.conclusion)
 }
 
+/// The description of the conditions status that the PR `number` must show.
+async fn conditions_description(pool: &PgPool, number: u64) -> String {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar(
+        "SELECT desired->>'description' FROM pr_conditions WHERE queue_id = $1 AND pr_number = $2",
+    )
+    .bind(queue().to_string())
+    .bind(i64::try_from(number).unwrap())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap()
+}
+
 async fn event_count(pool: &PgPool) -> i64 {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_scalar("SELECT count(*) FROM events WHERE queue_id = $1")
@@ -6112,15 +6125,32 @@ async fn a_pr_shows_whether_it_can_enter_its_queue(pool: PgPool) {
         Some(Some(CheckConclusion::Failure)),
         "the review is missing"
     );
+    assert_eq!(
+        conditions_description(&pool, number).await,
+        "The queue conditions `review-decision = approved` are not met"
+    );
 
-    sim.change_pr(&repo(), number, PrChange::Review(ReviewDecision::Approved))
-        .unwrap();
-    q.deliver().await;
-    q.settle().await;
+    // The status comes back to an earlier value: it is published again.
+    for (review, want) in [
+        (ReviewDecision::Approved, CheckConclusion::Success),
+        (ReviewDecision::ReviewRequired, CheckConclusion::Failure),
+        (ReviewDecision::Approved, CheckConclusion::Success),
+    ] {
+        sim.change_pr(&repo(), number, PrChange::Review(review))
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+
+        assert_eq!(
+            conditions_status(&sim, &head).await,
+            Some(Some(want)),
+            "{review:?}"
+        );
+    }
 
     assert_eq!(
-        conditions_status(&sim, &head).await,
-        Some(Some(CheckConclusion::Success))
+        conditions_description(&pool, number).await,
+        "Ready for the queue"
     );
     assert_eq!(event_count(&pool).await, events, "the log does not change");
 
@@ -6164,11 +6194,25 @@ async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: P
     q.deliver().await;
     q.settle().await;
 
-    let (_, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
     q.deliver().await;
     q.settle().await;
 
-    assert_eq!(conditions_status(&sim, &head).await, None);
+    let shown: Vec<String> = sim
+        .checks(&repo(), &head, JobClass::Repair)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|check| check.name)
+        .filter(|name| name.starts_with("CIHub "))
+        .collect();
+
+    assert_eq!(current_items(&pool).await.len(), 1, "the PR is submitted");
+    assert!(shown.is_empty(), "{shown:?}");
 
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned(), conditions_status_context("main")]),

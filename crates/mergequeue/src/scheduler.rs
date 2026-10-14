@@ -812,17 +812,9 @@ async fn route_pr_change(
 
     let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
     let number = i64::try_from(change.number).unwrap_or(i64::MAX);
-    // The draft PR of a run is the queue's own: it shows no status.
-    let is_run_draft: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM test_runs r JOIN queues q ON q.id = r.queue_id
-                        WHERE q.repo_id = $1 AND r.draft_pr_number = $2)",
-    )
-    .bind(repo.to_string())
-    .bind(number)
-    .fetch_one(&mut *conn)
-    .await?;
-    // Each queue reads the PR: its routing says which one shows the status.
-    for queue in queues.iter().filter(|_| !is_run_draft) {
+    // Each queue reads the PR: its routing says which one shows the status,
+    // and the read skips the draft PR of a run.
+    for queue in &queues {
         for job in observe_jobs(queue, &subject(&delivery.delivery_id), &[change.number]) {
             enqueue_job(conn, &job, now, now).await?;
         }
@@ -859,7 +851,6 @@ async fn route_pr_change(
         let Some(label) = change.label_added else {
             return Ok(());
         };
-        let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
         let wanted = queues.iter().any(|queue| {
             queue.settings().is_ok_and(|settings| {
                 settings.label_commands_enabled.value && settings.enqueue_label.value == label
