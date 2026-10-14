@@ -205,9 +205,7 @@ function QueuePicker({
   );
 }
 
-function PersonMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
-  const { login, name, avatar_url } = me;
-
+function PersonMenu({ me: { login, name, avatar_url }, onSignOut }: { me: Me; onSignOut: () => void }) {
   return (
     <Menu
       label="Your account"

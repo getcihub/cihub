@@ -400,7 +400,7 @@ Decisions:
   - Done (October 14, 2026, outside the content of the lot, validated by the project lead): `users` gains
     `name`, `avatar_url` and `updated_at`, from the sign-in (`GET /user` of the SCM) and, for the avatar, from
     the hourly read of the members; `User` gains `name` and `avatar_url`, and the menu of the person shows the
-    avatar. `Pr` is a frozen interface, so the avatar of the author of a PR comes later. The email and an admin
+    avatar; `Pr.author` becomes a `Person` (`login`, `avatar_url`), whose avatar the list of the PRs of a queue shows. The email and an admin
     of the instance wait for a feature that needs them.
   - Remaining, with the new recording of the contract: `Pr.url`, `Run.draft_pr_url`, and the state and
     times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the

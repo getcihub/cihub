@@ -3304,6 +3304,12 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "the PR waits in the queue: {twice}"
     );
 
+    sqlx::query(
+        "UPDATE users SET avatar_url = 'https://avatars.example.com/u/2' WHERE login = 'bob'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let (status, listed) = call("GET", prs.to_owned(), None).await;
     let (live_run, _, _) = q.runs_in_progress().await.remove(0);
     let pr = &listed["prs"][0];
@@ -3321,7 +3327,10 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         pr["title"], "pr-1",
         "the simulator names a PR after its branch"
     );
-    assert_eq!(pr["author"], "bob");
+    assert_eq!(
+        pr["author"],
+        serde_json::json!({ "login": "bob", "avatar_url": "https://avatars.example.com/u/2" })
+    );
     assert_eq!(pr["run_id"], live_run.to_string().as_str());
     assert_eq!(pr["no_batch"], false);
     assert_eq!(pr["submitted_via"], "api");

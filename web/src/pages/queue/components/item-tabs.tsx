@@ -197,13 +197,13 @@ function TabRows({
             </td>
             <td className={CELL}>
               <div className="flex items-center gap-2.25">
-                <Avatar name={item.author} />
+                <Avatar name={item.author.login} src={item.author.avatar_url} />
                 <div>
                   <PrLink className="font-medium text-inherit hover:underline" number={item.number}>
                     {item.title ?? `#${String(item.number)}`}
                   </PrLink>
                   <div className="text-sm text-muted-foreground">
-                    #{item.number} · {item.author}
+                    #{item.number} · {item.author.login}
                   </div>
                 </div>
               </div>
