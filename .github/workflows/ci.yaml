@@ -240,15 +240,13 @@ jobs:
           mise run web:shots-diff HEAD^1
           cat web/e2e/__screenshots__/diff/report.md >> "$GITHUB_STEP_SUMMARY"
 
-      # diff/index.html reads the captures of base/ and head/: the artifact keeps the three folders.
+      # diff/ is the whole comparison: it holds the captures of the views that differ, and only them.
       - name: Upload the views before and after
         if: ${{ steps.dashboard.outputs.changed == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dashboard-visual
-          path: |
-            web/e2e/__screenshots__/
-            !web/e2e/__screenshots__/builds/
+          path: web/e2e/__screenshots__/diff/
           if-no-files-found: error
 
   workflow-lint:

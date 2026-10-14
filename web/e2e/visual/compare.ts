@@ -1,8 +1,10 @@
 // Compares the captures of two builds, pixel by pixel: `node e2e/visual/compare.ts BASE HEAD OUT [LABEL]`. For each
 // view that differs, OUT/changes gets the head dimmed with the changed pixels in red; OUT/report.md lists the views,
 // and OUT/index.html shows each view before and after, with the viewer that shots.sh builds into OUT/viewer.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+// OUT/before and OUT/after hold the captures of the views that differ, so that OUT is the whole comparison without
+// the views that did not change: the CI uploads only OUT.
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { chromium } from "@playwright/test";
 
@@ -126,12 +128,13 @@ const headNames = pngs(headDir);
 const shared = headNames.filter((name) => baseNames.includes(name)).sort();
 const added = headNames.filter((name) => !baseNames.includes(name)).sort();
 const removed = baseNames.filter((name) => !headNames.includes(name)).sort();
-mkdirSync(join(outDir, "changes"), { recursive: true });
+for (const folder of ["changes", "before", "after"]) {
+  mkdirSync(join(outDir, folder), { recursive: true });
+}
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const differences: Difference[] = [];
-const unchanged: string[] = [];
 
 for (const name of shared) {
   await page.setContent(PAGE);
@@ -149,16 +152,23 @@ for (const name of shared) {
   );
   const difference = await page.evaluate(compareInPage);
 
-  if (difference.pixels === 0) {
-    unchanged.push(name);
-  } else {
-    differences.push({ name, ...difference });
-  }
   if (difference.pixels) {
+    differences.push({ name, ...difference });
     await page.locator("#changes").screenshot({ path: join(outDir, "changes", name) });
   }
 }
 await browser.close();
+
+for (const { name } of differences) {
+  copyFileSync(join(baseDir, name), join(outDir, "before", name));
+  copyFileSync(join(headDir, name), join(outDir, "after", name));
+}
+for (const name of added) {
+  copyFileSync(join(headDir, name), join(outDir, "after", name));
+}
+for (const name of removed) {
+  copyFileSync(join(baseDir, name), join(outDir, "before", name));
+}
 
 const report = reportOf(differences, added, removed, shared.length);
 writeFileSync(join(outDir, "report.md"), report);
@@ -166,8 +176,7 @@ console.log(report);
 
 const viewerData: ViewerData = {
   label,
-  before: relative(outDir, baseDir),
-  after: relative(outDir, headDir),
+  compared: shared.length,
   views: [
     ...differences.map(({ name, pixels, box, resized }) => ({
       name,
@@ -178,13 +187,6 @@ const viewerData: ViewerData = {
     })),
     ...added.map((name) => ({ name, status: "added" as const, pixels: null, box: null, resized: null })),
     ...removed.map((name) => ({ name, status: "removed" as const, pixels: null, box: null, resized: null })),
-    ...unchanged.map((name) => ({
-      name,
-      status: "unchanged" as const,
-      pixels: null,
-      box: null,
-      resized: null,
-    })),
   ],
 };
 // The theme is set before the first paint, as the dashboard does (index.html).

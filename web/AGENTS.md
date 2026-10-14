@@ -208,11 +208,12 @@ cannot show, in both themes and in a narrow window) from a build of the dashboar
 `e2e/visual/api.ts` and a fixed clock, into `e2e/__screenshots__/head`, which git ignores: two captures of the
 same
 build are the same. `mise run web:shots-diff [REF]` (`origin/main` by default) builds REF in a worktree, captures
-both, and writes into `e2e/__screenshots__/diff` the changed pixels of each view that differs (`changes/`),
-`report.md`, and `index.html`, which shows each view before and after: side by side, split, blend, or its changed
-pixels, zoomed on the change. On a pull request that changes `web/`, the job `Dashboard Visual` of the CI runs it
-against the base, writes `report.md` into the summary of the run, and uploads the three folders as the artifact
-`dashboard-visual`: download it and open `diff/index.html`. It gates nothing. Its viewer (`e2e/visual/viewer/`) uses the design system and the components of
+both, and writes into `e2e/__screenshots__/diff` the captures of each view that differs, is new or is gone
+(`before/`, `after/`), its changed pixels (`changes/`), `report.md`, and `index.html`, which shows each of these
+views before and after: side by side, split, blend, or its changed pixels, zoomed on the change. A view that did not
+change is only counted. On a pull request that changes `web/`, the job `Dashboard Visual` of the CI runs it against
+the base, writes `report.md` into the summary of the run, and uploads `diff/` as the artifact `dashboard-visual`:
+download it and open `index.html`. It gates nothing. Its viewer (`e2e/visual/viewer/`) uses the design system and the components of
 `src/`, built as one script, as a page opened from the disk runs no module. The fixtures use the types of `src/client`: a change of the API that they no longer
 follow fails the type check. A new page or a new state adds its view to `views.ts`.
 

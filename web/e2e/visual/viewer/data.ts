@@ -1,6 +1,6 @@
 // What compare.ts gives the viewer, in the JSON of OUT/index.html.
 
-export type ViewStatus = "changed" | "added" | "removed" | "unchanged";
+export type ViewStatus = "changed" | "added" | "removed";
 
 export interface Box {
   left: number;
@@ -24,9 +24,8 @@ export interface ViewDifference {
 export interface ViewerData {
   /** What the head is compared with: "`origin/main` (53097b6)". */
   label: string;
-  /** The folders of the captures, relative to OUT. */
-  before: string;
-  after: string;
+  /** The number of views that both builds show, the ones that did not change included. */
+  compared: number;
   views: ViewDifference[];
 }
 

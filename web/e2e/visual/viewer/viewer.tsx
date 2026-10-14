@@ -161,8 +161,7 @@ export function Viewer({ data }: { data: ViewerData }) {
         <Mark className="size-6" />
         <h1 className="text-xl font-medium">Visual changes</h1>
         <span className="text-base text-muted-foreground">
-          {changed} of {data.views.filter(({ status }) => status !== "added").length} views differ from{" "}
-          {data.label.replaceAll("`", "")}
+          {changed} of {data.compared} views differ from {data.label.replaceAll("`", "")}
         </span>
         <div className="ml-auto flex items-center gap-4">
           {STATUSES.map(({ status, label, tone }) => {
@@ -223,8 +222,8 @@ export function Viewer({ data }: { data: ViewerData }) {
                   key={view.name}
                   view={view}
                   paths={{
-                    before: `${data.before}/${view.name}`,
-                    after: `${data.after}/${view.name}`,
+                    before: `before/${view.name}`,
+                    after: `after/${view.name}`,
                     changes: `changes/${view.name}`,
                   }}
                   mode={mode}

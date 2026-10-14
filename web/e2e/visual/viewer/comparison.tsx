@@ -317,9 +317,8 @@ function Shown({
   if (view.status === "removed") {
     return <Single legend={BEFORE} crop={crop} layer={{ src: paths.before, alt: "Before" }} />;
   }
-  if (view.status !== "changed") {
-    const legend = view.status === "added" ? AFTER : <Badge>Unchanged</Badge>;
-    return <Single legend={legend} crop={crop} layer={{ src: paths.after, alt: "After" }} />;
+  if (view.status === "added") {
+    return <Single legend={AFTER} crop={crop} layer={{ src: paths.after, alt: "After" }} />;
   }
   if (side) {
     const legend = (
