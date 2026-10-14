@@ -8,12 +8,11 @@ import { type ViewDifference, type ViewStatus, partsOf } from "./data";
 export const STATUSES: {
   status: ViewStatus;
   label: string;
-  tone: "warning" | "success" | "destructive" | "neutral";
+  tone: "warning" | "success" | "destructive";
 }[] = [
   { status: "changed", label: "Changed", tone: "warning" },
   { status: "added", label: "New", tone: "success" },
   { status: "removed", label: "Removed", tone: "destructive" },
-  { status: "unchanged", label: "Unchanged", tone: "neutral" },
 ];
 
 const SHORTCUTS: [string, string][] = [
