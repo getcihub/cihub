@@ -206,9 +206,15 @@ export const VIEWS: View[] = [
     url: QUEUE_PAGE,
     ready: QUEUE_READY,
     act: async (page) => {
-      // The queue takes the request at once: its next read is paused.
+      // The queue takes the request at once: its next read is paused. A read before the request, as the one
+      // that the stream asks when it opens, still finds it running, so the Pause button stays.
+      let isRequested = false;
       await page.route("**/api/v1/orgs/acme/repos/web/queues/main", (route) => {
         if (route.request().method() !== "GET") {
+          isRequested = true;
+          return route.fallback();
+        }
+        if (!isRequested) {
           return route.fallback();
         }
         const [status, body] = answerOf(
