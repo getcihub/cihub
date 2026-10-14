@@ -1,7 +1,8 @@
-//! `cihub server`: starts and administers an instance, with a direct access to
-//! Postgres. One file per command (`start`, `migrate`, `token`) and one per
-//! role (`web`, `scheduler`, `worker`, `notifier`). A role holds no queue
-//! logic: it starts loops whose code lives in the library crates.
+//! `cihub-server`: starts and administers a CIHub instance, with a direct
+//! access to Postgres. One file per command (`start`, `migrate`, `token`) and
+//! one per role (`web`, `scheduler`, `worker`, `notifier`). A role holds no
+//! queue logic: it starts loops whose code lives in the library crates. The
+//! command line of the users is `cihub`, in `cihub-cli`.
 
 mod config;
 mod health;
@@ -22,7 +23,7 @@ use cihub_github::GithubApp;
 use cihub_mergequeue::Translate;
 use cihub_scm::Scm;
 use cihub_store::{MIGRATOR, PgPool};
-use clap::{Args, Subcommand};
+use clap::{Parser, Subcommand};
 use secrecy::SecretString;
 use time::OffsetDateTime;
 use tracing::info;
@@ -30,19 +31,24 @@ use tracing::info;
 use self::config::Config;
 use self::start::Shared;
 
-#[derive(Args)]
-#[command(arg_required_else_help = true)]
-pub(crate) struct ServerArgs {
+#[derive(Parser)]
+#[command(
+    name = "cihub-server",
+    version,
+    about = "Starts and administers a CIHub instance",
+    arg_required_else_help = true
+)]
+struct Cli {
     /// The configuration file; without it, the `CIHUB_*` variables and the
     /// defaults only (`specs/DEPLOYMENT.md`).
     #[arg(long, global = true, value_name = "FILE")]
     config: Option<PathBuf>,
     #[command(subcommand)]
-    command: ServerCommand,
+    command: Command,
 }
 
 #[derive(Subcommand)]
-enum ServerCommand {
+enum Command {
     /// Starts the four roles in one process.
     Start,
     /// Applies the migrations, creates the partitions, then stops.
@@ -62,7 +68,9 @@ enum TokenCommand {
     },
 }
 
-pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
     let Config {
         internal_addr,
         http_addr,
@@ -70,15 +78,15 @@ pub(crate) async fn run(args: ServerArgs) -> anyhow::Result<()> {
         database_url,
         logs,
         github,
-    } = Config::load(args.config.as_deref())?;
+    } = Config::load(cli.config.as_deref())?;
 
     logs.init()?;
     let pool = cihub_store::connect(&database_url).await?;
     cihub_store::check_role(&pool).await?;
-    match args.command {
-        ServerCommand::Migrate => migrate::run(&pool).await,
-        ServerCommand::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
-        ServerCommand::Start => {
+    match cli.command {
+        Command::Migrate => migrate::run(&pool).await,
+        Command::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
+        Command::Start => {
             let github = start_github(&pool, github).await?;
             start::run(internal_addr, http_addr, public_url, pool, github).await
         }
@@ -102,7 +110,7 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
 
     let missing = cihub_store::missing_migrations(&MIGRATOR, pool).await?;
     if !missing.is_empty() {
-        bail!("the database misses the migrations {missing:?}: run `cihub server migrate`");
+        bail!("the database misses the migrations {missing:?}: run `cihub-server migrate`");
     }
 
     let config::GithubApp {

@@ -2,7 +2,7 @@ The API of a CIHub instance: read the queues, the PRs in them and their runs; su
 
 ## Authentication
 
-Send an API token of the organization in the header `Authorization: Bearer <token>`. `cihub server token create --org <slug>` creates the first one. A token has scopes:
+Send an API token of the organization in the header `Authorization: Bearer <token>`. `cihub-server token create --org <slug>` creates the first one. A token has scopes:
 
 | Scope          | Allows                                                     |
 | -------------- | ---------------------------------------------------------- |

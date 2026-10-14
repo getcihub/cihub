@@ -47,8 +47,8 @@ Target order of magnitude for a standard instance: 1,000 organizations, 20,000 r
 
 A single repository contains the whole project: the Cargo workspace, then, with their lots, the dashboard, the
 GitHub action, the Helm chart and the migrations. The workspace (edition 2024, Rust pinned by `mise.toml`)
-produces one binary, `cihub`: `cihub server` starts and administers an instance,
-`cihub login` and `cihub queue` talk to its API. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
+produces two binaries: `cihub-server` starts and administers an instance, and `cihub`, the command line that a
+person or a CI installs, talks to its API with `cihub login` and `cihub queue`. The crates are named `cihub-*`, are not published on crates.io (`publish = false`) and share
 a single version, that of the release. A crate is created when a lot needs it, after validation; the list below is the target, and the "Lot" column says when each crate arrives.
 
 ```
@@ -75,9 +75,10 @@ crates/
   api-types/             cihub-api-types      (exists)
   client/                cihub-client         (exists)
   cli/                   cihub-cli            (exists, the cihub binary)
+  server/                cihub-server         (exists, the cihub-server binary)
   ...                    the other crates of the table, with their lot
-migrations/              Postgres migrations embedded in the cihub binary (Lot 2)
-web/                     dashboard (React, Vite, TanStack), embedded in the binary by crates/web/build.rs (Lots 10a to 10d)
+migrations/              Postgres migrations embedded in the cihub-server binary (Lot 2)
+web/                     dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs (Lots 10a to 10d)
 ```
 
 | Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |
@@ -100,7 +101,8 @@ web/                     dashboard (React, Vite, TanStack), embedded in the bina
 | `cihub-analytics`  | `AnalyticsStore` trait, Postgres implementation, then ClickHouse                                                                                                       | `domain`, `store`                                                | 11  | target |
 | `cihub-otlp`       | OTLP test spans, JUnit XML converter; used by the server and by `cihub`                                                                                                | `domain`                                                         | 14  | target |
 | `cihub-flakytests` | Flaky tests module: OTLP reception, `ft_*` tables, classification, quarantine, `FlakeOracle` implementation, `/api/v1/flaky` routes                                    | `flaky-core`, `otlp`, `contracts`, `platform`, `analytics`       | 14  | target |
-| `cihub-cli`        | `cihub` binary: every command, one file per command and per role, configuration file, module registration                                                             | the server crates, `client`, `api-types`                         | 2   | exists |
+| `cihub-cli`        | `cihub` binary, the command line of the users: `login` and `queue`, one file per command; no server crate                                                              | `client`, `api-types`, `domain`                                  | 9   | exists |
+| `cihub-server`     | `cihub-server` binary: `start`, `migrate`, `token`, one file per command and per role, configuration file, module registration                                        | the server crates                                                | 2   | exists |
 
 Three rules structure the split, and each one is checked in CI rather than left to discipline:
 
@@ -109,7 +111,7 @@ Three rules structure the split, and each one is checked in CI rather than left 
   crates that may declare it. The core changes often; since it depends on nothing heavy, it recompiles and
   tests in a few seconds.
 - **The modules do not know each other.** `cihub-mergequeue` and `cihub-flakytests` do not depend on each
-  other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-cli` knows
+  other; they communicate through the traits of `cihub-contracts` and through events. Only `cihub-server` knows
   them both. The `Module` contract of `cihub-platform` exposes its routes, its job
   executors and its event subscriptions; there is no dynamic loading.
 - **A single version per external dependency.** All versions are in `[workspace.dependencies]`; edition, license and `rust-version` come from `[workspace.package]`, the lints from
@@ -117,19 +119,19 @@ Three rules structure the split, and each one is checked in CI rather than left 
 
 Postgres queries are written in SQL with the `sqlx::query!` and `query_as!` macros, checked at
 compile time against the schema; the metadata is versioned in `.sqlx/` so that compilation and CI
-run without a database. The migrations are in `migrations/`, embedded in `cihub` and applied by
-`cihub server migrate`. The Postgres enums are not derived in `cihub-domain`, so that it
+run without a database. The migrations are in `migrations/`, embedded in `cihub-server` and applied by
+`cihub-server migrate`. The Postgres enums are not derived in `cihub-domain`, so that it
 stays free of `sqlx`: `cihub-store` converts them with `as_str` and `FromStr`, and a test compares `pg_enum` to the
 variants of each enumeration.
 
-## The `cihub` binary and the roles of the server
+## The binaries and the roles of the server
 
-`cihub` has three groups of commands: `cihub login` and `cihub queue` talk to the public API
-with a token (`specs/API.md`); `cihub server` talks to Postgres (`specs/DEPLOYMENT.md`). A command talks to one of
-the two, never both. `cihub server start` always runs the four roles in one process.
-`cihub-cli` defines every command, one file per command, and starts the components.
-A role has no crate: `crates/cli/src/server/` has one file per role, which starts loops whose code is in the
-library crates.
+Two binaries, so that the command line of a CI does not carry the server. `cihub` (`cihub-cli`) talks to the
+public API with a token (`cihub login`, `cihub queue`, `specs/API.md`) and depends on no server crate.
+`cihub-server` (`cihub-server`) talks to Postgres (`start`, `migrate`, `token`, `specs/DEPLOYMENT.md`).
+`cihub-server start` always runs the four roles in one process. Each crate defines its commands, one file per
+command; `cihub-server` starts the components. A role has no crate: `crates/server/src/` has one file per role,
+which starts loops whose code is in the library crates.
 
 | Role        | What the role starts                            | Crate that holds the code |
 | ----------- | ----------------------------------------------- | ----------------------- |
@@ -151,7 +153,7 @@ processes.
 
 ### Scaling
 
-A deployment scales by identical replicas of `cihub server start`, with the same image and the same
+A deployment scales by identical replicas of `cihub-server start`, with the same image and the same
 configuration file, behind a load balancer. Each role shares its work between the replicas:
 
 | Role        | How the replicas share the work                                                                                                 |

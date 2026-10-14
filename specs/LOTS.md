@@ -169,6 +169,13 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     `cihub queue drain|status` against a running server.
   - Done (October 5, 2026): `cihub server start` takes no argument and always runs the four roles; a
     deployment scales by identical replicas. The probes give only the name and the version of the binary.
+  - Done (October 14, 2026), decided by the project lead: two binaries instead of one, so that the command line
+    of a CI does not carry the server (`specs/LESSONS.md`). `cihub` (`cihub-cli`) keeps `login` and `queue` and
+    depends on no server crate; `cihub-server` (`crates/server/`) takes `start`, `migrate` and `token create`,
+    the roles, the configuration file, the examples and the tests against Postgres. The image becomes
+    `ghcr.io/getcihub/server`, entry point `cihub-server`, default command `start`; the chart and compose
+    follow. Tests: the refused arguments of each binary, and against Postgres the queue commands of `cihub`
+    against a `cihub-server start`.
   - Done (October 4, 2026): no queue is created by hand. The first `/cihub merge` on a branch without a
     queue creates, in `submit_pr`, the queues that `.cihub.yaml` names on the branch, or the queue of the default
     branch named after it, with the file that it read; a queue without an entry has `defaults`; a queue that the

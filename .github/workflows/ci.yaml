@@ -196,7 +196,7 @@ jobs:
         run: mise run web:install && pnpm --dir web exec playwright install --with-deps chromium
 
       # Starts the Postgres of compose.yaml, builds the dashboard, then runs
-      # Playwright against the server on the simulator (crates/cli/examples/e2e.rs).
+      # Playwright against the server on the simulator (crates/server/examples/e2e.rs).
       - name: Run the browser tests of the dashboard
         run: mise run web:e2e
 

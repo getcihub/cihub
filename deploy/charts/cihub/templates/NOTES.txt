@@ -1,4 +1,4 @@
-CIHub {{ .Chart.AppVersion }} is installed as {{ include "cihub.fullname" . }}: {{ .Values.replicas }} replica(s) of cihub server start, after the migration Job {{ include "cihub.fullname" . }}-migrate.
+CIHub {{ .Chart.AppVersion }} is installed as {{ include "cihub.fullname" . }}: {{ .Values.replicas }} replica(s) of cihub-server start, after the migration Job {{ include "cihub.fullname" . }}-migrate.
 
 The webhook URL of the GitHub App is https://<host>/webhooks/github:
 {{- if or .Values.ingress.enabled .Values.httpRoute.enabled }} the {{ if .Values.ingress.enabled }}Ingress{{ else }}HTTPRoute{{ end }} of the chart routes it.
@@ -7,4 +7,4 @@ The webhook URL of the GitHub App is https://<host>/webhooks/github:
 
 CIHub creates the organization of each installation of the App. To create an API token for one:
 
-  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "cihub.fullname" . }} -- cihub server token create --config /etc/cihub/server.yaml --org <slug>
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "cihub.fullname" . }} -- cihub-server token create --config /etc/cihub/server.yaml --org <slug>

@@ -3,7 +3,7 @@
 ## Installation target
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
-`cihub` binary; `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
+`cihub-server` binary; `cihub-server start` runs the four roles (`web`, `scheduler`, `worker`,
 `notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. On Kubernetes, the Helm chart `deploy/charts/cihub` installs it.
 
 ## Development
@@ -17,8 +17,8 @@ only.
 ```sh
 mise run db            # Postgres, then postgres-setup
 mise run db:reset      # erases the data, then mise run db (after a migration is rewritten)
-mise run migrate       # Postgres, then cihub server migrate
-mise run dev           # migrate, then cihub server start with the four roles and pretty logs
+mise run migrate       # Postgres, then cihub-server migrate
+mise run dev           # migrate, then cihub-server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
 ```
 
@@ -42,7 +42,7 @@ of the App points to a tunnel that leads to port 8080.
 
 ## Server configuration
 
-`cihub server` reads its configuration from a YAML file named by `--config <file>`, and from the `CIHUB_*`
+`cihub-server` reads its configuration from a YAML file named by `--config <file>`, and from the `CIHUB_*`
 variables. Without `--config`, it reads no file: a file forgotten in `/etc` never
 changes the behavior. The documentation names the file `server.yaml`, never `cihub.yaml`, which would look like
 `.cihub.yaml`, the configuration of a repository (`specs/CONFIGURATION.md`).
@@ -60,7 +60,7 @@ startup, with a message that names the key and the file, or the variable.
 | `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
 | `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
 | `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |
-| `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub server migrate` does not need it |
+| `github.app_id`           | `CIHUB_GITHUB_APP_ID`           | none, required for the server | Identifier of the GitHub App; `cihub-server migrate` does not need it |
 | `github.private_key`      | `CIHUB_GITHUB_PRIVATE_KEY`      | none                 | PEM private key of the App, secret; with `github.app_id`, this key or `github.private_key_file` is required |
 | `github.private_key_file` | `CIHUB_GITHUB_PRIVATE_KEY_FILE` | none                 | File that contains the private key, instead of `github.private_key`         |
 | `github.webhook_secret`   | `CIHUB_GITHUB_WEBHOOK_SECRET`   | none                 | Secret that signs the webhooks of the App; required with `github.app_id`   |
@@ -93,35 +93,36 @@ file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_GITHUB
 `github.client_secret` is a secret (`specs/SECURITY.md`).
 
 ```sh
-cihub server migrate --config /etc/cihub/server.yaml
-cihub server start --config /etc/cihub/server.yaml    # the four roles, as many replicas as needed
+cihub-server migrate --config /etc/cihub/server.yaml
+cihub-server start --config /etc/cihub/server.yaml    # the four roles, as many replicas as needed
 ```
 
-`cihub server` alone shows the help of the group: a typo never starts a server. `cihub server start` takes no
-argument, and refuses one.
+`cihub-server` alone shows its help: a typo never starts a server. `cihub-server start` takes no argument, and
+refuses one.
 
 In a container, `CIHUB_INTERNAL_ADDR` must listen on `0.0.0.0` so that the probes reach it. `/healthz`
 answers `200` as long as the process runs; `/readyz` answers `503` when Postgres does not answer within 2 s.
 
 ## Image
 
-`Dockerfile`, at the root, builds the `cihub` image in three stages: the dashboard on
+`Dockerfile`, at the root, builds the server image in three stages: the dashboard on
 `node:24.21.0-bookworm-slim` (the Node of `mise.toml`, pnpm by corepack from `web/package.json`), compilation on
 `rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), which embeds `web/dist` in the
 binary (`crates/web/build.rs`), then execution on `gcr.io/distroless/cc-debian12:nonroot`. The images are pinned
 by their digest, with the tag as a comment. A build of the Rust code without `web/dist` serves no dashboard: its
-pages answer `404`, and the API works. The binary is `/usr/local/bin/cihub`, its entry point; the default command is `server start`, so the
-image starts the four roles, and an argument replaces it (`server migrate`). The project
+pages answer `404`, and the API works. The binary is `/usr/local/bin/cihub-server`, its entry point; the default command is `start`, so the
+image starts the four roles, and an argument replaces it (`migrate`). The image does not contain the `cihub`
+command line. The project
 license is in `/usr/share/doc/cihub/`.
 The image listens on `0.0.0.0:8080` (public address) and sets `CIHUB_INTERNAL_ADDR` to `0.0.0.0:8081`, so that the
 probes reach `/healthz` and `/readyz`. On Linux, the TLS client reads the root certificates of the system, which
 the runtime image provides: the binary does not embed a list of certificates. The
 `release` profile of `Cargo.toml` (`lto = "thin"`, `codegen-units = 1`) is used for this image.
 
-`.github/workflows/image.yaml` publishes the image to `ghcr.io/getcihub/cihub` at each release, with the tags
+`.github/workflows/image.yaml` publishes the image to `ghcr.io/getcihub/server` at each release, with the tags
 `X.Y.Z`, `X.Y` and `latest`, and on demand, with the tag `sha-<commit>`. The image is for `linux/amd64` and
 `linux/arm64`: each architecture is built on a native runner hosted by GitHub (`ubuntu-26.04`,
-`ubuntu-26.04-arm`), then the two are joined in one manifest. The workflow takes the name of the image from the
+`ubuntu-26.04-arm`), then the two are joined in one manifest. The workflow takes the owner of the image from the
 repository.
 
 ## Installation with Docker Compose
@@ -132,7 +133,7 @@ repository.
 | ---------------- | ------------------------------------------------------------------------------------------ |
 | `postgres`       | Postgres 17, with a data volume; no port published on the host                             |
 | `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start |
-| `cihub-migrate`  | One-shot: `cihub server migrate`                                                     |
+| `cihub-migrate`  | One-shot: `cihub-server migrate`                                                     |
 | `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
 
 The values come from `deploy/compose/.env`, to be created from `deploy/compose/.env.example`: the Postgres passwords,
@@ -143,7 +144,7 @@ the host (`specs/SECURITY.md`). The complete procedure is in `INSTALL.md`.
 
 ```sh
 docker compose -f deploy/compose/compose.yaml up -d
-docker compose -f deploy/compose/compose.yaml run --rm cihub-server server token create --org <slug>
+docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create --org <slug>
 ```
 
 ## Installation on Kubernetes
@@ -152,9 +153,9 @@ docker compose -f deploy/compose/compose.yaml run --rm cihub-server server token
 
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Job `<release>-migrate`     | `cihub server migrate`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
+| Job `<release>-migrate`     | `cihub-server migrate`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
 | ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
-| Deployment                  | `cihub server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
+| Deployment                  | `cihub-server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
 | Ingress or HTTPRoute        | Optional, to the Service; it must not buffer the stream `/api/v1/orgs/{org}/stream` (CIHub sends `X-Accel-Buffering: no`) and must keep it open past 15 seconds of silence, the ping; HTTP/2 to the browser, else each open tab holds one of the 6 connections that a browser opens to a site |
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
@@ -210,7 +211,7 @@ organization.
 The sync creates no API token. A command creates one for an existing organization, without the dashboard:
 
 ```sh
-cihub server token create --org <slug of the organization>
+cihub-server token create --org <slug of the organization>
 ```
 
 It needs only the database: it creates a token named `token` with every scope, writes `token.created` in the
@@ -222,13 +223,13 @@ error.
 
 Migrations are explicit:
 
-- `cihub server migrate` applies the embedded migrations that are missing, creates the partitions, then stops.
-- At startup, `cihub server start` applies nothing: it stops if an embedded migration is missing in the database. A
+- `cihub-server migrate` applies the embedded migrations that are missing, creates the partitions, then stops.
+- At startup, `cihub-server start` applies nothing: it stops if an embedded migration is missing in the database. A
   migration in the database that the binary does not know comes from a newer version and does not prevent startup.
 - A published migration stays backward compatible for one version, so that old and new processes
   coexist during a deployment.
 
-| Environment                     | What runs `cihub server migrate`                       | When                                     |
+| Environment                     | What runs `cihub-server migrate`                       | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
 | Development                     | `mise run migrate`                                     | By hand                                  |
 | Installation `docker compose`   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |

@@ -14,7 +14,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "cargo run --quiet -p cihub-cli --example e2e",
+    command: "cargo run --quiet -p cihub-server --example e2e",
     cwd: "..",
     url: "http://127.0.0.1:18090/sign-in",
     reuseExistingServer: false,

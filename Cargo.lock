@@ -228,29 +228,14 @@ name = "cihub-cli"
 version = "0.2.1"
 dependencies = [
  "anyhow",
- "axum",
  "cihub-api-types",
  "cihub-client",
  "cihub-domain",
- "cihub-github",
- "cihub-mergequeue",
- "cihub-platform",
- "cihub-scm",
- "cihub-store",
- "cihub-telemetry",
- "cihub-web",
  "clap",
- "ring",
  "secrecy",
  "serde",
- "serde-saphyr",
  "serde_json",
- "sqlx",
- "time",
  "tokio",
- "tokio-util",
- "tracing",
- "ulid",
 ]
 
 [[package]]
@@ -395,6 +380,35 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
+ "ulid",
+]
+
+[[package]]
+name = "cihub-server"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "cihub-api-types",
+ "cihub-domain",
+ "cihub-github",
+ "cihub-mergequeue",
+ "cihub-platform",
+ "cihub-scm",
+ "cihub-store",
+ "cihub-telemetry",
+ "cihub-web",
+ "clap",
+ "ring",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "sqlx",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "ulid",
 ]
 

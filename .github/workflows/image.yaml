@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Image
 
-# Builds the image of CIHub for each release, on a
+# Builds the server image of CIHub for each release, on a
 # native runner per architecture, then joins the two in one manifest.
 
 on:
@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/${{ github.repository }}
+  IMAGE: ghcr.io/${{ github.repository_owner }}/server
 
 jobs:
   build-amd64:

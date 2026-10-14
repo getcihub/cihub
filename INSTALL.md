@@ -35,7 +35,7 @@ docker compose -f deploy/compose/compose.yaml up -d
 ```
 
 Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
-starts `cihub server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
+starts `cihub-server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
 
 On Kubernetes, the Helm chart replaces Compose: see [`deploy/charts/cihub/README.md`](deploy/charts/cihub/README.md).
 
@@ -46,7 +46,7 @@ organization of the account (its slug is the login of the account) and reads its
 the API or the CLI, create a token:
 
 ```sh
-docker compose -f deploy/compose/compose.yaml run --rm cihub-server server token create --org <login of the account>
+docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create --org <login of the account>
 ```
 
 The command prints an API token **once**: keep it in a secret store.

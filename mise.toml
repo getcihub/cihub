@@ -20,7 +20,7 @@
 postinstall = "lefthook install"
 
 # The development Postgres of compose.yaml: the tests use
-# DATABASE_URL, cihub server uses CIHUB_DATABASE_URL.
+# DATABASE_URL, cihub-server uses CIHUB_DATABASE_URL.
 [env]
 DATABASE_URL = "postgres://cihub:cihub@127.0.0.1:5432/cihub"
 CIHUB_DATABASE_URL = "{{env.DATABASE_URL}}"
@@ -99,13 +99,13 @@ run = ["docker compose down --volumes", { task = "db" }]
 description = "Apply the migrations to the development Postgres"
 depends = ["db"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = "cargo run --quiet -p cihub-cli -- server migrate"
+run = "cargo run --quiet -p cihub-server -- migrate"
 
 [tasks.dev]
-description = "Start Postgres, apply the migrations, then run cihub server start with the four roles"
+description = "Start Postgres, apply the migrations, then run cihub-server start with the four roles"
 depends = ["migrate"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = "cargo run --quiet -p cihub-cli -- server start"
+run = "cargo run --quiet -p cihub-server -- start"
 
 [tasks."web:install"]
 description = "Install the dependencies of the dashboard, as pnpm-lock.yaml gives them"
@@ -137,7 +137,7 @@ dir = "web"
 run = "pnpm build"
 
 [tasks."web:dev"]
-description = "Serve the dashboard with Vite, in front of a cihub server start on CIHUB_URL (http://localhost:8080)"
+description = "Serve the dashboard with Vite, in front of a cihub-server start on CIHUB_URL (http://localhost:8080)"
 depends = ["web:install"]
 dir = "web"
 run = "pnpm dev"
@@ -162,7 +162,7 @@ run = "web/e2e/visual/shots.sh diff"
 description = "Write the OpenAPI document of the API from the code, then the API client of the dashboard"
 depends = ["web:install"]
 dir = "web"
-run = ["cargo run --quiet -p cihub-cli --example openapi > openapi.json", "pnpm generate"]
+run = ["cargo run --quiet -p cihub-server --example openapi > openapi.json", "pnpm generate"]
 
 # git status, unlike git diff, also sees a new file.
 [tasks."web:generate-check"]

@@ -2,7 +2,7 @@
 //! to check by hand that the App authenticates and that each call of the
 //! `Scm` trait returns the right data.
 //!
-//! The App comes from the environment, as for `cihub server`:
+//! The App comes from the environment, as for `cihub-server`:
 //! `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_PRIVATE_KEY` or
 //! `CIHUB_GITHUB_PRIVATE_KEY_FILE`, and `CIHUB_GITHUB_URL`
 //! (`https://github.com` by default). After each call, the example prints the

@@ -195,10 +195,10 @@ before and after with `mise run web:shots-diff`, and explain each view that diff
 `react-hooks`, `@tanstack/eslint-plugin-query`, `@tanstack/eslint-plugin-router`), `oxfmt --check`, Vitest.
 `mise run web:fmt` formats the dashboard; the pre-commit hook (`.lefthook.toml`) formats the files that a
 commit stages, as `cargo fmt` does for the Rust code.
-`mise run web:dev` serves it with Vite in front of a `cihub server start` (`CIHUB_URL`, `http://localhost:8080`);
+`mise run web:dev` serves it with Vite in front of a `cihub-server start` (`CIHUB_URL`, `http://localhost:8080`);
 `mise run web:build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web:generate`
-writes `openapi.json` from the code (`cargo run -p cihub-cli --example openapi`) and the client in `src/client`;
-`mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-cli --example e2e`, a
+writes `openapi.json` from the code (`cargo run -p cihub-server --example openapi`) and the client in `src/client`;
+`mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-server --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
 passes each test commit of `acme/api`, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
 comment of a PR at `/sim/comment`.

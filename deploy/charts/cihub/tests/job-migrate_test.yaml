@@ -13,7 +13,7 @@ tests:
           value: pre-install,pre-upgrade
       - equal:
           path: spec.template.spec.containers[0].args
-          value: [server, migrate]
+          value: [migrate]
 
   - it: reads only the environment, as the ConfigMap does not exist yet
     asserts:
