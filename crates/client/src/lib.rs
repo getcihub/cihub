@@ -5,8 +5,8 @@
 use std::fmt::Write;
 
 use cihub_api_types::{
-    API_PREFIX, Graph, MAX_LIMIT, Pr, PrList, Problem, QueueList, RequestedQueueState, SubmitPr,
-    UpdateQueue,
+    API_PREFIX, CliSession, DeviceCode, DeviceCodeToken, Graph, Instance, MAX_LIMIT, Pr, PrList,
+    Problem, QueueList, RequestedQueueState, SubmitPr, UpdateQueue, User,
 };
 use reqwest::{Method, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -30,7 +30,8 @@ pub enum ClientError {
 pub struct Client {
     http: reqwest::Client,
     base: String,
-    token: SecretString,
+    /// `None` for the sign-in of the command line, which has no token yet.
+    token: Option<SecretString>,
 }
 
 impl Client {
@@ -40,6 +41,19 @@ impl Client {
     ///
     /// The HTTP client cannot start.
     pub fn new(url: &str, token: SecretString) -> Result<Self, ClientError> {
+        Self::with_token(url, Some(token))
+    }
+
+    /// A client without a token, for the sign-in of the command line.
+    ///
+    /// # Errors
+    ///
+    /// The HTTP client cannot start.
+    pub fn anonymous(url: &str) -> Result<Self, ClientError> {
+        Self::with_token(url, None)
+    }
+
+    fn with_token(url: &str, token: Option<SecretString>) -> Result<Self, ClientError> {
         // reqwest uses rustls without a provider: ring is
         // the provider of the process. A second install changes nothing.
         let _ = rustls::crypto::ring::default_provider().install_default();
@@ -61,11 +75,11 @@ impl Client {
         path: &str,
         body: Option<&impl Serialize>,
     ) -> Result<(StatusCode, String), ClientError> {
-        let mut request = self
-            .http
-            .request(method, format!("{}{path}", self.base))
-            .bearer_auth(self.token.expose_secret());
+        let mut request = self.http.request(method, format!("{}{path}", self.base));
 
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token.expose_secret());
+        }
         if let Some(body) = body {
             let text = serde_json::to_string(body).map_err(ClientError::Encode)?;
             request = request
@@ -88,7 +102,17 @@ impl Client {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, ClientError> {
-        let (status, text) = self.send(Method::GET, path, None::<&()>).await?;
+        self.read(Method::GET, path, None::<&()>).await
+    }
+
+    /// Sends the request, and reads the body of its answer.
+    async fn read<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&impl Serialize>,
+    ) -> Result<T, ClientError> {
+        let (status, text) = self.send(method, path, body).await?;
 
         serde_json::from_str(&text).map_err(|_| ClientError::Unexpected { status, body: text })
     }
@@ -195,6 +219,59 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn graph(&self, queue: QueuePath<'_>) -> Result<Graph, ClientError> {
         self.get(&format!("{}/graph", queue.path())).await
+    }
+
+    /// The person of the session of the client.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub refuses it: an API token stands for no
+    /// person.
+    pub async fn user(&self) -> Result<User, ClientError> {
+        self.get("/user").await
+    }
+
+    /// The instance, which any token reads.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub refuses the token.
+    pub async fn instance(&self) -> Result<Instance, ClientError> {
+        self.get("/instance").await
+    }
+
+    /// Starts a sign-in of the command line.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or nobody signs in to the instance.
+    pub async fn start_device_sign_in(&self) -> Result<DeviceCode, ClientError> {
+        self.read(Method::POST, "/device-codes", None::<&()>).await
+    }
+
+    /// The session of the sign-in of `device_code`, once its person approved
+    /// it. Before, CIHub answers `device_code_pending`.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub gives no session yet.
+    pub async fn device_session(&self, device_code: &str) -> Result<CliSession, ClientError> {
+        let body = DeviceCodeToken {
+            device_code: device_code.to_owned(),
+        };
+        self.read(Method::POST, "/device-codes/token", Some(&body))
+            .await
+    }
+
+    /// Ends the session of the client.
+    ///
+    /// # Errors
+    ///
+    /// The request fails, or CIHub refuses it.
+    pub async fn sign_out(&self) -> Result<(), ClientError> {
+        self.send(Method::DELETE, "/user/session", None::<&()>)
+            .await
+            .map(|_| ())
     }
 }
 

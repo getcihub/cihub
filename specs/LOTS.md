@@ -176,6 +176,16 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     `ghcr.io/getcihub/server`, entry point `cihub-server`, default command `start`; the chart and compose
     follow. Tests: the refused arguments of each binary, and against Postgres the queue commands of `cihub`
     against a `cihub-server start`.
+  - Done (October 14, 2026), decided by the project lead: `cihub auth login|logout|status|token`, on the model of
+    the groups of other command lines, without `refresh` (a session has no scopes of its own: the role of its person
+    gives them). `cihub auth login` follows the device authorization grant (RFC 8628) on top of the sign-in of the
+    dashboard: `POST /device-codes`, the page `/device` where the person types the code, then approves or denies it,
+    then `POST /device-codes/token`, which gives a session of the command line (`chc_`, in `sessions`, 90 days after
+    its last use). The command line acts as its person; `cihub-server token create` stays for a CI. Hosts:
+    `--hostname`, `CIHUB_HOST`, else the only known host, with no default host until an instance run by the project
+    exists; `CIHUB_URL` is removed. Tests: the user codes in `cihub-domain`, the device codes and the sliding end of
+    a session against Postgres, the routes end to end in `cihub-web`, `cihub auth login` against
+    `cihub-server start` with a code approved through the API, and the page `/device` in Vitest.
   - Done (October 4, 2026): no queue is created by hand. The first `/cihub merge` on a branch without a
     queue creates, in `submit_pr`, the queues that `.cihub.yaml` names on the branch, or the queue of the default
     branch named after it, with the file that it read; a queue without an entry has `defaults`; a queue that the

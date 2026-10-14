@@ -10,9 +10,8 @@ use cihub_api_types::{PriorityInput, Queue, RequestedQueueState, SubmitPr};
 use cihub_client::{Client, QueuePath, RepoPath};
 use cihub_domain::ItemState;
 use clap::{Args, Subcommand};
-use secrecy::SecretString;
 
-use crate::credentials::Credentials;
+use crate::credentials::{Credentials, address};
 use crate::repo;
 
 #[derive(Args)]
@@ -58,7 +57,13 @@ enum QueueCommand {
 
 pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result<()> {
     let credentials = Credentials::load()?;
-    let client = Client::new(&credentials.url, SecretString::from(credentials.token))?;
+    let host = credentials.host(None)?;
+    let Some((token, _)) = credentials.token(&host)? else {
+        bail!(
+            "not signed in to {host}: run `cihub auth login --hostname {host}`, or set CIHUB_TOKEN"
+        );
+    };
+    let client = Client::new(&address(&host), token)?;
     let (owner, name) = match args.repo {
         Some(repo) => repo,
         None => repo::from_git()?,

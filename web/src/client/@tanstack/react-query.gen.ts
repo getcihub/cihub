@@ -3,8 +3,98 @@
 import { queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { cancel, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, submit, updateQueue } from '../sdk.gen';
-import type { CancelData, CancelError, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+
+/**
+ * Start a sign-in of the command line
+ *
+ * A device code, for the command line, and its user code, for the person,
+ * who approves it on the page `verification_url`. The command line then
+ * asks `POST /device-codes/token` every `interval` seconds.
+ *
+ * **Access**: no token or session.
+ */
+export const startDeviceSignInMutation = (options?: Partial<Options<StartDeviceSignInData>>): UseMutationOptions<StartDeviceSignInResponse, StartDeviceSignInError, Options<StartDeviceSignInData>> => {
+    const mutationOptions: UseMutationOptions<StartDeviceSignInResponse, StartDeviceSignInError, Options<StartDeviceSignInData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await startDeviceSignIn({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Get the session of the command line
+ *
+ * The session, once the person approved the code; it is given once, and
+ * the code is used. Before, the answer says to ask again after `interval`
+ * seconds, 5 seconds more after each `polling_too_fast`.
+ *
+ * **Access**: no token or session.
+ */
+export const getDeviceSessionMutation = (options?: Partial<Options<GetDeviceSessionData>>): UseMutationOptions<GetDeviceSessionResponse, GetDeviceSessionError, Options<GetDeviceSessionData>> => {
+    const mutationOptions: UseMutationOptions<GetDeviceSessionResponse, GetDeviceSessionError, Options<GetDeviceSessionData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await getDeviceSession({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Approve a sign-in of the command line
+ *
+ * The person of the session approves the code that their command line
+ * shows: the command line then signs in as them.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const approveDeviceCodeMutation = (options?: Partial<Options<ApproveDeviceCodeData>>): UseMutationOptions<ApproveDeviceCodeResponse, ApproveDeviceCodeError, Options<ApproveDeviceCodeData>> => {
+    const mutationOptions: UseMutationOptions<ApproveDeviceCodeResponse, ApproveDeviceCodeError, Options<ApproveDeviceCodeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await approveDeviceCode({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Deny a sign-in of the command line
+ *
+ * The person of the session denies a code that they did not ask for: no
+ * command line signs in with it.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const denyDeviceCodeMutation = (options?: Partial<Options<DenyDeviceCodeData>>): UseMutationOptions<DenyDeviceCodeResponse, DenyDeviceCodeError, Options<DenyDeviceCodeData>> => {
+    const mutationOptions: UseMutationOptions<DenyDeviceCodeResponse, DenyDeviceCodeError, Options<DenyDeviceCodeData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await denyDeviceCode({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -460,7 +550,7 @@ export const getUserQueryKey = (options?: Options<GetUserData>) => createQueryKe
  * The person of the session of the dashboard. An API token stands for no
  * person: it gets `401`.
  *
- * **Access**: a session of the dashboard only.
+ * **Access**: the session of a person: the dashboard, or the command line.
  */
 export const getUserOptions = (options?: Options<GetUserData>) => queryOptions<GetUserResponse, GetUserError, GetUserResponse, ReturnType<typeof getUserQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -483,7 +573,7 @@ export const listUserOrgsQueryKey = (options?: Options<ListUserOrgsData>) => cre
  * The organizations where the person of the session has a role, by slug;
  * none before the App is installed on an account of the person.
  *
- * **Access**: a session of the dashboard only.
+ * **Access**: the session of a person: the dashboard, or the command line.
  */
 export const listUserOrgsOptions = (options?: Options<ListUserOrgsData>) => queryOptions<ListUserOrgsResponse, ListUserOrgsError, ListUserOrgsResponse, ReturnType<typeof listUserOrgsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -497,3 +587,26 @@ export const listUserOrgsOptions = (options?: Options<ListUserOrgsData>) => quer
     },
     queryKey: listUserOrgsQueryKey(options)
 });
+
+/**
+ * End the session
+ *
+ * Ends the session of the request: the sign-out of the command line. The
+ * dashboard signs out with `POST /auth/sign-out`, which also clears its
+ * cookies.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const deleteUserSessionMutation = (options?: Partial<Options<DeleteUserSessionData>>): UseMutationOptions<DeleteUserSessionResponse, DeleteUserSessionError, Options<DeleteUserSessionData>> => {
+    const mutationOptions: UseMutationOptions<DeleteUserSessionResponse, DeleteUserSessionError, Options<DeleteUserSessionData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteUserSession({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};

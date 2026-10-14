@@ -21,4 +21,7 @@ fn unknown_command_stops() {
     refuses(&["queue"]);
     refuses(&["queue", "drain", "--repo", "acme"]);
     refuses(&["server", "start"]);
+    refuses(&["login"]);
+    refuses(&["auth"]);
+    refuses(&["auth", "login", "--hostname", "https://cihub.example.com"]);
 }

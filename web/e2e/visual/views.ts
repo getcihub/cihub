@@ -58,6 +58,37 @@ export const VIEWS: View[] = [
   { name: "sign-in-failed", url: "/sign-in?error=failed", person: "nobody", ready: "The sign-in failed" },
   { name: "sign-in-no-org", url: "/sign-in", person: "grace", ready: "No organization yet", themes: BOTH },
   {
+    name: "device",
+    url: "/device",
+    ready: "Sign in the command line",
+    themes: BOTH,
+    act: async (page) => {
+      await page.getByRole("textbox", { name: "Letter 1 of 8" }).fill("WDJBMJHT");
+    },
+  },
+  { name: "device-typed", url: "/device", ready: "Type the code" },
+  {
+    name: "device-approved",
+    url: "/device",
+    ready: "Sign in the command line",
+    act: async (page) => {
+      await page.getByRole("textbox", { name: "Letter 1 of 8" }).fill("WDJBMJHT");
+      await page.getByRole("button", { name: "Approve as ada" }).click();
+      await page.getByText("Command line signed in").waitFor();
+    },
+  },
+  {
+    name: "device-unknown-code",
+    url: "/device",
+    ready: "Sign in the command line",
+    answer: ({ method }) => (method === "POST" ? [404, problem(404, "device_code_not_found")] : null),
+    act: async (page) => {
+      await page.getByRole("textbox", { name: "Letter 1 of 8" }).fill("WDJBMJHT");
+      await page.getByRole("button", { name: "Approve as ada" }).click();
+      await page.getByText("No command line waits for this code").waitFor();
+    },
+  },
+  {
     name: "org-overview",
     url: "/orgs/acme",
     ready: "Your pull requests",

@@ -32,6 +32,10 @@ Identifiers are typed ULIDs in the `typedid` text format. An SCM identifier is a
 `external_id`, unique within the deployment, which serves a single SCM. Each closed vocabulary is an
 enumeration whose text value (`snake_case`) is the same in the API, the webhooks, the analytics and Postgres.
 
+Outside the queue, `DeviceCodeState` says where a sign-in of the command line stands (`specs/API.md`): `pending`
+while the command line waits for the person, `approved` once the person approved its code, `denied` once they
+denied it. The command line takes its session from an `approved` code, which then ends.
+
 ## Log
 
 - **Log**: the append-only sequence of the events of a queue; it is the source of truth of the queue. The

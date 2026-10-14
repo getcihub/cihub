@@ -1,11 +1,11 @@
-//! `cihub`: the command line of CIHub, for a person or a CI. `cihub login`
-//! keeps the address of an instance and an API token; `cihub queue` drives the
-//! merge queue through the public API. It holds no server code and no queue
+//! `cihub`: the command line of CIHub, for a person or a CI. `cihub auth`
+//! signs the command line in to an instance; `cihub queue` drives the merge
+//! queue through the public API. It holds no server code and no queue
 //! logic, and never reaches Postgres: `cihub-server` starts and administers an
 //! instance.
 
+mod auth;
 mod credentials;
-mod login;
 mod queue;
 mod repo;
 
@@ -25,8 +25,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Keeps the address of the instance and an API token.
-    Login(login::LoginArgs),
+    /// Signs the command line in to an instance, and shows its sessions.
+    Auth(auth::AuthArgs),
     /// The merge queue: PRs and queues.
     Queue(queue::QueueArgs),
 }
@@ -35,7 +35,7 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let mut out = std::io::stdout();
     match Cli::parse().command {
-        Command::Login(args) => login::run(&mut out, args),
+        Command::Auth(args) => auth::run(&mut out, args).await,
         Command::Queue(args) => queue::run(&mut out, args).await,
     }
 }

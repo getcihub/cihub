@@ -4107,8 +4107,10 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
     assert!(
         paths.iter().all(|path| path.starts_with("/orgs/{org}")
             || path.starts_with("/user")
+            || path.starts_with("/device-codes")
             || *path == "/instance"),
-        "only the person of a session and the instance are outside an organization: {paths:?}"
+        "only the person of a session, their sign-in and the instance are outside an \
+         organization: {paths:?}"
     );
     assert!(
         paths.contains(&&"/orgs/{org}/repos/{repo}/prs/{number}/cancel".to_owned()),

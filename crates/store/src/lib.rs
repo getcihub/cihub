@@ -5,6 +5,7 @@
 //! migrate` applies them, and `cihub-server start` refuses to start while one
 //! is missing.
 
+mod device_codes;
 mod events;
 mod memberships;
 mod sessions;
@@ -14,6 +15,10 @@ mod users;
 use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
+pub use device_codes::{
+    DevicePoll, NewDeviceCode, answer_device_code, create_device_code, new_device_code_secret,
+    new_user_code, poll_device_code,
+};
 pub use events::{
     append_events, create_event_partitions, delete_facts, deposit_fact, event_kind, load_events,
     next_month, pending_facts,
@@ -21,7 +26,8 @@ pub use events::{
 pub use memberships::{Membership, forget_memberships_before, memberships_of, record_membership};
 use secrecy::{ExposeSecret, SecretString};
 pub use sessions::{
-    NewSession, SessionGrant, authenticate_session, create_session, csrf_token, delete_session,
+    CLI_SESSION_IDLE_LIFETIME, NewSession, SessionClient, SessionGrant, authenticate_session,
+    create_session, csrf_token, delete_session, delete_session_by_id, new_cli_session_secret,
     new_session_secret, new_sign_in_secret,
 };
 use sqlx::migrate::{MigrateError, Migrator};

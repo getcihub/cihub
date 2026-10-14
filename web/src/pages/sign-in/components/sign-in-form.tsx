@@ -4,7 +4,7 @@ import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { buttonVariants } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { signInAddress } from "@/domain/session/session";
-import { Failure, Lead, Note, Title } from "./parts";
+import { Failure, Lead, Note, Title } from "@/components/session/parts";
 
 /** The sign-in through the SCM: then CIHub opens `next`. */
 export function SignInForm({ hasFailed, next }: { hasFailed: boolean; next: string }) {

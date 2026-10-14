@@ -42,8 +42,8 @@ On Kubernetes, the Helm chart replaces Compose: see [`deploy/charts/cihub/README
 ## 3. Install the App and start your organization
 
 Install the App on the repositories to serve (*Install App* on the page of the App). CIHub creates the
-organization of the account (its slug is the login of the account) and reads its repositories by itself. To use
-the API or the CLI, create a token:
+organization of the account (its slug is the login of the account) and reads its repositories by itself. A CI or
+a script that uses the API needs a token of the organization:
 
 ```sh
 docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create --org <login of the account>
@@ -89,9 +89,12 @@ In a clone of the repository:
 
 ```sh
 cargo install --locked --git https://github.com/getcihub/cihub cihub-cli   # the cihub binary
-cihub login --url https://<your CIHub host>   # asks for the token
+cihub auth login --hostname <your CIHub host>   # approve the code in the dashboard
 cihub queue status
 ```
+
+`cihub auth login` shows a code and the page of the dashboard where you approve it; the command line then acts as
+you. In a CI, set `CIHUB_HOST` and `CIHUB_TOKEN`, with the token of step 3.
 
 ## Next: write your `.cihub.yaml` with an assistant
 

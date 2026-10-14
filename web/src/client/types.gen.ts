@@ -72,6 +72,20 @@ export type CheckConclusion = 'success' | 'neutral' | 'skipped' | 'failure' | 'e
 export type CheckKind = 'check' | 'status';
 
 /**
+ * The session of the command line, once its person approved the code.
+ */
+export type CliSession = {
+    /**
+     * The login of the person on the SCM.
+     */
+    login: string;
+    /**
+     * The secret of the session, for `Authorization: Bearer`; given once.
+     */
+    token: string;
+};
+
+/**
  * `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
  * check of the configuration of the SCM; no finding means a sound
  * configuration.
@@ -103,10 +117,48 @@ export type Dependent = {
 };
 
 /**
+ * `POST /device-codes`: a sign-in of the command line, which waits for its
+ * person.
+ */
+export type DeviceCode = {
+    /**
+     * The secret of the command line, which it sends to
+     * `POST /device-codes/token`; never shown to the person.
+     */
+    device_code: string;
+    /**
+     * The seconds before the code expires.
+     */
+    expires_in: number;
+    /**
+     * The seconds to wait between two requests of the session.
+     */
+    interval: number;
+    /**
+     * The code that the person checks on the page of `verification_url`.
+     */
+    user_code: string;
+    /**
+     * The page of the dashboard where the person approves the code.
+     */
+    verification_url: string;
+};
+
+/**
+ * `POST /device-codes/token`: the device code of the sign-in.
+ */
+export type DeviceCodeToken = {
+    /**
+     * The `device_code` that `POST /device-codes` gave.
+     */
+    device_code: string;
+};
+
+/**
  * The machine code of an error: a client decides on it, never on
  * `detail`. Each code has one HTTP status.
  */
-export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'me_needs_session' | 'queue_needs_repo' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'queue_not_accepting' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'internal';
+export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'me_needs_session' | 'queue_needs_repo' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'queue_not_accepting' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
 
 /**
  * An event of the log of a queue about a PR.
@@ -1042,6 +1094,166 @@ export type Window = {
      */
     floor: number;
 };
+
+export type StartDeviceSignInData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/device-codes';
+};
+
+export type StartDeviceSignInErrors = {
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+    /**
+     * - `sign_in_unavailable`: The instance has no public address or no sign-in client: nobody signs in to it.
+     */
+    503: Problem;
+};
+
+export type StartDeviceSignInError = StartDeviceSignInErrors[keyof StartDeviceSignInErrors];
+
+export type StartDeviceSignInResponses = {
+    /**
+     * A sign-in that waits for its person.
+     */
+    200: DeviceCode;
+};
+
+export type StartDeviceSignInResponse = StartDeviceSignInResponses[keyof StartDeviceSignInResponses];
+
+export type GetDeviceSessionData = {
+    body: DeviceCodeToken;
+    path?: never;
+    query?: never;
+    url: '/device-codes/token';
+};
+
+export type GetDeviceSessionErrors = {
+    /**
+     * - `invalid_request`: The body, the path or the query of the request is not valid.
+     * - `device_code_pending`: The person has not approved or denied the code yet: ask again after `interval` seconds.
+     * - `device_code_expired`: The device code is unknown, already used, or older than 15 minutes: start again.
+     */
+    400: Problem;
+    /**
+     * - `device_code_denied`: The person denied the code: the command line is not signed in.
+     */
+    403: Problem;
+    /**
+     * - `polling_too_fast`: The command line asked again sooner than `interval`: wait 5 seconds more each time.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type GetDeviceSessionError = GetDeviceSessionErrors[keyof GetDeviceSessionErrors];
+
+export type GetDeviceSessionResponses = {
+    /**
+     * The session of the command line.
+     */
+    200: CliSession;
+};
+
+export type GetDeviceSessionResponse = GetDeviceSessionResponses[keyof GetDeviceSessionResponses];
+
+export type ApproveDeviceCodeData = {
+    body?: never;
+    path: {
+        /**
+         * The code that the command line shows.
+         */
+        user_code: string;
+    };
+    query?: never;
+    url: '/device-codes/{user_code}/approve';
+};
+
+export type ApproveDeviceCodeErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `device_code_not_found`: No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type ApproveDeviceCodeError = ApproveDeviceCodeErrors[keyof ApproveDeviceCodeErrors];
+
+export type ApproveDeviceCodeResponses = {
+    /**
+     * The command line signs in as the person.
+     */
+    204: void;
+};
+
+export type ApproveDeviceCodeResponse = ApproveDeviceCodeResponses[keyof ApproveDeviceCodeResponses];
+
+export type DenyDeviceCodeData = {
+    body?: never;
+    path: {
+        /**
+         * The code that the command line shows.
+         */
+        user_code: string;
+    };
+    query?: never;
+    url: '/device-codes/{user_code}/deny';
+};
+
+export type DenyDeviceCodeErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `device_code_not_found`: No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type DenyDeviceCodeError = DenyDeviceCodeErrors[keyof DenyDeviceCodeErrors];
+
+export type DenyDeviceCodeResponses = {
+    /**
+     * No command line signs in with the code.
+     */
+    204: void;
+};
+
+export type DenyDeviceCodeResponse = DenyDeviceCodeResponses[keyof DenyDeviceCodeResponses];
 
 export type GetInstanceData = {
     body?: never;
@@ -2249,3 +2461,40 @@ export type ListUserOrgsResponses = {
 };
 
 export type ListUserOrgsResponse = ListUserOrgsResponses[keyof ListUserOrgsResponses];
+
+export type DeleteUserSessionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/user/session';
+};
+
+export type DeleteUserSessionErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type DeleteUserSessionError = DeleteUserSessionErrors[keyof DeleteUserSessionErrors];
+
+export type DeleteUserSessionResponses = {
+    /**
+     * The session ended.
+     */
+    204: void;
+};
+
+export type DeleteUserSessionResponse = DeleteUserSessionResponses[keyof DeleteUserSessionResponses];
