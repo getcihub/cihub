@@ -3,7 +3,7 @@
 //! (`specs/API.md`); `logout` ends the session; `status` checks each token;
 //! `token` prints one, for a script.
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -72,13 +72,14 @@ async fn login(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<(
     let client = Client::anonymous(&address(&host))?;
 
     let code = client.start_device_sign_in().await?;
+    let address = format!("{}?code={}", code.verification_url, code.user_code);
     writeln!(
         out,
-        "Open {url}?code={user_code} and check the code {user_code}; it expires in {minutes} \
-         minutes.",
-        url = code.verification_url,
-        user_code = code.user_code,
+        "To sign in, open this address (it expires in {minutes} minutes):\n\n  {link}\n\n\
+         Approve the code {user_code} there only if the page shows this code.",
         minutes = code.expires_in / 60,
+        link = hyperlink(&address, std::io::stdout().is_terminal()),
+        user_code = code.user_code,
     )?;
     let mut interval = Duration::from_secs(code.interval);
     let session = loop {
@@ -206,4 +207,30 @@ fn token(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<()> {
 
     writeln!(out, "{}", token.expose_secret())?;
     Ok(())
+}
+
+/// `address` as a link that a terminal opens on a click (OSC 8); as it is
+/// when the output is not a terminal, so that a script reads the address.
+fn hyperlink(address: &str, is_terminal: bool) -> String {
+    if is_terminal {
+        format!("\x1b]8;;{address}\x1b\\{address}\x1b]8;;\x1b\\")
+    } else {
+        address.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_terminal_gets_a_link_and_a_script_the_address() {
+        let address = "https://cihub.example.com/device?code=WDJB-MJHT";
+
+        assert_eq!(hyperlink(address, false), address);
+        assert_eq!(
+            hyperlink(address, true),
+            format!("\x1b]8;;{address}\x1b\\{address}\x1b]8;;\x1b\\")
+        );
+    }
 }
