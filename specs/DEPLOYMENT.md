@@ -4,7 +4,7 @@
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
 `cihub` binary; `cihub server start` runs the four roles (`web`, `scheduler`, `worker`,
-`notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. On Kubernetes, the Helm chart `charts/cihub` installs it.
+`notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. On Kubernetes, the Helm chart `deploy/charts/cihub` installs it.
 
 ## Development
 
@@ -126,7 +126,7 @@ repository.
 
 ## Installation with Docker Compose
 
-`deploy/compose.yaml` is the installation `docker compose`. It starts four services:
+`deploy/compose/compose.yaml` is the installation `docker compose`. It starts four services:
 
 | Service          | Role                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------ |
@@ -135,20 +135,20 @@ repository.
 | `cihub-migrate`  | One-shot: `cihub server migrate`                                                     |
 | `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
 
-The values come from `deploy/.env`, to be created from `deploy/.env.example`: the Postgres passwords,
+The values come from `deploy/compose/.env`, to be created from `deploy/compose/.env.example`: the Postgres passwords,
 `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` and the path of the private key of the App. The key is mounted
 read-only and given by `CIHUB_GITHUB_PRIVATE_KEY_FILE`; the user of the image (uid 65532) must be able to
-read it. `deploy/.env` must never be committed (`.gitignore` excludes it). The internal port 8081 is not published on
+read it. `deploy/compose/.env` must never be committed (`.gitignore` excludes it). The internal port 8081 is not published on
 the host (`specs/SECURITY.md`). The complete procedure is in `INSTALL.md`.
 
 ```sh
-docker compose -f deploy/compose.yaml up -d
-docker compose -f deploy/compose.yaml run --rm cihub-server server token create --org <slug>
+docker compose -f deploy/compose/compose.yaml up -d
+docker compose -f deploy/compose/compose.yaml run --rm cihub-server server token create --org <slug>
 ```
 
 ## Installation on Kubernetes
 
-`charts/cihub` is the Helm chart. It installs:
+`deploy/charts/cihub` is the Helm chart. It installs:
 
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -164,12 +164,12 @@ The secrets come from two existing Secrets: `database.existingSecret` gives `CIH
 `github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and,
 when `github.clientId` is set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
-CIHub does not call the Kubernetes API. `charts/cihub/README.md`, generated, lists the values.
+CIHub does not call the Kubernetes API. `deploy/charts/cihub/README.md`, generated, lists the values.
 
 ```sh
-mise run helm:lint       # helm lint with charts/cihub/ci/lint-values.yaml
-mise run helm:unittest   # the tests of charts/cihub/tests (installs the helm-unittest plugin when it is missing)
-mise run helm:generate   # charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
+mise run helm:lint       # helm lint with deploy/charts/cihub/ci/lint-values.yaml
+mise run helm:unittest   # the tests of deploy/charts/cihub/tests (installs the helm-unittest plugin when it is missing)
+mise run helm:generate   # deploy/charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
 mise run smoke           # the chart in a throwaway kind cluster (needs Docker)
 ```
 
@@ -269,9 +269,9 @@ yet.
 release-please (`.github/workflows/release-please.yaml`) maintains a release PR from the
 commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
-in `Cargo.lock`, and the version and the `appVersion` of `charts/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
+in `Cargo.lock`, and the version and the `appVersion` of `deploy/charts/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
-triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `charts/cihub` with the
+triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `deploy/charts/cihub` with the
 version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.
 
 ## Dependency updates

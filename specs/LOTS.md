@@ -143,7 +143,7 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     rulesets of the target branch and of the test branches, and the simulator restricts no update;
     `GET /queues/{id}/config-check`. Tests: the contract suite, a hand-written response, and the route.
   - Done (October 2, 2026): step 6. `Dockerfile` (distroless, pinned by digest), `.github/workflows/image.yaml`
-    (GHCR, one native runner per architecture, then a manifest), `deploy/compose.yaml` and `deploy/.env.example`,
+    (GHCR, one native runner per architecture, then a manifest), `deploy/compose/compose.yaml` and `deploy/compose/.env.example`,
     `README.md` with the installation procedure and the help prompt for `.cihub.yaml`, `release` profile. Verified
     by the agent: image built (69.6 MB), `migrate` in the image against Postgres, `docker compose config`,
     `actionlint` and `zizmor`.
@@ -265,7 +265,7 @@ Decisions:
     submission carries their account, so that the job checks their permission on the repository. The OpenAPI
     document gives the scheme `session` to every route. `GET /auth/github` and its callback, with the new key
     `http.public_url`; `GET /api/v1/me` (with the page that installs the App, from the new `Scm` method
-    `app_install_url`); `POST /auth/sign-out`. The chart and `deploy/compose.yaml` give the three keys of the
+    `app_install_url`); `POST /auth/sign-out`. The chart and `deploy/compose/compose.yaml` give the three keys of the
     sign-in.
   - Changed by the mockups v5 (October 10, 2026, validated by the project lead): a person without an organization
     gets a session, and the dashboard asks them to install the App, instead of an error of the sign-in.

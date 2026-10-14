@@ -1,6 +1,6 @@
 /target
 # Local settings and secrets of each developer (specs/DEPLOYMENT.md).
 mise.local.toml
-# The secrets of an installation (deploy/.env.example).
-deploy/.env
+# The secrets of an installation (deploy/compose/.env.example).
+deploy/compose/.env
 *.pem
