@@ -1,10 +1,12 @@
-//! Starts the `cihub` binary against Postgres: each `#[sqlx::test]`
-//! gets a new database.
+//! Starts the `cihub-server` binary against Postgres: each `#[sqlx::test]`
+//! gets a new database. The test of the queue commands also runs the `cihub`
+//! binary of `cihub-cli` against it.
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
@@ -28,7 +30,7 @@ fn free_addr() -> String {
 }
 
 fn command(pool: &PgPool) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_cihub"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cihub-server"));
     command
         .env_clear()
         .env("CIHUB_DATABASE_URL", database_url(pool))
@@ -54,7 +56,7 @@ fn with_github(pool: &PgPool) -> Command {
 
 fn start(pool: &PgPool, addr: &str) -> Child {
     with_github(pool)
-        .args(["server", "start"])
+        .arg("start")
         .env("CIHUB_INTERNAL_ADDR", addr)
         .env("CIHUB_HTTP_ADDR", free_addr())
         .spawn()
@@ -120,7 +122,7 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
     for path in ["/healthz", "/readyz"] {
         let (status, body) = wait_for(&addr, path);
         assert_eq!(status, "HTTP/1.1 200 OK");
-        assert!(body.contains(r#""name":"cihub""#), "{body}");
+        assert!(body.contains(r#""name":"cihub-server""#), "{body}");
     }
     stop(child);
 }
@@ -128,25 +130,16 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
 #[sqlx::test(migrations = false)]
 fn migrate_twice_succeeds(pool: PgPool) {
     for _ in 0..2 {
-        let status = command(&pool).args(["server", "migrate"]).status().unwrap();
+        let status = command(&pool).arg("migrate").status().unwrap();
         assert!(status.success(), "{status}");
     }
 }
 
 #[sqlx::test(migrations = false)]
 fn a_missing_migration_stops_the_start(pool: PgPool) {
-    let status = with_github(&pool)
-        .args(["server", "start"])
-        .status()
-        .unwrap();
+    let status = with_github(&pool).arg("start").status().unwrap();
     assert!(!status.success(), "{status}");
-    assert!(
-        command(&pool)
-            .args(["server", "migrate"])
-            .status()
-            .unwrap()
-            .success()
-    );
+    assert!(command(&pool).arg("migrate").status().unwrap().success());
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -189,7 +182,7 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
 async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let (internal, public) = (free_addr(), free_addr());
     let child = with_github(&pool)
-        .args(["server", "start"])
+        .arg("start")
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
@@ -249,7 +242,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
     let output = command(&pool)
-        .args(["server", "start"])
+        .arg("start")
         .stderr(Stdio::piped())
         .output()
         .unwrap();
@@ -257,13 +250,19 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("GitHub is not configured"), "{stderr}");
+    assert!(command(&pool).arg("migrate").status().unwrap().success());
+}
+
+/// Cargo gives the path of the binaries of this crate only; `cargo nextest
+/// run --workspace` builds the one of `cihub-cli` in the same directory.
+fn cli() -> PathBuf {
+    let path = Path::new(env!("CARGO_BIN_EXE_cihub-server")).with_file_name("cihub");
     assert!(
-        command(&pool)
-            .args(["server", "migrate"])
-            .status()
-            .unwrap()
-            .success()
+        path.exists(),
+        "{} is missing: build cihub-cli first",
+        path.display()
     );
+    path
 }
 
 async fn two_queues(pool: &PgPool) -> String {
@@ -314,7 +313,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
     let token = two_queues(&pool).await;
     let (internal, public) = (free_addr(), free_addr());
     let child = with_github(&pool)
-        .args(["server", "start"])
+        .arg("start")
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
         .spawn()
@@ -322,7 +321,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
 
     wait_for(&public, "/api/v1/openapi.json");
     let cihub = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_cihub"))
+        Command::new(cli())
             .args(["queue", "--repo", "acme/app"])
             .args(args)
             .env_clear()
@@ -358,7 +357,7 @@ async fn token_create_shows_one_token_with_every_scope(pool: PgPool) {
     two_queues(&pool).await;
     let create = |slug: &str| {
         command(&pool)
-            .args(["server", "token", "create", "--org", slug])
+            .args(["token", "create", "--org", slug])
             .stdout(Stdio::piped())
             .output()
             .unwrap()

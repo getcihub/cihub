@@ -55,11 +55,20 @@ reason no longer holds.
 
 ## Process and binaries
 
-### Two binaries, and a selection of the roles per process
+### One binary for the server and the command line
 
-- **Tried / considered**: a server binary and a separate CLI; `CIHUB_ROLES` or a role argument to run only some
-  of the four roles in a process.
-- **Why not**: identical replicas already share the work through leases, locks and idempotency keys. One binary
+- **Tried / considered**: one `cihub` binary, with `cihub server start|migrate|token` next to `cihub login` and
+  `cihub queue`.
+- **Why not**: the command line installs in the CI of the users and on their machines. With the server in it,
+  it carried `sqlx`, `axum`, the GitHub adapter and the queue (221 crates instead of 116), and their
+  vulnerabilities. `cihub` (`cihub-cli`) and `cihub-server` are two binaries; the image carries only
+  `cihub-server`.
+- **Would change if**: the command line needs the code of the server.
+
+### A selection of the roles per process
+
+- **Tried / considered**: `CIHUB_ROLES` or a role argument to run only some of the four roles in a process.
+- **Why not**: identical replicas already share the work through leases, locks and idempotency keys. A server
   that always runs the four roles is simpler to ship and to deploy.
 - **Would change if**: a measured need for a role on its own appears.
 
@@ -244,7 +253,7 @@ reason no longer holds.
 
 - **Tried / considered**: create nothing from webhooks, and create organizations with `cihub server bootstrap`.
 - **Why not**: webhooks get lost. CIHub reads the installations of its App on the SCM (at start, daily, and on
-  each signal) and converges `scm_connections`; `cihub server token create` only makes a token.
+  each signal) and converges `scm_connections`; `cihub-server token create` only makes a token.
 
 ### Trust a `blocked` PR state as is
 

@@ -12,7 +12,7 @@ tests:
           of: Deployment
       - equal:
           path: spec.template.spec.containers[0].args
-          value: [server, start, --config, /etc/cihub/server.yaml]
+          value: [start, --config, /etc/cihub/server.yaml]
       - equal:
           path: spec.template.spec.volumes[0].configMap.name
           value: RELEASE-NAME-cihub
@@ -94,7 +94,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/getcihub/cihub@sha256:0123
+          value: ghcr.io/getcihub/server@sha256:0123
 
   - it: defaults the tag to the appVersion
     template: deployment.tpl
@@ -103,7 +103,7 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: ghcr.io/getcihub/cihub:1.2.3
+          value: ghcr.io/getcihub/server:1.2.3
 
   - it: refuses a missing database Secret
     template: deployment.tpl

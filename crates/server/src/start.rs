@@ -1,4 +1,4 @@
-//! `cihub server start`: serves `/healthz` and `/readyz` on the internal
+//! `cihub-server start`: serves `/healthz` and `/readyz` on the internal
 //! address, and runs the four roles in one process until `SIGTERM` or `SIGINT`.
 //! The roles of one process share only the
 //! Postgres pool.

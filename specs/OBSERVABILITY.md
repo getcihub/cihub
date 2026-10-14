@@ -12,7 +12,7 @@ Each process emits OpenTelemetry traces, Prometheus metrics and structured logs 
 
 ## Logs
 
-The logs use `tracing` and `tracing-subscriber`. Only `cihub server` installs the
+The logs use `tracing` and `tracing-subscriber`. Only `cihub-server` installs the
 subscriber, through `cihub-telemetry`; the library crates write with the `tracing` macros
 (`info!`, `warn!`...) and open spans. The pure crates write no logs: the caller writes their
 decisions.

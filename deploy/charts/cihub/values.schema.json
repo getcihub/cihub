@@ -187,7 +187,7 @@
           "type": "string"
         },
         "repository": {
-          "default": "ghcr.io/getcihub/cihub",
+          "default": "ghcr.io/getcihub/server",
           "description": "Image repository.",
           "title": "repository",
           "type": "string"
@@ -476,7 +476,7 @@
     },
     "replicas": {
       "default": 1,
-      "description": "Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.",
+      "description": "Replicas of `cihub-server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.",
       "title": "replicas",
       "type": "integer"
     },

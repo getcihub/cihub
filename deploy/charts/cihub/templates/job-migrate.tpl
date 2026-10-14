@@ -36,7 +36,6 @@ spec:
           image: {{ include "cihub.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - server
             - migrate
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}

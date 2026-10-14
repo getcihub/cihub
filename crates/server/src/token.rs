@@ -1,4 +1,4 @@
-//! `cihub server token create --org <slug>`: creates an API token with every
+//! `cihub-server token create --org <slug>`: creates an API token with every
 //! scope for an organization, shows it once, and stops.
 
 use anyhow::Context;

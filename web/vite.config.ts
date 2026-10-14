@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 // The development server sends the API and the sign-in to a local
-// `cihub server start` (CIHUB_URL, http://localhost:8080 by default).
+// `cihub-server start` (CIHUB_URL, http://localhost:8080 by default).
 const server = process.env.CIHUB_URL ?? "http://localhost:8080";
 
 export default defineConfig({

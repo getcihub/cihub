@@ -1,4 +1,4 @@
-//! The configuration of `cihub server`: the YAML
+//! The configuration of `cihub-server`: the YAML
 //! file named by `--config`, under the `CIHUB_*` variables. The variable of a
 //! key is `CIHUB_` followed by its path in capitals, with `_` as separator;
 //! a variable wins over the file, the file over the default.

@@ -173,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Drops and creates `cihub_e2e` on the server of `DATABASE_URL`, then applies
-/// the migrations and creates the partitions, as `cihub server migrate` does.
+/// the migrations and creates the partitions, as `cihub-server migrate` does.
 async fn fresh_database() -> Result<PgPool, Box<dyn std::error::Error>> {
     let url = std::env::var("DATABASE_URL")?;
     let admin = PgPool::connect(&url).await?;

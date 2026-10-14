@@ -36,6 +36,7 @@ deny = [
         "cihub-mergequeue",
         "cihub-flakytests",
         "cihub-cli",
+        "cihub-server",
         "axum",
         "hyper",
         "hyper-rustls",
@@ -54,7 +55,7 @@ deny = [
         "cihub-store",
         # A dev-dependency only: its tests against Postgres.
         "cihub-web",
-        "cihub-cli",
+        "cihub-server",
         "cihub-platform",
         "cihub-analytics",
         "cihub-mergequeue",
@@ -72,13 +73,13 @@ deny = [
         "cihub-web",
         "cihub-mergequeue",
         "cihub-flakytests",
-        "cihub-cli",
+        "cihub-server",
     ] },
     # The pure crates write no logs: the caller writes their decisions.
     { crate = "tracing", wrappers = [
-        "cihub-cli",
         "cihub-mergequeue",
         "cihub-platform",
+        "cihub-server",
         "cihub-telemetry",
         "cihub-web",
         "hyper-util",
@@ -87,11 +88,11 @@ deny = [
         "tracing-subscriber",
     ] },
     # A library crate keeps the cause in its own `thiserror` enumeration.
-    { crate = "anyhow", wrappers = ["cihub-cli"] },
-    # Only the binary and the web server wire the adapter; the other crates see
-    # the neutral `Scm` trait.
+    { crate = "anyhow", wrappers = ["cihub-cli", "cihub-server"] },
+    # Only the server binary and the web server wire the adapter; the other
+    # crates see the neutral `Scm` trait.
     { crate = "cihub-github", wrappers = [
-        "cihub-cli",
+        "cihub-server",
         "cihub-web",
         # A dev-dependency only: the rate limit test, end to end.
         "cihub-mergequeue",

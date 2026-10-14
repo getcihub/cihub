@@ -26,9 +26,9 @@ the migration Job uses the same URL.
 
 ## What the chart installs
 
-- A `pre-install` and `pre-upgrade` hook Job, `cihub server migrate`: the pods of a new version start only once
+- A `pre-install` and `pre-upgrade` hook Job, `cihub-server migrate`: the pods of a new version start only once
   the migrations are applied.
-- A Deployment of `cihub server start`. Each replica runs the four roles; the replicas share the work through
+- A Deployment of `cihub-server start`. Each replica runs the four roles; the replicas share the work through
   Postgres. `server.yaml` comes from a ConfigMap, without secrets: the URL of the database and the webhook secret
   come from the environment, the private key from a file of its Secret.
 - A Service to the public address of the pods (`POST /webhooks/github` and the API), and an optional Ingress or
@@ -65,7 +65,7 @@ Kubernetes: `>=1.25.0-0`
 | httpRoute.parentRefs | list | `[]` | Gateways and listeners of the route. |
 | image.digest | string | `""` | Image digest (`sha256:…`); wins over the tag when set. |
 | image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
-| image.repository | string | `"ghcr.io/getcihub/cihub"` | Image repository. |
+| image.repository | string | `"ghcr.io/getcihub/server"` | Image repository. |
 | image.tag | string | `""` | Image tag; the appVersion of the chart when empty. |
 | imagePullSecrets | list | `[]` | Secrets to pull the image, for the server pods, the migration Job and the test pod. |
 | ingress.annotations | object | `{}` | Annotations of the Ingress. |
@@ -87,7 +87,7 @@ Kubernetes: `>=1.25.0-0`
 | priorityClassName | string | `""` | Priority class of the server pods. |
 | publicUrl | string | `""` | The root address where people reach the instance, such as `https://ci.example.com`. The sign-in to the dashboard sends them back there; without it, nobody signs in (specs/DEPLOYMENT.md). |
 | readinessProbe | object | `{"httpGet":{"path":"/readyz","port":"internal"},"periodSeconds":10}` | Readiness probe: `/readyz` answers 503 when Postgres does not answer within 2 s. |
-| replicas | int | `1` | Replicas of `cihub server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost. |
+| replicas | int | `1` | Replicas of `cihub-server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost. |
 | resources | object | `{"limits":{"memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resources of the server pods and of the migration Job. |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}` | Security context of the containers: CIHub writes no file. |
 | service.port | int | `8080` | Port of the Service, to the public address of the pods: the webhooks on `POST /webhooks/github` and the API. The internal address (`/healthz`, `/readyz`) stays on the pods, for the probes. |

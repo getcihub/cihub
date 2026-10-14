@@ -1,4 +1,4 @@
-//! `cihub server migrate`: applies the missing migrations, creates the
+//! `cihub-server migrate`: applies the missing migrations, creates the
 //! partitions of the events, then stops.
 
 use cihub_store::{MIGRATOR, PgPool};

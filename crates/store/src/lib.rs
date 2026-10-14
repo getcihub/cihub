@@ -1,8 +1,8 @@
 //! Postgres store of CIHub: the connection pool, the transactions of an
 //! organization or of the system (row level security), and
 //! the migrations embedded from `migrations/`. It holds no
-//! queue logic and does not decide when the migrations run: `cihub server
-//! migrate` applies them, and `cihub server start` refuses to start while one
+//! queue logic and does not decide when the migrations run: `cihub-server
+//! migrate` applies them, and `cihub-server start` refuses to start while one
 //! is missing.
 
 mod events;

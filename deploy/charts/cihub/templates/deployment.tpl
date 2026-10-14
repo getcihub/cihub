@@ -55,7 +55,6 @@ spec:
           image: {{ include "cihub.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - server
             - start
             - --config
             - /etc/cihub/server.yaml
