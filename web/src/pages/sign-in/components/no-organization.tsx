@@ -1,7 +1,7 @@
 import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useSignOut } from "@/hooks/use-sign-out";
-import { Failure, Lead, Note, Title } from "./parts";
+import { Failure, Lead, Note, Title } from "@/components/session/parts";
 
 /**
  * The sign-out page of the GitHub of the App, next to its installation page: GitHub asks which account to use

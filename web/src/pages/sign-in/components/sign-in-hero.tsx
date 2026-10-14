@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { CheckIcon } from "@/components/icons/check-icon";
-import { Brand } from "./parts";
+import { Brand } from "@/components/session/parts";
 import { Timeline } from "./timeline";
 
 /** The left side of the sign-in: what CIHub promises, beside the form. Hidden in a narrow window. */

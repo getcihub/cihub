@@ -791,6 +791,16 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query(
+            "INSERT INTO device_codes (id, device_code_hash, user_code, created_at, expires_at)
+             VALUES ($1, sha256($1::bytea), $1, $2, $3)",
+        )
+        .bind(id)
+        .bind(now - Duration::minutes(15))
+        .bind(expires_at)
+        .execute(&pool)
+        .await
+        .unwrap();
     }
 
     run_maintenance(&pool, now).await.unwrap();
@@ -815,6 +825,12 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .unwrap();
 
     assert_eq!(sessions, ["live"]);
+    let device_codes: Vec<String> = sqlx::query_scalar("SELECT id FROM device_codes")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(device_codes, ["live"]);
     let partitions: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
          WHERE i.inhparent = 'events'::regclass ORDER BY 1",

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CancelData, CancelErrors, CancelResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -17,6 +17,71 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
      */
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
 };
+
+/**
+ * Start a sign-in of the command line
+ *
+ * A device code, for the command line, and its user code, for the person,
+ * who approves it on the page `verification_url`. The command line then
+ * asks `POST /device-codes/token` every `interval` seconds.
+ *
+ * **Access**: no token or session.
+ */
+export const startDeviceSignIn = <ThrowOnError extends boolean = false>(options?: Options<StartDeviceSignInData, ThrowOnError>): RequestResult<StartDeviceSignInResponses, StartDeviceSignInErrors, ThrowOnError> => (options?.client ?? client).post<StartDeviceSignInResponses, StartDeviceSignInErrors, ThrowOnError>({ url: '/device-codes', ...options });
+
+/**
+ * Get the session of the command line
+ *
+ * The session, once the person approved the code; it is given once, and
+ * the code is used. Before, the answer says to ask again after `interval`
+ * seconds, 5 seconds more after each `polling_too_fast`.
+ *
+ * **Access**: no token or session.
+ */
+export const getDeviceSession = <ThrowOnError extends boolean = false>(options: Options<GetDeviceSessionData, ThrowOnError>): RequestResult<GetDeviceSessionResponses, GetDeviceSessionErrors, ThrowOnError> => (options.client ?? client).post<GetDeviceSessionResponses, GetDeviceSessionErrors, ThrowOnError>({
+    url: '/device-codes/token',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Approve a sign-in of the command line
+ *
+ * The person of the session approves the code that their command line
+ * shows: the command line then signs in as them.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const approveDeviceCode = <ThrowOnError extends boolean = false>(options: Options<ApproveDeviceCodeData, ThrowOnError>): RequestResult<ApproveDeviceCodeResponses, ApproveDeviceCodeErrors, ThrowOnError> => (options.client ?? client).post<ApproveDeviceCodeResponses, ApproveDeviceCodeErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/device-codes/{user_code}/approve',
+    ...options
+});
+
+/**
+ * Deny a sign-in of the command line
+ *
+ * The person of the session denies a code that they did not ask for: no
+ * command line signs in with it.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const denyDeviceCode = <ThrowOnError extends boolean = false>(options: Options<DenyDeviceCodeData, ThrowOnError>): RequestResult<DenyDeviceCodeResponses, DenyDeviceCodeErrors, ThrowOnError> => (options.client ?? client).post<DenyDeviceCodeResponses, DenyDeviceCodeErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/device-codes/{user_code}/deny',
+    ...options
+});
 
 /**
  * Get the instance
@@ -382,7 +447,7 @@ export const stream = <ThrowOnError extends boolean = false>(options: Options<St
  * The person of the session of the dashboard. An API token stands for no
  * person: it gets `401`.
  *
- * **Access**: a session of the dashboard only.
+ * **Access**: the session of a person: the dashboard, or the command line.
  */
 export const getUser = <ThrowOnError extends boolean = false>(options?: Options<GetUserData, ThrowOnError>): RequestResult<GetUserResponses, GetUserErrors, ThrowOnError> => (options?.client ?? client).get<GetUserResponses, GetUserErrors, ThrowOnError>({
     security: [{
@@ -400,7 +465,7 @@ export const getUser = <ThrowOnError extends boolean = false>(options?: Options<
  * The organizations where the person of the session has a role, by slug;
  * none before the App is installed on an account of the person.
  *
- * **Access**: a session of the dashboard only.
+ * **Access**: the session of a person: the dashboard, or the command line.
  */
 export const listUserOrgs = <ThrowOnError extends boolean = false>(options?: Options<ListUserOrgsData, ThrowOnError>): RequestResult<ListUserOrgsResponses, ListUserOrgsErrors, ThrowOnError> => (options?.client ?? client).get<ListUserOrgsResponses, ListUserOrgsErrors, ThrowOnError>({
     security: [{
@@ -409,5 +474,24 @@ export const listUserOrgs = <ThrowOnError extends boolean = false>(options?: Opt
             type: 'apiKey'
         }],
     url: '/user/orgs',
+    ...options
+});
+
+/**
+ * End the session
+ *
+ * Ends the session of the request: the sign-out of the command line. The
+ * dashboard signs out with `POST /auth/sign-out`, which also clears its
+ * cookies.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const deleteUserSession = <ThrowOnError extends boolean = false>(options?: Options<DeleteUserSessionData, ThrowOnError>): RequestResult<DeleteUserSessionResponses, DeleteUserSessionErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteUserSessionResponses, DeleteUserSessionErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/user/session',
     ...options
 });

@@ -120,22 +120,28 @@ pub enum ErrorCode {
     UnknownPriority,
     MeNeedsSession,
     QueueNeedsRepo,
+    DeviceCodePending,
+    DeviceCodeExpired,
     Unauthorized,
     ScopeMissing,
     CsrfRefused,
+    DeviceCodeDenied,
     RouteNotFound,
     OrgNotFound,
     RepoNotFound,
     QueueNotFound,
     PrNotFound,
     RunNotFound,
+    DeviceCodeNotFound,
     QueueNotAccepting,
     PrAlreadyQueued,
     ItemEnded,
     ItemNotInTest,
     RateLimited,
     TooManyStreams,
+    PollingTooFast,
     Internal,
+    SignInUnavailable,
 }
 
 impl ErrorCode {
@@ -151,21 +157,25 @@ impl ErrorCode {
             | Self::InvalidCursor
             | Self::UnknownPriority
             | Self::MeNeedsSession
-            | Self::QueueNeedsRepo => 400,
+            | Self::QueueNeedsRepo
+            | Self::DeviceCodePending
+            | Self::DeviceCodeExpired => 400,
             Self::Unauthorized => 401,
-            Self::ScopeMissing | Self::CsrfRefused => 403,
+            Self::ScopeMissing | Self::CsrfRefused | Self::DeviceCodeDenied => 403,
             Self::RouteNotFound
             | Self::OrgNotFound
             | Self::RepoNotFound
             | Self::QueueNotFound
             | Self::PrNotFound
-            | Self::RunNotFound => 404,
+            | Self::RunNotFound
+            | Self::DeviceCodeNotFound => 404,
             Self::QueueNotAccepting
             | Self::PrAlreadyQueued
             | Self::ItemEnded
             | Self::ItemNotInTest => 409,
-            Self::RateLimited | Self::TooManyStreams => 429,
+            Self::RateLimited | Self::TooManyStreams | Self::PollingTooFast => 429,
             Self::Internal => 500,
+            Self::SignInUnavailable => 503,
         }
     }
 
@@ -182,6 +192,13 @@ impl ErrorCode {
                 "`@me` names the person of a session; an API token stands for no person."
             }
             Self::QueueNeedsRepo => "`queue` names a queue of the repository that `repo` names.",
+            Self::DeviceCodePending => {
+                "The person has not approved or denied the code yet: ask again after `interval` \
+                 seconds."
+            }
+            Self::DeviceCodeExpired => {
+                "The device code is unknown, already used, or older than 15 minutes: start again."
+            }
             Self::Unauthorized => "No API token or session, or one that is unknown or expired.",
             Self::ScopeMissing => {
                 "The token, or the role of the user of the session, lacks the scope of the route."
@@ -189,6 +206,9 @@ impl ErrorCode {
             Self::CsrfRefused => {
                 "A request of a session that can change a state lacks the header `X-CSRF-Token`, \
                  or carries another token than the cookie `__Host-cihub_csrf`."
+            }
+            Self::DeviceCodeDenied => {
+                "The person denied the code: the command line is not signed in."
             }
             Self::RouteNotFound => "No route has this path.",
             Self::OrgNotFound => {
@@ -198,6 +218,10 @@ impl ErrorCode {
             Self::QueueNotFound => "The repository has no queue with this name.",
             Self::PrNotFound => "The PR was never submitted to a queue of the repository.",
             Self::RunNotFound => "The organization has no run with this identifier.",
+            Self::DeviceCodeNotFound => {
+                "No sign-in of the command line waits for this code: it is wrong, used, or older \
+                 than 15 minutes."
+            }
             Self::QueueNotAccepting => {
                 "The queue is `draining` or `switching_modes`: it accepts no new PR."
             }
@@ -213,7 +237,13 @@ impl ErrorCode {
                  `Retry-After` seconds."
             }
             Self::TooManyStreams => "The token or the person already keeps 8 streams open.",
+            Self::PollingTooFast => {
+                "The command line asked again sooner than `interval`: wait 5 seconds more each time."
+            }
             Self::Internal => "The server failed; the logs of the instance say why.",
+            Self::SignInUnavailable => {
+                "The instance has no public address or no sign-in client: nobody signs in to it."
+            }
         }
     }
 }
@@ -257,6 +287,62 @@ pub struct User {
         schema(example = "https://avatars.example.com/u/1")
     )]
     pub avatar_url: Option<String>,
+}
+
+/// `POST /device-codes`: a sign-in of the command line, which waits for its
+/// person.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DeviceCode {
+    /// The secret of the command line, which it sends to
+    /// `POST /device-codes/token`; never shown to the person.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "chd_0123456789abcdefghjkmnpqrstvwx")
+    )]
+    pub device_code: String,
+    /// The code that the person checks on the page of `verification_url`.
+    #[cfg_attr(feature = "openapi", schema(example = "WDJB-MJHT"))]
+    pub user_code: String,
+    /// The page of the dashboard where the person approves the code.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://cihub.example.com/device")
+    )]
+    pub verification_url: String,
+    /// The seconds before the code expires.
+    #[cfg_attr(feature = "openapi", schema(example = 900))]
+    pub expires_in: u64,
+    /// The seconds to wait between two requests of the session.
+    #[cfg_attr(feature = "openapi", schema(example = 5))]
+    pub interval: u64,
+}
+
+/// `POST /device-codes/token`: the device code of the sign-in.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DeviceCodeToken {
+    /// The `device_code` that `POST /device-codes` gave.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "chd_0123456789abcdefghjkmnpqrstvwx")
+    )]
+    pub device_code: String,
+}
+
+/// The session of the command line, once its person approved the code.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CliSession {
+    /// The secret of the session, for `Authorization: Bearer`; given once.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "chc_0123456789abcdefghjkmnpqrstvwx")
+    )]
+    pub token: String,
+    /// The login of the person on the SCM.
+    #[cfg_attr(feature = "openapi", schema(example = "ada"))]
+    pub login: String,
 }
 
 /// `GET /instance`: the instance of CIHub.

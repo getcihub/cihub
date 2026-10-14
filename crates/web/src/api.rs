@@ -1,8 +1,9 @@
 //! `/api/v1` (`specs/API.md`): the authentication of each
-//! request by its API token or by a session of the dashboard, the rate limit
+//! request by its API token or by the session of a person, the rate limit
 //! of each of them, the routes of the platform (`/user`, `/instance`,
-//! `/orgs/{org}`, its repositories and its audit log), the routes of the
-//! modules, and the `OpenAPI` document of all of them.
+//! `/orgs/{org}`, its repositories and its audit log, the sign-in of the
+//! command line), the routes of the modules, and the `OpenAPI` document of all
+//! of them.
 
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
@@ -10,14 +11,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::header::AUTHORIZATION;
-use axum::http::{HeaderMap, Method};
+use axum::http::{HeaderMap, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use cihub_api_types::{
-    AuditEntry, AuditList, ErrorCode, Instance, Org, OrgList, Problem, QueueChanged, Repo,
-    RepoList, User,
+    AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
+    OrgList, Problem, QueueChanged, Repo, RepoList, User,
 };
 use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
 use cihub_platform::{
@@ -26,7 +27,8 @@ use cihub_platform::{
 };
 use cihub_scm::Scm;
 use cihub_store::{
-    PgPool, SessionGrant, authenticate, authenticate_session, memberships_of, profile_of,
+    PgPool, SessionClient, SessionGrant, authenticate, authenticate_session, delete_session_by_id,
+    memberships_of, profile_of,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -41,6 +43,11 @@ use utoipa::openapi::security::{
 use utoipa::openapi::{RefOr, Response as DocumentResponse};
 use utoipa::{Modify, OpenApi};
 
+use crate::device::{
+    __path_approve_device_code, __path_deny_device_code, __path_get_device_session,
+    __path_start_device_sign_in, approve_device_code, deny_device_code, get_device_session,
+    start_device_sign_in,
+};
 use crate::session::{SESSION_COOKIE, cookie, csrf_refused, has_csrf_token, needs_csrf_token};
 use crate::stream::{__path_stream, Streams, stream};
 
@@ -49,10 +56,12 @@ pub const REQUESTS_PER_MINUTE: u32 = 600;
 const MAX_BODY_BYTES: usize = 25 * 1024 * 1024;
 
 #[derive(Clone)]
-struct ApiState {
-    pool: PgPool,
-    now: fn() -> OffsetDateTime,
+pub(crate) struct ApiState {
+    pub pool: PgPool,
+    pub now: fn() -> OffsetDateTime,
     scm: Arc<dyn Scm>,
+    /// The root address of the instance, where the dashboard is.
+    pub public_url: Option<String>,
     windows: Arc<Mutex<HashMap<Caller, (i64, u32)>>>,
 }
 
@@ -96,7 +105,8 @@ impl Modify for Security {
     tags(
         (
             name = "Session",
-            description = "The person signed in to the dashboard, and the instance."
+            description = "The person signed in, the sign-in of the command line, and the \
+                           instance."
         ),
         (
             name = "Organizations",
@@ -111,6 +121,11 @@ impl Modify for Security {
     paths(
         get_user,
         list_user_orgs,
+        delete_user_session,
+        start_device_sign_in,
+        get_device_session,
+        approve_device_code,
+        deny_device_code,
         get_instance,
         get_org,
         list_repos,
@@ -121,6 +136,9 @@ impl Modify for Security {
     components(schemas(
         AuditEntry,
         AuditList,
+        CliSession,
+        DeviceCode,
+        DeviceCodeToken,
         ErrorCode,
         Instance,
         Org,
@@ -193,9 +211,16 @@ fn accept_session(operation: &mut Operation) {
 /// Says who may call the route, and adds the errors that every route of its
 /// kind answers: the routes of a module declare only their own.
 fn document_access(path: &str, operation: &mut Operation, changes_state: bool) {
+    if operation.security.is_none() {
+        document_public(operation);
+        return;
+    }
+
     let scopes = token_scopes(operation);
     let access = match &scopes {
-        None => "**Access**: a session of the dashboard only.".to_owned(),
+        None => {
+            "**Access**: the session of a person: the dashboard, or the command line.".to_owned()
+        }
         Some(scopes) if scopes.is_empty() => "**Access**: any API token or session.".to_owned(),
         Some(scopes) => format!(
             "**Scope**: {}, for an API token or for the role of the user of a session.",
@@ -226,6 +251,18 @@ fn document_access(path: &str, operation: &mut Operation, changes_state: bool) {
     }
 }
 
+/// A route that needs no token or session: the sign-in of the command line.
+/// No caller is known, so no rate limit applies.
+fn document_public(operation: &mut Operation) {
+    let access = "**Access**: no token or session.";
+
+    operation.description = Some(match operation.description.take() {
+        Some(description) => format!("{description}\n\n{access}"),
+        None => access.to_owned(),
+    });
+    document_error(&mut operation.responses, ErrorCode::Internal);
+}
+
 /// The scopes that an API token needs on the route, as `` `queues:read` ``;
 /// `None` for a route that no token reaches.
 fn token_scopes(operation: &Operation) -> Option<Vec<String>> {
@@ -250,6 +287,7 @@ pub(crate) fn router(
     modules: Vec<ModuleApi>,
     scm: Arc<dyn Scm>,
     news: QueueNewsFeed,
+    public_url: Option<String>,
 ) -> Router {
     let parts: Vec<_> = modules
         .iter()
@@ -265,11 +303,18 @@ pub(crate) fn router(
         pool,
         now,
         scm,
+        public_url,
         windows: Arc::default(),
     };
     let mut routes = Router::new()
         .route("/user", get(get_user))
         .route("/user/orgs", get(list_user_orgs))
+        .route("/user/session", delete(delete_user_session))
+        .route(
+            "/device-codes/{user_code}/approve",
+            post(approve_device_code),
+        )
+        .route("/device-codes/{user_code}/deny", post(deny_device_code))
         .route("/instance", get(get_instance))
         .route("/orgs/{org}", get(get_org))
         .route("/orgs/{org}/repos", get(list_repos))
@@ -290,7 +335,11 @@ pub(crate) fn router(
         .fallback(|| async {
             ApiError::new(ErrorCode::RouteNotFound, "no route has this path".into())
         })
-        .layer(middleware::from_fn_with_state(state, authenticated));
+        .layer(middleware::from_fn_with_state(state.clone(), authenticated));
+    let sign_in = Router::new()
+        .route("/device-codes", post(start_device_sign_in))
+        .route("/device-codes/token", post(get_device_session))
+        .with_state(state);
 
     Router::new()
         .route(
@@ -300,6 +349,7 @@ pub(crate) fn router(
                 async move { Json(document) }
             }),
         )
+        .merge(sign_in)
         .merge(routes)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
 }
@@ -316,11 +366,13 @@ async fn authenticated(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(|token| SecretString::from(token.trim().to_owned()));
-    let authenticated = if let Some(secret) = bearer {
-        by_token(&state, &secret, now).await
-    } else {
-        let (headers, method, path) = (request.headers(), request.method(), request.uri().path());
-        by_session(&state, headers, method, path, now).await
+    let path = request.uri().path();
+    let authenticated = match bearer {
+        Some(secret) if SessionClient::of(&secret) == Some(SessionClient::CommandLine) => {
+            by_session(&state, &secret, path, now).await
+        }
+        Some(secret) => by_token(&state, &secret, now).await,
+        None => by_cookie(&state, request.headers(), request.method(), path, now).await,
     };
     let authenticated = match authenticated {
         Ok(authenticated) => authenticated,
@@ -387,24 +439,40 @@ async fn by_token(
     ))
 }
 
-/// A session, and on a route of an organization the grant of the role of
-/// its user there. An organization where the user has no role answers
-/// `404`, as for a token of another organization.
-async fn by_session(
+/// The session of the dashboard in the cookie of the request. A request
+/// that can change a state also carries its CSRF token; a session of the
+/// command line is never a cookie.
+async fn by_cookie(
     state: &ApiState,
     headers: &HeaderMap,
     method: &Method,
     path: &str,
     now: OffsetDateTime,
 ) -> Result<Authenticated, ApiError> {
-    let secret = cookie(headers, SESSION_COOKIE).ok_or_else(ApiError::unauthorized)?;
-    let session = authenticate_session(&state.pool, &secret, now)
-        .await?
+    let secret = cookie(headers, SESSION_COOKIE)
+        .filter(|secret| SessionClient::of(secret) == Some(SessionClient::Dashboard))
         .ok_or_else(ApiError::unauthorized)?;
+    let authenticated = by_session(state, &secret, path, now).await;
 
-    if needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
+    if authenticated.is_ok() && needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
         return Err(csrf_refused());
     }
+
+    authenticated
+}
+
+/// A session, and on a route of an organization the grant of the role of
+/// its user there. An organization where the user has no role answers
+/// `404`, as for a token of another organization.
+async fn by_session(
+    state: &ApiState,
+    secret: &SecretString,
+    path: &str,
+    now: OffsetDateTime,
+) -> Result<Authenticated, ApiError> {
+    let session = authenticate_session(&state.pool, secret, now)
+        .await?
+        .ok_or_else(ApiError::unauthorized)?;
 
     let Some(slug) = org_of_path(path) else {
         return Ok(Authenticated::Session(session, None));
@@ -454,11 +522,13 @@ fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u
 
 /// The session of the request; `401` for an API token, which stands for no
 /// person.
-fn session_of(session: Option<Extension<SessionGrant>>) -> Result<SessionGrant, ApiError> {
+pub(crate) fn session_of(
+    session: Option<Extension<SessionGrant>>,
+) -> Result<SessionGrant, ApiError> {
     session.map(|Extension(session)| session).ok_or_else(|| {
         ApiError::new(
             ErrorCode::Unauthorized,
-            "the route needs a session of the dashboard".into(),
+            "the route needs the session of a person".into(),
         )
     })
 }
@@ -489,6 +559,28 @@ async fn get_user(
         name: profile.name,
         avatar_url: profile.avatar_url,
     }))
+}
+
+/// End the session
+///
+/// Ends the session of the request: the sign-out of the command line. The
+/// dashboard signs out with `POST /auth/sign-out`, which also clears its
+/// cookies.
+#[utoipa::path(
+    delete,
+    path = "/user/session",
+    tag = "Session",
+    responses((status = 204, description = "The session ended.")),
+    security(("session" = []))
+)]
+async fn delete_user_session(
+    State(state): State<ApiState>,
+    session: Option<Extension<SessionGrant>>,
+) -> Result<StatusCode, ApiError> {
+    let session = session_of(session)?;
+
+    delete_session_by_id(&state.pool, session.id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]

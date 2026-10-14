@@ -9,6 +9,7 @@
 
 mod api;
 mod dashboard;
+mod device;
 mod session;
 mod sign_in;
 mod stream;
@@ -86,7 +87,14 @@ pub fn router(
         .merge(sign_in_routes(&pool, now, &dashboard))
         .nest(
             API_PREFIX,
-            api::router(pool, now, modules, dashboard.scm, dashboard.news),
+            api::router(
+                pool,
+                now,
+                modules,
+                dashboard.scm,
+                dashboard.news,
+                dashboard.public_url,
+            ),
         )
         .fallback(get(dashboard::serve))
 }

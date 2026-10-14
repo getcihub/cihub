@@ -51,7 +51,9 @@ export function renderApp(path: string, answers: Answers) {
     vi.fn((input: Request | string) => {
       const [status, body] = answerOf(new URL(typeof input === "string" ? input : input.url));
       const headers = { "content-type": "application/json" };
-      return Promise.resolve(new Response(JSON.stringify(body), { status, headers }));
+      // A `204` carries no body: `Response` refuses one.
+      const text = status === 204 ? null : JSON.stringify(body);
+      return Promise.resolve(new Response(text, { status, headers }));
     }),
   );
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

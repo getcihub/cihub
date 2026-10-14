@@ -21,6 +21,18 @@ closed_enum! {
 }
 
 closed_enum! {
+    /// Where a sign-in of the command line stands (`specs/API.md`).
+    pub enum DeviceCodeState {
+        /// The command line waits for the person.
+        Pending,
+        /// The person approved the code: the command line takes its session.
+        Approved,
+        /// The person denied the code.
+        Denied,
+    }
+}
+
+closed_enum! {
     /// What an API token may do (`specs/API.md`).
     pub enum ApiScope {
         /// Read the queues, their items and their timeline.

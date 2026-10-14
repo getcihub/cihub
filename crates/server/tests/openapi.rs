@@ -53,8 +53,10 @@ fn each_route_documents_its_errors_with_an_example_of_each() {
 
     for (route, operation) in operations(&document) {
         let responses = operation["responses"].as_object().unwrap();
+        // The sign-in of the command line needs no token or session.
+        let is_public = operation.get("security").is_none();
 
-        assert!(responses.contains_key("401"), "{route}");
+        assert_eq!(responses.contains_key("401"), !is_public, "{route}");
         for (status, response) in responses {
             let described = response["description"].as_str().unwrap_or_default();
             assert!(!described.is_empty(), "{route} {status}");

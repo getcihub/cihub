@@ -4,14 +4,14 @@
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
-use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId};
+use cihub_domain::{ApiScope, ApiTokenId, ConnectionId, OrgId, QueueId, RepoId, SessionId, UserId};
 use ring::hmac;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -325,7 +325,7 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
             .args(["queue", "--repo", "acme/app"])
             .args(args)
             .env_clear()
-            .env("CIHUB_URL", format!("http://{public}"))
+            .env("CIHUB_HOST", &public)
             .env("CIHUB_TOKEN", &token)
             .output()
             .unwrap()
@@ -350,6 +350,116 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
 
     assert_eq!(stdout, "queue `main` on `main`: running\n");
     stop(child);
+}
+
+/// A session of the dashboard of `ada`: its cookie and its CSRF token.
+async fn dashboard_session(pool: &PgPool) -> (String, String) {
+    let user_id = UserId::from_ulid(Ulid(5));
+    let secret = cihub_store::new_session_secret().unwrap();
+    let session = cihub_store::NewSession {
+        id: SessionId::from_ulid(Ulid(5)),
+        user_id,
+        // The server reads the clock: the session outlives the test.
+        created_at: time::OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap(),
+        expires_at: time::OffsetDateTime::from_unix_timestamp(4_000_000_000).unwrap(),
+    };
+    let mut tx = cihub_store::begin_system(pool).await.unwrap();
+
+    cihub_store::ensure_user(&mut tx, user_id, "5", "ada")
+        .await
+        .unwrap();
+    cihub_store::create_session(&mut tx, &session, &secret)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    (
+        format!("__Host-cihub_session={}", secret.expose_secret()),
+        cihub_store::csrf_token(&secret),
+    )
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_command_line_signs_in_with_a_code_that_its_person_approves(pool: PgPool) {
+    let (cookie, csrf) = dashboard_session(&pool).await;
+    let (internal, public) = (free_addr(), free_addr());
+    let child = with_github(&pool)
+        .arg("start")
+        .env("CIHUB_INTERNAL_ADDR", &internal)
+        .env("CIHUB_HTTP_ADDR", &public)
+        .env("CIHUB_HTTP_PUBLIC_URL", format!("http://{public}"))
+        .spawn()
+        .unwrap();
+    let config = std::env::temp_dir().join(format!("cihub-{}", public.replace(':', "-")));
+    let cihub = |args: &[&str]| {
+        let mut command = Command::new(cli());
+        command
+            .args(args)
+            .env_clear()
+            .env("XDG_CONFIG_HOME", &config)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    };
+
+    wait_for(&public, "/api/v1/openapi.json");
+    let mut login = cihub(&["auth", "login", "--hostname", &public])
+        .spawn()
+        .unwrap();
+    let mut prompt = String::new();
+    BufReader::new(login.stdout.as_mut().unwrap())
+        .read_line(&mut prompt)
+        .unwrap();
+    let user_code = prompt
+        .split("check the code ")
+        .nth(1)
+        .and_then(|rest| rest.split(';').next())
+        .unwrap();
+
+    assert!(
+        prompt.starts_with(&format!("Open http://{public}/device?code={user_code} ")),
+        "{prompt}"
+    );
+    let approved = post(
+        &public,
+        &format!("/api/v1/device-codes/{user_code}/approve"),
+        &[("Cookie", &cookie), ("X-CSRF-Token", &csrf)],
+        "",
+    );
+    let login = login.wait_with_output().unwrap();
+
+    assert_eq!(approved.as_deref(), Some("HTTP/1.1 204 No Content"));
+    assert!(
+        login.status.success(),
+        "{}",
+        String::from_utf8_lossy(&login.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&login.stdout)
+            .starts_with(&format!("Signed in to {public} as ada;")),
+        "{}",
+        String::from_utf8_lossy(&login.stdout)
+    );
+    let status = cihub(&["auth", "status"]).output().unwrap();
+    let token = cihub(&["auth", "token"]).output().unwrap();
+
+    assert!(
+        String::from_utf8_lossy(&status.stdout)
+            .starts_with(&format!("{public}: signed in as ada (token from ")),
+        "{}",
+        String::from_utf8_lossy(&status.stdout)
+    );
+    assert!(String::from_utf8_lossy(&token.stdout).starts_with("chc_"));
+    let logout = cihub(&["auth", "logout"]).output().unwrap();
+    let after = cihub(&["auth", "status"]).output().unwrap();
+
+    assert!(
+        logout.status.success(),
+        "{}",
+        String::from_utf8_lossy(&logout.stderr)
+    );
+    assert!(!after.status.success());
+    stop(child);
+    std::fs::remove_dir_all(&config).unwrap();
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

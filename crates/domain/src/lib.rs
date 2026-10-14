@@ -41,8 +41,8 @@ mod transition;
 pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
-    ApiTokenId, AuditEntryId, ConnectionId, EventId, GroupId, IdParseError, ItemId, OrgId, QueueId,
-    RepoId, RunId, SessionId, UserId,
+    ApiTokenId, AuditEntryId, ConnectionId, DeviceCodeId, EventId, GroupId, IdParseError, ItemId,
+    OrgId, QueueId, RepoId, RunId, SessionId, UserId,
 };
 pub use item::{BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
@@ -56,9 +56,11 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, MembershipRole};
+pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, DeviceCodeState, MembershipRole};
 pub use token::{
-    API_TOKEN_PREFIX, SESSION_TOKEN_PREFIX, format_api_token, format_session_token, is_api_token,
-    is_session_token,
+    API_TOKEN_PREFIX, CLI_SESSION_TOKEN_PREFIX, DEVICE_CODE_PREFIX, SESSION_TOKEN_PREFIX,
+    format_api_token, format_cli_session_token, format_device_code, format_session_token,
+    format_user_code, is_api_token, is_cli_session_token, is_device_code, is_session_token,
+    parse_user_code,
 };
 pub use transition::{Lifecycle, TransitionError, check_transition};

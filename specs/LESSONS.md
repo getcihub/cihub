@@ -255,6 +255,16 @@ reason no longer holds.
 - **Why not**: webhooks get lost. CIHub reads the installations of its App on the SCM (at start, daily, and on
   each signal) and converges `scm_connections`; `cihub-server token create` only makes a token.
 
+### The device flow of the GitHub App for the command line
+
+- **Tried / considered**: `cihub auth login` runs the device flow of the GitHub App, then trades the GitHub token
+  for a CIHub session; or `cihub auth login --token`, with an API token that the person copies from the server.
+- **Why not**: the command line would know GitHub, the App would need its device flow turned on, and CIHub would
+  take an SCM token as input. CIHub has its own device codes on top of the sign-in of the dashboard, so the command
+  line stays neutral. A copied API token stands for an organization, not for the person: a submission would carry
+  no account, and no permission of the person would be checked.
+- **Would change if**: a person must sign in where no browser reaches the dashboard at all.
+
 ### Trust a `blocked` PR state as is
 
 - **Tried / considered**: keep a PR out of the queue while GitHub reports it `blocked`.

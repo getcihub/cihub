@@ -169,16 +169,31 @@ async fn call(addr: &str, method: &str, path: &str, token: Option<&str>) -> Answ
 }
 
 async fn call_with(addr: &str, method: &str, path: &str, headers: &[(&str, &str)]) -> Answer {
+    call_with_body(addr, method, path, headers, "").await
+}
+
+async fn call_with_body(
+    addr: &str,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> Answer {
     let mut stream = TcpStream::connect(addr).await.unwrap();
     let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: 0\r\n"
+        "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\nContent-Length: {}\r\n",
+        body.len()
     );
 
+    if !body.is_empty() {
+        request.push_str("Content-Type: application/json\r\n");
+    }
     for (name, value) in headers {
         let _ = write!(request, "{name}: {value}\r\n");
     }
 
     request.push_str("\r\n");
+    request.push_str(body);
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut response = String::new();
     stream.read_to_string(&mut response).await.unwrap();
@@ -522,6 +537,151 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
         signed_out.head
     );
     assert_eq!(after.status, 401);
+}
+
+/// A device code of the instance at `addr`: its secret and its user code.
+async fn start_device_sign_in(addr: &str) -> (String, String) {
+    let created = call_with(addr, "POST", "/api/v1/device-codes", &[]).await;
+
+    assert_eq!(created.status, 200, "{}", created.body);
+    let created: serde_json::Value = serde_json::from_str(&created.body).unwrap();
+    assert_eq!(created["verification_url"], format!("{PUBLIC_URL}/device"));
+    assert_eq!(
+        (created["expires_in"].as_u64(), created["interval"].as_u64()),
+        (Some(900), Some(5))
+    );
+    (
+        created["device_code"].as_str().unwrap().to_owned(),
+        created["user_code"].as_str().unwrap().to_owned(),
+    )
+}
+
+async fn ask_session(addr: &str, device_code: &str) -> Answer {
+    let body = serde_json::json!({ "device_code": device_code }).to_string();
+    call_with_body(addr, "POST", "/api/v1/device-codes/token", &[], &body).await
+}
+
+fn code_of(answer: &Answer) -> String {
+    let problem: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
+    problem["code"].as_str().unwrap_or_default().to_owned()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_command_line_signs_in_once_its_person_approves_the_code(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Member).await;
+    let cookie = session_cookie(&secret);
+    let csrf = csrf_token(&secret);
+    let dashboard = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
+    let (waiting, _) = start_device_sign_in(&addr).await;
+    let (device_code, user_code) = start_device_sign_in(&addr).await;
+
+    let pending = ask_session(&addr, &waiting).await;
+    let too_fast = ask_session(&addr, &waiting).await;
+    let typed = user_code.to_lowercase().replace('-', "%20");
+    let approve = format!("/api/v1/device-codes/{typed}/approve");
+    let forged = call_with(&addr, "POST", &approve, &[dashboard[0]]).await;
+    let approved = call_with(&addr, "POST", &approve, &dashboard).await;
+    let again = call_with(&addr, "POST", &approve, &dashboard).await;
+    let signed_in = ask_session(&addr, &device_code).await;
+    let used = ask_session(&addr, &device_code).await;
+
+    assert_eq!(
+        (pending.status, code_of(&pending)),
+        (400, "device_code_pending".into())
+    );
+    assert_eq!(
+        (too_fast.status, code_of(&too_fast)),
+        (429, "polling_too_fast".into())
+    );
+    assert_eq!(forged.status, 403, "{}", forged.body);
+    assert_eq!(approved.status, 204, "{}", approved.body);
+    assert_eq!(
+        (again.status, code_of(&again)),
+        (404, "device_code_not_found".into())
+    );
+    assert_eq!(signed_in.status, 200, "{}", signed_in.body);
+    assert_eq!(
+        (used.status, code_of(&used)),
+        (400, "device_code_expired".into())
+    );
+    let signed_in: serde_json::Value = serde_json::from_str(&signed_in.body).unwrap();
+    let token = signed_in["token"].as_str().unwrap();
+    assert!(token.starts_with("chc_"), "{token}");
+    assert_eq!(signed_in["login"], "ada");
+
+    let me = call(&addr, "GET", "/api/v1/user", Some(token)).await;
+    let org = call(&addr, "GET", "/api/v1/orgs/acme", Some(token)).await;
+    let as_cookie = format!("__Host-cihub_session={token}");
+    let in_cookie = call_with(
+        &addr,
+        "GET",
+        "/api/v1/user",
+        &[("Cookie", as_cookie.as_str())],
+    )
+    .await;
+    let (_, other_code) = start_device_sign_in(&addr).await;
+    let by_command_line = call(
+        &addr,
+        "POST",
+        &format!("/api/v1/device-codes/{other_code}/approve"),
+        Some(token),
+    )
+    .await;
+    let signed_out = call(&addr, "DELETE", "/api/v1/user/session", Some(token)).await;
+    let after = call(&addr, "GET", "/api/v1/user", Some(token)).await;
+
+    let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
+    assert_eq!(me["login"], "ada");
+    assert_eq!(org.body, r#"{"slug":"acme","role":"member"}"#);
+    assert_eq!(
+        in_cookie.status, 401,
+        "a session of the command line is no cookie"
+    );
+    assert_eq!(by_command_line.status, 401, "{}", by_command_line.body);
+    assert_eq!(signed_out.status, 204, "{}", signed_out.body);
+    assert_eq!(after.status, 401);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_denied_code_signs_no_command_line_in(pool: PgPool) {
+    let addr = start(&pool).await;
+    let secret = session(&pool, MembershipRole::Member).await;
+    let cookie = session_cookie(&secret);
+    let csrf = csrf_token(&secret);
+    let dashboard = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
+    let (device_code, user_code) = start_device_sign_in(&addr).await;
+
+    let unknown = call_with(
+        &addr,
+        "POST",
+        "/api/v1/device-codes/BCDF-GHJ/deny",
+        &dashboard,
+    )
+    .await;
+    let denied = call_with(
+        &addr,
+        "POST",
+        &format!("/api/v1/device-codes/{user_code}/deny"),
+        &dashboard,
+    )
+    .await;
+    let refused = ask_session(&addr, &device_code).await;
+    let malformed = call_with_body(&addr, "POST", "/api/v1/device-codes/token", &[], "{}").await;
+
+    assert_eq!(
+        (unknown.status, code_of(&unknown)),
+        (404, "device_code_not_found".into())
+    );
+    assert_eq!(denied.status, 204, "{}", denied.body);
+    assert_eq!(
+        (refused.status, code_of(&refused)),
+        (403, "device_code_denied".into())
+    );
+    assert_eq!(
+        (malformed.status, code_of(&malformed)),
+        (400, "invalid_request".into())
+    );
 }
 
 /// `text` with each `%XX` of a query decoded.

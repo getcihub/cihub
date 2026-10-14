@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './pages/root/route'
 import { Route as homeRouteRouteImport } from './pages/home/route'
+import { Route as deviceRouteRouteImport } from './pages/device/route'
 import { Route as signInRouteRouteImport } from './pages/sign-in/route'
 import { Route as redirectsOrgsRouteImport } from './pages/redirects/orgs'
 import { Route as orgRouteRouteImport } from './pages/org/route'
@@ -23,6 +24,11 @@ import { Route as prRouteRouteImport } from './pages/pr/route'
 const homeRouteRoute = homeRouteRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const deviceRouteRoute = deviceRouteRouteImport.update({
+  id: '/device',
+  path: '/device',
   getParentRoute: () => rootRouteImport,
 } as any)
 const signInRouteRoute = signInRouteRouteImport.update({
@@ -73,6 +79,7 @@ const prRouteRoute = prRouteRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof homeRouteRoute
+  '/device': typeof deviceRouteRoute
   '/sign-in': typeof signInRouteRoute
   '/orgs/$org': typeof orgRouteRouteWithChildren
   '/orgs/': typeof redirectsOrgsRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof homeRouteRoute
+  '/device': typeof deviceRouteRoute
   '/sign-in': typeof signInRouteRoute
   '/orgs': typeof redirectsOrgsRoute
   '/orgs/$org': typeof orgQueuesRouteRoute
@@ -97,6 +105,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof homeRouteRoute
+  '/device': typeof deviceRouteRoute
   '/sign-in': typeof signInRouteRoute
   '/orgs/$org': typeof orgRouteRouteWithChildren
   '/orgs/': typeof redirectsOrgsRoute
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/device'
     | '/sign-in'
     | '/orgs/$org'
     | '/orgs/'
@@ -123,6 +133,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/device'
     | '/sign-in'
     | '/orgs'
     | '/orgs/$org'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/device'
     | '/sign-in'
     | '/orgs/$org'
     | '/orgs/'
@@ -147,6 +159,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   homeRouteRoute: typeof homeRouteRoute
+  deviceRouteRoute: typeof deviceRouteRoute
   signInRouteRoute: typeof signInRouteRoute
   orgRouteRoute: typeof orgRouteRouteWithChildren
   redirectsOrgsRoute: typeof redirectsOrgsRoute
@@ -159,6 +172,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof homeRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/device': {
+      id: '/device'
+      path: '/device'
+      fullPath: '/device'
+      preLoaderRoute: typeof deviceRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -261,6 +281,7 @@ const orgRouteRouteWithChildren = orgRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   homeRouteRoute: homeRouteRoute,
+  deviceRouteRoute: deviceRouteRoute,
   signInRouteRoute: signInRouteRoute,
   orgRouteRoute: orgRouteRouteWithChildren,
   redirectsOrgsRoute: redirectsOrgsRoute,

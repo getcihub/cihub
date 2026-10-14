@@ -1,7 +1,7 @@
 import { getRouteApi } from "@tanstack/react-router";
 
 import { NoOrganization } from "@/pages/sign-in/components/no-organization";
-import { Brand } from "@/pages/sign-in/components/parts";
+import { Brand } from "@/components/session/parts";
 import { SignInForm } from "@/pages/sign-in/components/sign-in-form";
 import { SignInHero } from "@/pages/sign-in/components/sign-in-hero";
 
@@ -26,7 +26,8 @@ export function SignInPage() {
           )}
           <div className="my-7 h-px bg-divider" />
           <p className="text-md text-muted-foreground">
-            Scripts and the <code>cihub</code> CLI sign in with an API token instead.
+            The <code>cihub</code> command line signs in with <code>cihub auth login</code>; a CI uses an API
+            token.
           </p>
         </div>
       </section>
