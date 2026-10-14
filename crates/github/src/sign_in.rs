@@ -5,7 +5,8 @@
 
 use cihub_domain::{JobClass, MembershipRole};
 use cihub_scm::{
-    ConnectionRef, ScmError, ScmMember, ScmMembership, ScmUser, SignInCode, SignInRequest, SignedIn,
+    ConnectionRef, ScmError, ScmMember, ScmMembership, ScmProfile, ScmUser, SignInCode,
+    SignInRequest, SignedIn,
 };
 use reqwest::{Method, StatusCode, Url};
 use secrecy::SecretString;
@@ -26,13 +27,16 @@ const MEMBERS_PER_PAGE: usize = 100;
 struct Person {
     id: u64,
     login: String,
+    /// Only `/user` gives it.
+    name: Option<String>,
+    avatar_url: Option<String>,
 }
 
 impl Person {
-    fn into_neutral(self) -> ScmUser {
+    fn user(&self) -> ScmUser {
         ScmUser {
             external_id: self.id.to_string(),
-            login: self.login,
+            login: self.login.clone(),
         }
     }
 }
@@ -47,6 +51,7 @@ struct Installation {
 struct Account {
     id: u64,
     login: String,
+    avatar_url: Option<String>,
     #[serde(rename = "type")]
     kind: String,
 }
@@ -108,7 +113,11 @@ impl GithubApp {
         }
 
         Ok(SignedIn {
-            user: user.into_neutral(),
+            user: user.user(),
+            profile: ScmProfile {
+                name: user.name,
+                avatar_url: user.avatar_url,
+            },
             memberships,
         })
     }
@@ -234,8 +243,9 @@ impl GithubApp {
             let is_last = listed.len() < MEMBERS_PER_PAGE;
 
             members.extend(listed.into_iter().map(|person| ScmMember {
-                user: person.into_neutral(),
+                user: person.user(),
                 role,
+                avatar_url: person.avatar_url,
             }));
             if is_last {
                 break;
@@ -262,5 +272,6 @@ fn owner(account: Account) -> ScmMember {
             login: account.login,
         },
         role: MembershipRole::Admin,
+        avatar_url: account.avatar_url,
     }
 }

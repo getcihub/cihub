@@ -26,7 +26,7 @@ use cihub_platform::{
 };
 use cihub_scm::Scm;
 use cihub_store::{
-    PgPool, SessionGrant, authenticate, authenticate_session, login_of, memberships_of,
+    PgPool, SessionGrant, authenticate, authenticate_session, memberships_of, profile_of,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -480,11 +480,15 @@ async fn get_user(
 ) -> Result<Json<User>, ApiError> {
     let session = session_of(session)?;
 
-    let login = login_of(&state.pool, session.user_id)
+    let profile = profile_of(&state.pool, session.user_id)
         .await?
         .ok_or_else(ApiError::unauthorized)?;
 
-    Ok(Json(User { login }))
+    Ok(Json(User {
+        login: profile.login,
+        name: profile.name,
+        avatar_url: profile.avatar_url,
+    }))
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]

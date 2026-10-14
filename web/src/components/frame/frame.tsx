@@ -80,7 +80,7 @@ export function Frame({ me, org, queues, repo, queue, children }: Props) {
           )}
         </nav>
         <div className="ml-auto">
-          <PersonMenu login={me.login} onSignOut={startSignOut} />
+          <PersonMenu me={me} onSignOut={startSignOut} />
         </div>
       </TopBar>
       {hasSignOutFailed && (
@@ -205,13 +205,15 @@ function QueuePicker({
   );
 }
 
-function PersonMenu({ login, onSignOut }: { login: string; onSignOut: () => void }) {
+function PersonMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+  const { login, name, avatar_url } = me;
+
   return (
     <Menu
       label="Your account"
       trigger={
         <>
-          <Avatar name={login} size={24} />
+          <Avatar name={login} src={avatar_url} size={24} />
           <span className="max-md:hidden">{login}</span>
         </>
       }
@@ -219,7 +221,7 @@ function PersonMenu({ login, onSignOut }: { login: string; onSignOut: () => void
       align="right"
     >
       <MenuItem className="font-medium" disabled>
-        Signed in as @{login}
+        Signed in as {name ? `${name} (@${login})` : `@${login}`}
       </MenuItem>
       <MenuItem className="font-medium" onClick={toggleTheme}>
         Light / dark<MenuHint>theme</MenuHint>

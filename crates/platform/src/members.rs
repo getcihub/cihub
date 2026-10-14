@@ -6,7 +6,8 @@ use std::sync::Arc;
 use cihub_domain::{ConnectionId, JobClass, OrgId, UserId};
 use cihub_scm::{Scm, ScmUser, SignedIn};
 use cihub_store::{
-    PgPool, begin_org, begin_system, ensure_user, forget_memberships_before, record_membership,
+    PgPool, begin_org, begin_system, ensure_user, forget_memberships_before, record_avatar,
+    record_membership, record_profile,
 };
 use serde_json::json;
 use sqlx::PgConnection;
@@ -81,6 +82,9 @@ pub async fn run_sync_members(
 
     for member in &members {
         let user_id = user_of(&mut tx, &member.user).await?;
+        record_avatar(&mut tx, user_id, member.avatar_url.as_deref())
+            .await
+            .map_err(PlatformError::Store)?;
         record_membership(&mut tx, org_id, user_id, member.role, now)
             .await
             .map_err(PlatformError::Store)?;
@@ -116,12 +120,12 @@ pub fn sync_members_executor(
     }
 }
 
-/// Records the person of a sign-in and their role in each organization that
-/// CIHub knows among those that the SCM gave. An installation that CIHub has
-/// not synced yet, or that is suspended, gives no organization. The sign-in
-/// deletes no membership: it reads only the installations that the person
-/// reaches, so the hourly read of the members decides who left. Returns the
-/// user.
+/// Records the person of a sign-in, their profile, and their role in each
+/// organization that CIHub knows among those that the SCM gave. An
+/// installation that CIHub has not synced yet, or that is suspended, gives no
+/// organization. The sign-in deletes no membership: it reads only the
+/// installations that the person reaches, so the hourly read of the members
+/// decides who left. Returns the user.
 ///
 /// # Errors
 ///
@@ -148,6 +152,15 @@ pub async fn record_sign_in(
     let orgs: HashMap<String, String> = rows.into_iter().collect();
 
     let user_id = user_of(&mut tx, &signed_in.user).await?;
+    let profile = &signed_in.profile;
+    record_profile(
+        &mut tx,
+        user_id,
+        profile.name.as_deref(),
+        profile.avatar_url.as_deref(),
+    )
+    .await
+    .map_err(PlatformError::Store)?;
     for membership in &signed_in.memberships {
         let Some(org) = orgs.get(&membership.connection_external_id) else {
             continue;

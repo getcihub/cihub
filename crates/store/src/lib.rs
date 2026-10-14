@@ -29,7 +29,7 @@ pub use sqlx::{PgPool, Postgres, Transaction};
 pub use tokens::{
     ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
 };
-pub use users::{ensure_user, login_of};
+pub use users::{UserProfile, ensure_user, profile_of, record_avatar, record_profile};
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 

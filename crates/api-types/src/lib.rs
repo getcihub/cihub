@@ -247,6 +247,16 @@ pub struct User {
     /// The login of the person on the SCM.
     #[cfg_attr(feature = "openapi", schema(example = "ada"))]
     pub login: String,
+    /// The name that the person gives on the SCM, `null` when they give none.
+    #[cfg_attr(feature = "openapi", schema(example = "Ada Lovelace"))]
+    pub name: Option<String>,
+    /// The address of the image of the person on the SCM, `null` when the SCM
+    /// gives none.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://avatars.example.com/u/1")
+    )]
+    pub avatar_url: Option<String>,
 }
 
 /// `GET /instance`: the instance of CIHub.

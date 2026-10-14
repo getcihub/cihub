@@ -11,7 +11,7 @@ use cihub_scm::sim::Sim;
 use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
 use cihub_store::{
     NewApiToken, NewSession, begin_org, begin_system, create_api_token, create_session, csrf_token,
-    ensure_user, new_api_token_secret, new_session_secret, record_membership,
+    ensure_user, new_api_token_secret, new_session_secret, record_membership, record_profile,
 };
 use cihub_web::{Dashboard, GithubWebhooks};
 use ring::hmac;
@@ -411,6 +411,14 @@ async fn session(pool: &PgPool, role: MembershipRole) -> SecretString {
     let mut tx = begin_system(pool).await.unwrap();
 
     ensure_user(&mut tx, user_id, "5", "ada").await.unwrap();
+    record_profile(
+        &mut tx,
+        user_id,
+        Some("Ada Lovelace"),
+        Some("https://avatars.example.com/u/5"),
+    )
+    .await
+    .unwrap();
     create_session(&mut tx, &session, &secret).await.unwrap();
     tx.commit().await.unwrap();
     let mut tx = begin_org(pool, org).await.unwrap();
@@ -450,7 +458,14 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
     let org: serde_json::Value = serde_json::from_str(&org.body).unwrap();
     let repo: serde_json::Value = serde_json::from_str(&repo.body).unwrap();
-    assert_eq!(me, serde_json::json!({ "login": "ada" }));
+    assert_eq!(
+        me,
+        serde_json::json!({
+            "login": "ada",
+            "name": "Ada Lovelace",
+            "avatar_url": "https://avatars.example.com/u/5"
+        })
+    );
     assert_eq!(
         orgs,
         serde_json::json!({

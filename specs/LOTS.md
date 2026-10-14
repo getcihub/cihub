@@ -397,6 +397,11 @@ Decisions:
     requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
     browser tests passes each test commit of `acme/api`.
   - The project lead started lot 10d meanwhile: the rest of lot 10c waits for the recording, not for lot 10d.
+  - Done (October 14, 2026, outside the content of the lot, validated by the project lead): `users` gains
+    `name`, `avatar_url` and `updated_at`, from the sign-in (`GET /user` of the SCM) and, for the avatar, from
+    the hourly read of the members; `User` gains `name` and `avatar_url`, and the menu of the person shows the
+    avatar. `Pr` is a frozen interface, so the avatar of the author of a PR comes later. The email and an admin
+    of the instance wait for a feature that needs them.
   - Remaining, with the new recording of the contract: `Pr.url`, `Run.draft_pr_url`, and the state and
     times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
     lot; the lot is done once they are.

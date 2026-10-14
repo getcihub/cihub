@@ -6219,10 +6219,26 @@
           "login"
         ],
         "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address of the image of the person on the SCM, `null` when the SCM\ngives none.",
+            "example": "https://avatars.example.com/u/1"
+          },
           "login": {
             "type": "string",
             "description": "The login of the person on the SCM.",
             "example": "ada"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name that the person gives on the SCM, `null` when they give none.",
+            "example": "Ada Lovelace"
           }
         }
       },

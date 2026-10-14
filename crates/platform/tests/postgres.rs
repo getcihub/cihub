@@ -22,10 +22,12 @@ use cihub_platform::{
 };
 use cihub_scm::sim::Sim;
 use cihub_scm::{
-    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmMembership, ScmUser,
-    SignedIn,
+    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmMembership, ScmProfile,
+    ScmUser, SignedIn,
 };
-use cihub_store::{Membership, authenticate, begin_org, begin_system, memberships_of};
+use cihub_store::{
+    Membership, UserProfile, authenticate, begin_org, begin_system, memberships_of, profile_of,
+};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
 use time::{Duration, OffsetDateTime};
@@ -1572,6 +1574,7 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     };
     let signed_in = |memberships| SignedIn {
         user: person("5", "ada"),
+        profile: ScmProfile::default(),
         memberships,
     };
     let first = signed_in(vec![
@@ -1652,6 +1655,50 @@ async fn the_hourly_read_of_the_members_follows_the_account(pool: PgPool) {
 
     assert_eq!(read, 1);
     assert_eq!(roles(&pool).await, [("ada".to_owned(), "admin".to_owned())]);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+    let job = sync_members_job(org(), connection(), "20260910T00");
+    let signed_in = SignedIn {
+        user: ada.clone(),
+        profile: ScmProfile {
+            name: Some("Ada Lovelace".into()),
+            avatar_url: Some("https://avatars.example.com/u/5?v=1".into()),
+        },
+        memberships: Vec::new(),
+    };
+    let profile = |avatar_url: &str| UserProfile {
+        login: "ada".into(),
+        name: Some("Ada Lovelace".into()),
+        avatar_url: Some(avatar_url.into()),
+    };
+
+    let user_id = record_sign_in(&pool, &signed_in, at(0)).await.unwrap();
+
+    assert_eq!(
+        profile_of(&pool, user_id).await.unwrap(),
+        Some(profile("https://avatars.example.com/u/5?v=1"))
+    );
+
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Admin);
+    sim.set_profile(
+        &ada,
+        ScmProfile {
+            name: None,
+            avatar_url: Some("https://avatars.example.com/u/5?v=2".into()),
+        },
+    );
+    run_sync_members(&pool, &sim, &job, at(60)).await.unwrap();
+
+    assert_eq!(
+        profile_of(&pool, user_id).await.unwrap(),
+        Some(profile("https://avatars.example.com/u/5?v=2"))
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

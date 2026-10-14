@@ -18,7 +18,9 @@ pub async fn ensure_user(
 ) -> Result<UserId, StoreError> {
     let id: String = sqlx::query_scalar(
         "INSERT INTO users (id, external_id, login) VALUES ($1, $2, $3)
-         ON CONFLICT (external_id) DO UPDATE SET login = excluded.login
+         ON CONFLICT (external_id) DO UPDATE SET
+             login = excluded.login,
+             updated_at = CASE WHEN users.login = excluded.login THEN users.updated_at ELSE now() END
          RETURNING id",
     )
     .bind(id.to_string())
@@ -30,14 +32,70 @@ pub async fn ensure_user(
     id.parse().map_err(StoreError::read("user", &id))
 }
 
-/// The login of the user `user_id`, or `None` when no user has it. Users are
-/// global: no context of an organization applies.
+/// How a user shows on the dashboard.
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow)]
+pub struct UserProfile {
+    pub login: String,
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// Records the name and the avatar that the SCM gives at the sign-in of
+/// `user_id`.
 ///
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn login_of(pool: &PgPool, user_id: UserId) -> Result<Option<String>, StoreError> {
-    sqlx::query_scalar("SELECT login FROM users WHERE id = $1")
+pub async fn record_profile(
+    conn: &mut PgConnection,
+    user_id: UserId,
+    name: Option<&str>,
+    avatar_url: Option<&str>,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE users SET name = $2, avatar_url = $3, updated_at = now()
+         WHERE id = $1 AND (name, avatar_url) IS DISTINCT FROM ($2, $3)",
+    )
+    .bind(user_id.to_string())
+    .bind(name)
+    .bind(avatar_url)
+    .execute(conn)
+    .await
+    .map_err(StoreError::Query)?;
+    Ok(())
+}
+
+/// Records the avatar that the list of the members of an account gives for
+/// `user_id`. The list does not give the name, which stays.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn record_avatar(
+    conn: &mut PgConnection,
+    user_id: UserId,
+    avatar_url: Option<&str>,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE users SET avatar_url = $2, updated_at = now()
+         WHERE id = $1 AND avatar_url IS DISTINCT FROM $2",
+    )
+    .bind(user_id.to_string())
+    .bind(avatar_url)
+    .execute(conn)
+    .await
+    .map_err(StoreError::Query)?;
+    Ok(())
+}
+
+/// The profile of the user `user_id`, or `None` when no user has it. Users
+/// are global: no context of an organization applies.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn profile_of(pool: &PgPool, user_id: UserId) -> Result<Option<UserProfile>, StoreError> {
+    sqlx::query_as("SELECT login, name, avatar_url FROM users WHERE id = $1")
         .bind(user_id.to_string())
         .fetch_optional(pool)
         .await

@@ -996,9 +996,18 @@ export type UpdateQueue = {
  */
 export type User = {
     /**
+     * The address of the image of the person on the SCM, `null` when the SCM
+     * gives none.
+     */
+    avatar_url?: string | null;
+    /**
      * The login of the person on the SCM.
      */
     login: string;
+    /**
+     * The name that the person gives on the SCM, `null` when they give none.
+     */
+    name?: string | null;
 };
 
 /**
