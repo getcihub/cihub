@@ -19,7 +19,7 @@ use tracing::{info, warn};
 
 use crate::assembly::{Step, required_statuses};
 use crate::jobs::{
-    Failure, give_back_facts, job, mergeability, queue_status_context, read_payload, target_of,
+    Failure, give_back_facts, job, mergeability, own_contexts, read_payload, target_of,
 };
 use crate::surfaces::merging_status;
 use crate::target::QueueTarget;
@@ -270,7 +270,7 @@ async fn direct_merge_possible(
     let rules = scm
         .required_checks(repo, &target.target_branch, class)
         .await?;
-    let own = queue_status_context(&target.target_branch);
+    let own = own_contexts(&target.target_branch);
 
     if mergeability(pr, &rules, &own) != Mergeability::Mergeable {
         return Ok(false);

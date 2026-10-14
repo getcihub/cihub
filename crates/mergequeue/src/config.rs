@@ -17,7 +17,9 @@ use sqlx::types::Json;
 use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
-use crate::jobs::{Failure, job, read_payload, target_of, window};
+use crate::jobs::{
+    Failure, conditions_status_context, job, queue_status_context, read_payload, target_of, window,
+};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, parse_id};
 
@@ -191,11 +193,24 @@ pub(crate) async fn check(
 ) -> Result<(), Failure> {
     let target = target_of(pool, job).await?;
     let branch = &target.target_branch;
-    let found = match scm.check_setup(&target.repo, branch, job.class).await {
+    let mut found: Vec<CheckFinding> = match scm.check_setup(&target.repo, branch, job.class).await
+    {
         Ok(findings) => findings.into_iter().map(CheckFinding::Setup).collect(),
         Err(ScmError::NotFound(what)) => missing_branch(scm, &target, job.class, what).await?,
         Err(err) => return Err(err.into()),
     };
+    let is_branch_gone = found.contains(&CheckFinding::TargetBranchMissing);
+
+    if !is_branch_gone
+        && scm
+            .required_checks(&target.repo, branch, job.class)
+            .await?
+            .names
+            .contains(&conditions_status_context(branch))
+    {
+        found.push(CheckFinding::ConditionsStatusRequired);
+    }
+
     let findings: Vec<Finding> = found
         .into_iter()
         .map(|finding| Finding {
@@ -230,6 +245,9 @@ pub(crate) async fn check(
 enum CheckFinding {
     Setup(SetupFinding),
     TargetBranchMissing,
+    /// A rule requires the conditions status: a PR whose conditions pass
+    /// would merge outside the queue.
+    ConditionsStatusRequired,
 }
 
 impl CheckFinding {
@@ -237,6 +255,7 @@ impl CheckFinding {
         match self {
             Self::Setup(finding) => finding.code(),
             Self::TargetBranchMissing => "target_branch_missing",
+            Self::ConditionsStatusRequired => "conditions_status_required",
         }
     }
 
@@ -262,6 +281,12 @@ impl CheckFinding {
             Self::TargetBranchMissing => {
                 format!("the branch `{branch}` no longer exists: the queue cannot merge")
             }
+            Self::ConditionsStatusRequired => format!(
+                "the rules of `{branch}` require `{}`: a PR whose conditions pass can merge \
+                 without the queue; require `{}` instead",
+                conditions_status_context(branch),
+                queue_status_context(branch)
+            ),
         }
     }
 }

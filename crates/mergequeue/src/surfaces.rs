@@ -62,7 +62,7 @@ struct RenderedStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum StatusState {
+pub(crate) enum StatusState {
     Pending,
     Success,
     Failure,
@@ -127,7 +127,7 @@ fn render(
 }
 
 /// The hash of a rendering: a new one asks for a new publication.
-fn hash(rendered: &Rendered) -> String {
+pub(crate) fn hash(rendered: &impl Serialize) -> String {
     let bytes = serde_json::to_vec(rendered).unwrap_or_default();
     let digest = Sha256::digest(bytes);
     digest.iter().take(8).fold(String::new(), |mut hex, byte| {
@@ -168,7 +168,7 @@ fn description(surface: &Surface) -> String {
     }
 }
 
-fn truncate(text: &str) -> String {
+pub(crate) fn truncate(text: &str) -> String {
     if text.chars().count() <= DESCRIPTION_LIMIT {
         return text.to_owned();
     }
@@ -179,7 +179,7 @@ fn truncate(text: &str) -> String {
     short
 }
 
-fn block_text(reason: &BlockReason) -> String {
+pub(crate) fn block_text(reason: &BlockReason) -> String {
     match reason {
         BlockReason::ReviewRequired { have, need } => {
             format!("{have} of {need} required approvals")
@@ -527,7 +527,7 @@ fn batch_wait_line(wait: &BatchWait, size: u32) -> String {
     )
 }
 
-fn capitalized(text: &str) -> String {
+pub(crate) fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
     chars.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(chars).collect()

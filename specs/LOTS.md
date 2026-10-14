@@ -42,7 +42,7 @@ configuration checker, in phase 1).
 | 7   | Merge and outside changes                              | 1     | 6          | —         | done                                     |
 | 8   | Queue policy                                           | 1     | 6          | —         | done                                     |
 | 9   | Surfaces: PR, API, CLI                                 | 1     | 7, 8       | —         | done                                     |
-| 9b  | Conditions status of a PR                              | 2     | 9          | —         | to do                                    |
+| 9b  | Conditions status of a PR                              | 2     | 9          | —         | in progress (budget not measured)        |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
 | 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
@@ -229,8 +229,8 @@ Decisions (October 14, 2026, validated by the project lead):
 
 - **Goal**: a person sees on GitHub, before the submission, whether their PR can enter the queue and what blocks
   it.
-- **Content**: the `CIHub Conditions (<branch>)` status of `specs/GITHUB.md`; the `observe_pr` job for an open
-  PR without a live item, which writes in `pr_surfaces` without an event; the finding
+- **Content**: the `CIHub Conditions (<branch>)` status of `specs/GITHUB.md`; the `observe_pr` job for every open
+  PR of a queue, which writes in `pr_conditions` without an event, and `publish_conditions`; the finding
   `conditions_status_required` of `check_config`.
 - **Frozen interfaces**: the context `CIHub Conditions (<branch>)`, its states and what each one means; the
   finding `conditions_status_required`.
@@ -239,7 +239,20 @@ Decisions (October 14, 2026, validated by the project lead):
   its status until it closes; with `status_check_enabled: false`, neither status; 50 open PRs not submitted
   stay under 300 GraphQL points per hour.
 - **Tracking**:
-  - To validate: whether a PR not submitted needs the polling of the tick, or only the events and `…/resync`.
+  - Done (October 15, 2026), but the budget of the exit criterion. `conditions_of` in `cihub-mq-core` gives the
+    reasons that the PR alone gives, the ones of `readiness_of` without the impacted targets. `observe_pr` reads
+    every open PR of the queue, submitted or not, so that one writer gives the status before and after the
+    submission; a table of its own, `pr_conditions`, rather than `pr_surfaces`, which the reconciliation writes
+    whole. The status has no link: a PR not submitted has no page. The draft PR of a run shows none. The statuses
+    of CIHub, `CIHub Merge Queue` and `CIHub Conditions`, count as the queue's own wherever the first one did
+    (mergeability, injected conditions, required checks of a test commit), and their deliveries read no PR again.
+  - Decided: no polling for a PR not submitted; its events and `…/resync` are enough, and a lost delivery leaves
+    the status behind until the next event of the PR.
+  - Exit criterion: `a_pr_shows_whether_it_can_enter_its_queue` (`failure` without its review, `success` once
+    reviewed, the log unchanged, the status kept under test, no row once closed),
+    `the_conditions_status_follows_its_setting_and_is_never_required`, `conditions_of` in
+    `crates/mq-core/tests/conditions.rs`.
+  - Remaining: the budget of 50 open PRs not submitted is not measured; each event of a PR reads that PR alone.
 
 ### Lots 10a to 10d: dashboard
 

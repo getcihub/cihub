@@ -30,9 +30,11 @@ use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
 use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
+use crate::conditions_status::{observe_jobs, observed_prs};
 use crate::config::{load_config, request_config_checks};
 use crate::jobs::{
-    SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
+    SubmitPr, connection_job, is_own_context, new_event_id, refresh_after, refresh_at, subject,
+    submit, user_of,
 };
 use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
@@ -360,6 +362,7 @@ impl Work<'_> {
                         base_branch,
                     ));
                 }
+                jobs.extend(observe_jobs(self.target, &subject(delivery_id), &[number]));
                 let tracked = snapshot.current_item(number).is_some()
                     || snapshot.requests.values().any(|r| {
                         matches!(r, cihub_mq_core::Request::Submit { pr_number, .. } if *pr_number == number)
@@ -393,6 +396,9 @@ impl Work<'_> {
                     return Ok(false);
                 }
                 let sender_id = user_of(conn, &sender).await?;
+                // The push can make a PR behind or in conflict.
+                let observed = observed_prs(conn, self.target).await?;
+                jobs.extend(observe_jobs(self.target, &subject(delivery_id), &observed));
                 facts.push(self.fact(
                     Actor::User { user_id: sender_id },
                     EventKind::TargetPushed {
@@ -653,6 +659,11 @@ async fn pass_delivery(
             ..
         } if check.conclusion.is_some() => {
             read_waiting_prs(conn, delivery, &repo_external_id, &sha, now).await?;
+            // A status of CIHub changes no condition: reading the PR again
+            // after each publication would only spend points.
+            if !is_own_context(&check.name) {
+                observe_checked_prs(conn, delivery, &repo_external_id, &sha, now).await?;
+            }
         }
         _ => {}
     }
@@ -794,13 +805,17 @@ async fn route_pr_change(
         return Ok(());
     };
 
+    let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
+    // Each queue reads the PR: its routing says which one shows the status.
+    for queue in &queues {
+        for job in observe_jobs(queue, &subject(&delivery.delivery_id), &[change.number]) {
+            enqueue_job(conn, &job, now, now).await?;
+        }
+    }
+
     // The welcome job checks the settings of the first active queue of the
     // branch.
-    if change.opened
-        && !QueueTarget::queues_of_branch(conn, repo, change.base_branch)
-            .await?
-            .is_empty()
-    {
+    if change.opened && !queues.is_empty() {
         let job = welcome_job(
             delivery.org_id,
             delivery.connection,
@@ -894,6 +909,48 @@ async fn read_waiting_prs(
     Ok(())
 }
 
+/// Asks each queue that shows a status on a PR whose head is `sha` to read
+/// the PR again: a concluded check can change its conditions.
+async fn observe_checked_prs(
+    conn: &mut PgConnection,
+    delivery: &ConnectionDelivery,
+    repo_external_id: &str,
+    sha: &str,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let Some(repo) = repo_of(conn, delivery, repo_external_id).await? else {
+        return Ok(());
+    };
+
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT c.queue_id, c.pr_number FROM pr_conditions c JOIN queues q ON q.id = c.queue_id
+         WHERE c.org_id = $1 AND c.head_sha = $2 AND q.repo_id = $3
+         ORDER BY c.queue_id, c.pr_number",
+    )
+    .bind(delivery.org_id.to_string())
+    .bind(sha)
+    .bind(repo.to_string())
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut prs_by_queue: BTreeMap<String, Vec<u64>> = BTreeMap::new();
+
+    for (queue, number) in rows {
+        prs_by_queue
+            .entry(queue)
+            .or_default()
+            .push(u64::try_from(number).unwrap_or_default());
+    }
+
+    for (queue, prs) in prs_by_queue {
+        let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
+        for job in observe_jobs(&target, &subject(&delivery.delivery_id), &prs) {
+            enqueue_job(conn, &job, now, now).await?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Asks each queue of `branch` to read its head again, after a push that
 /// the routing gave to no queue because the branch has several. Returns
 /// `false` while a merge of one of them is in flight: the push of the merge
@@ -919,6 +976,10 @@ async fn read_heads(
     for queue in &queues {
         let job = refresh_target_after(queue, &delivery.delivery_id);
         enqueue_job(conn, &job, now, now).await?;
+        let observed = observed_prs(conn, queue).await?;
+        for job in observe_jobs(queue, &subject(&delivery.delivery_id), &observed) {
+            enqueue_job(conn, &job, now, now).await?;
+        }
     }
 
     Ok(true)

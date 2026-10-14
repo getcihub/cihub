@@ -100,9 +100,9 @@ fn context(target: &QueueTarget, pr: &PrSnapshot, sender: &Sender, now: OffsetDa
 pub(crate) struct Reading<'a> {
     pub sender: &'a Sender,
     /// The checks that the rules of the target branch require, and the
-    /// status of the queue, which they may require.
+    /// statuses of CIHub, which they may require.
     pub rules: &'a RequiredChecks,
-    pub own_status: &'a str,
+    pub own_statuses: &'a [String],
     pub class: JobClass,
     pub now: OffsetDateTime,
 }
@@ -130,7 +130,7 @@ pub(crate) async fn unmet_conditions(
                 .rules
                 .names
                 .iter()
-                .filter(|name| *name != reading.own_status && !check_passed(pr, name))
+                .filter(|name| !reading.own_statuses.contains(name) && !check_passed(pr, name))
                 .map(|name| format!("check-success = {name}")),
         );
     }
@@ -240,7 +240,7 @@ mod tests {
         let reading = Reading {
             sender: &Sender::default(),
             rules: &rules,
-            own_status: "own",
+            own_statuses: &["own".to_owned()],
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
         };

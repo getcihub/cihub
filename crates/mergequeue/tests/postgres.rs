@@ -18,7 +18,8 @@ use cihub_domain::{
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, request_config_checks, wake_uncovered,
+    conditions_status_context, queue_status_context, rebuild, request_config_checks, resync,
+    wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -6033,5 +6034,138 @@ async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
 
         assert_eq!(seen, 0, "another organization reads {table}");
     }
+    q.stop().await;
+}
+
+/// The conditions status of a PR on the simulator, as the SCM shows it on
+/// `head`: `None` without one, `Some(None)` while pending.
+async fn conditions_status(sim: &Sim, head: &str) -> Option<Option<CheckConclusion>> {
+    let context = conditions_status_context("main");
+    sim.checks(&repo(), head, JobClass::Repair)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|check| check.name == context)
+        .map(|check| check.conclusion)
+}
+
+async fn event_count(pool: &PgPool) -> i64 {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT count(*) FROM events WHERE queue_id = $1")
+        .bind(queue().to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// The exit criterion of lot 9b: a PR shows from its opening whether it
+/// would enter its queue, without a submission and without a fact in the log
+/// of the queue; a submitted PR keeps its status until it closes.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_shows_whether_it_can_enter_its_queue(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    \
+         direct_merge_mode: off\n    queue_conditions:\n      - review-decision = approved\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let events = event_count(&pool).await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Failure)),
+        "the review is missing"
+    );
+
+    sim.change_pr(&repo(), number, PrChange::Review(ReviewDecision::Approved))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Success))
+    );
+    assert_eq!(event_count(&pool).await, events, "the log does not change");
+
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(current_items(&pool).await[0].1, "testing");
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Success)),
+        "a PR in test still meets its conditions"
+    );
+
+    sim.change_pr(&repo(), number, PrChange::Close).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM pr_conditions")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(rows, 0, "a closed PR shows no status any more");
+    q.stop().await;
+}
+
+/// Without `status_check_enabled`, a PR shows neither status; a rule that
+/// requires the conditions status is a finding of the check of the
+/// configuration.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config =
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    status_check_enabled: false\n";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(conditions_status(&sim, &head).await, None);
+
+    let rules = RequiredChecks {
+        names: BTreeSet::from([REQUIRED.to_owned(), conditions_status_context("main")]),
+        up_to_date: false,
+    };
+    sim.set_rules(&repo(), "main", rules).unwrap();
+    resync(&pool, queue(), q.clock.now()).await.unwrap();
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let findings: Value =
+        sqlx::query_scalar("SELECT findings FROM config_checks WHERE queue_id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    let codes: Vec<&str> = findings
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|finding| finding["code"].as_str())
+        .collect();
+
+    assert!(codes.contains(&"conditions_status_required"), "{codes:?}");
     q.stop().await;
 }
