@@ -26,7 +26,7 @@ DATABASE_URL = "postgres://cihub:cihub@127.0.0.1:5432/cihub"
 CIHUB_DATABASE_URL = "{{env.DATABASE_URL}}"
 
 [vars]
-helm_lint_values = "charts/cihub/ci/lint-values.yaml"
+helm_lint_values = "deploy/charts/cihub/ci/lint-values.yaml"
 
 [tasks.fmt]
 description = "Format the Rust code and the dashboard"
@@ -174,7 +174,7 @@ run = [
 
 [tasks."helm:lint"]
 description = "Lint the Helm chart"
-run = "helm lint charts/cihub --values {{vars.helm_lint_values}}"
+run = "helm lint deploy/charts/cihub --values {{vars.helm_lint_values}}"
 
 # helm-unittest is a Helm plugin, which mise cannot install: the task installs
 # the pinned version when it is missing.
@@ -183,25 +183,25 @@ description = "Run the template tests of the Helm chart with helm-unittest"
 env = { HELM_UNITTEST_VERSION = "1.2.1" }
 run = [
   "helm plugin list | grep -q '^unittest' || helm plugin install https://github.com/helm-unittest/helm-unittest --version \"v$HELM_UNITTEST_VERSION\" --verify=false",
-  "helm unittest charts/cihub",
+  "helm unittest deploy/charts/cihub",
 ]
 
 [tasks."helm:template"]
 description = "Render the Helm chart with the lint values"
-run = "helm template cihub charts/cihub --values {{vars.helm_lint_values}}"
+run = "helm template cihub deploy/charts/cihub --values {{vars.helm_lint_values}}"
 
 [tasks."helm:generate"]
 description = "Generate the README.md and the values.schema.json of the chart from Chart.yaml and values.yaml"
 run = [
-  "helm-docs --chart-search-root=charts --log-level=warn",
-  "helm-schema --chart-search-root charts/cihub --skip-auto-generation required,additionalProperties --append-newline",
+  "helm-docs --chart-search-root=deploy/charts --log-level=warn",
+  "helm-schema --chart-search-root deploy/charts/cihub --skip-auto-generation required,additionalProperties --append-newline",
 ]
 
 [tasks."helm:generate-check"]
 description = "Fail if the generated files of the chart are not up to date"
 run = [
   { task = "helm:generate" },
-  "! git status --porcelain charts/cihub/README.md charts/cihub/values.schema.json | grep .",
+  "! git status --porcelain deploy/charts/cihub/README.md deploy/charts/cihub/values.schema.json | grep .",
 ]
 
 [tasks."workflows:lint"]

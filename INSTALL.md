@@ -27,17 +27,17 @@ procedure is in [`specs/GITHUB.md`](specs/GITHUB.md); in short:
 From a clone of this repository:
 
 ```sh
-cp deploy/.env.example deploy/.env
-# Fill in deploy/.env: two Postgres passwords, the App ID, the webhook secret,
+cp deploy/compose/.env.example deploy/compose/.env
+# Fill in deploy/compose/.env: two Postgres passwords, the App ID, the webhook secret,
 # the path of the private key and, for the dashboard, the address of this
 # instance, the Client ID and the client secret.
-docker compose -f deploy/compose.yaml up -d
+docker compose -f deploy/compose/compose.yaml up -d
 ```
 
 Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
 starts `cihub server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
 
-On Kubernetes, the Helm chart replaces Compose: see [`charts/cihub/README.md`](charts/cihub/README.md).
+On Kubernetes, the Helm chart replaces Compose: see [`deploy/charts/cihub/README.md`](deploy/charts/cihub/README.md).
 
 ## 3. Install the App and start your organization
 
@@ -46,7 +46,7 @@ organization of the account (its slug is the login of the account) and reads its
 the API or the CLI, create a token:
 
 ```sh
-docker compose -f deploy/compose.yaml run --rm cihub-server server token create --org <login of the account>
+docker compose -f deploy/compose/compose.yaml run --rm cihub-server server token create --org <login of the account>
 ```
 
 The command prints an API token **once**: keep it in a secret store.
