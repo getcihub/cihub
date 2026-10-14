@@ -368,7 +368,8 @@ impl Work<'_> {
                     .values()
                     .any(|run| run.draft_pr_number == Some(number));
                 if !is_run_draft {
-                    jobs.extend(observe_jobs(self.target, &subject(delivery_id), &[number]));
+                    let subject = subject(delivery_id);
+                    jobs.extend(observe_jobs(conn, self.target, &subject, &[number]).await?);
                 }
                 let tracked = snapshot.current_item(number).is_some()
                     || snapshot.requests.values().any(|r| {
@@ -405,7 +406,8 @@ impl Work<'_> {
                 let sender_id = user_of(conn, &sender).await?;
                 // The push can make a PR behind or in conflict.
                 let observed = observed_prs(conn, self.target).await?;
-                jobs.extend(observe_jobs(self.target, &subject(delivery_id), &observed));
+                let subject = subject(delivery_id);
+                jobs.extend(observe_jobs(conn, self.target, &subject, &observed).await?);
                 facts.push(self.fact(
                     Actor::User { user_id: sender_id },
                     EventKind::TargetPushed {
@@ -815,7 +817,8 @@ async fn route_pr_change(
     // Each queue reads the PR: its routing says which one shows the status,
     // and the read skips the draft PR of a run.
     for queue in &queues {
-        for job in observe_jobs(queue, &subject(&delivery.delivery_id), &[change.number]) {
+        let subject = subject(&delivery.delivery_id);
+        for job in observe_jobs(conn, queue, &subject, &[change.number]).await? {
             enqueue_job(conn, &job, now, now).await?;
         }
     }
@@ -949,7 +952,8 @@ async fn observe_checked_prs(
 
     for (queue, prs) in prs_by_queue {
         let target = QueueTarget::load(conn, parse_id(&queue, &queue)?).await?;
-        for job in observe_jobs(&target, &subject(&delivery.delivery_id), &prs) {
+        let subject = subject(&delivery.delivery_id);
+        for job in observe_jobs(conn, &target, &subject, &prs).await? {
             enqueue_job(conn, &job, now, now).await?;
         }
     }
@@ -983,7 +987,8 @@ async fn read_heads(
         let job = refresh_target_after(queue, &delivery.delivery_id);
         enqueue_job(conn, &job, now, now).await?;
         let observed = observed_prs(conn, queue).await?;
-        for job in observe_jobs(queue, &subject(&delivery.delivery_id), &observed) {
+        let subject = subject(&delivery.delivery_id);
+        for job in observe_jobs(conn, queue, &subject, &observed).await? {
             enqueue_job(conn, &job, now, now).await?;
         }
     }

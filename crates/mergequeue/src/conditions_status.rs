@@ -18,11 +18,13 @@ use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, routes_to, unmet_conditions};
 use crate::jobs::{
     Failure, conditions_status_context, job, mergeability, own_contexts, read_payload, target_of,
+    window,
 };
 use crate::surfaces::{StatusState, block_text, capitalized, hash, truncate};
 use crate::target::QueueTarget;
 
 pub(crate) const OBSERVE_PR: &str = "observe_pr";
+pub(crate) const OBSERVE_OPEN_PRS: &str = "observe_open_prs";
 pub(crate) const PUBLISH_CONDITIONS: &str = "publish_conditions";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,16 +46,87 @@ struct ConditionsStatus {
 }
 
 /// The reads of `prs` after `subject`, a delivery or a moment, by chunks of
-/// [`MAX_PRS_PER_READ`]. Class `repair`: the status never slows the queue.
-pub(crate) fn observe_jobs(target: &QueueTarget, subject: &str, prs: &[u64]) -> Vec<Job> {
-    prs.chunks(MAX_PRS_PER_READ)
+/// [`MAX_PRS_PER_READ`]. Class `repair`: the status never slows the queue. A
+/// PR that a read still waits for asks no other one: that read sees the
+/// change, so the checks of a push that conclude together cost one read.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub(crate) async fn observe_jobs(
+    conn: &mut PgConnection,
+    target: &QueueTarget,
+    subject: &str,
+    prs: &[u64],
+) -> Result<Vec<Job>, MergeQueueError> {
+    let numbers: Vec<i64> = prs.iter().filter_map(|n| i64::try_from(*n).ok()).collect();
+    let unread: Vec<i64> = sqlx::query_scalar(
+        "SELECT pr FROM unnest($2::bigint[]) AS p (pr)
+         WHERE NOT EXISTS (SELECT 1 FROM jobs
+                           WHERE queue_id = $1 AND type = $3 AND state = 'queued'
+                             AND payload->'prs' @> to_jsonb(p.pr))",
+    )
+    .bind(target.queue_id.to_string())
+    .bind(&numbers)
+    .bind(OBSERVE_PR)
+    .fetch_all(conn)
+    .await?;
+    let unread: Vec<u64> = unread
+        .into_iter()
+        .filter_map(|n| u64::try_from(n).ok())
+        .collect();
+
+    Ok(unread
+        .chunks(MAX_PRS_PER_READ)
         .enumerate()
         .map(|(chunk, prs)| {
             let key = format!("{OBSERVE_PR}:{}-{subject}-{chunk}:1", target.queue_id);
             let payload = json!(ObservePr { prs: prs.to_vec() });
             job(target, key, OBSERVE_PR, JobClass::Repair, payload)
         })
-        .collect()
+        .collect())
+}
+
+/// The read of every open PR of the queue after `subject`: the ones that a
+/// lost delivery or a start of CIHub after their opening left without a
+/// status.
+pub(crate) fn observe_open_prs_job(target: &QueueTarget, subject: &str) -> Job {
+    let key = format!("{OBSERVE_OPEN_PRS}:{}-{subject}:1", target.queue_id);
+    job(target, key, OBSERVE_OPEN_PRS, JobClass::Repair, json!({}))
+}
+
+/// Lists the open PRs of the target branch and asks a read of each one, and
+/// of each PR that shows a status, so that a closed one loses its row.
+pub(crate) async fn observe_open_prs(
+    pool: &PgPool,
+    scm: &dyn Scm,
+    job: &Job,
+    now: OffsetDateTime,
+) -> Result<(), Failure> {
+    let target = target_of(pool, job).await?;
+    let open = match scm
+        .open_pull_requests(&target.repo, &target.target_branch, job.class)
+        .await
+    {
+        Ok(open) => open,
+        // The target is gone: `check_config` reports it.
+        Err(ScmError::NotFound(_)) => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    let mut tx = begin_system(pool).await?;
+    let mut prs = observed_prs(&mut tx, &target).await?;
+
+    prs.extend(open);
+    prs.sort_unstable();
+    prs.dedup();
+    let subject = format!("open-{}", window(now));
+    for read in observe_jobs(&mut tx, &target, &subject, &prs).await? {
+        enqueue_job(&mut tx, &read, now, now).await?;
+    }
+
+    tx.commit().await?;
+
+    Ok(())
 }
 
 /// The open PRs of the queue that show a status.
@@ -108,6 +181,32 @@ fn status_of(blocks: &[BlockReason]) -> (StatusState, String) {
     };
 
     (state, truncate(&description))
+}
+
+/// The check of `condition` when it is `check-success = <check>` and the
+/// check has not concluded yet: reported without a conclusion, or required
+/// by the rules and not reported. The status waits for it rather than fails.
+fn running_check<'a>(
+    pr: &PrSnapshot,
+    required: &RequiredChecks,
+    condition: &'a str,
+) -> Option<&'a str> {
+    let check = condition.strip_prefix("check-success = ")?;
+    let report = pr.checks.iter().find(|report| report.name == check);
+    let is_running = match report {
+        Some(report) => report.conclusion.is_none(),
+        None => required.names.contains(check),
+    };
+
+    is_running.then_some(check)
+}
+
+/// Whether `blocks` already waits for `check`, which the mergeability gives
+/// when the rules require it.
+fn is_awaited(blocks: &[BlockReason], check: &str) -> bool {
+    blocks.iter().any(|reason| {
+        matches!(reason, BlockReason::AwaitingRequiredCheck { check: awaited, .. } if awaited == check)
+    })
 }
 
 /// What the queue sees of `pr`, as `refresh_prs` gives it to the core.
@@ -190,7 +289,21 @@ pub(crate) async fn observe(
         }
 
         let unmet = unmet_conditions(scm, &target, config.as_ref(), pr, &reading).await?;
-        let blocks = conditions_of(&observation(pr, &required, &own, unmet));
+        let (running, unmet): (Vec<String>, Vec<String>) = unmet
+            .into_iter()
+            .partition(|condition| running_check(pr, &required, condition).is_some());
+        let mut blocks = conditions_of(&observation(pr, &required, &own, unmet));
+        let waits: Vec<BlockReason> = running
+            .iter()
+            .filter_map(|condition| running_check(pr, &required, condition))
+            .filter(|check| !is_awaited(&blocks, check))
+            .map(|check| BlockReason::AwaitingRequiredCheck {
+                check: check.to_owned(),
+                status: "pending".to_owned(),
+            })
+            .collect();
+
+        blocks.extend(waits);
         let (state, description) = status_of(&blocks);
         statuses.push((
             pr.number,
@@ -355,7 +468,44 @@ pub(crate) async fn publish(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use cihub_domain::{Mergeability, ReviewDecision};
+
     use super::*;
+    use crate::target::test_pr;
+
+    #[test]
+    fn a_check_that_has_not_concluded_waits() {
+        let mut pr = test_pr(
+            Mergeability::Blocked,
+            ReviewDecision::None,
+            &[("lint", false)],
+        );
+        let mut running = pr.checks[0].clone();
+        running.name = "ci".into();
+        running.conclusion = None;
+        pr.checks.push(running);
+        let required = RequiredChecks {
+            names: BTreeSet::from(["ci".to_owned(), "build".to_owned()]),
+            up_to_date: false,
+        };
+        let cases = [
+            ("check-success = ci", Some("ci")),
+            ("check-success = build", Some("build")),
+            ("check-success = lint", None),
+            ("check-success = docs", None),
+            ("label = ready", None),
+        ];
+
+        for (condition, want) in cases {
+            assert_eq!(
+                running_check(&pr, &required, condition),
+                want,
+                "{condition}"
+            );
+        }
+    }
 
     fn awaiting(check: &str) -> BlockReason {
         BlockReason::AwaitingRequiredCheck {

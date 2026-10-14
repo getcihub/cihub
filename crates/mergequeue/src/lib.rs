@@ -38,7 +38,7 @@ pub use scheduler::{
 
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
 use crate::command::PR_COMMAND;
-use crate::conditions_status::{OBSERVE_PR, PUBLISH_CONDITIONS};
+use crate::conditions_status::{OBSERVE_OPEN_PRS, OBSERVE_PR, PUBLISH_CONDITIONS};
 use crate::config::{CHECK_CONFIG, LOAD_CONFIG};
 use crate::jobs::SUBMIT_PR;
 use crate::merge::MERGE_PR;
@@ -158,6 +158,12 @@ pub fn module(
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);
             register!(executors, scm, OBSERVE_PR, conditions_status::observe);
+            register!(
+                executors,
+                scm,
+                OBSERVE_OPEN_PRS,
+                conditions_status::observe_open_prs
+            );
             register!(
                 executors,
                 scm,

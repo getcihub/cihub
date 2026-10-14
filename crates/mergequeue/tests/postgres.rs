@@ -6239,3 +6239,50 @@ async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: P
     assert!(codes.contains(&"conditions_status_required"), "{codes:?}");
     q.stop().await;
 }
+
+/// A required check that runs keeps the conditions status `pending`, not
+/// `failure`; a PR whose opening was lost shows its status after `…/resync`,
+/// which lists the open PRs of the branch.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_running_check_waits_and_resync_finds_a_lost_pr(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, running(REQUIRED)).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(conditions_status(&sim, &head).await, Some(None), "CI runs");
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Success))
+    );
+
+    let (_, lost) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    sim.report_check(&repo(), &lost, check(REQUIRED, false))
+        .unwrap();
+    sim.take_deliveries();
+
+    assert_eq!(conditions_status(&sim, &lost).await, None);
+
+    resync(&pool, queue(), q.clock.now()).await.unwrap();
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &lost).await,
+        Some(Some(CheckConclusion::Failure)),
+        "the failing check of a lost PR"
+    );
+    q.stop().await;
+}

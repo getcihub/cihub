@@ -248,16 +248,18 @@ Decisions (October 14, 2026, validated by the project lead):
     (mergeability, injected conditions, required checks of a test commit), and their deliveries read no PR again.
   - Decided: no polling for a PR not submitted; a lost delivery leaves the status behind until the next event
     of the PR.
-  - To validate (principle V): `…/resync` reads again only the PRs that show a status. A PR whose opening was
-    lost, or that was open before CIHub watched its branch, shows none until its next event: catching it up needs
-    a read of the open PRs of a branch, a new method of `Scm`.
-  - To validate (principle VII): the key of `observe_pr` is per delivery, so N concluded checks of a push read
-    the PR N times, a `not_ready` item is read by `refresh_prs` and `observe_pr`, and a branch with K queues
-    reads it K times. A key per head and per minute would gather them.
+  - Decided (October 14, 2026, validated by the project lead), after a review against the principles:
+    `Scm::open_pull_requests` lists the open PRs of a branch, which `…/resync` reads through `observe_open_prs`,
+    so that a PR whose opening was lost gets its status (principle V); a PR that a read still waits for asks no
+    other read, so the checks of a push that conclude together cost one read (principle VII); a
+    `check-success` condition whose check runs keeps the status `pending`. Remaining for principle VII: a
+    `not_ready` item is read by both `refresh_prs` and `observe_pr`, and a branch with K queues reads a PR K times.
   - Exit criterion: `a_pr_shows_whether_it_can_enter_its_queue` (`failure` without its review, `success` once
     reviewed, the log unchanged, the status kept under test, no row once closed),
-    `the_conditions_status_follows_its_setting_and_is_never_required`, `conditions_of` in
-    `crates/mq-core/tests/conditions.rs`.
+    `the_conditions_status_follows_its_setting_and_is_never_required`,
+    `a_running_check_waits_and_resync_finds_a_lost_pr`, `conditions_of` in `crates/mq-core/tests/conditions.rs`,
+    `the_open_prs_of_a_branch_come_from_every_page` for the GitHub adapter. Tested by hand on
+    `getcihub/testing` with the development App (PRs #40 and #41).
   - Remaining: the budget of 50 open PRs not submitted is not measured; each event of a PR reads that PR alone.
 
 ### Lots 10a to 10d: dashboard

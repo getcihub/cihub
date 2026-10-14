@@ -1333,6 +1333,25 @@ impl Scm for Sim {
         })
     }
 
+    fn open_pull_requests<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        base_branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<u64>> {
+        let base_branch = base_branch.to_owned();
+        self.call("open_pull_requests", repo, class, move |ctx| {
+            Ok(ctx
+                .repo
+                .prs
+                .iter()
+                .filter(|(_, pr)| pr.state == PrState::Open && pr.base_branch == base_branch)
+                .map(|(number, _)| *number)
+                .take(crate::MAX_OPEN_PRS)
+                .collect())
+        })
+    }
+
     fn pr_files<'a>(
         &'a self,
         repo: &'a RepoRef,

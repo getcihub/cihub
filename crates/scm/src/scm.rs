@@ -17,6 +17,9 @@ pub type ScmFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, ScmError>> + S
 /// A read of PRs asks for this many PRs at most.
 pub const MAX_PRS_PER_READ: usize = 50;
 
+/// A list of the open PRs of a branch gives this many PRs at most.
+pub const MAX_OPEN_PRS: usize = 1_000;
+
 /// The calls of CIHub to its SCM. Each call names its repository, and so its
 /// connection, and its class, which decides what the budget of the connection
 /// lets through. A write whose result already exists succeeds without a change,
@@ -30,6 +33,15 @@ pub trait Scm: Send + Sync {
         numbers: &'a [u64],
         class: JobClass,
     ) -> ScmFuture<'a, Vec<PrSnapshot>>;
+
+    /// The numbers of the open PRs whose base is `base_branch`, oldest first,
+    /// at most [`MAX_OPEN_PRS`]: the PRs that a lost delivery hid from CIHub.
+    fn open_pull_requests<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        base_branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<u64>>;
 
     /// The PR `number`, by a read of one PR; `NotFound` when it does not
     /// exist.
