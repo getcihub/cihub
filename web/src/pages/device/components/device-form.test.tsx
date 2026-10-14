@@ -20,7 +20,8 @@ describe("the sign-in of the command line", () => {
   it("approves the code of the link only once the person clicks, with the CSRF token", async () => {
     renderApp("/device?code=WDJB-MJHT", { ...answersOfMe(ada), [`${CODES}/WDJB-MJHT/approve`]: [204, null] });
 
-    expect(await screen.findByRole("textbox", { name: /^Code/ })).toHaveValue("WDJB-MJHT");
+    expect(await screen.findByText("WDJB-MJHT")).toHaveAccessibleName("Code");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(await sentChanges()).toEqual([]);
 
     await userEvent.click(screen.getByRole("button", { name: "Approve as ada" }));
@@ -37,6 +38,12 @@ describe("the sign-in of the command line", () => {
 
     expect(await screen.findByRole("status")).toHaveTextContent("No command line signs in with this code.");
     expect(await sentChanges()).toEqual([["POST", `${CODES}/WDJB-MJHT/deny`, null, "token"]]);
+  });
+
+  it("lets the person type the code when the link carries none that reads", async () => {
+    renderApp("/device?code=nope", answersOfMe(ada));
+
+    expect(await screen.findByRole("textbox", { name: /^Code/ })).toHaveValue("nope");
   });
 
   it("checks the code, then says when no command line waits for it", async () => {
