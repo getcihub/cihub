@@ -143,9 +143,10 @@ pub(crate) fn address(host: &str) -> String {
 }
 
 /// A host is a name, with a port or not: `cihub.example.com`,
-/// `localhost:8080`; never an address.
+/// `localhost:8080`; never an address. An `@` would make the name before it
+/// a user name, and send the token to the host after it.
 fn check_host(host: &str) -> anyhow::Result<String> {
-    if host.is_empty() || host.contains('/') {
+    if host.is_empty() || host.contains(['/', '@']) {
         bail!(
             "`{host}` is not a host: give a name such as `cihub.example.com`, without `https://`"
         );
@@ -192,6 +193,7 @@ mod tests {
             "cihub.example.com"
         );
         assert!(check_host("https://cihub.example.com").is_err());
+        assert!(check_host("localhost:80@evil.example.com").is_err());
         assert!(check_host("").is_err());
     }
 

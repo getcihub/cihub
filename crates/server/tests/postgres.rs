@@ -407,22 +407,19 @@ async fn the_command_line_signs_in_with_a_code_that_its_person_approves(pool: Pg
         .unwrap();
     let mut prompt = String::new();
     let mut reader = BufReader::new(login.stdout.as_mut().unwrap());
-    while !prompt.contains("Approve the code") {
+    while !prompt.contains("type this code:\n\n  ") {
         reader.read_line(&mut prompt).unwrap();
     }
-    let address = format!("http://{public}/device?code=");
     let user_code = prompt
-        .split(&address)
+        .split("type this code:")
         .nth(1)
-        .and_then(|rest| rest.split_whitespace().next())
+        .map(str::trim)
         .unwrap();
 
     assert!(
-        prompt.starts_with("To sign in, open this address (it expires in 15 minutes):"),
-        "{prompt}"
-    );
-    assert!(
-        prompt.contains(&format!("Approve the code {user_code} there")),
+        prompt.starts_with(&format!(
+            "To sign in, open this address (it expires in 15 minutes):\n\n  http://{public}/device\n\n"
+        )),
         "{prompt}"
     );
     let approved = post(

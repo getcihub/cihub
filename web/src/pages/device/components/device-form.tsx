@@ -7,9 +7,9 @@ import { approveDeviceCodeMutation, denyDeviceCodeMutation } from "@/client/@tan
 import { Failure, Lead, Note, Title } from "@/components/session/parts";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { failureOf, isProblem, problemOf } from "@/domain/problem";
 import { userCodeOf } from "@/domain/session/device";
+import { CodeBoxes } from "./code-boxes";
 
 type Answer = "approve" | "deny";
 
@@ -27,17 +27,15 @@ function refusalOf(thrown: unknown): string {
 }
 
 /**
- * The code of the command line, which the person checks, then approves or denies. Nothing approves a code by
- * itself: a link can carry the code of someone else. A code of the link shows as it is, to compare with the
- * terminal, never to edit; without one, the person types it.
+ * The code of the command line, which the person types, then approves or denies. No link carries the code: a link
+ * sent by someone else would approve their code with one click.
  */
-export function DeviceForm({ login, code }: { login: string; code: string }) {
+export function DeviceForm({ login }: { login: string }) {
   const [answered, setAnswered] = useState<Answer | null>(null);
   const approve = useMutation(approveDeviceCodeMutation());
   const deny = useMutation(denyDeviceCodeMutation());
-  const linkedCode = userCodeOf(code);
   const form = useForm({
-    defaultValues: { code: linkedCode ?? code },
+    defaultValues: { code: "" },
     validators: { onSubmit: typedCode },
     onSubmitMeta: { answer: "approve" as Answer },
     onSubmit: async ({ value, meta }) => {
@@ -71,8 +69,7 @@ export function DeviceForm({ login, code }: { login: string; code: string }) {
     <>
       <Title>Sign in the command line</Title>
       <Lead>
-        {linkedCode ? "Check that this code is the one that" : "Type the code that"}{" "}
-        <code>cihub auth login</code> shows in your terminal.
+        Type the code that <code>cihub auth login</code> shows in your terminal.
       </Lead>
       <form
         className="grid gap-4"
@@ -82,42 +79,24 @@ export function DeviceForm({ login, code }: { login: string; code: string }) {
         }}
         noValidate
       >
-        {linkedCode ? (
-          <div className="grid gap-1.5">
-            <span id="device-code" className="text-md font-medium">
-              Code
-            </span>
-            <p aria-labelledby="device-code" className="font-mono text-5xl font-semibold tracking-[0.08em]">
-              {linkedCode}
-            </p>
-          </div>
-        ) : (
-          <form.Field name="code">
-            {(field) => (
-              <label className="grid gap-1.5 text-lg">
-                <span className="text-md font-medium">Code</span>
-                <Input
-                  type="text"
-                  name={field.name}
-                  value={field.state.value}
-                  placeholder="WDJB-MJHT"
-                  autoComplete="off"
-                  spellCheck={false}
-                  className="font-mono uppercase"
-                  onChange={(event) => {
-                    field.handleChange(event.target.value);
-                  }}
-                  aria-invalid={field.state.meta.errors.length > 0}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <span key={error?.message} className="text-sm font-medium text-destructive">
-                    {error?.message}
-                  </span>
-                ))}
-              </label>
-            )}
-          </form.Field>
-        )}
+        <form.Field name="code">
+          {(field) => (
+            <div className="grid gap-1.5">
+              <CodeBoxes
+                letters={field.state.value}
+                isInvalid={field.state.meta.errors.length > 0}
+                onChange={(letters) => {
+                  field.handleChange(letters);
+                }}
+              />
+              {field.state.meta.errors.map((error) => (
+                <span key={error?.message} className="text-sm font-medium text-destructive">
+                  {error?.message}
+                </span>
+              ))}
+            </div>
+          )}
+        </form.Field>
         {failed && <Failure className="">{refusalOf(failed)}</Failure>}
         <Button
           type="submit"

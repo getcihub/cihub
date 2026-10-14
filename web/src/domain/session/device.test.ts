@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { deviceAddress, userCodeOf } from "./device";
+import { userCodeOf } from "./device";
 
 describe("the code of the command line", () => {
   it("reads whatever its case, its spaces and its dash", () => {
@@ -13,10 +13,5 @@ describe("the code of the command line", () => {
     for (const typed of ["", "WDJB-MJH", "WDJB-MJHTX", "WAJB-MJHT", "WDJB-MJH1"]) {
       expect(userCodeOf(typed)).toBeNull();
     }
-  });
-
-  it("comes back to its page after the sign-in", () => {
-    expect(deviceAddress("WDJB-MJHT")).toBe("/device?code=WDJB-MJHT");
-    expect(deviceAddress(undefined)).toBe("/device");
   });
 });

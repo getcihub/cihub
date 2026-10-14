@@ -11,8 +11,3 @@ export function userCodeOf(typed: string): string | null {
   const letters = typed.replace(/[\s-]/g, "").toUpperCase();
   return LETTERS.test(letters) ? `${letters.slice(0, 4)}-${letters.slice(4)}` : null;
 }
-
-/** The page that approves `code`, to open after the sign-in. */
-export function deviceAddress(code: string | undefined): string {
-  return code ? `/device?code=${encodeURIComponent(code)}` : "/device";
-}

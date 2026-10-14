@@ -265,6 +265,15 @@ reason no longer holds.
   no account, and no permission of the person would be checked.
 - **Would change if**: a person must sign in where no browser reaches the dashboard at all.
 
+### The code of the command line in the address of the page `/device`
+
+- **Tried / considered**: `cihub auth login` shows `/device?code=WDJB-MJHT`, and the page shows the code for the
+  person to compare with the terminal, then approve (`verification_uri_complete`, RFC 8628, section 3.3.1).
+- **Why not**: an attacker runs `cihub auth login` and sends the link. The person has no terminal to compare with,
+  and one click on *Approve* gives the attacker a session that acts as the person. The person types the code, as
+  on the device page of GitHub.
+- **Would change if**: a sign-in needs no typing, for example on a device without a keyboard.
+
 ### Trust a `blocked` PR state as is
 
 - **Tried / considered**: keep a PR out of the queue while GitHub reports it `blocked`.

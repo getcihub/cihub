@@ -72,13 +72,14 @@ async fn login(out: &mut impl Write, hostname: Option<&str>) -> anyhow::Result<(
     let client = Client::anonymous(&address(&host))?;
 
     let code = client.start_device_sign_in().await?;
-    let address = format!("{}?code={}", code.verification_url, code.user_code);
+    // The address does not carry the code: the person types it, so that a
+    // link sent by someone else does not approve their code with one click.
     writeln!(
         out,
         "To sign in, open this address (it expires in {minutes} minutes):\n\n  {link}\n\n\
-         Approve the code {user_code} there only if the page shows this code.",
+         and type this code:\n\n  {user_code}",
         minutes = code.expires_in / 60,
-        link = hyperlink(&address, std::io::stdout().is_terminal()),
+        link = hyperlink(&code.verification_url, std::io::stdout().is_terminal()),
         user_code = code.user_code,
     )?;
     let mut interval = Duration::from_secs(code.interval);
@@ -225,7 +226,7 @@ mod tests {
 
     #[test]
     fn a_terminal_gets_a_link_and_a_script_the_address() {
-        let address = "https://cihub.example.com/device?code=WDJB-MJHT";
+        let address = "https://cihub.example.com/device";
 
         assert_eq!(hyperlink(address, false), address);
         assert_eq!(
