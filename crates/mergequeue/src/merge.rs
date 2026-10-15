@@ -245,11 +245,12 @@ async fn land(
     }
 }
 
-/// A direct merge lands exactly what the CI of the PR tested: the required
-/// statuses of a test SHA on the current head of the target are green on the
-/// head of the PR, the PR contains that head, and the PR is mergeable. An
-/// error of the configuration leaves the item to the tests, whose assembly
-/// reports it.
+/// A direct merge lands exactly what the CI of the PR tested: the PR
+/// contains the current head of the target, it is mergeable, and the
+/// required statuses of a test SHA on that head are green on its head. Most
+/// attempts fail because the PR is behind the target, so that call comes
+/// first. An error of the configuration leaves the item to the tests, whose
+/// assembly reports it.
 async fn direct_merge_possible(
     scm: &dyn Scm,
     settings: &QueueSettings,
@@ -262,15 +263,7 @@ async fn direct_merge_possible(
         return Ok(false);
     };
 
-    let names = match required_statuses(scm, target, settings, &base, class).await {
-        Ok((names, _)) => names,
-        Err(Step::Transient(text) | Step::Passing(text)) => {
-            return Err(ScmError::Unavailable(text));
-        }
-        Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
-    };
-
-    if !names.iter().all(|name| check_passed(pr, name)) {
+    if !scm.is_ancestor(repo, &base, &pr.head_sha, class).await? {
         return Ok(false);
     }
 
@@ -283,7 +276,15 @@ async fn direct_merge_possible(
         return Ok(false);
     }
 
-    scm.is_ancestor(repo, &base, &pr.head_sha, class).await
+    let names = match required_statuses(scm, target, settings, &base, Some(&rules), class).await {
+        Ok((names, _)) => names,
+        Err(Step::Transient(text) | Step::Passing(text)) => {
+            return Err(ScmError::Unavailable(text));
+        }
+        Err(Step::GiveUp(..) | Step::Wait(_)) => return Ok(false),
+    };
+
+    Ok(names.iter().all(|name| check_passed(pr, name)))
 }
 
 /// The item is still `tests_passed`, proved by the run of the request, or
