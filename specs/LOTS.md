@@ -223,8 +223,7 @@ Decisions (October 14, 2026, validated by the project lead):
 
 - A PR shows from its opening whether it can enter its queue, in a status of its own,
   `CIHub Conditions (<branch>)`, next to `CIHub Merge Queue (<branch>)`. The queue status cannot turn green
-  before the submission: a team that requires it would then merge PRs outside the queue. Mergify shows the same
-  answer with one check on every PR, its merge protections (`specs/COMPETITION.md`).
+  before the submission: a team that requires it would then merge PRs outside the queue.
 - The welcome comment stays as it is: posted at the opening, whatever the conditions.
 
 - **Goal**: a person sees on GitHub, before the submission, whether their PR can enter the queue and what blocks
