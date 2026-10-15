@@ -29,6 +29,11 @@
       groupSlug: "mise-tools",
     },
     {
+      description: "TypeScript 7: typescript-eslint does not support it yet",
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<7",
+    },
+    {
       description: "Rust toolchain, apart from the other mise tools",
       matchManagers: ["mise"],
       matchDepNames: ["rust"],
