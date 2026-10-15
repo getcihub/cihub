@@ -290,8 +290,8 @@ impl RepoPath<'_> {
 }
 
 /// A queue as the URL of the API names it (`specs/API.md`): the slug of the
-/// organization, the name of the repository in it, and the name of the queue
-/// in the repository.
+/// organization, the name of the repository in it, and the target branch of
+/// the queue.
 #[derive(Clone, Copy, Debug)]
 pub struct QueuePath<'a> {
     pub org: &'a str,
@@ -313,7 +313,7 @@ impl<'a> QueuePath<'a> {
     }
 }
 
-/// `name` as one segment of a path. A queue named after its branch can hold a
+/// `name` as one segment of a path. A queue named by its branch can hold a
 /// `/`: every byte but the unreserved characters of RFC 3986 is
 /// percent-encoded.
 fn segment(name: &str) -> String {

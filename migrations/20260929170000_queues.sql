@@ -6,7 +6,6 @@ CREATE TABLE queues (
     org_id        text        NOT NULL REFERENCES orgs (id),
     repo_id       text        NOT NULL,
     target_branch text        NOT NULL,
-    name          text        NOT NULL,
     state         queue_state NOT NULL DEFAULT 'running',
     mode          queue_mode  NOT NULL DEFAULT 'single',
     state_changed_at timestamptz,
@@ -24,7 +23,7 @@ CREATE TABLE queues (
     config_error  text,
     created_at    timestamptz NOT NULL DEFAULT now(),
     CHECK ((snapshot_seq IS NULL) = (snapshot IS NULL)),
-    UNIQUE (repo_id, name),
+    UNIQUE (repo_id, target_branch),
     UNIQUE (org_id, id),
     FOREIGN KEY (org_id, repo_id) REFERENCES repos (org_id, id)
 );

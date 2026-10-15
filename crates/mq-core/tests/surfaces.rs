@@ -177,7 +177,13 @@ fn the_members_of_a_waiting_batch_show_when_it_closes() {
 
     w.submit(4, Priority::MEDIUM);
     let closes_at = w.item(4).unwrap().admitted_at.unwrap() + Duration::minutes(5);
-    let wait = |members| Some(BatchWait { members, closes_at });
+    let wait = |members| {
+        Some(BatchWait {
+            members,
+            size: 3,
+            closes_at,
+        })
+    };
     assert_eq!(waits(&w)[3], (4, wait(1)));
 
     w.submit(5, Priority::MEDIUM);

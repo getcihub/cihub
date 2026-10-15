@@ -75,7 +75,6 @@ attributes! {
     Deletions => "deletions", Kind::Int;
     Base => "base", Kind::Text;
     Head => "head", Kind::Text;
-    QueueName => "queue-name", Kind::Text;
     QueuePosition => "queue-position", Kind::Int;
     QueueAge => "queue-age", Kind::Duration;
     PrAge => "pr-age", Kind::Duration;

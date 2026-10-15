@@ -44,7 +44,6 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
     id: `queue_${repo}_${name}`,
     repo_id: `repo_${repo}`,
     repo,
-    name,
     target_branch: name,
     state: "running",
     mode: "single",

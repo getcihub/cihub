@@ -715,8 +715,7 @@ async fn pass_comment(
     Ok(())
 }
 
-/// A change of a PR whose base branch has several queues, so that the
-/// routing gave it no queue.
+/// A change of a PR whose base branch had no queue when the routing read it.
 struct PrChange<'a> {
     repo_external_id: &'a str,
     number: u64,
@@ -782,8 +781,8 @@ async fn repo_of_command(
 }
 
 /// Gives `change` to the queue of the live item of its PR, which reads the
-/// PR again; without a live item, the label of a queue of the branch
-/// requests a submission, which chooses the queue.
+/// PR again; without a live item, the label of the queue of the branch
+/// requests a submission.
 async fn route_pr_change(
     conn: &mut PgConnection,
     delivery: &ConnectionDelivery,
@@ -794,12 +793,11 @@ async fn route_pr_change(
         return Ok(());
     };
 
-    // The welcome job checks the settings of the first active queue of the
-    // branch.
+    // The welcome job checks the settings of the queue of the branch.
     if change.opened
-        && !QueueTarget::queues_of_branch(conn, repo, change.base_branch)
+        && QueueTarget::of_branch(conn, repo, change.base_branch)
             .await?
-            .is_empty()
+            .is_some()
     {
         let job = welcome_job(
             delivery.org_id,
@@ -829,8 +827,8 @@ async fn route_pr_change(
         let Some(label) = change.label_added else {
             return Ok(());
         };
-        let queues = QueueTarget::queues_of_branch(conn, repo, change.base_branch).await?;
-        let wanted = queues.iter().any(|queue| {
+        let queue = QueueTarget::of_branch(conn, repo, change.base_branch).await?;
+        let wanted = queue.is_some_and(|queue| {
             queue.settings().is_ok_and(|settings| {
                 settings.label_commands_enabled.value && settings.enqueue_label.value == label
             })
@@ -894,10 +892,10 @@ async fn read_waiting_prs(
     Ok(())
 }
 
-/// Asks each queue of `branch` to read its head again, after a push that
-/// the routing gave to no queue because the branch has several. Returns
-/// `false` while a merge of one of them is in flight: the push of the merge
-/// may come before its fact, so the push waits for the next pass.
+/// Asks the queue of `branch` to read its head again, after a push that the
+/// routing gave to no queue because the branch had none yet. Returns `false`
+/// while a merge of the queue is in flight: the push of the merge may come
+/// before its fact, so the push waits for the next pass.
 async fn read_heads(
     conn: &mut PgConnection,
     delivery: &ConnectionDelivery,
@@ -909,17 +907,16 @@ async fn read_heads(
         return Ok(true);
     };
 
-    let queues = QueueTarget::queues_of_branch(conn, repo, branch).await?;
-    for queue in &queues {
-        if merge_in_flight(conn, queue.queue_id).await? {
-            return Ok(false);
-        }
+    let Some(queue) = QueueTarget::of_branch(conn, repo, branch).await? else {
+        return Ok(true);
+    };
+
+    if merge_in_flight(conn, queue.queue_id).await? {
+        return Ok(false);
     }
 
-    for queue in &queues {
-        let job = refresh_target_after(queue, &delivery.delivery_id);
-        enqueue_job(conn, &job, now, now).await?;
-    }
+    let job = refresh_target_after(&queue, &delivery.delivery_id);
+    enqueue_job(conn, &job, now, now).await?;
 
     Ok(true)
 }
@@ -954,7 +951,7 @@ async fn request_submission(
         priority: command.merge.priority,
         no_batch: command.merge.no_batch,
         direct: command.merge.direct,
-        queue: command.merge.queue.clone(),
+        profile: command.merge.profile.clone(),
         label: None,
         comment_id: command.comment_external_id.map(str::to_owned),
     };

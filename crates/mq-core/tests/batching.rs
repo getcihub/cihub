@@ -49,6 +49,62 @@ fn assert_replays(w: &World) {
     assert_eq!(w.replay(), w.snapshot);
 }
 
+/// Batches of 3 that wait 5 minutes in a window of 3, and of 2 that wait 30
+/// minutes for the profile `dependencies`.
+fn with_profile() -> World {
+    let mut settings = settings(batching(3, 3));
+    let mut dependencies = settings.clone();
+
+    dependencies.batching_size.value = 2;
+    dependencies.batching_max_wait_minutes.value = 30;
+    settings
+        .profiles
+        .insert("dependencies".into(), dependencies);
+    World::new(settings)
+}
+
+#[test]
+fn a_batch_holds_the_prs_of_one_profile_with_its_size() {
+    let mut w = with_profile();
+
+    for pr in [1, 2] {
+        w.submit_profile(pr, "dependencies");
+    }
+    for pr in [3, 4, 5] {
+        w.submit(pr, Priority::MEDIUM);
+    }
+    w.submit_profile(6, "dependencies");
+    w.submit(7, Priority::MEDIUM);
+
+    assert_eq!(
+        groups(&w),
+        vec![
+            (GroupKind::Batch, vec![1, 2]),
+            (GroupKind::Batch, vec![3, 4, 5]),
+            (GroupKind::Single, vec![6]),
+        ],
+        "the PR of another profile right behind closes the batch of 6"
+    );
+    assert_eq!(w.state(7), Some(ItemState::Pending));
+    assert_replays(&w);
+}
+
+#[test]
+fn a_batch_of_a_profile_waits_for_the_time_of_its_profile() {
+    let mut w = with_profile();
+    w.submit_profile(1, "dependencies");
+
+    w.advance(10);
+    assert!(
+        w.snapshot.groups.is_empty(),
+        "the queue waits 5, the profile 30"
+    );
+
+    w.advance(25);
+    assert_eq!(groups(&w), vec![(GroupKind::Single, vec![1])]);
+    assert_replays(&w);
+}
+
 #[test]
 fn a_full_batch_forms_at_once_and_tests_its_members_in_one_run() {
     let mut w = world(3, 2);

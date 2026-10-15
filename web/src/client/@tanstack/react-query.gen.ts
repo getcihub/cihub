@@ -227,7 +227,7 @@ export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => cr
  * List the queues of the organization
  *
  * Every queue of the organization, or of one repository, with its counters
- * and its settings, by repository name then queue name: the overview of the
+ * and its settings, by repository name then target branch: the overview of the
  * dashboard.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
@@ -383,9 +383,10 @@ export const restartMutation = (options?: Partial<Options<RestartData>>): UseMut
 /**
  * Submit a PR
  *
- * The queue takes the PR at its next reconciliation. A queue that accepts
- * nothing, and a PR already in a queue, answer `409` at once; the refusals
- * that need a read of the SCM come later, on the PR.
+ * The queue of the base branch of the PR takes it at its next
+ * reconciliation. A PR already in a queue answers `409` at once; the
+ * refusals that need a read of the SCM, such as a queue that accepts
+ * nothing, come later, on the PR.
  *
  * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
  */
@@ -409,7 +410,7 @@ export const listRepoQueuesQueryKey = (options: Options<ListRepoQueuesData>) => 
  * List the queues of a repository
  *
  * The queues of the repository with their counters and their settings, by
- * name. The first `/cihub merge` on a PR of a branch creates its queue.
+ * target branch. The first `/cihub merge` on a PR of a branch creates its queue.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */

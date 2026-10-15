@@ -168,12 +168,20 @@ impl World {
     /// Submits `head(pr_number, version)` without an observation: the test
     /// chooses what the first observation says.
     pub fn submit_only(&mut self, pr_number: u64, version: u32, priority: Priority) -> Outcome {
-        self.submit_with(pr_number, version, priority, false)
+        self.submit_with(pr_number, version, priority, false, None)
     }
 
     /// Submits the PR with `no_batch`, then observes it.
     pub fn submit_no_batch(&mut self, pr_number: u64) -> Outcome {
-        let outcome = self.submit_with(pr_number, 0, Priority::MEDIUM, true);
+        let outcome = self.submit_with(pr_number, 0, Priority::MEDIUM, true, None);
+        self.observe(pr_number, |_| {});
+        outcome
+    }
+
+    /// Submits the PR with the profile `profile`, then observes it.
+    pub fn submit_profile(&mut self, pr_number: u64, profile: &str) -> Outcome {
+        let profile = Some(profile.to_owned());
+        let outcome = self.submit_with(pr_number, 0, Priority::MEDIUM, false, profile);
         self.observe(pr_number, |_| {});
         outcome
     }
@@ -184,6 +192,7 @@ impl World {
         version: u32,
         priority: Priority,
         no_batch: bool,
+        profile: Option<String>,
     ) -> Outcome {
         self.fact(
             Actor::System,
@@ -199,6 +208,7 @@ impl World {
                 deletions: 0,
                 changed_files: 0,
                 sender_permission: None,
+                profile,
             },
         )
     }

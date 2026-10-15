@@ -43,6 +43,8 @@ pub enum EventKind {
         deletions: u64,
         changed_files: u64,
         sender_permission: Option<Permission>,
+        /// The profile of the queue that the submission chose, if any.
+        profile: Option<String>,
     },
     #[serde(rename = "item.cancel_requested")]
     ItemCancelRequested { item_id: ItemId, by_admin: bool },

@@ -198,6 +198,25 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     `defaults` alone in `cihub-config`, the rule of the queues that take submissions, and against Postgres and
     the simulator the queue of the default branch, the queues of the file and their routing, a label and a
     command on another branch that create nothing.
+  - Done (October 15, 2026), decided by the project lead: one queue per target branch (`specs/LESSONS.md`). Two
+    queues on one branch restarted the runs of each other at each merge. `queues.name` is removed, and
+    (`repo_id`, `target_branch`) is unique; a route names a queue by its branch, and the API `Queue` loses `name`.
+    `route_conditions`, the `queue-name` attribute, `/cihub merge --queue=`, the `queue` of `SubmitPr` and
+    `409 queue_not_accepting` are removed: a PR enters the queue of its base branch, and a draining queue refuses it
+    on the PR. The CLI option `--queue` becomes `--branch`, and `cihub queue merge|cancel|restart` need no queue.
+    Tests: one entry per branch in `cihub-config`, the queue of a branch that takes submissions, and against
+    Postgres and the simulator the queue that the file names on a branch, the priority of a PR in the queue of its
+    branch, and the CLI with two branches.
+  - Done (October 15, 2026), decided by the project lead: what the named queues on one branch gave, in one train
+    (`specs/CONFIGURATION.md`). The `branch` of an entry can be a glob (`release/*`), a queue for each branch that it
+    matches, and an entry that names the branch wins; `defaults` takes `queue_conditions` and `merge_conditions`,
+    which each queue adds to; a queue has `profiles`, chosen once at the submission by their `conditions` or by
+    `--profile` (command, CLI, `profile` of the API), which set `merge_method` (but `fast_forward`),
+    `merge_commit_title`, `batching` and `failure_budget` for their PRs. `item.submitted` and `queue_items` gain
+    `profile`; a batch holds one profile. Tests: globs, conditions of `defaults` and profiles in `cihub-config`, the
+    batch and the failure budget of a profile in `cihub-mq-core`, and against Postgres and the simulator the merge
+    method of a profile, an unknown profile refused, a queue created by a glob, and a branch without a required
+    check that merges nothing.
   - Done (October 2, 2026): the GitHub responses are recorded again for `check_setup`, with the
     rules of the target branch and of the test branches.
   - Done (October 5, 2026): CIHub on its own queue, on an instance started locally behind a tunnel. The queue

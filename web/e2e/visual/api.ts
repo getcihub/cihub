@@ -46,7 +46,6 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
     id: `queue_${repo}_${name}`,
     repo_id: `repo_${repo}`,
     repo,
-    name,
     target_branch: name,
     state: "running",
     mode: "single",
@@ -257,7 +256,7 @@ const PRS: Pr[] = [
   }),
 ];
 
-/** The live PRs of the queue `name` of `repo`, as the nodes of its graph: the server gives every one. */
+/** The live PRs of the queue of the branch `name` of `repo`, as the nodes of its graph: the server gives every one. */
 function nodesOf(repo: string, name: string): GraphNode[] {
   return PRS.filter((pr) => pr.repo === repo && pr.queue === name && LIVE_STATES.includes(pr.state)).map(
     (pr) => ({
@@ -594,19 +593,19 @@ function answerOfQueue(path: string, query: URLSearchParams): Answer | null {
   }
 
   const [, repo, name, part] = match;
-  const queue = QUEUES.find((entry) => entry.repo === repo && entry.name === name);
+  const queue = QUEUES.find((entry) => entry.repo === repo && entry.target_branch === name);
   if (!queue) {
     return [404, problem(404, "queue_not_found")];
   }
   if (part === "/health") {
-    return [200, healthOf(queue.repo, queue.name, query)];
+    return [200, healthOf(queue.repo, queue.target_branch, query)];
   }
   if (part === "/graph") {
     return [
       200,
       GRAPHS[`${repo ?? ""}/${name ?? ""}`] ?? {
         target_head_sha: "c7f2210ab4",
-        nodes: nodesOf(queue.repo, queue.name),
+        nodes: nodesOf(queue.repo, queue.target_branch),
         edges: [],
         runs: [],
       },

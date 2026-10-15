@@ -73,6 +73,7 @@ pub enum Request {
         no_batch: bool,
         direct: bool,
         submitted_via: SubmittedVia,
+        profile: Option<String>,
     },
     Cancel {
         item_id: ItemId,

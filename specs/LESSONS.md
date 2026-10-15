@@ -234,12 +234,26 @@ reason no longer holds.
 
 ## Configuration
 
-### Route a submission with `queue_conditions`
+### Several queues on one branch
 
-- **Tried / considered**: pick the first queue of the branch whose `queue_conditions` pass.
-- **Why not**: routing reads the PR once and an item never changes queue, but `queue_conditions` change over time
-  (checks, reviews): a PR that does not pass them yet at submission would go to another queue and stay there.
-  `route_conditions` route; `queue_conditions` admit.
+- **Tried / considered**: named queues on the same branch (`main` and `hotfix` on `main`), each with its own log
+  and train, and a routing of each submission by `--queue=<name>` or `route_conditions`.
+- **Why not**: both trains merge into the same branch, and neither tests on top of the other. A queue knows only
+  its own merges (`own_shas`), so each merge of one is an outside push for the other: it drops all its runs with
+  `manual_push_to_target_branch`, a reason that is false on the PR. The needs behind a second queue have another
+  answer in one train: `priority_rules` and `--priority` for an urgent PR, `--no-batch` to test it alone,
+  profiles for other settings, and the lanes of the `parallel` mode for unrelated changes. Mergify went the same
+  way: it removed `partition_rules` (2025), the implicit priority between `queue_rules` (2025) and
+  `routing_conditions` (2026).
+
+### Choose a profile with `queue_conditions`, or let it change the train
+
+- **Tried / considered**: choose the profile of a PR, as Mergify chooses a `queue_rule`, by the first profile
+  whose `queue_conditions` pass; and let a profile set any setting.
+- **Why not**: the submission reads the PR once, but `queue_conditions` change over time (checks, reviews): a PR
+  that does not pass them yet would keep another profile. `conditions` choose; `queue_conditions` admit. A
+  profile sets only the settings of a PR: `strategy`, `window` or `trigger` describe the whole train, and
+  `fast_forward` moves the target onto a test commit that the other PRs of the train do not descend from.
 
 ## GitHub
 
