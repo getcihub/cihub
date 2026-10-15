@@ -1,7 +1,7 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ItemState } from "@/client/types.gen";
+import type { ItemState, Queue } from "@/client/types.gen";
 import { type Answers, renderApp } from "@/test/app";
 import {
   ada,
@@ -114,6 +114,24 @@ describe("the stream of an organization", () => {
     act(() => stream?.onerror?.());
 
     expect(screen.getByText("Not live")).toBeInTheDocument();
+  });
+
+  it.each<[string, Partial<Queue>, string]>([
+    ["draining", { state: "draining" }, "Live"],
+    ["paused", { state: "paused" }, "Not live"],
+    ["without access", { access: "suspended" }, "Not live"],
+  ])("shows a queue %s as %s while the stream is open", async (_, changes, mark) => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    renderApp("/orgs/acme/repos/web/queues/main", {
+      ...answers,
+      [QUEUE]: [200, detailOf(web, changes)],
+      [liveOf()]: [200, pageOf("prs", [itemOf(124, "pending")])],
+    });
+    await screen.findByRole("heading", { level: 2, name: "Live graph" });
+
+    act(() => FakeEventSource.opened[0]?.onopen?.());
+
+    expect(screen.getByText(mark)).toBeInTheDocument();
   });
 
   it("tells the person that one of their PRs moved", async () => {

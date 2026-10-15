@@ -1,12 +1,15 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { updateQueueMutation } from "@/client/@tanstack/react-query.gen";
 import type { Queue, RequestedQueueState } from "@/client/types.gen";
+import { CheckIcon } from "@/components/icons/check-icon";
 import { DrainIcon } from "@/components/icons/drain-icon";
 import { PauseIcon } from "@/components/icons/pause-icon";
 import { PlayIcon } from "@/components/icons/play-icon";
 import { Button } from "@/components/ui/button";
 import { Modal, ModalDescription, ModalFooter } from "@/components/ui/modal";
+import { Spinner } from "@/components/ui/spinner";
+import { Toast } from "@/components/ui/toast";
 import { refusalOf } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useQueueMutation } from "@/hooks/use-queue-mutation";
@@ -15,11 +18,16 @@ interface StateRequest {
   /** The button, and the confirmation in the modal: "Pause". */
   verb: string;
   icon: ReactNode;
-  /** The confirmation while the request leaves: "Pausing". */
+  /** The confirmation while the request leaves, and the toast until the queue takes it: "Pausing". */
   pending: string;
   question: string;
   consequence: string;
+  /** What the toast says once the queue is in the requested state. */
+  done: string;
 }
+
+/** How long the toast says that the queue is in the requested state. */
+const DONE_SHOWN_MS = 3_000;
 
 const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
   paused: {
@@ -28,6 +36,7 @@ const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
     pending: "Pausing",
     question: "Pause the queue?",
     consequence: "It starts no test and merges nothing, and keeps its order.",
+    done: "The queue is paused.",
   },
   draining: {
     verb: "Drain",
@@ -35,6 +44,7 @@ const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
     pending: "Draining",
     question: "Drain the queue?",
     consequence: "It accepts no new pull request and lets the ones in it merge.",
+    done: "The queue is draining.",
   },
   running: {
     verb: "Resume",
@@ -42,26 +52,39 @@ const STATE_REQUESTS: Record<RequestedQueueState, StateRequest> = {
     pending: "Resuming",
     question: "Resume the queue?",
     consequence: "It starts where it stopped.",
+    done: "The queue is running.",
   },
 };
 
 /** Pause, drain or resume the queue: an admin only, as the server checks. */
-export function QueueActions({
-  path,
-  queue,
-  isAdmin,
-  onSent,
-}: {
-  path: QueuePath;
-  queue: Queue;
-  isAdmin: boolean;
-  onSent: (notice: string) => void;
-}) {
+export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue: Queue; isAdmin: boolean }) {
   const [asked, setAsked] = useState<RequestedQueueState | null>(null);
+  const [sent, setSent] = useState<RequestedQueueState | null>(null);
+  const [done, setDone] = useState<RequestedQueueState | null>(null);
   const update = useQueueMutation(updateQueueMutation());
   const choices: RequestedQueueState[] = queue.state === "running" ? ["paused", "draining"] : ["running"];
   const isLost = queue.access === "suspended";
   const request = asked && STATE_REQUESTS[asked];
+
+  // The queue takes the request at its next reconciliation; the stream brings its new state.
+  if (sent && queue.state === sent) {
+    setSent(null);
+    setDone(sent);
+  }
+
+  useEffect(() => {
+    if (!done) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setDone(null);
+    }, DONE_SHOWN_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [done]);
 
   return (
     <>
@@ -110,7 +133,7 @@ export function QueueActions({
                   {
                     onSuccess: () => {
                       setAsked(null);
-                      onSent(`${request.verb} sent: the queue changes at its next reconciliation.`);
+                      setSent(asked);
                     },
                   },
                 );
@@ -121,6 +144,21 @@ export function QueueActions({
           </ModalFooter>
         </Modal>
       )}
+      <Toast>
+        {sent ? (
+          <span className="flex items-center gap-2">
+            <Spinner className="text-primary" />
+            {STATE_REQUESTS[sent].pending} the queue…
+          </span>
+        ) : (
+          done && (
+            <span className="flex items-center gap-2">
+              <CheckIcon className="size-4 text-success" />
+              {STATE_REQUESTS[done].done}
+            </span>
+          )
+        )}
+      </Toast>
     </>
   );
 }
