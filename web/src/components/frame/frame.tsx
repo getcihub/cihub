@@ -149,20 +149,58 @@ function RepoPicker({ org, queues, repo }: { org: string; queues: Queue[]; repo:
       </Link>
       <MenuSeparator />
       {repos.map((name) => (
-        <Link
+        <RepoLink
           key={name}
-          className={menuItemVariants({ isCurrent: name === repo })}
-          to="/orgs/$org/repos/$repo"
-          params={{ org, repo: name }}
-        >
-          <span>
-            <span className="text-muted-foreground">{org}/</span>
-            <b className="font-semibold">{name}</b>
-          </span>
-          <MenuHint>{queues.filter((candidate) => candidate.repo === name).length}</MenuHint>
-        </Link>
+          org={org}
+          repo={name}
+          queues={queues.filter((candidate) => candidate.repo === name)}
+          isCurrent={name === repo}
+        />
       ))}
     </Menu>
+  );
+}
+
+/** A repository of the picker: its only queue, else the page that lists its queues. */
+function RepoLink({
+  org,
+  repo,
+  queues,
+  isCurrent,
+}: {
+  org: string;
+  repo: string;
+  queues: Queue[];
+  isCurrent: boolean;
+}) {
+  const className = menuItemVariants({ isCurrent });
+  const label = (
+    <>
+      <span>
+        <span className="text-muted-foreground">{org}/</span>
+        <b className="font-semibold">{repo}</b>
+      </span>
+      <MenuHint>{queues.length}</MenuHint>
+    </>
+  );
+  const [onlyQueue] = queues;
+
+  if (onlyQueue && queues.length === 1) {
+    return (
+      <Link
+        className={className}
+        to="/orgs/$org/repos/$repo/queues/$queue"
+        params={{ org, repo, queue: onlyQueue.name }}
+      >
+        {label}
+      </Link>
+    );
+  }
+
+  return (
+    <Link className={className} to="/orgs/$org/repos/$repo" params={{ org, repo }}>
+      {label}
+    </Link>
   );
 }
 
