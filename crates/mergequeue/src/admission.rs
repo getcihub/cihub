@@ -1,8 +1,7 @@
 //! The `queue_conditions` of a queue: the jobs that read a PR evaluate them,
 //! and give the conditions that the PR does not meet in its `pr.observed`. The
 //! core sees the result, not the conditions: they need the logins, which the
-//! log does not keep. Also the `route_conditions` that `submit_pr` reads to
-//! choose the queue.
+//! log does not keep.
 
 use std::time::Duration;
 
@@ -22,42 +21,17 @@ pub(crate) struct Sender {
     pub permission: Option<Permission>,
 }
 
-/// The `queue_conditions` of the entry of the queue in `config`, its last
-/// valid file; none without a file or an entry.
+/// The `queue_conditions` of `defaults` and of the entry of the queue in
+/// `config`, its last valid file; none without a file.
 fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Conditions {
     config
-        .and_then(|config| config.queue(&target.target_branch, &target.name))
-        .map(|queue| queue.queue_conditions.clone())
+        .map(|config| config.queue_conditions(&target.target_branch))
         .unwrap_or_default()
-}
-
-/// Whether the `route_conditions` of the entry of the queue of `target` in
-/// `config`, its last valid file, send `pr` to that queue: a queue without
-/// them takes every PR. The files and the review threads are read only
-/// when a condition uses them.
-pub(crate) async fn routes_to(
-    scm: &dyn Scm,
-    target: &QueueTarget,
-    config: Option<&RepoConfig>,
-    pr: &PrSnapshot,
-    reading: &Reading<'_>,
-) -> Result<bool, Failure> {
-    let Some(conditions) = config
-        .and_then(|config| config.queue(&target.target_branch, &target.name))
-        .map(|queue| &queue.route_conditions)
-        .filter(|conditions| !conditions.0.is_empty())
-    else {
-        return Ok(true);
-    };
-    let ctx = loaded_context(scm, target, pr, reading, |a| conditions.uses(a)).await?;
-    conditions
-        .eval(&ctx)
-        .map_err(|err| Failure::Never(err.to_string()))
 }
 
 /// The context of the conditions for `pr`, before its admission: the PR is
 /// not in the queue yet.
-fn context(target: &QueueTarget, pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
+fn context(pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
     let list = |set: &std::collections::BTreeSet<String>| set.iter().cloned().collect();
     Context {
         draft: pr.draft,
@@ -89,7 +63,6 @@ fn context(target: &QueueTarget, pr: &PrSnapshot, sender: &Sender, now: OffsetDa
         deletions: pr.deletions,
         base: pr.base_branch.clone(),
         head: pr.head_branch.clone(),
-        queue_name: Some(target.name.clone()),
         queue_position: None,
         queue_age: None,
         pr_age: Duration::try_from(now - pr.created_at).unwrap_or_default(),
@@ -166,7 +139,7 @@ async fn loaded_context(
     uses: impl Fn(Attribute) -> bool,
 ) -> Result<Context, Failure> {
     let class = reading.class;
-    let mut ctx = context(target, pr, reading.sender, reading.now);
+    let mut ctx = context(pr, reading.sender, reading.now);
 
     if uses(Attribute::Files) {
         ctx.files = Some(scm.pr_files(&target.repo, pr.number, class).await?);
@@ -216,6 +189,41 @@ pub(crate) async fn rule_priority(
     Ok(None)
 }
 
+/// The first profile of the queue in `config` whose `conditions` `pr` meets.
+/// A profile without conditions is chosen only by its name.
+pub(crate) async fn rule_profile(
+    scm: &dyn Scm,
+    target: &QueueTarget,
+    config: Option<&RepoConfig>,
+    pr: &PrSnapshot,
+    reading: &Reading<'_>,
+) -> Result<Option<String>, Failure> {
+    let profiles: Vec<_> = config
+        .and_then(|config| config.queue(&target.target_branch))
+        .into_iter()
+        .flat_map(|queue| &queue.profiles)
+        .filter(|profile| !profile.conditions.0.is_empty())
+        .collect();
+    if profiles.is_empty() {
+        return Ok(None);
+    }
+
+    let uses = |a| profiles.iter().any(|profile| profile.conditions.uses(a));
+    let ctx = loaded_context(scm, target, pr, reading, uses).await?;
+
+    for profile in profiles {
+        if profile
+            .conditions
+            .eval(&ctx)
+            .map_err(|err| Failure::Never(err.to_string()))?
+        {
+            return Ok(Some(profile.name.clone()));
+        }
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -229,7 +237,7 @@ mod tests {
     async fn unmet(injection: &str, checks: &[(&str, bool)]) -> Vec<String> {
         let mut target = test_target();
         target.config_text = Some(format!(
-            "version: 1\nqueues:\n  - name: main\n    branch: main\n    \
+            "version: 1\nqueues:\n  - branch: main\n    \
              branch_protection_injection: {injection}\n    queue_conditions:\n      - label = ready\n      - author = alice\n"
         ));
 

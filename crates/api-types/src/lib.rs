@@ -133,7 +133,6 @@ pub enum ErrorCode {
     PrNotFound,
     RunNotFound,
     DeviceCodeNotFound,
-    QueueNotAccepting,
     PrAlreadyQueued,
     ItemEnded,
     ItemNotInTest,
@@ -169,10 +168,7 @@ impl ErrorCode {
             | Self::PrNotFound
             | Self::RunNotFound
             | Self::DeviceCodeNotFound => 404,
-            Self::QueueNotAccepting
-            | Self::PrAlreadyQueued
-            | Self::ItemEnded
-            | Self::ItemNotInTest => 409,
+            Self::PrAlreadyQueued | Self::ItemEnded | Self::ItemNotInTest => 409,
             Self::RateLimited | Self::TooManyStreams | Self::PollingTooFast => 429,
             Self::Internal => 500,
             Self::SignInUnavailable => 503,
@@ -215,15 +211,12 @@ impl ErrorCode {
                 "No organization has this slug, or the token or the user does not belong to it."
             }
             Self::RepoNotFound => "The organization has no repository with this name.",
-            Self::QueueNotFound => "The repository has no queue with this name.",
+            Self::QueueNotFound => "The repository has no queue of this branch.",
             Self::PrNotFound => "The PR was never submitted to a queue of the repository.",
             Self::RunNotFound => "The organization has no run with this identifier.",
             Self::DeviceCodeNotFound => {
                 "No sign-in of the command line waits for this code: it is wrong, used, or older \
                  than 15 minutes."
-            }
-            Self::QueueNotAccepting => {
-                "The queue is `draining` or `switching_modes`: it accepts no new PR."
             }
             Self::PrAlreadyQueued => {
                 "The PR is already in a queue of the repository, and its item has not ended."
@@ -264,7 +257,7 @@ pub struct Problem {
     pub status: u16,
     /// What went wrong with this request, in English, for a person; it can
     /// change without notice, unlike `code`.
-    #[cfg_attr(feature = "openapi", schema(example = "queue `main` not found"))]
+    #[cfg_attr(feature = "openapi", schema(example = "no queue of `main`"))]
     pub detail: String,
     /// The machine code of the error: decide on it.
     pub code: ErrorCode,
@@ -431,10 +424,8 @@ pub struct Queue {
     /// The name of the repository of the queue, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "web"))]
     pub repo: String,
-    /// The name of the queue in its repository, as the routes name it.
-    #[cfg_attr(feature = "openapi", schema(example = "main"))]
-    pub name: String,
-    /// The branch that the queue merges into.
+    /// The branch that the queue merges into, which names the queue in the
+    /// routes: a repository has one queue per branch.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub target_branch: String,
     /// `running` accepts and merges; `paused` tests and merges nothing and
@@ -534,7 +525,7 @@ pub enum QueueAccess {
 }
 
 page! {
-    /// A page of queues, by repository name then queue name.
+    /// A page of queues, by repository name then target branch.
     pub struct QueueList {
         /// The queues of the page.
         pub queues: Vec<Queue>,
@@ -642,7 +633,7 @@ pub struct Pr {
     /// The name of the repository of the queue, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "web"))]
     pub repo: String,
-    /// The name of the queue, as the routes name it.
+    /// The target branch of the queue, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub queue: String,
     /// The number of the PR in its repository.
@@ -826,11 +817,6 @@ impl PriorityInput {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SubmitPr {
-    /// The queue of the repository; without it, the base branch of the PR
-    /// chooses, as for a command in a comment.
-    #[cfg_attr(feature = "openapi", schema(example = "main"))]
-    #[serde(default)]
-    pub queue: Option<String>,
     /// Without it, the `priority_rules` of the configuration file decide.
     #[cfg_attr(feature = "openapi", schema(example = "high"))]
     #[serde(default)]
@@ -838,6 +824,11 @@ pub struct SubmitPr {
     /// Test the PR alone, never in a batch.
     #[serde(default)]
     pub no_batch: bool,
+    /// A profile of the queue of the base branch of the PR; without it, the
+    /// `conditions` of the profiles decide.
+    #[cfg_attr(feature = "openapi", schema(example = "dependencies"))]
+    #[serde(default)]
+    pub profile: Option<String>,
     /// Merge the PR without a test of the queue; the person needs the
     /// permission `admin` on the repository.
     #[serde(default)]

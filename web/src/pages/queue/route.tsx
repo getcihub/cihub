@@ -29,7 +29,10 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
     // The params of a page of a PR under this one also hold its number.
     const { org, repo, queue } = params;
     const list = await queryClient.query(orgQueuesOptions(org)).catch(() => null);
-    if (list && !list.queues.some((candidate) => candidate.repo === repo && candidate.name === queue)) {
+    if (
+      list &&
+      !list.queues.some((candidate) => candidate.repo === repo && candidate.target_branch === queue)
+    ) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router stops on a thrown notFound
       throw notFound();
     }

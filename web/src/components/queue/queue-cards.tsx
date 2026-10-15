@@ -30,7 +30,7 @@ export function QueueCards({ org, queues }: { org: string; queues: Queue[] }) {
   const hasFilter = queues.length >= FILTER_FROM;
   const words = hasFilter ? filter.trim().toLowerCase() : "";
   const shown = queues
-    .filter((queue) => `${queue.repo} ${queue.name} ${queue.target_branch}`.toLowerCase().includes(words))
+    .filter((queue) => `${queue.repo} ${queue.target_branch}`.toLowerCase().includes(words))
     .sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)));
   const now = useNow();
   const grid = useRef<HTMLDivElement>(null);
@@ -76,14 +76,14 @@ function QueueCard({ org, queue, now }: { org: string; queue: Queue; now: number
         "grid content-start gap-3 px-4 py-3.5 text-inherit transition-[border-color,translate] duration-150 hover:-translate-y-px hover:border-primary-border focus-visible:border-primary-border motion-reduce:hover:translate-y-0",
       )}
       to="/orgs/$org/repos/$repo/queues/$queue"
-      params={{ org, repo, queue: queue.name }}
+      params={{ org, repo, queue: queue.target_branch }}
     >
       <div className="flex items-center justify-between gap-2.5">
         <div>
           <div className="text-sm text-muted-foreground">
             {org}/{repo}
           </div>
-          <h2 className="text-2xl font-medium">{queue.name}</h2>
+          <h2 className="text-2xl font-medium">{queue.target_branch}</h2>
         </div>
         <QueueStateBadge queue={queue} />
       </div>

@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::{Attribute, Condition, Context, EvalError};
 
-/// A list of conditions, as written under `route_conditions`,
-/// `queue_conditions`, `merge_conditions` or a priority rule: all of them must hold.
+/// A list of conditions, as written under `queue_conditions`,
+/// `merge_conditions` or a priority rule: all of them must hold.
 #[derive(Clone, Debug, Default)]
 pub struct Conditions(pub Vec<Expr>);
 
@@ -232,8 +232,6 @@ mod tests {
         assert!(!holds("sender-permission != admin", &ctx));
         assert!(!holds("queue-age < 1000d", &ctx));
         assert!(holds("queue-position = -1", &ctx));
-        assert!(!holds("queue-name = main", &ctx));
-        assert!(holds("queue-name != main", &ctx));
     }
 
     #[test]

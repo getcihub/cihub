@@ -121,21 +121,17 @@ fn numbers(prs: &[u64]) -> String {
         .join(", ")
 }
 
-/// The required statuses that `.cihub.yaml` gives for the queue `name` on
-/// `branch`, or `None` when the file leaves them to the branch protection
+/// The required statuses that `.cihub.yaml` gives for the queue of `branch`,
+/// or `None` when the file leaves them to the branch protection
 /// (`specs/CONFIGURATION.md`: `null` or no key inherits). A queue without an
 /// entry in the file inherits them.
 ///
 /// # Errors
 ///
 /// The file is not valid, or it gives an empty list.
-fn required_statuses_of_file(
-    text: &str,
-    branch: &str,
-    name: &str,
-) -> Result<Option<Vec<String>>, JobError> {
+fn required_statuses_of_file(text: &str, branch: &str) -> Result<Option<Vec<String>>, JobError> {
     let config = RepoConfig::parse(text).map_err(|err| err.job_error())?;
-    let setting = config.queue(branch, name).and_then(|queue| {
+    let setting = config.queue(branch).and_then(|queue| {
         queue
             .settings
             .required_statuses
@@ -164,19 +160,16 @@ pub(crate) async fn required_statuses(
     class: JobClass,
 ) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
     let branch = target.target_branch.as_str();
-    let name = target.name.as_str();
     let file = read_config_file(scm, &target.repo, base_sha, class)
         .await?
         .map_err(|err| err.job_error())?;
     let (listed, merge_checks, injection) = match file {
         Some(text) => {
-            let listed = required_statuses_of_file(&text, branch, name)?;
+            let listed = required_statuses_of_file(&text, branch)?;
             let config = RepoConfig::parse(&text).map_err(|err| err.job_error())?;
-            let settings = config
-                .settings(branch, name)
-                .map_err(|err| err.job_error())?;
+            let settings = config.settings(branch).map_err(|err| err.job_error())?;
             let injection = settings.branch_protection_injection.value;
-            (listed, config.merge_checks(branch, name), injection)
+            (listed, config.merge_checks(branch), injection)
         }
         None => (None, Vec::new(), settings.branch_protection_injection.value),
     };
@@ -710,8 +703,7 @@ mod tests {
 
     #[test]
     fn the_file_gives_its_required_statuses_or_inherits() {
-        let queue =
-            |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+        let queue = |body: &str| format!("version: 1\nqueues:\n  - branch: main\n{body}");
         let cases: Vec<FileCase> = vec![
             (
                 queue("    required_statuses: [ci, lint]\n"),
@@ -757,11 +749,7 @@ mod tests {
             ),
         ];
         for (text, branch, want) in cases {
-            assert_eq!(
-                required_statuses_of_file(&text, branch, "main"),
-                want,
-                "{text}"
-            );
+            assert_eq!(required_statuses_of_file(&text, branch), want, "{text}");
         }
     }
 
@@ -1038,7 +1026,7 @@ mod tests {
             vec![head(&sim, &target, parent, n, &[(&path, Some("x"))])]
         };
         // The file of the repository, read on the target branch at the base.
-        let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [build]\n";
+        let config = "version: 1\nqueues:\n  - branch: main\n    required_statuses: [build]\n";
         let with_file = sim
             .commit(&target.repo, &main, &[(".cihub/config.yml", Some(config))])
             .unwrap();
@@ -1100,7 +1088,7 @@ mod tests {
         let mut n = 0;
         let mut built = |body: &str| {
             n += 1;
-            let config = format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+            let config = format!("version: 1\nqueues:\n  - branch: main\n{body}");
             let base = sim
                 .commit(
                     &target.repo,

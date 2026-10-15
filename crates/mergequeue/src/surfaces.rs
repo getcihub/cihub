@@ -217,7 +217,7 @@ fn comment(
     let mut blocks = vec![state_line(surface, target_branch)];
 
     if let Some(wait) = &surface.batch_wait {
-        blocks.push(batch_wait_line(wait, settings.batching_size.value));
+        blocks.push(batch_wait_line(wait));
     }
 
     if surface.state == ItemState::NotReady && !surface.block_reasons.is_empty() {
@@ -516,14 +516,15 @@ fn cell(text: &str) -> String {
 /// closed batch still waits for room in the window. An absolute time does
 /// not go stale between two edits of the comment; the seconds are dropped,
 /// so the batch closes during the minute shown.
-fn batch_wait_line(wait: &BatchWait, size: u32) -> String {
+fn batch_wait_line(wait: &BatchWait) -> String {
     let prs = if wait.members == 1 { "PR" } else { "PRs" };
     let at = wait.closes_at.to_offset(UtcOffset::UTC);
     format!(
-        "Batch of {} {prs}: it waits for more PRs until {:02}:{:02} UTC, or until it has {size}.",
+        "Batch of {} {prs}: it waits for more PRs until {:02}:{:02} UTC, or until it has {}.",
         wait.members,
         at.hour(),
-        at.minute()
+        at.minute(),
+        wait.size
     )
 }
 
@@ -587,13 +588,12 @@ async fn queue_page(
         dashboard.trim_end_matches('/'),
         path_segment(&slug),
         path_segment(&target.repo.name),
-        path_segment(&target.name)
+        path_segment(&target.target_branch)
     ))
 }
 
 /// `text` as one segment of a path: every byte but the unreserved ones of
-/// RFC 3986 is percent-encoded, as a queue name of the file can hold `/` or a
-/// space.
+/// RFC 3986 is percent-encoded, as a branch can hold `/`.
 fn path_segment(text: &str) -> String {
     text.bytes().fold(String::new(), |mut segment, byte| {
         if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
@@ -1109,7 +1109,6 @@ mod tests {
             .with_hms(12, 40, 59)
             .unwrap()
             .assume_offset(UtcOffset::from_hms(2, 0, 0).unwrap());
-        let size_3 = settings(|l| l.batching_size = Some(Setting::new(3)));
         let cases = [
             (
                 2,
@@ -1130,8 +1129,12 @@ mod tests {
             queued.position = Some(1);
             queued.predecessors = Vec::new();
             queued.test_sha = None;
-            queued.batch_wait = Some(BatchWait { members, closes_at });
-            let rendered = render(&queued, &size_3, "main", &[], None);
+            queued.batch_wait = Some(BatchWait {
+                members,
+                size: 3,
+                closes_at,
+            });
+            let rendered = render(&queued, &settings(|_| {}), "main", &[], None);
             assert_eq!(rendered.comment.unwrap(), want, "{members}");
             let status = rendered.status.unwrap().description;
             assert_eq!(status, "Queued, position 1", "the status does not change");
@@ -1583,8 +1586,8 @@ fn welcome(target_branch: &str) -> String {
 }
 
 /// Posts the welcome comment of the PR, once: a PR that has a comment of
-/// CIHub already keeps it. The first active queue of the branch decides
-/// whether the comment and the commands are on.
+/// CIHub already keeps it. The queue of the branch decides whether the
+/// comment and the commands are on.
 pub(crate) async fn post_welcome(
     pool: &PgPool,
     scm: &dyn Scm,
@@ -1593,10 +1596,9 @@ pub(crate) async fn post_welcome(
 ) -> Result<(), Failure> {
     let request: WelcomePr = read_payload(job)?;
     let mut lock = begin_system(pool).await?;
-    let queues =
-        QueueTarget::queues_of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
+    let queue = QueueTarget::of_branch(&mut lock, request.repo_id, &request.base_branch).await?;
 
-    let Some(target) = queues.into_iter().next() else {
+    let Some(target) = queue else {
         return Ok(());
     };
 

@@ -25,6 +25,9 @@ pub struct Item {
     pub state_reason: Reason,
     pub priority: Priority,
     pub no_batch: bool,
+    /// The profile of the queue that gives the settings of the item; `None`
+    /// takes those of the queue.
+    pub profile: Option<String>,
     /// Submitted with `--direct`: merged by `cihub-sudo`.
     pub force_enqueued: bool,
     pub submitted_via: SubmittedVia,

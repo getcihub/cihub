@@ -125,6 +125,7 @@ mod tests {
             state_reason: Reason::Submitted,
             priority,
             no_batch: false,
+            profile: None,
             force_enqueued: false,
             submitted_via: SubmittedVia::Api,
             position,

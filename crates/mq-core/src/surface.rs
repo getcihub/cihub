@@ -38,6 +38,9 @@ pub struct Surface {
 pub struct BatchWait {
     /// The number of its members now.
     pub members: usize,
+    /// The `batching.size` of the profile of its members: it closes at once
+    /// when it has that many.
+    pub size: u32,
     /// When it stops waiting for more PRs: its oldest member has then waited
     /// `batching.max_wait_minutes`. Not when its test starts: a closed batch
     /// still waits for room in the window.

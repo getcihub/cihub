@@ -103,8 +103,8 @@ async fn seed(pool: &PgPool) {
              VALUES ('{connection}', '{org}', '1', 'github_app', '1', '{synced_at}', '{{}}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-             VALUES ('{queue}', '{org}', '{repo}', 'main', 'main');",
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{queue}', '{org}', '{repo}', 'main');",
         user = user(),
         org = org(),
         connection = connection(),
@@ -228,6 +228,7 @@ impl World {
                 deletions: 0,
                 changed_files: 1,
                 sender_permission: None,
+                profile: None,
             },
         )
         .await;
@@ -1510,8 +1511,7 @@ fn open_pr_with(sim: &Sim, parent: &str, n: u64, files: &[(&str, Option<&str>)])
 }
 
 /// A file whose queue tests every PR: these tests follow the test path.
-const TEST_PATH: &str =
-    "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n";
+const TEST_PATH: &str = "version: 1\nqueues:\n  - branch: main\n    direct_merge_mode: off\n";
 
 /// A repository on the simulator whose queue knows the head of `main`,
 /// requires `ci`, and lets alice submit. Returns the head of `main`.
@@ -1579,7 +1579,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
     let mut heads: HashMap<String, u64> = HashMap::new();
@@ -1944,7 +1944,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2024,53 +2024,12 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     q.stop().await;
 }
 
-/// A queue `hotfix` on `main` next to the queue `main` of the seed, both
-/// set by `config` once the queues read the head of `main`, which the
-/// function returns.
-async fn two_queues(pool: &PgPool, q: &mut SimQueue, config: &str) -> String {
-    let hotfix = QueueId::from_ulid(Ulid(30));
-    let mut tx = begin_system(pool).await.unwrap();
-
-    sqlx::query(
-        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-         SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
-    )
-    .bind(hotfix.to_string())
-    .bind(queue().to_string())
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-
-    tx.commit().await.unwrap();
-
-    let main = target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
-    q.deliver().await;
-    q.settle().await;
-
-    let mut tx = begin_system(pool).await.unwrap();
-    let read: Vec<Option<String>> =
-        sqlx::query_scalar("SELECT config_sha FROM queues ORDER BY name")
-            .fetch_all(&mut *tx)
-            .await
-            .unwrap();
-
-    drop(tx);
-
-    assert_eq!(
-        read,
-        [Some(main.clone()), Some(main.clone())],
-        "both queues read the push"
-    );
-
-    main
-}
-
 /// The queue, the priority and whether the item left `not_ready`, of the
 /// current item of each PR.
-async fn routed_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
+async fn submitted_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
     let mut tx = begin_system(pool).await.unwrap();
     let items: Vec<(i64, String, i16, String)> = sqlx::query_as(
-        "SELECT i.pr_number, q.name, i.priority_value, i.state::text
+        "SELECT i.pr_number, q.target_branch, i.priority_value, i.state::text
          FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE i.is_current ORDER BY i.pr_number",
     )
@@ -2086,28 +2045,17 @@ async fn routed_items(pool: &PgPool) -> Vec<(i64, String, i16, bool)> {
         .collect()
 }
 
-/// With two queues on `main`, a PR enters the first queue whose
-/// `route_conditions` it meets, or the one that its command names, with the
-/// priority of the first rule that it meets unless the command gives one. A
-/// `hotfix/` PR whose CI still runs enters `hotfix` and waits there for its
-/// `queue_conditions`. A push on `main` reaches both queues.
+/// A PR enters the queue of its base branch, with the priority of the first
+/// rule that it meets unless the command gives one. A PR whose CI still runs
+/// waits in `not_ready` for its `queue_conditions`.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_pr_enters_the_queue_that_the_file_routes_it_to(pool: PgPool) {
+async fn a_pr_enters_the_queue_of_its_branch_with_the_priority_of_its_rule(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
         "version: 1
 queues:
-  - name: hotfix
-    branch: main
-    strategy: sequential
-    route_conditions:
-      - head ~= ^hotfix/
-    queue_conditions:
-      - check-success = {REQUIRED}
-      - \"#approved-reviews-by >= 1\"
-  - name: main
-    branch: main
+  - branch: main
     strategy: batched
     batching: {{ size: 5, max_wait_minutes: 1 }}
     queue_conditions:
@@ -2120,21 +2068,20 @@ priority_rules:
     priority: urgent
 "
     );
-    let main = two_queues(&pool, &mut q, &config).await;
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
-    let cases: [(&str, bool, &[&str], &str); 5] = [
-        ("hotfix/login", false, &[], "/cihub merge"),
-        ("pr-2", true, &[], "/cihub merge"),
-        ("pr-3", true, &["urgent"], "/cihub merge"),
-        ("pr-4", true, &[], "/cihub merge --queue=hotfix"),
-        ("pr-5", true, &["urgent"], "/cihub merge --priority=low"),
+    q.deliver().await;
+    q.settle().await;
+
+    let cases: [(bool, &[&str], &str); 4] = [
+        (false, &[], "/cihub merge"),
+        (true, &[], "/cihub merge"),
+        (true, &["urgent"], "/cihub merge"),
+        (true, &["urgent"], "/cihub merge --priority=low"),
     ];
 
-    for (n, (branch, green, labels, command)) in (1..).zip(cases) {
-        let path = format!("f{n}.txt");
-        let head = sim.commit(&repo(), &main, &[(&path, Some("x"))]).unwrap();
-        sim.push(&repo(), branch, &head, &bob()).unwrap();
-        let number = sim.open_pr(&repo(), branch, "main", &bob()).unwrap();
+    for (n, (green, labels, command)) in (1..).zip(cases) {
+        let (number, head) = open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]);
         if green {
             sim.report_check(&repo(), &head, check(REQUIRED, true))
                 .unwrap();
@@ -2156,69 +2103,26 @@ priority_rules:
     q.settle().await;
 
     assert_eq!(
-        routed_items(&pool).await,
+        submitted_items(&pool).await,
         [
-            (1, "hotfix".into(), 100, false),
+            (1, "main".into(), 100, false),
             (2, "main".into(), 100, true),
             (3, "main".into(), 0, true),
-            (4, "hotfix".into(), 100, true),
-            (5, "main".into(), 200, true),
+            (4, "main".into(), 200, true),
         ]
     );
 
     q.stop().await;
 }
 
-/// A PR that the `route_conditions` of no queue of its branch take enters
-/// the first queue of the branch.
+/// A push that the routing gave to no queue, as the branch had none yet,
+/// waits while a merge of the queue of the branch is in flight, then asks it
+/// to read its head.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_pr_that_no_queue_routes_enters_the_first_queue(pool: PgPool) {
-    let mut q = SimQueue::new(pool.clone()).await;
-    let sim = q.sim.clone();
-    let config = "version: 1
-queues:
-  - name: hotfix
-    branch: main
-    route_conditions:
-      - head ~= ^hotfix/
-  - name: main
-    branch: main
-    route_conditions:
-      - label = main
-";
-    let main = two_queues(&pool, &mut q, config).await;
-    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
-
-    sim.report_check(&repo(), &head, check(REQUIRED, true))
-        .unwrap();
-
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
-        .unwrap();
-
-    q.deliver().await;
-    q.settle().await;
-    assert_eq!(routed_items(&pool).await, [(1, "hotfix".into(), 100, true)]);
-    q.stop().await;
-}
-
-/// A push on a branch with two queues waits while a merge of one of them is in
-/// flight, then asks each queue to read its head.
-#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
+async fn a_push_without_a_queue_waits_for_a_merge_in_flight(pool: PgPool) {
     seed(&pool).await;
 
-    let hotfix = QueueId::from_ulid(Ulid(30));
     let mut tx = begin_system(&pool).await.unwrap();
-
-    sqlx::query(
-        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-         SELECT $1, org_id, repo_id, 'main', 'hotfix' FROM queues WHERE id = $2",
-    )
-    .bind(hotfix.to_string())
-    .bind(queue().to_string())
-    .execute(&mut *tx)
-    .await
-    .unwrap();
 
     let sim = Sim::new();
     let root = sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
@@ -2231,7 +2135,6 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
     for (n, delivery) in sim.take_deliveries().into_iter().enumerate() {
         let id = format!("push-{n}");
         let route = find_route(&mut tx, &delivery).await.unwrap();
-        assert_eq!(route.queue_id, None, "two queues: no sure queue");
         deliveries.lock().unwrap().insert(id.clone(), delivery);
         let stored = Delivery {
             delivery_id: id.clone(),
@@ -2298,7 +2201,7 @@ async fn a_shared_push_waits_for_a_merge_in_flight(pool: PgPool) {
         .await
         .unwrap();
 
-    assert_eq!(state(pool.clone()).await, (0, 2));
+    assert_eq!(state(pool.clone()).await, (0, 1));
 }
 
 /// With `resubmit_on_push`, a push on a PR in the queue cancels its item and
@@ -2308,7 +2211,7 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2555,6 +2458,171 @@ async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     q.stop().await;
 }
 
+/// A PR takes the first profile whose `conditions` it meets, and merges with
+/// the method of that profile; another PR merges with the method of the
+/// queue.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_merges_with_the_settings_of_its_profile(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1
+queues:
+  - branch: main
+    required_statuses: [{REQUIRED}]
+    merge_method: squash
+    profiles:
+      - name: dependencies
+        conditions:
+          - label = deps
+        merge_method: merge_commit
+"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let mut base = main;
+    let mut heads = Vec::new();
+    for (n, labels) in [(1, &["deps"][..]), (2, &[][..])] {
+        let (number, head) = open_pr_with(&sim, &base, n, &[(&format!("f{n}.txt"), Some("x"))]);
+        sim.report_check(&repo(), &head, check(REQUIRED, true))
+            .unwrap();
+        for label in labels {
+            sim.add_label(&repo(), number, label, JobClass::Interactive)
+                .await
+                .unwrap();
+        }
+        sim.comment(&repo(), number, &alice(), "/cihub merge")
+            .unwrap();
+
+        q.deliver().await;
+        q.settle().await;
+
+        base = sim
+            .branch_head(&repo(), "main", JobClass::Repair)
+            .await
+            .unwrap()
+            .unwrap();
+        heads.push(head);
+    }
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let items: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT pr_number, state::text, profile FROM queue_items WHERE is_current
+         ORDER BY pr_number",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+
+    drop(tx);
+
+    assert_eq!(
+        items,
+        [
+            (1, "merged".into(), Some("dependencies".into())),
+            (2, "merged".into(), None),
+        ]
+    );
+    let repo = repo();
+    let mut kept = Vec::new();
+    for head in &heads {
+        kept.push(
+            sim.is_ancestor(&repo, head, &base, JobClass::Repair)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(
+        kept,
+        [true, false],
+        "a merge commit keeps the head, a squash does not"
+    );
+
+    q.stop().await;
+}
+
+/// A command that names a profile that the queue does not have is refused,
+/// with the cause, and gives no item.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_command_with_an_unknown_profile_is_refused(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+
+    sim.comment(&repo(), number, &alice(), "/cihub merge --profile=fast")
+        .unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(current_items(&pool).await, []);
+    assert!(
+        sim.comments(&repo(), number)
+            .iter()
+            .any(|body| body.contains("the queue of `main` has no profile `fast`.")),
+        "{:?}",
+        sim.comments(&repo(), number)
+    );
+
+    q.stop().await;
+}
+
+/// Without a file and without a check that the branch requires, a green PR
+/// that contains the head of the target does not merge directly: its test
+/// fails with `start_test_run_no_required_statuses`, as nothing would gate
+/// the merge.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_branch_without_a_required_check_merges_nothing(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let no_rules = RequiredChecks {
+        names: BTreeSet::new(),
+        up_to_date: false,
+    };
+
+    sim.set_rules(&repo(), "main", no_rules).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+
+    let pr = sim
+        .pull_request(&repo(), number, JobClass::Repair)
+        .await
+        .unwrap();
+
+    assert_ne!(pr.state, PrState::Merged);
+    assert_eq!(
+        current_items(&pool).await,
+        [(
+            i64::try_from(number).unwrap(),
+            "failed".into(),
+            "start_test_run_no_required_statuses".into()
+        )]
+    );
+
+    q.stop().await;
+}
+
 /// A submission while the queue drains gives an item that is cancelled at
 /// once, concluded, and not the live item of its PR.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2589,23 +2657,6 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
-
-    let (addr, token) = q.serve_api().await;
-    let submit = serde_json::json!({ "queue": "main" });
-    let (status, refused) = call(
-        &addr,
-        &token,
-        "POST",
-        &format!("/orgs/acme/repos/app/prs/{number}/submit"),
-        Some(submit),
-    )
-    .await;
-
-    assert_eq!(
-        (status, &refused["code"]),
-        (409, &serde_json::json!("queue_not_accepting")),
-        "the API refuses at once: {refused}"
-    );
 
     sim.comment(&repo(), number, &alice(), "/cihub merge")
         .unwrap();
@@ -2691,23 +2742,21 @@ async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     q.stop().await;
 }
 
-/// The queues of the repository, as (name, target branch, whether it keeps
-/// a file, config SHA), and the queue of each current item.
+/// The queues of the repository, as (target branch, whether it keeps a
+/// file, config SHA), and the queue of each current item.
 async fn queues_and_items(
     pool: &PgPool,
-) -> (
-    Vec<(String, String, bool, Option<String>)>,
-    Vec<(i64, String)>,
-) {
+) -> (Vec<(String, bool, Option<String>)>, Vec<(i64, String)>) {
     let mut tx = begin_system(pool).await.unwrap();
     let queues = sqlx::query_as(
-        "SELECT name, target_branch, config_text IS NOT NULL, config_sha FROM queues ORDER BY name",
+        "SELECT target_branch, config_text IS NOT NULL, config_sha FROM queues
+         ORDER BY target_branch",
     )
     .fetch_all(&mut *tx)
     .await
     .unwrap();
     let items = sqlx::query_as(
-        "SELECT i.pr_number, q.name FROM queue_items i JOIN queues q ON q.id = i.queue_id
+        "SELECT i.pr_number, q.target_branch FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE i.is_current ORDER BY i.pr_number",
     )
     .fetch_all(&mut *tx)
@@ -2784,7 +2833,7 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     assert_eq!(
         queues_and_items(&pool).await,
         (
-            vec![("main".into(), "main".into(), false, Some(main))],
+            vec![("main".into(), false, Some(main))],
             vec![
                 (i64::try_from(labelled).unwrap(), "main".into()),
                 (i64::try_from(other).unwrap(), "main".into())
@@ -2803,52 +2852,43 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     q.stop().await;
 }
 
-/// The first command on a branch creates the queues that the file names
-/// on it, with the file, so that the routing of the command reads their
+/// The first command on a branch that a pattern of the file matches creates
+/// the queue of that branch, with the file, so that the command reads its
 /// conditions.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn a_command_creates_the_queues_that_the_file_names(pool: PgPool) {
+async fn a_command_creates_the_queue_that_the_file_names(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     without_queue(&pool).await;
 
     let sim = q.sim.clone();
     let config = "version: 1
 queues:
-  - name: hotfix
-    branch: main
-    route_conditions:
-      - label = hotfix
-  - name: fast
-    branch: main
+  - branch: \"release*\"
+    strategy: sequential
 ";
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
 
-    q.deliver().await;
-    q.settle().await;
+    sim.push(&repo(), "release", &main, &alice()).unwrap();
+    let head = sim
+        .commit(&repo(), &main, &[("f1.txt", Some("x"))])
+        .unwrap();
 
-    for (n, labels) in [(1, &["hotfix"][..]), (2, &[][..])] {
-        let path = format!("f{n}.txt");
-        let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
-        sim.report_check(&repo(), &head, check(REQUIRED, true))
-            .unwrap();
-        for label in labels {
-            sim.add_label(&repo(), number, label, JobClass::Interactive)
-                .await
-                .unwrap();
-        }
-        sim.comment(&repo(), number, &alice(), "/cihub merge")
-            .unwrap();
-    }
+    sim.push(&repo(), "pr-1", &head, &bob()).unwrap();
+    let number = sim.open_pr(&repo(), "pr-1", "release", &bob()).unwrap();
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
 
     q.deliver().await;
     q.settle().await;
 
-    let queue = |name: &str| (name.to_owned(), "main".to_owned(), true, Some(main.clone()));
     assert_eq!(
         queues_and_items(&pool).await,
         (
-            vec![queue("fast"), queue("hotfix")],
-            vec![(1, "hotfix".into()), (2, "fast".into())]
+            vec![("release".into(), true, Some(main))],
+            vec![(1, "release".into())]
         )
     );
 
@@ -2863,7 +2903,7 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2923,7 +2963,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n    state_labels_enabled: true\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: always\n    state_labels_enabled: true\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3028,7 +3068,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3127,7 +3167,7 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3178,7 +3218,7 @@ async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3285,7 +3325,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3612,7 +3652,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3864,7 +3904,7 @@ async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    \
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    \
          failure_budget: {{ retries: 0 }}\n    pending_failure_depth: 1\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
@@ -3926,7 +3966,7 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -4232,9 +4272,9 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
              VALUES ('{suspended}', '{org}', '2', 'github_app', '2', '{now}', '{{}}', '{now}');
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
              VALUES ('{api_repo}', '{org}', '{suspended}', '201', 'acme', 'api', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-             VALUES ('{app_release}', '{org}', '{app_repo}', 'release', 'release'),
-                    ('{api_main}', '{org}', '{api_repo}', 'main', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{app_release}', '{org}', '{app_repo}', 'release'),
+                    ('{api_main}', '{org}', '{api_repo}', 'main');
          UPDATE queues SET state = 'paused', state_changed_by = '{user}' WHERE id = '{app_main}';",
         suspended = ConnectionId::from_ulid(Ulid(63)),
         user = user(),
@@ -4300,7 +4340,7 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
         .map(|entry| {
             (
                 entry.repo.as_str(),
-                entry.name.as_str(),
+                entry.target_branch.as_str(),
                 [
                     entry.counts.not_ready,
                     entry.counts.pending,
@@ -4400,7 +4440,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -4523,8 +4563,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
 async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let file =
-        |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+    let file = |body: &str| format!("version: 1\nqueues:\n  - branch: main\n{body}");
     let strict = file(&format!(
         "    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n"
     ));
@@ -4603,8 +4642,7 @@ async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<Str
 async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let file =
-        |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
+    let file = |body: &str| format!("version: 1\nqueues:\n  - branch: main\n{body}");
     let valid = file("    branch_prefix: ship\n");
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &valid)]);
 
@@ -5272,8 +5310,8 @@ impl Chaos {
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
                          '{name}', 'main');
-             INSERT INTO queues (id, org_id, repo_id, target_branch, name, config_text)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main', '{config_text}');",
+             INSERT INTO queues (id, org_id, repo_id, target_branch, config_text)
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', '{config_text}');",
             org = chaos.org(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,
@@ -5693,7 +5731,7 @@ impl Chaos {
 async fn fault_injection(pool: PgPool) {
     play_chaos(
         pool,
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n",
+        "version: 1\nqueues:\n  - branch: main\n    direct_merge_mode: off\n",
     )
     .await;
 }
@@ -5704,7 +5742,7 @@ async fn fault_injection(pool: PgPool) {
 async fn fault_injection_batched(pool: PgPool) {
     play_chaos(
         pool.clone(),
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n    direct_merge_mode: off\n",
+        "version: 1\nqueues:\n  - branch: main\n    strategy: batched\n    direct_merge_mode: off\n",
     )
     .await;
 
@@ -5809,10 +5847,10 @@ async fn call_as(
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
-    let config = "version: 1\nqueues:\n  - name: main\n    branch: main\n";
+    let config = "version: 1\nqueues:\n  - branch: main\n";
     let queue = "/orgs/acme/repos/app/queues/main";
     let pause = r#"{"state":"paused"}"#;
-    let direct = r#"{"queue":"main","direct":true}"#;
+    let direct = r#"{"direct":true}"#;
 
     target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
     q.deliver().await;

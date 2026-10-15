@@ -187,7 +187,7 @@ struct QueuePath {
     /// The name of the repository in the organization.
     #[param(example = "web")]
     repo: String,
-    /// The name of the queue in the repository.
+    /// The target branch of the queue, percent-encoded: `release%2F2.0`.
     #[param(example = "main")]
     queue: String,
 }
@@ -269,8 +269,6 @@ route_errors!(
         ErrorCode::InvalidRequest,
         ErrorCode::UnknownPriority,
         ErrorCode::RepoNotFound,
-        ErrorCode::QueueNotFound,
-        ErrorCode::QueueNotAccepting,
         ErrorCode::PrAlreadyQueued,
     ]
 );

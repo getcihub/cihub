@@ -7,27 +7,30 @@ The behavior of a queue is configured in one file of the repository, `.cihub.yam
 `.cihub/config.yaml` or `.cihub/config.yml`, read on
 the head of the target branch (so that a PR cannot loosen its own gate) by the `load_config` job, at
 each new head; the settings apply from the reconciliation that follows the
-read. No queue is created by hand: the first `/cihub merge` on a branch without a queue
-creates the queues that the file names on that branch, or, without such an entry, on the default branch of the
-repository, a queue named after the branch, with the default settings and `defaults`. Without a file, a team thus
-starts with one queue on its default branch; an entry `name: main`, `branch: main` then sets that same queue. An
-entry of `queues` links to its queue by `branch` and `name`; a queue without an entry has `defaults`. A queue
-that the file no longer names takes no new submission and finishes its items. This file is the only
+read. A branch has at most one queue, and the branch names it: two queues on one branch would each merge
+without testing on top of the other, and each merge of one would restart the runs of the other
+(`specs/LESSONS.md`). The `branch` of an entry is a branch, or a glob of branches (`release/*`, with the
+syntax of `*=`: `*` stays in one `/` segment, `**` crosses them); each branch that a glob matches has its own
+queue. A branch takes the entry that names it, else the first glob, in file order, that matches it. No queue
+is created by hand: the first `/cihub merge` on a branch without a queue creates its queue when an entry of
+the file serves that branch, or when it is the default branch of the repository, with the default settings
+and `defaults`. Without a file, a team thus starts with one queue on its default branch; an entry
+`branch: main` then sets that same queue. A queue without an entry has `defaults`. A queue that the file no
+longer serves, other than the one of the default branch, takes no new submission and finishes its items.
+This file is the only
 source of the settings: the dashboard helps write it through a form that opens a PR on
 the repository, never a direct commit on the target. If several of these files exist, the configuration is in error, because none
-wins. Several queues can target the same branch: a PR is routed to the queue named in the command
-(`/cihub merge --queue=hotfix`), otherwise to the first queue, in file order, whose `route_conditions` are
-satisfied (a queue without `route_conditions` takes every PR), otherwise to the first queue of the branch. The routing reads the PR once, at the submission, and an item never changes queue.
-`queue_conditions` do not route: they only admit, and the item waits in `not_ready` in its queue until they are
-satisfied. Write in `route_conditions` what says where a PR goes and does not change (its head branch, for example),
-and in `queue_conditions` what says whether it is ready (its checks, its reviews). The first rule of `priority_rules` that the PR satisfies gives its priority, unless the
-command gives one (`--priority`).
+wins. A PR enters the queue of its base branch, and waits in `not_ready` there until its `queue_conditions`
+(its checks, its reviews) are satisfied: those of `defaults`, then those of its entry. The first rule of
+`priority_rules` that the PR satisfies gives its priority, unless the command gives one (`--priority`): an
+urgent PR goes ahead of the others in the same train, rather than in a second queue. The first profile of the
+queue whose `conditions` the PR satisfies gives its settings, unless the command names one (`--profile`; see
+below).
 
 ```yaml
 version: 1
 queues:
-  - name: main
-    branch: main
+  - branch: main
     strategy: batched                     # sequential | pipelined | batched | parallel
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
@@ -44,12 +47,16 @@ queues:
     failure_budget: { retries: 1 }
     pending_failure_depth: 1
     optimistic_merging: true
-  - name: hotfix
-    branch: main
+    profiles:                             # settings of a kind of PR, in the same train
+      - name: dependencies
+        conditions:                       # choose the profile, once, at the submission
+          - author = dependabot[bot]
+        merge_method: merge_commit
+        batching: { size: 8, max_wait_minutes: 15 }
+        failure_budget: { retries: 2 }
+  - branch: "release/*"                   # a queue for each branch that the glob matches
     strategy: sequential
     merge_method: fast_forward
-    route_conditions:                     # routing: the queue that the PR enters
-      - label = hotfix
     queue_conditions:
       - sender-permission >= write
 priority_rules:
@@ -64,6 +71,8 @@ priority_rules:
 defaults:                                 # any queue setting; each queue can override it
   label_commands: { enqueue_label: ready-to-merge }
   merge_commit_title: pr_title            # pr_title | pr_title_and_number
+  queue_conditions:                       # every queue adds its own after them
+    - -label = do-not-merge
 ```
 
 ## Errors
@@ -74,8 +83,28 @@ together give `start_test_run_config_parsing_failure`, with the line and column 
 `required_statuses` list with an empty or duplicate name gives `start_test_run_config_bad_required_statuses`.
 For now, `merge_conditions` accepts only `check-success = <name>` at the first level:
 another form gives `start_test_run_config_parsing_failure`, with its position. `defaults` accepts every
-queue setting, but not `name`, `branch` or the conditions (`route_conditions`, `queue_conditions`,
-`merge_conditions`); two queues cannot have the same `name`.
+queue setting and the conditions, but not `branch` or `profiles`; two entries cannot have the same `branch`,
+and a `branch` that is not a valid glob is refused. In an entry, two profiles cannot have the same `name`, and a
+profile cannot set `merge_method: fast_forward`, which moves the target of the whole train.
+
+## Profiles
+
+A profile gives settings to a kind of PR in the train of its queue: Dependabot updates merged with a merge
+commit and in large batches, while the PRs of people are squashed. It is not a second queue: its PRs are tested
+on top of the others, in the same order (`specs/LESSONS.md`). A profile sets only the settings of a PR:
+`merge_method` (but `fast_forward`), `merge_commit_title`, `batching` (`enabled`, `size`, `max_wait_minutes`) and
+`failure_budget`; a setting that it does not set is the one of its queue. The settings of the train (`strategy`,
+`mode`, `window`, `trigger`, the timeouts, the prefixes) stay on the queue.
+
+The submission chooses the profile once, as the routing did before: the profile that the command names
+(`/cihub merge --profile=<name>`, `--profile` of the CLI, `profile` of the API, refused when the queue does not
+have it), else the first profile, in file order, whose `conditions` the PR satisfies; a profile without
+`conditions` is chosen only by its name. The item keeps its profile until it ends; a resubmission on a push
+keeps it too. `conditions` choose and `queue_conditions` admit: write in `conditions` what says what the PR is
+and does not change (its author, its head branch, its files), as a PR that does not satisfy a condition yet at
+the submission would keep the wrong profile. A batch holds the PRs of one profile, as it merges with one set of
+settings, and a culprit spends the failure budget of its profile. A profile that the file no longer has leaves
+its items the settings of their queue.
 
 ## Sources and strategies
 
@@ -128,13 +157,13 @@ failure budget retry.
 | `branch_protection_injection`                                  | `both`                              | `both`, `merge`, `none`                                                    |
 | `required_statuses`                                            | inherited from branch protection    | list; empty list = none, `null` = inherited                                |
 
-## Per-PR options and multiple queues
+## Per-PR options and several branches
 
-Per-PR options are set at submission and stored on the item: priority, `no_batch`, `direct` (admins,
-requires the sudo App). Named priorities are shortcuts for values (`urgent` 0, `high` 10,
-`medium` 100, `low` 200). A repository can have several queues (`main`,
-`release/*` branches), each with its own settings; a PR is routed by its base branch, and a
-base branch change cancels the item with `pr_base_branch_changed`.
+Per-PR options are set at submission and stored on the item: priority, `no_batch`, `profile`, `direct`
+(admins, requires the sudo App). Named priorities are shortcuts for values (`urgent` 0, `high` 10,
+`medium` 100, `low` 200). A repository has one queue per target branch (`main`, `release/2.0`),
+each with its own settings; a PR enters the queue of its base branch, and a base branch change cancels
+the item with `pr_base_branch_changed`.
 
 A queue cannot be deleted while it contains live items; its deletion erases its settings
 and its history from Postgres but not from ClickHouse. Changing `mode` with items in flight switches to

@@ -16,7 +16,9 @@ function Head({ path, queue }: { path: QueuePath; queue: Queue }) {
 /** A read of the page failed: its head stays, from the list of the queues, with what the server answered. */
 export function QueuePageError(props: ErrorComponentProps) {
   const { org, repo, queue: name } = route.useParams();
-  const queue = useOrgQueues(org).find((candidate) => candidate.repo === repo && candidate.name === name);
+  const queue = useOrgQueues(org).find(
+    (candidate) => candidate.repo === repo && candidate.target_branch === name,
+  );
 
   return (
     <ServerErrorPage {...props} head={queue && <Head path={{ org, repo, queue: name }} queue={queue} />} />
