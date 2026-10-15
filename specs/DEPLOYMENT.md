@@ -246,10 +246,10 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 ## Project CI
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
-test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise run cover`), `Workflow Lint`
-(`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run helm:generate-check`), `Helm Unittest`
-(`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build Success`, is the required status
-of the `main` branch: it fails when one of these jobs failed or was cancelled.
+rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise
+run cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
+helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build
+Success`, is the required status of the `main` branch: it fails when one of these jobs failed or was cancelled.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each
 job installs the tools with `mise install --locked`. Each action and each image is pinned by its SHA or its

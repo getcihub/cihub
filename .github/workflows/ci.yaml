@@ -92,7 +92,31 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-test-
 
       - name: Run unit tests
-        run: mise run test
+        run: mise run rust:test
+
+  # Apart from Rust Test: the build of the Rust code would slow these tests
+  # past the waits of their queries.
+  web-test:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Web Test
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: --locked
+
+      - name: Run the unit tests of the dashboard
+        run: mise run web:test
 
   rust-integration:
     if: >-
@@ -351,6 +375,7 @@ jobs:
     needs:
       - rust-lint
       - rust-test
+      - web-test
       - rust-integration
       - rust-cover
       - dashboard-e2e
