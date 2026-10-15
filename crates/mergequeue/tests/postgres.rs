@@ -5932,7 +5932,15 @@ async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
         health["verdict"],
         serde_json::json!({ "kind": "many_failures" })
     );
-    assert_eq!(health["buckets"].as_array().unwrap().len(), 7);
+    let buckets = health["buckets"].as_array().unwrap();
+    assert_eq!(buckets.len(), 7);
+    let in_buckets = |field: &str| {
+        buckets
+            .iter()
+            .map(|bucket| bucket[field].as_u64().unwrap())
+            .sum::<u64>()
+    };
+    assert_eq!((in_buckets("merged"), in_buckets("failed")), (1, 1));
     assert_eq!(health["time_in_states"].as_array().unwrap().len(), 5);
     assert_eq!(
         health["left_without_merge"],

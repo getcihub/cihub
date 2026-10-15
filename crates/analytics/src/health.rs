@@ -236,8 +236,8 @@ async fn buckets(
          FROM generate_series($2::timestamptz, $3::timestamptz - $4 * interval '1 second',
                               $4 * interval '1 second') AS b (start)
          LEFT JOIN an_item_conclusions c
-           ON c.queue_id = $1 AND c.concluded_at >= b.start
-          AND c.concluded_at < b.start + $4 * interval '1 second'
+           ON c.queue_id = $1 AND c.concluded_at >= $2 AND c.concluded_at < $3
+          AND date_bin($4 * interval '1 second', c.concluded_at, 'epoch') = b.start
          GROUP BY b.start
          ORDER BY b.start"
     )))
