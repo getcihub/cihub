@@ -5193,8 +5193,8 @@ const CHAOS_PRS: u64 = 5;
 /// webhooks lost, sent twice and reordered.
 struct Chaos {
     seed: u64,
-    /// The `.cihub.yaml` of the repository; `None` keeps the defaults.
-    config: Option<&'static str>,
+    /// The `.cihub.yaml` of the repository.
+    config: &'static str,
     pool: PgPool,
     sim: Arc<Sim>,
     clock: TestClock,
@@ -5233,7 +5233,7 @@ impl Chaos {
         }
     }
 
-    async fn new(pool: PgPool, seed: u64, clock: TestClock, config: Option<&'static str>) -> Self {
+    async fn new(pool: PgPool, seed: u64, clock: TestClock, config: &'static str) -> Self {
         let mut chaos = Self {
             seed,
             config,
@@ -5261,13 +5261,13 @@ impl Chaos {
                  VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
                          '{name}', 'main');
              INSERT INTO queues (id, org_id, repo_id, target_branch, name, config_text)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main', {config_text});",
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main', '{config_text}');",
             org = chaos.org(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,
             repo_id = RepoId::from_ulid(chaos.id(5)),
             // The queue has read its file, as after its first push.
-            config_text = config.map_or("NULL".to_owned(), |text| format!("'{text}'")),
+            config_text = config,
             repo_external_id = repo.external_id,
             name = repo.name,
             queue = chaos.queue(),
@@ -5513,11 +5513,11 @@ impl Chaos {
     async fn play(&mut self) {
         let repo = self.repo();
         let sim = self.sim.clone();
-        let mut files = vec![("a.txt", "a")];
-
-        files.extend(self.config.map(|config| (".cihub.yaml", config)));
-
-        let root = sim.add_repo(&repo, "main", &files);
+        let root = sim.add_repo(
+            &repo,
+            "main",
+            &[("a.txt", "a"), (".cihub.yaml", self.config)],
+        );
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
             up_to_date: false,
@@ -5681,7 +5681,7 @@ impl Chaos {
 async fn fault_injection(pool: PgPool) {
     play_chaos(
         pool,
-        Some("version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n"),
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n",
     )
     .await;
 }
@@ -5692,7 +5692,7 @@ async fn fault_injection(pool: PgPool) {
 async fn fault_injection_batched(pool: PgPool) {
     play_chaos(
         pool.clone(),
-        Some("version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n    direct_merge_mode: off\n"),
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n    direct_merge_mode: off\n",
     )
     .await;
 
@@ -5711,7 +5711,7 @@ async fn fault_injection_batched(pool: PgPool) {
     );
 }
 
-async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
+async fn play_chaos(pool: PgPool, config: &'static str) {
     let seeds: u64 = std::env::var("CIHUB_SIM_SEEDS")
         .ok()
         .and_then(|seeds| seeds.parse().ok())
