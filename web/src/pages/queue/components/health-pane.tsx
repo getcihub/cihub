@@ -5,50 +5,70 @@ import type { ReactNode } from "react";
 import type { CheckHealth, HealthTotals, QueueHealth, StateTime } from "@/client/types.gen";
 import { Card, CardHeader, CardHint, CardTitle } from "@/components/ui/card";
 import { LoadingStatus, Skeleton } from "@/components/ui/skeleton";
-import { type QueuePath, RANGES, type Range, healthOptions } from "@/domain/queue/queries";
+import {
+  type HealthPeriod,
+  type PeriodWords,
+  RANGE_LABELS,
+  grainOf,
+  hasPeriodBefore,
+  periodWords,
+} from "@/domain/queue/period";
+import { type QueuePath, RANGES, healthOptions } from "@/domain/queue/queries";
+import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/cn";
 import { plural } from "@/lib/text";
 import { MergedChart, TimeToMergeChart } from "./health-charts";
 import { durationOf, percentOf } from "./health-format";
-
-const RANGE_LABELS: Record<Range, string> = { "24h": "24 hours", "7d": "7 days", "30d": "30 days" };
+import { PeriodPicker } from "./period-picker";
 
 /** The share of the PRs that merged or failed that failed. */
 function failureRateOf({ merged, failed }: HealthTotals): number {
   return merged + failed === 0 ? 0 : failed / (merged + failed);
 }
 
-/** What the queue did over `range`, against the period before. */
-export function HealthPane({ path, range, branch }: { path: QueuePath; range: Range; branch: string }) {
-  const { data: health } = useSuspenseQuery(healthOptions(path, range));
+/** What the queue did over `period`, against the period before. */
+export function HealthPane({
+  path,
+  period,
+  branch,
+}: {
+  path: QueuePath;
+  period: HealthPeriod;
+  branch: string;
+}) {
+  const { data: health } = useSuspenseQuery(healthOptions(path, period));
+  const now = useNow();
   const { current } = health;
   const isQuiet = current.merged + current.failed === 0;
+  const words = periodWords(period, health, now);
+  const grain = grainOf(Date.parse(health.to) - Date.parse(health.from));
+  const longer = "range" in period && period.range === "24h" ? "7d" : "30d";
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-4">
-        <Verdict health={health} range={range} />
-        <RangePicker path={path} range={range} />
+        <Verdict health={health} words={words} />
+        <RangePicker path={path} period={period} now={now} />
       </div>
       {isQuiet ? (
         <Card>
           <p className="p-7 text-center text-secondary-foreground">
             Nothing to measure in this period.{" "}
-            {range !== "30d" && (
+            {!("range" in period && period.range === "30d") && (
               <Link
                 className="text-primary hover:underline"
                 to="/orgs/$org/repos/$repo/queues/$queue"
                 params={path}
-                search={{ pane: "health", range: range === "24h" ? "7d" : "30d" }}
+                search={{ pane: "health", range: longer }}
               >
-                Show the last {RANGE_LABELS[range === "24h" ? "7d" : "30d"]}
+                Show the last {RANGE_LABELS[longer]}
               </Link>
             )}
           </p>
         </Card>
       ) : (
         <>
-          <Stats health={health} range={range} />
+          <Stats health={health} words={words} now={now} />
           <div className="grid grid-cols-2 items-start gap-4 max-md:grid-cols-1">
             <ChartCard
               title="Merged and failed"
@@ -57,7 +77,7 @@ export function HealthPane({ path, range, branch }: { path: QueuePath; range: Ra
                 <Key key="f" swatch="bg-destructive" label="Failed" />,
               ]}
             >
-              <MergedChart buckets={health.buckets} range={range} />
+              <MergedChart buckets={health.buckets} grain={grain} />
             </ChartCard>
             <ChartCard
               title="Time to merge"
@@ -70,14 +90,14 @@ export function HealthPane({ path, range, branch }: { path: QueuePath; range: Ra
                 />,
               ]}
             >
-              <TimeToMergeChart buckets={health.buckets} range={range} />
+              <TimeToMergeChart buckets={health.buckets} grain={grain} />
             </ChartCard>
           </div>
           <div className="grid grid-cols-2 items-start gap-4 max-md:grid-cols-1">
             <TimeShare states={health.time_in_states} branch={branch} />
             <LeftWithoutMerge health={health} />
           </div>
-          <Checks health={health} range={range} />
+          <Checks health={health} words={words} />
         </>
       )}
     </>
@@ -92,27 +112,27 @@ const VERDICT_TONES = {
 };
 
 /** The first thing to know about the queue, in the words of its verdict. */
-function Verdict({ health, range }: { health: QueueHealth; range: Range }) {
+function Verdict({ health, words }: { health: QueueHealth; words: PeriodWords }) {
   const { verdict, current } = health;
-  const label = RANGE_LABELS[range];
+  const { during } = words;
   const [title, text]: [ReactNode, string] =
     verdict.kind === "quiet"
-      ? ["Quiet", `Nothing merged or failed in the last ${label}.`]
+      ? ["Quiet", `Nothing merged or failed ${during}.`]
       : verdict.kind === "healthy"
         ? [
             "Healthy",
-            `${String(current.merged)} merged in the last ${label}, and ${percentOf(failureRateOf(current))} failed.`,
+            `${String(current.merged)} merged ${during}, and ${percentOf(failureRateOf(current))} failed.`,
           ]
         : verdict.kind === "many_failures"
           ? [
               "Many pull requests fail",
-              `${percentOf(failureRateOf(current))} of the pull requests failed in the last ${label}.`,
+              `${percentOf(failureRateOf(current))} of the pull requests failed ${during}.`,
             ]
           : [
               <>
                 <code>{verdict.check}</code> looks flaky
               </>,
-              `It failed, then passed on a retry, ${plural(verdict.times, "time", "times")} in the last ${label}. Each retry costs a run and makes the pull requests behind wait.`,
+              `It failed, then passed on a retry, ${plural(verdict.times, "time", "times")} ${during}. Each retry costs a run and makes the pull requests behind wait.`,
             ];
 
   return (
@@ -124,28 +144,37 @@ function Verdict({ health, range }: { health: QueueHealth; range: Range }) {
   );
 }
 
-function RangePicker({ path, range }: { path: QueuePath; range: Range }) {
+/** The periods of the Health: the last 24 hours, 7 days or 30 days, or Custom, a period that the person chooses. */
+function RangePicker({ path, period, now }: { path: QueuePath; period: HealthPeriod; now: number }) {
   return (
-    <nav
-      className="inline-flex rounded-md border border-border bg-card p-0.5 max-md:w-full"
-      aria-label="Period"
-    >
-      {RANGES.map((candidate) => (
-        <Link
-          key={candidate}
-          className={cn(
-            "flex h-6 items-center justify-center rounded-xs px-2.5 text-md whitespace-nowrap text-secondary-foreground hover:text-foreground max-md:flex-1",
-            candidate === range && "bg-muted font-medium text-foreground",
-          )}
-          to="/orgs/$org/repos/$repo/queues/$queue"
-          params={path}
-          search={{ pane: "health", range: candidate }}
-          aria-current={candidate === range ? "page" : undefined}
-        >
-          {RANGE_LABELS[candidate]}
-        </Link>
-      ))}
-    </nav>
+    <div className="relative max-md:w-full">
+      <nav
+        className="inline-flex rounded-md border border-border bg-card p-0.5 max-md:flex max-md:w-full"
+        aria-label="Period"
+      >
+        {RANGES.map((candidate) => {
+          const isCurrent = "range" in period && candidate === period.range;
+          return (
+            <Link
+              key={candidate}
+              className={cn(
+                "flex h-6 items-center justify-center rounded-xs px-2.5 text-md whitespace-nowrap text-secondary-foreground hover:text-foreground max-md:flex-1",
+                isCurrent && "bg-muted font-medium text-foreground",
+              )}
+              to="/orgs/$org/repos/$repo/queues/$queue"
+              params={path}
+              // A period that the person chose holds the default range too: the link is not its own.
+              search={{ pane: "health", range: candidate, from: undefined, to: undefined }}
+              activeOptions={{ explicitUndefined: true }}
+              aria-current={isCurrent ? "page" : undefined}
+            >
+              {RANGE_LABELS[candidate]}
+            </Link>
+          );
+        })}
+        <PeriodPicker path={path} period={period} now={now} />
+      </nav>
+    </div>
   );
 }
 
@@ -197,8 +226,11 @@ function Stat({
   );
 }
 
-function Stats({ health, range }: { health: QueueHealth; range: Range }) {
-  const { current, previous } = health;
+function Stats({ health, words, now }: { health: QueueHealth; words: PeriodWords; now: number }) {
+  // A period before that starts out of the 13 months that CIHub keeps has nothing to compare with.
+  const isCompared = hasPeriodBefore(Date.parse(health.from), Date.parse(health.to), now);
+  const { current } = health;
+  const previous = isCompared ? health.previous : current;
   const rate = Math.round(failureRateOf(current) * 100);
   const rateBefore = Math.round(failureRateOf(previous) * 100);
   const median = current.time_to_merge?.median_seconds;
@@ -216,7 +248,11 @@ function Stats({ health, range }: { health: QueueHealth; range: Range }) {
             text={String(Math.abs(current.merged - previous.merged))}
           />
         }
-        hint={`${String(previous.merged)} in the previous ${RANGE_LABELS[range]}`}
+        hint={
+          isCompared
+            ? `${String(previous.merged)} ${words.previous}`
+            : "Nothing to compare with: older than 13 months"
+        }
       />
       <Stat
         label="Time to merge"
@@ -397,14 +433,14 @@ const HEAD_CELL = "border-b border-divider px-4 py-2 text-left text-md font-medi
 const CELL = "px-4 py-2.25";
 
 /** The checks of the runs of the period, and the one that the verdict finds flaky. */
-function Checks({ health, range }: { health: QueueHealth; range: Range }) {
+function Checks({ health, words }: { health: QueueHealth; words: PeriodWords }) {
   const flaky = health.verdict.kind === "check_passes_on_retry" ? health.verdict.check : null;
 
   return (
     <Card className="min-w-0">
       <CardHeader>
         <CardTitle>Checks</CardTitle>
-        <CardHint>On the test runs of the queue, last {RANGE_LABELS[range]}</CardHint>
+        <CardHint>On the test runs of the queue, {words.over}</CardHint>
       </CardHeader>
       <div className="overflow-x-auto">
         <table className="w-full min-w-130">

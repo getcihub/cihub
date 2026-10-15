@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
 import type { HealthBucket } from "@/client/types.gen";
-import type { Range } from "@/domain/queue/queries";
+import type { Grain } from "@/domain/queue/period";
 import { cn } from "@/lib/cn";
 import { minutesOf } from "./health-format";
 
@@ -21,35 +21,45 @@ const WEEKDAY = utc({ weekday: "short" });
 const DAY = utc({ month: "short", day: "numeric" });
 const LONG_DAY = utc({ weekday: "short", month: "short", day: "numeric" });
 
-/** The name of a bucket in its tip: an hour of the day, or a day, in UTC as the server cuts them. */
-function labelOf(bucket: HealthBucket, range: Range): string {
+/** The name of a bucket in its tip: an hour, a day or a week, in UTC as the server cuts them. */
+function labelOf(bucket: HealthBucket, grain: Grain, count: number): string {
   const start = new Date(bucket.start);
-  return range === "24h" ? HOUR.format(start) : LONG_DAY.format(start);
+  if (grain === "hour") {
+    return count <= 24 ? HOUR.format(start) : `${DAY.format(start)}, ${HOUR.format(start)}`;
+  }
+  return grain === "day" ? LONG_DAY.format(start) : `Week of ${DAY.format(start)}`;
 }
 
-/** The name of a bucket under the axis: every 6 hours, each day of a week, or each week of a month. */
-function tickOf(bucket: HealthBucket, index: number, range: Range): string {
+/**
+ * The name of a bucket under the axis: every 6 hours, with the day at midnight; each day of a week; else about five
+ * days or weeks along the axis.
+ */
+function tickOf(bucket: HealthBucket, index: number, grain: Grain, count: number): string {
   const start = new Date(bucket.start);
-  if (range === "24h") {
-    return start.getUTCHours() % 6 === 0 ? HOUR.format(start) : "";
+  if (grain === "hour") {
+    if (start.getUTCHours() % 6 !== 0) {
+      return "";
+    }
+    return count > 24 && start.getUTCHours() === 0 ? DAY.format(start) : HOUR.format(start);
   }
-  if (range === "7d") {
+  if (grain === "day" && count <= 7) {
     return WEEKDAY.format(start);
   }
-  return index % 7 === 1 ? DAY.format(start) : "";
+  const every = grain === "day" && count <= 31 ? 7 : Math.max(1, Math.ceil(count / 5));
+  return index % every === 1 % every ? DAY.format(start) : "";
 }
 
 /** A chart: an axis, a column per bucket that shows its tip on hover, and the names of the buckets. */
 function Chart({
   buckets,
-  range,
+  grain,
   top,
   plot,
   column,
   tip,
 }: {
   buckets: HealthBucket[];
-  range: Range;
+  grain: Grain;
   top: number;
   plot?: ReactNode;
   column?: (bucket: HealthBucket) => ReactNode;
@@ -87,7 +97,7 @@ function Chart({
                     : "left-1/2 -translate-x-1/2 -translate-y-full",
                 )}
               >
-                <b className="font-medium">{labelOf(bucket, range)}</b>
+                <b className="font-medium">{labelOf(bucket, grain, buckets.length)}</b>
                 {tip(bucket)}
               </span>
             </div>
@@ -97,7 +107,7 @@ function Chart({
       <div className={cn(grid, "col-start-2 text-2xs text-muted-foreground")}>
         {buckets.map((bucket, index) => (
           <span key={bucket.start} className="whitespace-nowrap">
-            {tickOf(bucket, index, range)}
+            {tickOf(bucket, index, grain, buckets.length)}
           </span>
         ))}
       </div>
@@ -106,14 +116,14 @@ function Chart({
 }
 
 /** The PRs that merged and failed in each bucket, stacked. */
-export function MergedChart({ buckets, range }: { buckets: HealthBucket[]; range: Range }) {
+export function MergedChart({ buckets, grain }: { buckets: HealthBucket[]; grain: Grain }) {
   const top = niceTop(Math.max(1, ...buckets.map((bucket) => bucket.merged + bucket.failed)));
   const height = (count: number) => ({ height: `${String((count / top) * 100)}%` });
 
   return (
     <Chart
       buckets={buckets}
-      range={range}
+      grain={grain}
       top={top}
       column={(bucket) => (
         <>
@@ -136,7 +146,7 @@ export function MergedChart({ buckets, range }: { buckets: HealthBucket[]; range
 }
 
 /** The median and the 90 % of the time to merge, in minutes; a bucket without a merge has no point. */
-export function TimeToMergeChart({ buckets, range }: { buckets: HealthBucket[]; range: Range }) {
+export function TimeToMergeChart({ buckets, grain }: { buckets: HealthBucket[]; grain: Grain }) {
   const top = niceTop(
     Math.max(10, ...buckets.map((bucket) => minutesOf(bucket.time_to_merge?.p90_seconds ?? 0))),
   );
@@ -155,7 +165,7 @@ export function TimeToMergeChart({ buckets, range }: { buckets: HealthBucket[]; 
   return (
     <Chart
       buckets={buckets}
-      range={range}
+      grain={grain}
       top={top}
       plot={
         <>

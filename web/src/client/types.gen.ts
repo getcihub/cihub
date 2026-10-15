@@ -2435,6 +2435,17 @@ export type GetHealthData = {
          * The period of the Health of a queue.
          */
         range?: '24h' | '7d' | '30d';
+        /**
+         * The start of a period instead of `range`, with `to` (RFC 3339): from
+         * its UTC hour, in the last 13 months.
+         */
+        from?: string;
+        /**
+         * The end of the period, with `from` (RFC 3339): to the end of its UTC
+         * hour, or of the current hour. Its buckets are hours up to 2 days, UTC
+         * days up to 90 days, and weeks from a Monday beyond.
+         */
+        to?: string;
     };
     url: '/orgs/{org}/repos/{repo}/queues/{queue}/health';
 };

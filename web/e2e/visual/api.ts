@@ -487,11 +487,29 @@ function bucketsOf(merged: number[], failed: number[]): HealthBucket[] {
   }));
 }
 
+/** The days of a period that the person chose: a busy week, quiet on the weekends. */
+function daysOf(from: string, to: string): HealthBucket[] {
+  const days = Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+  const merged = [6, 8, 7, 9, 5, 1, 0];
+  return Array.from({ length: days }, (_, index) => {
+    const count = merged[index % 7] ?? 0;
+    return {
+      start: new Date(Date.parse(from) + index * 86_400_000).toISOString(),
+      merged: count,
+      failed: index % 5 === 2 ? 1 : 0,
+      time_to_merge:
+        count > 0 ? { median_seconds: 1_260 + index * 20, p90_seconds: 2_700 + index * 45 } : null,
+    };
+  });
+}
+
 /** The Health of `web/main`: a check that passes on a retry; the other queues ended nothing. */
-function healthOf(repo: string, name: string, range: string): QueueHealth {
+function healthOf(repo: string, name: string, query: URLSearchParams): QueueHealth {
   const isBusy = repo === "web" && name === "main";
   const empty = { merged: 0, failed: 0, cancelled: 0, time_to_merge: null };
-  const from = new Date(NOW - 24 * 3_600_000).toISOString();
+  const range = query.get("range") ?? "24h";
+  const chosen = { from: query.get("from"), to: query.get("to") };
+  const from = chosen.from ?? new Date(NOW - 24 * 3_600_000).toISOString();
 
   if (!isBusy) {
     return {
@@ -508,8 +526,12 @@ function healthOf(repo: string, name: string, range: string): QueueHealth {
   }
   return {
     from,
-    to: new Date(NOW).toISOString(),
-    verdict: { kind: "check_passes_on_retry", check: "ci / e2e", times: range === "24h" ? 4 : 19 },
+    to: chosen.to ?? new Date(NOW).toISOString(),
+    verdict: {
+      kind: "check_passes_on_retry",
+      check: "ci / e2e",
+      times: range === "24h" && !chosen.to ? 4 : 19,
+    },
     current: {
       merged: 31,
       failed: 3,
@@ -522,10 +544,13 @@ function healthOf(repo: string, name: string, range: string): QueueHealth {
       cancelled: 1,
       time_to_merge: { median_seconds: 1_560, p90_seconds: 3_120 },
     },
-    buckets: bucketsOf(
-      [0, 0, 0, 0, 0, 0, 0, 1, 3, 4, 3, 2, 4, 3, 2, 3, 2, 1, 1, 0, 0, 0, 1, 1],
-      [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    ),
+    buckets:
+      chosen.from && chosen.to
+        ? daysOf(chosen.from, chosen.to)
+        : bucketsOf(
+            [0, 0, 0, 0, 0, 0, 0, 1, 3, 4, 3, 2, 4, 3, 2, 3, 2, 1, 1, 0, 0, 0, 1, 1],
+            [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+          ),
     time_in_states: [
       { state: "not_ready", median_seconds: 420 },
       { state: "pending", median_seconds: 240 },
@@ -574,7 +599,7 @@ function answerOfQueue(path: string, query: URLSearchParams): Answer | null {
     return [404, problem(404, "queue_not_found")];
   }
   if (part === "/health") {
-    return [200, healthOf(queue.repo, queue.name, query.get("range") ?? "24h")];
+    return [200, healthOf(queue.repo, queue.name, query)];
   }
   if (part === "/graph") {
     return [

@@ -8,6 +8,7 @@ import {
   listPrsOptions,
 } from "@/client/@tanstack/react-query.gen";
 import type { Graph } from "@/client/types.gen";
+import type { HealthPeriod } from "./period";
 
 /**
  * The read of the queues of `org`: one page of the most queues that a page holds, which the frame, the overview
@@ -100,12 +101,12 @@ export function queueReads(path: QueuePath, tab: Tab, now: number): QueueReads {
  */
 const HEALTH_READ_EVERY_MS = 30_000;
 
-/** The read of the Health of a queue over `range`. */
+/** The read of the Health of a queue over `period`. */
 export function healthOptions(
   path: QueuePath,
-  range: Range,
+  period: HealthPeriod,
 ): ReturnType<typeof getHealthOptions> & { refetchInterval: number } {
-  return { ...getHealthOptions({ path, query: { range } }), refetchInterval: HEALTH_READ_EVERY_MS };
+  return { ...getHealthOptions({ path, query: period }), refetchInterval: HEALTH_READ_EVERY_MS };
 }
 
 /**

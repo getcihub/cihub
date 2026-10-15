@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Page } from "@/components/ui/page";
 import { ranksOf } from "@/domain/queue/queries";
 import { useMinePrs } from "@/hooks/use-mine-prs";
+import { periodOfSearch } from "@/domain/queue/period";
 import { useNow } from "@/hooks/use-now";
 import { useSentNotice } from "@/hooks/use-sent-notice";
 import { Banners } from "@/pages/queue/components/banners";
@@ -26,7 +27,7 @@ const route = getRouteApi("/orgs/$org/repos/$repo/queues/$queue");
  */
 export function QueuePage() {
   const { org, repo, queue: name } = route.useParams();
-  const { tab, pane, range } = route.useSearch();
+  const { tab, pane, ...search } = route.useSearch();
   const path = { org, repo, queue: name };
   const now = useNow();
   const { queue, graph, live } = useQueuePageData(path, now);
@@ -48,7 +49,7 @@ export function QueuePage() {
         <Banners queue={queue} org={org} repo={repo} now={now} />
         {pane === "health" ? (
           <Suspense fallback={<HealthSkeleton />}>
-            <HealthPane path={path} range={range} branch={queue.target_branch} />
+            <HealthPane path={path} period={periodOfSearch(search)} branch={queue.target_branch} />
           </Suspense>
         ) : (
           <>

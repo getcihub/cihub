@@ -404,4 +404,61 @@ describe("the Health of a queue", () => {
     expect(await screen.findByText("Nothing merged or failed in the last 7 days.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Show the last 30 days" })).toBeInTheDocument();
   });
+
+  it("shows a period that the person chose, in its own words", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-10-15T09:41:00Z"), toFake: ["Date"] });
+    const period = "from=2026-09-12T00:00:00.000Z&to=2026-10-04T00:00:00.000Z";
+    const chosen = healthOf({ from: "2026-09-12T00:00:00Z", to: "2026-10-04T00:00:00Z" });
+    renderApp(
+      `/orgs/acme/repos/web/queues/main?pane=health&${period}`,
+      answersFor({ [`${QUEUE}/health?${period}`]: [200, chosen] }),
+    );
+
+    expect(await screen.findByText(/passed on a retry, 4 times over Sep 12 – Oct 3/)).toBeInTheDocument();
+    expect(screen.getByText("6 in the 22 days before")).toBeInTheDocument();
+    expect(screen.getByText("On the test runs of the queue, Sep 12 – Oct 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sep 12 – Oct 3" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "24 hours" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("applies a period of the calendar, and closes it on Escape", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-10-15T09:41:00Z"), toFake: ["Date"] });
+    const lastWeek = "from=2026-10-05T00:00:00.000Z&to=2026-10-12T00:00:00.000Z";
+    const router = renderApp(
+      "/orgs/acme/repos/web/queues/main?pane=health",
+      answersFor({
+        [`${QUEUE}/health?range=24h`]: [200, healthOf()],
+        [`${QUEUE}/health?${lastWeek}`]: [
+          200,
+          healthOf({ from: "2026-10-05T00:00:00Z", to: "2026-10-12T00:00:00Z" }),
+        ],
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Custom" }));
+    const calendar = screen.getByRole("dialog", { name: "Choose a period" });
+    await userEvent.click(within(calendar).getByRole("button", { name: "Last week" }));
+
+    expect(within(calendar).getByText(/compared with Sep 28 – Oct 4/)).toHaveTextContent(
+      "7 days · charts by day",
+    );
+    expect(within(calendar).getByRole("button", { name: "Next month" })).toBeDisabled();
+
+    await userEvent.click(within(calendar).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(router.state.location.search).toMatchObject({
+        pane: "health",
+        from: "2026-10-05T00:00:00.000Z",
+        to: "2026-10-12T00:00:00.000Z",
+      });
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Oct 5 – Oct 11" }));
+    expect(screen.getByRole("dialog", { name: "Choose a period" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Choose a period" })).not.toBeInTheDocument();
+    });
+  });
 });

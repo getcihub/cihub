@@ -3,7 +3,7 @@ use sqlx::PgConnection;
 use time::{Duration, OffsetDateTime};
 
 use crate::AnalyticsError;
-use crate::hourly::{LIVE_STATES, TIME_TO_MERGE, percentile};
+use crate::hourly::{LIVE_STATES, TIME_TO_MERGE, hour_of, percentile};
 
 /// A check that passed on a retry this many times in a period looks flaky.
 const FLAKY_RETRIES: u64 = 3;
@@ -11,23 +11,94 @@ const FLAKY_RETRIES: u64 = 3;
 /// Above this share of failed PRs, a queue fails too often.
 const MANY_FAILURES: f64 = 0.15;
 
-/// A period of `buckets` buckets of `bucket` each; the last bucket holds
-/// `now`. The buckets start on a multiple of their size since the Unix epoch:
-/// an hour, or a day in UTC.
+/// The history that a period of the Health can start in: 13 months.
+pub const KEPT: Duration = Duration::days(395);
+
+/// A period of the Health, in UTC.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Period {
-    pub bucket: Duration,
-    pub buckets: u32,
+pub enum Period {
+    /// The last `buckets` buckets of `bucket` each; the last bucket holds
+    /// `now`. The buckets start on a multiple of their size since the Unix
+    /// epoch: an hour, or a day.
+    Last { bucket: Duration, buckets: u32 },
+    /// The hours from the hour of `from` to the end of the hour of `to`, or of
+    /// `now` before it, in buckets of an hour up to 2 days, of a day up to 90
+    /// days, and of a week from a Monday beyond.
+    Between {
+        from: OffsetDateTime,
+        to: OffsetDateTime,
+    },
+}
+
+/// The bounds of a period, the size of its buckets and the time that they
+/// start from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Window {
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+    bucket: Duration,
+    origin: OffsetDateTime,
+}
+
+impl Window {
+    /// The start of the bucket that holds `at`.
+    fn bin(&self, at: OffsetDateTime) -> OffsetDateTime {
+        let size = self.bucket.whole_seconds().max(1);
+        let buckets = (at - self.origin).whole_seconds().div_euclid(size);
+        self.origin + Duration::seconds(buckets * size)
+    }
+}
+
+/// The end of the hour that holds `at`, or `at` on the hour.
+fn end_of_hour(at: OffsetDateTime) -> OffsetDateTime {
+    let start = hour_of(at);
+    if start == at {
+        at
+    } else {
+        start + Duration::HOUR
+    }
 }
 
 impl Period {
-    /// The start and the end of the period that holds `now`.
-    fn bounds(self, now: OffsetDateTime) -> (OffsetDateTime, OffsetDateTime) {
-        let size = self.bucket.whole_seconds().max(1);
-        let elapsed = now.unix_timestamp().rem_euclid(size);
-        let end =
-            now.replace_nanosecond(0).unwrap_or(now) - Duration::seconds(elapsed) + self.bucket;
-        (end - self.bucket * self.buckets, end)
+    fn window(self, now: OffsetDateTime) -> Window {
+        match self {
+            Self::Last { bucket, buckets } => {
+                let size = bucket.whole_seconds().max(1);
+                let elapsed = now.unix_timestamp().rem_euclid(size);
+                let to =
+                    now.replace_nanosecond(0).unwrap_or(now) - Duration::seconds(elapsed) + bucket;
+                Window {
+                    from: to - bucket * buckets,
+                    to,
+                    bucket,
+                    origin: OffsetDateTime::UNIX_EPOCH,
+                }
+            }
+            Self::Between { from, to } => {
+                let (from, to) = (hour_of(from), end_of_hour(to.min(now)));
+                let span = to - from;
+                let bucket = if span <= Duration::days(2) {
+                    Duration::HOUR
+                } else if span <= Duration::days(90) {
+                    Duration::DAY
+                } else {
+                    Duration::WEEK
+                };
+                // January 5, 1970 is a Monday.
+                let origin = OffsetDateTime::UNIX_EPOCH
+                    + if bucket == Duration::WEEK {
+                        Duration::days(4)
+                    } else {
+                        Duration::ZERO
+                    };
+                Window {
+                    from,
+                    to,
+                    bucket,
+                    origin,
+                }
+            }
+        }
     }
 }
 
@@ -109,13 +180,14 @@ pub async fn queue_health(
     period: Period,
     now: OffsetDateTime,
 ) -> Result<Health, AnalyticsError> {
-    let (from, to) = period.bounds(now);
+    let window = period.window(now);
+    let (from, to) = (window.from, window.to);
     let before = from - (to - from);
     let queue = queue.to_string();
 
     let current = totals(conn, &queue, (from, to)).await?;
     let previous = totals(conn, &queue, (before, from)).await?;
-    let buckets = buckets(conn, &queue, (from, to), period.bucket).await?;
+    let buckets = buckets(conn, &queue, &window).await?;
     let time_in_states = time_in_states(conn, &queue, (from, to)).await?;
     let left_without_merge = left_without_merge(conn, &queue, (from, to)).await?;
     let checks = checks(conn, &queue, (from, to)).await?;
@@ -237,11 +309,11 @@ async fn histogram(
 async fn buckets(
     conn: &mut PgConnection,
     queue: &str,
-    (from, to): (OffsetDateTime, OffsetDateTime),
-    size: Duration,
+    window: &Window,
 ) -> Result<Vec<Bucket>, AnalyticsError> {
+    let (from, to, size) = (window.from, window.to, window.bucket);
     let ended: Vec<(OffsetDateTime, String, i64)> = sqlx::query_as(
-        "SELECT date_bin($4 * interval '1 second', hour, 'epoch'), conclusion::text,
+        "SELECT date_bin($4 * interval '1 second', hour, $5), conclusion::text,
                 sum(count)::bigint
          FROM an_hourly_conclusions
          WHERE queue_id = $1 AND hour >= $2 AND hour < $3 AND conclusion IN ('merged', 'failed')
@@ -251,10 +323,11 @@ async fn buckets(
     .bind(from)
     .bind(to)
     .bind(size.whole_seconds())
+    .bind(window.origin)
     .fetch_all(&mut *conn)
     .await?;
     let durations: Vec<(OffsetDateTime, i16, i64)> = sqlx::query_as(
-        "SELECT date_bin($4 * interval '1 second', hour, 'epoch'), bucket, sum(count)::bigint
+        "SELECT date_bin($4 * interval '1 second', hour, $6), bucket, sum(count)::bigint
          FROM an_hourly_durations
          WHERE queue_id = $1 AND measure = $5 AND hour >= $2 AND hour < $3
          GROUP BY 1, 2
@@ -265,11 +338,13 @@ async fn buckets(
     .bind(to)
     .bind(size.whole_seconds())
     .bind(TIME_TO_MERGE)
+    .bind(window.origin)
     .fetch_all(&mut *conn)
     .await?;
 
+    // A period between two times may start or end in the middle of a bucket.
     let mut buckets = Vec::new();
-    let mut start = from;
+    let mut start = window.bin(from);
     while start < to {
         let of = |conclusion: ItemState| {
             ended
@@ -422,29 +497,69 @@ mod tests {
 
     #[test]
     fn the_last_bucket_holds_now() {
-        let hours = Period {
+        let hours = Period::Last {
             bucket: Duration::HOUR,
             buckets: 24,
         };
-        let days = Period {
+        let days = Period::Last {
             bucket: Duration::DAY,
             buckets: 7,
         };
         let now = datetime!(2026-10-14 09:41:12.5 UTC);
 
+        let (hours, days) = (hours.window(now), days.window(now));
+
         assert_eq!(
-            hours.bounds(now),
+            (hours.from, hours.to),
             (
                 datetime!(2026-10-13 10:00 UTC),
                 datetime!(2026-10-14 10:00 UTC)
             )
         );
         assert_eq!(
-            days.bounds(now),
+            (days.from, days.to),
             (
                 datetime!(2026-10-08 00:00 UTC),
                 datetime!(2026-10-15 00:00 UTC)
             )
+        );
+    }
+
+    #[test]
+    fn a_period_between_two_times_takes_its_buckets_from_its_length() {
+        let now = datetime!(2026-10-14 09:41 UTC);
+        let between = |from, to| Period::Between { from, to }.window(now);
+
+        let incident = between(
+            datetime!(2026-10-08 09:30 UTC),
+            datetime!(2026-10-08 18:20 UTC),
+        );
+        let month = between(
+            datetime!(2026-09-12 00:00 UTC),
+            datetime!(2026-10-04 00:00 UTC),
+        );
+        let year = between(
+            datetime!(2025-11-01 00:00 UTC),
+            datetime!(2026-11-01 00:00 UTC),
+        );
+
+        assert_eq!(
+            (incident.from, incident.to, incident.bucket),
+            (
+                datetime!(2026-10-08 09:00 UTC),
+                datetime!(2026-10-08 19:00 UTC),
+                Duration::HOUR
+            )
+        );
+        assert_eq!(month.bucket, Duration::DAY);
+        assert_eq!(
+            (year.to, year.bucket),
+            (datetime!(2026-10-14 10:00 UTC), Duration::WEEK)
+        );
+        assert_eq!(
+            year.bin(year.from),
+            datetime!(2025-10-27 00:00 UTC),
+            "a week starts on a Monday"
         );
     }
 

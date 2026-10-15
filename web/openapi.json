@@ -4160,7 +4160,7 @@
           "Queues"
         ],
         "summary": "Get the Health of a queue",
-        "description": "What the queue did over the period: the PRs that merged and failed, their\ntime to merge, why the others left, and the checks of its runs, each\nagainst the period before. Read from the facts of the log, which arrive a\nfew seconds after the log.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "description": "What the queue did over the period: the PRs that merged and failed, their\ntime to merge, why the others left, and the checks of its runs, each\nagainst the period before: the last 24 hours, 7 days or 30 days, or the\nhours between two times. Read from the hourly aggregate of the facts of the\nlog, which arrive a few seconds after the log; the medians and the 90th\npercentiles are within 5 %.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
         "operationId": "get_health",
         "parameters": [
           {
@@ -4196,7 +4196,7 @@
           {
             "name": "range",
             "in": "query",
-            "description": "`24h` (by default), `7d` or `30d`.",
+            "description": "`24h` (by default), `7d` or `30d`; not with `from` and `to`.",
             "required": false,
             "schema": {
               "type": "string",
@@ -4206,6 +4206,26 @@
                 "7d",
                 "30d"
               ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "The start of a period instead of `range`, with `to` (RFC 3339): from\nits UTC hour, in the last 13 months.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "The end of the period, with `from` (RFC 3339): to the end of its UTC\nhour, or of the current hour. Its buckets are hours up to 2 days, UTC\ndays up to 90 days, and weeks from a Monday beyond.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
