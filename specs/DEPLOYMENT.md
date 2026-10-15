@@ -277,7 +277,9 @@ version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.
 
 ## Dependency updates
 
-Renovate (`.github/workflows/renovate.yaml`) runs every hour, on a push that modifies
-`.renovaterc.json5`, and on demand (with a dry-run option). It opens PRs for the GitHub actions,
-the tools of `mise.toml` (with `mise.lock`) and the crates of `Cargo.toml`, and maintains a dashboard in an
-issue. No PR is merged automatically. It uses the same bot GitHub App as release-please.
+Renovate (`.github/workflows/renovate.yaml`) runs on a push that modifies `.renovaterc.json5`, on demand
+(with a dry-run option), and when a person edits its dashboard or one of its PRs (a checkbox) or closes one of
+its PRs; another issue or PR does not run it. It opens PRs for the GitHub actions, the tools of `mise.toml`
+(with `mise.lock`) and the crates of `Cargo.toml`, and maintains a dashboard in an issue. No PR is merged
+automatically. TypeScript stays below 7 until `typescript-eslint` supports it. It uses the same bot GitHub App
+as release-please.

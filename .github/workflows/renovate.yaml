@@ -44,6 +44,12 @@ concurrency:
 
 jobs:
   main:
+    # An edited or closed pull request, or an edited issue, concerns Renovate
+    # only when it is one of its pull requests or its dashboard.
+    if: >-
+      ${{ (github.event_name != 'pull_request' && github.event_name != 'issues')
+      || (github.event_name == 'pull_request' && startsWith(github.event.pull_request.head.ref, 'renovate/'))
+      || (github.event_name == 'issues' && github.event.issue.title == 'Renovate Dashboard') }}
     name: Renovate
     runs-on: ubuntu-26.04
     steps:
