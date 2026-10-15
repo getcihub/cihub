@@ -98,7 +98,8 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   says what is still fresh (`defaultPreloadStaleTime: 0`).
 - The stream `/orgs/{org}/stream` (`src/domain/queue/live.ts`, followed by `src/pages/org/use-queue-news.ts`) invalidates the query keys of the queue that
   changed, gathered over half a second, and every read of the organization each time it opens; it opens again
-  after an error; no polling.
+  after an error; no polling, except the Health of a queue: its facts come a few seconds after the change, so it
+  reads them again every 30 seconds while it is open, and not at each change.
 - A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
   answers `202` and the queue decides at its next reconciliation; the page shows the request as sent until the
   stream signals the change.

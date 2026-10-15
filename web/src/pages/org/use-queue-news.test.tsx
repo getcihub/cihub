@@ -1,7 +1,7 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ItemState, Queue } from "@/client/types.gen";
+import type { ItemState, Queue, QueueHealth } from "@/client/types.gen";
 import { type Answers, renderApp } from "@/test/app";
 import {
   ada,
@@ -93,6 +93,37 @@ describe("the stream of an organization", () => {
     await waitFor(() => {
       expect(readsOf(QUEUE)).toBe(before + 1);
     });
+  });
+
+  it("leaves the Health to its own timer when its queue changes", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const totals = { merged: 0, failed: 0, cancelled: 0, time_to_merge: null };
+    const quiet: QueueHealth = {
+      from: "2026-10-13T10:00:00Z",
+      to: "2026-10-14T10:00:00Z",
+      verdict: { kind: "quiet" },
+      current: totals,
+      previous: totals,
+      buckets: [],
+      time_in_states: [],
+      left_without_merge: [],
+      checks: [],
+    };
+    renderApp("/orgs/acme/repos/web/queues/main?pane=health", {
+      ...answers,
+      [`${QUEUE}/health?range=24h`]: [200, quiet],
+    });
+    await screen.findByText(/Nothing to measure in this period/);
+
+    const [stream] = FakeEventSource.opened;
+    const healths = readsOf(`${QUEUE}/health`);
+    const before = readsOf(QUEUE);
+    stream?.emit("queue_changed", { queue_id: web.id, seq: 4 });
+    await waitFor(() => {
+      expect(readsOf(QUEUE)).toBe(before + 1);
+    });
+
+    expect(readsOf(`${QUEUE}/health`)).toBe(healths);
   });
 
   it("shows the graph as live while the stream is open", async () => {

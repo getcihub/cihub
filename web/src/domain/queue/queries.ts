@@ -94,9 +94,18 @@ export function queueReads(path: QueuePath, tab: Tab, now: number): QueueReads {
   };
 }
 
+/**
+ * How often an open Health reads its facts again. The notifier writes them a few seconds after a change of the
+ * queue, so a read at each change of the stream would mostly read the facts before it.
+ */
+const HEALTH_READ_EVERY_MS = 30_000;
+
 /** The read of the Health of a queue over `range`. */
-export function healthOptions(path: QueuePath, range: Range): ReturnType<typeof getHealthOptions> {
-  return getHealthOptions({ path, query: { range } });
+export function healthOptions(
+  path: QueuePath,
+  range: Range,
+): ReturnType<typeof getHealthOptions> & { refetchInterval: number } {
+  return { ...getHealthOptions({ path, query: { range } }), refetchInterval: HEALTH_READ_EVERY_MS };
 }
 
 /**

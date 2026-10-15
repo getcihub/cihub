@@ -518,8 +518,8 @@ Decisions (October 14, 2026, validated by the project lead):
     `the_health_of_a_queue_reads_the_facts_of_its_log` (a PR merged after its check passed on a retry, a PR
     failed; the facts rebuilt from the log are the same; another organization reads none of them),
     `web/e2e/health.spec.ts`.
-  - Remaining: the page reads the Health again at each change of its queue, which can come before the notifier
-    writes its facts; the next change shows them.
+  - Done (October 15, 2026): an open Health reads its facts again every 30 seconds, and not at each change of its
+    queue, which mostly came before the notifier wrote them (validated by the project lead).
 
 #### Lot 11b: Prometheus
 

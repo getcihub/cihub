@@ -73,6 +73,10 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         if (key._id === "listOrgQueues" || key._id === "listPrs" || key._id === "getRun") {
           return true;
         }
+        // The Health reads its facts again on its own timer (`healthOptions`).
+        if (key._id === "getHealth") {
+          return false;
+        }
         // A read of a queue names it; a read of a PR names its repository.
         return changed.some(
           (entry) =>
