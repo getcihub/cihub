@@ -64,9 +64,13 @@ function rankOf(run: GraphRun, ranks: Map<string, number>): number {
   return Math.min(...run.item_ids.map((id) => ranks.get(id) ?? Number.MAX_SAFE_INTEGER));
 }
 
-/** Whether the graph follows the queue: without the stream, it shows the queue at its last read. */
-function LiveMark() {
-  const isLive = useSyncExternalStore(onStreamOpenChanged, isStreamOpen);
+/**
+ * Whether the graph moves: the stream brings the changes, and the queue tests and merges. A draining queue still
+ * merges the PRs in flight; a paused one, or one without access, merges nothing.
+ */
+function LiveMark({ queue }: { queue: Queue }) {
+  const isStreamLive = useSyncExternalStore(onStreamOpenChanged, isStreamOpen);
+  const isLive = isStreamLive && queue.state !== "paused" && queue.access === "ok";
 
   return (
     <span
@@ -172,7 +176,7 @@ export function QueueGraph({
     <section className={cn(cardVariants(), "min-w-0")} aria-labelledby="graph-title">
       <CardHeader>
         <CardTitle id="graph-title">Live graph</CardTitle>
-        <LiveMark />
+        <LiveMark queue={queue} />
         <CardHint className="max-md:hidden">
           Each run tests its pull requests on top of the runs on its right.
         </CardHint>

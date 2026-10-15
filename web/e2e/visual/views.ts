@@ -2,7 +2,7 @@
 // (a paused queue, a failed run, a refusal), its menus and its dialogs.
 import type { Page } from "@playwright/test";
 
-import { type Answer, type ApiRequest, type Person, problem } from "./api";
+import { type Answer, type ApiRequest, type Person, answerOf, problem } from "./api";
 
 export type Theme = "light" | "dark";
 
@@ -44,6 +44,11 @@ async function submitPr(page: Page, number: string): Promise<void> {
   await page.getByRole("button", { name: "Submit a pull request" }).click();
   await page.getByRole("dialog").getByRole("textbox").fill(number);
   await page.getByRole("dialog").getByRole("button", { name: "Submit" }).click();
+}
+
+async function pauseQueue(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Pause" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Pause" }).click();
 }
 
 export const VIEWS: View[] = [
@@ -186,6 +191,45 @@ export const VIEWS: View[] = [
     ready: QUEUE_READY,
     themes: BOTH,
     act: (page) => page.getByRole("button", { name: "Pause" }).click(),
+  },
+  {
+    name: "queue-pausing",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    act: async (page) => {
+      await pauseQueue(page);
+      await page.getByText("Pausing the queue…").waitFor();
+    },
+  },
+  {
+    name: "queue-paused-now",
+    url: QUEUE_PAGE,
+    ready: QUEUE_READY,
+    act: async (page) => {
+      // The queue takes the request at once: its next read is paused. A read before the request, as the one
+      // that the stream asks when it opens, still finds it running, so the Pause button stays.
+      let isRequested = false;
+      await page.route("**/api/v1/orgs/acme/repos/web/queues/main", (route) => {
+        if (route.request().method() !== "GET") {
+          isRequested = true;
+          return route.fallback();
+        }
+        if (!isRequested) {
+          return route.fallback();
+        }
+        const [status, body] = answerOf(
+          { path: "/orgs/acme/repos/web/queues/main", query: new URLSearchParams(), method: "GET" },
+          "ada",
+        );
+        return route.fulfill({
+          status,
+          contentType: "application/json",
+          body: JSON.stringify({ ...body, state: "paused" }),
+        });
+      });
+      await pauseQueue(page);
+      await page.getByText("The queue is paused.").waitFor();
+    },
   },
   {
     name: "modal-cancel",

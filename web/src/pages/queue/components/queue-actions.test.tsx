@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Me } from "@/domain/session/session";
 import { type Answers, mockSessionCookie, problem, renderApp, sentChanges } from "@/test/app";
-import { ada, answersOfMe, answersOfQueuePage, itemOf } from "@/test/fixtures";
+import { ada, answersOfMe, answersOfQueuePage, detailOf, itemOf, queueOf } from "@/test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
 const PR = "/api/v1/orgs/acme/repos/web/prs";
@@ -24,15 +24,28 @@ afterEach(() => {
 });
 
 describe("the actions on a queue", () => {
-  it("let an admin pause the queue, with the CSRF token of the session, and say that it is sent", async () => {
+  it("let an admin pause the queue, with the CSRF token of the session, and say that it pauses", async () => {
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({}));
 
     await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
     const dialog = screen.getByRole("dialog", { name: "Pause the queue?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Pause" }));
 
-    expect(await screen.findByText(/^Pause sent/)).toBeInTheDocument();
+    expect(await screen.findByText("Pausing the queue…")).toBeInTheDocument();
     expect(await sentChanges()).toEqual([["PATCH", QUEUE, { state: "paused" }, "token"]]);
+  });
+
+  it("say that the queue is paused once it is", async () => {
+    const answers = answersFor({});
+    renderApp("/orgs/acme/repos/web/queues/main", answers);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
+    answers[QUEUE] = [200, detailOf(queueOf("web", "main"), { state: "paused" })];
+    const dialog = screen.getByRole("dialog", { name: "Pause the queue?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Pause" }));
+
+    expect(await screen.findByText("The queue is paused.")).toBeInTheDocument();
+    expect(screen.queryByText("Pausing the queue…")).not.toBeInTheDocument();
   });
 
   it("let a member pause nothing", async () => {
