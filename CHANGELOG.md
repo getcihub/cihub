@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.3.0](https://github.com/getcihub/cihub/compare/v0.2.1...v0.3.0) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** sign the command line in with a device code ([#116](https://github.com/getcihub/cihub/issues/116))
+* split the cihub command line and the cihub-server binary ([#114](https://github.com/getcihub/cihub/issues/114))
+
+### Features
+
+* a viewer for the visual diff of the dashboard ([3ab3f8f](https://github.com/getcihub/cihub/commit/3ab3f8f7984eb1b00165a081ccab9f0bf1a1b437))
+* **analytics:** the Health of a period that the person chooses ([7d7046c](https://github.com/getcihub/cihub/commit/7d7046c748fadde75714ddf9cf0f769e8610c12a))
+* **analytics:** the Health of a queue, from facts derived from its log ([92b8ff2](https://github.com/getcihub/cihub/commit/92b8ff2984f5891175c759ab2f2d025b5f876118))
+* **cli:** sign the command line in with a device code ([#116](https://github.com/getcihub/cihub/issues/116)) ([5355ce8](https://github.com/getcihub/cihub/commit/5355ce8f5cc66c742756ac4ee0d5e48a81019f67))
+* icons on the buttons of the queue ([#100](https://github.com/getcihub/cihub/issues/100)) ([b64f130](https://github.com/getcihub/cihub/commit/b64f1302041d3ae75715f09aebb0870dd72e1b73))
+* **mergequeue:** direct merge is on by default ([3a2ac8f](https://github.com/getcihub/cihub/commit/3a2ac8f8eae7453227665056b4561c0f9f22ec77))
+* split the cihub command line and the cihub-server binary ([#114](https://github.com/getcihub/cihub/issues/114)) ([96d44cc](https://github.com/getcihub/cihub/commit/96d44cc952e59f960e3e1049abe3a52a35161495))
+* the dashboard and its API ([0758ac0](https://github.com/getcihub/cihub/commit/0758ac0be0e25c3ef97dea15c6fca2c10bc736eb))
+* the empty state of a queue ([#103](https://github.com/getcihub/cihub/issues/103)) ([735ff14](https://github.com/getcihub/cihub/commit/735ff14e9f06cc4e006e70adf8120565bbb527f5))
+* **web:** the copy of the command says so for a moment, in a toast ([2da2a4c](https://github.com/getcihub/cihub/commit/2da2a4cc743f002d1074c91842fab62fe48a4098))
+* **web:** the empty graph, the tab counters and the history of a PR ([#108](https://github.com/getcihub/cihub/issues/108)) ([eb1eb8a](https://github.com/getcihub/cihub/commit/eb1eb8a333fe5d9b083373d25c40649f3116e860))
+* **web:** the live graph says whether it follows the queue ([c9f1548](https://github.com/getcihub/cihub/commit/c9f15488296698b266838a99c57a07d2d400cef2))
+* **web:** the menu of the person and the PRs of a queue show the avatar, from the SCM profile ([#120](https://github.com/getcihub/cihub/issues/120)) ([707b0b6](https://github.com/getcihub/cihub/commit/707b0b638172babad695317a060d858f315c9931))
+* **web:** the queue actions and the live mark follow the state of the queue ([410e9cc](https://github.com/getcihub/cihub/commit/410e9cc15d8b22d5d7a0dfbe8ab3fb8f7db1a0b0))
+* **web:** the repository picker opens the only queue of a repository ([a09e476](https://github.com/getcihub/cihub/commit/a09e476b6e8663e4334613779731caaeec67b351))
+
+
+### Bug Fixes
+
+* **deps:** update dependency zod to v4.6.6 ([ad43291](https://github.com/getcihub/cihub/commit/ad432913390acb4851de32e82df4de9672c42e23))
+* **deps:** update rustls to 0.23.46 ([f633791](https://github.com/getcihub/cihub/commit/f63379136c4f6b88f0c7871dae57fd0a830b5c6f))
+* **deps:** update tanstack-query monorepo to v5.104.2 ([601357e](https://github.com/getcihub/cihub/commit/601357ece7091d5eac7d3a15d9e5ee82e5e825a6))
+* **deps:** update tanstack-router monorepo ([#104](https://github.com/getcihub/cihub/issues/104)) ([6d9271d](https://github.com/getcihub/cihub/commit/6d9271d81989313752a024d9f03533b7dc6fb80e))
+* the visual diff of views whose size changed, and the zoomed split ([#106](https://github.com/getcihub/cihub/issues/106)) ([ad83000](https://github.com/getcihub/cihub/commit/ad830003ba626f192ea468e9d26792c25412baf7))
+* **web:** align the sizes and weights of the text with the design ([#107](https://github.com/getcihub/cihub/issues/107)) ([d159efc](https://github.com/getcihub/cihub/commit/d159efc9c1c8354aef22968ad37e8c5b2885a545))
+* **web:** the tabs and the panes of a queue keep the scroll position ([40330e9](https://github.com/getcihub/cihub/commit/40330e9e02c8872066fc656da86ba863331dbdec))
+* **web:** the visual diff skips a view that the base cannot show ([736ee2c](https://github.com/getcihub/cihub/commit/736ee2c0d11fabc4799dec8fb48f59782af125a0))
+
+
+### Performance Improvements
+
+* **mergequeue:** read the queues and the PRs through indexes, not their history ([#109](https://github.com/getcihub/cihub/issues/109)) ([43b478f](https://github.com/getcihub/cihub/commit/43b478f3348a52114faa07cdda96076fad4c6632))
+
+
+### Code Refactoring
+
+* **deploy:** group the chart and the compose installation under deploy/ ([fd834bf](https://github.com/getcihub/cihub/commit/fd834bf5fb5012453f359673d4b10a1d23e38c99))
+* simplify the server code and the dashboard layout ([#92](https://github.com/getcihub/cihub/issues/92)) ([53097b6](https://github.com/getcihub/cihub/commit/53097b6a0508391b3aa422b1108156827b48084e))
+* the hooks of the design system in components/ui/hooks ([#101](https://github.com/getcihub/cihub/issues/101)) ([1695e60](https://github.com/getcihub/cihub/commit/1695e60b52c55ae393e4805981eabfa150d3a5ac))
+
+
+### Build System
+
+* rename the mise tasks, update the smoke test and the docs ([#91](https://github.com/getcihub/cihub/issues/91)) ([79fd7a8](https://github.com/getcihub/cihub/commit/79fd7a8f9879ce7ae08e5cc80cbe653de695e074))
+
+
+### Continuous Integration
+
+* **renovate:** run only for the pull requests and the dashboard of Renovate ([49d54df](https://github.com/getcihub/cihub/commit/49d54df57a21bdb282240e6ac8ff869376c7da0a))
+* run the unit tests of the dashboard in their own job ([561a57c](https://github.com/getcihub/cihub/commit/561a57c54b7e612f45aacd19bf33ec99620072af))
+* **web:** compare the views of the dashboard with the base on each pull request ([#128](https://github.com/getcihub/cihub/issues/128)) ([fc6ef36](https://github.com/getcihub/cihub/commit/fc6ef36605b19d49d9d8b7490241da5d04f053ac))
+* **web:** the visual artifact keeps only the views that differ ([#130](https://github.com/getcihub/cihub/issues/130)) ([300d4a1](https://github.com/getcihub/cihub/commit/300d4a1a56f9c89f032afd4d1a89d7ca85ba90a3))
+
+
+### Miscellaneous Chores
+
+* **deps:** update dependency lefthook to v2.2.1 ([491219d](https://github.com/getcihub/cihub/commit/491219dcd6a66fc8d169cb4fc26410f00992d4b3))
+* **deps:** update dependency vitest to v5.0.4 ([df402cd](https://github.com/getcihub/cihub/commit/df402cd474476f57e779f18538356a7f07f368c7))
+* **deps:** update github-actions ([559d8be](https://github.com/getcihub/cihub/commit/559d8be4653dcb65ff4a8722be67d633c7537398))
+* **deps:** update rust crate proptest to v1.12.0 ([63b67fe](https://github.com/getcihub/cihub/commit/63b67fee36caf9178c269ff575f481bba9702acd))
+* **deps:** update rust crate serde_json to v1.0.152 ([ff735df](https://github.com/getcihub/cihub/commit/ff735df415177d7eeb4d67c7d24104aeb67e4d38))
+* **deps:** update rust crate serde_json to v1.0.154 ([73c0218](https://github.com/getcihub/cihub/commit/73c0218c92d315c90231911cd01b42e1f25e3786))
+* **deps:** update rust crate tokio-util to v0.7.20 ([0cdf5dd](https://github.com/getcihub/cihub/commit/0cdf5dd5300c0a3d62980dc9eef5d9a433966013))
+
 ## [0.2.1](https://github.com/getcihub/cihub/compare/v0.2.0...v0.2.1) (2026-10-10)
 
 
