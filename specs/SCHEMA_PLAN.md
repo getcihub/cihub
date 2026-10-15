@@ -149,10 +149,11 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 
 - **No enable flag**, per organization, per repository or per offer. A module that needs a setting reads
   `.cihub.yaml` (`specs/CONFIGURATION.md`).
-- **One table for the time series** (lot 11): `measurements (org_id, repo_id, queue_id, name, bucket, value)`
-  behind `AnalyticsStore`. Codecov has eight aggregate tables of the same shape (hourly and daily, crossed with
-  repository, branch and test); one table with a `grain` column and nullable `branch` and `test_id` does the
-  same.
+- **Typed hourly tables for the time series** (lot 11a): `an_hourly_conclusions`, `an_hourly_durations` and
+  `an_hourly_checks`, keyed by queue and hour, behind `AnalyticsStore`. A single `measurements (name, bucket,
+  value)` table would write the reason, the check and the bucket of a histogram into `name`, outside the closed
+  vocabulary (decided October 15, 2026, by the project lead). Codecov has eight aggregate tables (hourly and
+  daily, crossed with repository, branch and test); a daily grain comes only if a range needs it.
 - **No `outbox` table** (lot 11): `events` is the outbox. A consumer keeps a cursor per queue (`seq` is per
   queue), and reads the events after it. One table less and no double write.
 - **Flaky tests** (lot 14): `ft_tests` keyed by `test_id bytea`, a 128-bit hash of `(suite, class, name)`, as

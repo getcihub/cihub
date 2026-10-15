@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -378,6 +378,26 @@ export const graph = <ThrowOnError extends boolean = false>(options: Options<Gra
             type: 'apiKey'
         }],
     url: '/orgs/{org}/repos/{repo}/queues/{queue}/graph',
+    ...options
+});
+
+/**
+ * Get the Health of a queue
+ *
+ * What the queue did over the period: the PRs that merged and failed, their
+ * time to merge, why the others left, and the checks of its runs, each
+ * against the period before. Read from the facts of the log, which arrive a
+ * few seconds after the log.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const getHealth = <ThrowOnError extends boolean = false>(options: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, GetHealthErrors, ThrowOnError> => (options.client ?? client).get<GetHealthResponses, GetHealthErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/health',
     ...options
 });
 

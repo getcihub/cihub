@@ -22,6 +22,7 @@ mod module;
 mod news;
 mod page;
 mod routing;
+mod subscriptions;
 mod sweep;
 mod tokens;
 mod wake;
@@ -56,6 +57,10 @@ pub use module::{LoopError, Module, ModuleApi, ModuleLoop};
 pub use news::{QueueChange, QueueNews, QueueNewsFeed, notify_queue_changed};
 pub use page::{PAGE_ERRORS, Page, cursor_of};
 pub use routing::{ROUTE_POLL, Route, find_route, run_router};
+pub use subscriptions::{
+    SUBSCRIPTIONS_POLL, Subscription, SubscriptionFuture, SubscriptionHandler, deliver_all,
+    run_subscriptions,
+};
 pub use sweep::{SWEEP_DELIVERIES, SWEEP_EVERY, request_sweep, run_sweep, sweep_executor};
 pub use tokens::create_token;
 pub use wake::{
@@ -89,6 +94,12 @@ pub enum PlatformError {
     SlugTaken { slug: String, installation: String },
     #[error("no organization has the slug {0}")]
     UnknownOrganization(String),
+    #[error("the subscription {name} failed")]
+    Subscription {
+        name: &'static str,
+        #[source]
+        source: crate::LoopError,
+    },
 }
 
 impl PlatformError {

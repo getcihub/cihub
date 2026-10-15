@@ -1,16 +1,16 @@
 //! The server of the browser tests of the dashboard (`mise run web:e2e`): the API,
-//! the dashboard of `web/dist`, the sign-in, and the worker, the router and
-//! the scheduler of the queues, on the simulator and on a fresh database
-//! `cihub_e2e`, next to the one of `DATABASE_URL`. Its sign-in page signs
-//! anyone in: never a server of production.
+//! the dashboard of `web/dist`, the sign-in, and the worker, the router, the
+//! scheduler of the queues and their subscriptions, on the simulator and on a
+//! fresh database `cihub_e2e`, next to the one of `DATABASE_URL`. Its sign-in
+//! page signs anyone in: never a server of production.
 //!
 //! The world: `acme` and `globex`, a queue each; `ada` is a member of `acme`,
 //! `grace` of no organization. On `acme/web`, `ada` submits three PRs with
 //! `/cihub merge`: two whose check passed, which the queue tests, and one
 //! whose check waits; #4 is open, not submitted. `acme/api` has no queue
-//! yet, a PR of `marie` and one of `ada`, both green, and a CI that passes
-//! each test commit; the page `/sim/merge` comments `/cihub merge` on a PR,
-//! `/sim/comment` gives the last comment of a PR.
+//! yet, a PR of `marie` and two of `ada`, all green, and a CI that passes
+//! each test commit but those that test #3; the page `/sim/merge` comments
+//! `/cihub merge` on a PR, `/sim/comment` gives the last comment of a PR.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -26,7 +26,8 @@ use cihub_domain::{
     QueueId, RepoId,
 };
 use cihub_platform::{
-    Delivery, Executors, QueueNewsFeed, find_route, run_router, run_worker, store_delivery,
+    Delivery, Executors, QueueNewsFeed, find_route, run_router, run_subscriptions, run_worker,
+    store_delivery,
 };
 use cihub_scm::sim::{PrChange, Sim};
 use cihub_scm::{
@@ -129,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel.clone(),
     );
     let scheduler = (module.scheduler)(cancel.clone());
+    let subscriptions = run_subscriptions(pool.clone(), module.subscriptions, cancel.clone());
     tokio::spawn(async move {
         if let Err(err) = worker.await {
             warn!(error = &err as &dyn std::error::Error, "worker stopped");
@@ -142,6 +144,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         if let Err(err) = scheduler.await {
             warn!(error = &*err as &dyn std::error::Error, "scheduler stopped");
+        }
+    });
+    tokio::spawn(async move {
+        if let Err(err) = subscriptions.await {
+            warn!(
+                error = &err as &dyn std::error::Error,
+                "subscriptions stopped"
+            );
         }
     });
     tokio::spawn(pass_deliveries(
@@ -323,6 +333,13 @@ fn passed() -> CheckReport {
     }
 }
 
+fn failed() -> CheckReport {
+    CheckReport {
+        conclusion: Some(CheckConclusion::Failure),
+        ..passed()
+    }
+}
+
 /// Opens the PRs of `acme/web`, and `ada` submits each one with a comment.
 fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     let [(ada, _), _] = people();
@@ -377,12 +394,19 @@ fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
         &ada,
         true,
     )?;
+    open_pr(
+        sim,
+        &api,
+        ("token-rotation", "Rotate the API tokens"),
+        &ada,
+        true,
+    )?;
 
     Ok(())
 }
 
 /// The CI of `acme/api`: it passes each test commit of a run in progress,
-/// until `cancel`. The runs of `acme/web` keep testing, for the page of a
+/// and fails those that test #3, until `cancel`. The runs of `acme/web` keep testing, for the page of a
 /// queue in test.
 async fn pass_api_tests(pool: PgPool, sim: Arc<Sim>, cancel: CancellationToken) {
     let Some(api) = acme_repo("api") else {
@@ -408,26 +432,29 @@ async fn pause(cancel: &CancellationToken, wait: Duration) -> bool {
     }
 }
 
-/// Passes each test commit of `acme/api` in progress that it did not pass yet.
+/// Reports each test commit of `acme/api` in progress that it did not report
+/// yet.
 async fn pass_new_tests(
     pool: &PgPool,
     sim: &Sim,
     api: &RepoRef,
     passed_shas: &mut HashSet<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for sha in testing_shas(pool).await? {
+    for (sha, is_red) in testing_shas(pool).await? {
         if passed_shas.insert(sha.clone()) {
-            sim.report_check(api, &sha, passed())?;
+            let report = if is_red { failed() } else { passed() };
+            sim.report_check(api, &sha, report)?;
         }
     }
 
     Ok(())
 }
 
-async fn testing_shas(pool: &PgPool) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+/// The test commits of `acme/api` in progress, and whether they test #3.
+async fn testing_shas(pool: &PgPool) -> Result<Vec<(String, bool)>, Box<dyn std::error::Error>> {
     let mut tx = begin_system(pool).await?;
-    let shas = sqlx::query_scalar(
-        "SELECT DISTINCT t.test_sha FROM test_runs t
+    let shas = sqlx::query_as(
+        "SELECT DISTINCT t.test_sha, 3 = ANY (t.tested_pr_numbers) FROM test_runs t
          JOIN queues q ON q.id = t.queue_id
          JOIN repos r ON r.id = q.repo_id
          WHERE t.status = 'in_progress' AND t.test_sha IS NOT NULL AND r.name = 'api'",

@@ -20,8 +20,8 @@ pub use device_codes::{
     new_user_code, poll_device_code,
 };
 pub use events::{
-    append_events, create_event_partitions, delete_facts, deposit_fact, event_kind, load_events,
-    next_month, pending_facts,
+    append_events, create_event_partitions, delete_facts, deposit_fact, event_kind,
+    load_event_page, load_events, next_month, pending_facts,
 };
 pub use memberships::{Membership, forget_memberships_before, memberships_of, record_membership};
 use secrecy::{ExposeSecret, SecretString};

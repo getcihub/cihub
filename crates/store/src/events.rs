@@ -93,13 +93,37 @@ pub async fn load_events(
     queue: QueueId,
     after: i64,
 ) -> Result<Vec<(i64, Event)>, StoreError> {
+    load(conn, queue, after, None).await
+}
+
+/// The first `limit` events of `queue` after `after`.
+///
+/// # Errors
+///
+/// Postgres fails, or a row does not match the events of `cihub-domain`.
+pub async fn load_event_page(
+    conn: &mut PgConnection,
+    queue: QueueId,
+    after: i64,
+    limit: i64,
+) -> Result<Vec<(i64, Event)>, StoreError> {
+    load(conn, queue, after, Some(limit)).await
+}
+
+async fn load(
+    conn: &mut PgConnection,
+    queue: QueueId,
+    after: i64,
+    limit: Option<i64>,
+) -> Result<Vec<(i64, Event)>, StoreError> {
     let rows: Vec<EventRow> = sqlx::query_as(
         "SELECT seq, id, org_id, queue_id, type::text, actor_kind::text, actor_user_id, cause_id,
                 payload, occurred_at
-         FROM events WHERE queue_id = $1 AND seq > $2 ORDER BY seq",
+         FROM events WHERE queue_id = $1 AND seq > $2 ORDER BY seq LIMIT $3",
     )
     .bind(queue.to_string())
     .bind(after)
+    .bind(limit)
     .fetch_all(conn)
     .await
     .map_err(StoreError::Query)?;

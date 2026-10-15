@@ -98,7 +98,8 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   says what is still fresh (`defaultPreloadStaleTime: 0`).
 - The stream `/orgs/{org}/stream` (`src/domain/queue/live.ts`, followed by `src/pages/org/use-queue-news.ts`) invalidates the query keys of the queue that
   changed, gathered over half a second, and every read of the organization each time it opens; it opens again
-  after an error; no polling.
+  after an error; no polling, except the Health of a queue: its facts come a few seconds after the change, so it
+  reads them again every 30 seconds while it is open, and not at each change.
 - A mutation invalidates the keys that it changes in `onSettled`. No optimistic update of the queue: the API
   answers `202` and the queue decides at its next reconciliation; the page shows the request as sent until the
   stream signals the change.
@@ -200,7 +201,7 @@ commit stages, as `cargo fmt` does for the Rust code.
 writes `openapi.json` from the code (`cargo run -p cihub-server --example openapi`) and the client in `src/client`;
 `mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-server --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
-passes each test commit of `acme/api`, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
+passes each test commit of `acme/api` but those that test its #3, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
 comment of a PR at `/sim/comment`.
 
 `mise run web:shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator
@@ -217,4 +218,4 @@ download it and open `index.html`. It gates nothing. Its viewer (`e2e/visual/vie
 `src/`, built as one script, as a page opened from the disk runs no module. The fixtures use the types of `src/client`: a change of the API that they no longer
 follow fails the type check. A new page or a new state adds its view to `views.ts`.
 
-Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d).
+Specs: `specs/API.md`, `specs/SECURITY.md`, `specs/LOTS.md` (lots 10a to 10d, 11a).

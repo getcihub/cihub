@@ -69,6 +69,36 @@ export type AuditList = {
 
 export type CheckConclusion = 'success' | 'neutral' | 'skipped' | 'failure' | 'error' | 'cancelled' | 'timed_out' | 'action_required' | 'stale';
 
+/**
+ * A check over the runs that ended in a period.
+ */
+export type CheckHealth = {
+    /**
+     * The runs where it failed.
+     */
+    failed: number;
+    /**
+     * `check` for a check with a run, `status` for a commit status.
+     */
+    kind: CheckKind;
+    /**
+     * The name of the check or of the status.
+     */
+    name: string;
+    /**
+     * The runs where it passed after it failed on the attempt before.
+     */
+    passed_on_retry: number;
+    /**
+     * A run needs it to pass.
+     */
+    required: boolean;
+    /**
+     * The runs that reported it.
+     */
+    runs: number;
+};
+
 export type CheckKind = 'check' | 'status';
 
 /**
@@ -339,6 +369,65 @@ export type GraphRun = {
      * The status of the run.
      */
     status: RunStatus;
+};
+
+/**
+ * The PRs that ended in an hour or a day of the period.
+ */
+export type HealthBucket = {
+    /**
+     * The PRs that failed in the bucket.
+     */
+    failed: number;
+    /**
+     * The PRs that merged in the bucket.
+     */
+    merged: number;
+    /**
+     * The start of the hour or of the day.
+     */
+    start: string;
+    time_to_merge?: TimeToMerge | null;
+};
+
+/**
+ * The PRs that ended in a period.
+ */
+export type HealthTotals = {
+    /**
+     * The PRs that a person cancelled, or that left the queue on a change of the PR.
+     */
+    cancelled: number;
+    /**
+     * The PRs that failed.
+     */
+    failed: number;
+    /**
+     * The PRs that merged.
+     */
+    merged: number;
+    time_to_merge?: TimeToMerge | null;
+};
+
+/**
+ * The first thing to know about a queue over the period.
+ */
+export type HealthVerdict = {
+    kind: 'quiet';
+} | {
+    kind: 'healthy';
+} | {
+    kind: 'many_failures';
+} | {
+    /**
+     * The name of the check.
+     */
+    check: string;
+    kind: 'check_passes_on_retry';
+    /**
+     * How many times it passed on a retry.
+     */
+    times: number;
 };
 
 /**
@@ -772,6 +861,52 @@ export type QueueChanged = {
 };
 
 /**
+ * What a queue did over a period, against the period of the same length
+ * before it: the PRs that ended, how long they took to merge, why the others
+ * left, and the checks of its runs. A period ends with the hour, or the UTC
+ * day, that holds now.
+ */
+export type QueueHealth = {
+    /**
+     * The period cut in hours (`24h`) or in UTC days (`7d`, `30d`), the oldest first.
+     */
+    buckets: Array<HealthBucket>;
+    /**
+     * The checks of the runs that ended in the period, by name.
+     */
+    checks: Array<CheckHealth>;
+    /**
+     * The PRs that ended in the period.
+     */
+    current: HealthTotals;
+    /**
+     * The start of the period.
+     */
+    from: string;
+    /**
+     * Why the other PRs ended without a merge, the most frequent reason first.
+     */
+    left_without_merge: Array<ReasonCount>;
+    /**
+     * The PRs that ended in the period before.
+     */
+    previous: HealthTotals;
+    /**
+     * The median time that the PRs merged in the period spent in each
+     * state before their merge, in the order of the states.
+     */
+    time_in_states: Array<StateTime>;
+    /**
+     * The end of the period, excluded.
+     */
+    to: string;
+    /**
+     * The first thing to know about the queue over the period.
+     */
+    verdict: HealthVerdict;
+};
+
+/**
  * A page of queues, by repository name then queue name.
  */
 export type QueueList = {
@@ -798,6 +933,28 @@ export type QueueMode = 'single' | 'parallel';
 export type QueueState = 'running' | 'paused' | 'draining' | 'switching_modes';
 
 export type Reason = 'submitted' | 'merge_item_now_ready' | 'test_run_started' | 'failure_budget_retry' | 'manual_push_to_target_branch' | 'prerequisite_merge_item_failed' | 'prerequisite_merge_item_cancelled' | 'prerequisite_merge_item_manually_merged' | 'batch_member_left' | 'tests_restarted_by_user' | 'tests_restarted_by_api_request' | 'skip_the_line_interrupted' | 'bisection_required' | 'bisection_test_run_passed' | 'test_run_passed' | 'successor_test_run_passed' | 'passed_by_optimization' | 'merge_graph_merge' | 'merge_graph_direct_merge' | 'manual_merge' | 'user_requested' | 'admin_requested' | 'pr_closed' | 'pr_pushed_to' | 'pr_base_branch_changed' | 'pr_converted_to_draft' | 'label_removed' | 'not_ready_timeout_expired' | 'start_test_run_invalid_event' | 'start_test_run_merge_conflict' | 'start_test_run_config_parsing_failure' | 'start_test_run_config_bad_version' | 'start_test_run_config_missing_required_statuses' | 'start_test_run_config_bad_required_statuses' | 'start_test_run_no_required_statuses' | 'start_test_run_retry_exhausted' | 'start_test_run_draft_prs_not_allowed' | 'start_test_run_permissions_block_test_branch' | 'test_run_required_status_failed' | 'test_run_timeout' | 'merge_rejected' | 'direct_merge_rejected' | 'merge_rate_limit_exceeded' | 'merge_branch_protection_unmet' | 'merge_already_in_progress' | 'merge_repeated_server_errors' | 'pr_updated_at_merge_time' | 'test_branch_assembled' | 'access_lost' | 'access_restored' | 'mode_changed' | 'mode_switch_completed' | 'queue_draining' | 'queue_switching_modes';
+
+/**
+ * How many PRs ended for a reason.
+ */
+export type ReasonCount = {
+    /**
+     * `failed` or `cancelled`.
+     */
+    conclusion: ItemState;
+    /**
+     * How many PRs ended for this reason.
+     */
+    count: number;
+    /**
+     * The reason for a person, as the comment of a PR gives it.
+     */
+    description: string;
+    /**
+     * Why the PRs ended.
+     */
+    reason: Reason;
+};
 
 /**
  * A repository of the organization.
@@ -1021,6 +1178,21 @@ export type SettingsSummary = {
     merge_method: MergeMethod;
 };
 
+/**
+ * The median time in a state of the PRs merged in a period; a PR that did
+ * not pass through the state counts as 0.
+ */
+export type StateTime = {
+    /**
+     * The median time in the state, in seconds.
+     */
+    median_seconds: number;
+    /**
+     * A state before the merge.
+     */
+    state: ItemState;
+};
+
 export type Strategy = 'sequential' | 'pipelined' | 'batched' | 'parallel';
 
 /**
@@ -1045,6 +1217,20 @@ export type SubmitPr = {
 };
 
 export type SubmittedVia = 'comment' | 'label' | 'api';
+
+/**
+ * The time from the submission of a PR to its merge.
+ */
+export type TimeToMerge = {
+    /**
+     * Half of the PRs merged within this time, in seconds.
+     */
+    median_seconds: number;
+    /**
+     * 90 % of the PRs merged within this time, in seconds.
+     */
+    p90_seconds: number;
+};
 
 /**
  * `PATCH /orgs/{org}/repos/{repo}/queues/{queue}`.
@@ -2227,6 +2413,67 @@ export type GraphResponses = {
 };
 
 export type GraphResponse = GraphResponses[keyof GraphResponses];
+
+export type GetHealthData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+        /**
+         * The name of the queue in the repository.
+         */
+        queue: string;
+    };
+    query?: {
+        /**
+         * The period of the Health of a queue.
+         */
+        range?: '24h' | '7d' | '30d';
+    };
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/health';
+};
+
+export type GetHealthErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `queue_not_found`: The repository has no queue with this name.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type GetHealthError = GetHealthErrors[keyof GetHealthErrors];
+
+export type GetHealthResponses = {
+    /**
+     * The Health of the queue.
+     */
+    200: QueueHealth;
+};
+
+export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
 
 export type ResyncQueueData = {
     body?: never;

@@ -23,8 +23,8 @@ use cihub_mergequeue::{
 use cihub_mq_core::plan;
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, Job, SYNC_INSTALLATION, SYNC_INSTALLATIONS, SYNC_REPOS,
-    begin_reconciliation, claim_jobs, enqueue_job, find_route, mark_dirty,
-    request_installations_sync, request_installations_sync_at_start, run_budget_writer,
+    Subscription, begin_reconciliation, claim_jobs, deliver_all, enqueue_job, find_route,
+    mark_dirty, request_installations_sync, request_installations_sync_at_start, run_budget_writer,
     run_maintenance, run_router, run_worker, store_delivery, sync_installation_executor,
     sync_installations_executor, sync_repos_executor, sync_repos_job,
 };
@@ -33,7 +33,7 @@ use cihub_scm::{
     ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent,
     ScmUser,
 };
-use cihub_store::{begin_system, create_event_partitions};
+use cihub_store::{begin_org, begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
@@ -512,6 +512,8 @@ struct SimQueue {
     loops: Vec<tokio::task::JoinHandle<()>>,
     /// The routes of the module, until a test serves them.
     api: Option<cihub_platform::ModuleApi>,
+    /// What the notifier runs; a test delivers the logs to them.
+    subscriptions: Vec<Subscription>,
 }
 
 fn alice() -> ScmUser {
@@ -616,6 +618,7 @@ impl SimQueue {
         );
         let scheduler = (module.scheduler)(cancel.clone());
         let api = Some(module.api);
+        let subscriptions = module.subscriptions;
         let loops = vec![
             tokio::spawn(async move { worker.await.unwrap() }),
             tokio::spawn(async move { router.await.unwrap() }),
@@ -631,6 +634,14 @@ impl SimQueue {
             cancel,
             loops,
             api,
+            subscriptions,
+        }
+    }
+
+    /// Delivers the logs to the subscriptions, as the notifier does.
+    async fn notify(&self) {
+        for subscription in &self.subscriptions {
+            deliver_all(&self.pool, subscription).await.unwrap();
         }
     }
 
@@ -5855,5 +5866,139 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
         requested_by,
         [serde_json::json!({ "external_id": "71", "login": "grace" })]
     );
+    q.stop().await;
+}
+
+const FACT_TABLES: [&str; 7] = [
+    "an_item_conclusions",
+    "an_state_durations",
+    "an_test_run_results",
+    "an_check_results",
+    "an_hourly_conclusions",
+    "an_hourly_durations",
+    "an_hourly_checks",
+];
+
+async fn facts(pool: &PgPool) -> Vec<Value> {
+    let mut tx = begin_system(pool).await.unwrap();
+    let mut rows = Vec::new();
+    for table in FACT_TABLES {
+        let found: Vec<Value> = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT to_jsonb(t) FROM {table} t ORDER BY to_jsonb(t)::text"
+        )))
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+        rows.extend(found);
+    }
+    rows
+}
+
+/// The Health of a queue reads the facts that its log concludes: a PR that
+/// merged after its check passed on a retry, and a PR that failed. A log
+/// read again counts once, the facts and the hourly aggregate rebuilt from the
+/// log are the same, and another organization reads none.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+
+    // The second PR fails twice: past the failure budget of one retry.
+    for (n, results) in [(1, [false, true]), (2, [false, false])] {
+        submit_new_pr(&sim, &main, n);
+        q.deliver().await;
+        q.settle().await;
+        for passed in results {
+            let (_, test_sha, _) = q.runs_in_progress().await.remove(0);
+            sim.report_check(&repo(), &test_sha, check(REQUIRED, passed))
+                .unwrap();
+            q.deliver().await;
+            q.settle().await;
+            q.deliver().await;
+            q.settle().await;
+        }
+    }
+    q.notify().await;
+
+    let path = "/orgs/acme/repos/app/queues/main/health?range=7d";
+    let (status, health) = call(&addr, &token, "GET", path, None).await;
+
+    assert_eq!(status, 200, "{health}");
+    assert_eq!(health["current"]["merged"], 1);
+    assert_eq!(health["current"]["failed"], 1);
+    assert_eq!(
+        health["verdict"],
+        serde_json::json!({ "kind": "many_failures" })
+    );
+    let buckets = health["buckets"].as_array().unwrap();
+    assert_eq!(buckets.len(), 7);
+    let in_buckets = |field: &str| {
+        buckets
+            .iter()
+            .map(|bucket| bucket[field].as_u64().unwrap())
+            .sum::<u64>()
+    };
+    assert_eq!((in_buckets("merged"), in_buckets("failed")), (1, 1));
+    assert_eq!(health["time_in_states"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        health["left_without_merge"],
+        serde_json::json!([{
+            "conclusion": "failed",
+            "reason": "test_run_required_status_failed",
+            "description": "a required check failed",
+            "count": 1
+        }])
+    );
+    assert_eq!(
+        health["checks"],
+        serde_json::json!([{
+            "name": REQUIRED,
+            "kind": "status",
+            "required": true,
+            "runs": 4,
+            "failed": 3,
+            "passed_on_retry": 1
+        }])
+    );
+
+    let before = facts(&pool).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("DELETE FROM log_cursors")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    q.notify().await;
+
+    assert_eq!(facts(&pool).await, before, "the log read again counts once");
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    for table in FACT_TABLES.iter().rev().chain(&["log_cursors"]) {
+        sqlx::query(AssertSqlSafe(format!("DELETE FROM {table}")))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+    }
+    tx.commit().await.unwrap();
+    q.notify().await;
+
+    assert_eq!(facts(&pool).await, before, "the facts rebuilt from the log");
+    assert_eq!(call(&addr, &token, "GET", path, None).await.1, health);
+
+    let mut tx = begin_org(&pool, OrgId::from_ulid(Ulid(99))).await.unwrap();
+    for table in FACT_TABLES {
+        let seen: i64 = sqlx::query_scalar(AssertSqlSafe(format!("SELECT count(*) FROM {table}")))
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+
+        assert_eq!(seen, 0, "another organization reads {table}");
+    }
     q.stop().await;
 }

@@ -67,7 +67,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 19] = [
+const TENANT_TABLES: [&str; 27] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -87,6 +87,14 @@ const TENANT_TABLES: [&str; 19] = [
     "config_checks",
     "pr_comments",
     "memberships",
+    "log_cursors",
+    "an_item_conclusions",
+    "an_state_durations",
+    "an_test_run_results",
+    "an_check_results",
+    "an_hourly_conclusions",
+    "an_hourly_durations",
+    "an_hourly_checks",
 ];
 
 fn september() -> Date {
@@ -147,7 +155,31 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
              VALUES ('{org}', '{queue}', '[]', '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role, refreshed_at)
-             VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');"
+             VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');
+         INSERT INTO log_cursors (org_id, queue_id, subscription, seq)
+             VALUES ('{org}', '{queue}', 'analytics', 1);
+         INSERT INTO an_item_conclusions (item_id, org_id, queue_id, conclusion, reason,
+                                          submitted_at, concluded_at)
+             VALUES ('item-{n}', '{org}', '{queue}', 'merged', 'merge_graph_merge',
+                     '2026-09-15T00:00:00Z', '2026-09-15T00:10:00Z');
+         INSERT INTO an_state_durations (org_id, queue_id, item_id, pass, state, entered_at,
+                                         left_at, exit_reason)
+             VALUES ('{org}', '{queue}', 'item-{n}', 0, 'pending', '2026-09-15T00:00:00Z',
+                     '2026-09-15T00:10:00Z', 'merge_graph_merge');
+         INSERT INTO an_test_run_results (run_id, org_id, queue_id, group_id, attempt, status,
+                                          reason, started_at, ended_at)
+             VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'succeeded',
+                     'test_run_passed', '2026-09-15T00:00:00Z', '2026-09-15T00:05:00Z');
+         INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion,
+                                       passed_on_retry)
+             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, 'success', false);
+         INSERT INTO an_hourly_conclusions (org_id, queue_id, hour, conclusion, reason, count)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'merged', 'merge_graph_merge', 1);
+         INSERT INTO an_hourly_durations (org_id, queue_id, hour, measure, bucket, count)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'time_to_merge', 67, 1);
+         INSERT INTO an_hourly_checks (org_id, queue_id, hour, name, kind, required, runs,
+                                       failed, passed_on_retry)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'ci', 'check', true, 1, 0, 0);"
     )
 }
 
