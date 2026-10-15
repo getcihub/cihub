@@ -1162,16 +1162,7 @@ fn validity(s: &Snapshot, _: &QueueSettings, _: OffsetDateTime, _: &mut IdGen) -
 /// the SCM, the impacted targets in parallel mode, and the `queue_conditions`
 /// that the job that read the PR found unmet.
 fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReason> {
-    let mut blocks = match pr.mergeability {
-        Mergeability::Mergeable => Vec::new(),
-        Mergeability::Behind => vec![BlockReason::BehindBase],
-        Mergeability::Conflict => vec![BlockReason::MergeConflict],
-        Mergeability::Blocked if pr.review_decision == ReviewDecision::ChangesRequested => {
-            vec![BlockReason::ChangesRequested]
-        }
-        Mergeability::Blocked => blocking_checks(pr),
-        Mergeability::Unknown => vec![BlockReason::Undetermined],
-    };
+    let mut blocks = mergeability_blocks(pr);
 
     let has_targets = s
         .targets
@@ -1181,13 +1172,39 @@ fn readiness_of(s: &Snapshot, item: &Item, pr: &PrObservation) -> Vec<BlockReaso
         blocks.push(BlockReason::Undetermined);
     }
 
-    if !pr.unmet_conditions.is_empty() {
-        blocks.push(BlockReason::QueueConditionsUnmet {
-            conditions: pr.unmet_conditions.clone(),
-        });
-    }
+    blocks.extend(unmet_conditions(pr));
 
     blocks
+}
+
+/// What keeps the PR out of its queue now, submitted or not: the reasons of
+/// `readiness_of` that the PR alone gives.
+#[must_use]
+pub fn conditions_of(pr: &PrObservation) -> Vec<BlockReason> {
+    let mut blocks = mergeability_blocks(pr);
+
+    blocks.extend(unmet_conditions(pr));
+
+    blocks
+}
+
+fn mergeability_blocks(pr: &PrObservation) -> Vec<BlockReason> {
+    match pr.mergeability {
+        Mergeability::Mergeable => Vec::new(),
+        Mergeability::Behind => vec![BlockReason::BehindBase],
+        Mergeability::Conflict => vec![BlockReason::MergeConflict],
+        Mergeability::Blocked if pr.review_decision == ReviewDecision::ChangesRequested => {
+            vec![BlockReason::ChangesRequested]
+        }
+        Mergeability::Blocked => blocking_checks(pr),
+        Mergeability::Unknown => vec![BlockReason::Undetermined],
+    }
+}
+
+fn unmet_conditions(pr: &PrObservation) -> Option<BlockReason> {
+    (!pr.unmet_conditions.is_empty()).then(|| BlockReason::QueueConditionsUnmet {
+        conditions: pr.unmet_conditions.clone(),
+    })
 }
 
 /// The required checks that block a PR: failed, or not concluded yet; else

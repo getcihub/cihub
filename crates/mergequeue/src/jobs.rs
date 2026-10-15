@@ -259,11 +259,41 @@ pub fn queue_status_context(target_branch: &str) -> String {
     format!("CIHub Merge Queue ({target_branch})")
 }
 
-/// The mergeability that the queue sees: a PR blocked only by the status of the
-/// queue itself is mergeable, otherwise a repository that requires this status
+/// The commit status that says whether a PR would enter its queue now
+/// (`specs/GITHUB.md`).
+pub fn conditions_status_context(target_branch: &str) -> String {
+    format!("CIHub Conditions ({target_branch})")
+}
+
+/// Whether `name` is a status that CIHub writes, on any branch.
+pub(crate) fn is_own_context(name: &str) -> bool {
+    ["CIHub Merge Queue (", "CIHub Conditions ("]
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// The statuses that CIHub writes on a PR of `target_branch`: a rule may
+/// require them, and none of them waits for a CI.
+pub(crate) fn own_contexts(target_branch: &str) -> Vec<String> {
+    vec![
+        queue_status_context(target_branch),
+        conditions_status_context(target_branch),
+    ]
+}
+
+/// The mergeability that the queue sees: a PR blocked only by the statuses of
+/// CIHub is mergeable, otherwise a repository that requires one of them
 /// could never enter the queue.
-pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str) -> Mergeability {
-    if pr.mergeability != Mergeability::Blocked || !required.names.contains(own) {
+pub(crate) fn mergeability(
+    pr: &PrSnapshot,
+    required: &RequiredChecks,
+    own: &[String],
+) -> Mergeability {
+    let required_own: Vec<&String> = own
+        .iter()
+        .filter(|name| required.names.contains(*name))
+        .collect();
+    if pr.mergeability != Mergeability::Blocked || required_own.is_empty() {
         return pr.mergeability;
     }
 
@@ -277,10 +307,10 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
     let others_pass = required
         .names
         .iter()
-        .filter(|name| *name != own)
+        .filter(|name| !own.contains(name))
         .all(|name| check_passed(pr, name));
 
-    if others_pass && !check_passed(pr, own) {
+    if others_pass && !required_own.iter().all(|name| check_passed(pr, name)) {
         Mergeability::Mergeable
     } else {
         Mergeability::Blocked
@@ -290,7 +320,7 @@ pub(crate) fn mergeability(pr: &PrSnapshot, required: &RequiredChecks, own: &str
 fn observed(
     pr: &PrSnapshot,
     required: &RequiredChecks,
-    own: &str,
+    own: &[String],
     unmet: Vec<String>,
 ) -> EventKind {
     EventKind::PrObserved {
@@ -307,7 +337,7 @@ fn observed(
         required_checks: required
             .names
             .iter()
-            .filter(|name| *name != own)
+            .filter(|name| !own.contains(name))
             .cloned()
             .collect(),
     }
@@ -501,7 +531,7 @@ pub(crate) async fn refresh(
     let prs = scm
         .pull_requests(&target.repo, &request.prs, job.class)
         .await?;
-    let own = queue_status_context(&target.target_branch);
+    let own = own_contexts(&target.target_branch);
     let mut tx = begin_system(pool).await?;
     let submissions = submissions(&mut tx, target.queue_id, &request.prs).await?;
 
@@ -526,7 +556,7 @@ pub(crate) async fn refresh(
                 let reading = Reading {
                     sender: &sender,
                     rules: &required,
-                    own_status: &own,
+                    own_statuses: &own,
                     class: job.class,
                     now,
                 };
@@ -991,11 +1021,11 @@ pub(crate) async fn submit_pr(
     let required = scm
         .required_checks(&first.repo, &first.target_branch, job.class)
         .await?;
-    let own = queue_status_context(&first.target_branch);
+    let own = own_contexts(&first.target_branch);
     let reading = Reading {
         sender: &sender,
         rules: &required,
-        own_status: &own,
+        own_statuses: &own,
         class: job.class,
         now,
     };
@@ -1057,12 +1087,17 @@ mod tests {
     use crate::target::{test_pr as pr, test_target};
 
     #[test]
-    fn a_pr_blocked_only_by_the_queue_status_is_mergeable() {
-        let own = queue_status_context("main");
-        assert_eq!(own, "CIHub Merge Queue (main)");
+    fn a_pr_blocked_only_by_the_statuses_of_cihub_is_mergeable() {
+        let own = own_contexts("main");
+        assert_eq!(own, ["CIHub Merge Queue (main)", "CIHub Conditions (main)"]);
 
+        let (queue, conditions) = (own[0].as_str(), own[1].as_str());
         let required = RequiredChecks {
-            names: BTreeSet::from(["ci".to_owned(), own.clone()]),
+            names: BTreeSet::from(["ci".to_owned(), queue.to_owned()]),
+            up_to_date: false,
+        };
+        let both_required = RequiredChecks {
+            names: BTreeSet::from(["ci".to_owned(), queue.to_owned(), conditions.to_owned()]),
             up_to_date: false,
         };
         let not_required = RequiredChecks::default();
@@ -1093,8 +1128,22 @@ mod tests {
             ),
             // The queue status passes: something else blocks the PR.
             (
-                pr(blocked, approved, &[("ci", true), (own.as_str(), true)]),
+                pr(blocked, approved, &[("ci", true), (queue, true)]),
                 &required,
+                blocked,
+            ),
+            (
+                pr(blocked, approved, &[("ci", true), (queue, true)]),
+                &both_required,
+                Mergeability::Mergeable,
+            ),
+            (
+                pr(
+                    blocked,
+                    approved,
+                    &[("ci", true), (queue, true), (conditions, true)],
+                ),
+                &both_required,
                 blocked,
             ),
             (

@@ -10,7 +10,7 @@ use cihub_domain::{
     PrState, ReviewDecision,
 };
 use cihub_scm::{
-    CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
+    CommitStatus, ConnectionRef, MAX_OPEN_PRS, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
     RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
     ScmMember, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
 };
@@ -60,6 +60,9 @@ query($owner: String!, $name: String!, $number: Int!) {
 
 /// GitHub lists 3 000 files of a PR at most, 100 per page.
 const FILE_PAGES: u32 = 30;
+
+/// The pages of 100 open PRs that `open_pull_requests` reads at most.
+const OPEN_PR_PAGES: usize = MAX_OPEN_PRS / 100;
 
 const CHECKS_QUERY: &str = "
 query($owner: String!, $name: String!, $sha: GitObjectID!) {
@@ -920,6 +923,38 @@ impl Scm for GithubApp {
                 .json::<Comparison>()?
                 .status;
             Ok(matches!(status.as_str(), "ahead" | "identical"))
+        })
+    }
+
+    fn open_pull_requests<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        base_branch: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, Vec<u64>> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Pull {
+                number: u64,
+            }
+            let mut numbers = Vec::new();
+            for page in 1..=OPEN_PR_PAGES {
+                let rest = format!(
+                    "/pulls?state=open&base={}&sort=created&direction=asc&per_page=100&page={page}",
+                    encode(base_branch)
+                );
+                let pulls: Vec<Pull> = self
+                    .rest_json(repo, class, Method::GET, &rest, None, StatusCode::OK)
+                    .await?;
+                let last = pulls.len() < 100;
+
+                numbers.extend(pulls.into_iter().map(|pull| pull.number));
+                if last {
+                    break;
+                }
+            }
+
+            Ok(numbers)
         })
     }
 

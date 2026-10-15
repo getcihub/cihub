@@ -18,7 +18,8 @@ use cihub_domain::{
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, request_config_checks, wake_uncovered,
+    conditions_status_context, queue_status_context, rebuild, request_config_checks, resync,
+    wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -698,11 +699,23 @@ impl SimQueue {
         stored
     }
 
+    /// Whether a PR whose head is `sha` shows its conditions status.
+    async fn shows_conditions(&self, sha: &str) -> bool {
+        let mut tx = begin_system(&self.pool).await.unwrap();
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pr_conditions WHERE head_sha = $1)")
+            .bind(sha)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap()
+    }
+
     /// Delivers the deliveries of the simulator, then processes each one
     /// again, one at a time: the log of the queue and the jobs stay the same,
     /// except for a PR opened, which is in the queue now and asks one read of
     /// the PR, keyed by the delivery, and the `pr.observed` facts of that
-    /// read. Returns the events of the deliveries.
+    /// read, and for a check on the head of a PR, which shows its conditions
+    /// status now and asks one read of it. Returns the events of the
+    /// deliveries.
     async fn deliver_and_process_again(&mut self) -> Vec<ScmEvent> {
         let first = self.sent + 1;
         self.deliver().await;
@@ -720,6 +733,19 @@ impl SimQueue {
             let is_opened_pr = matches!(event, ScmEvent::PrChanged { opened: true, .. });
             if is_opened_pr {
                 jobs.push(format!("refresh_prs:{}-{id}:1", queue()));
+                jobs.sort();
+            }
+            let observe = format!("observe_pr:{}-{id}-0:1", queue());
+            let reads_a_status = match &event {
+                ScmEvent::CheckChanged { sha, check, .. } => {
+                    check.conclusion.is_some()
+                        && !check.name.starts_with("CIHub ")
+                        && self.shows_conditions(sha).await
+                }
+                _ => false,
+            };
+            if reads_a_status && !jobs.contains(&observe) {
+                jobs.push(observe);
                 jobs.sort();
             }
             assert_eq!(jobs_again, jobs, "{id}");
@@ -1322,7 +1348,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
-        (1, 2, 0, 0, false)
+        (1, 3, 0, 0, false)
     );
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1335,6 +1361,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         keys,
         [
             format!("load_config:{}-{root}:1", queue()),
+            format!("observe_pr:{}-delivery-0-0:1", queue()),
             "submit_pr:delivery-0:1".to_owned()
         ]
     );
@@ -6033,5 +6060,229 @@ async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
 
         assert_eq!(seen, 0, "another organization reads {table}");
     }
+    q.stop().await;
+}
+
+/// The conditions status of a PR on the simulator, as the SCM shows it on
+/// `head`: `None` without one, `Some(None)` while pending.
+async fn conditions_status(sim: &Sim, head: &str) -> Option<Option<CheckConclusion>> {
+    let context = conditions_status_context("main");
+    sim.checks(&repo(), head, JobClass::Repair)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|check| check.name == context)
+        .map(|check| check.conclusion)
+}
+
+/// The description of the conditions status that the PR `number` must show.
+async fn conditions_description(pool: &PgPool, number: u64) -> String {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar(
+        "SELECT desired->>'description' FROM pr_conditions WHERE queue_id = $1 AND pr_number = $2",
+    )
+    .bind(queue().to_string())
+    .bind(i64::try_from(number).unwrap())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap()
+}
+
+async fn event_count(pool: &PgPool) -> i64 {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_scalar("SELECT count(*) FROM events WHERE queue_id = $1")
+        .bind(queue().to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// The exit criterion of lot 9b: a PR shows from its opening whether it
+/// would enter its queue, without a submission and without a fact in the log
+/// of the queue; a submitted PR keeps its status until it closes.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_shows_whether_it_can_enter_its_queue(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    \
+         direct_merge_mode: off\n    queue_conditions:\n      - review-decision = approved\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let events = event_count(&pool).await;
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Failure)),
+        "the review is missing"
+    );
+    assert_eq!(
+        conditions_description(&pool, number).await,
+        "The queue conditions `review-decision = approved` are not met"
+    );
+
+    // The status comes back to an earlier value: it is published again.
+    for (review, want) in [
+        (ReviewDecision::Approved, CheckConclusion::Success),
+        (ReviewDecision::ReviewRequired, CheckConclusion::Failure),
+        (ReviewDecision::Approved, CheckConclusion::Success),
+    ] {
+        sim.change_pr(&repo(), number, PrChange::Review(review))
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+
+        assert_eq!(
+            conditions_status(&sim, &head).await,
+            Some(Some(want)),
+            "{review:?}"
+        );
+    }
+
+    assert_eq!(
+        conditions_description(&pool, number).await,
+        "Ready for the queue"
+    );
+    assert_eq!(event_count(&pool).await, events, "the log does not change");
+
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(current_items(&pool).await[0].1, "testing");
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Success)),
+        "a PR in test still meets its conditions"
+    );
+
+    sim.change_pr(&repo(), number, PrChange::Close).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM pr_conditions")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+
+    assert_eq!(rows, 0, "a closed PR shows no status any more");
+    q.stop().await;
+}
+
+/// Without `status_check_enabled`, a PR shows neither status; a rule that
+/// requires the conditions status is a finding of the check of the
+/// configuration.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config =
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    status_check_enabled: false\n";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let shown: Vec<String> = sim
+        .checks(&repo(), &head, JobClass::Repair)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|check| check.name)
+        .filter(|name| name.starts_with("CIHub "))
+        .collect();
+
+    assert_eq!(current_items(&pool).await.len(), 1, "the PR is submitted");
+    assert!(shown.is_empty(), "{shown:?}");
+
+    let rules = RequiredChecks {
+        names: BTreeSet::from([REQUIRED.to_owned(), conditions_status_context("main")]),
+        up_to_date: false,
+    };
+    sim.set_rules(&repo(), "main", rules).unwrap();
+    resync(&pool, queue(), q.clock.now()).await.unwrap();
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let findings: Value =
+        sqlx::query_scalar("SELECT findings FROM config_checks WHERE queue_id = $1")
+            .bind(queue().to_string())
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+    let codes: Vec<&str> = findings
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|finding| finding["code"].as_str())
+        .collect();
+
+    assert!(codes.contains(&"conditions_status_required"), "{codes:?}");
+    q.stop().await;
+}
+
+/// A required check that runs keeps the conditions status `pending`, not
+/// `failure`; a PR whose opening was lost shows its status after `…/resync`,
+/// which lists the open PRs of the branch.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_running_check_waits_and_resync_finds_a_lost_pr(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, running(REQUIRED)).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(conditions_status(&sim, &head).await, Some(None), "CI runs");
+
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &head).await,
+        Some(Some(CheckConclusion::Success))
+    );
+
+    let (_, lost) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    sim.report_check(&repo(), &lost, check(REQUIRED, false))
+        .unwrap();
+    sim.take_deliveries();
+
+    assert_eq!(conditions_status(&sim, &lost).await, None);
+
+    resync(&pool, queue(), q.clock.now()).await.unwrap();
+    q.settle().await;
+
+    assert_eq!(
+        conditions_status(&sim, &lost).await,
+        Some(Some(CheckConclusion::Failure)),
+        "the failing check of a lost PR"
+    );
     q.stop().await;
 }

@@ -22,7 +22,7 @@ use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
 use crate::config::read_config_file;
-use crate::jobs::{Failure, give_back_facts, job, queue_status_context, read_payload, target_of};
+use crate::jobs::{Failure, give_back_facts, job, own_contexts, read_payload, target_of};
 use crate::target::QueueTarget;
 
 pub(crate) const ASSEMBLE_TEST_BRANCH: &str = "assemble_test_branch";
@@ -194,8 +194,8 @@ pub(crate) async fn required_statuses(
                         .names
                 }
             };
-            let own = queue_status_context(branch);
-            let names: Vec<String> = rules.into_iter().filter(|n| *n != own).collect();
+            let own = own_contexts(branch);
+            let names: Vec<String> = rules.into_iter().filter(|n| !own.contains(n)).collect();
             let source = if names.is_empty() {
                 RequiredStatusesSource::RepoConfig
             } else {
