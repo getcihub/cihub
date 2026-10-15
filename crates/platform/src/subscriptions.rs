@@ -87,13 +87,13 @@ pub async fn run_subscriptions(
 /// Postgres fails, or the subscription fails on a queue: the first error.
 pub async fn deliver_all(pool: &PgPool, subscription: &Subscription) -> Result<(), PlatformError> {
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    // The last event of each queue, read backwards on `events_queue_id_seq`:
+    // an `EXISTS` after the cursor let Postgres read the whole log.
     let behind: Vec<(String, String)> = sqlx::query_as(
         "SELECT q.org_id, q.id FROM queues q
-         WHERE EXISTS (
-             SELECT 1 FROM events e
-             WHERE e.queue_id = q.id
-               AND e.seq > coalesce((SELECT c.seq FROM log_cursors c
-                                     WHERE c.queue_id = q.id AND c.subscription = $1), 0))
+         CROSS JOIN LATERAL (SELECT max(e.seq) AS seq FROM events e WHERE e.queue_id = q.id) last
+         LEFT JOIN log_cursors c ON c.queue_id = q.id AND c.subscription = $1
+         WHERE last.seq > coalesce(c.seq, 0)
          ORDER BY q.id",
     )
     .bind(subscription.name)
