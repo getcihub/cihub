@@ -76,10 +76,10 @@ fn a_direct_merge_lands_without_a_test_branch() {
 }
 
 #[test]
-fn no_direct_merge_by_default_or_with_a_live_group() {
+fn no_direct_merge_when_off_or_with_a_live_group() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
-    assert_eq!(w.state(1), Some(ItemState::Testing), "off by default");
+    assert_eq!(w.state(1), Some(ItemState::Testing), "off");
 
     let mut w = direct();
     w.submit(1, Priority::MEDIUM);

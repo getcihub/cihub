@@ -14,7 +14,7 @@ use cihub_domain::{
 };
 use cihub_mq_core::{Head, TestBranch};
 use cihub_platform::{Job, MAX_ATTEMPTS, error_chain};
-use cihub_scm::{MergeIntoRef, Scm, ScmError};
+use cihub_scm::{MergeIntoRef, RequiredChecks, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -153,12 +153,14 @@ fn required_statuses_of_file(
 /// list of the file of the repository on the target branch at `base_sha`, or
 /// else the rules of the target branch when `branch_protection_injection` lets
 /// them in, without the status of the queue itself; then the checks of the
-/// `merge_conditions`. `settings` gives the injection without a file.
+/// `merge_conditions`. `settings` gives the injection without a file; `rules`
+/// spares the read of the rules to a caller that already has them.
 pub(crate) async fn required_statuses(
     scm: &dyn Scm,
     target: &QueueTarget,
     settings: &QueueSettings,
     base_sha: &str,
+    rules: Option<&RequiredChecks>,
     class: JobClass,
 ) -> Result<(Vec<String>, RequiredStatusesSource), Step> {
     let branch = target.target_branch.as_str();
@@ -184,9 +186,16 @@ pub(crate) async fn required_statuses(
             (Vec::new(), RequiredStatusesSource::RepoConfig)
         }
         None => {
-            let rules = scm.required_checks(&target.repo, branch, class).await?;
+            let rules = match rules {
+                Some(rules) => rules.names.clone(),
+                None => {
+                    scm.required_checks(&target.repo, branch, class)
+                        .await?
+                        .names
+                }
+            };
             let own = queue_status_context(branch);
-            let names: Vec<String> = rules.names.into_iter().filter(|n| *n != own).collect();
+            let names: Vec<String> = rules.into_iter().filter(|n| *n != own).collect();
             let source = if names.is_empty() {
                 RequiredStatusesSource::RepoConfig
             } else {
@@ -294,6 +303,7 @@ impl Assembly<'_> {
             self.target,
             self.settings,
             &self.request.base_sha,
+            None,
             self.class,
         )
         .await
@@ -599,7 +609,6 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_scm::RequiredChecks;
     use cihub_scm::sim::{Fault, Sim, bot};
     use ulid::Ulid;
 

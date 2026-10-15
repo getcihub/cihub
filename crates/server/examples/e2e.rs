@@ -47,6 +47,10 @@ const ADDR: &str = "127.0.0.1:18090";
 const PUBLIC_URL: &str = "http://127.0.0.1:18090";
 const DATABASE: &str = "cihub_e2e";
 const REQUIRED: &str = "ci";
+/// The file of `acme/web`: its queue tests every PR, so that the pages show
+/// runs.
+const WEB_CONFIG: &str =
+    "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n";
 
 /// The deliveries of the simulator, by the identifier that their stored
 /// payload holds.
@@ -210,8 +214,14 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
              INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{n}000', '{slug}', '{repo}', 'main');
-             INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');"
+             INSERT INTO queues (id, org_id, repo_id, target_branch, name, config_text)
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main', {config_text});",
+            // The queue has read its file, as after its first push.
+            config_text = if repo == "web" {
+                format!("'{WEB_CONFIG}'")
+            } else {
+                "NULL".to_owned()
+            },
         )))
         .execute(&mut *tx)
         .await?;
@@ -263,7 +273,11 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 
     for name in ["web", "api"] {
         let repo = acme_repo(name).ok_or("unknown repository")?;
-        sim.add_repo(&repo, "main", &[("README.md", name)]);
+        let mut files = vec![("README.md", name)];
+        if name == "web" {
+            files.push((".cihub.yaml", WEB_CONFIG));
+        }
+        sim.add_repo(&repo, "main", &files);
         let rules = RequiredChecks {
             names: [REQUIRED.to_owned()].into(),
             up_to_date: false,

@@ -10,10 +10,10 @@ use cihub_api_types::QueueAccess;
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
     Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
-    ConflictCulprit, ConnectionId, ConnectionKind, Event, EventId, EventKind, ItemState, JobClass,
-    MembershipRole, Mergeability, OrgId, Permission, PrState, Priority, QueueControl, QueueId,
-    Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SessionId, Strategy,
-    SubmittedVia, UserId, temp_branch,
+    ConflictCulprit, ConnectionId, ConnectionKind, DirectMergeMode, Event, EventId, EventKind,
+    ItemState, JobClass, MembershipRole, Mergeability, OrgId, Permission, PrState, Priority,
+    QueueControl, QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId,
+    RunStatus, SessionId, Strategy, SubmittedVia, UserId, temp_branch,
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
@@ -141,6 +141,7 @@ impl World {
 
         let layer = Layer {
             failure_budget_retries: Some(Setting::new(0)),
+            direct_merge_mode: Some(Setting::new(DirectMergeMode::Off)),
             ..Layer::default()
         };
         let mut tx = begin_system(&pool).await.unwrap();
@@ -944,7 +945,11 @@ fn check(name: &str, passed: bool) -> CheckReport {
 async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let root = sim.add_repo(&repo(), "main", &[("a.txt", "a")]);
+    let root = sim.add_repo(
+        &repo(),
+        "main",
+        &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)],
+    );
     let own = queue_status_context("main");
     let rules = RequiredChecks {
         names: BTreeSet::from([REQUIRED.to_owned(), own]),
@@ -955,6 +960,14 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
 
     sim.set_permission(&repo(), &alice(), Permission::Write)
         .unwrap();
+
+    // The push makes the queue read its file.
+    let main = sim
+        .commit(&repo(), &root, &[("README.md", Some("cihub"))])
+        .unwrap();
+    sim.push(&repo(), "main", &main, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
 
     let ready = |_: &Sim, _: u64, _: &str| {};
     let failing = |sim: &Sim, _: u64, head: &str| {
@@ -1484,6 +1497,10 @@ fn open_pr_with(sim: &Sim, parent: &str, n: u64, files: &[(&str, Option<&str>)])
     (sim.open_pr(&repo(), &branch, "main", &bob()).unwrap(), head)
 }
 
+/// A file whose queue tests every PR: these tests follow the test path.
+const TEST_PATH: &str =
+    "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n";
+
 /// A repository on the simulator whose queue knows the head of `main`,
 /// requires `ci`, and lets alice submit. Returns the head of `main`.
 fn target_repo(sim: &Sim, files: &[(&str, &str)]) -> String {
@@ -1550,7 +1567,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
     let mut heads: HashMap<String, u64> = HashMap::new();
@@ -1813,7 +1830,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
 async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
     let submit = |n: u64| {
         let path = format!("f{n}.txt");
         let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
@@ -1823,6 +1840,8 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
             .unwrap();
     };
 
+    q.deliver().await;
+    q.settle().await;
     submit(1);
 
     sim.fail(Fault {
@@ -1913,7 +1932,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2277,7 +2296,7 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    resubmit_on_push: true\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2368,7 +2387,7 @@ async fn item_state(pool: &PgPool, number: u64) -> String {
 async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
 
     q.deliver().await;
     q.settle().await;
@@ -2431,7 +2450,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
 
     q.deliver().await;
     q.settle().await;
@@ -2493,7 +2512,7 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
 async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
 
     q.deliver().await;
     q.settle().await;
@@ -2997,7 +3016,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3096,7 +3115,7 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3147,7 +3166,7 @@ async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3254,7 +3273,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3581,7 +3600,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -3669,7 +3688,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
 async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
 
     q.deliver().await;
     q.settle().await;
@@ -3833,7 +3852,7 @@ async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    \
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    \
          failure_budget: {{ retries: 0 }}\n    pending_failure_depth: 1\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
@@ -3895,7 +3914,7 @@ async fn cancel_and_restart_by_pr_number_act_on_the_current_item(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -4369,7 +4388,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n"
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -4495,7 +4514,7 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     let file =
         |body: &str| format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}");
     let strict = file(&format!(
-        "    required_statuses: [{REQUIRED}]\n    queue_conditions:\n      - label = ready\n"
+        "    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n"
     ));
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &strict)]);
 
@@ -4884,7 +4903,10 @@ fn submit_new_pr(sim: &Sim, main: &str, n: u64) -> u64 {
 async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
 
     for n in 1..=2 {
         assert_eq!(open_green_pr(&sim, &main, n), n);
@@ -4960,7 +4982,10 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
 async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
 
     for n in 1..=2 {
         assert_eq!(open_green_pr(&sim, &main, n), n);
@@ -5043,7 +5068,10 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
 async fn the_reads_repair_what_lost_webhooks_leave(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
-    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", TEST_PATH)]);
+
+    q.deliver().await;
+    q.settle().await;
 
     submit_new_pr(&sim, &main, 1);
     q.deliver().await;
@@ -5165,8 +5193,8 @@ const CHAOS_PRS: u64 = 5;
 /// webhooks lost, sent twice and reordered.
 struct Chaos {
     seed: u64,
-    /// The `.cihub.yaml` of the repository; `None` keeps the defaults.
-    config: Option<&'static str>,
+    /// The `.cihub.yaml` of the repository.
+    config: &'static str,
     pool: PgPool,
     sim: Arc<Sim>,
     clock: TestClock,
@@ -5205,7 +5233,7 @@ impl Chaos {
         }
     }
 
-    async fn new(pool: PgPool, seed: u64, clock: TestClock, config: Option<&'static str>) -> Self {
+    async fn new(pool: PgPool, seed: u64, clock: TestClock, config: &'static str) -> Self {
         let mut chaos = Self {
             seed,
             config,
@@ -5232,12 +5260,14 @@ impl Chaos {
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
                          '{name}', 'main');
-             INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main');",
+             INSERT INTO queues (id, org_id, repo_id, target_branch, name, config_text)
+                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', 'main', '{config_text}');",
             org = chaos.org(),
             connection = repo.connection.id,
             connection_external_id = repo.connection.external_id,
             repo_id = RepoId::from_ulid(chaos.id(5)),
+            // The queue has read its file, as after its first push.
+            config_text = config,
             repo_external_id = repo.external_id,
             name = repo.name,
             queue = chaos.queue(),
@@ -5483,11 +5513,11 @@ impl Chaos {
     async fn play(&mut self) {
         let repo = self.repo();
         let sim = self.sim.clone();
-        let mut files = vec![("a.txt", "a")];
-
-        files.extend(self.config.map(|config| (".cihub.yaml", config)));
-
-        let root = sim.add_repo(&repo, "main", &files);
+        let root = sim.add_repo(
+            &repo,
+            "main",
+            &[("a.txt", "a"), (".cihub.yaml", self.config)],
+        );
         let rules = RequiredChecks {
             names: BTreeSet::from([REQUIRED.to_owned()]),
             up_to_date: false,
@@ -5644,10 +5674,16 @@ impl Chaos {
 /// and processes killed at random, each green PR is merged exactly once, in the
 /// order of the queue, and each red PR fails with a reason. `CIHUB_SIM_SEEDS`
 /// gives the number of seeds (10 by default; `mise run sim` plays 1 000, for
-/// this test and the `batched` one).
+/// this test and the `batched` one). Direct merge is `off`: a red PR is green
+/// on its own head and red only on its test commits, which a direct merge
+/// does not run.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn fault_injection(pool: PgPool) {
-    play_chaos(pool, None).await;
+    play_chaos(
+        pool,
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    direct_merge_mode: off\n",
+    )
+    .await;
 }
 
 /// The same test with the `batched` strategy (lot 12): batches, bisections,
@@ -5656,7 +5692,7 @@ async fn fault_injection(pool: PgPool) {
 async fn fault_injection_batched(pool: PgPool) {
     play_chaos(
         pool.clone(),
-        Some("version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n"),
+        "version: 1\nqueues:\n  - name: main\n    branch: main\n    strategy: batched\n    direct_merge_mode: off\n",
     )
     .await;
 
@@ -5675,7 +5711,7 @@ async fn fault_injection_batched(pool: PgPool) {
     );
 }
 
-async fn play_chaos(pool: PgPool, config: Option<&'static str>) {
+async fn play_chaos(pool: PgPool, config: &'static str) {
     let seeds: u64 = std::env::var("CIHUB_SIM_SEEDS")
         .ok()
         .and_then(|seeds| seeds.parse().ok())

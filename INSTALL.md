@@ -141,8 +141,9 @@ Rules of the file (version 1):
   (default true), `state_labels_enabled`, `resubmit_on_push` (default false).
 - `label_commands: { enabled: true, enqueue_label: <label> }`: a label that
   submits the pull request (default `cihub-merge-queue-submit`).
-- `direct_merge_mode`: `off` (default) or `always` (when no test runs, merge
-  the first pull request without a test branch).
+- `direct_merge_mode`: `always` (default: when no test runs, merge the first
+  pull request without a test branch if it contains the head of the target
+  branch and its checks are green) or `off`.
 - `branch_protection_injection`: `both` (default), `merge` or `none`: whether
   the checks required by the branch rules also count before admission and on
   the test commit.
