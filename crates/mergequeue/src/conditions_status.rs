@@ -20,7 +20,7 @@ use crate::jobs::{
     Failure, conditions_status_context, job, mergeability, own_contexts, read_payload, target_of,
     window,
 };
-use crate::surfaces::{StatusState, block_text, capitalized, hash, truncate};
+use crate::surfaces::{StatusState, block_text, capitalized, hash, lock_pr, truncate};
 use crate::target::QueueTarget;
 
 pub(crate) const OBSERVE_PR: &str = "observe_pr";
@@ -29,20 +29,20 @@ pub(crate) const PUBLISH_CONDITIONS: &str = "publish_conditions";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct ObservePr {
-    pub prs: Vec<u64>,
+    prs: Vec<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct PublishConditions {
-    pub pr_number: i64,
+    pr_number: i64,
 }
 
 /// The status a PR must show, on its head.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct ConditionsStatus {
-    pub sha: String,
-    pub state: StatusState,
-    pub description: String,
+    sha: String,
+    state: StatusState,
+    description: String,
 }
 
 /// The reads of `prs` after `subject`, a delivery or a moment, by chunks of
@@ -406,17 +406,9 @@ pub(crate) async fn publish(
     let request: PublishConditions = read_payload(job)?;
     let target = target_of(pool, job).await?;
     let mut lock = begin_system(pool).await?;
-    let is_locked: bool =
-        sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtext($1), $2::integer)")
-            .bind(format!("pr_conditions:{}", target.queue_id))
-            .bind(request.pr_number)
-            .fetch_one(&mut *lock)
-            .await?;
-    if !is_locked {
-        return Err(Failure::Retry(
-            "another job publishes the status of this PR".into(),
-        ));
-    }
+    let scope = format!("pr_conditions:{}", target.queue_id);
+
+    lock_pr(&mut lock, &scope, request.pr_number).await?;
 
     let row: Option<(serde_json::Value, String, Option<String>)> = sqlx::query_as(
         "SELECT desired, desired_hash, published_hash FROM pr_conditions

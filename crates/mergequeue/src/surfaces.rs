@@ -812,7 +812,7 @@ pub(crate) async fn publish(
     let target = target_of(pool, job).await?;
     let mut lock = begin_system(pool).await?;
 
-    lock_comment(&mut lock, target.repo_id, request.pr_number).await?;
+    lock_pr(&mut lock, &comment_lock(target.repo_id), request.pr_number).await?;
 
     let row: Option<SurfaceRow> = sqlx::query_as(
         "SELECT s.desired, s.desired_hash, s.published_hash, c.comment_external_id
@@ -886,27 +886,31 @@ pub(crate) async fn publish(
     Ok(())
 }
 
-/// Takes the lock of the comment of the PR `pr_number` of `repo` for the
-/// transaction: one job at a time writes the comment of a PR, whatever its
-/// queue.
-async fn lock_comment(
+/// Takes the lock `scope` of the PR `pr_number` for the transaction: one job
+/// at a time writes what `scope` names on a PR.
+pub(crate) async fn lock_pr(
     conn: &mut PgConnection,
-    repo: RepoId,
+    scope: &str,
     pr_number: i64,
 ) -> Result<(), Failure> {
     let locked: bool =
         sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtext($1), $2::integer)")
-            .bind(format!("pr_comments:{repo}"))
+            .bind(scope)
             .bind(pr_number)
             .fetch_one(conn)
             .await?;
     if locked {
         Ok(())
     } else {
-        Err(Failure::Retry(
-            "another job writes the comment of this PR".into(),
-        ))
+        Err(Failure::Retry(format!(
+            "another job holds the lock `{scope}` of this PR"
+        )))
     }
+}
+
+/// The lock of the comment of a PR of `repo`, whatever its queue.
+fn comment_lock(repo: RepoId) -> String {
+    format!("pr_comments:{repo}")
 }
 
 /// Keeps `id` as the comment of the PR.
@@ -1606,7 +1610,7 @@ pub(crate) async fn post_welcome(
     }
 
     let number = i64::try_from(request.pr_number).unwrap_or(i64::MAX);
-    lock_comment(&mut lock, target.repo_id, number).await?;
+    lock_pr(&mut lock, &comment_lock(target.repo_id), number).await?;
 
     let known: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM pr_comments WHERE repo_id = $1 AND pr_number = $2)",
