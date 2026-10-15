@@ -90,6 +90,10 @@ async function openView(context: BrowserContext, view: View, theme: Theme): Prom
   await view.act?.(page);
   // The cards and rows slide to their place once the reads settle.
   await page.waitForTimeout(400);
+  // A full-page capture draws the sticky header where the page is scrolled: an action can scroll it.
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
   return page;
 }
 

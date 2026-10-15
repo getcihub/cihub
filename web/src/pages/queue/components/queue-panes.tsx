@@ -25,6 +25,7 @@ export function QueuePanes({ path, pane, live }: { path: QueuePath; pane: Pane; 
           to="/orgs/$org/repos/$repo/queues/$queue"
           params={path}
           search={{ pane: candidate }}
+          resetScroll={false}
           aria-current={candidate === pane ? "page" : undefined}
         >
           {PANE_LABELS[candidate].icon}

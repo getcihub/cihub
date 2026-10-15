@@ -111,6 +111,7 @@ export function ItemTabs({
               to="/orgs/$org/repos/$repo/queues/$queue"
               params={path}
               search={{ tab: candidate }}
+              resetScroll={false}
               aria-current={candidate === tab ? "page" : undefined}
             >
               {TAB_LABELS[candidate]}
