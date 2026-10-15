@@ -5869,11 +5869,14 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
     q.stop().await;
 }
 
-const FACT_TABLES: [&str; 4] = [
+const FACT_TABLES: [&str; 7] = [
     "an_item_conclusions",
     "an_state_durations",
     "an_test_run_results",
     "an_check_results",
+    "an_hourly_conclusions",
+    "an_hourly_durations",
+    "an_hourly_checks",
 ];
 
 async fn facts(pool: &PgPool) -> Vec<Value> {
@@ -5892,8 +5895,9 @@ async fn facts(pool: &PgPool) -> Vec<Value> {
 }
 
 /// The Health of a queue reads the facts that its log concludes: a PR that
-/// merged after its check passed on a retry, and a PR that failed. The facts
-/// rebuilt from the log are the same, and another organization reads none.
+/// merged after its check passed on a retry, and a PR that failed. A log
+/// read again counts once, the facts and the hourly aggregate rebuilt from the
+/// log are the same, and another organization reads none.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
@@ -5964,6 +5968,16 @@ async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
     );
 
     let before = facts(&pool).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("DELETE FROM log_cursors")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    q.notify().await;
+
+    assert_eq!(facts(&pool).await, before, "the log read again counts once");
+
     let mut tx = begin_system(&pool).await.unwrap();
     for table in FACT_TABLES.iter().rev().chain(&["log_cursors"]) {
         sqlx::query(AssertSqlSafe(format!("DELETE FROM {table}")))

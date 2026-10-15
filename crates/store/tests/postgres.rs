@@ -67,7 +67,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 24] = [
+const TENANT_TABLES: [&str; 27] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -92,6 +92,9 @@ const TENANT_TABLES: [&str; 24] = [
     "an_state_durations",
     "an_test_run_results",
     "an_check_results",
+    "an_hourly_conclusions",
+    "an_hourly_durations",
+    "an_hourly_checks",
 ];
 
 fn september() -> Date {
@@ -167,8 +170,16 @@ fn rows(org: OrgId, n: u8) -> String {
                                           reason, started_at, ended_at)
              VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'succeeded',
                      'test_run_passed', '2026-09-15T00:00:00Z', '2026-09-15T00:05:00Z');
-         INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion)
-             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, 'success');"
+         INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion,
+                                       passed_on_retry)
+             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, 'success', false);
+         INSERT INTO an_hourly_conclusions (org_id, queue_id, hour, conclusion, reason, count)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'merged', 'merge_graph_merge', 1);
+         INSERT INTO an_hourly_durations (org_id, queue_id, hour, measure, bucket, count)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'time_to_merge', 67, 1);
+         INSERT INTO an_hourly_checks (org_id, queue_id, hour, name, kind, required, runs,
+                                       failed, passed_on_retry)
+             VALUES ('{org}', '{queue}', '2026-09-15T00:00:00Z', 'ci', 'check', true, 1, 0, 0);"
     )
 }
 

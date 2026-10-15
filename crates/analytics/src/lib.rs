@@ -1,12 +1,14 @@
 //! Analytics of the queues (`specs/ANALYTICS.md`): the facts that the log of a
 //! queue concludes (an ended item, its passes through the states, an ended run
-//! and its checks), written in the `an_*` tables from the events only, and the
-//! Health of a queue read from them. It reads no projection, so that a replay
-//! of the log writes the same facts; it does not choose when the facts are
-//! written: the subscription of the merge queue does.
+//! and its checks), written in the `an_*` tables from the events only, with
+//! the hourly aggregate of each queue, and the Health of a queue read from
+//! that aggregate. It reads no projection, so that a replay of the log writes
+//! the same facts; it does not choose when the facts are written: the
+//! subscription of the merge queue does.
 
 mod facts;
 mod health;
+mod hourly;
 
 pub use facts::{SUBSCRIPTION, record_facts};
 pub use health::{Bucket, CheckHealth, Health, Period, TimeToMerge, Totals, Verdict, queue_health};

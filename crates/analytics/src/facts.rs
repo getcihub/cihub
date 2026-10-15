@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cihub_domain::{
     CheckConclusion, CheckKind, CheckReport, Event, EventKind, GroupId, ItemId, ItemState, OrgId,
@@ -7,17 +7,21 @@ use cihub_domain::{
 use cihub_store::event_kind;
 use serde_json::Value;
 use sqlx::PgConnection;
+use strum::IntoEnumIterator;
 use time::OffsetDateTime;
 
 use crate::AnalyticsError;
+use crate::hourly::{Increments, LIVE_STATES, TIME_TO_MERGE};
 
 /// The key of the cursors of the facts in `log_cursors`.
 pub const SUBSCRIPTION: &str = "analytics";
 
 /// Writes the facts that `events`, a page of the log of one queue in its
-/// order, conclude: an ended item, an ended run. The caller advances its
+/// order, conclude: an ended item, an ended run, and adds the facts that it
+/// writes to the hourly aggregate of the queue. The caller advances its
 /// cursor in the same transaction, so that each fact is written once; a fact
-/// already written, after a cursor read the log again, stays as it is.
+/// already written, after a cursor read the log again, stays as it is and
+/// counts once.
 ///
 /// A page costs a fixed number of queries, whatever it concludes: a query
 /// per fact was most of the time of a notifier that catches up.
@@ -29,6 +33,10 @@ pub async fn record_facts(
     conn: &mut PgConnection,
     events: &[(i64, Event)],
 ) -> Result<(), AnalyticsError> {
+    let Some((_, first)) = events.first() else {
+        return Ok(());
+    };
+
     let mut items = Vec::new();
     let mut runs = Vec::new();
     for (seq, event) in events {
@@ -43,8 +51,11 @@ pub async fn record_facts(
         }
     }
 
-    record_items(conn, &items).await?;
-    record_runs(conn, &runs).await
+    let mut hourly = Increments::default();
+    record_items(conn, &items, &mut hourly).await?;
+    record_runs(conn, &runs, &mut hourly).await?;
+
+    hourly.write(conn, (first.org_id, first.queue_id)).await
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,6 +81,17 @@ struct ItemFacts {
     submitted_at: OffsetDateTime,
     concluded_at: OffsetDateTime,
     passes: Vec<StatePass>,
+}
+
+impl ItemFacts {
+    /// The seconds that the item spent in `state`, over its passes.
+    fn seconds_in(&self, state: ItemState) -> i64 {
+        self.passes
+            .iter()
+            .filter(|pass| pass.state == state)
+            .map(|pass| (pass.left_at - pass.entered_at).whole_seconds())
+            .sum()
+    }
 }
 
 /// The facts of an item from its transitions, its creation first. `None` when
@@ -166,6 +188,7 @@ impl ItemRows {
 async fn record_items(
     conn: &mut PgConnection,
     items: &[(ItemId, &Event)],
+    hourly: &mut Increments,
 ) -> Result<(), AnalyticsError> {
     let Some((_, first)) = items.first() else {
         return Ok(());
@@ -174,29 +197,52 @@ async fn record_items(
     let ids: Vec<String> = items.iter().map(|(item, _)| item.to_string()).collect();
     let mut transitions = transitions(conn, &ids).await?;
     let mut rows = ItemRows::default();
+    let mut ended = Vec::new();
     for id in ids {
         let facts = transitions.remove(&id).and_then(|found| item_facts(&found));
         if let Some(facts) = facts {
-            rows.push(id, &facts);
+            rows.push(id.clone(), &facts);
+            ended.push((id, facts));
         }
     }
+    let written = write_items(conn, (first.org_id, first.queue_id), &rows).await?;
 
-    write_items(conn, (first.org_id, first.queue_id), &rows).await
+    for (_, facts) in ended.iter().filter(|(id, _)| written.contains(id)) {
+        count_item(hourly, facts);
+    }
+    Ok(())
 }
 
+/// Counts an ended item in the hour of its end; a merged one adds its time to
+/// merge and its time in each live state, 0 for a state that it skipped.
+fn count_item(hourly: &mut Increments, facts: &ItemFacts) {
+    hourly.add_conclusion(facts.concluded_at, facts.conclusion, facts.reason);
+    if facts.conclusion != ItemState::Merged {
+        return;
+    }
+
+    let time_to_merge = (facts.concluded_at - facts.submitted_at).whole_seconds();
+    hourly.add_duration(facts.concluded_at, TIME_TO_MERGE, time_to_merge);
+    for state in LIVE_STATES {
+        hourly.add_duration(facts.concluded_at, state.as_str(), facts.seconds_in(state));
+    }
+}
+
+/// Writes the rows, and returns the items that were not written yet.
 async fn write_items(
     conn: &mut PgConnection,
     (org, queue): (OrgId, QueueId),
     rows: &ItemRows,
-) -> Result<(), AnalyticsError> {
-    sqlx::query(
+) -> Result<HashSet<String>, AnalyticsError> {
+    let written: Vec<String> = sqlx::query_scalar(
         "INSERT INTO an_item_conclusions (item_id, org_id, queue_id, conclusion, reason,
                                           submitted_at, concluded_at)
          SELECT r.item_id, $1, $2, r.conclusion::item_state, r.reason::reason, r.submitted_at,
                 r.concluded_at
          FROM unnest($3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::timestamptz[])
               AS r (item_id, conclusion, reason, submitted_at, concluded_at)
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT DO NOTHING
+         RETURNING item_id",
     )
     .bind(org.to_string())
     .bind(queue.to_string())
@@ -205,7 +251,7 @@ async fn write_items(
     .bind(&rows.reason)
     .bind(&rows.submitted_at)
     .bind(&rows.concluded_at)
-    .execute(&mut *conn)
+    .fetch_all(&mut *conn)
     .await?;
     sqlx::query(
         "INSERT INTO an_state_durations (org_id, queue_id, item_id, pass, state, entered_at,
@@ -227,7 +273,7 @@ async fn write_items(
     .bind(&rows.exit_reason)
     .execute(&mut *conn)
     .await?;
-    Ok(())
+    Ok(written.into_iter().collect())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -236,7 +282,17 @@ struct CheckFact {
     kind: CheckKind,
     required: bool,
     conclusion: Option<CheckConclusion>,
+    /// It passed, and failed on the attempt before of the same group.
+    passed_on_retry: bool,
 }
+
+fn is_failed(conclusion: Option<CheckConclusion>) -> bool {
+    conclusion.is_some_and(|conclusion| !conclusion.is_passing())
+}
+
+/// A check of an attempt of a group: the group, the attempt, the name and
+/// the kind of the check.
+type CheckKey = (String, i64, String, &'static str);
 
 /// The last report of each check, in the order of their names.
 fn last_reports(required_statuses: &[String], reports: Vec<CheckReport>) -> Vec<CheckFact> {
@@ -250,8 +306,87 @@ fn last_reports(required_statuses: &[String], reports: Vec<CheckReport>) -> Vec<
             name,
             kind,
             conclusion,
+            passed_on_retry: false,
         })
         .collect()
+}
+
+/// The checks that failed in the runs of `groups` already written.
+async fn failed_checks(
+    conn: &mut PgConnection,
+    groups: &[String],
+) -> Result<HashSet<CheckKey>, AnalyticsError> {
+    let failing: Vec<&str> = CheckConclusion::iter()
+        .filter(|conclusion| !conclusion.is_passing())
+        .map(CheckConclusion::as_str)
+        .collect();
+    let rows: Vec<(String, i64, String, String)> = sqlx::query_as(
+        "SELECT r.group_id, r.attempt::bigint, k.name, k.kind::text
+         FROM an_test_run_results r
+         JOIN an_check_results k ON k.run_id = r.run_id
+         WHERE r.group_id = ANY ($1) AND k.conclusion::text = ANY ($2)",
+    )
+    .bind(groups)
+    .bind(&failing)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    let kinds: HashMap<String, CheckKind> = CheckKind::iter()
+        .map(|kind| (kind.as_str().to_owned(), kind))
+        .collect();
+    Ok(rows
+        .into_iter()
+        .filter_map(|(group, attempt, name, kind)| {
+            kinds
+                .get(&kind)
+                .map(|kind| (group, attempt, name, kind.as_str()))
+        })
+        .collect())
+}
+
+/// The checks that a run counts, each marked when it passed after it failed
+/// on the attempt before; adds its failures to `failed`, for the attempt
+/// after it in the same page.
+fn checks_of(
+    start: &RunStart,
+    ended: i64,
+    reports: &[(i64, String, CheckReport)],
+    failed: &mut HashSet<CheckKey>,
+) -> Vec<CheckFact> {
+    let Some(assembly) = &start.assembly else {
+        return Vec::new();
+    };
+
+    let group = start.group_id.to_string();
+    let attempt = i64::from(start.attempt);
+    let mut checks = last_reports(
+        &assembly.required_statuses,
+        reports_of(assembly, ended, reports),
+    );
+    for check in &mut checks {
+        let before = (
+            group.clone(),
+            attempt - 1,
+            check.name.clone(),
+            check.kind.as_str(),
+        );
+        check.passed_on_retry =
+            check.conclusion.is_some_and(CheckConclusion::is_passing) && failed.contains(&before);
+    }
+    failed.extend(
+        checks
+            .iter()
+            .filter(|check| is_failed(check.conclusion))
+            .map(|check| {
+                (
+                    group.clone(),
+                    attempt,
+                    check.name.clone(),
+                    check.kind.as_str(),
+                )
+            }),
+    );
+    checks
 }
 
 /// The test commit, the required statuses and the sequence number of the
@@ -402,21 +537,23 @@ struct RunRows {
     kind: Vec<&'static str>,
     required: Vec<bool>,
     conclusion: Vec<Option<&'static str>>,
+    passed_on_retry: Vec<bool>,
 }
 
 impl RunRows {
-    fn push(&mut self, run: String, start: &RunStart, end: &Event, checks: Vec<CheckFact>) {
+    fn push(&mut self, run: String, start: &RunStart, end: &Event, checks: &[CheckFact]) {
         let EventKind::RunTransitioned { to, reason, .. } = &end.kind else {
             return;
         };
 
         for check in checks {
             self.check_run_id.push(run.clone());
-            self.name.push(check.name);
+            self.name.push(check.name.clone());
             self.kind.push(check.kind.as_str());
             self.required.push(check.required);
             self.conclusion
                 .push(check.conclusion.map(CheckConclusion::as_str));
+            self.passed_on_retry.push(check.passed_on_retry);
         }
         self.run_id.push(run);
         self.group_id.push(start.group_id.to_string());
@@ -431,6 +568,7 @@ impl RunRows {
 async fn record_runs(
     conn: &mut PgConnection,
     runs: &[(i64, RunId, &Event)],
+    hourly: &mut Increments,
 ) -> Result<(), AnalyticsError> {
     let (Some((_, _, first)), Some((last_seq, _, _))) = (runs.first(), runs.last()) else {
         return Ok(());
@@ -439,29 +577,43 @@ async fn record_runs(
     let ids: Vec<String> = runs.iter().map(|(_, run, _)| run.to_string()).collect();
     let starts = run_starts(conn, &ids).await?;
     let reports = reports(conn, first.queue_id, &starts, *last_seq).await?;
+    let groups: Vec<String> = starts
+        .values()
+        .map(|start| start.group_id.to_string())
+        .collect();
+    let mut failed = failed_checks(conn, &groups).await?;
     let mut rows = RunRows::default();
-    for ((ended, _, end), id) in runs.iter().zip(ids) {
+    let mut ended = Vec::new();
+    for ((seq, _, end), id) in runs.iter().zip(ids) {
         let Some(start) = starts.get(&id) else {
             continue;
         };
-        let checks = start.assembly.as_ref().map_or_else(Vec::new, |assembly| {
-            last_reports(
-                &assembly.required_statuses,
-                reports_of(assembly, *ended, &reports),
-            )
-        });
-        rows.push(id, start, end, checks);
+        let checks = checks_of(start, *seq, &reports, &mut failed);
+        rows.push(id.clone(), start, end, &checks);
+        ended.push((id, end.occurred_at, checks));
     }
+    let written = write_runs(conn, (first.org_id, first.queue_id), &rows).await?;
 
-    write_runs(conn, (first.org_id, first.queue_id), &rows).await
+    for (_, ended_at, checks) in ended.iter().filter(|(id, _, _)| written.contains(id)) {
+        for check in checks {
+            hourly.add_check(
+                *ended_at,
+                (&check.name, check.kind),
+                check.required,
+                (is_failed(check.conclusion), check.passed_on_retry),
+            );
+        }
+    }
+    Ok(())
 }
 
+/// Writes the rows, and returns the runs that were not written yet.
 async fn write_runs(
     conn: &mut PgConnection,
     (org, queue): (OrgId, QueueId),
     rows: &RunRows,
-) -> Result<(), AnalyticsError> {
-    sqlx::query(
+) -> Result<HashSet<String>, AnalyticsError> {
+    let written: Vec<String> = sqlx::query_scalar(
         "INSERT INTO an_test_run_results (run_id, org_id, queue_id, group_id, attempt, status,
                                           reason, started_at, ended_at)
          SELECT r.run_id, $1, $2, r.group_id, r.attempt, r.status::run_status, r.reason::reason,
@@ -469,7 +621,8 @@ async fn write_runs(
          FROM unnest($3::text[], $4::text[], $5::bigint[], $6::text[], $7::text[],
                      $8::timestamptz[], $9::timestamptz[])
               AS r (run_id, group_id, attempt, status, reason, started_at, ended_at)
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT DO NOTHING
+         RETURNING run_id",
     )
     .bind(org.to_string())
     .bind(queue.to_string())
@@ -480,14 +633,16 @@ async fn write_runs(
     .bind(&rows.reason)
     .bind(&rows.started_at)
     .bind(&rows.ended_at)
-    .execute(&mut *conn)
+    .fetch_all(&mut *conn)
     .await?;
     sqlx::query(
-        "INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion)
+        "INSERT INTO an_check_results (org_id, run_id, name, kind, required, conclusion,
+                                       passed_on_retry)
          SELECT $1, r.run_id, r.name, r.kind::check_kind, r.required,
-                r.conclusion::check_conclusion
-         FROM unnest($2::text[], $3::text[], $4::text[], $5::boolean[], $6::text[])
-              AS r (run_id, name, kind, required, conclusion)
+                r.conclusion::check_conclusion, r.passed_on_retry
+         FROM unnest($2::text[], $3::text[], $4::text[], $5::boolean[], $6::text[],
+                     $7::boolean[])
+              AS r (run_id, name, kind, required, conclusion, passed_on_retry)
          ON CONFLICT DO NOTHING",
     )
     .bind(org.to_string())
@@ -496,9 +651,10 @@ async fn write_runs(
     .bind(&rows.kind)
     .bind(&rows.required)
     .bind(&rows.conclusion)
+    .bind(&rows.passed_on_retry)
     .execute(&mut *conn)
     .await?;
-    Ok(())
+    Ok(written.into_iter().collect())
 }
 
 fn read_event(id: &str, kind: &str, payload: &Value) -> Result<EventKind, AnalyticsError> {
@@ -616,14 +772,54 @@ mod tests {
                     kind: CheckKind::Check,
                     required: false,
                     conclusion: Some(CheckConclusion::Success),
+                    passed_on_retry: false,
                 },
                 CheckFact {
                     name: "test".into(),
                     kind: CheckKind::Check,
                     required: true,
                     conclusion: Some(CheckConclusion::Failure),
+                    passed_on_retry: false,
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_check_that_passes_after_it_failed_passed_on_a_retry() {
+        let group: GroupId = "group_00000000000000000000000005j0v0he".parse().unwrap();
+        let at = datetime!(2026-10-14 09:00 UTC);
+        let attempt = |attempt, seq, test_sha: &str| RunStart {
+            group_id: group,
+            attempt,
+            started_at: at,
+            assembly: Some(Assembly {
+                test_sha: test_sha.into(),
+                required_statuses: vec!["test".into()],
+                seq,
+            }),
+        };
+        let report = |test_sha: &str, conclusion| {
+            let check = CheckReport {
+                name: "test".into(),
+                kind: CheckKind::Check,
+                conclusion: Some(conclusion),
+                details_url: None,
+            };
+            (test_sha.to_owned(), check)
+        };
+        let reports = [
+            (2, report("a", CheckConclusion::Failure)),
+            (5, report("b", CheckConclusion::Success)),
+        ]
+        .map(|(seq, (test_sha, check))| (seq, test_sha, check));
+        let mut failed = HashSet::new();
+
+        let first = checks_of(&attempt(1, 1, "a"), 3, &reports, &mut failed);
+        let second = checks_of(&attempt(2, 4, "b"), 6, &reports, &mut failed);
+
+        assert!(!first[0].passed_on_retry);
+        assert!(is_failed(first[0].conclusion));
+        assert!(second[0].passed_on_retry);
     }
 }

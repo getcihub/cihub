@@ -1,24 +1,15 @@
-use cihub_domain::{CheckConclusion, CheckKind, ItemState, QueueId, Reason};
+use cihub_domain::{CheckKind, ItemState, QueueId, Reason};
 use sqlx::PgConnection;
-use strum::IntoEnumIterator;
 use time::{Duration, OffsetDateTime};
 
 use crate::AnalyticsError;
+use crate::hourly::{LIVE_STATES, TIME_TO_MERGE, percentile};
 
 /// A check that passed on a retry this many times in a period looks flaky.
 const FLAKY_RETRIES: u64 = 3;
 
 /// Above this share of failed PRs, a queue fails too often.
 const MANY_FAILURES: f64 = 0.15;
-
-/// The states that a merged PR passes through, in their order.
-const LIVE_STATES: [ItemState; 5] = [
-    ItemState::NotReady,
-    ItemState::Pending,
-    ItemState::Testing,
-    ItemState::PendingFailure,
-    ItemState::TestsPassed,
-];
 
 /// A period of `buckets` buckets of `bucket` each; the last bucket holds
 /// `now`. The buckets start on a multiple of their size since the Unix epoch:
@@ -170,55 +161,77 @@ fn verdict(current: &Totals, checks: &[CheckHealth]) -> Verdict {
     }
 }
 
-/// The number of rows that `count(*)` gives, never negative.
+/// A count of the aggregate, never negative.
 fn count(value: i64) -> u64 {
     value.unsigned_abs()
 }
 
-/// A duration in seconds; a clock that went back counts as 0.
-fn seconds(value: i64) -> u64 {
-    u64::try_from(value).unwrap_or(0)
-}
+/// A histogram of durations: its buckets in their order, and the count of
+/// each.
+type Histogram = Vec<(i16, u64)>;
 
-fn time_to_merge(median: Option<i64>, p90: Option<i64>) -> Option<TimeToMerge> {
+fn time_to_merge(histogram: &[(i16, u64)]) -> Option<TimeToMerge> {
     Some(TimeToMerge {
-        median: seconds(median?),
-        p90: seconds(p90?),
+        median: percentile(histogram, 0.5)?,
+        p90: percentile(histogram, 0.9)?,
     })
 }
 
-/// The time to merge of the merged PRs of `c`, in whole seconds.
-const TIME_TO_MERGE: &str = "
-    round(percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM c.concluded_at - c.submitted_at))
-          FILTER (WHERE c.conclusion = 'merged'))::bigint,
-    round(percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(epoch FROM c.concluded_at - c.submitted_at))
-          FILTER (WHERE c.conclusion = 'merged'))::bigint";
+// Every read below sums the hourly aggregate: its cost follows the length of
+// the period, not the number of PRs of the queue.
 
 async fn totals(
     conn: &mut PgConnection,
     queue: &str,
     (from, to): (OffsetDateTime, OffsetDateTime),
 ) -> Result<Totals, AnalyticsError> {
-    let (merged, failed, cancelled, median, p90): (i64, i64, i64, Option<i64>, Option<i64>) =
-        sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT count(*) FILTER (WHERE c.conclusion = 'merged'),
-                    count(*) FILTER (WHERE c.conclusion = 'failed'),
-                    count(*) FILTER (WHERE c.conclusion = 'cancelled'),
-                    {TIME_TO_MERGE}
-             FROM an_item_conclusions c
-             WHERE c.queue_id = $1 AND c.concluded_at >= $2 AND c.concluded_at < $3"
-        )))
-        .bind(queue)
-        .bind(from)
-        .bind(to)
-        .fetch_one(&mut *conn)
-        .await?;
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT conclusion::text, sum(count)::bigint FROM an_hourly_conclusions
+         WHERE queue_id = $1 AND hour >= $2 AND hour < $3
+         GROUP BY conclusion",
+    )
+    .bind(queue)
+    .bind(from)
+    .bind(to)
+    .fetch_all(&mut *conn)
+    .await?;
+    let histogram = histogram(conn, queue, TIME_TO_MERGE, (from, to)).await?;
+
+    let of = |conclusion: ItemState| {
+        rows.iter()
+            .find(|(found, _)| found == conclusion.as_str())
+            .map_or(0, |(_, total)| count(*total))
+    };
     Ok(Totals {
-        merged: count(merged),
-        failed: count(failed),
-        cancelled: count(cancelled),
-        time_to_merge: time_to_merge(median, p90),
+        merged: of(ItemState::Merged),
+        failed: of(ItemState::Failed),
+        cancelled: of(ItemState::Cancelled),
+        time_to_merge: time_to_merge(&histogram),
     })
+}
+
+async fn histogram(
+    conn: &mut PgConnection,
+    queue: &str,
+    measure: &str,
+    (from, to): (OffsetDateTime, OffsetDateTime),
+) -> Result<Histogram, AnalyticsError> {
+    let rows: Vec<(i16, i64)> = sqlx::query_as(
+        "SELECT bucket, sum(count)::bigint FROM an_hourly_durations
+         WHERE queue_id = $1 AND measure = $2 AND hour >= $3 AND hour < $4
+         GROUP BY bucket
+         ORDER BY bucket",
+    )
+    .bind(queue)
+    .bind(measure)
+    .bind(from)
+    .bind(to)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(bucket, total)| (bucket, count(total)))
+        .collect())
 }
 
 async fn buckets(
@@ -227,67 +240,93 @@ async fn buckets(
     (from, to): (OffsetDateTime, OffsetDateTime),
     size: Duration,
 ) -> Result<Vec<Bucket>, AnalyticsError> {
-    type Row = (OffsetDateTime, i64, i64, Option<i64>, Option<i64>);
-    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT b.start,
-                count(c.item_id) FILTER (WHERE c.conclusion = 'merged'),
-                count(c.item_id) FILTER (WHERE c.conclusion = 'failed'),
-                {TIME_TO_MERGE}
-         FROM generate_series($2::timestamptz, $3::timestamptz - $4 * interval '1 second',
-                              $4 * interval '1 second') AS b (start)
-         LEFT JOIN an_item_conclusions c
-           ON c.queue_id = $1 AND c.concluded_at >= $2 AND c.concluded_at < $3
-          AND date_bin($4 * interval '1 second', c.concluded_at, 'epoch') = b.start
-         GROUP BY b.start
-         ORDER BY b.start"
-    )))
+    let ended: Vec<(OffsetDateTime, String, i64)> = sqlx::query_as(
+        "SELECT date_bin($4 * interval '1 second', hour, 'epoch'), conclusion::text,
+                sum(count)::bigint
+         FROM an_hourly_conclusions
+         WHERE queue_id = $1 AND hour >= $2 AND hour < $3 AND conclusion IN ('merged', 'failed')
+         GROUP BY 1, 2",
+    )
     .bind(queue)
     .bind(from)
     .bind(to)
     .bind(size.whole_seconds())
     .fetch_all(&mut *conn)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(start, merged, failed, median, p90)| Bucket {
+    let durations: Vec<(OffsetDateTime, i16, i64)> = sqlx::query_as(
+        "SELECT date_bin($4 * interval '1 second', hour, 'epoch'), bucket, sum(count)::bigint
+         FROM an_hourly_durations
+         WHERE queue_id = $1 AND measure = $5 AND hour >= $2 AND hour < $3
+         GROUP BY 1, 2
+         ORDER BY 1, 2",
+    )
+    .bind(queue)
+    .bind(from)
+    .bind(to)
+    .bind(size.whole_seconds())
+    .bind(TIME_TO_MERGE)
+    .fetch_all(&mut *conn)
+    .await?;
+
+    let mut buckets = Vec::new();
+    let mut start = from;
+    while start < to {
+        let of = |conclusion: ItemState| {
+            ended
+                .iter()
+                .find(|(at, found, _)| *at == start && found == conclusion.as_str())
+                .map_or(0, |(_, _, total)| count(*total))
+        };
+        let histogram: Histogram = durations
+            .iter()
+            .filter(|(at, _, _)| *at == start)
+            .map(|(_, bucket, total)| (*bucket, count(*total)))
+            .collect();
+        buckets.push(Bucket {
             start,
-            merged: count(merged),
-            failed: count(failed),
-            time_to_merge: time_to_merge(median, p90),
-        })
-        .collect())
+            merged: of(ItemState::Merged),
+            failed: of(ItemState::Failed),
+            time_to_merge: time_to_merge(&histogram),
+        });
+        start += size;
+    }
+    Ok(buckets)
 }
 
+/// The median time in each live state of the merged PRs; none without a
+/// merged PR.
 async fn time_in_states(
     conn: &mut PgConnection,
     queue: &str,
     (from, to): (OffsetDateTime, OffsetDateTime),
 ) -> Result<Vec<(ItemState, u64)>, AnalyticsError> {
-    let states: Vec<&str> = LIVE_STATES.iter().map(|state| state.as_str()).collect();
-    // A merged PR that skipped a state spent no time in it: it counts as 0.
-    let rows: Vec<(String, Option<i64>)> = sqlx::query_as(
-        "SELECT s.state::text,
-                round(percentile_cont(0.5) WITHIN GROUP (ORDER BY coalesce(t.seconds, 0)))::bigint
-         FROM unnest($4::text[]) WITH ORDINALITY AS s (state, rank)
-         CROSS JOIN an_item_conclusions c
-         LEFT JOIN LATERAL (
-             SELECT sum(extract(epoch FROM d.left_at - d.entered_at)) AS seconds
-             FROM an_state_durations d
-             WHERE d.item_id = c.item_id AND d.state::text = s.state) t ON true
-         WHERE c.queue_id = $1 AND c.conclusion = 'merged'
-           AND c.concluded_at >= $2 AND c.concluded_at < $3
-         GROUP BY s.state, s.rank
-         ORDER BY s.rank",
+    let rows: Vec<(String, i16, i64)> = sqlx::query_as(
+        "SELECT measure, bucket, sum(count)::bigint FROM an_hourly_durations
+         WHERE queue_id = $1 AND measure <> $4 AND hour >= $2 AND hour < $3
+         GROUP BY measure, bucket
+         ORDER BY measure, bucket",
     )
     .bind(queue)
     .bind(from)
     .bind(to)
-    .bind(&states)
+    .bind(TIME_TO_MERGE)
     .fetch_all(&mut *conn)
     .await?;
-    rows.into_iter()
-        .map(|(state, median)| Ok((read(&state)?, seconds(median.unwrap_or_default()))))
-        .collect()
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(LIVE_STATES
+        .iter()
+        .map(|state| {
+            let histogram: Histogram = rows
+                .iter()
+                .filter(|(measure, _, _)| measure == state.as_str())
+                .map(|(_, bucket, total)| (*bucket, count(*total)))
+                .collect();
+            (*state, percentile(&histogram, 0.5).unwrap_or(0))
+        })
+        .collect())
 }
 
 async fn left_without_merge(
@@ -296,11 +335,10 @@ async fn left_without_merge(
     (from, to): (OffsetDateTime, OffsetDateTime),
 ) -> Result<Vec<(ItemState, Reason, u64)>, AnalyticsError> {
     let rows: Vec<(String, String, i64)> = sqlx::query_as(
-        "SELECT conclusion::text, reason::text, count(*) FROM an_item_conclusions
-         WHERE queue_id = $1 AND conclusion <> 'merged'
-           AND concluded_at >= $2 AND concluded_at < $3
+        "SELECT conclusion::text, reason::text, sum(count)::bigint FROM an_hourly_conclusions
+         WHERE queue_id = $1 AND conclusion <> 'merged' AND hour >= $2 AND hour < $3
          GROUP BY conclusion, reason
-         ORDER BY count(*) DESC, conclusion::text, reason::text",
+         ORDER BY sum(count) DESC, conclusion::text, reason::text",
     )
     .bind(queue)
     .bind(from)
@@ -318,31 +356,17 @@ async fn checks(
     (from, to): (OffsetDateTime, OffsetDateTime),
 ) -> Result<Vec<CheckHealth>, AnalyticsError> {
     type Row = (String, String, bool, i64, i64, i64);
-    let failing: Vec<&str> = CheckConclusion::iter()
-        .filter(|conclusion| !conclusion.is_passing())
-        .map(CheckConclusion::as_str)
-        .collect();
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT k.name, k.kind::text, bool_or(k.required), count(*),
-                count(*) FILTER (WHERE k.conclusion::text = ANY ($4)),
-                count(*) FILTER (WHERE k.conclusion IS NOT NULL
-                                   AND k.conclusion::text <> ALL ($4)
-                                   AND EXISTS (
-                    SELECT 1 FROM an_test_run_results p
-                    JOIN an_check_results pk ON pk.run_id = p.run_id
-                    WHERE p.group_id = r.group_id AND p.attempt = r.attempt - 1
-                      AND pk.name = k.name AND pk.kind = k.kind
-                      AND pk.conclusion::text = ANY ($4)))
-         FROM an_check_results k
-         JOIN an_test_run_results r ON r.run_id = k.run_id
-         WHERE r.queue_id = $1 AND r.ended_at >= $2 AND r.ended_at < $3
-         GROUP BY k.name, k.kind
-         ORDER BY k.name, k.kind",
+        "SELECT name, kind::text, bool_or(required), sum(runs)::bigint, sum(failed)::bigint,
+                sum(passed_on_retry)::bigint
+         FROM an_hourly_checks
+         WHERE queue_id = $1 AND hour >= $2 AND hour < $3
+         GROUP BY name, kind
+         ORDER BY name, kind",
     )
     .bind(queue)
     .bind(from)
     .bind(to)
-    .bind(&failing)
     .fetch_all(&mut *conn)
     .await?;
     rows.into_iter()

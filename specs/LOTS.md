@@ -520,6 +520,10 @@ Decisions (October 14, 2026, validated by the project lead):
     `web/e2e/health.spec.ts`.
   - Done (October 15, 2026): an open Health reads its facts again every 30 seconds, and not at each change of its
     queue, which mostly came before the notifier wrote them (validated by the project lead).
+  - Done (October 15, 2026): the Health reads the hourly aggregate (`an_hourly_conclusions`,
+    `an_hourly_durations`, `an_hourly_checks`), which the notifier adds to with the facts that it writes; the
+    medians and the 90th percentiles come from histograms, within 5 %; `an_check_results` gains
+    `passed_on_retry`. Validated by the project lead, with three typed tables rather than `measurements`.
 
 #### Lot 11b: Prometheus
 
