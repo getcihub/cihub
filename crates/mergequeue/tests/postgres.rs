@@ -37,6 +37,7 @@ use cihub_store::{begin_org, begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
+use time::format_description::well_known::Rfc3339;
 use time::{Date, Duration, Month, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
 use ulid::Ulid;
@@ -5966,6 +5967,38 @@ async fn the_health_of_a_queue_reads_the_facts_of_its_log(pool: PgPool) {
             "passed_on_retry": 1
         }])
     );
+
+    // The same 7 days between two times, then the periods that the API refuses.
+    let to = OffsetDateTime::parse(health["to"].as_str().unwrap(), &Rfc3339).unwrap();
+    let from = OffsetDateTime::parse(health["from"].as_str().unwrap(), &Rfc3339).unwrap();
+    let at = |time: OffsetDateTime| time.format(&Rfc3339).unwrap();
+    let between = format!(
+        "/orgs/acme/repos/app/queues/main/health?from={}&to={}",
+        at(from),
+        at(to)
+    );
+    let (status, same) = call(&addr, &token, "GET", &between, None).await;
+
+    assert_eq!(status, 200, "{same}");
+    assert_eq!(
+        (&same["current"], &same["buckets"], &same["checks"]),
+        (&health["current"], &health["buckets"], &health["checks"])
+    );
+    for query in [
+        format!("range=7d&from={}&to={}", at(from), at(to)),
+        format!("from={}", at(from)),
+        format!("from={}&to={}", at(to), at(from)),
+        format!("from={}&to={}", at(to - Duration::days(400)), at(to)),
+    ] {
+        let path = format!("/orgs/acme/repos/app/queues/main/health?{query}");
+        let (status, error) = call(&addr, &token, "GET", &path, None).await;
+
+        assert_eq!(
+            (status, &error["code"]),
+            (400, &serde_json::json!("invalid_request")),
+            "{query}"
+        );
+    }
 
     let before = facts(&pool).await;
     let mut tx = begin_system(&pool).await.unwrap();

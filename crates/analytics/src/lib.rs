@@ -11,7 +11,9 @@ mod health;
 mod hourly;
 
 pub use facts::{SUBSCRIPTION, record_facts};
-pub use health::{Bucket, CheckHealth, Health, Period, TimeToMerge, Totals, Verdict, queue_health};
+pub use health::{
+    Bucket, CheckHealth, Health, KEPT, Period, TimeToMerge, Totals, Verdict, queue_health,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnalyticsError {

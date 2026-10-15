@@ -524,6 +524,10 @@ Decisions (October 14, 2026, validated by the project lead):
     `an_hourly_durations`, `an_hourly_checks`), which the notifier adds to with the facts that it writes; the
     medians and the 90th percentiles come from histograms, within 5 %; `an_check_results` gains
     `passed_on_retry`. Validated by the project lead, with three typed tables rather than `measurements`.
+  - Done (October 15, 2026): a period that the person chooses, after the mockups v8-calendar: `GET …/health`
+    takes `from` and `to` (the last 13 months, in UTC) instead of `range`, and cuts the period in hours, days or
+    weeks after its length; the Custom choice of the Health opens a calendar of two months, its shortcuts and the
+    hours, and keeps the period in the address of the page (`?from=…&to=…`).
 
 #### Lot 11b: Prometheus
 

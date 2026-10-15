@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::State;
-use cihub_analytics::{Health, Period, Verdict, queue_health};
+use cihub_analytics::{Health, KEPT, Period, Verdict, queue_health};
+use cihub_api_types::ErrorCode;
 use cihub_api_types::{
     CheckHealth, HealthBucket, HealthTotals, HealthVerdict, QueueHealth, ReasonCount, StateTime,
     TimeToMerge,
@@ -8,7 +9,7 @@ use cihub_api_types::{
 use cihub_domain::{ApiScope, QueueId};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery};
 use serde::Deserialize;
-use time::Duration;
+use time::{Duration, OffsetDateTime};
 
 use super::queues::begin_queue;
 use super::{ApiState, QueueErrors, QueuePath};
@@ -31,15 +32,15 @@ pub(super) enum HealthRange {
 impl HealthRange {
     const fn period(self) -> Period {
         match self {
-            Self::Day => Period {
+            Self::Day => Period::Last {
                 bucket: Duration::HOUR,
                 buckets: 24,
             },
-            Self::Week => Period {
+            Self::Week => Period::Last {
                 bucket: Duration::DAY,
                 buckets: 7,
             },
-            Self::Month => Period {
+            Self::Month => Period::Last {
                 bucket: Duration::DAY,
                 buckets: 30,
             },
@@ -50,18 +51,60 @@ impl HealthRange {
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(super) struct HealthQuery {
-    /// `24h` (by default), `7d` or `30d`.
-    #[serde(default)]
+    /// `24h` (by default), `7d` or `30d`; not with `from` and `to`.
     #[param(inline)]
-    range: HealthRange,
+    range: Option<HealthRange>,
+    /// The start of a period instead of `range`, with `to` (RFC 3339): from
+    /// its UTC hour, in the last 13 months.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>, format = DateTime)]
+    from: Option<OffsetDateTime>,
+    /// The end of the period, with `from` (RFC 3339): to the end of its UTC
+    /// hour, or of the current hour. Its buckets are hours up to 2 days, UTC
+    /// days up to 90 days, and weeks from a Monday beyond.
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[param(value_type = Option<String>, format = DateTime)]
+    to: Option<OffsetDateTime>,
+}
+
+impl HealthQuery {
+    fn period(&self, now: OffsetDateTime) -> Result<Period, ApiError> {
+        let invalid = |message: &str| ApiError::new(ErrorCode::InvalidRequest, message.into());
+        match (self.range, self.from, self.to) {
+            (range, None, None) => Ok(range.unwrap_or_default().period()),
+            (Some(_), _, _) => Err(invalid("`range` or `from` and `to`, not both")),
+            (None, Some(from), Some(to)) => between(from, to, now).map_err(invalid),
+            (None, _, _) => Err(invalid("`from` and `to` go together")),
+        }
+    }
+}
+
+fn between(
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+    now: OffsetDateTime,
+) -> Result<Period, &'static str> {
+    if to <= from {
+        return Err("`to` is not after `from`");
+    }
+    if from >= now {
+        return Err("`from` is in the future");
+    }
+    if from < now - KEPT {
+        return Err("`from` is older than 13 months");
+    }
+
+    Ok(Period::Between { from, to })
 }
 
 /// Get the Health of a queue
 ///
 /// What the queue did over the period: the PRs that merged and failed, their
 /// time to merge, why the others left, and the checks of its runs, each
-/// against the period before. Read from the facts of the log, which arrive a
-/// few seconds after the log.
+/// against the period before: the last 24 hours, 7 days or 30 days, or the
+/// hours between two times. Read from the hourly aggregate of the facts of the
+/// log, which arrive a few seconds after the log; the medians and the 90th
+/// percentiles are within 5 %.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues/{queue}/health",
@@ -77,10 +120,12 @@ pub(super) async fn get_health(
     ApiQuery(query): ApiQuery<HealthQuery>,
 ) -> Result<Json<QueueHealth>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
+    let now = (state.clock)();
+    let period = query.period(now)?;
 
     let (mut tx, queue) = begin_queue(&state, &grant, &path).await?;
     let queue: QueueId = queue.id.parse()?;
-    let health = queue_health(&mut tx, queue, query.range.period(), (state.clock)()).await?;
+    let health = queue_health(&mut tx, queue, period, now).await?;
 
     Ok(Json(response(health)))
 }

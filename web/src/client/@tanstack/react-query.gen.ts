@@ -502,8 +502,10 @@ export const getHealthQueryKey = (options: Options<GetHealthData>) => createQuer
  *
  * What the queue did over the period: the PRs that merged and failed, their
  * time to merge, why the others left, and the checks of its runs, each
- * against the period before. Read from the facts of the log, which arrive a
- * few seconds after the log.
+ * against the period before: the last 24 hours, 7 days or 30 days, or the
+ * hours between two times. Read from the hourly aggregate of the facts of the
+ * log, which arrive a few seconds after the log; the medians and the 90th
+ * percentiles are within 5 %.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */

@@ -148,6 +148,23 @@ export const VIEWS: View[] = [
     viewports: [WIDE, NARROW],
   },
   {
+    name: "queue-health-custom",
+    url: `${QUEUE_PAGE}?pane=health&from=2026-09-14T00:00:00.000Z&to=2026-10-12T00:00:00.000Z`,
+    ready: "looks flaky",
+  },
+  {
+    name: "queue-health-calendar",
+    url: `${QUEUE_PAGE}?pane=health`,
+    ready: "looks flaky",
+    themes: BOTH,
+    viewports: [WIDE, NARROW],
+    act: async (page) => {
+      await page.getByRole("button", { name: "Custom" }).click();
+      await page.getByRole("button", { name: "Last month" }).click();
+      await page.getByText("compared with").waitFor();
+    },
+  },
+  {
     name: "queue-health-quiet",
     url: "/orgs/acme/repos/sdk/queues/main?pane=health",
     ready: "Show the last 7 days",
