@@ -4261,7 +4261,7 @@ async fn insert_item(conn: &mut PgConnection, item: &ItemFixture<'_>) {
 }
 
 /// `GET /orgs/{org}/queues` gives every queue of the organization in the
-/// order of the repository names, then of the queue names, with the current
+/// order of the repository names, then of the target branches, with the current
 /// items in each live state and the current items that merged, failed or were
 /// cancelled in the 24 hours before the request.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

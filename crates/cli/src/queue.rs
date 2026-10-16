@@ -2,7 +2,7 @@
 //! The repository comes from `--repo`, else from the remote `origin` of git,
 //! and its owner is the slug of the organization. A PR goes to the queue of
 //! its base branch; the other commands take the queue of `--branch`, else
-//! the only queue of the repository.
+//! the queue of the default branch of the repository.
 
 use std::io::Write;
 
@@ -22,7 +22,7 @@ pub(crate) struct QueueArgs {
     #[arg(long, global = true, value_name = "OWNER/NAME", value_parser = repo::from_arg)]
     repo: Option<(String, String)>,
     /// The target branch of the queue of `status`, `graph`, `pause`, `resume`
-    /// and `drain`; needed when the repository has more than one queue. The
+    /// and `drain`; the default branch of the repository without it. The
     /// commands on a PR ignore it: a PR is in the queue of its base branch.
     #[arg(long, global = true)]
     branch: Option<String>,
@@ -53,8 +53,8 @@ enum QueueCommand {
     OnQueue(QueueAction),
 }
 
-/// A command on one queue: the one of `--branch`, else the only one of the
-/// repository.
+/// A command on one queue: the one of `--branch`, else the one of the
+/// default branch of the repository.
 #[derive(Subcommand)]
 enum QueueAction {
     /// The state of the queue, or of a PR.
@@ -123,7 +123,8 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
     Ok(())
 }
 
-/// `action` on the queue of `branch`, else on the only queue of `repo`.
+/// `action` on the queue of `branch`, else on the queue of the default branch
+/// of `repo`.
 async fn on_queue(
     out: &mut impl Write,
     client: &Client,
@@ -252,12 +253,17 @@ fn pick_queue(mut queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyho
             .find(|q| q.target_branch == wanted)
             .with_context(|| format!("{repo} has no queue of `{wanted}`: {branches}"));
     }
-    match queues.len() {
-        0 => bail!(
+    if queues.is_empty() {
+        bail!(
             "{repo} has no queue yet: comment `/cihub merge` on a PR of its default branch to create one"
+        );
+    }
+    match queues.iter().position(|q| q.is_default_branch) {
+        Some(index) => Ok(queues.remove(index)),
+        None if queues.len() == 1 => Ok(queues.remove(0)),
+        None => bail!(
+            "{repo} has no queue on its default branch: choose one with `--branch` ({branches})"
         ),
-        1 => Ok(queues.remove(0)),
-        _ => bail!("{repo} has more than one queue: choose one with `--branch` ({branches})"),
     }
 }
 
@@ -268,6 +274,7 @@ mod tests {
     fn queue(branch: &str) -> Queue {
         serde_json::from_value(serde_json::json!({
             "id": format!("queue-{branch}"), "repo_id": "r", "target_branch": branch,
+            "is_default_branch": branch == "main",
             "state": "running", "mode": "single", "state_changed_at": "2026-10-01T09:00:00Z",
             "state_changed_by": null, "strategy": "pipelined", "target_head_sha": null,
             "access": "ok", "has_config_file": false, "config_sha": null, "config_error": null,
@@ -286,19 +293,26 @@ mod tests {
     }
 
     #[test]
-    fn the_queue_is_the_one_of_the_branch_or_the_only_one() {
-        let only = pick_queue(vec![queue("main")], None, "acme/app").unwrap();
-        assert_eq!(only.target_branch, "main");
-        let two = || vec![queue("main"), queue("release/2.0")];
+    fn the_queue_is_the_one_of_the_branch_else_the_default_one() {
+        let only = pick_queue(vec![queue("release/1.0")], None, "acme/app").unwrap();
+        assert_eq!(only.target_branch, "release/1.0");
+        let two = || vec![queue("release/2.0"), queue("main")];
         assert_eq!(
             pick_queue(two(), Some("release/2.0"), "acme/app")
                 .unwrap()
                 .target_branch,
             "release/2.0"
         );
-        let error = pick_queue(two(), None, "acme/app").unwrap_err().to_string();
+        assert_eq!(
+            pick_queue(two(), None, "acme/app").unwrap().target_branch,
+            "main"
+        );
+        let releases = vec![queue("release/1.0"), queue("release/2.0")];
+        let error = pick_queue(releases, None, "acme/app")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("--branch"), "{error}");
-        assert!(error.contains("main, release/2.0"), "{error}");
+        assert!(error.contains("release/1.0, release/2.0"), "{error}");
         assert!(pick_queue(two(), Some("x"), "acme/app").is_err());
         assert!(pick_queue(Vec::new(), None, "acme/app").is_err());
     }

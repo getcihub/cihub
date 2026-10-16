@@ -45,6 +45,7 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
     repo_id: `repo_${repo}`,
     repo,
     target_branch: name,
+    is_default_branch: name === "main",
     state: "running",
     mode: "single",
     state_changed_at: "2026-10-01T09:00:00Z",

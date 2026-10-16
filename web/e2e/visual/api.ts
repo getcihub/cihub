@@ -47,6 +47,7 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
     repo_id: `repo_${repo}`,
     repo,
     target_branch: name,
+    is_default_branch: name === "main",
     state: "running",
     mode: "single",
     state_changed_at: ago(6),

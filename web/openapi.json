@@ -6599,6 +6599,7 @@
           "repo_id",
           "repo",
           "target_branch",
+          "is_default_branch",
           "state",
           "mode",
           "state_changed_at",
@@ -6665,6 +6666,10 @@
             "type": "string",
             "description": "The identifier of the queue.",
             "example": "queue_06cx8fn2wagkyc9x5csgnm5r1gz34p81"
+          },
+          "is_default_branch": {
+            "type": "boolean",
+            "description": "The branch of the queue is the default branch of its repository."
           },
           "last_merged_at": {
             "type": [

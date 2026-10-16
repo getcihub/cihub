@@ -330,25 +330,18 @@ async fn the_queue_commands_drive_the_api(pool: PgPool) {
             .output()
             .unwrap()
     };
-    let refused = cihub(&["drain"]);
-
-    assert!(!refused.status.success());
-    let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert!(
-        stderr.contains(
-            "acme/app has more than one queue: choose one with `--branch` (main, release/1)"
-        ),
-        "{stderr}"
-    );
-    let drained = cihub(&["drain", "--branch", "release/1"]);
+    let drained = cihub(&["drain"]);
     let stdout = String::from_utf8_lossy(&drained.stdout);
 
     assert!(drained.status.success(), "{stdout}");
-    assert_eq!(stdout, "queue of `release/1`: \"draining\" asked\n");
-    let status = cihub(&["status", "--branch", "main"]);
+    assert_eq!(
+        stdout, "queue of `main`: \"draining\" asked\n",
+        "without `--branch`, the queue of the default branch"
+    );
+    let status = cihub(&["status", "--branch", "release/1"]);
     let stdout = String::from_utf8_lossy(&status.stdout);
 
-    assert_eq!(stdout, "queue of `main`: running\n");
+    assert_eq!(stdout, "queue of `release/1`: running\n");
     stop(child);
 }
 
