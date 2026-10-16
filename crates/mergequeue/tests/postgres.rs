@@ -2540,6 +2540,16 @@ queues:
         [true, false],
         "a merge commit keeps the head, a squash does not"
     );
+    let named = |number: u64| {
+        sim.comments(&repo, number)
+            .iter()
+            .any(|body| body.contains("Profile `dependencies` of `.cihub.yaml`."))
+    };
+    assert_eq!(
+        (named(1), named(2)),
+        (true, false),
+        "the comment names the profile"
+    );
 
     q.stop().await;
 }

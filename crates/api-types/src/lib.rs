@@ -714,6 +714,11 @@ pub struct Pr {
     pub merged_sha: Option<String>,
     /// The PR is tested alone, never in a batch.
     pub no_batch: bool,
+    /// The profile of the queue that gives the settings of the PR (its merge
+    /// method, its batches, its failure budget); `null` for those of the
+    /// queue.
+    #[cfg_attr(feature = "openapi", schema(example = "dependencies"))]
+    pub profile: Option<String>,
     /// The login of the person who submitted the PR; `null` when CIHub or an
     /// API token did.
     #[cfg_attr(feature = "openapi", schema(example = "ada"))]

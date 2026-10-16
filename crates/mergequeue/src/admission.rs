@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use cihub_conditions::{Attribute, Check, Conditions, Context};
-use cihub_config::RepoConfig;
+use cihub_config::{ProfileConfig, RepoConfig};
 use cihub_domain::{BranchProtectionInjection, JobClass, Mergeability, Permission, Priority};
 use cihub_scm::{PrSnapshot, RequiredChecks, Scm, check_passed};
 use time::OffsetDateTime;
@@ -92,23 +92,34 @@ pub(crate) async fn unmet_conditions(
     reading: &Reading<'_>,
 ) -> Result<Vec<String>, Failure> {
     let mut unmet = file_conditions(scm, target, config, pr, reading).await?;
+    unmet.extend(injected(target, config, pr, reading)?);
+    Ok(unmet)
+}
+
+/// With `branch_protection_injection: both`, each check that the rules
+/// require and that has not passed on the head of the PR, as
+/// `check-success = <name>`.
+fn injected(
+    target: &QueueTarget,
+    config: Option<&RepoConfig>,
+    pr: &PrSnapshot,
+    reading: &Reading<'_>,
+) -> Result<Vec<String>, Failure> {
     let injection = target
         .settings_in(config)?
         .branch_protection_injection
         .value;
-
-    if injection == BranchProtectionInjection::Both {
-        unmet.extend(
-            reading
-                .rules
-                .names
-                .iter()
-                .filter(|name| *name != reading.own_status && !check_passed(pr, name))
-                .map(|name| format!("check-success = {name}")),
-        );
+    if injection != BranchProtectionInjection::Both {
+        return Ok(Vec::new());
     }
 
-    Ok(unmet)
+    Ok(reading
+        .rules
+        .names
+        .iter()
+        .filter(|name| *name != reading.own_status && !check_passed(pr, name))
+        .map(|name| format!("check-success = {name}"))
+        .collect())
 }
 
 async fn file_conditions(
@@ -155,72 +166,72 @@ async fn loaded_context(
     Ok(ctx)
 }
 
-/// The priority of the first rule of `priority_rules` that `pr` meets, in
-/// `config`, the last valid file of the queue that it enters.
-pub(crate) async fn rule_priority(
-    scm: &dyn Scm,
-    target: &QueueTarget,
-    config: Option<&RepoConfig>,
-    pr: &PrSnapshot,
-    reading: &Reading<'_>,
-) -> Result<Option<Priority>, Failure> {
-    let Some(config) = config else {
-        return Ok(None);
-    };
-
-    let rules = &config.priority_rules;
-    if rules.is_empty() {
-        return Ok(None);
-    }
-
-    let uses = |a| rules.iter().any(|rule| rule.conditions.uses(a));
-    let ctx = loaded_context(scm, target, pr, reading, uses).await?;
-
-    for rule in rules {
-        if rule
-            .conditions
-            .eval(&ctx)
-            .map_err(|err| Failure::Never(err.to_string()))?
-        {
-            return Ok(Some(rule.priority));
-        }
-    }
-
-    Ok(None)
+/// What the file gives to a submission of `pr`, from `config`, the last valid
+/// file of the queue that it enters.
+pub(crate) struct Choices {
+    /// The `queue_conditions` that the PR does not meet, as
+    /// [`unmet_conditions`] gives them.
+    pub unmet: Vec<String>,
+    /// The priority of the first rule of `priority_rules` that the PR meets.
+    pub priority: Option<Priority>,
+    /// The first profile of the queue whose `conditions` the PR meets; a
+    /// profile without conditions is chosen only by its name.
+    pub profile: Option<String>,
 }
 
-/// The first profile of the queue in `config` whose `conditions` `pr` meets.
-/// A profile without conditions is chosen only by its name.
-pub(crate) async fn rule_profile(
+/// The conditions, the priority and the profile of a submission of `pr`. The
+/// files and the review threads are read once, when one of them uses them.
+pub(crate) async fn submission_choices(
     scm: &dyn Scm,
     target: &QueueTarget,
     config: Option<&RepoConfig>,
     pr: &PrSnapshot,
     reading: &Reading<'_>,
-) -> Result<Option<String>, Failure> {
-    let profiles: Vec<_> = config
+) -> Result<Choices, Failure> {
+    let conditions = queue_conditions(target, config);
+    let rules = config.map_or(&[][..], |config| &config.priority_rules[..]);
+    let profiles: Vec<&ProfileConfig> = config
         .and_then(|config| config.queue(&target.target_branch))
         .into_iter()
         .flat_map(|queue| &queue.profiles)
         .filter(|profile| !profile.conditions.0.is_empty())
         .collect();
-    if profiles.is_empty() {
-        return Ok(None);
-    }
-
-    let uses = |a| profiles.iter().any(|profile| profile.conditions.uses(a));
+    let uses = |a| {
+        conditions.uses(a)
+            || rules.iter().any(|rule| rule.conditions.uses(a))
+            || profiles.iter().any(|profile| profile.conditions.uses(a))
+    };
     let ctx = loaded_context(scm, target, pr, reading, uses).await?;
 
-    for profile in profiles {
-        if profile
-            .conditions
-            .eval(&ctx)
+    let mut unmet = conditions
+        .unmet(&ctx)
+        .map_err(|err| Failure::Never(err.to_string()))?;
+    unmet.extend(injected(target, config, pr, reading)?);
+    let priority = first_met(rules, &ctx, |rule| &rule.conditions)?.map(|rule| rule.priority);
+    let profile = first_met(profiles, &ctx, |profile| &profile.conditions)?
+        .map(|profile| profile.name.clone());
+
+    Ok(Choices {
+        unmet,
+        priority,
+        profile,
+    })
+}
+
+/// The first of `items` whose conditions hold on `ctx`.
+fn first_met<'a, T: 'a>(
+    items: impl IntoIterator<Item = &'a T>,
+    ctx: &Context,
+    conditions: impl Fn(&T) -> &Conditions,
+) -> Result<Option<&'a T>, Failure> {
+    for item in items {
+        if conditions(item)
+            .eval(ctx)
             .map_err(|err| Failure::Never(err.to_string()))?
         {
-            return Ok(Some(profile.name.clone()));
+            return Ok(Some(item));
         }
     }
-
     Ok(None)
 }
 
@@ -259,6 +270,70 @@ mod tests {
         let result = unmet_conditions(&Sim::new(), &target, config.as_ref(), &pr, &reading).await;
 
         result.unwrap_or_else(|_| panic!("the conditions evaluate"))
+    }
+
+    #[tokio::test]
+    async fn a_submission_reads_the_files_once_for_its_three_choices() {
+        let mut target = test_target();
+        target.config_text = Some(
+            "version: 1
+queues:
+  - branch: main
+    queue_conditions:
+      - \"files ~= ^src/\"
+    profiles:
+      - name: docs
+        conditions:
+          - \"files ~= ^docs/\"
+      - name: core
+        conditions:
+          - \"files ~= ^src/\"
+priority_rules:
+  - name: core
+    conditions:
+      - \"files ~= ^src/\"
+    priority: high
+"
+            .to_owned(),
+        );
+        let sim = Sim::new();
+        let author = cihub_scm::ScmUser {
+            external_id: "1".into(),
+            login: "octocat".into(),
+        };
+        let main = sim.add_repo(&target.repo, "main", &[("a.txt", "a")]);
+        let head = sim
+            .commit(&target.repo, &main, &[("src/lib.rs", Some("x"))])
+            .unwrap();
+        sim.push(&target.repo, "feat", &head, &author).unwrap();
+        let mut pr = test_pr(Mergeability::Mergeable, ReviewDecision::Approved, &[]);
+        pr.number = sim.open_pr(&target.repo, "feat", "main", &author).unwrap();
+        let rules = RequiredChecks {
+            names: BTreeSet::new(),
+            up_to_date: false,
+        };
+        let reading = Reading {
+            sender: &Sender::default(),
+            rules: &rules,
+            own_status: "own",
+            class: JobClass::Repair,
+            now: OffsetDateTime::UNIX_EPOCH,
+        };
+        let config = target.config().unwrap();
+
+        let choices = submission_choices(&sim, &target, config.as_ref(), &pr, &reading)
+            .await
+            .unwrap_or_else(|_| panic!("the conditions evaluate"));
+
+        assert_eq!(choices.unmet, [] as [String; 0]);
+        assert_eq!(choices.priority, Some(Priority::HIGH));
+        assert_eq!(choices.profile.as_deref(), Some("core"));
+        let reads = sim
+            .calls()
+            .iter()
+            .filter(|call| call.name == "pr_files")
+            .count();
+        assert_eq!(reads, 1);
     }
 
     #[tokio::test]

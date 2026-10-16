@@ -72,7 +72,7 @@ of the item, its `number`, `repo` and `queue`. It carries `state_reason`, the co
 `state_description`, its sentence for a person (`Reason::describe`, `specs/DOMAIN.md`). A client shows the
 sentence and decides on the code: the sentence can change without notice. It also carries the `title` of the PR at
 its last read (`pr_titles`), its `author`, a `Person` (`login`, and `avatar_url`, `null` until a sign-in or the members of an account give
-it), the `run_id` of the last run of its group, `no_batch`, `submitted_via`,
+it), the `run_id` of the last run of its group, `no_batch`, `profile` (`null` for the settings of the queue), `submitted_via`,
 `submitted_by`, the login of the person who submitted it (`null` for CIHub or a token), `ahead`, the admitted PRs
 that merge before it (number and state), the head of the queue first, empty for a merged PR, and
 `merges_in_seconds`, an estimate from the median duration of the runs and the window of its queue. An event of the
