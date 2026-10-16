@@ -24,7 +24,7 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
-use crate::admission::{Reading, Sender, routes_to, rule_priority, unmet_conditions};
+use crate::admission::{Reading, Sender, submission_choices, unmet_conditions};
 use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
 
@@ -79,8 +79,9 @@ pub(crate) struct SubmitPr {
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
-    /// The queue that the command names.
-    pub queue: Option<String>,
+    /// The profile that the command names; `None` leaves it to the
+    /// `conditions` of the profiles.
+    pub profile: Option<String>,
     /// The label that the action put, for a submission by label.
     pub label: Option<String>,
     /// The comment of the command, which the job acknowledges once the
@@ -100,7 +101,7 @@ impl SubmitPr {
             priority: None,
             no_batch: false,
             direct: false,
-            queue: None,
+            profile: None,
             label: Some(label),
             comment_id: None,
         }
@@ -550,6 +551,7 @@ struct Submission {
     priority: Priority,
     no_batch: bool,
     direct: bool,
+    profile: Option<String>,
     via: SubmittedVia,
     submitted_by: Option<UserId>,
     author_id: UserId,
@@ -565,6 +567,7 @@ struct SubmissionRow {
     priority: i16,
     no_batch: bool,
     direct: bool,
+    profile: Option<String>,
     via: String,
     submitted_by: Option<String>,
     author_id: String,
@@ -582,6 +585,7 @@ impl SubmissionRow {
             priority: Priority(u8::try_from(self.priority).ok()?),
             no_batch: self.no_batch,
             direct: self.direct,
+            profile: self.profile,
             via: self.via.parse().ok()?,
             submitted_by: self.submitted_by.and_then(|id| id.parse().ok()),
             author_id: self.author_id.parse().ok()?,
@@ -600,7 +604,7 @@ async fn submissions(
     let rows: Vec<SubmissionRow> = sqlx::query_as(
         "SELECT i.pr_number, i.state::text AS state, u.login,
                 i.sender_permission::text AS permission, i.pr_head_sha AS head_sha,
-                i.priority_value AS priority, i.no_batch, i.force_enqueued AS direct,
+                i.priority_value AS priority, i.no_batch, i.force_enqueued AS direct, i.profile,
                 i.submitted_via::text AS via, i.submitted_by, i.pr_author_id AS author_id
          FROM queue_items i LEFT JOIN users u ON u.id = i.submitted_by
          WHERE i.queue_id = $1 AND i.is_current
@@ -650,6 +654,7 @@ fn resubmission(
         deletions: pr.deletions,
         changed_files: pr.changed_files,
         sender_permission: submission.sender.permission,
+        profile: submission.profile.clone(),
     };
 
     Some((actor, kind))
@@ -696,34 +701,28 @@ async fn default_branch_of(pool: &PgPool, repo: RepoId) -> Result<String, Failur
     Ok(default_branch)
 }
 
-/// The queues of `branch` that take submissions, in the order of the
-/// routing.
-async fn open_queues(
+/// The queue of `branch`, if it takes submissions.
+async fn open_queue(
     pool: &PgPool,
     repo: RepoId,
     branch: &str,
     default_branch: &str,
-) -> Result<Vec<QueueTarget>, Failure> {
+) -> Result<Option<QueueTarget>, Failure> {
     let mut tx = begin_system(pool).await?;
-    let queues = QueueTarget::queues_of_branch(&mut tx, repo, branch).await?;
+    let queue = QueueTarget::of_branch(&mut tx, repo, branch).await?;
 
     tx.commit().await?;
 
-    let mut open = Vec::with_capacity(queues.len());
-    for queue in queues {
-        if queue.takes_submissions(default_branch)? {
-            open.push(queue);
-        }
+    match queue {
+        Some(queue) if queue.takes_submissions(default_branch)? => Ok(Some(queue)),
+        _ => Ok(None),
     }
-
-    Ok(open)
 }
 
-/// Creates the queues of `branch`: the ones that the configuration file
-/// names on the head of the branch, or else, on the default branch, the
-/// queue named after it. Each one keeps the file that it comes from, so that
-/// the routing of the submission reads its conditions.
-async fn create_queues(
+/// Creates the queue of `branch` when the configuration file on the head of
+/// the branch names it, or when it is the default branch. The queue keeps
+/// the file that it comes from, so that the submission reads its conditions.
+async fn create_queue(
     pool: &PgPool,
     scm: &dyn Scm,
     repo: &RepoTarget,
@@ -740,18 +739,9 @@ async fn create_queues(
         text.map(|text| RepoConfig::parse(&text).map(|config| (text, config)))
             .transpose()
     });
-    let mut names: Vec<String> = match &checked {
-        Ok(Some((_, config))) => config
-            .queues
-            .iter()
-            .filter(|queue| queue.branch == branch)
-            .map(|queue| queue.name.clone())
-            .collect(),
-        _ => Vec::new(),
-    };
-
-    if names.is_empty() && branch == default_branch {
-        names.push(branch.to_owned());
+    let is_named = matches!(&checked, Ok(Some((_, config))) if config.queue(branch).is_some());
+    if !is_named && branch != default_branch {
+        return Ok(());
     }
 
     let (text, error) = match checked {
@@ -759,61 +749,36 @@ async fn create_queues(
         Err(err) => (None, Some(err.to_string())),
     };
     let mut tx = begin_system(pool).await?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "a new queue gets a new identifier"
+    )]
+    let id = QueueId::new();
+    let inserted = sqlx::query(
+        "INSERT INTO queues (id, org_id, repo_id, target_branch, dirty,
+                             config_text, config_sha, config_error)
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7)
+         ON CONFLICT (repo_id, target_branch) DO NOTHING",
+    )
+    .bind(id.to_string())
+    .bind(repo.org_id.to_string())
+    .bind(repo.repo_id.to_string())
+    .bind(branch)
+    .bind(&text)
+    .bind(&head)
+    .bind(&error)
+    .execute(&mut *tx)
+    .await?;
 
-    for name in names {
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "a new queue gets a new identifier"
-        )]
-        let id = QueueId::new();
-        let inserted = sqlx::query(
-            "INSERT INTO queues (id, org_id, repo_id, target_branch, name, dirty,
-                                 config_text, config_sha, config_error)
-             VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)
-             ON CONFLICT (repo_id, name) DO NOTHING",
-        )
-        .bind(id.to_string())
-        .bind(repo.org_id.to_string())
-        .bind(repo.repo_id.to_string())
-        .bind(branch)
-        .bind(&name)
-        .bind(&text)
-        .bind(&head)
-        .bind(&error)
-        .execute(&mut *tx)
-        .await?;
-        if inserted.rows_affected() == 1 {
-            info!(queue_name = name, target_branch = branch, "queue created");
-            mark_dirty(&mut tx, id).await?;
-            notify_queue_changed(&mut tx, repo.org_id, id, Some(0)).await?;
-        }
+    if inserted.rows_affected() == 1 {
+        info!(target_branch = branch, "queue created");
+        mark_dirty(&mut tx, id).await?;
+        notify_queue_changed(&mut tx, repo.org_id, id, Some(0)).await?;
     }
 
     tx.commit().await?;
 
     Ok(())
-}
-
-/// The queue that `pr` enters: the queue that the command names, or else the
-/// first queue of the branch whose `route_conditions` it meets, or else the
-/// first one. The `queue_conditions` do not route: they only admit. `None`
-/// when the command names a queue that the branch does not have.
-async fn route<'a>(
-    scm: &dyn Scm,
-    queues: &'a [QueueTarget],
-    pr: &PrSnapshot,
-    request: &SubmitPr,
-    reading: &Reading<'_>,
-) -> Result<Option<&'a QueueTarget>, Failure> {
-    if let Some(name) = &request.queue {
-        return Ok(queues.iter().find(|queue| queue.name == *name));
-    }
-    for queue in queues {
-        if routes_to(scm, queue, queue.config()?.as_ref(), pr, reading).await? {
-            return Ok(Some(queue));
-        }
-    }
-    Ok(queues.first())
 }
 
 /// Why the queue refuses the submission, if it does: a command while the
@@ -857,41 +822,25 @@ async fn find_pull_request(
     }
 }
 
-async fn queues_of_pr(
+async fn queue_of_pr(
     pool: &PgPool,
     scm: &dyn Scm,
     repo: &RepoTarget,
     pr: &PrSnapshot,
     request: &SubmitPr,
     class: JobClass,
-) -> Result<Vec<QueueTarget>, Failure> {
+) -> Result<Option<QueueTarget>, Failure> {
     let default_branch = default_branch_of(pool, repo.repo_id).await?;
-    let queues = open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
+    let queue = open_queue(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
 
     // A label is a setting of a queue: only a command creates one.
-    if !queues.is_empty() || request.via != SubmittedVia::Comment {
-        return Ok(queues);
+    if queue.is_some() || request.via != SubmittedVia::Comment {
+        return Ok(queue);
     }
 
-    create_queues(pool, scm, repo, &pr.base_branch, &default_branch, class).await?;
+    create_queue(pool, scm, repo, &pr.base_branch, &default_branch, class).await?;
 
-    open_queues(pool, repo.repo_id, &pr.base_branch, &default_branch).await
-}
-
-async fn submission_priority(
-    scm: &dyn Scm,
-    target: &QueueTarget,
-    config: Option<&RepoConfig>,
-    pr: &PrSnapshot,
-    request: &SubmitPr,
-    reading: &Reading<'_>,
-) -> Result<Priority, Failure> {
-    if let Some(priority) = request.priority {
-        return Ok(priority);
-    }
-
-    let rule = rule_priority(scm, target, config, pr, reading).await?;
-    Ok(rule.unwrap_or(Priority::MEDIUM))
+    open_queue(pool, repo.repo_id, &pr.base_branch, &default_branch).await
 }
 
 async fn submission_accounts(
@@ -914,6 +863,24 @@ async fn submission_accounts(
     tx.commit().await?;
 
     Ok((author_id, actor))
+}
+
+/// The profile that `request` names, `None` when it names none. The error is
+/// the refusal of a profile that the queue of `branch` in `config` does not
+/// have.
+fn named_profile(
+    request: &SubmitPr,
+    config: Option<&RepoConfig>,
+    branch: &str,
+) -> Result<Option<String>, String> {
+    let Some(name) = &request.profile else {
+        return Ok(None);
+    };
+
+    config
+        .and_then(|config| config.profile(branch, name))
+        .map(|profile| Some(profile.name.clone()))
+        .ok_or_else(|| format!("the queue of `{branch}` has no profile `{name}`."))
 }
 
 /// Answers the refused submission `request`: a command or a checkbox gets the
@@ -974,8 +941,7 @@ pub(crate) async fn submit_pr(
         return refuse(format!("this PR is {state}.")).await;
     }
 
-    let queues = queues_of_pr(pool, scm, &repo, &pr, &request, job.class).await?;
-    let Some(first) = queues.first() else {
+    let Some(target) = queue_of_pr(pool, scm, &repo, &pr, &request, job.class).await? else {
         info!(
             pr_number,
             base_branch = pr.base_branch,
@@ -989,9 +955,9 @@ pub(crate) async fn submit_pr(
     };
 
     let required = scm
-        .required_checks(&first.repo, &first.target_branch, job.class)
+        .required_checks(&target.repo, &target.target_branch, job.class)
         .await?;
-    let own = queue_status_context(&first.target_branch);
+    let own = queue_status_context(&target.target_branch);
     let reading = Reading {
         sender: &sender,
         rules: &required,
@@ -1000,29 +966,28 @@ pub(crate) async fn submit_pr(
         now,
     };
 
-    let Some(target) = route(scm, &queues, &pr, &request, &reading).await? else {
-        info!(pr_number, "submission dropped: no queue of that name");
-        return refuse(format!(
-            "the branch `{}` has no queue named `{}`.",
-            pr.base_branch,
-            request.queue.as_deref().unwrap_or_default()
-        ))
-        .await;
-    };
-
     let config = target.config()?;
     if let Some(reason) = refusal(&target.settings_in(config.as_ref())?, &request, &pr) {
         info!(pr_number, reason, "submission dropped");
         return refuse(format!(
-            "the commands are off for the queue `{}`.",
-            target.name
+            "the commands are off for the queue of `{}`.",
+            target.target_branch
         ))
         .await;
     }
 
-    let unmet = unmet_conditions(scm, target, config.as_ref(), &pr, &reading).await?;
-    let priority =
-        submission_priority(scm, target, config.as_ref(), &pr, &request, &reading).await?;
+    let choices = submission_choices(scm, &target, config.as_ref(), &pr, &reading).await?;
+    let profile = match named_profile(&request, config.as_ref(), &target.target_branch) {
+        Ok(named) => named.or(choices.profile),
+        Err(text) => {
+            info!(pr_number, "submission refused: unknown profile");
+            return refuse(text).await;
+        }
+    };
+    let priority = request
+        .priority
+        .or(choices.priority)
+        .unwrap_or(Priority::MEDIUM);
     let (author_id, actor) = submission_accounts(pool, &pr, &request).await?;
 
     let submitted = EventKind::ItemSubmitted {
@@ -1037,13 +1002,14 @@ pub(crate) async fn submit_pr(
         deletions: pr.deletions,
         changed_files: pr.changed_files,
         sender_permission: sender.permission,
+        profile,
     };
     let facts = vec![
         (actor, submitted),
-        (Actor::System, observed(&pr, &required, &own, unmet)),
+        (Actor::System, observed(&pr, &required, &own, choices.unmet)),
     ];
 
-    give_back_with_titles(pool, target, std::slice::from_ref(&pr), facts, now).await?;
+    give_back_with_titles(pool, &target, std::slice::from_ref(&pr), facts, now).await?;
     acknowledge(scm, repo_ref, request.comment_id.as_deref(), job.class).await;
 
     Ok(())
@@ -1149,7 +1115,7 @@ mod tests {
             priority: None,
             no_batch: false,
             direct: false,
-            queue: None,
+            profile: None,
             label: None,
             comment_id: None,
         };

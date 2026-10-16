@@ -7,7 +7,7 @@ use crate::Attribute;
 
 /// What conditions are evaluated on: a PR, its checks, and its place in the
 /// queue. The caller loads it; checks come from the PR head for
-/// `route_conditions` and `queue_conditions`, and from the test SHA for `merge_conditions`.
+/// `queue_conditions`, and from the test SHA for `merge_conditions`.
 #[derive(Clone, Debug, Default)]
 #[allow(
     clippy::struct_excessive_bools,
@@ -38,8 +38,6 @@ pub struct Context {
     pub deletions: u64,
     pub base: String,
     pub head: String,
-    /// `None` when the PR is not in a queue.
-    pub queue_name: Option<String>,
     /// 0 at the head of the queue; `None` when the PR is not in a queue.
     pub queue_position: Option<u64>,
     /// `None` when the PR is not in a queue.
@@ -117,7 +115,6 @@ impl Context {
             A::Deletions => number(self.deletions),
             A::Base => Value::Texts(vec![&self.base]),
             A::Head => Value::Texts(vec![&self.head]),
-            A::QueueName => Value::Texts(self.queue_name.as_deref().into_iter().collect()),
             A::QueuePosition => match self.queue_position {
                 Some(position) => number(position),
                 None => Value::Number(Some(-1)),

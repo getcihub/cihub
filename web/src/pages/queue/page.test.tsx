@@ -69,6 +69,7 @@ describe("the page of a queue", () => {
     const pending = itemOf(124, "pending", {
       position: 2000,
       priority: 10,
+      profile: "dependencies",
       author: { login: "lea", avatar_url: "https://avatars.example.com/u/3" },
     });
     const waiting = itemOf(125, "not_ready", { state_description: "a required check is in progress" });
@@ -125,7 +126,7 @@ describe("the page of a queue", () => {
       "https://avatars.example.com/u/3",
     );
     expect(rows.map((row) => within(row).getAllByRole("cell")[0]?.textContent)).toEqual(["1", "2", "–"]);
-    expect(rows[1]).toHaveTextContent("high");
+    expect(rows[1]).toHaveTextContent("high · dependencies");
     expect(rows[2]).toHaveTextContent("a required check is in progress");
   });
 

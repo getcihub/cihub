@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use cihub_conditions::{Conditions, Expr};
+use cihub_conditions::{Conditions, Expr, Glob};
 use cihub_domain::{
     BranchProtectionInjection, DirectMergeMode, MergeCommitTitle, MergeMethod, OptimizationMode,
     Priority, QueueMode, Strategy, Trigger, UpdateMethod,
@@ -48,21 +48,44 @@ pub fn find_config_file<'a>(
 pub struct RepoConfig {
     /// Settings for every queue; each queue can replace them.
     pub defaults: Layer,
-    /// In file order, which is the routing order between queues of a branch.
+    /// The conditions of `defaults`, which every queue adds to its own.
+    pub queue_conditions: Conditions,
+    pub merge_conditions: Conditions,
+    /// One entry per branch or pattern.
     pub queues: Vec<QueueConfig>,
     pub priority_rules: Vec<PriorityRule>,
 }
 
 #[derive(Clone, Debug)]
 pub struct QueueConfig {
-    pub name: String,
+    /// A branch, or a glob of branches (`release/*`): each branch that it
+    /// matches has its own queue.
     pub branch: String,
-    /// Which PRs the routing of a submission sends to this queue; empty
-    /// takes every PR.
-    pub route_conditions: Conditions,
+    /// `None` when `branch` names one branch.
+    pattern: Option<Glob>,
     pub queue_conditions: Conditions,
     pub merge_conditions: Conditions,
     pub settings: Layer,
+    pub profiles: Vec<ProfileConfig>,
+}
+
+/// Settings of a kind of PR in the train of a queue. Its `conditions`
+/// choose it at the submission; the first profile that a PR meets wins.
+#[derive(Clone, Debug)]
+pub struct ProfileConfig {
+    pub name: String,
+    /// Empty: only a command that names the profile chooses it.
+    pub conditions: Conditions,
+    pub settings: Layer,
+}
+
+impl QueueConfig {
+    fn serves(&self, branch: &str) -> bool {
+        match &self.pattern {
+            Some(pattern) => pattern.is_match(branch),
+            None => self.branch == branch,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -82,25 +105,27 @@ impl RepoConfig {
     pub fn parse(text: &str) -> Result<Self, ConfigError> {
         check_version(text)?;
         let file: RawFile = serde_saphyr::from_str(text).map_err(|e| yaml_error(&e))?;
-        let defaults = file
-            .defaults
-            .map(defaults_layer)
-            .transpose()?
-            .unwrap_or_default();
+        let (defaults, queue_conditions, merge_conditions) = match file.defaults {
+            Some(raw) => defaults(raw, text)?,
+            None => Default::default(),
+        };
 
         QueueSettings::resolve(&Layer::default(), &defaults)?;
-        let mut names = HashSet::new();
+        let mut branches = HashSet::new();
         let mut queues = Vec::with_capacity(file.queues.len());
 
         for raw in file.queues {
-            let (queue, name_at) = queue(raw, text)?;
-            if !names.insert(queue.name.clone()) {
+            let (queue, branch_at) = queue(raw, text)?;
+            if !branches.insert(queue.branch.clone()) {
                 return Err(ConfigError::parsing(
-                    name_at,
-                    format!("queue `{}` is defined twice", queue.name),
+                    branch_at,
+                    format!("the queue of `{}` is defined twice", queue.branch),
                 ));
             }
             QueueSettings::resolve(&queue.settings, &defaults)?;
+            for profile in &queue.profiles {
+                QueueSettings::resolve_profile(&profile.settings, &queue.settings, &defaults)?;
+            }
             queues.push(queue);
         }
 
@@ -112,43 +137,89 @@ impl RepoConfig {
 
         Ok(Self {
             defaults,
+            queue_conditions,
+            merge_conditions,
             queues,
             priority_rules,
         })
     }
 
-    /// The entry of the queue `name` on the branch `branch`, if any.
-    pub fn queue(&self, branch: &str, name: &str) -> Option<&QueueConfig> {
+    /// The entry of the queue of the branch `branch`, if any: the entry that
+    /// names it, else the first pattern that matches it.
+    pub fn queue(&self, branch: &str) -> Option<&QueueConfig> {
         self.queues
             .iter()
-            .find(|queue| queue.branch == branch && queue.name == name)
+            .find(|queue| queue.pattern.is_none() && queue.branch == branch)
+            .or_else(|| {
+                self.queues
+                    .iter()
+                    .find(|queue| queue.pattern.is_some() && queue.serves(branch))
+            })
     }
 
-    /// The checks that the `merge_conditions` of the queue `name` on the
-    /// branch `branch` require on the test SHA.
-    pub fn merge_checks(&self, branch: &str, name: &str) -> Vec<String> {
-        self.queue(branch, name)
-            .into_iter()
-            .flat_map(|queue| &queue.merge_conditions.0)
+    /// The `queue_conditions` of the queue of `branch`: those of `defaults`,
+    /// then those of its entry.
+    pub fn queue_conditions(&self, branch: &str) -> Conditions {
+        let own = self.queue(branch).map(|queue| &queue.queue_conditions.0);
+        Conditions(
+            self.queue_conditions
+                .0
+                .iter()
+                .chain(own.into_iter().flatten())
+                .cloned()
+                .collect(),
+        )
+    }
+
+    /// The checks that the `merge_conditions` of `defaults` and of the queue
+    /// of `branch` require on the test SHA.
+    pub fn merge_checks(&self, branch: &str) -> Vec<String> {
+        let own = self.queue(branch).map(|queue| &queue.merge_conditions.0);
+        let mut checks: Vec<String> = Vec::new();
+        for check in self
+            .merge_conditions
+            .0
+            .iter()
+            .chain(own.into_iter().flatten())
             .filter_map(|expr| match expr {
-                Expr::Condition(condition) => condition.required_check().map(str::to_owned),
+                Expr::Condition(condition) => condition.required_check(),
                 _ => None,
             })
-            .collect()
+        {
+            if !checks.iter().any(|known| known == check) {
+                checks.push(check.to_owned());
+            }
+        }
+        checks
     }
 
-    /// The settings of the queue `name` on the branch `branch`. A queue
-    /// without an entry has the `defaults` of the file.
+    /// The profile `name` of the queue of `branch`, if the file has it.
+    pub fn profile(&self, branch: &str, name: &str) -> Option<&ProfileConfig> {
+        self.queue(branch)?
+            .profiles
+            .iter()
+            .find(|profile| profile.name == name)
+    }
+
+    /// The settings of the queue of the branch `branch`. A queue without an
+    /// entry has the `defaults` of the file.
     ///
     /// # Errors
     ///
     /// The values of the entry do not go together: `parse` already refuses
     /// such a file.
-    pub fn settings(&self, branch: &str, name: &str) -> Result<QueueSettings, ConfigError> {
-        match self.queue(branch, name) {
-            Some(queue) => QueueSettings::resolve(&queue.settings, &self.defaults),
-            None => QueueSettings::resolve(&Layer::default(), &self.defaults),
+    pub fn settings(&self, branch: &str) -> Result<QueueSettings, ConfigError> {
+        let Some(queue) = self.queue(branch) else {
+            return QueueSettings::resolve(&Layer::default(), &self.defaults);
+        };
+
+        let mut settings = QueueSettings::resolve(&queue.settings, &self.defaults)?;
+        for profile in &queue.profiles {
+            let resolved =
+                QueueSettings::resolve_profile(&profile.settings, &queue.settings, &self.defaults)?;
+            settings.profiles.insert(profile.name.clone(), resolved);
         }
+        Ok(settings)
     }
 }
 
@@ -202,15 +273,14 @@ struct RawFile {
     defaults: Option<RawQueue>,
 }
 
-/// A queue, or `defaults` without `name`, `branch` and conditions.
+/// A queue, or `defaults` without `branch` and `profiles`.
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct RawQueue {
-    name: Value<String>,
     branch: Value<String>,
-    route_conditions: Value<Vec<Spanned<RawExpr>>>,
     queue_conditions: Value<Vec<Spanned<RawExpr>>>,
     merge_conditions: Value<Vec<Spanned<RawExpr>>>,
+    profiles: Value<Vec<Spanned<RawProfile>>>,
     strategy: Value<Strategy>,
     mode: Value<QueueMode>,
     window: Value<RawWindow>,
@@ -270,6 +340,23 @@ struct RawLabelCommands {
     enqueue_label: Value<String>,
 }
 
+/// A profile sets only the settings of a PR, never those of the train.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProfile {
+    name: Spanned<String>,
+    #[serde(default)]
+    conditions: Vec<Spanned<RawExpr>>,
+    #[serde(default)]
+    merge_method: Value<MergeMethod>,
+    #[serde(default)]
+    merge_commit_title: Value<MergeCommitTitle>,
+    #[serde(default)]
+    batching: Option<RawBatching>,
+    #[serde(default)]
+    failure_budget: Option<RawFailureBudget>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPriorityRule {
@@ -289,49 +376,104 @@ fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Optio
     T::deserialize(d).map(Some)
 }
 
-/// The queue and the position of its name.
+/// The queue and the position of its branch.
 fn queue(
     raw: Spanned<RawQueue>,
     text: &str,
 ) -> Result<(QueueConfig, Option<Position>), ConfigError> {
     let queue_at = position(&raw);
     let mut raw = raw.value;
-    let required = |value: Value<String>, key: &str| {
-        value
-            .map(|v| (position(&v), v.value))
-            .ok_or_else(|| ConfigError::parsing(queue_at, format!("a queue needs a `{key}`")))
-    };
-    let (name_at, name) = required(raw.name.take(), "name")?;
-    let (_, branch) = required(raw.branch.take(), "branch")?;
+    let (branch_at, branch) = raw
+        .branch
+        .take()
+        .map(|v| (position(&v), v.value))
+        .ok_or_else(|| ConfigError::parsing(queue_at, "a queue needs a `branch`"))?;
+    let pattern = branch_pattern(&branch, branch_at)?;
     let list = |value: Value<Vec<Spanned<RawExpr>>>| value.map(|v| v.value).unwrap_or_default();
+    let profiles = raw
+        .profiles
+        .take()
+        .map(|v| v.value)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|raw| profile(raw, text))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut names = HashSet::new();
+
+    for (name, at) in &profiles {
+        if !names.insert(name.name.clone()) {
+            return Err(ConfigError::parsing(
+                *at,
+                format!("the profile `{}` is defined twice", name.name),
+            ));
+        }
+    }
+
     let queue = QueueConfig {
-        name,
         branch,
-        route_conditions: conditions(&list(raw.route_conditions.take()), text)?,
+        pattern,
         queue_conditions: conditions(&list(raw.queue_conditions.take()), text)?,
         merge_conditions: merge_conditions(&list(raw.merge_conditions.take()), text)?,
         settings: layer(raw)?,
+        profiles: profiles.into_iter().map(|(profile, _)| profile).collect(),
     };
 
-    Ok((queue, name_at))
+    Ok((queue, branch_at))
 }
 
-fn defaults_layer(raw: RawQueue) -> Result<Layer, ConfigError> {
+/// The glob of `branch` when it holds one of `*?[`, which git refuses in a
+/// branch name; `None` when it names one branch.
+fn branch_pattern(branch: &str, at: Option<Position>) -> Result<Option<Glob>, ConfigError> {
+    if !branch.contains(['*', '?', '[']) {
+        return Ok(None);
+    }
+
+    Glob::new(branch)
+        .map(Some)
+        .map_err(|kind| ConfigError::parsing(at, format!("branch `{branch}`: {kind}")))
+}
+
+/// The profile and the position of its name.
+fn profile(
+    raw: Spanned<RawProfile>,
+    text: &str,
+) -> Result<(ProfileConfig, Option<Position>), ConfigError> {
+    let raw = raw.value;
+    let at = position(&raw.name);
+
+    if let Some(method) = &raw.merge_method
+        && method.value == MergeMethod::FastForward
+    {
+        return Err(ConfigError::parsing(
+            position(method),
+            "a profile cannot set merge_method `fast_forward`: it moves the target of the whole train",
+        ));
+    }
+
+    let batching = raw.batching.unwrap_or_default();
+    let settings = Layer {
+        merge_method: setting(raw.merge_method),
+        merge_commit_title: setting(raw.merge_commit_title),
+        batching_enabled: setting(batching.enabled),
+        batching_size: setting(batching.size),
+        batching_max_wait_minutes: setting(batching.max_wait_minutes),
+        failure_budget_retries: setting(raw.failure_budget.unwrap_or_default().retries),
+        ..Layer::default()
+    };
+    let profile = ProfileConfig {
+        name: raw.name.value,
+        conditions: conditions(&raw.conditions, text)?,
+        settings,
+    };
+
+    Ok((profile, at))
+}
+
+/// The settings and the conditions of `defaults`.
+fn defaults(raw: RawQueue, text: &str) -> Result<(Layer, Conditions, Conditions), ConfigError> {
     let queue_only = [
-        ("name", raw.name.as_ref().and_then(position)),
         ("branch", raw.branch.as_ref().and_then(position)),
-        (
-            "route_conditions",
-            raw.route_conditions.as_ref().and_then(position),
-        ),
-        (
-            "queue_conditions",
-            raw.queue_conditions.as_ref().and_then(position),
-        ),
-        (
-            "merge_conditions",
-            raw.merge_conditions.as_ref().and_then(position),
-        ),
+        ("profiles", raw.profiles.as_ref().and_then(position)),
     ];
     if let Some((key, at)) = queue_only.into_iter().find(|(_, at)| at.is_some()) {
         return Err(ConfigError::parsing(
@@ -339,7 +481,13 @@ fn defaults_layer(raw: RawQueue) -> Result<Layer, ConfigError> {
             format!("`{key}` is not allowed in `defaults`"),
         ));
     }
-    layer(raw)
+
+    let mut raw = raw;
+    let list = |value: Value<Vec<Spanned<RawExpr>>>| value.map(|v| v.value).unwrap_or_default();
+    let queue_conditions = conditions(&list(raw.queue_conditions.take()), text)?;
+    let merge_conditions = merge_conditions(&list(raw.merge_conditions.take()), text)?;
+
+    Ok((layer(raw)?, queue_conditions, merge_conditions))
 }
 
 #[allow(clippy::unnecessary_wraps, reason = "used with `Option::and_then`")]
@@ -534,10 +682,9 @@ mod tests {
     use crate::Source;
 
     /// The example of the spec, section Configuration.
-    const SPEC_EXAMPLE: &str = r"version: 1
+    const SPEC_EXAMPLE: &str = r#"version: 1
 queues:
-  - name: main
-    branch: main
+  - branch: main
     strategy: batched                     # sequential | pipelined | batched | parallel
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
@@ -554,12 +701,16 @@ queues:
     failure_budget: { retries: 1 }
     pending_failure_depth: 1
     optimistic_merging: true
-  - name: hotfix
-    branch: main
+    profiles:                             # settings of a kind of PR, in the same train
+      - name: dependencies
+        conditions:                       # choose the profile, once, at the submission
+          - author = dependabot[bot]
+        merge_method: merge_commit
+        batching: { size: 8, max_wait_minutes: 15 }
+        failure_budget: { retries: 2 }
+  - branch: "release/*"                   # a queue for each branch that the glob matches
     strategy: sequential
     merge_method: fast_forward
-    route_conditions:                     # routing: the queue that the PR enters
-      - label = hotfix
     queue_conditions:
       - sender-permission >= write
 priority_rules:
@@ -573,7 +724,9 @@ priority_rules:
 defaults:                                 # tout reglage d'une file ; chaque file peut le remplacer
   label_commands: { enqueue_label: ready-to-merge }
   merge_commit_title: pr_title            # pr_title | pr_title_and_number
-";
+  queue_conditions:                       # every queue adds its own after them
+    - -label = do-not-merge
+"#;
 
     fn error(yaml: &str) -> ConfigError {
         RepoConfig::parse(yaml).unwrap_err()
@@ -584,24 +737,28 @@ defaults:                                 # tout reglage d'une file ; chaque fil
     }
 
     fn queue(body: &str) -> String {
-        format!("version: 1\nqueues:\n  - name: main\n    branch: main\n{body}")
+        format!("version: 1\nqueues:\n  - branch: main\n{body}")
     }
 
     #[test]
     fn parses_the_spec_example() {
         let config = RepoConfig::parse(SPEC_EXAMPLE).unwrap();
-        let [main, hotfix] = &config.queues[..] else {
+        let [main, release] = &config.queues[..] else {
             panic!("expected two queues");
         };
 
         assert_eq!(
-            (main.name.as_str(), hotfix.name.as_str()),
-            ("main", "hotfix")
+            (main.branch.as_str(), release.branch.as_str()),
+            ("main", "release/*")
         );
         assert_eq!(main.queue_conditions.0.len(), 4);
-        assert!(main.route_conditions.0.is_empty());
-        assert_eq!(hotfix.route_conditions.0.len(), 1);
-        assert_eq!(hotfix.queue_conditions.0.len(), 1);
+        assert_eq!(config.queue_conditions("main").0.len(), 5);
+        assert_eq!(config.queue_conditions("release/2.0").0.len(), 2);
+        assert_eq!(main.profiles[0].name, "dependencies");
+        assert_eq!(
+            config.settings("release/2.0").unwrap().merge_method.value,
+            MergeMethod::FastForward
+        );
         assert_eq!(
             config
                 .priority_rules
@@ -614,7 +771,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         let settings = QueueSettings::resolve(&main.settings, &config.defaults).unwrap();
         assert_eq!(settings.batching_size.value, 8);
         assert_eq!(settings.batching_size.source, Source::File);
-        assert_eq!(settings.batching_size.at, Some(at(17, 23)));
+        assert_eq!(settings.batching_size.at, Some(at(16, 23)));
         assert_eq!(settings.batching_enabled.source, Source::Strategy);
         assert_eq!(settings.enqueue_label.value, "ready-to-merge");
         assert_eq!(settings.enqueue_label.source, Source::File);
@@ -633,8 +790,8 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             "    merge_conditions:\n      - check-success = build\n      - check-success = \"e2e tests\"\n",
         ))
         .unwrap();
-        assert_eq!(config.merge_checks("main", "main"), ["build", "e2e tests"]);
-        assert_eq!(config.merge_checks("main", "other"), [] as [String; 0]);
+        assert_eq!(config.merge_checks("main"), ["build", "e2e tests"]);
+        assert_eq!(config.merge_checks("other"), [] as [String; 0]);
         for (body, shown) in [
             ("      - label = ready\n", "label = ready"),
             ("      - -check-success = build\n", "-check-success = build"),
@@ -648,7 +805,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
             ),
         ] {
             let error = error(&queue(&format!("    merge_conditions:\n{body}")));
-            assert_eq!(error.position, Some(at(6, 9)), "{body}");
+            assert_eq!(error.position, Some(at(5, 9)), "{body}");
             assert_eq!(
                 error.message,
                 format!("merge_conditions accept only `check-success = <name>`, not `{shown}`")
@@ -657,31 +814,28 @@ defaults:                                 # tout reglage d'une file ; chaque fil
     }
 
     #[test]
-    fn a_queue_finds_its_entry_by_branch_and_name() {
+    fn a_queue_finds_its_entry_by_branch() {
         let text = "version: 1
 defaults:
   testing_timeout_minutes: 60
 queues:
-  - name: main
-    branch: main
+  - branch: main
     strategy: sequential
-  - name: hotfix
-    branch: main
+  - branch: release/2.0
 ";
         let config = RepoConfig::parse(text).unwrap();
-        let main = config.settings("main", "main").unwrap();
+        let main = config.settings("main").unwrap();
 
         assert_eq!(main.strategy.value, Strategy::Sequential);
         assert_eq!(main.testing_timeout_minutes.value, 60);
-        let hotfix = config.settings("main", "hotfix").unwrap();
-        assert_eq!(hotfix.strategy.value, Strategy::Pipelined);
-        assert_eq!(hotfix.testing_timeout_minutes.source, Source::File);
-        for (branch, name) in [("release", "main"), ("main", "other")] {
-            assert!(config.queue(branch, name).is_none());
-            let settings = config.settings(branch, name).unwrap();
-            assert_eq!(settings.strategy.value, Strategy::Pipelined);
-            assert_eq!(settings.testing_timeout_minutes.value, 60);
-        }
+        let release = config.settings("release/2.0").unwrap();
+        assert_eq!(release.strategy.value, Strategy::Pipelined);
+        assert_eq!(release.testing_timeout_minutes.source, Source::File);
+
+        assert!(config.queue("dev").is_none());
+        let settings = config.settings("dev").unwrap();
+        assert_eq!(settings.strategy.value, Strategy::Pipelined);
+        assert_eq!(settings.testing_timeout_minutes.value, 60);
     }
 
     #[test]
@@ -706,7 +860,7 @@ queues:
             "    window: { floor: 2 }\n    testing_concurrency: 3\n",
         ));
 
-        assert_eq!(e.position, Some(at(6, 26)));
+        assert_eq!(e.position, Some(at(5, 26)));
         assert!(e.message.contains("cannot both be set"));
     }
 
@@ -736,26 +890,24 @@ queues:
 
     #[test]
     fn reports_condition_errors_at_their_character() {
-        for key in ["route_conditions", "queue_conditions"] {
-            let e = error(&queue(&format!(
-                "    {key}:\n      - -draft\n      - lable = x\n"
-            )));
-            assert_eq!(e.position, Some(at(7, 9)), "{key}");
-            assert_eq!(e.message, "unknown attribute `lable`", "{key}");
-        }
+        let e = error(&queue(
+            "    queue_conditions:\n      - -draft\n      - lable = x\n",
+        ));
+        assert_eq!(e.position, Some(at(6, 9)));
+        assert_eq!(e.message, "unknown attribute `lable`");
 
         let e = error(&queue("    queue_conditions:\n      - label ~= (\n"));
-        assert_eq!(e.position, Some(at(6, 18)));
+        assert_eq!(e.position, Some(at(5, 18)));
 
         let e = error(&queue("    queue_conditions:\n      - \"#label >= x\"\n"));
-        assert_eq!(e.position, Some(at(6, 20)));
+        assert_eq!(e.position, Some(at(5, 20)));
         assert_eq!(e.message, "`x` is not an integer");
 
         let e = error(&queue(
             "    queue_conditions:\n      - or:\n          - label = a\n          - draft = true\n",
         ));
 
-        assert_eq!(e.position, Some(at(8, 19)));
+        assert_eq!(e.position, Some(at(7, 19)));
     }
 
     #[test]
@@ -770,21 +922,21 @@ queues:
     #[test]
     fn reports_invalid_settings_at_their_value() {
         let e = error(&queue("    batching: { size: 50 }\n"));
-        assert_eq!(e.position, Some(at(5, 23)));
+        assert_eq!(e.position, Some(at(4, 23)));
         assert_eq!(e.message, "batching.size is 50, out of range 2–20");
 
         let e = error(&queue("    window: { floor: 30, ceiling: 20 }\n"));
-        assert_eq!(e.position, Some(at(5, 22)));
+        assert_eq!(e.position, Some(at(4, 22)));
 
         let e = error(&queue("    trigger: inplace\n"));
-        assert_eq!(e.position, Some(at(5, 14)));
+        assert_eq!(e.position, Some(at(4, 14)));
 
         let e = error(&queue("    strategy: fast\n"));
         assert_eq!(e.kind, ConfigErrorKind::Parsing);
-        assert_eq!(e.position.map(|p| p.line), Some(5));
+        assert_eq!(e.position.map(|p| p.line), Some(4));
 
         let e = error(&queue("    colour: blue\n"));
-        assert_eq!(e.position.map(|p| p.line), Some(5));
+        assert_eq!(e.position.map(|p| p.line), Some(4));
         assert!(e.message.contains("colour"), "{e}");
 
         let e = error(&queue("    required_statuses: [ci, ci]\n"));
@@ -807,26 +959,167 @@ queues:
 
     #[test]
     fn checks_queues_and_defaults() {
-        let e = error("version: 1\nqueues:\n  - branch: main\n");
-        assert_eq!(e.message, "a queue needs a `name`");
+        let e = error("version: 1\nqueues:\n  - strategy: batched\n");
+        assert_eq!(e.message, "a queue needs a `branch`");
         assert_eq!(e.position.map(|p| p.line), Some(3));
 
-        let e = error(&format!("{}  - name: main\n    branch: dev\n", queue("")));
-        assert_eq!(e.message, "queue `main` is defined twice");
-        assert_eq!(e.position, Some(at(5, 11)));
+        let e = error(&queue("    name: hotfix\n"));
+        assert!(e.message.contains("name"), "{e}");
+        assert_eq!(e.position.map(|p| p.line), Some(4));
+
+        let e = error(&format!("{}  - branch: main\n", queue("")));
+        assert_eq!(e.message, "the queue of `main` is defined twice");
+        assert_eq!(e.position, Some(at(4, 13)));
 
         for (defaults, key, position) in [
             ("  branch: main\n", "branch", at(3, 11)),
-            (
-                "  route_conditions:\n    - draft\n",
-                "route_conditions",
-                at(4, 5),
-            ),
+            ("  profiles:\n    - name: a\n", "profiles", at(4, 5)),
         ] {
             let e = error(&format!("version: 1\ndefaults:\n{defaults}"));
             assert_eq!(e.message, format!("`{key}` is not allowed in `defaults`"));
             assert_eq!(e.position, Some(position), "{key}");
         }
+    }
+
+    #[test]
+    fn reads_yaml_anchors_and_merge_keys() {
+        let text = "version: 1
+queues:
+  - branch: main
+    queue_conditions: &checks
+      - check-success = ci
+    <<: &fast
+      strategy: batched
+      batching: { size: 8 }
+  - branch: dev
+    queue_conditions: *checks
+    <<: *fast
+";
+        let config = RepoConfig::parse(text).unwrap();
+
+        for branch in ["main", "dev"] {
+            let settings = config.settings(branch).unwrap();
+            assert_eq!(settings.strategy.value, Strategy::Batched, "{branch}");
+            assert_eq!(settings.batching_size.value, 8, "{branch}");
+            assert_eq!(config.queue_conditions(branch).0.len(), 1, "{branch}");
+        }
+    }
+
+    #[test]
+    fn an_entry_that_names_the_branch_wins_over_a_pattern() {
+        let text = "version: 1
+queues:
+  - branch: \"release/*\"
+    strategy: sequential
+  - branch: release/2.0
+    strategy: batched
+";
+        let config = RepoConfig::parse(text).unwrap();
+        let strategy = |branch: &str| config.settings(branch).unwrap().strategy.value;
+
+        assert_eq!(strategy("release/2.0"), Strategy::Batched);
+        assert_eq!(strategy("release/2.1"), Strategy::Sequential);
+        assert_eq!(strategy("release/2.1/fix"), Strategy::Pipelined);
+        assert!(config.queue("main").is_none());
+
+        let e = error("version: 1\nqueues:\n  - branch: \"release/[\"\n");
+        assert!(e.message.starts_with("branch `release/[`"), "{e}");
+        assert_eq!(e.position.map(|p| p.line), Some(3));
+    }
+
+    #[test]
+    fn the_conditions_of_defaults_come_before_those_of_the_queue() {
+        let text = "version: 1
+defaults:
+  queue_conditions:
+    - -draft
+  merge_conditions:
+    - check-success = build
+queues:
+  - branch: main
+    queue_conditions:
+      - label = ready
+    merge_conditions:
+      - check-success = e2e
+      - check-success = build
+";
+        let config = RepoConfig::parse(text).unwrap();
+        let shown = |branch: &str| {
+            config
+                .queue_conditions(branch)
+                .0
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(shown("main"), ["-draft", "label = ready"]);
+        assert_eq!(shown("dev"), ["-draft"]);
+        assert_eq!(config.merge_checks("main"), ["build", "e2e"]);
+        assert_eq!(config.merge_checks("dev"), ["build"]);
+    }
+
+    #[test]
+    fn a_profile_sets_the_settings_of_a_pr_over_those_of_its_queue() {
+        let text = "version: 1
+queues:
+  - branch: main
+    strategy: batched
+    merge_method: squash
+    profiles:
+      - name: dependencies
+        conditions:
+          - author = dependabot[bot]
+        merge_method: merge_commit
+        batching: { size: 8 }
+        failure_budget: { retries: 2 }
+      - name: manual
+";
+        let config = RepoConfig::parse(text).unwrap();
+        let settings = config.settings("main").unwrap();
+        let dependencies = settings.of_profile(Some("dependencies"));
+
+        assert_eq!(dependencies.merge_method.value, MergeMethod::MergeCommit);
+        assert_eq!(dependencies.batching_size.value, 8);
+        assert_eq!(dependencies.failure_budget_retries.value, 2);
+        assert_eq!(dependencies.strategy.value, Strategy::Batched);
+        assert!(dependencies.batching_enabled.value);
+        assert_eq!(
+            settings.of_profile(None).merge_method.value,
+            MergeMethod::Squash
+        );
+        assert_eq!(settings.of_profile(Some("gone")).batching_size.value, 4);
+        assert!(
+            config
+                .profile("main", "manual")
+                .unwrap()
+                .conditions
+                .0
+                .is_empty()
+        );
+        assert!(config.profile("dev", "manual").is_none());
+    }
+
+    #[test]
+    fn a_profile_sets_only_the_settings_of_a_pr() {
+        let profiles = |body: &str| queue(&format!("    profiles:\n      - name: a\n{body}"));
+
+        let e = error(&profiles("        merge_method: fast_forward\n"));
+        assert!(
+            e.message.contains("cannot set merge_method `fast_forward`"),
+            "{e}"
+        );
+        assert_eq!(e.position, Some(at(6, 23)));
+
+        let e = error(&profiles("        strategy: sequential\n"));
+        assert!(e.message.contains("strategy"), "{e}");
+
+        let e = error(&profiles("        batching: { size: 50 }\n"));
+        assert_eq!(e.message, "batching.size is 50, out of range 2–20");
+
+        let e = error(&format!("{}      - name: a\n", profiles("")));
+        assert_eq!(e.message, "the profile `a` is defined twice");
+        assert_eq!(e.position.map(|p| p.line), Some(6));
     }
 
     #[test]

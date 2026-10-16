@@ -60,8 +60,8 @@ pub(crate) fn refresh_target(target: &QueueTarget, point: OffsetDateTime) -> Job
 }
 
 /// The read of the head of the target branch after the delivery
-/// `delivery_id` of a push, when the branch has several queues and the
-/// routing gave the push to none.
+/// `delivery_id` of a push, when the routing gave the push to no queue
+/// because the branch had none yet.
 pub(crate) fn refresh_target_after(target: &QueueTarget, delivery_id: &str) -> Job {
     refresh_target_job(target, &subject(delivery_id), JobClass::Interactive)
 }

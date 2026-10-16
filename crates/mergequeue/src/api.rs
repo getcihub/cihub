@@ -1,5 +1,6 @@
 //! The routes of the merge queue under `/api/v1` (`specs/API.md`). They name
-//! the organization, the repository and the queue by their names, read the
+//! the organization and the repository by their names and the queue by its
+//! target branch, read the
 //! projections in a transaction of the organization, and change a queue only
 //! through its inbox (`queue_inbox`) or a job: the scheduler stays the only
 //! writer of the log.
@@ -187,7 +188,7 @@ struct QueuePath {
     /// The name of the repository in the organization.
     #[param(example = "web")]
     repo: String,
-    /// The name of the queue in the repository.
+    /// The target branch of the queue, percent-encoded: `release%2F2.0`.
     #[param(example = "main")]
     queue: String,
 }
@@ -269,8 +270,6 @@ route_errors!(
         ErrorCode::InvalidRequest,
         ErrorCode::UnknownPriority,
         ErrorCode::RepoNotFound,
-        ErrorCode::QueueNotFound,
-        ErrorCode::QueueNotAccepting,
         ErrorCode::PrAlreadyQueued,
     ]
 );

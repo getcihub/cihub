@@ -5,8 +5,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use cihub_api_types::{ErrorCode, Event, EventList, Person, Pr, PrAhead, PrList, SubmitPr};
 use cihub_domain::{
-    ApiScope, EventKind, ItemId, ItemState, Priority, QueueId, QueueState, Reason, RepoId,
-    SubmittedVia,
+    ApiScope, EventKind, ItemId, ItemState, Priority, QueueId, Reason, RepoId, SubmittedVia,
 };
 use cihub_mq_core::current_window;
 use cihub_platform::{
@@ -36,7 +35,7 @@ struct ItemRow {
     id: String,
     queue_id: String,
     repo: String,
-    queue_name: String,
+    queue: String,
     pr_number: i64,
     pr_head_sha: String,
     state: String,
@@ -49,6 +48,7 @@ struct ItemRow {
     run_id: Option<String>,
     merged_sha: Option<String>,
     no_batch: bool,
+    profile: Option<String>,
     submitted_by: Option<String>,
     submitted_via: String,
     submitted_at: OffsetDateTime,
@@ -60,12 +60,12 @@ struct ItemRow {
 /// The columns of [`ItemRow`], read from the items `i` and [`ITEM_JOINS`]. The
 /// title is a lookup by PR rather than a join, which would read every title
 /// of the organization.
-const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.name AS queue_name,
+const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.target_branch AS queue,
     i.pr_number, i.pr_head_sha, i.state::text AS state, i.state_reason::text AS state_reason,
     i.state_changed_at, i.priority_value, i.position, i.block_reasons, i.group_id,
     (SELECT run.id FROM test_runs run WHERE run.group_id = i.group_id
      ORDER BY run.attempt DESC LIMIT 1) AS run_id,
-    i.merged_sha, i.no_batch, submitter.login AS submitted_by,
+    i.merged_sha, i.no_batch, i.profile, submitter.login AS submitted_by,
     i.submitted_via::text AS submitted_via, i.submitted_at,
     (SELECT t.title FROM pr_titles t WHERE t.repo_id = q.repo_id AND t.pr_number = i.pr_number)
         AS title,
@@ -176,7 +176,7 @@ impl Progress {
             id: row.id,
             queue_id: row.queue_id,
             repo: row.repo,
-            queue: row.queue_name,
+            queue: row.queue,
             head_sha: row.pr_head_sha,
             state_changed_at: row.state_changed_at,
             position: row.position,
@@ -184,6 +184,7 @@ impl Progress {
             run_id: row.run_id,
             merged_sha: row.merged_sha,
             no_batch: row.no_batch,
+            profile: row.profile,
             submitted_by: row.submitted_by,
             submitted_at: row.submitted_at,
             title: row.title,
@@ -511,7 +512,7 @@ async fn pr_page(
             sql.push(format_args!(") SELECT {ITEM_COLUMNS} FROM i {ITEM_JOINS}"));
             if let Some((repo, queue, position, at, id)) = page.after.clone() {
                 sql.push(format_args!(
-                    " WHERE (r.name, q.name, {PLACE}, i.submitted_at, i.id) > ("
+                    " WHERE (r.name, q.target_branch, {PLACE}, i.submitted_at, i.id) > ("
                 ));
                 let mut key = sql.separated(", ");
                 key.push_bind(repo)
@@ -523,7 +524,7 @@ async fn pr_page(
                 sql.push(")");
             }
             sql.push(format_args!(
-                " ORDER BY r.name, q.name, {PLACE}, i.submitted_at, i.id LIMIT "
+                " ORDER BY r.name, q.target_branch, {PLACE}, i.submitted_at, i.id LIMIT "
             ))
             .push_bind(page.rows());
             let rows: Vec<ItemRow> = sql.build_query_as().fetch_all(&mut *conn).await?;
@@ -808,9 +809,10 @@ fn describe(kind: &EventKind) -> String {
 
 /// Submit a PR
 ///
-/// The queue takes the PR at its next reconciliation. A queue that accepts
-/// nothing, and a PR already in a queue, answer `409` at once; the refusals
-/// that need a read of the SCM come later, on the PR.
+/// The queue of the base branch of the PR takes it at its next
+/// reconciliation. A PR already in a queue answers `409` at once; the
+/// refusals that need a read of the SCM, such as a queue that accepts
+/// nothing, come later, on the PR.
 #[utoipa::path(
     post,
     path = "/orgs/{org}/repos/{repo}/prs/{number}/submit",
@@ -841,10 +843,6 @@ pub(super) async fn submit(
         .transpose()?;
 
     let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
-    let queue = match &request.queue {
-        Some(name) => Some(queue_row(&mut tx, &repo, name).await?),
-        None => None,
-    };
     let current: Option<String> = sqlx::query_scalar(
         "SELECT i.state::text FROM queue_items i JOIN queues q ON q.id = i.queue_id
          WHERE q.repo_id = $1 AND i.pr_number = $2 AND i.is_current
@@ -856,11 +854,8 @@ pub(super) async fn submit(
     .fetch_optional(&mut *tx)
     .await?;
 
-    // The refusals that need no read of the SCM; the others come later, on
+    // The refusal that needs no read of the SCM; the others come later, on
     // the PR (principle V).
-    if let Some(queue) = &queue {
-        refuse_closed(queue)?;
-    }
     if let Some(item_state) = current {
         return Err(ApiError::new(
             ErrorCode::PrAlreadyQueued,
@@ -877,7 +872,7 @@ pub(super) async fn submit(
         priority,
         no_batch: request.no_batch,
         direct: request.direct,
-        queue: queue.map(|queue| queue.name),
+        profile: request.profile,
         label: None,
         comment_id: None,
     };
@@ -891,25 +886,8 @@ pub(super) async fn submit(
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Refuses a queue that accepts no new PR.
-fn refuse_closed(queue: &QueueRow) -> Result<(), ApiError> {
-    let queue_state: QueueState = queue.state.parse()?;
-
-    if matches!(
-        queue_state,
-        QueueState::Draining | QueueState::SwitchingModes
-    ) {
-        return Err(ApiError::new(
-            ErrorCode::QueueNotAccepting,
-            format!("the queue is `{queue_state}`: it accepts no new PR"),
-        ));
-    }
-
-    Ok(())
-}
-
 /// The current item of the PR `number` in the repository `repo`, its state
-/// and its queue: the last one submitted, when the PR is in several queues.
+/// and its queue: the last one submitted, when the PR changed its base branch.
 async fn current_item(
     conn: &mut PgConnection,
     repo: &RepoId,

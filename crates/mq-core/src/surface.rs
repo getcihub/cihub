@@ -29,6 +29,8 @@ pub struct Surface {
     pub block_reasons: Vec<BlockReason>,
     /// The labels that the PR carries, as last observed.
     pub labels: BTreeSet<String>,
+    /// The profile of the queue that gives the settings of the item.
+    pub profile: Option<String>,
     /// The batch that waits for more PRs, for its members only.
     pub batch_wait: Option<BatchWait>,
 }
@@ -38,6 +40,9 @@ pub struct Surface {
 pub struct BatchWait {
     /// The number of its members now.
     pub members: usize,
+    /// The `batching.size` of the profile of its members: it closes at once
+    /// when it has that many.
+    pub size: u32,
     /// When it stops waiting for more PRs: its oldest member has then waited
     /// `batching.max_wait_minutes`. Not when its test starts: a closed batch
     /// still waits for room in the window.
@@ -81,6 +86,7 @@ pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
             .get(&item.pr_number)
             .map(|pr| pr.value.labels.clone())
             .unwrap_or_default(),
+        profile: item.profile.clone(),
         batch_wait: None,
     }
 }

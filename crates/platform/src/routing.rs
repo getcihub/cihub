@@ -156,9 +156,8 @@ async fn queue_of_branch(
     branch: &str,
 ) -> Result<Option<String>, PlatformError> {
     sqlx::query_scalar(
-        "SELECT min(q.id) FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.connection_id = $1 AND r.external_id = $2 AND q.target_branch = $3
-         HAVING count(*) = 1",
+        "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
+         WHERE r.connection_id = $1 AND r.external_id = $2 AND q.target_branch = $3",
     )
     .bind(connection_id)
     .bind(repo_external_id)

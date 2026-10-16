@@ -352,6 +352,7 @@ async fn refused_item(
         no_batch,
         direct,
         submitted_via,
+        profile,
         ..
     } = event_kind(EventType::ItemSubmitted.as_str(), &payload)
         .map_err(MergeQueueError::Snapshot)?
@@ -369,6 +370,7 @@ async fn refused_item(
         state_reason: reason,
         priority,
         no_batch,
+        profile,
         force_enqueued: direct,
         submitted_via,
         position: None,
@@ -408,10 +410,11 @@ async fn create_item(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value,
                                   no_batch, force_enqueued, submitted_by, submitted_via,
-                                  submitted_at, block_reasons, is_current, sender_permission)
+                                  submitted_at, block_reasons, is_current, sender_permission,
+                                  profile)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
                 $10, $11, s.actor_user_id, $12::submitted_via, s.occurred_at,
-                $13, $15, (s.payload->>'sender_permission')::permission
+                $13, $15, (s.payload->>'sender_permission')::permission, s.payload->>'profile'
          FROM events s
          WHERE s.queue_id = $3 AND s.id = $14 AND s.type = 'item.submitted'",
     )

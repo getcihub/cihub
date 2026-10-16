@@ -80,7 +80,8 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         // A read of a queue names it; a read of a PR names its repository.
         return changed.some(
           (entry) =>
-            key.path?.repo === entry.repo && (key.path.queue === undefined || key.path.queue === entry.name),
+            key.path?.repo === entry.repo &&
+            (key.path.queue === undefined || key.path.queue === entry.target_branch),
         );
       },
     },

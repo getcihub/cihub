@@ -27,15 +27,15 @@ pub(crate) enum PrCommand {
 }
 
 /// `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
-/// [--direct] [--queue=<name>]`.
+/// [--direct] [--profile=<name>]`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Merge {
     /// `None` leaves the priority to the `priority_rules`.
     pub priority: Option<Priority>,
     pub no_batch: bool,
     pub direct: bool,
-    /// The queue of the branch to enter, by its name.
-    pub queue: Option<String>,
+    /// `None` leaves the profile to the `conditions` of the profiles.
+    pub profile: Option<String>,
 }
 
 /// The first line of `body` that is a command. A command with an option
@@ -63,11 +63,11 @@ fn parse_merge<'a>(words: impl Iterator<Item = &'a str>) -> Option<Merge> {
             merge.no_batch = true;
         } else if word == "--direct" {
             merge.direct = true;
-        } else if let Some(name) = word.strip_prefix("--queue=") {
+        } else if let Some(name) = word.strip_prefix("--profile=") {
             if name.is_empty() {
                 return None;
             }
-            merge.queue = Some(name.to_owned());
+            merge.profile = Some(name.to_owned());
         } else {
             let value = word.strip_prefix("--priority=")?;
             let priority =
@@ -147,8 +147,8 @@ pub(crate) async fn run_pr_command(
     let target = load_target(pool, queue_id).await?;
     if !target.settings()?.commands_enabled.value {
         return refuse(format!(
-            "the commands are off for the queue `{}`.",
-            target.name
+            "the commands are off for the queue of `{}`.",
+            target.target_branch
         ))
         .await;
     }
@@ -237,7 +237,7 @@ mod tests {
             priority,
             no_batch,
             direct,
-            queue: None,
+            profile: None,
         }))
     }
 
@@ -255,15 +255,15 @@ mod tests {
                 merge(Some(Priority(42)), false, false),
             ),
             (
-                "/cihub merge --queue=hotfix --no-batch",
+                "/cihub merge --profile=dependencies --no-batch",
                 Some(PrCommand::Merge(Merge {
-                    queue: Some("hotfix".into()),
-                    priority: None,
+                    profile: Some("dependencies".into()),
                     no_batch: true,
-                    direct: false,
+                    ..Merge::default()
                 })),
             ),
-            ("/cihub merge --queue=", None),
+            ("/cihub merge --profile=", None),
+            ("/cihub merge --queue=hotfix", None),
             ("/cihub merge --priority=256", None),
             ("/cihub merge --priority=soon", None),
             ("/cihub merge --force", None),

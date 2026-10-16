@@ -21,7 +21,6 @@ pub(crate) struct QueueTarget {
     pub repo_id: RepoId,
     pub repo: RepoRef,
     pub target_branch: String,
-    pub name: String,
     /// The last valid configuration file, and the head of the target at the
     /// last read.
     pub config_text: Option<String>,
@@ -29,7 +28,6 @@ pub(crate) struct QueueTarget {
 }
 
 type Row = (
-    String,
     String,
     String,
     String,
@@ -45,7 +43,7 @@ type Row = (
 
 /// The columns of [`Row`]: the queue, its repository and its connection.
 const COLUMNS: &str =
-    "q.id, q.org_id, q.target_branch, q.name, q.config_text, q.config_sha, r.id, r.external_id,
+    "q.id, q.org_id, q.target_branch, q.config_text, q.config_sha, r.id, r.external_id,
     r.namespace, r.name, c.id, c.external_id
     FROM queues q
     JOIN repos r ON r.id = q.repo_id
@@ -56,7 +54,6 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         queue,
         org,
         branch,
-        queue_name,
         config_text,
         config_sha,
         repo,
@@ -80,14 +77,13 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
             name,
         },
         target_branch: branch,
-        name: queue_name,
         config_text,
         config_sha,
     })
 }
 
-/// The settings of the queue `name` of `branch` in `config`, its last valid
-/// file; the defaults without a file.
+/// The settings of the queue of `branch` in `config`, its last valid file;
+/// the defaults without a file.
 ///
 /// # Errors
 ///
@@ -95,10 +91,9 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
 pub(crate) fn queue_settings(
     config: Option<&RepoConfig>,
     branch: &str,
-    name: &str,
 ) -> Result<QueueSettings, MergeQueueError> {
     match config {
-        Some(config) => config.settings(branch, name),
+        Some(config) => config.settings(branch),
         None => QueueSettings::resolve(&Layer::default(), &Layer::default()),
     }
     .map_err(MergeQueueError::Settings)
@@ -145,7 +140,7 @@ impl QueueTarget {
         &self,
         config: Option<&RepoConfig>,
     ) -> Result<QueueSettings, MergeQueueError> {
-        queue_settings(config, &self.target_branch, &self.name)
+        queue_settings(config, &self.target_branch)
     }
 
     /// The settings of the queue, from its last valid file.
@@ -157,75 +152,39 @@ impl QueueTarget {
         self.settings_in(self.config()?.as_ref())
     }
 
-    /// Whether the queue takes new submissions: its file names it, or
-    /// names no queue of its branch and the queue is the one of
-    /// `default_branch`, named after it. A queue that the file no longer
+    /// Whether the queue takes new submissions: its file names its branch,
+    /// or its branch is `default_branch`. A queue that the file no longer
     /// names finishes its items.
     ///
     /// # Errors
     ///
     /// As [`Self::config`].
     pub(crate) fn takes_submissions(&self, default_branch: &str) -> Result<bool, MergeQueueError> {
-        let config = self.config()?;
-        let mut names = config
-            .iter()
-            .flat_map(|config| &config.queues)
-            .filter(|queue| queue.branch == self.target_branch)
-            .map(|queue| queue.name.as_str())
-            .peekable();
-        Ok(if names.peek().is_none() {
-            self.target_branch == default_branch && self.name == self.target_branch
-        } else {
-            names.any(|name| name == self.name)
-        })
+        let is_named = self
+            .config()?
+            .is_some_and(|config| config.queue(&self.target_branch).is_some());
+        Ok(is_named || self.target_branch == default_branch)
     }
 
-    /// The queues of the branch `branch` of the repository `repo`, in the order
-    /// of the configuration file, which is the order of the routing; the queues
-    /// that the file does not name come last, by age.
+    /// The queue of the branch `branch` of the repository `repo`, if any.
     ///
     /// # Errors
     ///
     /// Postgres fails, or a row does not match the identifiers of
     /// `cihub-domain`.
-    pub(crate) async fn queues_of_branch(
+    pub(crate) async fn of_branch(
         conn: &mut PgConnection,
         repo: RepoId,
         branch: &str,
-    ) -> Result<Vec<Self>, MergeQueueError> {
-        let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT {COLUMNS} WHERE r.id = $1 AND q.target_branch = $2 ORDER BY q.created_at, q.id"
+    ) -> Result<Option<Self>, MergeQueueError> {
+        let row: Option<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {COLUMNS} WHERE r.id = $1 AND q.target_branch = $2"
         )))
         .bind(repo.to_string())
         .bind(branch)
-        .fetch_all(conn)
+        .fetch_optional(conn)
         .await?;
-        let mut queues = rows
-            .into_iter()
-            .map(decode)
-            .collect::<Result<Vec<_>, _>>()?;
-        let order: Vec<String> = queues
-            .iter()
-            .find_map(|queue| queue.config_text.as_deref())
-            .and_then(|text| RepoConfig::parse(text).ok())
-            .map(|config| {
-                config
-                    .queues
-                    .into_iter()
-                    .filter(|queue| queue.branch == branch)
-                    .map(|queue| queue.name)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        queues.sort_by_key(|queue| {
-            order
-                .iter()
-                .position(|name| *name == queue.name)
-                .unwrap_or(usize::MAX)
-        });
-
-        Ok(queues)
+        row.map(decode).transpose()
     }
 }
 
@@ -283,7 +242,6 @@ pub(crate) fn test_target() -> QueueTarget {
             name: "app".into(),
         },
         target_branch: "main".into(),
-        name: "main".into(),
         config_text: None,
         config_sha: None,
         repo_id: RepoId::from_ulid(Ulid(6)),
@@ -351,34 +309,26 @@ mod tests {
 
     #[test]
     fn a_queue_takes_submissions_while_the_file_names_it() {
-        let file = |names: &[(&str, &str)]| {
+        let file = |branches: &[&str]| {
             let mut text = "version: 1\nqueues:\n".to_owned();
-            for (name, branch) in names {
-                writeln!(text, "  - name: {name}\n    branch: {branch}").unwrap();
+            for branch in branches {
+                writeln!(text, "  - branch: {branch}").unwrap();
             }
             Some(text)
         };
         let cases = [
-            // No file: only the queue of the default branch, named after it.
-            ("main", "main", None, true),
-            ("other", "main", None, false),
-            ("release", "release", None, false),
-            // The file names no queue of the branch.
-            ("main", "main", file(&[("rel", "release")]), true),
-            // The file names queues of the branch.
-            ("main", "main", file(&[("main", "main")]), true),
-            (
-                "hotfix",
-                "main",
-                file(&[("main", "main"), ("hotfix", "main")]),
-                true,
-            ),
-            ("main", "main", file(&[("fast", "main")]), false),
-            ("rel", "release", file(&[("rel", "release")]), true),
+            // No file: only the queue of the default branch.
+            ("main", None, true),
+            ("release", None, false),
+            // The file does not name the branch.
+            ("main", file(&["release"]), true),
+            ("dev", file(&["release"]), false),
+            // The file names the branch.
+            ("main", file(&["main"]), true),
+            ("release", file(&["release"]), true),
         ];
-        for (n, (name, branch, config_text, want)) in cases.into_iter().enumerate() {
+        for (n, (branch, config_text, want)) in cases.into_iter().enumerate() {
             let queue = QueueTarget {
-                name: name.into(),
                 target_branch: branch.into(),
                 config_text,
                 ..test_target()

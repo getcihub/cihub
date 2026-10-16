@@ -136,7 +136,7 @@ pub(crate) async fn merge_pr(
 ) -> Result<(), Failure> {
     let request: MergePr = read_payload(job)?;
     let target = target_of(pool, job).await?;
-    let settings = &target.settings()?;
+    let settings = target.settings()?;
     let item_id = request.item_id;
 
     if !still_to_merge(pool, &request).await? {
@@ -144,6 +144,8 @@ pub(crate) async fn merge_pr(
         return Ok(());
     }
 
+    let profile = profile_of(pool, item_id).await?;
+    let settings = settings.of_profile(profile.as_deref());
     let landed = land(scm, settings, &target, &request, job.class).await;
     let scm_error = landed.as_ref().err().map(|err| error_chain(err));
     let failed = |error| EventKind::MergeFailed {
@@ -285,6 +287,20 @@ async fn direct_merge_possible(
     };
 
     Ok(names.iter().all(|name| check_passed(pr, name)))
+}
+
+/// The profile of the item, whose settings give the method and the title of
+/// its merge.
+async fn profile_of(pool: &PgPool, item_id: ItemId) -> Result<Option<String>, Failure> {
+    let mut tx = begin_system(pool).await?;
+    let profile = sqlx::query_scalar("SELECT profile FROM queue_items WHERE id = $1")
+        .bind(item_id.to_string())
+        .fetch_one(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(profile)
 }
 
 /// The item is still `tests_passed`, proved by the run of the request, or

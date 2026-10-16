@@ -47,6 +47,7 @@ CREATE TABLE queue_items (
     position           bigint,
     priority_value     smallint      NOT NULL,
     no_batch           boolean       NOT NULL,
+    profile            text,
     force_enqueued     boolean       NOT NULL,
     submitted_by       text          REFERENCES users (id),
     submitted_via      submitted_via NOT NULL,
