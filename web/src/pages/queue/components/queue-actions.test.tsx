@@ -49,7 +49,7 @@ describe("the actions on a queue", () => {
   });
 
   it("let a member pause nothing", async () => {
-    const member: Me = { ...ada, orgs: [{ slug: "acme", role: "member" }] };
+    const member: Me = { ...ada, orgs: [{ slug: "acme", role: "member", access: "ok" }] };
     renderApp("/orgs/acme/repos/web/queues/main", answersFor(answersOfMe(member)));
 
     expect(await screen.findByRole("button", { name: "Pause" })).toBeDisabled();

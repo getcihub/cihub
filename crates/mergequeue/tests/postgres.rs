@@ -18,7 +18,7 @@ use cihub_domain::{
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, request_config_checks, wake_uncovered,
+    queue_status_context, rebuild, request_queue_setups, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -838,7 +838,7 @@ impl SimQueue {
                      OR EXISTS (SELECT 1 FROM jobs
                                 WHERE state = 'running'
                                    OR (state = 'queued'
-                                       AND (type <> 'check_config' OR run_after <= $1)))
+                                       AND (type <> 'read_setup' OR run_after <= $1)))
                      OR EXISTS (SELECT 1 FROM queues WHERE dirty)",
             )
             .bind(self.clock.now())
@@ -3538,7 +3538,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         "cihub-merge-queue-submit"
     );
     assert_eq!(
-        read["config_check"],
+        read["setup"],
         serde_json::json!({ "findings": [], "checked_at": null })
     );
 
@@ -3556,16 +3556,16 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     assert_eq!(status, 200, "{checked}");
     assert_eq!(
-        checked["config_check"]["findings"][0]["code"], "update_restriction_missing",
+        checked["setup"]["findings"][0]["code"], "update_restriction_missing",
         "the simulator restricts no update"
     );
     assert!(
         calls[before_resync..]
             .iter()
             .any(|call| call.name == "check_setup"),
-        "the resync checks the configuration"
+        "the resync reads the setup"
     );
-    assert_eq!(read_again["config_check"], checked["config_check"]);
+    assert_eq!(read_again["setup"], checked["setup"]);
     assert_eq!(
         sim.calls().len(),
         calls.len(),
@@ -3644,7 +3644,7 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
 
     let (_, checked) = call("GET", queue.to_owned(), None).await;
     assert_eq!(
-        checked["config_check"]["findings"],
+        checked["setup"]["findings"],
         serde_json::json!([{
             "code": "target_branch_missing",
             "message": "the branch `main` no longer exists: the queue cannot merge"
@@ -4743,10 +4743,10 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
         .unwrap()
 }
 
-/// The scheduler asks for a check of the configuration of a queue that has
-/// none, or whose check is one hour old, while CIHub reaches its repository.
+/// The scheduler asks for a setup read of a queue that has none, or whose
+/// read is one hour old, while CIHub reaches its repository.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
+async fn the_setup_of_a_queue_is_read_every_hour(pool: PgPool) {
     seed(&pool).await;
 
     let now = clock();
@@ -4756,7 +4756,7 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
         async move {
             let mut tx = begin_system(&pool).await.unwrap();
             sqlx::query(
-                "INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+                "INSERT INTO queue_setups (org_id, queue_id, findings, checked_at)
                  VALUES ($1, $2, '[]', $3)
                  ON CONFLICT (queue_id) DO UPDATE SET checked_at = $3",
             )
@@ -4767,7 +4767,7 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
             .await
             .unwrap();
             sqlx::query(
-                "UPDATE jobs SET state = 'done', finished_at = now() WHERE type = 'check_config'",
+                "UPDATE jobs SET state = 'done', finished_at = now() WHERE type = 'read_setup'",
             )
             .execute(&mut *tx)
             .await
@@ -4776,9 +4776,9 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
         }
     };
 
-    assert_eq!(request_config_checks(&pool, now).await.unwrap(), 1);
+    assert_eq!(request_queue_setups(&pool, now).await.unwrap(), 1);
     assert_eq!(
-        request_config_checks(&pool, now + Duration::minutes(5))
+        request_queue_setups(&pool, now + Duration::minutes(5))
             .await
             .unwrap(),
         0,
@@ -4787,7 +4787,7 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
 
     let mut tx = begin_system(&pool).await.unwrap();
     let run_after: OffsetDateTime =
-        sqlx::query_scalar("SELECT run_after FROM jobs WHERE type = 'check_config'")
+        sqlx::query_scalar("SELECT run_after FROM jobs WHERE type = 'read_setup'")
             .fetch_one(&mut *tx)
             .await
             .unwrap();
@@ -4801,13 +4801,13 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
     run_the_check(now).await;
 
     assert_eq!(
-        request_config_checks(&pool, now + Duration::minutes(30))
+        request_queue_setups(&pool, now + Duration::minutes(30))
             .await
             .unwrap(),
         0
     );
     assert_eq!(
-        request_config_checks(&pool, now + Duration::minutes(61))
+        request_queue_setups(&pool, now + Duration::minutes(61))
             .await
             .unwrap(),
         1
@@ -4824,7 +4824,7 @@ async fn the_configuration_of_a_queue_is_checked_every_hour(pool: PgPool) {
     tx.commit().await.unwrap();
 
     assert_eq!(
-        request_config_checks(&pool, now + Duration::days(1))
+        request_queue_setups(&pool, now + Duration::days(1))
             .await
             .unwrap(),
         0,

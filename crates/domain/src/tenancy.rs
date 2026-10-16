@@ -21,6 +21,19 @@ closed_enum! {
 }
 
 closed_enum! {
+    /// Whether a repository has a configuration file on its default branch,
+    /// and whether it is valid, at the last setup read (`specs/DATA_MODEL.md`).
+    pub enum RepoConfigState {
+        /// No file.
+        None,
+        /// A file that parses, with settings for the default branch.
+        Valid,
+        /// A file that does not parse, or two paths of the file.
+        Invalid,
+    }
+}
+
+closed_enum! {
     /// Where a sign-in of the command line stands (`specs/API.md`).
     pub enum DeviceCodeState {
         /// The command line waits for the person.

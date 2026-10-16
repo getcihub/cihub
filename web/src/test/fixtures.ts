@@ -6,8 +6,8 @@ import { type Answer, type Answers, problem } from "./app";
 export const ada: Me = {
   login: "ada",
   orgs: [
-    { slug: "acme", role: "admin" },
-    { slug: "acme-labs", role: "member" },
+    { slug: "acme", role: "admin", access: "ok" },
+    { slug: "acme-labs", role: "member", access: "ok" },
   ],
   version: "0.2.0",
   app_install_url: "https://github.com/apps/cihub/installations/new",
@@ -68,7 +68,7 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
       merge_method: "squash",
       enqueue_label: "cihub-merge-queue-submit",
     },
-    config_check: { findings: [], checked_at: null },
+    setup: { findings: [], checked_at: null },
   };
 }
 

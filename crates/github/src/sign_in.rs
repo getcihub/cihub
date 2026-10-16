@@ -20,6 +20,10 @@ use crate::scm::{encode, expect};
 pub const SIGN_IN_PATH: &str = "/auth/github";
 /// Where GitHub sends the person back; the *Callback URL* of the App.
 pub const SIGN_IN_CALLBACK_PATH: &str = "/auth/github/callback";
+/// Where GitHub sends an owner after an install or an update of the App; the
+/// *Setup URL* of the App. Its `installation_id` proves nothing: the sign-in
+/// that it starts again does.
+pub const SETUP_PATH: &str = "/auth/github/installed";
 
 const MEMBERS_PER_PAGE: usize = 100;
 

@@ -366,6 +366,8 @@ pub struct Org {
     /// `member` has `queues:read` and `prs:write`; `null` for an API token.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::MembershipRole>))]
     pub role: Option<MembershipRole>,
+    /// Whether CIHub reaches the SCM accounts of the organization.
+    pub access: OrgAccess,
 }
 
 page! {
@@ -511,8 +513,9 @@ pub struct Queue {
     pub window: Window,
     /// The settings of the last valid configuration file.
     pub settings: SettingsSummary,
-    /// The last check of the configuration of the SCM that the queue needs.
-    pub config_check: ConfigCheck,
+    /// What the last setup read found about the rules of the SCM that the
+    /// queue needs.
+    pub setup: Setup,
 }
 
 /// Whether CIHub reaches the repository of a queue on the SCM: `ok`, or
@@ -1402,22 +1405,204 @@ pub struct Finding {
     pub message: String,
 }
 
-/// `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
-/// check of the configuration of the SCM; no finding means a sound
-/// configuration.
+/// The setup of a queue: what its last setup read found about the rules of
+/// the SCM; no finding means sound rules.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ConfigCheck {
-    /// What the configuration misses; empty for a sound configuration.
+pub struct Setup {
+    /// What the rules miss; empty for sound rules.
     pub findings: Vec<Finding>,
-    /// When CIHub checked the configuration; `null` before the first check,
-    /// which comes within minutes of the creation of the queue.
+    /// When CIHub read the setup; `null` before the first read, which comes
+    /// within minutes of the creation of the queue.
     #[serde(with = "time::serde::rfc3339::option")]
     #[cfg_attr(
         feature = "openapi",
         schema(value_type = Option<String>, format = DateTime, example = "2026-10-11T09:00:00Z")
     )]
     pub checked_at: Option<OffsetDateTime>,
+}
+
+/// The setup of a repository: what CIHub found about the rules of its
+/// default branch and its configuration file, with a verdict. Every field
+/// comes from Postgres: showing a setup calls the SCM zero times.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RepoSetup {
+    /// The identifier of the repository.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "repo_06cx8fn2w6gkyc9x5csgnm5r1dmqz3s0")
+    )]
+    pub repo_id: String,
+    /// The name of the repository, as the routes name it.
+    #[cfg_attr(feature = "openapi", schema(example = "web"))]
+    pub repo: String,
+    /// The account of the repository on the SCM.
+    #[cfg_attr(feature = "openapi", schema(example = "acme"))]
+    pub namespace: String,
+    /// The default branch of the repository, whose rules and file the setup
+    /// reads.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub default_branch: String,
+    /// The verdict of the setup.
+    pub state: SetupState,
+    /// The target branch of the queue of the default branch, with `started`;
+    /// `null` otherwise.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub queue: Option<String>,
+    /// The four rules that a queue needs, always in this order:
+    /// `update_restriction_missing`, `app_not_exempt`,
+    /// `test_branches_not_excluded`, `up_to_date_required`.
+    pub rules: Vec<RuleCheck>,
+    /// The default branch did not exist at the last read: no queue can merge
+    /// into it.
+    pub target_branch_missing: bool,
+    /// The page of the SCM that changes the rules of the repository; `null`
+    /// when the SCM has none.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://scm.example.com/acme/web/settings/rules")
+    )]
+    pub rules_url: Option<String>,
+    /// The configuration file at the head of the default branch.
+    pub config: ConfigFile,
+    /// When CIHub read the setup; `null` before the first read.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-16T09:00:00Z")
+    )]
+    pub checked_at: Option<OffsetDateTime>,
+    /// When an admin asked to read the setup again, while that read waits;
+    /// `null` otherwise.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-16T09:05:00Z")
+    )]
+    pub requested_at: Option<OffsetDateTime>,
+}
+
+/// The verdict of the setup of a repository, computed by the server in this
+/// order: `started` (the default branch has its queue), `checking` (no read
+/// yet, or a read asked after the last one), `invalid_config` (the file is
+/// not valid), `cannot_merge` (a rule blocks the merges, or the default
+/// branch is missing), `ready_with_warnings` (a rule fails without blocking
+/// the merges), `ready`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SetupState {
+    Started,
+    Checking,
+    Ready,
+    ReadyWithWarnings,
+    CannotMerge,
+    InvalidConfig,
+}
+
+/// A rule of the SCM that a queue needs, and whether the default branch has
+/// it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RuleCheck {
+    /// `update_restriction_missing`, `app_not_exempt`,
+    /// `test_branches_not_excluded` or `up_to_date_required`: the finding
+    /// when the rule fails.
+    #[cfg_attr(feature = "openapi", schema(example = "app_not_exempt"))]
+    pub code: String,
+    /// The default branch has the rule.
+    pub passed: bool,
+    /// The queue cannot merge while the rule fails (`app_not_exempt`,
+    /// `test_branches_not_excluded`).
+    pub blocks_merge: bool,
+    /// The rule, in English, for a person: what passes, or what fails.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "The CIHub App is exempt from it")
+    )]
+    pub title: String,
+    /// What to change, in English, for a person, when the rule fails; `null`
+    /// when it passes.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "add the App to the bypass list of the ruleset, in exempt mode")
+    )]
+    pub message: Option<String>,
+}
+
+/// The configuration file at the head of the default branch of a
+/// repository.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigFile {
+    /// `none` without a file, `valid`, or `invalid`.
+    pub state: ConfigFileState,
+    /// The path of the file: `.cihub.yaml`, `.cihub.yml`,
+    /// `.cihub/config.yaml` or `.cihub/config.yml`; `null` without a file.
+    #[cfg_attr(feature = "openapi", schema(example = ".cihub.yaml"))]
+    pub path: Option<String>,
+    /// The head of the default branch that was read; `null` when the branch
+    /// is missing.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "9f2c4e1a7b3d5f60812a4c6e8b0d2f4a6c8e0b1d")
+    )]
+    pub sha: Option<String>,
+    /// Why the file is not valid; `null` otherwise.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "line 6: `batching.size` is from 1 to 100")
+    )]
+    pub error: Option<String>,
+    /// The line of the error, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 6))]
+    pub line: Option<u32>,
+    /// The column of the error, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 3))]
+    pub column: Option<u32>,
+    /// The text of the file when it is not valid, at most 64 KiB; `null`
+    /// otherwise.
+    #[cfg_attr(feature = "openapi", schema(example = "queues:\n  - branch: main\n"))]
+    pub text: Option<String>,
+    /// The `branch` of each entry of the file, globs as written.
+    #[cfg_attr(feature = "openapi", schema(example = json!(["main", "release/*"])))]
+    pub entries: Vec<String>,
+    /// The strategy of the default branch: from the file, or the default.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::Strategy))]
+    pub strategy: Strategy,
+    /// The settings of the default branch: from the file, or the defaults.
+    pub settings: SettingsSummary,
+}
+
+/// Whether a repository has a configuration file on its default branch, and
+/// whether it is valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigFileState {
+    None,
+    Valid,
+    Invalid,
+}
+
+page! {
+    /// A page of the setups of the repositories that the App reaches, by
+    /// name.
+    pub struct SetupList {
+        /// The setups of the page.
+        pub setups: Vec<RepoSetup>,
+    }
+}
+
+/// Whether CIHub reaches the SCM accounts of an organization: `ok`, or
+/// `suspended` when every connection of the organization is suspended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum OrgAccess {
+    Ok,
+    Suspended,
 }
 
 #[cfg(test)]
@@ -1446,6 +1631,48 @@ mod tests {
         assert_eq!(json["type"], "about:blank");
         assert_eq!(json["code"], "queue_not_found");
         assert_eq!(ErrorCode::PrAlreadyQueued.to_string(), "pr_already_queued");
+    }
+
+    #[test]
+    fn the_states_of_a_setup_are_snake_case() {
+        let states = [
+            (SetupState::Started, "started"),
+            (SetupState::Checking, "checking"),
+            (SetupState::Ready, "ready"),
+            (SetupState::ReadyWithWarnings, "ready_with_warnings"),
+            (SetupState::CannotMerge, "cannot_merge"),
+            (SetupState::InvalidConfig, "invalid_config"),
+        ];
+
+        for (state, text) in states {
+            let json = serde_json::to_value(state).unwrap();
+            assert_eq!(json, text);
+            assert_eq!(serde_json::from_value::<SetupState>(json).unwrap(), state);
+        }
+    }
+
+    #[test]
+    fn a_config_file_state_and_an_org_access_are_snake_case() {
+        let files = [
+            (ConfigFileState::None, "none"),
+            (ConfigFileState::Valid, "valid"),
+            (ConfigFileState::Invalid, "invalid"),
+        ];
+        let accesses = [(OrgAccess::Ok, "ok"), (OrgAccess::Suspended, "suspended")];
+
+        for (state, text) in files {
+            let json = serde_json::to_value(state).unwrap();
+            assert_eq!(json, text);
+            assert_eq!(
+                serde_json::from_value::<ConfigFileState>(json).unwrap(),
+                state
+            );
+        }
+        for (access, text) in accesses {
+            let json = serde_json::to_value(access).unwrap();
+            assert_eq!(json, text);
+            assert_eq!(serde_json::from_value::<OrgAccess>(json).unwrap(), access);
+        }
     }
 
     #[test]

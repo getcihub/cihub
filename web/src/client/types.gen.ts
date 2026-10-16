@@ -116,21 +116,60 @@ export type CliSession = {
 };
 
 /**
- * `GET /orgs/{org}/repos/{repo}/queues/{queue}/config-check`: the last
- * check of the configuration of the SCM; no finding means a sound
- * configuration.
+ * The configuration file at the head of the default branch of a
+ * repository.
  */
-export type ConfigCheck = {
+export type ConfigFile = {
     /**
-     * When CIHub checked the configuration; `null` before the first check,
-     * which comes within minutes of the creation of the queue.
+     * The column of the error, from 1; `null` without one.
      */
-    checked_at?: string | null;
+    column?: number | null;
     /**
-     * What the configuration misses; empty for a sound configuration.
+     * The `branch` of each entry of the file, globs as written.
      */
-    findings: Array<Finding>;
+    entries: Array<string>;
+    /**
+     * Why the file is not valid; `null` otherwise.
+     */
+    error?: string | null;
+    /**
+     * The line of the error, from 1; `null` without one.
+     */
+    line?: number | null;
+    /**
+     * The path of the file: `.cihub.yaml`, `.cihub.yml`,
+     * `.cihub/config.yaml` or `.cihub/config.yml`; `null` without a file.
+     */
+    path?: string | null;
+    /**
+     * The settings of the default branch: from the file, or the defaults.
+     */
+    settings: SettingsSummary;
+    /**
+     * The head of the default branch that was read; `null` when the branch
+     * is missing.
+     */
+    sha?: string | null;
+    /**
+     * `none` without a file, `valid`, or `invalid`.
+     */
+    state: ConfigFileState;
+    /**
+     * The strategy of the default branch: from the file, or the default.
+     */
+    strategy: Strategy;
+    /**
+     * The text of the file when it is not valid, at most 64 KiB; `null`
+     * otherwise.
+     */
+    text?: string | null;
 };
+
+/**
+ * Whether a repository has a configuration file on its default branch, and
+ * whether it is valid.
+ */
+export type ConfigFileState = 'none' | 'valid' | 'invalid';
 
 /**
  * A live run whose predecessors hold a PR of this run.
@@ -482,12 +521,22 @@ export type MergeMethod = 'squash' | 'merge_commit' | 'rebase' | 'fast_forward';
  * An organization: the account of an installation of the App.
  */
 export type Org = {
+    /**
+     * Whether CIHub reaches the SCM accounts of the organization.
+     */
+    access: OrgAccess;
     role?: MembershipRole | null;
     /**
      * The slug of the organization, as the routes name it.
      */
     slug: string;
 };
+
+/**
+ * Whether CIHub reaches the SCM accounts of an organization: `ok`, or
+ * `suspended` when every connection of the organization is suspended.
+ */
+export type OrgAccess = 'ok' | 'suspended';
 
 /**
  * A page of the organizations of the person, by slug.
@@ -734,10 +783,6 @@ export type Queue = {
      */
     access: QueueAccess;
     /**
-     * The last check of the configuration of the SCM that the queue needs.
-     */
-    config_check: ConfigCheck;
-    /**
      * Why the last file read is not valid; the queue keeps the last valid
      * one.
      */
@@ -808,6 +853,11 @@ export type Queue = {
      * The settings of the last valid configuration file.
      */
     settings: SettingsSummary;
+    /**
+     * What the last setup read found about the rules of the SCM that the
+     * queue needs.
+     */
+    setup: Setup;
     /**
      * `running` accepts and merges; `paused` tests and merges nothing and
      * keeps the order, and a submission waits for the resume; `draining`
@@ -1008,11 +1058,105 @@ export type RepoList = {
 };
 
 /**
+ * The setup of a repository: what CIHub found about the rules of its
+ * default branch and its configuration file, with a verdict. Every field
+ * comes from Postgres: showing a setup calls the SCM zero times.
+ */
+export type RepoSetup = {
+    /**
+     * When CIHub read the setup; `null` before the first read.
+     */
+    checked_at?: string | null;
+    /**
+     * The configuration file at the head of the default branch.
+     */
+    config: ConfigFile;
+    /**
+     * The default branch of the repository, whose rules and file the setup
+     * reads.
+     */
+    default_branch: string;
+    /**
+     * The account of the repository on the SCM.
+     */
+    namespace: string;
+    /**
+     * The target branch of the queue of the default branch, with `started`;
+     * `null` otherwise.
+     */
+    queue?: string | null;
+    /**
+     * The name of the repository, as the routes name it.
+     */
+    repo: string;
+    /**
+     * The identifier of the repository.
+     */
+    repo_id: string;
+    /**
+     * When an admin asked to read the setup again, while that read waits;
+     * `null` otherwise.
+     */
+    requested_at?: string | null;
+    /**
+     * The four rules that a queue needs, always in this order:
+     * `update_restriction_missing`, `app_not_exempt`,
+     * `test_branches_not_excluded`, `up_to_date_required`.
+     */
+    rules: Array<RuleCheck>;
+    /**
+     * The page of the SCM that changes the rules of the repository; `null`
+     * when the SCM has none.
+     */
+    rules_url?: string | null;
+    /**
+     * The verdict of the setup.
+     */
+    state: SetupState;
+    /**
+     * The default branch did not exist at the last read: no queue can merge
+     * into it.
+     */
+    target_branch_missing: boolean;
+};
+
+/**
  * The state that `PATCH /orgs/{org}/repos/{repo}/queues/{queue}` asks for.
  */
 export type RequestedQueueState = 'running' | 'paused' | 'draining';
 
 export type RequiredStatusesSource = 'repo_config' | 'branch_protection';
+
+/**
+ * A rule of the SCM that a queue needs, and whether the default branch has
+ * it.
+ */
+export type RuleCheck = {
+    /**
+     * The queue cannot merge while the rule fails (`app_not_exempt`,
+     * `test_branches_not_excluded`).
+     */
+    blocks_merge: boolean;
+    /**
+     * `update_restriction_missing`, `app_not_exempt`,
+     * `test_branches_not_excluded` or `up_to_date_required`: the finding
+     * when the rule fails.
+     */
+    code: string;
+    /**
+     * What to change, in English, for a person, when the rule fails; `null`
+     * when it passes.
+     */
+    message?: string | null;
+    /**
+     * The default branch has the rule.
+     */
+    passed: boolean;
+    /**
+     * The rule, in English, for a person: what passes, or what fails.
+     */
+    title: string;
+};
 
 /**
  * A run: one test, on the CI, of a test branch that CIHub assembles from
@@ -1184,6 +1328,55 @@ export type SettingsSummary = {
      */
     merge_method: MergeMethod;
 };
+
+/**
+ * The setup of a queue: what its last setup read found about the rules of
+ * the SCM; no finding means sound rules.
+ */
+export type Setup = {
+    /**
+     * When CIHub read the setup; `null` before the first read, which comes
+     * within minutes of the creation of the queue.
+     */
+    checked_at?: string | null;
+    /**
+     * What the rules miss; empty for sound rules.
+     */
+    findings: Array<Finding>;
+};
+
+/**
+ * A page of the setups of the repositories that the App reaches, by
+ * name.
+ */
+export type SetupList = {
+    /**
+     * How many entries the list has, every page together.
+     */
+    count: number;
+    /**
+     * The `from` of the next page; `null` on the last page.
+     */
+    cursor?: string | null;
+    /**
+     * More entries follow this page.
+     */
+    has_more: boolean;
+    /**
+     * The setups of the page.
+     */
+    setups: Array<RepoSetup>;
+};
+
+/**
+ * The verdict of the setup of a repository, computed by the server in this
+ * order: `started` (the default branch has its queue), `checking` (no read
+ * yet, or a read asked after the last one), `invalid_config` (the file is
+ * not valid), `cannot_merge` (a rule blocks the merges, or the default
+ * branch is missing), `ready_with_warnings` (a rule fails without blocking
+ * the merges), `ready`.
+ */
+export type SetupState = 'started' | 'checking' | 'ready' | 'ready_with_warnings' | 'cannot_merge' | 'invalid_config';
 
 /**
  * The median time in a state of the PRs merged in a period; a PR that did
@@ -2546,6 +2739,107 @@ export type ResyncQueueResponses = {
     202: unknown;
 };
 
+export type ResyncRepoData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/repos/{repo}/resync';
+};
+
+export type ResyncRepoErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type ResyncRepoError = ResyncRepoErrors[keyof ResyncRepoErrors];
+
+export type ResyncRepoResponses = {
+    /**
+     * CIHub takes the request.
+     */
+    202: unknown;
+};
+
+export type GetSetupData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/repos/{repo}/setup';
+};
+
+export type GetSetupErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type GetSetupError = GetSetupErrors[keyof GetSetupErrors];
+
+export type GetSetupResponses = {
+    /**
+     * The setup.
+     */
+    200: RepoSetup;
+};
+
+export type GetSetupResponse = GetSetupResponses[keyof GetSetupResponses];
+
 export type GetRunData = {
     body?: never;
     path: {
@@ -2596,6 +2890,123 @@ export type GetRunResponses = {
 };
 
 export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
+
+export type ListSetupsData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+    };
+    query?: {
+        /**
+         * Only the setups in these states, separated by commas: `started`,
+         * `checking`, `ready`, `ready_with_warnings`, `cannot_merge`,
+         * `invalid_config`.
+         */
+        state?: string;
+        /**
+         * Only the repositories whose name holds this text, whatever its case;
+         * from 1 to 100 characters.
+         */
+        q?: string;
+        /**
+         * The `cursor` of the previous page.
+         */
+        from?: string;
+        /**
+         * How many setups, from 1 to 100; 50 by default.
+         */
+        limit?: number;
+    };
+    url: '/orgs/{org}/setups';
+};
+
+export type ListSetupsErrors = {
+    /**
+     * - `invalid_request`: The body, the path or the query of the request is not valid.
+     * - `limit_out_of_range`: `limit` is from 1 to 100.
+     * - `invalid_cursor`: `from` is not a `cursor` that this list gave.
+     */
+    400: Problem;
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     */
+    403: Problem;
+    /**
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type ListSetupsError = ListSetupsErrors[keyof ListSetupsErrors];
+
+export type ListSetupsResponses = {
+    /**
+     * A page of setups.
+     */
+    200: SetupList;
+};
+
+export type ListSetupsResponse = ListSetupsResponses[keyof ListSetupsResponses];
+
+export type ResyncSetupsData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/setups/resync';
+};
+
+export type ResyncSetupsErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type ResyncSetupsError = ResyncSetupsErrors[keyof ResyncSetupsErrors];
+
+export type ResyncSetupsResponses = {
+    /**
+     * CIHub takes the request.
+     */
+    202: unknown;
+};
 
 export type StreamData = {
     body?: never;
