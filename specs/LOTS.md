@@ -225,6 +225,10 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     conditions, its priority and its profile (`submission_choices`). Tests: one read of the files for the three
     choices, the line of the profile in the comment, the profile in the table, and the comment of a PR with a
     profile against Postgres and the simulator.
+  - Done (October 16, 2026): the API `Queue` gains `is_default_branch`, and `cihub queue status|graph|pause|resume|drain`
+    without `--branch` takes the queue of the default branch of the repository. The anchors and the merge keys of
+    YAML are documented. Tests: the choice of the queue of the CLI, the CLI against `cihub-server start`, and a file
+    with anchors in `cihub-config`.
   - Done (October 2, 2026): the GitHub responses are recorded again for `check_setup`, with the
     rules of the target branch and of the test branches.
   - Done (October 5, 2026): CIHub on its own queue, on an instance started locally behind a tunnel. The queue

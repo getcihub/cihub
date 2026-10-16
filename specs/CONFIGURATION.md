@@ -20,7 +20,8 @@ longer serves, other than the one of the default branch, takes no new submission
 This file is the only
 source of the settings: the dashboard helps write it through a form that opens a PR on
 the repository, never a direct commit on the target. If several of these files exist, the configuration is in error, because none
-wins. A PR enters the queue of its base branch, and waits in `not_ready` there until its `queue_conditions`
+wins. The anchors (`&`, `*`) and the merge keys (`<<:`) of YAML are read, so that a part of the file is written
+once. A PR enters the queue of its base branch, and waits in `not_ready` there until its `queue_conditions`
 (its checks, its reviews) are satisfied: those of `defaults`, then those of its entry. The first rule of
 `priority_rules` that the PR satisfies gives its priority, unless the command gives one (`--priority`): an
 urgent PR goes ahead of the others in the same train, rather than in a second queue. The first profile of the

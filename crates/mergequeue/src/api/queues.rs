@@ -30,6 +30,7 @@ pub(super) struct QueueRow {
     repo_id: String,
     repo: String,
     target_branch: String,
+    is_default_branch: bool,
     state: String,
     mode: String,
     state_changed_at: OffsetDateTime,
@@ -44,7 +45,7 @@ pub(super) struct QueueRow {
 
 /// The columns of [`QueueRow`], read from [`QUEUE_SOURCE`].
 pub(super) const QUEUE_COLUMNS: &str = "q.id, q.repo_id, r.name AS repo, q.target_branch,
-    q.state::text AS state, q.mode::text AS mode,
+    q.target_branch = r.default_branch AS is_default_branch, q.state::text AS state, q.mode::text AS mode,
     coalesce(q.state_changed_at, q.created_at) AS state_changed_at,
     u.login AS state_changed_by, q.target_head_sha, q.window_size,
     c.suspended_at IS NOT NULL AS is_suspended, q.config_text, q.config_sha, q.config_error";
@@ -258,6 +259,7 @@ impl QueueFacts {
             repo_id: row.repo_id,
             repo: row.repo,
             target_branch: row.target_branch,
+            is_default_branch: row.is_default_branch,
             config_sha: row.config_sha,
             config_error: row.config_error,
         })

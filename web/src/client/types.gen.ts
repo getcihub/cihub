@@ -770,6 +770,10 @@ export type Queue = {
      */
     id: string;
     /**
+     * The branch of the queue is the default branch of its repository.
+     */
+    is_default_branch: boolean;
+    /**
      * When the last current item reached `merged`; `null` if no item merged.
      */
     last_merged_at?: string | null;

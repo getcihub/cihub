@@ -53,7 +53,8 @@ a resource has one form, the same in a list and alone.
 | GET                | `/metrics`                                               | Prometheus exposition, filters `repo`, `branch`                                                                                                                                                                                                |
 | GET, POST, DELETE  | `/orgs/{org}/webhooks`                                   | Manage the outgoing webhook endpoints, test a delivery                                                                                                                                                                                         |
 
-A queue (`Queue`) carries its `repo` and `name`, its `state` and `mode`, `state_changed_at` (its creation before a
+A queue (`Queue`) carries its `repo`, its `target_branch` and `is_default_branch` (the branch is the default branch
+of the repository), its `state` and `mode`, `state_changed_at` (its creation before a
 first change) and `state_changed_by`, the login of the person who asked for the state (`null` when CIHub decided it
 or a token asked for it); the `strategy` of its last valid file; `target_head_sha`, the head of the target branch
 that the log saw last; `access`, `ok` or `suspended` when the installation of the App is suspended or removed;
@@ -122,6 +123,7 @@ The host is `--hostname`, else `CIHUB_HOST`, else the only host that the command
 | `cihub queue resume`                                     | starts the queue again                                   | `queues:write` |
 | `cihub queue drain`                                      | finishes the items in the queue and refuses new ones     | `queues:write` |
 
-Every `cihub queue` command takes `--repo <owner/name>`, else the repository of the `origin` remote of git, and the queue commands (`status`, `graph`, `pause`, `resume`, `drain`) take `--branch <branch>`, else the only queue of the repository. The owner is the slug of the organization: an organization is the account of an installation of the App. The host is the one of `cihub auth`. With two or more queues and no `--branch`, the command fails, lists the branches and does nothing; with none, it fails and says that the first `/cihub merge` on a PR of the default branch creates the queue. `cihub queue targets upload` arrives at Lot 13.
+Every `cihub queue` command takes `--repo <owner/name>`, else the repository of the `origin` remote of git, and the queue commands (`status`, `graph`, `pause`, `resume`, `drain`) take `--branch <branch>`, else the queue of the default branch of the repository, else its only queue. The owner is the slug of the organization: an organization is the account of an installation of the App. The host is the one of `cihub auth`. With two or more queues, none of them on the default branch, and no `--branch`, the command fails, lists the
+branches and does nothing; with none, it fails and says that the first `/cihub merge` on a PR of the default branch creates the queue. `cihub queue targets upload` arrives at Lot 13.
 
 The internal interfaces are not RPC: the processes share Postgres, so the "internal API" consists of the `jobs` table, the `events` log and the `NOTIFY` channels `cihub_queue` (a queue has work), `cihub_jobs`, and `cihub_queue_changed` (`<org> <queue> <seq>`: what the pages of a queue show changed, sent in the transaction that changed it, which each web process listens to once for the streams of its pages).

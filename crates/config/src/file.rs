@@ -982,6 +982,30 @@ queues:
     }
 
     #[test]
+    fn reads_yaml_anchors_and_merge_keys() {
+        let text = "version: 1
+queues:
+  - branch: main
+    queue_conditions: &checks
+      - check-success = ci
+    <<: &fast
+      strategy: batched
+      batching: { size: 8 }
+  - branch: dev
+    queue_conditions: *checks
+    <<: *fast
+";
+        let config = RepoConfig::parse(text).unwrap();
+
+        for branch in ["main", "dev"] {
+            let settings = config.settings(branch).unwrap();
+            assert_eq!(settings.strategy.value, Strategy::Batched, "{branch}");
+            assert_eq!(settings.batching_size.value, 8, "{branch}");
+            assert_eq!(config.queue_conditions(branch).0.len(), 1, "{branch}");
+        }
+    }
+
+    #[test]
     fn an_entry_that_names_the_branch_wins_over_a_pattern() {
         let text = "version: 1
 queues:

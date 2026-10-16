@@ -121,6 +121,8 @@ Rules of the file (version 1):
   use `priority_rules`, not a second queue.
 - If the file has no queue for the default branch, that branch still has
   one. Other branches have a queue only with an entry.
+- YAML anchors (`&name`, `*name`) and merge keys (`<<: *name`) work, to
+  write a list of conditions or a set of settings once.
 - `strategy`: `sequential` (one test at a time), `pipelined` (default: tests
   in parallel, each on top of the ones ahead) or `batched` (`pipelined` with
   several pull requests per test; a failed batch is split to find the

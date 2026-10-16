@@ -428,6 +428,8 @@ pub struct Queue {
     /// routes: a repository has one queue per branch.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub target_branch: String,
+    /// The branch of the queue is the default branch of its repository.
+    pub is_default_branch: bool,
     /// `running` accepts and merges; `paused` tests and merges nothing and
     /// keeps the order, and a submission waits for the resume; `draining`
     /// accepts nothing and lets the items in flight merge; `switching_modes`
