@@ -20,7 +20,7 @@ rewrites.
 | Phase                       | Lots            | Scope                                                                                                                                                                                                                                                                                                                                                             | Exit criterion                                                                                                                                                                |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, `docker compose` and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following `INSTALL.md`; measured in lot 15 |
-| 2. Throughput and visibility | 10 to 12       | Dashboard, Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
+| 2. Throughput and visibility | 10 to 12, 16   | Dashboard, onboarding (the Setup URL of the App, the setup of a repository before its first queue), Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
 | 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                                            | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
@@ -53,6 +53,7 @@ configuration checker, in phase 1).
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, hardening                           | 4     | 11b, 13    | Q8        | to do                                    |
+| 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | to do                                    |
 
 ```mermaid
 flowchart LR
@@ -79,6 +80,7 @@ flowchart LR
   L12 --> L13[13 parallel]
   L11b --> L15[15 Scale]
   L13 --> L15
+  L10b --> L16[16 Onboarding]
 ```
 
 Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 10a, 11a, 12 and 14
@@ -503,6 +505,56 @@ Decisions:
     `…/config-check`; `Pr` in place of `Item`, `OrgPr` and `PrItem`; `Event`, `Run`); a `202` has no body. Done
     with it: the server, `cihub-client`, the CLI, the dashboard (the person of the session is `Me` in
     `src/session.ts`; "Your pull requests" reads the live PRs of `@me` and the last ones merged) and the tests.
+
+### Lot 16: onboarding and the GitHub App
+
+- **Goal**: a person who installs the App goes from GitHub to the first queue of a repository without help. Before
+  that queue, the dashboard says what the branch rules of the repository miss and what its `.cihub.yaml` holds
+  (`GOAL.md`: simple to install, every decision explained).
+- **Content**:
+  - The Setup URL of the App, `GET /auth/github/installed`, with "Redirect on update". It trusts no
+    `installation_id`: it starts the sign-in again, and only the installations that the token of the person lists
+    count.
+  - Every sign-in connects at once, as a sync would, the installations of the person that CIHub does not know yet,
+    at most 10 (`specs/GITHUB.md`, "Sign-in and roles").
+  - The setup of a repository: what CIHub found about its branch rules and the configuration file at the head of its
+    default branch, with a state (`started`, `checking`, `ready`, `ready_with_warnings`, `cannot_merge`,
+    `invalid_config`), computed by the server. The job `read_setup` reads it at the discovery of a repository, then
+    once a day spread over the day (class `repair`), and at a `resync` of an admin (class `interactive`, at most
+    once a minute per repository, 50 repositories for the organization). It is kept in `repo_setups`, outside the
+    log.
+  - `GET /orgs/{org}/setups` (with `state` and a search `q`), `GET /orgs/{org}/repos/{repo}/setup`,
+    `POST /orgs/{org}/repos/{repo}/resync` and `POST /orgs/{org}/setups/resync` (`queues:write`); the `GET` routes
+    read Postgres only.
+  - A repository that the App no longer reaches gets `repos.removed_at`, and its queues `access.lost`, then
+    `access.restored` when it comes back; `Org.access` says when every connection of an organization is suspended.
+  - Pages: `/welcome` for a person without an organization (it replaces "No organization yet"), "Connecting" after
+    the Setup URL, "Start your first queue" with a search and "Check again" (admins), the setup of a repository
+    before its queue, the lost access of an organization and of a queue. A page reads again every 2 seconds, for 60
+    seconds at most, while it waits for a read; the first `/cihub merge` still shows through `queue_changed`.
+- **Frozen interfaces**: the routes and the types `RepoSetup`, `SetupState`, `SetupList`, `OrgAccess`; the table
+  `repo_setups`.
+- **Exit criterion**: on the simulator, a person without an organization installs the App, comes back through the
+  Setup URL, sees "Connecting" then the setup of each repository (`cannot_merge`, `invalid_config` with its line,
+  `ready`); a fixed rule and "Check again" turn a repository to `ready`, and a `/cihub merge` to `started` without
+  a reload (`web/e2e/onboarding.spec.ts`); a Setup URL with an `installation_id` that the person does not reach
+  creates nothing and gives no role; showing a setup calls the SCM zero times, and the setup of another
+  organization answers `404 org_not_found` (principles VII and VIII).
+- **Decisions** (October 16, 2026, validated by the project lead):
+  - Vocabulary: `sync` is the internal copy of an object of the SCM; `resync` the public action that reads again
+    from the SCM; `setup` what CIHub found about a repository, with a verdict; `check` stays the checks of the CI.
+    So `Queue.config_check` becomes `Queue.setup`, `config_checks` becomes `queue_setups` and `check_config`
+    becomes `read_setup`: a repository and its queue show the same setup, before and after the first queue.
+  - The two `resync` routes take `queues:write`: a read in class `interactive` goes ahead of the merges, and a token
+    of `queues:read` must not spend the budget of an installation.
+  - The "request sent" state of a member waits for a check on the App of staging: GitHub does not document a return
+    to the Setup URL after a request.
+  - The mockups v20 give the screens; the specs win where they differ: an organization that the App left still
+    opens, with a banner; the setup of a repository names the entries of the file of its default branch, and a
+    queue of another branch reads the file of that branch; the buttons of the configuration come with the form of
+    "Next"; the server writes every sentence.
+  - The work starts from PR #143 (one queue per target branch) without waiting for its merge.
+- **Tracking**: to do.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
