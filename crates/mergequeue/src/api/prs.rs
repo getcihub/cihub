@@ -48,6 +48,7 @@ struct ItemRow {
     run_id: Option<String>,
     merged_sha: Option<String>,
     no_batch: bool,
+    profile: Option<String>,
     submitted_by: Option<String>,
     submitted_via: String,
     submitted_at: OffsetDateTime,
@@ -64,7 +65,7 @@ const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.target_branch AS
     i.state_changed_at, i.priority_value, i.position, i.block_reasons, i.group_id,
     (SELECT run.id FROM test_runs run WHERE run.group_id = i.group_id
      ORDER BY run.attempt DESC LIMIT 1) AS run_id,
-    i.merged_sha, i.no_batch, submitter.login AS submitted_by,
+    i.merged_sha, i.no_batch, i.profile, submitter.login AS submitted_by,
     i.submitted_via::text AS submitted_via, i.submitted_at,
     (SELECT t.title FROM pr_titles t WHERE t.repo_id = q.repo_id AND t.pr_number = i.pr_number)
         AS title,
@@ -183,6 +184,7 @@ impl Progress {
             run_id: row.run_id,
             merged_sha: row.merged_sha,
             no_batch: row.no_batch,
+            profile: row.profile,
             submitted_by: row.submitted_by,
             submitted_at: row.submitted_at,
             title: row.title,

@@ -593,6 +593,12 @@ export type Pr = {
      */
     priority: number;
     /**
+     * The profile of the queue that gives the settings of the PR (its merge
+     * method, its batches, its failure budget); `null` for those of the
+     * queue.
+     */
+    profile?: string | null;
+    /**
      * The target branch of the queue, as the routes name it.
      */
     queue: string;

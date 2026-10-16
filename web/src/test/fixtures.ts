@@ -98,6 +98,7 @@ export function itemOf(number: number, state: ItemState, changes: Partial<Pr> = 
     run_id: null,
     merged_sha: null,
     no_batch: false,
+    profile: null,
     submitted_by: "marie",
     submitted_via: "comment",
     submitted_at: new Date().toISOString(),

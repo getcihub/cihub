@@ -104,7 +104,9 @@ keeps it too. `conditions` choose and `queue_conditions` admit: write in `condit
 and does not change (its author, its head branch, its files), as a PR that does not satisfy a condition yet at
 the submission would keep the wrong profile. A batch holds the PRs of one profile, as it merges with one set of
 settings, and a culprit spends the failure budget of its profile. A profile that the file no longer has leaves
-its items the settings of their queue.
+its items the settings of their queue. The comment of CIHub on the PR, the `profile` of the API `Pr` and the
+dashboard name the profile of a PR. The submission reads the files and the review threads of the PR once, for
+its `queue_conditions`, its priority and its profile together.
 
 ## Sources and strategies
 

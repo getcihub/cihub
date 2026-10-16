@@ -24,7 +24,7 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::MergeQueueError;
-use crate::admission::{Reading, Sender, rule_priority, rule_profile, unmet_conditions};
+use crate::admission::{Reading, Sender, submission_choices, unmet_conditions};
 use crate::config::read_config_file;
 use crate::target::{QueueTarget, RepoTarget};
 
@@ -843,22 +843,6 @@ async fn queue_of_pr(
     open_queue(pool, repo.repo_id, &pr.base_branch, &default_branch).await
 }
 
-async fn submission_priority(
-    scm: &dyn Scm,
-    target: &QueueTarget,
-    config: Option<&RepoConfig>,
-    pr: &PrSnapshot,
-    request: &SubmitPr,
-    reading: &Reading<'_>,
-) -> Result<Priority, Failure> {
-    if let Some(priority) = request.priority {
-        return Ok(priority);
-    }
-
-    let rule = rule_priority(scm, target, config, pr, reading).await?;
-    Ok(rule.unwrap_or(Priority::MEDIUM))
-}
-
 async fn submission_accounts(
     pool: &PgPool,
     pr: &PrSnapshot,
@@ -879,6 +863,24 @@ async fn submission_accounts(
     tx.commit().await?;
 
     Ok((author_id, actor))
+}
+
+/// The profile that `request` names, `None` when it names none. The error is
+/// the refusal of a profile that the queue of `branch` in `config` does not
+/// have.
+fn named_profile(
+    request: &SubmitPr,
+    config: Option<&RepoConfig>,
+    branch: &str,
+) -> Result<Option<String>, String> {
+    let Some(name) = &request.profile else {
+        return Ok(None);
+    };
+
+    config
+        .and_then(|config| config.profile(branch, name))
+        .map(|profile| Some(profile.name.clone()))
+        .ok_or_else(|| format!("the queue of `{branch}` has no profile `{name}`."))
 }
 
 /// Answers the refused submission `request`: a command or a checkbox gets the
@@ -974,30 +976,18 @@ pub(crate) async fn submit_pr(
         .await;
     }
 
-    let profile = match &request.profile {
-        Some(name) => {
-            let named = config
-                .as_ref()
-                .and_then(|config| config.profile(&target.target_branch, name));
-            if named.is_none() {
-                info!(
-                    pr_number,
-                    profile = name,
-                    "submission refused: unknown profile"
-                );
-                return refuse(format!(
-                    "the queue of `{}` has no profile `{name}`.",
-                    target.target_branch
-                ))
-                .await;
-            }
-            Some(name.clone())
+    let choices = submission_choices(scm, &target, config.as_ref(), &pr, &reading).await?;
+    let profile = match named_profile(&request, config.as_ref(), &target.target_branch) {
+        Ok(named) => named.or(choices.profile),
+        Err(text) => {
+            info!(pr_number, "submission refused: unknown profile");
+            return refuse(text).await;
         }
-        None => rule_profile(scm, &target, config.as_ref(), &pr, &reading).await?,
     };
-    let unmet = unmet_conditions(scm, &target, config.as_ref(), &pr, &reading).await?;
-    let priority =
-        submission_priority(scm, &target, config.as_ref(), &pr, &request, &reading).await?;
+    let priority = request
+        .priority
+        .or(choices.priority)
+        .unwrap_or(Priority::MEDIUM);
     let (author_id, actor) = submission_accounts(pool, &pr, &request).await?;
 
     let submitted = EventKind::ItemSubmitted {
@@ -1016,7 +1006,7 @@ pub(crate) async fn submit_pr(
     };
     let facts = vec![
         (actor, submitted),
-        (Actor::System, observed(&pr, &required, &own, unmet)),
+        (Actor::System, observed(&pr, &required, &own, choices.unmet)),
     ];
 
     give_back_with_titles(pool, &target, std::slice::from_ref(&pr), facts, now).await?;

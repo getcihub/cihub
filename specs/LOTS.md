@@ -217,6 +217,14 @@ Lots 0 to 8 are done; the git history keeps their tracking.
     batch and the failure budget of a profile in `cihub-mq-core`, and against Postgres and the simulator the merge
     method of a profile, an unknown profile refused, a queue created by a glob, and a branch without a required
     check that merges nothing.
+  - Decided (October 16, 2026, validated by the project lead): the model of one train per branch with globs and
+    profiles; a draining queue refuses a submission of the API on the PR, not with a `409`; this work stays a
+    deviation recorded in Lot 9.
+  - Done (October 16, 2026): the profile of a PR shows in the comment of CIHub, in the `profile` of the API `Pr`
+    and in the table of a queue in the dashboard; a submission reads the files and the review threads once for its
+    conditions, its priority and its profile (`submission_choices`). Tests: one read of the files for the three
+    choices, the line of the profile in the comment, the profile in the table, and the comment of a PR with a
+    profile against Postgres and the simulator.
   - Done (October 2, 2026): the GitHub responses are recorded again for `check_setup`, with the
     rules of the target branch and of the test branches.
   - Done (October 5, 2026): CIHub on its own queue, on an instance started locally behind a tunnel. The queue

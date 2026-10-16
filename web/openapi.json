@@ -6403,6 +6403,14 @@
             "example": 100,
             "minimum": 0
           },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile of the queue that gives the settings of the PR (its merge\nmethod, its batches, its failure budget); `null` for those of the\nqueue.",
+            "example": "dependencies"
+          },
           "queue": {
             "type": "string",
             "description": "The target branch of the queue, as the routes name it.",

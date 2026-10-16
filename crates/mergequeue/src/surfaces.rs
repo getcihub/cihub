@@ -232,6 +232,10 @@ fn comment(
     let queued = !surface.state.is_terminal() && surface.state != ItemState::NotReady;
     let mut details = Vec::new();
 
+    if let Some(profile) = &surface.profile {
+        details.push(format!("Profile `{profile}` of `.cihub.yaml`."));
+    }
+
     if !surface.failing_checks.is_empty() && surface.state != ItemState::Merged {
         let checks: Vec<String> = surface
             .failing_checks
@@ -990,6 +994,7 @@ mod tests {
             failing_checks: Vec::new(),
             block_reasons: Vec::new(),
             labels: BTreeSet::new(),
+            profile: None,
             batch_wait: None,
         }
     }
@@ -1100,6 +1105,34 @@ mod tests {
                 .unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
         }
+    }
+
+    #[test]
+    fn the_comment_names_the_profile_of_the_pr() {
+        for state in [ItemState::Pending, ItemState::Merged] {
+            let mut item = surface(state);
+            item.profile = Some("dependencies".into());
+
+            let comment = render(&item, &settings(|_| {}), "main", &[], None)
+                .comment
+                .unwrap();
+
+            assert!(
+                comment.contains("Profile `dependencies` of `.cihub.yaml`."),
+                "{state:?}: {comment}"
+            );
+        }
+
+        let comment = render(
+            &surface(ItemState::Pending),
+            &settings(|_| {}),
+            "main",
+            &[],
+            None,
+        )
+        .comment
+        .unwrap();
+        assert!(!comment.contains("Profile"), "{comment}");
     }
 
     #[test]
