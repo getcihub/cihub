@@ -159,7 +159,7 @@ describe("the page of a queue", () => {
     const paused = detailOf(entry, {
       state: "paused",
       state_changed_by: "hugo",
-      config_check: { findings: [finding], checked_at: new Date().toISOString() },
+      setup: { findings: [finding], checked_at: new Date().toISOString() },
     });
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, paused] }));
 

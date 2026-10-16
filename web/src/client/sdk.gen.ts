@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetSetupData, GetSetupErrors, GetSetupResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListSetupsData, ListSetupsErrors, ListSetupsResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, ResyncRepoData, ResyncRepoErrors, ResyncRepoResponses, ResyncSetupsData, ResyncSetupsErrors, ResyncSetupsResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -424,6 +424,42 @@ export const resyncQueue = <ThrowOnError extends boolean = false>(options: Optio
 });
 
 /**
+ * Read the setup of a repository again
+ *
+ * Asks CIHub to read the setup of the repository from the SCM now, at most
+ * once a minute; its `requested_at` shows the read until it ends.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const resyncRepo = <ThrowOnError extends boolean = false>(options: Options<ResyncRepoData, ThrowOnError>): RequestResult<ResyncRepoResponses, ResyncRepoErrors, ThrowOnError> => (options.client ?? client).post<ResyncRepoResponses, ResyncRepoErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/resync',
+    ...options
+});
+
+/**
+ * Get the setup of a repository
+ *
+ * What CIHub found about the rules of the default branch of the repository
+ * and its configuration file, with a verdict. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const getSetup = <ThrowOnError extends boolean = false>(options: Options<GetSetupData, ThrowOnError>): RequestResult<GetSetupResponses, GetSetupErrors, ThrowOnError> => (options.client ?? client).get<GetSetupResponses, GetSetupErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/setup',
+    ...options
+});
+
+/**
  * Get a run
  *
  * The run, its test branch, the PRs that it tests and their predecessors,
@@ -439,6 +475,44 @@ export const getRun = <ThrowOnError extends boolean = false>(options: Options<Ge
             type: 'apiKey'
         }],
     url: '/orgs/{org}/runs/{run_id}',
+    ...options
+});
+
+/**
+ * List the setups of the repositories
+ *
+ * The setup of each repository that the App reaches, by name: what CIHub
+ * found about the rules of its default branch and its configuration file,
+ * with a verdict. A repository whose default branch has its queue is
+ * `started`. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listSetups = <ThrowOnError extends boolean = false>(options: Options<ListSetupsData, ThrowOnError>): RequestResult<ListSetupsResponses, ListSetupsErrors, ThrowOnError> => (options.client ?? client).get<ListSetupsResponses, ListSetupsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/setups',
+    ...options
+});
+
+/**
+ * Read the setups of the organization again
+ *
+ * Asks CIHub to read from the SCM now the setups of at most 50 repositories
+ * without a queue, the oldest read first.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const resyncSetups = <ThrowOnError extends boolean = false>(options: Options<ResyncSetupsData, ThrowOnError>): RequestResult<ResyncSetupsResponses, ResyncSetupsErrors, ThrowOnError> => (options.client ?? client).post<ResyncSetupsResponses, ResyncSetupsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/setups/resync',
     ...options
 });
 

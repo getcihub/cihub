@@ -9,16 +9,18 @@ mod health;
 mod prs;
 mod queues;
 mod runs;
+mod setups;
 
 use std::collections::BTreeMap;
 
 use axum::Router;
 use axum::routing::{get, post};
 use cihub_api_types::{
-    CheckHealth, ConfigCheck, Dependent, ErrorCode, Event, EventList, Finding, Graph, GraphEdge,
-    GraphNode, GraphRun, HealthBucket, HealthTotals, HealthVerdict, ItemCounts, Person, Pr,
-    PrAhead, PrList, Queue, QueueAccess, QueueHealth, QueueList, ReasonCount, RequestedQueueState,
-    Run, RunCheck, SettingsSummary, StateTime, SubmitPr, TimeToMerge, UpdateQueue, Window,
+    CheckHealth, ConfigFile, ConfigFileState, Dependent, ErrorCode, Event, EventList, Finding,
+    Graph, GraphEdge, GraphNode, GraphRun, HealthBucket, HealthTotals, HealthVerdict, ItemCounts,
+    Person, Pr, PrAhead, PrList, Queue, QueueAccess, QueueHealth, QueueList, ReasonCount,
+    RepoSetup, RequestedQueueState, RuleCheck, Run, RunCheck, SettingsSummary, Setup, SetupList,
+    SetupState, StateTime, SubmitPr, TimeToMerge, UpdateQueue, Window,
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
@@ -56,6 +58,11 @@ struct ApiState {
             name = "Runs",
             description = "A run tests, on the CI, a test branch that holds a group of PRs on top \
                            of the PRs ahead of them."
+        ),
+        (
+            name = "Setups",
+            description = "The setup of a repository: what CIHub found about the rules of its \
+                           default branch and its configuration file, with a verdict."
         )
     ),
     paths(
@@ -72,11 +79,16 @@ struct ApiState {
         prs::submit,
         prs::cancel,
         prs::restart,
-        runs::get_run
+        runs::get_run,
+        setups::list_setups,
+        setups::get_setup,
+        setups::resync_repo,
+        setups::resync_setups
     ),
     components(schemas(
         CheckHealth,
-        ConfigCheck,
+        ConfigFile,
+        ConfigFileState,
         Dependent,
         Event,
         EventList,
@@ -98,10 +110,15 @@ struct ApiState {
         QueueHealth,
         QueueList,
         ReasonCount,
+        RepoSetup,
         RequestedQueueState,
+        RuleCheck,
         Run,
         RunCheck,
         SettingsSummary,
+        Setup,
+        SetupList,
+        SetupState,
         StateTime,
         SubmitPr,
         TimeToMerge,
@@ -159,6 +176,10 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
             post(prs::restart),
         )
         .route("/orgs/{org}/runs/{run_id}", get(runs::get_run))
+        .route("/orgs/{org}/setups", get(setups::list_setups))
+        .route("/orgs/{org}/setups/resync", post(setups::resync_setups))
+        .route("/orgs/{org}/repos/{repo}/setup", get(setups::get_setup))
+        .route("/orgs/{org}/repos/{repo}/resync", post(setups::resync_repo))
         .with_state(ApiState { pool, clock });
     ModuleApi {
         routes,
@@ -290,6 +311,8 @@ route_errors!(
     ]
 );
 route_errors!(RunErrors: &[ErrorCode::RunNotFound]);
+route_errors!(SetupListErrors: PAGE_ERRORS);
+route_errors!(RepoSetupErrors: &[ErrorCode::RepoNotFound]);
 
 /// A transaction of the organization of the URL, and the repository that the
 /// URL names, read in it.

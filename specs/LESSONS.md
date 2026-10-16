@@ -338,11 +338,11 @@ reason no longer holds.
 
 ### Write a job result in a column of `queues`
 
-- **Tried / considered**: keep the check of the configuration of the SCM in `queues.config_findings`, written by
-  the job `check_config`.
+- **Tried / considered**: keep the setup of a queue, what the rules of the SCM miss, in `queues.config_findings`,
+  written by the job `read_setup`.
 - **Why not**: the lease of the queues takes their rows with `FOR UPDATE SKIP LOCKED`. While the job holds the
-  row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The check has
-  its own table, `config_checks`. A job that must write `queues` calls `mark_dirty` in its transaction, as
+  row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The setup has
+  its own table, `queue_setups`. A job that must write `queues` calls `mark_dirty` in its transaction, as
   `load_config` does.
 
 ## API

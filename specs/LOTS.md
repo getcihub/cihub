@@ -366,7 +366,7 @@ Decisions:
   empty states); the page of a queue (banners of pause, drain, lost access, invalid file and up-to-date rule;
   counters; settings; live graph; the tabs of the items, live, merged, failed and cancelled). The pages read again
   every 10 seconds until lot 10d.
-- **Frozen interfaces**: `Queue`, `Pr`, `Graph`, `ConfigCheck` (the forms of the decision of October 11, 2026, in
+- **Frozen interfaces**: `Queue`, `Pr`, `Graph`, `Setup` (the forms of the decision of October 11, 2026, in
   lot 10d).
 - **Exit criterion**: a browser test on the simulator shows the cards of the queues and the page of a queue with
   the PRs submitted by comment, their title, author and position, and the runs of the graph; the routes give the
@@ -554,7 +554,14 @@ Decisions:
     queue of another branch reads the file of that branch; the buttons of the configuration come with the form of
     "Next"; the server writes every sentence.
   - The work starts from PR #143 (one queue per target branch) without waiting for its merge.
-- **Tracking**: to do.
+- **Tracking**:
+  - Done (October 16, 2026): WP0, the interfaces. `Queue.config_check` becomes `Queue.setup` (`Setup`), the table
+    `config_checks` becomes `queue_setups` and the job `check_config` becomes `read_setup`, without a change of
+    behaviour; the types `RepoSetup`, `SetupState`, `RuleCheck`, `ConfigFile`, `ConfigFileState`, `SetupList` and
+    `OrgAccess`, and `Org.access` (`ok` everywhere until the platform computes it); the four setup routes, with their
+    final document and scopes, which answer `404 route_not_found` until their bodies come; the table `repo_setups`,
+    the enum `repo_config_state` (`RepoConfigState` in `cihub-domain`) and `repos.removed_at`;
+    `Scm::branch_rules_url`; the constant `SETUP_PATH`; the empty pages `/welcome` and `/orgs/$org/start`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

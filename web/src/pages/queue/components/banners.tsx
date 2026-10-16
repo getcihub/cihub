@@ -73,7 +73,7 @@ export function Banners({ queue, org, repo, now }: { queue: Queue; org: string; 
           The queue accepts no new pull request and lets the ones in it merge.
         </Banner>
       )}
-      {queue.config_check.findings.map((finding) => (
+      {queue.setup.findings.map((finding) => (
         <Banner key={finding.code} variant="warning" icon={<WarningIcon />} title={finding.message} />
       ))}
     </>

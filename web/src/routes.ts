@@ -6,10 +6,12 @@ export const routes = rootRoute("root/route.tsx", [
   index("home/route.tsx"),
   route("/sign-in", "sign-in/route.tsx"),
   route("/device", "device/route.tsx"),
+  route("/welcome", "welcome/route.tsx"),
   route("/orgs", [
     index("redirects/orgs.tsx"),
     route("/$org", "org/route.tsx", [
       index("org-queues/route.tsx"),
+      route("/start", "start/route.tsx"),
       route("/repos", [
         index("redirects/repos.tsx"),
         route("/$repo", [

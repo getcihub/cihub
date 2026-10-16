@@ -267,6 +267,10 @@ pub trait Scm: Send + Sync {
     /// call, so no budget of a connection applies.
     fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String>;
 
+    /// The page of the SCM where an owner changes the rules of the branches
+    /// of `repo`, or `None` when the SCM has none. It makes no call.
+    fn branch_rules_url(&self, repo: &RepoRef) -> Option<String>;
+
     /// The address of the SCM where a person signs in to CIHub, or `None`
     /// when the operator configured no sign-in.
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String>;

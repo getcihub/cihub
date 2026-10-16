@@ -1,7 +1,7 @@
 //! The job `load_config`: it reads the configuration file on the head of the
 //! target branch, and keeps it on the queue when it is valid. The file is the
-//! only source of the settings. The job `check_config` reads what the
-//! configuration of the SCM misses for the queue, and keeps it for the pages.
+//! only source of the settings. The job `read_setup` reads what the rules of
+//! the SCM miss for the queue, its setup, and keeps it for the pages.
 
 use std::error::Error;
 
@@ -22,11 +22,11 @@ use crate::target::QueueTarget;
 use crate::{MergeQueueError, parse_id};
 
 pub(crate) const LOAD_CONFIG: &str = "load_config";
-pub(crate) const CHECK_CONFIG: &str = "check_config";
+pub(crate) const READ_SETUP: &str = "read_setup";
 
-/// How old a check of the configuration of the SCM gets before the scheduler
-/// asks for another one: the SCM sends no event when a rule changes.
-pub(crate) const CHECK_CONFIG_EVERY: Duration = Duration::hours(1);
+/// How old the setup read of a queue gets before the scheduler asks for
+/// another one: the SCM sends no event when a rule changes.
+pub(crate) const READ_SETUP_EVERY: Duration = Duration::hours(1);
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct LoadConfig {
@@ -123,18 +123,17 @@ pub(crate) async fn load(
     Ok(())
 }
 
-/// The check of the configuration of the SCM for `target`, once for
-/// `subject`.
-pub(crate) fn check_config_job(target: &QueueTarget, subject: &str, class: JobClass) -> Job {
-    let key = format!("{CHECK_CONFIG}:{}-{subject}:1", target.queue_id);
-    job(target, key, CHECK_CONFIG, class, json!({}))
+/// The setup read of `target`, once for `subject`.
+pub(crate) fn read_setup_job(target: &QueueTarget, subject: &str, class: JobClass) -> Job {
+    let key = format!("{READ_SETUP}:{}-{subject}:1", target.queue_id);
+    job(target, key, READ_SETUP, class, json!({}))
 }
 
-/// Asks for a check of the configuration of each queue whose last check is
-/// older than [`CHECK_CONFIG_EVERY`], or that has none, while CIHub reaches its
-/// repository and no check of it waits. Each check runs at a moment of the
-/// hour that its queue keeps, so that the checks of many queues do not come
-/// together. Returns their number.
+/// Asks for a setup read of each queue whose last read is older than
+/// [`READ_SETUP_EVERY`], or that has none, while CIHub reaches its repository
+/// and no read of it waits. Each read runs at a moment of the hour that its
+/// queue keeps, so that the reads of many queues do not come together.
+/// Returns their number.
 ///
 /// Like the other sweeps of the scheduler, it reads the queues of every
 /// organization, then acts on each queue alone.
@@ -142,7 +141,7 @@ pub(crate) fn check_config_job(target: &QueueTarget, subject: &str, class: JobCl
 /// # Errors
 ///
 /// Postgres fails.
-pub async fn request_config_checks(
+pub async fn request_queue_setups(
     pool: &PgPool,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
@@ -151,16 +150,16 @@ pub async fn request_config_checks(
         "SELECT q.id, abs(hashtextextended(q.id, 0) % $3) FROM queues q
          JOIN repos r ON r.id = q.repo_id
          JOIN scm_connections c ON c.id = r.connection_id
-         LEFT JOIN config_checks k ON k.queue_id = q.id
+         LEFT JOIN queue_setups k ON k.queue_id = q.id
          WHERE c.suspended_at IS NULL AND (k.checked_at IS NULL OR k.checked_at <= $1)
            AND NOT EXISTS (SELECT 1 FROM jobs j
                            WHERE j.queue_id = q.id AND j.type = $2
                              AND j.state IN ('queued', 'running'))
          ORDER BY q.id",
     )
-    .bind(now - CHECK_CONFIG_EVERY)
-    .bind(CHECK_CONFIG)
-    .bind(CHECK_CONFIG_EVERY.whole_seconds())
+    .bind(now - READ_SETUP_EVERY)
+    .bind(READ_SETUP)
+    .bind(READ_SETUP_EVERY.whole_seconds())
     .fetch_all(&mut *tx)
     .await?;
     let subject = window(now);
@@ -169,9 +168,9 @@ pub async fn request_config_checks(
     for (queue, delay_seconds) in &queues {
         let queue: QueueId = parse_id(queue, queue)?;
         let target = QueueTarget::load(&mut tx, queue).await?;
-        let check = check_config_job(&target, &subject, JobClass::Repair);
+        let read = read_setup_job(&target, &subject, JobClass::Repair);
         let run_after = now + Duration::seconds(*delay_seconds);
-        if enqueue_job(&mut tx, &check, run_after, now).await? {
+        if enqueue_job(&mut tx, &read, run_after, now).await? {
             requested += 1;
         }
     }
@@ -181,9 +180,9 @@ pub async fn request_config_checks(
     Ok(requested)
 }
 
-/// Reads what the configuration of the SCM misses for the queue, and keeps
-/// it with the time of the check: a page reads it without a call to the SCM.
-pub(crate) async fn check(
+/// Reads what the rules of the SCM miss for the queue, and keeps it with the
+/// time of the read: a page reads it without a call to the SCM.
+pub(crate) async fn read_setup(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
@@ -206,10 +205,10 @@ pub(crate) async fn check(
     let mut tx = begin_system(pool).await?;
 
     sqlx::query(
-        "INSERT INTO config_checks (org_id, queue_id, findings, checked_at)
+        "INSERT INTO queue_setups (org_id, queue_id, findings, checked_at)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (queue_id) DO UPDATE SET findings = $3, checked_at = $4
-         WHERE config_checks.checked_at <= $4",
+         WHERE queue_setups.checked_at <= $4",
     )
     .bind(target.org_id.to_string())
     .bind(target.queue_id.to_string())
@@ -223,9 +222,9 @@ pub(crate) async fn check(
     Ok(())
 }
 
-/// What a check of the configuration finds: a point of the configuration of
-/// the SCM, or a target branch that no longer exists. Its finding comes back
-/// in an hour, as the others.
+/// What a setup read finds: a point of the rules of the SCM, or a target
+/// branch that no longer exists. Its finding comes back in an hour, as the
+/// others.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CheckFinding {
     Setup(SetupFinding),

@@ -484,11 +484,14 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     assert_eq!(
         orgs,
         serde_json::json!({
-            "orgs": [{ "slug": "acme", "role": "member" }],
+            "orgs": [{ "slug": "acme", "role": "member", "access": "ok" }],
             "has_more": false, "count": 1, "cursor": null
         })
     );
-    assert_eq!(org, serde_json::json!({ "slug": "acme", "role": "member" }));
+    assert_eq!(
+        org,
+        serde_json::json!({ "slug": "acme", "role": "member", "access": "ok" })
+    );
     assert_eq!(repo["name"], "app", "the case of a name does not matter");
     assert_eq!(repos.status, 200, "{}", repos.body);
     assert_eq!(audit.status, 403, "{}", audit.body);
@@ -518,7 +521,7 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
     assert_eq!(instance.status, 200, "{}", instance.body);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&org.body).unwrap(),
-        serde_json::json!({ "slug": "acme", "role": null }),
+        serde_json::json!({ "slug": "acme", "role": null, "access": "ok" }),
         "a token has no role"
     );
     assert_eq!(signed_out.status, 204);
@@ -633,7 +636,7 @@ async fn the_command_line_signs_in_once_its_person_approves_the_code(pool: PgPoo
 
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
     assert_eq!(me["login"], "ada");
-    assert_eq!(org.body, r#"{"slug":"acme","role":"member"}"#);
+    assert_eq!(org.body, r#"{"slug":"acme","role":"member","access":"ok"}"#);
     assert_eq!(
         in_cookie.status, 401,
         "a session of the command line is no cookie"
@@ -800,7 +803,7 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
     assert_eq!(me["login"], "ada");
     assert_eq!(
         orgs["orgs"],
-        serde_json::json!([{ "slug": "acme", "role": "member" }])
+        serde_json::json!([{ "slug": "acme", "role": "member", "access": "ok" }])
     );
     assert_eq!(instance["app_install_url"], "sim:install");
 }

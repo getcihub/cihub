@@ -287,7 +287,7 @@ mod tests {
             "settings": { "batching_enabled": false, "batching_size": 1,
                           "batching_max_wait_minutes": 0, "failure_budget_retries": 0,
                           "merge_method": "squash" },
-            "config_check": { "findings": [], "checked_at": null },
+            "setup": { "findings": [], "checked_at": null },
         }))
         .unwrap()
     }

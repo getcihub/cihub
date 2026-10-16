@@ -78,10 +78,10 @@ CIHub checks the protection of the branch for you, once the queue exists:
 
 ```sh
 curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues -H "Authorization: Bearer <token>"
-curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues/<queue>/config-check -H "Authorization: Bearer <token>"
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues/<queue> -H "Authorization: Bearer <token>"
 ```
 
-An empty list of `findings` means a sound configuration.
+An empty list of `setup.findings` means sound rules.
 
 ## 6. Use the CLI
 

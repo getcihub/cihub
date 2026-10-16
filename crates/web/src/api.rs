@@ -18,7 +18,7 @@ use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use cihub_api_types::{
     AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
-    OrgList, Problem, QueueChanged, Repo, RepoList, User,
+    OrgAccess, OrgList, Problem, QueueChanged, Repo, RepoList, User,
 };
 use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
 use cihub_platform::{
@@ -142,6 +142,7 @@ impl Modify for Security {
         ErrorCode,
         Instance,
         Org,
+        OrgAccess,
         OrgList,
         Problem,
         QueueChanged,
@@ -639,6 +640,7 @@ async fn list_user_orgs(
         .map(|membership| Org {
             slug: membership.org_slug,
             role: Some(membership.role),
+            access: OrgAccess::Ok,
         })
         .collect();
     let (orgs, has_more) = page.split(rows);
@@ -717,7 +719,11 @@ async fn get_org(
             .map(|membership| membership.role),
     };
 
-    Ok(Json(Org { slug, role }))
+    Ok(Json(Org {
+        slug,
+        role,
+        access: OrgAccess::Ok,
+    }))
 }
 
 /// List the repositories

@@ -27,7 +27,7 @@ use cihub_scm::Scm;
 use cihub_store::PgPool;
 use time::OffsetDateTime;
 
-pub use config::request_config_checks;
+pub use config::request_queue_setups;
 pub use jobs::{REFRESH_PRS, queue_status_context};
 pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::resync;
@@ -37,7 +37,7 @@ pub use scheduler::{
 
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
 use crate::command::PR_COMMAND;
-use crate::config::{CHECK_CONFIG, LOAD_CONFIG};
+use crate::config::{LOAD_CONFIG, READ_SETUP};
 use crate::jobs::SUBMIT_PR;
 use crate::merge::MERGE_PR;
 use crate::repair::{REFRESH_CHECKS, REFRESH_TARGET};
@@ -151,7 +151,7 @@ pub fn module(
             register!(executors, scm, REFRESH_CHECKS, repair::read_checks);
             register!(executors, scm, REFRESH_TARGET, repair::read_target);
             register!(executors, scm, LOAD_CONFIG, config::load);
-            register!(executors, scm, CHECK_CONFIG, config::check);
+            register!(executors, scm, READ_SETUP, config::read_setup);
             register!(executors, scm, PR_COMMAND, command::run_pr_command);
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);

@@ -4,8 +4,8 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use cihub_api_types::{
-    ConfigCheck, ErrorCode, Finding, Graph, GraphEdge, GraphNode, GraphRun, ItemCounts, Queue,
-    QueueAccess, QueueList, RequestedQueueState, SettingsSummary, UpdateQueue, Window,
+    ErrorCode, Finding, Graph, GraphEdge, GraphNode, GraphRun, ItemCounts, Queue, QueueAccess,
+    QueueList, RequestedQueueState, SettingsSummary, Setup, UpdateQueue, Window,
 };
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{ApiScope, EventKind, QueueControl, QueueId, RepoId};
@@ -152,11 +152,11 @@ struct CountedQueueRow {
 }
 
 /// What a queue shows besides its row and its counters: its runs in progress,
-/// the median duration of its runs, and the last check of its configuration.
+/// the median duration of its runs, and its last setup read.
 struct QueueFacts {
     live_runs: HashMap<String, i64>,
     medians: HashMap<String, u32>,
-    checks: HashMap<String, ConfigCheck>,
+    setups: HashMap<String, Setup>,
 }
 
 impl QueueFacts {
@@ -175,9 +175,9 @@ impl QueueFacts {
         .await?
         .into_iter()
         .collect();
-        let checks: Vec<(String, sqlx::types::Json<Vec<Finding>>, OffsetDateTime)> =
+        let setups: Vec<(String, sqlx::types::Json<Vec<Finding>>, OffsetDateTime)> =
             sqlx::query_as(
-                "SELECT queue_id, findings, checked_at FROM config_checks
+                "SELECT queue_id, findings, checked_at FROM queue_setups
                  WHERE queue_id = ANY($1)",
             )
             .bind(queues)
@@ -185,20 +185,20 @@ impl QueueFacts {
             .await?;
         let medians = median_run_seconds(conn, queues, now).await?;
 
-        let checks = checks
+        let setups = setups
             .into_iter()
             .map(|(queue, findings, checked_at)| {
-                let check = ConfigCheck {
+                let setup = Setup {
                     findings: findings.0,
                     checked_at: Some(checked_at),
                 };
-                (queue, check)
+                (queue, setup)
             })
             .collect();
         Ok(Self {
             live_runs,
             medians,
-            checks,
+            setups,
         })
     }
 
@@ -211,7 +211,7 @@ impl QueueFacts {
         } else {
             QueueAccess::Ok
         };
-        let config_check = self.checks.remove(&row.id).unwrap_or(ConfigCheck {
+        let setup = self.setups.remove(&row.id).unwrap_or(Setup {
             findings: Vec::new(),
             checked_at: None,
         });
@@ -251,7 +251,7 @@ impl QueueFacts {
                     .value
                     .then(|| settings.enqueue_label.value.clone()),
             },
-            config_check,
+            setup,
             state_changed_at: row.state_changed_at,
             state_changed_by: row.state_changed_by,
             target_head_sha: row.target_head_sha,

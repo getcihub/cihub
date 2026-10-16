@@ -3,8 +3,8 @@
 import { queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getSetup, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listSetups, listUserOrgs, type Options, restart, resyncQueue, resyncRepo, resyncSetups, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetSetupData, GetSetupError, GetSetupResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListSetupsData, ListSetupsError, ListSetupsResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, ResyncRepoData, ResyncRepoError, ResyncSetupsData, ResyncSetupsError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
 
 /**
  * Start a sign-in of the command line
@@ -546,6 +546,51 @@ export const resyncQueueMutation = (options?: Partial<Options<ResyncQueueData>>)
     return mutationOptions;
 };
 
+/**
+ * Read the setup of a repository again
+ *
+ * Asks CIHub to read the setup of the repository from the SCM now, at most
+ * once a minute; its `requested_at` shows the read until it ends.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const resyncRepoMutation = (options?: Partial<Options<ResyncRepoData>>): UseMutationOptions<unknown, ResyncRepoError, Options<ResyncRepoData>> => {
+    const mutationOptions: UseMutationOptions<unknown, ResyncRepoError, Options<ResyncRepoData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await resyncRepo({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const getSetupQueryKey = (options: Options<GetSetupData>) => createQueryKey('getSetup', options);
+
+/**
+ * Get the setup of a repository
+ *
+ * What CIHub found about the rules of the default branch of the repository
+ * and its configuration file, with a verdict. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const getSetupOptions = (options: Options<GetSetupData>) => queryOptions<GetSetupResponse, GetSetupError, GetSetupResponse, ReturnType<typeof getSetupQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getSetup({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getSetupQueryKey(options)
+});
+
 export const getRunQueryKey = (options: Options<GetRunData>) => createQueryKey('getRun', options);
 
 /**
@@ -569,6 +614,53 @@ export const getRunOptions = (options: Options<GetRunData>) => queryOptions<GetR
     },
     queryKey: getRunQueryKey(options)
 });
+
+export const listSetupsQueryKey = (options: Options<ListSetupsData>) => createQueryKey('listSetups', options);
+
+/**
+ * List the setups of the repositories
+ *
+ * The setup of each repository that the App reaches, by name: what CIHub
+ * found about the rules of its default branch and its configuration file,
+ * with a verdict. A repository whose default branch has its queue is
+ * `started`. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listSetupsOptions = (options: Options<ListSetupsData>) => queryOptions<ListSetupsResponse, ListSetupsError, ListSetupsResponse, ReturnType<typeof listSetupsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listSetups({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listSetupsQueryKey(options)
+});
+
+/**
+ * Read the setups of the organization again
+ *
+ * Asks CIHub to read from the SCM now the setups of at most 50 repositories
+ * without a queue, the oldest read first.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const resyncSetupsMutation = (options?: Partial<Options<ResyncSetupsData>>): UseMutationOptions<unknown, ResyncSetupsError, Options<ResyncSetupsData>> => {
+    const mutationOptions: UseMutationOptions<unknown, ResyncSetupsError, Options<ResyncSetupsData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await resyncSetups({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const getUserQueryKey = (options?: Options<GetUserData>) => createQueryKey('getUser', options);
 

@@ -71,7 +71,7 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
       merge_method: "squash",
       enqueue_label: "cihub-merge-queue-submit",
     },
-    config_check: { findings: [], checked_at: null },
+    setup: { findings: [], checked_at: null },
     ...changes,
   };
 }
@@ -100,7 +100,7 @@ const QUEUES: Queue[] = [
     state: "paused",
     state_changed_by: "hugo",
     config_error: "line 3: `batching.size` must be 1 or more",
-    config_check: {
+    setup: {
       findings: [
         {
           code: "required_check_missing",
@@ -447,13 +447,13 @@ const EVENTS: Record<string, Event[]> = {
 
 const PEOPLE: Record<
   Exclude<Person, "nobody">,
-  { login: string; orgs: { slug: string; role: "admin" | "member" }[] }
+  { login: string; orgs: { slug: string; role: "admin" | "member"; access: "ok" }[] }
 > = {
   ada: {
     login: "ada",
     orgs: [
-      { slug: "acme", role: "admin" },
-      { slug: "acme-labs", role: "member" },
+      { slug: "acme", role: "admin", access: "ok" },
+      { slug: "acme-labs", role: "member", access: "ok" },
     ],
   },
   grace: { login: "grace", orgs: [] },
