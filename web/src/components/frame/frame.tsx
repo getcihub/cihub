@@ -2,10 +2,20 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
+import { CheckIcon } from "@/components/icons/check-icon";
+import { ExternalIcon } from "@/components/icons/external-icon";
 import { UpDownIcon } from "@/components/icons/up-down-icon";
 import { Avatar } from "@/components/ui/avatar";
 import { Mark } from "@/components/ui/mark";
-import { Menu, MenuHint, MenuItem, MenuSeparator, MenuSub, menuItemVariants } from "@/components/ui/menu";
+import {
+  Menu,
+  MenuHint,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuSub,
+  menuItemVariants,
+} from "@/components/ui/menu";
 import { inQueueCount } from "@/domain/queue/counts";
 import { type Me, membershipOf } from "@/domain/session/session";
 import { useSignOut } from "@/hooks/use-sign-out";
@@ -243,13 +253,32 @@ function QueuePicker({
   );
 }
 
+const REPOSITORY_URL = "https://github.com/getcihub/cihub";
+
+/** A page outside the dashboard, in a new tab. */
+function ExternalLink({ href, label, hint }: { href: string; label: string; hint?: string }) {
+  return (
+    <a className={menuItemVariants()} href={href} target="_blank" rel="noreferrer">
+      {label}
+      {hint && <MenuHint>{hint}</MenuHint>}
+      <ExternalIcon className={cn("size-3.5 flex-none text-muted-foreground", !hint && "ml-auto")} />
+    </a>
+  );
+}
+
 const THEMES: { theme: Theme; label: string }[] = [
   { theme: "light", label: "Light" },
   { theme: "dark", label: "Dark" },
   { theme: "system", label: "System" },
 ];
 
-function PersonMenu({ me: { login, name, avatar_url }, onSignOut }: { me: Me; onSignOut: () => void }) {
+function PersonMenu({
+  me: { login, name, avatar_url, version },
+  onSignOut,
+}: {
+  me: Me;
+  onSignOut: () => void;
+}) {
   const [theme, setTheme] = useState(chosenTheme);
 
   return (
@@ -264,14 +293,15 @@ function PersonMenu({ me: { login, name, avatar_url }, onSignOut }: { me: Me; on
       triggerClassName="flex cursor-pointer items-center rounded-full p-0.5 text-foreground hover:bg-muted"
       align="right"
     >
-      <MenuItem className="font-medium" disabled>
-        Signed in as {name ? `${name} (@${login})` : `@${login}`}
-      </MenuItem>
-      <MenuSub label="Appearance" side="left">
+      <MenuLabel>
+        <div className="font-medium">{name ?? login}</div>
+        {name && <div className="text-sm text-muted-foreground">@{login}</div>}
+      </MenuLabel>
+      <MenuSeparator />
+      <MenuSub label="Appearance">
         {THEMES.map((choice) => (
           <MenuItem
             key={choice.theme}
-            isCurrent={choice.theme === theme}
             aria-pressed={choice.theme === theme}
             onClick={() => {
               chooseTheme(choice.theme);
@@ -279,13 +309,16 @@ function PersonMenu({ me: { login, name, avatar_url }, onSignOut }: { me: Me; on
             }}
           >
             {choice.label}
+            {choice.theme === theme && <CheckIcon className="ml-auto size-4 flex-none" />}
           </MenuItem>
         ))}
       </MenuSub>
       <MenuSeparator />
-      <MenuItem className="font-medium" onClick={onSignOut}>
-        Sign out
-      </MenuItem>
+      <ExternalLink href={`${REPOSITORY_URL}#readme`} label="Documentation" />
+      <ExternalLink href={`${REPOSITORY_URL}/releases/tag/v${version}`} label="About" hint={`v${version}`} />
+      <ExternalLink href={REPOSITORY_URL} label="GitHub" />
+      <MenuSeparator />
+      <MenuItem onClick={onSignOut}>Sign out</MenuItem>
     </Menu>
   );
 }

@@ -117,6 +117,21 @@ describe("Frame", () => {
     expect(localStorage.getItem("theme")).toBeNull();
   });
 
+  it("links to the notes of the release that the instance runs", async () => {
+    renderInRouter(
+      <Frame me={ada} org="acme" queues={queues}>
+        page
+      </Frame>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Your account: ada" }));
+
+    expect(screen.getByRole("link", { name: /About/ })).toHaveAttribute(
+      "href",
+      `https://github.com/getcihub/cihub/releases/tag/v${ada.version}`,
+    );
+  });
+
   it("signs out, or says that the sign-out failed", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });

@@ -298,6 +298,18 @@ export const VIEWS: View[] = [
     act: (page) => page.getByRole("button", { name: /^Your account:/ }).click(),
   },
   {
+    name: "menu-person-appearance",
+    url: "/orgs/acme",
+    ready: "Your pull requests",
+    themes: BOTH,
+    // Wider than the page, then as narrow as a phone.
+    viewports: [{ width: 1920, height: 800 }, WIDE, NARROW, { width: 390, height: 844 }],
+    act: async (page) => {
+      await page.getByRole("button", { name: /^Your account:/ }).click();
+      await page.getByRole("button", { name: "Appearance" }).click();
+    },
+  },
+  {
     name: "sign-out-failed",
     url: "/orgs/acme",
     ready: "Your pull requests",
