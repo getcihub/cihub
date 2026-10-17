@@ -825,6 +825,7 @@ async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
             org_id: org(n),
             org_slug: format!("org-{n}"),
             role,
+            is_org_suspended: false,
         });
 
     tx.commit().await.unwrap();

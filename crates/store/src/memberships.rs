@@ -10,7 +10,16 @@ pub struct Membership {
     pub org_id: OrgId,
     pub org_slug: String,
     pub role: MembershipRole,
+    /// Every connection of the organization is suspended.
+    pub is_org_suspended: bool,
 }
+
+/// Every connection of the organization `o` is suspended: CIHub reaches none
+/// of its accounts.
+pub const ORG_IS_SUSPENDED: &str = "EXISTS (SELECT 1 FROM scm_connections c WHERE c.org_id = o.id)
+     AND NOT EXISTS (
+         SELECT 1 FROM scm_connections c WHERE c.org_id = o.id AND c.suspended_at IS NULL
+     )";
 
 /// Records that `user_id` has `role` in the organization of the
 /// transaction, as the SCM gave it at `now`.
@@ -71,10 +80,11 @@ pub async fn forget_memberships_before(
 /// Postgres fails, or a row does not match the vocabulary of `cihub-domain`.
 pub async fn memberships_of(pool: &PgPool, user_id: UserId) -> Result<Vec<Membership>, StoreError> {
     let mut tx = begin_system(pool).await?;
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT o.id, o.slug, m.role::text FROM memberships m JOIN orgs o ON o.id = m.org_id
-         WHERE m.user_id = $1 ORDER BY o.slug",
-    )
+    let rows: Vec<(String, String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT o.id, o.slug, m.role::text, {ORG_IS_SUSPENDED}
+         FROM memberships m JOIN orgs o ON o.id = m.org_id
+         WHERE m.user_id = $1 ORDER BY o.slug"
+    )))
     .bind(user_id.to_string())
     .fetch_all(&mut *tx)
     .await
@@ -82,7 +92,7 @@ pub async fn memberships_of(pool: &PgPool, user_id: UserId) -> Result<Vec<Member
 
     tx.commit().await.map_err(StoreError::Query)?;
     rows.into_iter()
-        .map(|(org_id, org_slug, role)| {
+        .map(|(org_id, org_slug, role, is_org_suspended)| {
             Ok(Membership {
                 org_id: org_id
                     .parse()
@@ -91,6 +101,7 @@ pub async fn memberships_of(pool: &PgPool, user_id: UserId) -> Result<Vec<Member
                     .parse()
                     .map_err(StoreError::read("membership", &org_id))?,
                 org_slug,
+                is_org_suspended,
             })
         })
         .collect()

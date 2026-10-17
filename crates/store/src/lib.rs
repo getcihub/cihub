@@ -24,7 +24,9 @@ pub use events::{
     append_events, create_event_partitions, delete_facts, deposit_fact, event_kind,
     load_event_page, load_events, next_month, pending_facts,
 };
-pub use memberships::{Membership, forget_memberships_before, memberships_of, record_membership};
+pub use memberships::{
+    Membership, ORG_IS_SUSPENDED, forget_memberships_before, memberships_of, record_membership,
+};
 use secrecy::{ExposeSecret, SecretString};
 pub use sessions::{
     CLI_SESSION_IDLE_LIFETIME, NewSession, SessionClient, SessionGrant, authenticate_session,

@@ -1,12 +1,14 @@
 //! A person on GitHub: the page that installs the App, the sign-in through the
-//! App, which gives the role of the person in each installation that they
-//! reach, and the members of the account of an installation
+//! App, which gives the installations that the person reaches and their role
+//! in each one, and the members of the account of an installation
 //! (`specs/GITHUB.md`).
+
+use std::collections::BTreeMap;
 
 use cihub_domain::{JobClass, MembershipRole};
 use cihub_scm::{
-    ConnectionRef, ScmError, ScmMember, ScmMembership, ScmProfile, ScmUser, SignInCode,
-    SignInRequest, SignedIn,
+    ConnectionRef, ScmAccount, ScmError, ScmInstallation, ScmMember, ScmMembership, ScmProfile,
+    ScmUser, SignInCode, SignInRequest, SignedIn,
 };
 use reqwest::{Method, StatusCode, Url};
 use secrecy::SecretString;
@@ -49,6 +51,23 @@ impl Person {
 struct Installation {
     id: u64,
     account: Account,
+    #[serde(default)]
+    permissions: BTreeMap<String, String>,
+    suspended_at: Option<String>,
+}
+
+impl Installation {
+    fn neutral(&self) -> ScmInstallation {
+        ScmInstallation {
+            external_id: self.id.to_string(),
+            account: ScmAccount {
+                external_id: self.account.id.to_string(),
+                path: self.account.login.clone(),
+            },
+            permissions: self.permissions.clone(),
+            is_suspended: self.suspended_at.is_some(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -102,9 +121,11 @@ impl GithubApp {
         let token = self.exchange_sign_in_code(code).await?;
         let (answer, _) = self.get_as_person(&token, "/user").await?;
         let user: Person = expect(answer, &[StatusCode::OK])?.json()?;
+        let listed = self.installations_of_person(&token).await?;
+        let installations = listed.iter().map(Installation::neutral).collect();
         let mut memberships = Vec::new();
 
-        for installation in self.installations_of_person(&token).await? {
+        for installation in listed {
             let role = self
                 .role_of_person(&token, &user, &installation.account)
                 .await?;
@@ -122,6 +143,7 @@ impl GithubApp {
                 name: user.name,
                 avatar_url: user.avatar_url,
             },
+            installations,
             memberships,
         })
     }

@@ -19,6 +19,9 @@ procedure is in [`specs/GITHUB.md`](specs/GITHUB.md); in short:
 - **Where can this GitHub App be installed?**: *Only on this account*. Keep the App private: any account that
   installs a public App gets an organization in your CIHub.
 - **Callback URL**, for the sign-in to the dashboard: `https://<your CIHub host>/auth/github/callback`.
+  *Request user authorization (OAuth) during installation* stays off.
+- **Setup URL**: `https://<your CIHub host>/auth/github/installed`, with *Redirect on update* checked: after an
+  install, the dashboard opens the repositories of the new organization.
 - After the creation, note the **App ID** and generate a **private key** (`.pem` file); for the dashboard, note
   the **Client ID** and generate a **client secret**.
 

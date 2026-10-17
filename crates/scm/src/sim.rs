@@ -254,6 +254,17 @@ impl Sim {
         })
     }
 
+    /// Gives the repository `repo_external_id` to the installation
+    /// `connection_external_id`, as an owner who changes the repositories of
+    /// the App: the installation that had it no longer lists it.
+    pub fn move_repo(&self, repo_external_id: &str, connection_external_id: &str) {
+        self.with(|state| {
+            if let Some(repo) = state.repos.get_mut(repo_external_id) {
+                connection_external_id.clone_into(&mut repo.connection);
+            }
+        });
+    }
+
     /// Creates a commit on `parent` that writes the files with `Some` and
     /// deletes the files with `None`, and returns it.
     ///
@@ -1753,7 +1764,7 @@ impl Scm for Sim {
                 return Err(refused());
             }
 
-            let memberships = state
+            let memberships: Vec<ScmMembership> = state
                 .members
                 .iter()
                 .filter(|(installation, _)| state.installations.contains_key(*installation))
@@ -1764,6 +1775,10 @@ impl Scm for Sim {
                     })
                 })
                 .collect();
+            let installations = memberships
+                .iter()
+                .filter_map(|membership| state.installation(&membership.connection_external_id))
+                .collect();
             let profile = state
                 .profiles
                 .get(&user.external_id)
@@ -1772,6 +1787,7 @@ impl Scm for Sim {
             Ok(SignedIn {
                 user,
                 profile,
+                installations,
                 memberships,
             })
         })

@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use cihub_domain::{ConnectionId, JobClass, OrgId, RepoId};
+use cihub_domain::{ConnectionId, EventKind, JobClass, OrgId, RepoId};
 use cihub_scm::{ConnectionRef, Scm, ScmError};
 use cihub_store::{PgPool, begin_system};
 use serde_json::json;
@@ -10,7 +10,7 @@ use sqlx::PgConnection;
 use time::OffsetDateTime;
 use tracing::info;
 
-use crate::installations::request_installation_sync;
+use crate::installations::{give_to_repo_queues, request_installation_sync};
 use crate::jobs::hour_window;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
@@ -88,8 +88,9 @@ pub(crate) async fn request_for_each_connection(
 
 /// Reads the repositories of the connection of `job`, creates those that
 /// CIHub does not know and updates the others, and returns their number. A
-/// repository that the connection no longer reaches stays;
-/// one that another organization has is left to it. When the SCM
+/// repository that the connection no longer reaches keeps its row and its
+/// history with `removed_at`, and its queues lose their access until it comes
+/// back; one that another organization has is left to it. When the SCM
 /// answers that the access is lost or the installation is not found, requests
 /// the sync of the installation.
 ///
@@ -126,6 +127,15 @@ pub async fn run_sync_repos(
         repos.iter().map(field).collect()
     };
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    let restored: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM repos
+         WHERE connection_id = $1 AND removed_at IS NOT NULL AND external_id = ANY($2)",
+    )
+    .bind(connection_id.to_string())
+    .bind(column(|repo| &repo.external_id))
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?;
     let written = sqlx::query(
         "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                             default_branch)
@@ -134,7 +144,7 @@ pub async fn run_sync_repos(
               AS r (id, external_id, namespace, name, default_branch)
          ON CONFLICT (connection_id, external_id) DO UPDATE
          SET namespace = EXCLUDED.namespace, name = EXCLUDED.name,
-             default_branch = EXCLUDED.default_branch",
+             default_branch = EXCLUDED.default_branch, removed_at = NULL",
     )
     .bind(&ids)
     .bind(org_id.to_string())
@@ -146,13 +156,28 @@ pub async fn run_sync_repos(
     .execute(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
+    let removed: Vec<String> = sqlx::query_scalar(
+        "UPDATE repos SET removed_at = $3
+         WHERE connection_id = $1 AND removed_at IS NULL AND external_id <> ALL($2)
+         RETURNING id",
+    )
+    .bind(connection_id.to_string())
+    .bind(column(|repo| &repo.external_id))
+    .bind(now)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?;
 
+    give_to_repo_queues(&mut tx, org_id, &removed, &EventKind::AccessLost, now).await?;
+    give_to_repo_queues(&mut tx, org_id, &restored, &EventKind::AccessRestored, now).await?;
     tx.commit().await.map_err(PlatformError::Query)?;
     let written = usize::try_from(written.rows_affected()).unwrap_or(usize::MAX);
     info!(
         org_id = %org_id,
         connection_id = %connection_id,
         repos = written,
+        removed = removed.len(),
+        restored = restored.len(),
         "repositories read"
     );
 
