@@ -84,19 +84,102 @@ export function Menu({ label, trigger, triggerClassName, align, children }: Prop
               "absolute top-[calc(100%_+_6px)] z-60 grid min-w-65 gap-0.5 rounded-md border border-border bg-card p-1 font-normal shadow-lg",
               align === "left"
                 ? "left-0 max-md:fixed max-md:top-14 max-md:left-3 max-md:w-[calc(100vw_-_24px)] max-md:min-w-0"
-                : "right-0 min-w-50",
+                : // `w-max`: the button of a right menu can be as narrow as an avatar, and would wrap every entry.
+                  // The list passes the edge of the content, into the margin of the page (`px-page`), so that
+                  // it does not look like a part of the page under it.
+                  "-right-3 w-max max-w-80 min-w-50 max-md:-right-2",
             )}
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={transitions.fade}
             onClick={(event) => {
-              if (event.target instanceof Element && event.target.closest("a, button:not([disabled])")) {
+              // A button that opens a list of its own (`MenuSub`) keeps the menu open.
+              if (
+                event.target instanceof Element &&
+                event.target.closest("a, button:not([disabled]):not([aria-expanded])")
+              ) {
                 setIsOpen(false);
               }
             }}
           >
             {children}
+          </m.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * An entry of a menu that shows a list of its own at the left of the menu,
+ * which aligns right: on a click, or while a mouse rests on it.
+ */
+export function MenuSub({ label, children }: { label: string; children: ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const listId = useId();
+
+  return (
+    <div
+      data-slot="menu-sub"
+      className="relative"
+      // A touch sends `pointerleave` as the finger lifts: only a mouse follows the hover.
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") {
+          setIsOpen(true);
+        }
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "mouse") {
+          setIsOpen(false);
+        }
+      }}
+    >
+      <MenuItem
+        isCurrent={isOpen}
+        aria-expanded={isOpen}
+        aria-controls={listId}
+        // A click only opens: the hover of a mouse opened the list just before it.
+        onClick={() => {
+          setIsOpen(true);
+        }}
+      >
+        {label}
+        <svg
+          className="ml-auto size-3.5 text-muted-foreground"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M6 3.5 L10.5 8 L6 12.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </MenuItem>
+      <AnimatePresence>
+        {isOpen && (
+          // The padding, not a margin, keeps the space between the two lists under the pointer. A narrow
+          // window has no room beside the menu: the list opens under its entry.
+          <m.div
+            key="list"
+            className="absolute -top-1.25 right-full z-60 pr-1 max-md:static max-md:pr-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={transitions.fade}
+          >
+            <div
+              id={listId}
+              role="group"
+              aria-label={label}
+              className="grid w-max min-w-50 gap-0.5 rounded-md border border-border bg-card p-1 shadow-lg max-md:w-auto max-md:min-w-0 max-md:border-0 max-md:p-0 max-md:pl-3 max-md:shadow-none"
+            >
+              {children}
+            </div>
           </m.div>
         )}
       </AnimatePresence>
@@ -134,6 +217,11 @@ export function MenuItem({
       {...props}
     />
   );
+}
+
+/** A text at the top of a menu or of a group, which the person reads but cannot choose. */
+export function MenuLabel({ className, ...props }: ComponentProps<"div">) {
+  return <div data-slot="menu-label" className={cn("px-2 py-1.5 text-base", className)} {...props} />;
 }
 
 export function MenuSeparator({ className, ...props }: ComponentProps<"div">) {

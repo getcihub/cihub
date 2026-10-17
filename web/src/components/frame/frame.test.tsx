@@ -88,6 +88,50 @@ describe("Frame", () => {
     expect(screen.queryByRole("button", { name: /^Repository/ })).not.toBeInTheDocument();
   });
 
+  it("keeps the theme that the person chooses, or follows the system", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    renderInRouter(
+      <Frame me={ada} org="acme" queues={queues}>
+        page
+      </Frame>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Your account: ada" }));
+    await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await userEvent.click(screen.getByRole("button", { name: "Light" }));
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("theme")).toBe("light");
+
+    await userEvent.click(screen.getByRole("button", { name: "Your account: ada" }));
+    await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(screen.getByRole("button", { name: "System" }));
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("theme")).toBeNull();
+  });
+
+  it("links to the notes of the release that the instance runs", async () => {
+    renderInRouter(
+      <Frame me={ada} org="acme" queues={queues}>
+        page
+      </Frame>,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Your account: ada" }));
+
+    expect(screen.getByRole("link", { name: /About/ })).toHaveAttribute(
+      "href",
+      `https://github.com/getcihub/cihub/releases/tag/v${ada.version}`,
+    );
+  });
+
   it("signs out, or says that the sign-out failed", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { assign });
