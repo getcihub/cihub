@@ -91,12 +91,86 @@ export function Menu({ label, trigger, triggerClassName, align, children }: Prop
             exit={{ opacity: 0 }}
             transition={transitions.fade}
             onClick={(event) => {
-              if (event.target instanceof Element && event.target.closest("a, button:not([disabled])")) {
+              // A button that opens a list of its own (`MenuSub`) keeps the menu open.
+              if (
+                event.target instanceof Element &&
+                event.target.closest("a, button:not([disabled]):not([aria-expanded])")
+              ) {
                 setIsOpen(false);
               }
             }}
           >
             {children}
+          </m.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * An entry of a menu that shows a list of its own beside the menu, on the
+ * `side` that has room: on a click, or while a mouse rests on it.
+ */
+export function MenuSub({
+  label,
+  side,
+  children,
+}: {
+  label: string;
+  side: "left" | "right";
+  children: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const listId = useId();
+
+  return (
+    <div
+      data-slot="menu-sub"
+      className="relative"
+      // A touch sends `pointerleave` as the finger lifts: only a mouse follows the hover.
+      onPointerEnter={(event) => {
+        if (event.pointerType === "mouse") {
+          setIsOpen(true);
+        }
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "mouse") {
+          setIsOpen(false);
+        }
+      }}
+    >
+      <MenuItem
+        isCurrent={isOpen}
+        aria-expanded={isOpen}
+        aria-controls={listId}
+        // A click only opens: the hover of a mouse opened the list just before it.
+        onClick={() => {
+          setIsOpen(true);
+        }}
+      >
+        {label}
+        <MenuHint aria-hidden="true">{side === "left" ? "‹" : "›"}</MenuHint>
+      </MenuItem>
+      <AnimatePresence>
+        {isOpen && (
+          // The padding, not a margin, keeps the space between the two lists under the pointer.
+          <m.div
+            key="list"
+            className={cn("absolute -top-1 z-60", side === "left" ? "right-full pr-1.5" : "left-full pl-1.5")}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={transitions.fade}
+          >
+            <div
+              id={listId}
+              role="group"
+              aria-label={label}
+              className="grid min-w-40 gap-0.5 rounded-md border border-border bg-card p-1 shadow-lg"
+            >
+              {children}
+            </div>
           </m.div>
         )}
       </AnimatePresence>

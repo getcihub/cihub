@@ -1,16 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
 import { UpDownIcon } from "@/components/icons/up-down-icon";
 import { Avatar } from "@/components/ui/avatar";
 import { Mark } from "@/components/ui/mark";
-import { Menu, MenuHint, MenuItem, MenuSeparator, menuItemVariants } from "@/components/ui/menu";
+import { Menu, MenuHint, MenuItem, MenuSeparator, MenuSub, menuItemVariants } from "@/components/ui/menu";
 import { inQueueCount } from "@/domain/queue/counts";
 import { type Me, membershipOf } from "@/domain/session/session";
 import { useSignOut } from "@/hooks/use-sign-out";
 import { cn } from "@/lib/cn";
-import { toggleTheme } from "@/lib/preferences";
+import { type Theme, chooseTheme, chosenTheme } from "@/lib/preferences";
 
 interface Props {
   me: Me;
@@ -243,25 +243,45 @@ function QueuePicker({
   );
 }
 
+const THEMES: { theme: Theme; label: string }[] = [
+  { theme: "light", label: "Light" },
+  { theme: "dark", label: "Dark" },
+  { theme: "system", label: "System" },
+];
+
 function PersonMenu({ me: { login, name, avatar_url }, onSignOut }: { me: Me; onSignOut: () => void }) {
+  const [theme, setTheme] = useState(chosenTheme);
+
   return (
     <Menu
       label="Your account"
       trigger={
         <>
           <Avatar name={login} src={avatar_url} size={24} />
-          <span className="max-md:hidden">{login}</span>
+          <span className="sr-only">{login}</span>
         </>
       }
-      triggerClassName="flex cursor-pointer items-center gap-2 rounded-sm px-1.5 py-0.5 text-base font-medium text-foreground hover:bg-muted"
+      triggerClassName="flex cursor-pointer items-center rounded-full p-0.5 text-foreground hover:bg-muted"
       align="right"
     >
       <MenuItem className="font-medium" disabled>
         Signed in as {name ? `${name} (@${login})` : `@${login}`}
       </MenuItem>
-      <MenuItem className="font-medium" onClick={toggleTheme}>
-        Light / dark<MenuHint>theme</MenuHint>
-      </MenuItem>
+      <MenuSub label="Appearance" side="left">
+        {THEMES.map((choice) => (
+          <MenuItem
+            key={choice.theme}
+            isCurrent={choice.theme === theme}
+            aria-pressed={choice.theme === theme}
+            onClick={() => {
+              chooseTheme(choice.theme);
+              setTheme(choice.theme);
+            }}
+          >
+            {choice.label}
+          </MenuItem>
+        ))}
+      </MenuSub>
       <MenuSeparator />
       <MenuItem className="font-medium" onClick={onSignOut}>
         Sign out
