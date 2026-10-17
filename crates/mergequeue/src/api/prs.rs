@@ -9,7 +9,7 @@ use cihub_domain::{
 };
 use cihub_mq_core::current_window;
 use cihub_platform::{
-    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, Job, Page, cursor_of, enqueue_job,
+    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, Job, Page, cursor_of, enqueue_job,
 };
 use cihub_store::event_kind;
 use serde::{Deserialize, Deserializer};
@@ -22,8 +22,8 @@ use super::queues::{
     QUEUE_COLUMNS, QUEUE_SOURCE, QueueRow, median_run_seconds, queue_row, seconds_of,
 };
 use super::{
-    ApiState, CancelErrors, EventErrors, PrErrors, PrListErrors, PrPath, RestartErrors,
-    SubmitErrors, actor, audit, begin_repo, repo_id, requester,
+    ApiState, CancelErrors, EventErrors, OrgPrListErrors, PrErrors, PrPath, RepoPath,
+    RepoPrListErrors, RestartErrors, SubmitErrors, actor, audit, begin_repo, requester,
 };
 use crate::MergeQueueError;
 use crate::jobs::{self, give_back, new_event_id};
@@ -258,16 +258,9 @@ pub(super) enum PrSort {
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(super) struct PrQuery {
-    /// Only the PRs of this author, whatever the case of the login; `@me` for
-    /// the person of the session.
-    #[param(example = "@me")]
+    /// Only the PRs of this author, whatever the case of the login.
+    #[param(example = "octocat")]
     author: Option<String>,
-    /// Only the PRs of this repository.
-    #[param(example = "web")]
-    repo: Option<String>,
-    /// Only the PRs of this queue of `repo`.
-    #[param(example = "main")]
-    queue: Option<String>,
     /// Only the PRs in these states, separated by commas: `not_ready`,
     /// `pending`, `testing`, `tests_passed`, `pending_failure`, `merged`,
     /// `failed`, `cancelled`.
@@ -294,6 +287,14 @@ pub(super) struct PrQuery {
     from: Option<String>,
     /// How many PRs, from 1 to 100; 50 by default.
     limit: Option<u32>,
+}
+
+#[derive(Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub(super) struct QueueFilter {
+    /// Only the PRs of the queue of this target branch.
+    #[param(example = "main")]
+    queue: Option<String>,
 }
 
 fn item_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<ItemState>, D::Error> {
@@ -376,11 +377,11 @@ fn push_filter(sql: &mut QueryBuilder<Postgres>, filter: &PrFilter) {
     }
 }
 
-/// List PRs
+/// List the PRs of the organization
 ///
-/// The PRs in the queues of the organization: the current submission of each
-/// PR in each queue, with the PRs that merge before it and an estimate.
-/// Without a filter, every PR, live or ended.
+/// The PRs in the queues of every repository of the organization: the
+/// current submission of each PR in each queue, with the PRs that merge before
+/// it and an estimate. Without a filter, every PR, live or ended.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/prs",
@@ -389,36 +390,65 @@ fn push_filter(sql: &mut QueryBuilder<Postgres>, filter: &PrFilter) {
         ("org" = String, Path, description = "The slug of the organization.", example = "acme"),
         PrQuery
     ),
-    responses((status = 200, description = "A page of PRs.", body = PrList), PrListErrors),
+    responses((status = 200, description = "A page of PRs.", body = PrList), OrgPrListErrors),
     security(("token" = ["queues:read"]))
 )]
-pub(super) async fn list_prs(
+pub(super) async fn list_org_prs(
     grant: ApiGrant,
     State(state): State<ApiState>,
     ApiPath(org): ApiPath<String>,
     ApiQuery(query): ApiQuery<PrQuery>,
 ) -> Result<Json<PrList>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
-    if query.queue.is_some() && query.repo.is_none() {
-        return Err(ApiError::new(
-            ErrorCode::QueueNeedsRepo,
-            "`queue` needs `repo`".into(),
-        ));
-    }
 
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    let author = author_of(&mut tx, &grant, query.author.as_deref()).await?;
-    let repo = match &query.repo {
-        Some(name) => Some(repo_id(&mut tx, name).await?),
+
+    pr_list(&mut tx, &state, &grant, (None, None), &query).await
+}
+
+/// List the PRs of a repository
+///
+/// The PRs in the queues of the repository, or of one of its queues: the
+/// current submission of each PR in each queue, with the PRs that merge
+/// before it and an estimate. Without a filter, every PR, live or ended.
+#[utoipa::path(
+    get,
+    path = "/orgs/{org}/repos/{repo}/prs",
+    tag = "Pull requests",
+    params(RepoPath, QueueFilter, PrQuery),
+    responses((status = 200, description = "A page of PRs.", body = PrList), RepoPrListErrors),
+    security(("token" = ["queues:read"]))
+)]
+pub(super) async fn list_repo_prs(
+    grant: ApiGrant,
+    State(state): State<ApiState>,
+    ApiPath(path): ApiPath<RepoPath>,
+    ApiQuery(filter): ApiQuery<QueueFilter>,
+    ApiQuery(query): ApiQuery<PrQuery>,
+) -> Result<Json<PrList>, ApiError> {
+    grant.require(ApiScope::QueuesRead)?;
+
+    let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
+    let queue = match &filter.queue {
+        Some(name) => Some(queue_row(&mut tx, &repo, name).await?.id),
         None => None,
     };
-    let queue = match (&repo, &query.queue) {
-        (Some(repo), Some(name)) => Some(queue_row(&mut tx, repo, name).await?.id),
-        _ => None,
-    };
+
+    pr_list(&mut tx, &state, &grant, (Some(repo), queue), &query).await
+}
+
+/// The page of the PRs that `query` keeps, in the organization of the
+/// transaction, or only in a repository and one of its queues.
+async fn pr_list(
+    tx: &mut PgConnection,
+    state: &ApiState,
+    grant: &ApiGrant,
+    (repo, queue): (Option<RepoId>, Option<String>),
+    query: &PrQuery,
+) -> Result<Json<PrList>, ApiError> {
     let filter = PrFilter {
         org: grant.org_id.to_string(),
-        author,
+        author: query.author.clone(),
         repo: repo.map(|repo| repo.to_string()),
         queue,
         states: query.state.clone(),
@@ -431,8 +461,8 @@ pub(super) async fn list_prs(
     let count: i64 = count.build_query_scalar().fetch_one(&mut *tx).await?;
     let now = (state.clock)();
 
-    let (prs, has_more) = pr_page(&mut tx, &filter, &query).await?;
-    let progress = Progress::read(&mut tx, &prs, now).await?;
+    let (prs, has_more) = pr_page(tx, &filter, query).await?;
+    let progress = Progress::read(tx, &prs, now).await?;
 
     let prs = prs
         .into_iter()
@@ -544,32 +574,6 @@ fn pr_cursor(pr: &Pr, sort: PrSort) -> Result<String, ApiError> {
             cursor_of("prs.position", key)
         }
     })
-}
-
-/// The login that `author` names: `@me` names the person of the session.
-async fn author_of(
-    conn: &mut PgConnection,
-    grant: &ApiGrant,
-    author: Option<&str>,
-) -> Result<Option<String>, ApiError> {
-    let Some(author) = author else {
-        return Ok(None);
-    };
-    if author != "@me" {
-        return Ok(Some(author.to_owned()));
-    }
-
-    let GrantActor::User(user_id) = grant.actor else {
-        return Err(ApiError::new(
-            ErrorCode::MeNeedsSession,
-            "`@me` needs a session; an API token stands for no person".into(),
-        ));
-    };
-    let login: String = sqlx::query_scalar("SELECT login FROM users WHERE id = $1")
-        .bind(user_id.to_string())
-        .fetch_one(conn)
-        .await?;
-    Ok(Some(login))
 }
 
 fn pr_not_found(number: u64) -> ApiError {

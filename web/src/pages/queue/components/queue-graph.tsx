@@ -70,7 +70,7 @@ function rankOf(run: GraphRun, ranks: Map<string, number>): number {
  */
 function LiveMark({ queue }: { queue: Queue }) {
   const isStreamLive = useSyncExternalStore(onStreamOpenChanged, isStreamOpen);
-  const isLive = isStreamLive && queue.state !== "paused" && queue.access === "ok";
+  const isLive = isStreamLive && queue.state !== "paused" && !queue.is_suspended;
 
   return (
     <span

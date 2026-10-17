@@ -5,7 +5,7 @@ import {
   getQueueOptions,
   graphOptions,
   listOrgQueuesOptions,
-  listPrsOptions,
+  listRepoPrsOptions,
 } from "@/client/@tanstack/react-query.gen";
 import type { Graph } from "@/client/types.gen";
 import type { HealthPeriod } from "./period";
@@ -66,21 +66,21 @@ export function sinceOf(now: number): string {
   return new Date(Math.floor(now / HOUR) * HOUR - 24 * HOUR).toISOString();
 }
 
-function itemsOf(path: QueuePath, tab: Tab, now: number): ReturnType<typeof listPrsOptions> {
+function itemsOf(path: QueuePath, tab: Tab, now: number): ReturnType<typeof listRepoPrsOptions> {
   const { org, repo, queue } = path;
   const query =
     tab === "live"
-      ? { repo, queue, state: STATES_OF[tab], sort: "position" as const, limit: 100 }
-      : { repo, queue, state: STATES_OF[tab], state_changed_since: sinceOf(now), limit: 100 };
+      ? { queue, state: STATES_OF[tab], sort: "position" as const, limit: 100 }
+      : { queue, state: STATES_OF[tab], state_changed_since: sinceOf(now), limit: 100 };
 
-  return listPrsOptions({ path: { org }, query });
+  return listRepoPrsOptions({ path: { org, repo }, query });
 }
 
 export interface QueueReads {
   detail: ReturnType<typeof getQueueOptions>;
   graph: ReturnType<typeof graphOptions>;
-  live: ReturnType<typeof listPrsOptions>;
-  tab: ReturnType<typeof listPrsOptions>;
+  live: ReturnType<typeof listRepoPrsOptions>;
+  tab: ReturnType<typeof listRepoPrsOptions>;
 }
 
 /**

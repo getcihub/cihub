@@ -49,7 +49,6 @@ describe("the routes of the dashboard", () => {
   it("lead an address without a page of its own to the page above it", async () => {
     const cases: [string, string][] = [
       ["/orgs", "/orgs/acme"],
-      ["/orgs/acme/repos", "/orgs/acme"],
       ["/orgs/acme/repos/web/queues", "/orgs/acme/repos/web"],
     ];
 

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { StartPage } from "./page";
+import { ReposPage } from "./page";
 
 const search = z.object({
   repo: z.string().optional().catch(undefined),
@@ -9,7 +9,7 @@ const search = z.object({
   q: z.string().optional().catch(undefined),
 });
 
-export const Route = createFileRoute("/orgs/$org/start")({
+export const Route = createFileRoute("/orgs/$org/repos/")({
   validateSearch: search,
-  component: StartPage,
+  component: ReposPage,
 });

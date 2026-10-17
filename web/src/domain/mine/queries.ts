@@ -1,4 +1,4 @@
-import { listPrsOptions } from "@/client/@tanstack/react-query.gen";
+import { listOrgPrsOptions } from "@/client/@tanstack/react-query.gen";
 import type { Pr } from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
 
@@ -6,16 +6,19 @@ import { LIVE_STATES } from "@/domain/queue/queries";
 const MERGED_STAYS_MS = 10 * 60 * 1000;
 
 /**
- * The reads of the PRs of the person of the session in the queues of `org`: the live ones, in the order of their
- * queues, and the last ones that merged.
+ * The reads of the PRs of `login`, the person of the session, in the queues of `org`: the live ones, in the order
+ * of their queues, and the last ones that merged.
  */
-export function minePrsReads(org: string): Record<"live" | "merged", ReturnType<typeof listPrsOptions>> {
+export function minePrsReads(
+  org: string,
+  login: string,
+): Record<"live" | "merged", ReturnType<typeof listOrgPrsOptions>> {
   return {
-    live: listPrsOptions({
+    live: listOrgPrsOptions({
       path: { org },
-      query: { author: "@me", state: LIVE_STATES, sort: "position", limit: 100 },
+      query: { author: login, state: LIVE_STATES, sort: "position", limit: 100 },
     }),
-    merged: listPrsOptions({ path: { org }, query: { author: "@me", state: "merged", limit: 10 } }),
+    merged: listOrgPrsOptions({ path: { org }, query: { author: login, state: "merged", limit: 10 } }),
   };
 }
 

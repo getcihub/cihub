@@ -94,7 +94,7 @@ describe("the drawer of a PR", () => {
       answersFor({
         [`${PR}/118`]: [200, testing],
         [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
-        "/api/v1/orgs/acme/runs/run_1": [200, run],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [200, run],
       }),
     );
 
@@ -138,7 +138,7 @@ describe("the drawer of a PR", () => {
       answersFor({
         [`${PR}/118`]: [200, testing],
         [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
-        "/api/v1/orgs/acme/runs/run_1": [200, run],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [200, run],
       }),
     );
 

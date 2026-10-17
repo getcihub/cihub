@@ -160,7 +160,7 @@ impl Client {
     /// The request fails, or CIHub refuses it.
     pub async fn prs(&self, queue: QueuePath<'_>, states: &[&str]) -> Result<PrList, ClientError> {
         let path = format!(
-            "/orgs/{}/prs?repo={}&queue={}&state={}&sort=position&limit={MAX_LIMIT}",
+            "/orgs/{}/repos/{}/prs?queue={}&state={}&sort=position&limit={MAX_LIMIT}",
             segment(queue.org),
             segment(queue.repo),
             segment(queue.queue),

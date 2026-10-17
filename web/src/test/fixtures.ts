@@ -6,8 +6,8 @@ import { type Answer, type Answers, problem } from "./app";
 export const ada: Me = {
   login: "ada",
   orgs: [
-    { slug: "acme", role: "admin", access: "ok" },
-    { slug: "acme-labs", role: "member", access: "ok" },
+    { slug: "acme", role: "admin", is_suspended: false },
+    { slug: "acme-labs", role: "member", is_suspended: false },
   ],
   version: "0.2.0",
   app_install_url: "https://github.com/apps/cihub/installations/new",
@@ -50,7 +50,7 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
     mode: "single",
     state_changed_at: "2026-10-01T09:00:00Z",
     strategy: "pipelined",
-    access: "ok",
+    is_suspended: false,
     has_config_file: true,
     config_error: configError,
     counts: { not_ready: 0, pending, testing: 0, pending_failure: 0, tests_passed: 0 },
@@ -113,12 +113,12 @@ export const noGraph: Graph = { target_head_sha: null, nodes: [], edges: [], run
 
 /** The read of the live PRs of the queue `queue` of `acme/web`, as its page asks for it. */
 export function liveOf(queue = "main"): string {
-  return `/api/v1/orgs/acme/prs?repo=web&queue=${queue}&state=${LIVE_STATES}&sort=position&limit=100`;
+  return `/api/v1/orgs/acme/repos/web/prs?queue=${queue}&state=${LIVE_STATES}&sort=position&limit=100`;
 }
 
 /** The answers of the reads of the PRs of the person in `org`: the live ones, then the ones merged lately. */
 export function answersOfMine(org: string, live: Pr[] | Answer[] = [], merged: Pr[] = []): Answers {
-  const reads = `/api/v1/orgs/${org}/prs?author=@me`;
+  const reads = `/api/v1/orgs/${org}/prs?author=ada`;
   const isSequence = live.length > 0 && Array.isArray(live[0]);
   return {
     [`${reads}&state=${LIVE_STATES}&sort=position&limit=100`]: isSequence

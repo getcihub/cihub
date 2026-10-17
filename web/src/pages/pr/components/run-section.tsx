@@ -85,8 +85,8 @@ function CheckMark({ conclusion }: { conclusion: CheckConclusion | null | undefi
 }
 
 /** The run of a PR in its drawer: what it tests, on top of what, and the checks of its test commit. */
-export function RunSection({ org, runId }: { org: string; runId: string }) {
-  const { data: run } = useSuspenseQuery(getRunOptions({ path: { org, run_id: runId } }));
+export function RunSection({ org, repo, runId }: { org: string; repo: string; runId: string }) {
+  const { data: run } = useSuspenseQuery(getRunOptions({ path: { org, repo, run_id: runId } }));
   const prs = (numbers: number[]) => numbers.map((number) => `#${String(number)}`).join(", ");
 
   return (
