@@ -38,6 +38,7 @@ use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
+use crate::repo_setup::request_repo_setups;
 use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, QueueLog, parse_id};
@@ -1118,6 +1119,14 @@ async fn read_queue_setups_if_due(
         Err(err) => warn!(
             error = &err as &dyn Error,
             "setup reads of the queues not requested"
+        ),
+    }
+    match request_repo_setups(pool, now).await {
+        Ok(0) => {}
+        Ok(repos) => info!(repos, "setup reads of the repositories requested"),
+        Err(err) => warn!(
+            error = &err as &dyn Error,
+            "setup reads of the repositories not requested"
         ),
     }
 }

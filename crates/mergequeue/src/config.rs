@@ -226,7 +226,7 @@ pub(crate) async fn read_setup(
 /// branch that no longer exists. Its finding comes back in an hour, as the
 /// others.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CheckFinding {
+pub(crate) enum CheckFinding {
     Setup(SetupFinding),
     TargetBranchMissing,
 }
@@ -239,7 +239,7 @@ impl CheckFinding {
         }
     }
 
-    fn text(self, branch: &str) -> String {
+    pub(crate) fn text(self, branch: &str) -> String {
         match self {
             Self::Setup(SetupFinding::UpdateRestrictionMissing) => {
                 format!(
