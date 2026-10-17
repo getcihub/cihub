@@ -168,7 +168,7 @@ describe("the page of a queue", () => {
   });
 
   it("says that a lost access stops it, rather than a pause", async () => {
-    const lost = detailOf(entry, { state: "paused", access: "suspended" });
+    const lost = detailOf(entry, { state: "paused", is_suspended: true });
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, lost] }));
 
     expect(await screen.findByText("CIHub lost its access to acme/web.")).toBeInTheDocument();
@@ -266,7 +266,7 @@ describe("the page of a queue", () => {
           200,
           detailOf(entry, { merged_last_24h: 1, failed_last_24h: 4, failed_or_cancelled_last_24h: 3 }),
         ],
-        [`/api/v1/orgs/acme/prs?repo=web&queue=main&state=merged&state_changed_since=${sinceOf(Date.now())}&limit=100`]:
+        [`/api/v1/orgs/acme/repos/web/prs?queue=main&state=merged&state_changed_since=${sinceOf(Date.now())}&limit=100`]:
           [200, pageOf("prs", [merged, old])],
       }),
     );

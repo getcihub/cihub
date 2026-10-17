@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 use tracing::info;
 
 use crate::connections::{
-    active_connection, outcome_of, request_for_each_connection, resync_installation_after,
+    active_connection, outcome_of, request_for_each_connection, sync_installation_after,
 };
 use crate::{Job, Outcome, PlatformError};
 
@@ -74,7 +74,7 @@ pub async fn run_sync_members(
 
     let listed = scm.members(&connection, job.class).await;
 
-    resync_installation_after(pool, &connection, &listed, now).await?;
+    sync_installation_after(pool, &connection, &listed, now).await?;
     let members = listed.map_err(PlatformError::Scm)?;
     let mut tx = begin_org(pool, org_id)
         .await

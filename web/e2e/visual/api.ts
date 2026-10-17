@@ -52,7 +52,7 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
     mode: "single",
     state_changed_at: ago(6),
     strategy: "pipelined",
-    access: "ok",
+    is_suspended: false,
     has_config_file: false,
     config_sha: null,
     config_error: null,
@@ -119,7 +119,7 @@ const QUEUES: Queue[] = [
     live_runs: 2,
   }),
   queueOf("docs", "main", { config_error: "line 1: unknown key `strategy2`" }),
-  queueOf("mobile", "main", { access: "suspended" }),
+  queueOf("mobile", "main", { is_suspended: true }),
   queueOf("infra", "main", { merged_last_24h: 1, last_merged_at: ago(300) }),
   queueOf("site", "main"),
   queueOf("sdk", "main"),
@@ -447,13 +447,13 @@ const EVENTS: Record<string, Event[]> = {
 
 const PEOPLE: Record<
   Exclude<Person, "nobody">,
-  { login: string; orgs: { slug: string; role: "admin" | "member"; access: "ok" }[] }
+  { login: string; orgs: { slug: string; role: "admin" | "member"; is_suspended: boolean }[] }
 > = {
   ada: {
     login: "ada",
     orgs: [
-      { slug: "acme", role: "admin", access: "ok" },
-      { slug: "acme-labs", role: "member", access: "ok" },
+      { slug: "acme", role: "admin", is_suspended: false },
+      { slug: "acme-labs", role: "member", is_suspended: false },
     ],
   },
   grace: { login: "grace", orgs: [] },
@@ -630,16 +630,16 @@ function answerOfPr(path: string): Answer | null {
 }
 
 /** The PRs that a list of the API gives: by state, author, repository, queue and time, as the server filters. */
-function answerOfPrList(query: URLSearchParams, org: string): Answer {
+function answerOfPrList(query: URLSearchParams, org: string, repo: string | undefined): Answer {
   const states = (query.get("state") ?? "").split(",");
   const since = query.get("state_changed_since");
-  const repo = query.get("repo");
+  const author = query.get("author");
   const queue = query.get("queue");
   const found = PRS.filter(
     (pr) =>
       org === "acme" &&
       states.includes(pr.state) &&
-      (query.get("author") !== "@me" || pr.author.login === "ada") &&
+      (!author || pr.author.login === author) &&
       (!repo || pr.repo === repo) &&
       (!queue || pr.queue === queue) &&
       (!since || Date.parse(pr.state_changed_at) >= Date.parse(since)),
@@ -671,9 +671,9 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
     return [202, null];
   }
 
-  const prList = /^\/orgs\/([^/]+)\/prs$/.exec(path);
+  const prList = /^\/orgs\/([^/]+)(?:\/repos\/([^/]+))?\/prs$/.exec(path);
   if (prList) {
-    return answerOfPrList(query, prList[1] ?? "");
+    return answerOfPrList(query, prList[1] ?? "", prList[2]);
   }
   return (
     answerOfQueue(path, query) ??
@@ -683,7 +683,7 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
 }
 
 function answerOfRun(path: string): Answer | null {
-  const match = /^\/orgs\/acme\/runs\/(.+)$/.exec(path);
+  const match = /^\/orgs\/acme\/repos\/[^/]+\/runs\/(.+)$/.exec(path);
   if (!match) {
     return null;
   }

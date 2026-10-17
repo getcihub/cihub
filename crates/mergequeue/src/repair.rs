@@ -2,7 +2,7 @@
 //! that no report reached, and creates again its test branch when it is gone;
 //! `refresh_target` reads again the head of the target branch. Each one gives its
 //! facts back through `queue_inbox`, so that a lost webhook is only a delay
-//! (principle V). `resync` asks for every read at once.
+//! (principle V). `sync_queue` asks for every read at once.
 
 use cihub_domain::{Actor, EventKind, JobClass, QueueId, RunId, RunStatus};
 use cihub_mq_core::CheckRead;
@@ -175,12 +175,12 @@ pub(crate) async fn read_target(
 
 /// Asks, in the class `interactive`, for a read of each live PR of `queue`, of
 /// the checks of each run in progress and of the head of its target, and returns
-/// the number of new jobs. A second resync in the same minute asks for nothing.
+/// the number of new jobs. A second sync in the same minute asks for nothing.
 ///
 /// # Errors
 ///
 /// Postgres fails, or the queue does not exist; nothing is asked.
-pub async fn resync(
+pub async fn sync_queue(
     pool: &PgPool,
     queue: QueueId,
     now: OffsetDateTime,
@@ -188,7 +188,7 @@ pub async fn resync(
     let mut tx = begin_system(pool).await?;
     let target = QueueTarget::load(&mut tx, queue).await?;
     let log = QueueLog::load(&mut tx, queue).await?;
-    let subject = format!("resync-{}", window(now));
+    let subject = format!("sync-{}", window(now));
     let snapshot = &log.snapshot;
     let prs: Vec<u64> = snapshot
         .items
@@ -230,7 +230,7 @@ pub async fn resync(
     }
 
     tx.commit().await?;
-    info!(%queue, jobs = requested, "queue resync requested");
+    info!(%queue, jobs = requested, "queue sync requested");
 
     Ok(requested)
 }

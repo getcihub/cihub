@@ -8,8 +8,8 @@
 mod health;
 mod prs;
 mod queues;
+mod repos;
 mod runs;
-mod setups;
 
 use std::collections::BTreeMap;
 
@@ -18,9 +18,10 @@ use axum::routing::{get, post};
 use cihub_api_types::{
     CheckHealth, ConfigFile, ConfigFileState, Dependent, ErrorCode, Event, EventList, Finding,
     Graph, GraphEdge, GraphNode, GraphRun, HealthBucket, HealthTotals, HealthVerdict, ItemCounts,
-    Person, Pr, PrAhead, PrList, Queue, QueueAccess, QueueHealth, QueueList, ReasonCount,
-    RepoSetup, RequestedQueueState, RuleCheck, Run, RunCheck, SettingsSummary, Setup, SetupList,
-    SetupState, StateTime, SubmitPr, TimeToMerge, UpdateQueue, Window,
+    Permission, Person, Pr, PrAhead, PrList, Queue, QueueHealth, QueueList, ReasonCount, Repo,
+    RepoDetail, RepoList, RepoSetup, RequestedQueueState, RuleCheck, Run, RunCheck,
+    SettingsSummary, Setup, SetupState, SetupSummary, StateTime, SubmitPr, TimeToMerge,
+    UpdateQueue, Window,
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
@@ -60,9 +61,10 @@ struct ApiState {
                            of the PRs ahead of them."
         ),
         (
-            name = "Setups",
-            description = "The setup of a repository: what CIHub found about the rules of its \
-                           default branch and its configuration file, with a verdict."
+            name = "Repositories",
+            description = "A repository of the organization: what the caller may do on it, and \
+                           its setup, what CIHub found about the rules of its default branch and \
+                           its configuration file, with a verdict."
         )
     ),
     paths(
@@ -70,20 +72,20 @@ struct ApiState {
         queues::list_repo_queues,
         queues::get_queue,
         queues::update_queue,
-        queues::resync_queue,
+        queues::sync_queue,
         queues::graph,
         health::get_health,
-        prs::list_prs,
+        prs::list_org_prs,
+        prs::list_repo_prs,
         prs::get_pr,
         prs::list_events,
         prs::submit,
         prs::cancel,
         prs::restart,
         runs::get_run,
-        setups::list_setups,
-        setups::get_setup,
-        setups::resync_repo,
-        setups::resync_setups
+        repos::list_repos,
+        repos::get_repo,
+        repos::sync_repo
     ),
     components(schemas(
         CheckHealth,
@@ -101,15 +103,18 @@ struct ApiState {
         HealthTotals,
         HealthVerdict,
         ItemCounts,
+        Permission,
         Person,
         Pr,
         PrAhead,
         PrList,
         Queue,
-        QueueAccess,
         QueueHealth,
         QueueList,
         ReasonCount,
+        Repo,
+        RepoDetail,
+        RepoList,
         RepoSetup,
         RequestedQueueState,
         RuleCheck,
@@ -117,8 +122,8 @@ struct ApiState {
         RunCheck,
         SettingsSummary,
         Setup,
-        SetupList,
         SetupState,
+        SetupSummary,
         StateTime,
         SubmitPr,
         TimeToMerge,
@@ -146,8 +151,8 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
             get(queues::get_queue).patch(queues::update_queue),
         )
         .route(
-            "/orgs/{org}/repos/{repo}/queues/{queue}/resync",
-            post(queues::resync_queue),
+            "/orgs/{org}/repos/{repo}/queues/{queue}/sync",
+            post(queues::sync_queue),
         )
         .route(
             "/orgs/{org}/repos/{repo}/queues/{queue}/graph",
@@ -157,7 +162,11 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
             "/orgs/{org}/repos/{repo}/queues/{queue}/health",
             get(health::get_health),
         )
-        .route("/orgs/{org}/prs", get(prs::list_prs))
+        .route("/orgs/{org}/prs", get(prs::list_org_prs))
+        .route("/orgs/{org}/repos", get(repos::list_repos))
+        .route("/orgs/{org}/repos/{repo}", get(repos::get_repo))
+        .route("/orgs/{org}/repos/{repo}/sync", post(repos::sync_repo))
+        .route("/orgs/{org}/repos/{repo}/prs", get(prs::list_repo_prs))
         .route("/orgs/{org}/repos/{repo}/prs/{number}", get(prs::get_pr))
         .route(
             "/orgs/{org}/repos/{repo}/prs/{number}/events",
@@ -175,11 +184,7 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
             "/orgs/{org}/repos/{repo}/prs/{number}/restart",
             post(prs::restart),
         )
-        .route("/orgs/{org}/runs/{run_id}", get(runs::get_run))
-        .route("/orgs/{org}/setups", get(setups::list_setups))
-        .route("/orgs/{org}/setups/resync", post(setups::resync_setups))
-        .route("/orgs/{org}/repos/{repo}/setup", get(setups::get_setup))
-        .route("/orgs/{org}/repos/{repo}/resync", post(setups::resync_repo))
+        .route("/orgs/{org}/repos/{repo}/runs/{run_id}", get(runs::get_run))
         .with_state(ApiState { pool, clock });
     ModuleApi {
         routes,
@@ -236,6 +241,9 @@ struct RunPath {
     /// The slug of the organization.
     #[param(example = "acme")]
     org: String,
+    /// The name of the repository in the organization.
+    #[param(example = "web")]
+    repo: String,
     /// The identifier of the run.
     #[param(example = "run_06cx8fn2wtgkyc9x5csgnm5r22ca6g0w")]
     run_id: String,
@@ -266,14 +274,10 @@ route_errors!(
         ErrorCode::QueueNotFound,
     ]
 );
+route_errors!(OrgPrListErrors: PAGE_ERRORS);
 route_errors!(
-    PrListErrors: PAGE_ERRORS,
-    &[
-        ErrorCode::MeNeedsSession,
-        ErrorCode::QueueNeedsRepo,
-        ErrorCode::RepoNotFound,
-        ErrorCode::QueueNotFound,
-    ]
+    RepoPrListErrors: PAGE_ERRORS,
+    &[ErrorCode::RepoNotFound, ErrorCode::QueueNotFound]
 );
 route_errors!(
     PrErrors: &[
@@ -310,9 +314,20 @@ route_errors!(
         ErrorCode::ItemNotInTest,
     ]
 );
-route_errors!(RunErrors: &[ErrorCode::RunNotFound]);
-route_errors!(SetupListErrors: PAGE_ERRORS);
-route_errors!(RepoSetupErrors: &[ErrorCode::RepoNotFound]);
+route_errors!(RunErrors: &[ErrorCode::RepoNotFound, ErrorCode::RunNotFound]);
+route_errors!(RepoListErrors: PAGE_ERRORS);
+route_errors!(RepoErrors: &[ErrorCode::RepoNotFound]);
+
+/// The text that a `q` filter looks for in a name: from 1 to 100 characters.
+fn name_part(q: Option<String>) -> Result<Option<String>, ApiError> {
+    match q {
+        Some(text) if !(1..=100).contains(&text.chars().count()) => Err(ApiError::new(
+            ErrorCode::InvalidRequest,
+            "`q` is from 1 to 100 characters".to_owned(),
+        )),
+        q => Ok(q),
+    }
+}
 
 /// A transaction of the organization of the URL, and the repository that the
 /// URL names, read in it.

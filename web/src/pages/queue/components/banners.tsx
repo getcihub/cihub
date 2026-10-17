@@ -32,7 +32,7 @@ function Banner({
 
 /** What stops or slows the queue: a lost access, a file that is not valid, a pause, a drain, the rules of the SCM. */
 export function Banners({ queue, org, repo, now }: { queue: Queue; org: string; repo: string; now: number }) {
-  const isAccessLost = queue.access === "suspended";
+  const isAccessLost = queue.is_suspended;
   const when = timeAgo(queue.state_changed_at, now);
 
   return (

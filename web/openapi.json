@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CIHub API",
-    "description": "The API of a CIHub instance: read the queues, the PRs in them and their runs; submit, cancel and restart a PR; pause, drain and resume a queue. The dashboard and the `cihub` command line use it too. The API is at `/api/v1` on the address of the instance, next to the dashboard.\n\n## Authentication\n\nSend an API token of the organization in the header `Authorization: Bearer <token>`. `cihub-server token create --org <slug>` creates the first one. A token has scopes:\n\n| Scope          | Allows                                                     |\n| -------------- | ---------------------------------------------------------- |\n| `queues:read`  | Read the queues, their PRs and their runs                  |\n| `queues:write` | Pause, drain, resume and read again a queue; read the audit log |\n| `prs:write`    | Submit, cancel and restart a PR                            |\n\nThe dashboard uses the session of a person instead: the cookie `__Host-cihub_session`. The role of the person in the organization of the URL gives the scopes: `admin` has every scope, `member` has `queues:read` and `prs:write`. A request of a session that can change a state (any method but `GET`, `HEAD` and `OPTIONS`) also sends the header `X-CSRF-Token`, with the value of the cookie `__Host-cihub_csrf`.\n\nThe `cihub` command line acts as a person too: `cihub auth login` asks `POST /device-codes` for a code, the person approves it on the page `/device` of the dashboard, and `POST /device-codes/token` then gives a session of the command line, `chc_…`, which goes in `Authorization: Bearer` as a token, with the scopes of the role of the person and no CSRF token.\n\n## Names in the URL\n\nA route names the organization by its slug, then the repository by its name and the queue by its target branch, percent-encoded: `/orgs/acme/repos/web/queues/main`, `/orgs/acme/repos/web/queues/release%2F2.0`. A PR belongs to its repository: `/orgs/acme/repos/web/prs/118`; its base branch gives its queue. The case of the slug and of the repository does not matter. An organization that the token or the person does not belong to answers `404 org_not_found`, as one that does not exist.\n\n## Requests that the queue does later\n\nA submission, a cancellation, a restart, a change of the state of a queue and a new read of a queue answer `202 Accepted`, without a body: the queue applies them at its next reconciliation, within seconds. `GET /orgs/{org}/stream` tells when a queue changed.\n\n## Pages\n\nA list gives a page. `limit` asks for 1 to 100 entries (50 by default), and `from` takes the `cursor` of the previous page. The answer names its entries after the resource (`prs`, `queues`, …) and adds:\n\n| Field      | Meaning                                                              |\n| ---------- | -------------------------------------------------------------------- |\n| `has_more` | More entries follow this page                                        |\n| `count`    | How many entries the list has, every page together                   |\n| `cursor`   | The `from` of the next page; `null` on the last page. It is opaque: pass it back as it is |\n\nA cursor of another list, or one that does not read, answers `400 invalid_cursor`.\n\n## Rate limits\n\nA token or a session makes at most 600 requests per minute on each replica of the server; past it, the answer is `429 rate_limited` with the header `Retry-After`. A token or a person keeps at most 8 streams open.\n\n## Errors\n\nAn error is a `application/problem+json` document (RFC 9457). Decide on its `code`, never on `detail`, whose text can change:\n\n```json\n{\n  \"type\": \"about:blank\",\n  \"title\": \"Not Found\",\n  \"status\": 404,\n  \"detail\": \"no queue of `main`\",\n  \"code\": \"queue_not_found\"\n}\n```\n\nEach route lists the codes that it can answer. Every code:\n\n| Code | Status | Meaning |\n| --- | --- | --- |\n| `invalid_request` | 400 | The body, the path or the query of the request is not valid. |\n| `limit_out_of_range` | 400 | `limit` is from 1 to 100. |\n| `invalid_cursor` | 400 | `from` is not a `cursor` that this list gave. |\n| `unknown_priority` | 400 | The name of the priority is not `urgent`, `high`, `medium` or `low`. |\n| `me_needs_session` | 400 | `@me` names the person of a session; an API token stands for no person. |\n| `queue_needs_repo` | 400 | `queue` names a queue of the repository that `repo` names. |\n| `device_code_pending` | 400 | The person has not approved or denied the code yet: ask again after `interval` seconds. |\n| `device_code_expired` | 400 | The device code is unknown, already used, or older than 15 minutes: start again. |\n| `unauthorized` | 401 | No API token or session, or one that is unknown or expired. |\n| `scope_missing` | 403 | The token, or the role of the user of the session, lacks the scope of the route. |\n| `csrf_refused` | 403 | A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`. |\n| `device_code_denied` | 403 | The person denied the code: the command line is not signed in. |\n| `route_not_found` | 404 | No route has this path. |\n| `org_not_found` | 404 | No organization has this slug, or the token or the user does not belong to it. |\n| `repo_not_found` | 404 | The organization has no repository with this name. |\n| `queue_not_found` | 404 | The repository has no queue of this branch. |\n| `pr_not_found` | 404 | The PR was never submitted to a queue of the repository. |\n| `run_not_found` | 404 | The organization has no run with this identifier. |\n| `device_code_not_found` | 404 | No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes. |\n| `pr_already_queued` | 409 | The PR is already in a queue of the repository, and its item has not ended. |\n| `item_ended` | 409 | The item of the PR ended: `merged`, `failed` or `cancelled`. |\n| `item_not_in_test` | 409 | Only an item in `testing` or `pending_failure` can restart its tests. |\n| `rate_limited` | 429 | The token or the session made 600 requests in the minute: retry after `Retry-After` seconds. |\n| `too_many_streams` | 429 | The token or the person already keeps 8 streams open. |\n| `polling_too_fast` | 429 | The command line asked again sooner than `interval`: wait 5 seconds more each time. |\n| `internal` | 500 | The server failed; the logs of the instance say why. |\n| `sign_in_unavailable` | 503 | The instance has no public address or no sign-in client: nobody signs in to it. |\n",
+    "description": "The API of a CIHub instance: read the queues, the PRs in them and their runs; submit, cancel and restart a PR; pause, drain and resume a queue. The dashboard and the `cihub` command line use it too. The API is at `/api/v1` on the address of the instance, next to the dashboard.\n\n## Authentication\n\nSend an API token of the organization in the header `Authorization: Bearer <token>`. `cihub-server token create --org <slug>` creates the first one. A token has scopes:\n\n| Scope          | Allows                                                     |\n| -------------- | ---------------------------------------------------------- |\n| `queues:read`  | Read the queues, their PRs and their runs                  |\n| `queues:write` | Pause, drain, resume and read again a queue; read the audit log |\n| `prs:write`    | Submit, cancel and restart a PR                            |\n\nThe dashboard uses the session of a person instead: the cookie `__Host-cihub_session`. The role of the person in the organization of the URL gives the scopes: `admin` has every scope, `member` has `queues:read` and `prs:write`. A request of a session that can change a state (any method but `GET`, `HEAD` and `OPTIONS`) also sends the header `X-CSRF-Token`, with the value of the cookie `__Host-cihub_csrf`.\n\nThe `cihub` command line acts as a person too: `cihub auth login` asks `POST /device-codes` for a code, the person approves it on the page `/device` of the dashboard, and `POST /device-codes/token` then gives a session of the command line, `chc_…`, which goes in `Authorization: Bearer` as a token, with the scopes of the role of the person and no CSRF token.\n\n## Names in the URL\n\nA route names the organization by its slug, then the repository by its name and the queue by its target branch, percent-encoded: `/orgs/acme/repos/web/queues/main`, `/orgs/acme/repos/web/queues/release%2F2.0`. A PR belongs to its repository: `/orgs/acme/repos/web/prs/118`; its base branch gives its queue. The case of the slug and of the repository does not matter. An organization that the token or the person does not belong to answers `404 org_not_found`, as one that does not exist.\n\n## Requests that the queue does later\n\nA submission, a cancellation, a restart, a change of the state of a queue and a new read of a queue answer `202 Accepted`, without a body: the queue applies them at its next reconciliation, within seconds. `GET /orgs/{org}/stream` tells when a queue changed.\n\n## Pages\n\nA list gives a page. `limit` asks for 1 to 100 entries (50 by default), and `from` takes the `cursor` of the previous page. The answer names its entries after the resource (`prs`, `queues`, …) and adds:\n\n| Field      | Meaning                                                              |\n| ---------- | -------------------------------------------------------------------- |\n| `has_more` | More entries follow this page                                        |\n| `count`    | How many entries the list has, every page together                   |\n| `cursor`   | The `from` of the next page; `null` on the last page. It is opaque: pass it back as it is |\n\nA cursor of another list, or one that does not read, answers `400 invalid_cursor`.\n\n## Rate limits\n\nA token or a session makes at most 600 requests per minute on each replica of the server; past it, the answer is `429 rate_limited` with the header `Retry-After`. A token or a person keeps at most 8 streams open.\n\n## Errors\n\nAn error is a `application/problem+json` document (RFC 9457). Decide on its `code`, never on `detail`, whose text can change:\n\n```json\n{\n  \"type\": \"about:blank\",\n  \"title\": \"Not Found\",\n  \"status\": 404,\n  \"detail\": \"no queue of `main`\",\n  \"code\": \"queue_not_found\"\n}\n```\n\nEach route lists the codes that it can answer. Every code:\n\n| Code | Status | Meaning |\n| --- | --- | --- |\n| `invalid_request` | 400 | The body, the path or the query of the request is not valid. |\n| `limit_out_of_range` | 400 | `limit` is from 1 to 100. |\n| `invalid_cursor` | 400 | `from` is not a `cursor` that this list gave. |\n| `unknown_priority` | 400 | The name of the priority is not `urgent`, `high`, `medium` or `low`. |\n| `device_code_pending` | 400 | The person has not approved or denied the code yet: ask again after `interval` seconds. |\n| `device_code_expired` | 400 | The device code is unknown, already used, or older than 15 minutes: start again. |\n| `unauthorized` | 401 | No API token or session, or one that is unknown or expired. |\n| `scope_missing` | 403 | The token, or the role of the user of the session, lacks the scope of the route. |\n| `csrf_refused` | 403 | A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`. |\n| `device_code_denied` | 403 | The person denied the code: the command line is not signed in. |\n| `route_not_found` | 404 | No route has this path. |\n| `org_not_found` | 404 | No organization has this slug, or the token or the user does not belong to it. |\n| `repo_not_found` | 404 | The organization has no repository with this name. |\n| `queue_not_found` | 404 | The repository has no queue of this branch. |\n| `pr_not_found` | 404 | The PR was never submitted to a queue of the repository. |\n| `run_not_found` | 404 | The organization has no run with this identifier. |\n| `device_code_not_found` | 404 | No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes. |\n| `pr_already_queued` | 409 | The PR is already in a queue of the repository, and its item has not ended. |\n| `item_ended` | 409 | The item of the PR ended: `merged`, `failed` or `cancelled`. |\n| `item_not_in_test` | 409 | Only an item in `testing` or `pending_failure` can restart its tests. |\n| `rate_limited` | 429 | The token or the session made 600 requests in the minute: retry after `Retry-After` seconds. |\n| `too_many_streams` | 429 | The token or the person already keeps 8 streams open. |\n| `polling_too_fast` | 429 | The command line asked again sooner than `interval`: wait 5 seconds more each time. |\n| `internal` | 500 | The server failed; the logs of the instance say why. |\n| `sign_in_unavailable` | 503 | The instance has no public address or no sign-in client: nobody signs in to it. |\n",
     "license": {
       "name": "FSL-1.1-ALv2",
       "identifier": "FSL-1.1-ALv2"
@@ -1003,9 +1003,9 @@
         "tags": [
           "Pull requests"
         ],
-        "summary": "List PRs",
-        "description": "The PRs in the queues of the organization: the current submission of each\nPR in each queue, with the PRs that merge before it and an estimate.\nWithout a filter, every PR, live or ended.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
-        "operationId": "list_prs",
+        "summary": "List the PRs of the organization",
+        "description": "The PRs in the queues of every repository of the organization: the\ncurrent submission of each PR in each queue, with the PRs that merge before\nit and an estimate. Without a filter, every PR, live or ended.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "operationId": "list_org_prs",
         "parameters": [
           {
             "name": "org",
@@ -1020,32 +1020,12 @@
           {
             "name": "author",
             "in": "query",
-            "description": "Only the PRs of this author, whatever the case of the login; `@me` for\nthe person of the session.",
+            "description": "Only the PRs of this author, whatever the case of the login.",
             "required": false,
             "schema": {
               "type": "string"
             },
-            "example": "@me"
-          },
-          {
-            "name": "repo",
-            "in": "query",
-            "description": "Only the PRs of this repository.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "example": "web"
-          },
-          {
-            "name": "queue",
-            "in": "query",
-            "description": "Only the PRs of this queue of `repo`.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "example": "main"
+            "example": "octocat"
           },
           {
             "name": "state",
@@ -1134,7 +1114,7 @@
             }
           },
           "400": {
-            "description": "- `invalid_request`: The body, the path or the query of the request is not valid.\n- `limit_out_of_range`: `limit` is from 1 to 100.\n- `invalid_cursor`: `from` is not a `cursor` that this list gave.\n- `me_needs_session`: `@me` names the person of a session; an API token stands for no person.\n- `queue_needs_repo`: `queue` names a queue of the repository that `repo` names.",
+            "description": "- `invalid_request`: The body, the path or the query of the request is not valid.\n- `limit_out_of_range`: `limit` is from 1 to 100.\n- `invalid_cursor`: `from` is not a `cursor` that this list gave.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1166,26 +1146,6 @@
                     "value": {
                       "code": "limit_out_of_range",
                       "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
-                  },
-                  "me_needs_session": {
-                    "summary": "me_needs_session",
-                    "value": {
-                      "code": "me_needs_session",
-                      "detail": "`@me` names the person of a session; an API token stands for no person.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
-                  },
-                  "queue_needs_repo": {
-                    "summary": "queue_needs_repo",
-                    "value": {
-                      "code": "queue_needs_repo",
-                      "detail": "`queue` names a queue of the repository that `repo` names.",
                       "status": 400,
                       "title": "Bad Request",
                       "type": "about:blank"
@@ -1240,7 +1200,7 @@
             }
           },
           "404": {
-            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `queue_not_found`: The repository has no queue of this branch.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
+            "description": "- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1252,26 +1212,6 @@
                     "value": {
                       "code": "org_not_found",
                       "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  },
-                  "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  },
-                  "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
                       "status": 404,
                       "title": "Not Found",
                       "type": "about:blank"
@@ -1352,7 +1292,7 @@
           "Queues"
         ],
         "summary": "List the queues of the organization",
-        "description": "Every queue of the organization, or of one repository, with its counters\nand its settings, by repository name then target branch: the overview of the\ndashboard.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "description": "Every queue of the organization, with its counters and its settings, by\nrepository name then target branch: the overview of the dashboard.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
         "operationId": "list_org_queues",
         "parameters": [
           {
@@ -1366,9 +1306,9 @@
             "example": "acme"
           },
           {
-            "name": "repo",
+            "name": "q",
             "in": "query",
-            "description": "Only the queues of this repository.",
+            "description": "Only the queues of the repositories whose name holds this text,\nwhatever its case; from 1 to 100 characters.",
             "required": false,
             "schema": {
               "type": "string"
@@ -1593,10 +1533,10 @@
     "/orgs/{org}/repos": {
       "get": {
         "tags": [
-          "Organizations"
+          "Repositories"
         ],
         "summary": "List the repositories",
-        "description": "The repositories of the organization that the App reaches, by namespace\nthen name.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "description": "The repositories of the organization that the App reaches, by namespace\nthen name, each with what the caller may do on it and the verdict of its\nsetup. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
         "operationId": "list_repos",
         "parameters": [
           {
@@ -1610,6 +1550,26 @@
             "example": "acme"
           },
           {
+            "name": "state",
+            "in": "query",
+            "description": "Only the repositories whose setup is in these states, separated by\ncommas: `started`, `checking`, `ready`, `ready_with_warnings`,\n`cannot_merge`, `invalid_config`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "checking,ready,cannot_merge"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Only the repositories whose name holds this text, whatever its case;\nfrom 1 to 100 characters.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "web"
+          },
+          {
             "name": "from",
             "in": "query",
             "description": "The `cursor` of the previous page.",
@@ -1621,7 +1581,7 @@
           {
             "name": "limit",
             "in": "query",
-            "description": "How many entries, from 1 to 100; 50 by default.",
+            "description": "How many repositories, from 1 to 100; 50 by default.",
             "required": false,
             "schema": {
               "type": "integer",
@@ -1817,10 +1777,10 @@
     "/orgs/{org}/repos/{repo}": {
       "get": {
         "tags": [
-          "Organizations"
+          "Repositories"
         ],
         "summary": "Get a repository",
-        "description": "The repository, whatever the case of its name.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "description": "The repository, whatever the case of its name, with what the caller may\ndo on it and its whole setup. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
         "operationId": "get_repo",
         "parameters": [
           {
@@ -1836,7 +1796,7 @@
           {
             "name": "repo",
             "in": "path",
-            "description": "The name of the repository.",
+            "description": "The name of the repository in the organization.",
             "required": true,
             "schema": {
               "type": "string"
@@ -1850,7 +1810,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Repo"
+                  "$ref": "#/components/schemas/RepoDetail"
                 }
               }
             }
@@ -1912,6 +1872,334 @@
                     "value": {
                       "code": "org_not_found",
                       "detail": "No organization has this slug, or the token or the user does not belong to it.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "repo_not_found": {
+                    "summary": "repo_not_found",
+                    "value": {
+                      "code": "repo_not_found",
+                      "detail": "The organization has no repository with this name.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "The seconds to wait before the next request."
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "rate_limited": {
+                    "summary": "rate_limited",
+                    "value": {
+                      "code": "rate_limited",
+                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+                      "status": 429,
+                      "title": "Too Many Requests",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "- `internal`: The server failed; the logs of the instance say why.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "internal": {
+                    "summary": "internal",
+                    "value": {
+                      "code": "internal",
+                      "detail": "The server failed; the logs of the instance say why.",
+                      "status": 500,
+                      "title": "Internal Server Error",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "token": [
+              "queues:read"
+            ]
+          },
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/orgs/{org}/repos/{repo}/prs": {
+      "get": {
+        "tags": [
+          "Pull requests"
+        ],
+        "summary": "List the PRs of a repository",
+        "description": "The PRs in the queues of the repository, or of one of its queues: the\ncurrent submission of each PR in each queue, with the PRs that merge\nbefore it and an estimate. Without a filter, every PR, live or ended.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "operationId": "list_repo_prs",
+        "parameters": [
+          {
+            "name": "org",
+            "in": "path",
+            "description": "The slug of the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "acme"
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "web"
+          },
+          {
+            "name": "queue",
+            "in": "query",
+            "description": "Only the PRs of the queue of this target branch.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "main"
+          },
+          {
+            "name": "author",
+            "in": "query",
+            "description": "Only the PRs of this author, whatever the case of the login.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "octocat"
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "Only the PRs in these states, separated by commas: `not_ready`,\n`pending`, `testing`, `tests_passed`, `pending_failure`, `merged`,\n`failed`, `cancelled`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "example": "pending,testing"
+          },
+          {
+            "name": "submitted_since",
+            "in": "query",
+            "description": "Submitted at or after this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "submitted_until",
+            "in": "query",
+            "description": "Submitted before this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "state_changed_since",
+            "in": "query",
+            "description": "Reached their state at or after this time (RFC 3339).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`newest` (by default) or `position`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "The order of a list of PRs.",
+              "enum": [
+                "newest",
+                "position"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "The `cursor` of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "How many PRs, from 1 to 100; 50 by default.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of PRs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "- `invalid_request`: The body, the path or the query of the request is not valid.\n- `limit_out_of_range`: `limit` is from 1 to 100.\n- `invalid_cursor`: `from` is not a `cursor` that this list gave.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "invalid_cursor": {
+                    "summary": "invalid_cursor",
+                    "value": {
+                      "code": "invalid_cursor",
+                      "detail": "`from` is not a `cursor` that this list gave.",
+                      "status": 400,
+                      "title": "Bad Request",
+                      "type": "about:blank"
+                    }
+                  },
+                  "invalid_request": {
+                    "summary": "invalid_request",
+                    "value": {
+                      "code": "invalid_request",
+                      "detail": "The body, the path or the query of the request is not valid.",
+                      "status": 400,
+                      "title": "Bad Request",
+                      "type": "about:blank"
+                    }
+                  },
+                  "limit_out_of_range": {
+                    "summary": "limit_out_of_range",
+                    "value": {
+                      "code": "limit_out_of_range",
+                      "detail": "`limit` is from 1 to 100.",
+                      "status": 400,
+                      "title": "Bad Request",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "summary": "unauthorized",
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "No API token or session, or one that is unknown or expired.",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "- `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "scope_missing": {
+                    "summary": "scope_missing",
+                    "value": {
+                      "code": "scope_missing",
+                      "detail": "The token, or the role of the user of the session, lacks the scope of the route.",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `queue_not_found`: The repository has no queue of this branch.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "org_not_found": {
+                    "summary": "org_not_found",
+                    "value": {
+                      "code": "org_not_found",
+                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "queue_not_found": {
+                    "summary": "queue_not_found",
+                    "value": {
+                      "code": "queue_not_found",
+                      "detail": "The repository has no queue of this branch.",
                       "status": 404,
                       "title": "Not Found",
                       "type": "about:blank"
@@ -4371,14 +4659,14 @@
         ]
       }
     },
-    "/orgs/{org}/repos/{repo}/queues/{queue}/resync": {
+    "/orgs/{org}/repos/{repo}/queues/{queue}/sync": {
       "post": {
         "tags": [
           "Queues"
         ],
-        "summary": "Read a queue again",
+        "summary": "Sync a queue",
         "description": "Reads again from the SCM each live PR, the checks of each live run, the\nhead of the target branch and its configuration: the way out after an\nincident.\n\n**Scope**: `queues:write`, for an API token or for the role of the user of a session.",
-        "operationId": "resync_queue",
+        "operationId": "sync_queue",
         "parameters": [
           {
             "name": "org",
@@ -4576,380 +4864,13 @@
         ]
       }
     },
-    "/orgs/{org}/repos/{repo}/resync": {
-      "post": {
-        "tags": [
-          "Setups"
-        ],
-        "summary": "Read the setup of a repository again",
-        "description": "Asks CIHub to read the setup of the repository from the SCM now, at most\nonce a minute; its `requested_at` shows the read until it ends.\n\n**Scope**: `queues:write`, for an API token or for the role of the user of a session.",
-        "operationId": "resync_repo",
-        "parameters": [
-          {
-            "name": "org",
-            "in": "path",
-            "description": "The slug of the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "acme"
-          },
-          {
-            "name": "repo",
-            "in": "path",
-            "description": "The name of the repository in the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "web"
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "CIHub takes the request."
-          },
-          "401": {
-            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "- `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.\n- `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
-                  },
-                  "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  },
-                  "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "The seconds to wait before the next request."
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "- `internal`: The server failed; the logs of the instance say why.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "token": [
-              "queues:write"
-            ]
-          },
-          {
-            "session": []
-          }
-        ]
-      }
-    },
-    "/orgs/{org}/repos/{repo}/setup": {
-      "get": {
-        "tags": [
-          "Setups"
-        ],
-        "summary": "Get the setup of a repository",
-        "description": "What CIHub found about the rules of the default branch of the repository\nand its configuration file, with a verdict. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
-        "operationId": "get_setup",
-        "parameters": [
-          {
-            "name": "org",
-            "in": "path",
-            "description": "The slug of the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "acme"
-          },
-          {
-            "name": "repo",
-            "in": "path",
-            "description": "The name of the repository in the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "web"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The setup.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RepoSetup"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "- `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  },
-                  "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "The seconds to wait before the next request."
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "- `internal`: The server failed; the logs of the instance say why.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "token": [
-              "queues:read"
-            ]
-          },
-          {
-            "session": []
-          }
-        ]
-      }
-    },
-    "/orgs/{org}/runs/{run_id}": {
+    "/orgs/{org}/repos/{repo}/runs/{run_id}": {
       "get": {
         "tags": [
           "Runs"
         ],
         "summary": "Get a run",
-        "description": "The run, its test branch, the PRs that it tests and their predecessors,\nevery check observed on it, and the live runs that depend on it. A job of\nthe CI reads its run identifier in the last segment of its branch.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
+        "description": "The run, its test branch, the PRs that it tests and their predecessors,\nevery check observed on it, and the live runs that depend on it. A job of\nthe CI reads its run identifier in the last segment of its branch; a run of\nanother repository answers `run_not_found`.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
         "operationId": "get_run",
         "parameters": [
           {
@@ -4961,6 +4882,16 @@
               "type": "string"
             },
             "example": "acme"
+          },
+          {
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "web"
           },
           {
             "name": "run_id",
@@ -5029,7 +4960,7 @@
             }
           },
           "404": {
-            "description": "- `run_not_found`: The organization has no run with this identifier.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
+            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `run_not_found`: The organization has no run with this identifier.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5041,6 +4972,16 @@
                     "value": {
                       "code": "org_not_found",
                       "detail": "No organization has this slug, or the token or the user does not belong to it.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "repo_not_found": {
+                    "summary": "repo_not_found",
+                    "value": {
+                      "code": "repo_not_found",
+                      "detail": "The organization has no repository with this name.",
                       "status": 404,
                       "title": "Not Found",
                       "type": "about:blank"
@@ -5125,14 +5066,14 @@
         ]
       }
     },
-    "/orgs/{org}/setups": {
-      "get": {
+    "/orgs/{org}/repos/{repo}/sync": {
+      "post": {
         "tags": [
-          "Setups"
+          "Repositories"
         ],
-        "summary": "List the setups of the repositories",
-        "description": "The setup of each repository that the App reaches, by name: what CIHub\nfound about the rules of its default branch and its configuration file,\nwith a verdict. A repository whose default branch has its queue is\n`started`. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token or for the role of the user of a session.",
-        "operationId": "list_setups",
+        "summary": "Sync the setup of a repository",
+        "description": "Asks CIHub to read the setup of the repository from the SCM now, at most\nonce a minute; its `requested_at` shows the read until it ends.\n\n**Scope**: `queues:write`, for an API token or for the role of the user of a session.",
+        "operationId": "sync_repo",
         "parameters": [
           {
             "name": "org",
@@ -5145,248 +5086,14 @@
             "example": "acme"
           },
           {
-            "name": "state",
-            "in": "query",
-            "description": "Only the setups in these states, separated by commas: `started`,\n`checking`, `ready`, `ready_with_warnings`, `cannot_merge`,\n`invalid_config`.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "example": "checking,ready,cannot_merge"
-          },
-          {
-            "name": "q",
-            "in": "query",
-            "description": "Only the repositories whose name holds this text, whatever its case;\nfrom 1 to 100 characters.",
-            "required": false,
+            "name": "repo",
+            "in": "path",
+            "description": "The name of the repository in the organization.",
+            "required": true,
             "schema": {
               "type": "string"
             },
             "example": "web"
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "description": "The `cursor` of the previous page.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "How many setups, from 1 to 100; 50 by default.",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "minimum": 0
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "A page of setups.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SetupList"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "- `invalid_request`: The body, the path or the query of the request is not valid.\n- `limit_out_of_range`: `limit` is from 1 to 100.\n- `invalid_cursor`: `from` is not a `cursor` that this list gave.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
-                  },
-                  "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
-                  },
-                  "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "- `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "integer"
-                },
-                "description": "The seconds to wait before the next request."
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "- `internal`: The server failed; the logs of the instance say why.",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                },
-                "examples": {
-                  "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "token": [
-              "queues:read"
-            ]
-          },
-          {
-            "session": []
-          }
-        ]
-      }
-    },
-    "/orgs/{org}/setups/resync": {
-      "post": {
-        "tags": [
-          "Setups"
-        ],
-        "summary": "Read the setups of the organization again",
-        "description": "Asks CIHub to read from the SCM now the setups of at most 50 repositories\nwithout a queue, the oldest read first.\n\n**Scope**: `queues:write`, for an API token or for the role of the user of a session.",
-        "operationId": "resync_setups",
-        "parameters": [
-          {
-            "name": "org",
-            "in": "path",
-            "description": "The slug of the organization.",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "example": "acme"
           }
         ],
         "responses": {
@@ -5448,7 +5155,7 @@
             }
           },
           "404": {
-            "description": "- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
+            "description": "- `repo_not_found`: The organization has no repository with this name.\n- `org_not_found`: No organization has this slug, or the token or the user does not belong to it.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5460,6 +5167,16 @@
                     "value": {
                       "code": "org_not_found",
                       "detail": "No organization has this slug, or the token or the user does not belong to it.",
+                      "status": 404,
+                      "title": "Not Found",
+                      "type": "about:blank"
+                    }
+                  },
+                  "repo_not_found": {
+                    "summary": "repo_not_found",
+                    "value": {
+                      "code": "repo_not_found",
+                      "detail": "The organization has no repository with this name.",
                       "status": 404,
                       "title": "Not Found",
                       "type": "about:blank"
@@ -6087,6 +5804,122 @@
           }
         ]
       }
+    },
+    "/user/sync": {
+      "post": {
+        "tags": [
+          "Session"
+        ],
+        "summary": "Sync the user",
+        "description": "Asks CIHub to read again from the SCM now the installations and the\nrepositories that the person of the session reaches.\n\n**Access**: the session of a person: the dashboard, or the command line.",
+        "operationId": "sync_user",
+        "responses": {
+          "202": {
+            "description": "CIHub takes the request."
+          },
+          "401": {
+            "description": "- `unauthorized`: No API token or session, or one that is unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "unauthorized": {
+                    "summary": "unauthorized",
+                    "value": {
+                      "code": "unauthorized",
+                      "detail": "No API token or session, or one that is unknown or expired.",
+                      "status": 401,
+                      "title": "Unauthorized",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "- `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "csrf_refused": {
+                    "summary": "csrf_refused",
+                    "value": {
+                      "code": "csrf_refused",
+                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
+                      "status": 403,
+                      "title": "Forbidden",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "- `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "The seconds to wait before the next request."
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "rate_limited": {
+                    "summary": "rate_limited",
+                    "value": {
+                      "code": "rate_limited",
+                      "detail": "The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.",
+                      "status": 429,
+                      "title": "Too Many Requests",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "- `internal`: The server failed; the logs of the instance say why.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                },
+                "examples": {
+                  "internal": {
+                    "summary": "internal",
+                    "value": {
+                      "code": "internal",
+                      "detail": "The server failed; the logs of the instance say why.",
+                      "status": 500,
+                      "title": "Internal Server Error",
+                      "type": "about:blank"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -6111,7 +5944,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "What was done: `queue.state_requested`, `queue.resync`,\n`item.cancel_requested` or `item.restart_requested`.",
+            "description": "What was done: `queue.state_requested`, `queue.sync`,\n`item.cancel_requested` or `item.restart_requested`.",
             "example": "queue.state_requested"
           },
           "actor_user_id": {
@@ -6467,8 +6300,6 @@
           "limit_out_of_range",
           "invalid_cursor",
           "unknown_priority",
-          "me_needs_session",
-          "queue_needs_repo",
           "device_code_pending",
           "device_code_expired",
           "unauthorized",
@@ -7060,12 +6891,12 @@
         "description": "An organization: the account of an installation of the App.",
         "required": [
           "slug",
-          "access"
+          "is_suspended"
         ],
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/OrgAccess",
-            "description": "Whether CIHub reaches the SCM accounts of the organization."
+          "is_suspended": {
+            "type": "boolean",
+            "description": "Every connection of the organization to the SCM is suspended: CIHub\nreaches none of its accounts, and its queues are paused."
           },
           "role": {
             "oneOf": [
@@ -7084,14 +6915,6 @@
             "example": "acme"
           }
         }
-      },
-      "OrgAccess": {
-        "type": "string",
-        "description": "Whether CIHub reaches the SCM accounts of an organization: `ok`, or\n`suspended` when every connection of the organization is suspended.",
-        "enum": [
-          "ok",
-          "suspended"
-        ]
       },
       "OrgList": {
         "type": "object",
@@ -7127,6 +6950,29 @@
               "$ref": "#/components/schemas/Org"
             },
             "description": "The organizations of the page."
+          }
+        }
+      },
+      "Permission": {
+        "type": "object",
+        "description": "What the caller may do on a repository: `read` its queues, its PRs and\nits setup; `write`: submit, cancel and restart a PR; `admin`: change the\nstate of a queue and read a setup or a queue again from the SCM.",
+        "required": [
+          "read",
+          "write",
+          "admin"
+        ],
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "description": "The caller acts on the queues and the setup of the repository."
+          },
+          "read": {
+            "type": "boolean",
+            "description": "The caller reads the repository."
+          },
+          "write": {
+            "type": "boolean",
+            "description": "The caller acts on the PRs of the repository."
           }
         }
       },
@@ -7464,7 +7310,7 @@
           "mode",
           "state_changed_at",
           "strategy",
-          "access",
+          "is_suspended",
           "has_config_file",
           "counts",
           "merged_last_24h",
@@ -7476,10 +7322,6 @@
           "setup"
         ],
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/QueueAccess",
-            "description": "Whether CIHub reaches the repository of the queue on the SCM."
-          },
           "config_error": {
             "type": [
               "string",
@@ -7526,6 +7368,10 @@
           "is_default_branch": {
             "type": "boolean",
             "description": "The branch of the queue is the default branch of its repository."
+          },
+          "is_suspended": {
+            "type": "boolean",
+            "description": "CIHub no longer reaches the repository of the queue on the SCM: the\nApp is suspended or uninstalled, and the queue is paused until the\naccess comes back."
           },
           "last_merged_at": {
             "type": [
@@ -7622,14 +7468,6 @@
             "description": "How many runs the queue keeps in progress."
           }
         }
-      },
-      "QueueAccess": {
-        "type": "string",
-        "description": "Whether CIHub reaches the repository of a queue on the SCM: `ok`, or\n`suspended` when the App is suspended or uninstalled, and the queue is\npaused until the access comes back.",
-        "enum": [
-          "ok",
-          "suspended"
-        ]
       },
       "QueueChanged": {
         "type": "object",
@@ -7867,12 +7705,14 @@
       },
       "Repo": {
         "type": "object",
-        "description": "A repository of the organization.",
+        "description": "A repository of the organization, with what the caller may do on it and\nthe verdict of its setup; `RepoDetail` gives its whole setup.",
         "required": [
           "id",
           "namespace",
           "name",
-          "default_branch"
+          "default_branch",
+          "permission",
+          "setup"
         ],
         "properties": {
           "default_branch": {
@@ -7894,6 +7734,56 @@
             "type": "string",
             "description": "The account of the repository on the SCM.",
             "example": "acme"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/Permission",
+            "description": "What the caller may do on the repository."
+          },
+          "setup": {
+            "$ref": "#/components/schemas/SetupSummary",
+            "description": "The verdict of the setup of the repository."
+          }
+        }
+      },
+      "RepoDetail": {
+        "type": "object",
+        "description": "A repository of the organization, with what the caller may do on it and\nits whole setup.",
+        "required": [
+          "id",
+          "namespace",
+          "name",
+          "default_branch",
+          "permission",
+          "setup"
+        ],
+        "properties": {
+          "default_branch": {
+            "type": "string",
+            "description": "The default branch of the repository.",
+            "example": "main"
+          },
+          "id": {
+            "type": "string",
+            "description": "The identifier of the repository.",
+            "example": "repo_06cx8fn2w6gkyc9x5csgnm5r1dmqz3s0"
+          },
+          "name": {
+            "type": "string",
+            "description": "The name of the repository, as the routes name it.",
+            "example": "web"
+          },
+          "namespace": {
+            "type": "string",
+            "description": "The account of the repository on the SCM.",
+            "example": "acme"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/Permission",
+            "description": "What the caller may do on the repository."
+          },
+          "setup": {
+            "$ref": "#/components/schemas/RepoSetup",
+            "description": "What CIHub found about the rules and the configuration file of the\ndefault branch."
           }
         }
       },
@@ -7938,14 +7828,9 @@
         "type": "object",
         "description": "The setup of a repository: what CIHub found about the rules of its\ndefault branch and its configuration file, with a verdict. Every field\ncomes from Postgres: showing a setup calls the SCM zero times.",
         "required": [
-          "repo_id",
-          "repo",
-          "namespace",
-          "default_branch",
           "state",
           "rules",
-          "target_branch_missing",
-          "config"
+          "target_branch_missing"
         ],
         "properties": {
           "checked_at": {
@@ -7958,18 +7843,15 @@
             "example": "2026-10-16T09:00:00Z"
           },
           "config": {
-            "$ref": "#/components/schemas/ConfigFile",
-            "description": "The configuration file at the head of the default branch."
-          },
-          "default_branch": {
-            "type": "string",
-            "description": "The default branch of the repository, whose rules and file the setup\nreads.",
-            "example": "main"
-          },
-          "namespace": {
-            "type": "string",
-            "description": "The account of the repository on the SCM.",
-            "example": "acme"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConfigFile",
+                "description": "The configuration file at the head of the default branch; `null`\nbefore the first read."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "queue": {
             "type": [
@@ -7978,16 +7860,6 @@
             ],
             "description": "The target branch of the queue of the default branch, with `started`;\n`null` otherwise.",
             "example": "main"
-          },
-          "repo": {
-            "type": "string",
-            "description": "The name of the repository, as the routes name it.",
-            "example": "web"
-          },
-          "repo_id": {
-            "type": "string",
-            "description": "The identifier of the repository.",
-            "example": "repo_06cx8fn2w6gkyc9x5csgnm5r1dmqz3s0"
           },
           "requested_at": {
             "type": [
@@ -8003,7 +7875,7 @@
             "items": {
               "$ref": "#/components/schemas/RuleCheck"
             },
-            "description": "The four rules that a queue needs, always in this order:\n`update_restriction_missing`, `app_not_exempt`,\n`test_branches_not_excluded`, `up_to_date_required`."
+            "description": "The four rules that a queue needs, always in this order:\n`update_restriction_missing`, `app_not_exempt`,\n`test_branches_not_excluded`, `up_to_date_required`; empty before the\nfirst read."
           },
           "rules_url": {
             "type": [
@@ -8422,43 +8294,6 @@
           }
         }
       },
-      "SetupList": {
-        "type": "object",
-        "description": "A page of the setups of the repositories that the App reaches, by\nname.",
-        "required": [
-          "setups",
-          "has_more",
-          "count"
-        ],
-        "properties": {
-          "count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "How many entries the list has, every page together.",
-            "example": 137,
-            "minimum": 0
-          },
-          "cursor": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The `from` of the next page; `null` on the last page.",
-            "example": "eyJsaXN0IjoicHJzIiwiYWZ0ZXIiOlsiMjAyNi0xMC0xMVQwOTozMDowMFoiXX0"
-          },
-          "has_more": {
-            "type": "boolean",
-            "description": "More entries follow this page."
-          },
-          "setups": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RepoSetup"
-            },
-            "description": "The setups of the page."
-          }
-        }
-      },
       "SetupState": {
         "type": "string",
         "description": "The verdict of the setup of a repository, computed by the server in this\norder: `started` (the default branch has its queue), `checking` (no read\nyet, or a read asked after the last one), `invalid_config` (the file is\nnot valid), `cannot_merge` (a rule blocks the merges, or the default\nbranch is missing), `ready_with_warnings` (a rule fails without blocking\nthe merges), `ready`.",
@@ -8470,6 +8305,37 @@
           "cannot_merge",
           "invalid_config"
         ]
+      },
+      "SetupSummary": {
+        "type": "object",
+        "description": "The verdict of the setup of a repository, and when CIHub read it.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When CIHub read the setup; `null` before the first read.",
+            "example": "2026-10-16T09:00:00Z"
+          },
+          "requested_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When an admin asked to read the setup again, while that read waits;\n`null` otherwise.",
+            "example": "2026-10-16T09:05:00Z"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SetupState",
+            "description": "The verdict of the setup."
+          }
+        }
       },
       "StateTime": {
         "type": "object",
@@ -8661,7 +8527,7 @@
     },
     {
       "name": "Organizations",
-      "description": "An organization is the account of an installation of the App: its repositories and its audit log."
+      "description": "An organization is the account of an installation of the App, with its audit log."
     },
     {
       "name": "Live updates",
@@ -8680,8 +8546,8 @@
       "description": "A run tests, on the CI, a test branch that holds a group of PRs on top of the PRs ahead of them."
     },
     {
-      "name": "Setups",
-      "description": "The setup of a repository: what CIHub found about the rules of its default branch and its configuration file, with a verdict."
+      "name": "Repositories",
+      "description": "A repository of the organization: what the caller may do on it, and its setup, what CIHub found about the rules of its default branch and its configuration file, with a verdict."
     }
   ]
 }

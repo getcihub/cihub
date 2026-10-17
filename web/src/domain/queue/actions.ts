@@ -16,7 +16,8 @@ export function refusalOf(failure: Failure): string {
 const READS_OF_A_QUEUE = new Set([
   "getQueue",
   "graph",
-  "listPrs",
+  "listOrgPrs",
+  "listRepoPrs",
   "getPr",
   "listEvents",
   "getRun",

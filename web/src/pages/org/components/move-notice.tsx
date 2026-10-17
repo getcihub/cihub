@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Toast } from "@/components/ui/toast";
 import { minePrsOf, minePrsReads } from "@/domain/mine/queries";
 import { whereAmong } from "@/domain/pr/words";
+import { useMe } from "@/hooks/use-me";
 
 const SHOWN_MS = 8_000;
 
@@ -32,10 +33,11 @@ function placesOf(prs: Pr[], queues: Queue[]): Map<string, PrPlace> {
  */
 export function MoveNotice({ org, queues }: { org: string; queues: Queue[] }) {
   const queryClient = useQueryClient();
+  const { login } = useMe();
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const reads = minePrsReads(org);
+    const reads = minePrsReads(org, login);
     const hashes = [hashKey(reads.live.queryKey), hashKey(reads.merged.queryKey)];
     const mine = () =>
       minePrsOf(
@@ -58,7 +60,7 @@ export function MoveNotice({ org, queues }: { org: string; queues: Queue[] }) {
         setNotice(moved.map((place) => `${place.title}: ${place.where}`).join(" · "));
       }
     });
-  }, [org, queues, queryClient]);
+  }, [org, login, queues, queryClient]);
 
   useEffect(() => {
     if (!notice) {

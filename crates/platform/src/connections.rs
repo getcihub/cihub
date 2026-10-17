@@ -114,7 +114,7 @@ pub async fn run_sync_repos(
 
     let listed = scm.list_repos(&connection, job.class).await;
 
-    resync_installation_after(pool, &connection, &listed, now).await?;
+    sync_installation_after(pool, &connection, &listed, now).await?;
     let repos = listed.map_err(PlatformError::Scm)?;
 
     #[expect(
@@ -182,7 +182,7 @@ pub(crate) async fn active_connection(
 
 /// When the SCM answered that the access is lost or the installation is not
 /// found, requests the sync of the installation, which records it.
-pub(crate) async fn resync_installation_after<T>(
+pub(crate) async fn sync_installation_after<T>(
     pool: &PgPool,
     connection: &ConnectionRef,
     answer: &Result<T, ScmError>,

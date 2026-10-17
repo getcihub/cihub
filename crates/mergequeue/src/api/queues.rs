@@ -4,8 +4,8 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use cihub_api_types::{
-    ErrorCode, Finding, Graph, GraphEdge, GraphNode, GraphRun, ItemCounts, Queue, QueueAccess,
-    QueueList, RequestedQueueState, SettingsSummary, Setup, UpdateQueue, Window,
+    ErrorCode, Finding, Graph, GraphEdge, GraphNode, GraphRun, ItemCounts, Queue, QueueList,
+    RequestedQueueState, SettingsSummary, Setup, UpdateQueue, Window,
 };
 use cihub_config::{QueueSettings, RepoConfig};
 use cihub_domain::{ApiScope, EventKind, QueueControl, QueueId, RepoId};
@@ -19,7 +19,7 @@ use time::{Duration, OffsetDateTime};
 
 use super::{
     ApiState, QueueErrors, QueueListErrors, QueuePath, RepoPath, UpdateQueueErrors, actor, audit,
-    begin_repo, repo_id,
+    begin_repo, name_part,
 };
 use crate::jobs::give_back;
 use crate::target::queue_settings;
@@ -206,11 +206,6 @@ impl QueueFacts {
         let CountedQueueRow { queue: row, counts } = row;
         let settings = row.settings()?;
         let window_size = row.window_size.map(u32::try_from).transpose()?;
-        let access = if row.is_suspended {
-            QueueAccess::Suspended
-        } else {
-            QueueAccess::Ok
-        };
         let setup = self.setups.remove(&row.id).unwrap_or(Setup {
             findings: Vec::new(),
             checked_at: None,
@@ -220,7 +215,7 @@ impl QueueFacts {
             state: row.state.parse()?,
             mode: row.mode.parse()?,
             strategy: settings.strategy.value,
-            access,
+            is_suspended: row.is_suspended,
             has_config_file: row.config_text.is_some() || row.config_error.is_some(),
             counts: ItemCounts {
                 not_ready: u32::try_from(counts.not_ready)?,
@@ -273,9 +268,10 @@ type QueueKey = (String, String, String);
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub(super) struct QueueQuery {
-    /// Only the queues of this repository.
+    /// Only the queues of the repositories whose name holds this text,
+    /// whatever its case; from 1 to 100 characters.
     #[param(example = "web")]
-    repo: Option<String>,
+    q: Option<String>,
     /// The `cursor` of the previous page.
     from: Option<String>,
     /// How many queues, from 1 to 100; 50 by default.
@@ -293,9 +289,8 @@ pub(super) struct PageQuery {
 
 /// List the queues of the organization
 ///
-/// Every queue of the organization, or of one repository, with its counters
-/// and its settings, by repository name then target branch: the overview of the
-/// dashboard.
+/// Every queue of the organization, with its counters and its settings, by
+/// repository name then target branch: the overview of the dashboard.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/queues",
@@ -316,13 +311,11 @@ pub(super) async fn list_org_queues(
     grant.require(ApiScope::QueuesRead)?;
     let page = Page::read("queues", query.from.as_deref(), query.limit)?;
 
-    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    let repo = match &query.repo {
-        Some(name) => Some(repo_id(&mut tx, name).await?),
-        None => None,
-    };
+    let name = name_part(query.q)?;
 
-    let list = queue_list(&mut tx, repo, &page, (state.clock)()).await?;
+    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
+
+    let list = queue_list(&mut tx, None, name, &page, (state.clock)()).await?;
     Ok(Json(list))
 }
 
@@ -349,24 +342,29 @@ pub(super) async fn list_repo_queues(
 
     let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
 
-    let list = queue_list(&mut tx, Some(repo), &page, (state.clock)()).await?;
+    let list = queue_list(&mut tx, Some(repo), None, &page, (state.clock)()).await?;
     Ok(Json(list))
 }
 
-/// The page of the queues of the organization of the transaction, or of the
-/// repository `repo`.
+/// The page of the queues of the organization of the transaction, of the
+/// repository `repo`, or of the repositories whose name holds `name`.
 async fn queue_list(
     conn: &mut PgConnection,
     repo: Option<RepoId>,
+    name: Option<String>,
     page: &Page<QueueKey>,
     now: OffsetDateTime,
 ) -> Result<QueueList, ApiError> {
     let repo = repo.map(|repo| repo.to_string());
-    let count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM queues WHERE $1::text IS NULL OR repo_id = $1")
-            .bind(&repo)
-            .fetch_one(&mut *conn)
-            .await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM queues q JOIN repos r ON r.id = q.repo_id
+         WHERE ($1::text IS NULL OR q.repo_id = $1)
+           AND ($2::text IS NULL OR strpos(lower(r.name), lower($2)) > 0)",
+    )
+    .bind(&repo)
+    .bind(&name)
+    .fetch_one(&mut *conn)
+    .await?;
     let (after_repo, after_name, after_id) = match page.after.clone() {
         Some((repo, name, id)) => (Some(repo), Some(name), Some(id)),
         None => (None, None, None),
@@ -378,15 +376,17 @@ async fn queue_list(
              SELECT {QUEUE_COLUMNS}
              FROM {QUEUE_SOURCE}
              WHERE ($2::text IS NULL OR q.repo_id = $2)
-               AND ($3::text IS NULL OR (r.name, q.target_branch, q.id) > ($3, $4, $5))
+               AND ($3::text IS NULL OR strpos(lower(r.name), lower($3)) > 0)
+               AND ($4::text IS NULL OR (r.name, q.target_branch, q.id) > ($4, $5, $6))
              ORDER BY r.name, q.target_branch, q.id
-             LIMIT $6
+             LIMIT $7
          ) q
          {COUNT_SOURCE}
          ORDER BY q.repo, q.target_branch, q.id"
     )))
     .bind(now)
     .bind(&repo)
+    .bind(&name)
     .bind(after_repo)
     .bind(after_name)
     .bind(after_id)
@@ -490,20 +490,20 @@ pub(super) async fn update_queue(
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Read a queue again
+/// Sync a queue
 ///
 /// Reads again from the SCM each live PR, the checks of each live run, the
 /// head of the target branch and its configuration: the way out after an
 /// incident.
 #[utoipa::path(
     post,
-    path = "/orgs/{org}/repos/{repo}/queues/{queue}/resync",
+    path = "/orgs/{org}/repos/{repo}/queues/{queue}/sync",
     tag = "Queues",
     params(QueuePath),
     responses((status = 202, description = "The queue takes the request."), QueueErrors),
     security(("token" = ["queues:write"]))
 )]
-pub(super) async fn resync_queue(
+pub(super) async fn sync_queue(
     grant: ApiGrant,
     State(state): State<ApiState>,
     ApiPath(path): ApiPath<QueuePath>,
@@ -512,11 +512,11 @@ pub(super) async fn resync_queue(
 
     let (mut tx, row) = begin_queue(&state, &grant, &path).await?;
 
-    audit(&mut tx, &grant, "queue.resync", &row.id, json!({})).await?;
+    audit(&mut tx, &grant, "queue.sync", &row.id, json!({})).await?;
     tx.commit().await?;
 
     let id: QueueId = row.id.parse()?;
-    crate::resync(&state.pool, id, (state.clock)()).await?;
+    crate::sync_queue(&state.pool, id, (state.clock)()).await?;
 
     Ok(StatusCode::ACCEPTED)
 }

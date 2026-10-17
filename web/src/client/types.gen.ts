@@ -11,7 +11,7 @@ export type ActorKind = 'system' | 'bot' | 'user';
  */
 export type AuditEntry = {
     /**
-     * What was done: `queue.state_requested`, `queue.resync`,
+     * What was done: `queue.state_requested`, `queue.sync`,
      * `item.cancel_requested` or `item.restart_requested`.
      */
     action: string;
@@ -227,7 +227,7 @@ export type DeviceCodeToken = {
  * The machine code of an error: a client decides on it, never on
  * `detail`. Each code has one HTTP status.
  */
-export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'me_needs_session' | 'queue_needs_repo' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
+export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
 
 /**
  * An event of the log of a queue about a PR.
@@ -522,21 +522,16 @@ export type MergeMethod = 'squash' | 'merge_commit' | 'rebase' | 'fast_forward';
  */
 export type Org = {
     /**
-     * Whether CIHub reaches the SCM accounts of the organization.
+     * Every connection of the organization to the SCM is suspended: CIHub
+     * reaches none of its accounts, and its queues are paused.
      */
-    access: OrgAccess;
+    is_suspended: boolean;
     role?: MembershipRole | null;
     /**
      * The slug of the organization, as the routes name it.
      */
     slug: string;
 };
-
-/**
- * Whether CIHub reaches the SCM accounts of an organization: `ok`, or
- * `suspended` when every connection of the organization is suspended.
- */
-export type OrgAccess = 'ok' | 'suspended';
 
 /**
  * A page of the organizations of the person, by slug.
@@ -558,6 +553,26 @@ export type OrgList = {
      * The organizations of the page.
      */
     orgs: Array<Org>;
+};
+
+/**
+ * What the caller may do on a repository: `read` its queues, its PRs and
+ * its setup; `write`: submit, cancel and restart a PR; `admin`: change the
+ * state of a queue and read a setup or a queue again from the SCM.
+ */
+export type Permission = {
+    /**
+     * The caller acts on the queues and the setup of the repository.
+     */
+    admin: boolean;
+    /**
+     * The caller reads the repository.
+     */
+    read: boolean;
+    /**
+     * The caller acts on the PRs of the repository.
+     */
+    write: boolean;
 };
 
 /**
@@ -779,10 +794,6 @@ export type Problem = {
  */
 export type Queue = {
     /**
-     * Whether CIHub reaches the repository of the queue on the SCM.
-     */
-    access: QueueAccess;
-    /**
      * Why the last file read is not valid; the queue keeps the last valid
      * one.
      */
@@ -818,6 +829,12 @@ export type Queue = {
      * The branch of the queue is the default branch of its repository.
      */
     is_default_branch: boolean;
+    /**
+     * CIHub no longer reaches the repository of the queue on the SCM: the
+     * App is suspended or uninstalled, and the queue is paused until the
+     * access comes back.
+     */
+    is_suspended: boolean;
     /**
      * When the last current item reached `merged`; `null` if no item merged.
      */
@@ -893,13 +910,6 @@ export type Queue = {
      */
     window: Window;
 };
-
-/**
- * Whether CIHub reaches the repository of a queue on the SCM: `ok`, or
- * `suspended` when the App is suspended or uninstalled, and the queue is
- * paused until the access comes back.
- */
-export type QueueAccess = 'ok' | 'suspended';
 
 /**
  * The event `queue_changed` of `GET /orgs/{org}/stream`: what the pages of
@@ -1014,7 +1024,8 @@ export type ReasonCount = {
 };
 
 /**
- * A repository of the organization.
+ * A repository of the organization, with what the caller may do on it and
+ * the verdict of its setup; `RepoDetail` gives its whole setup.
  */
 export type Repo = {
     /**
@@ -1033,6 +1044,46 @@ export type Repo = {
      * The account of the repository on the SCM.
      */
     namespace: string;
+    /**
+     * What the caller may do on the repository.
+     */
+    permission: Permission;
+    /**
+     * The verdict of the setup of the repository.
+     */
+    setup: SetupSummary;
+};
+
+/**
+ * A repository of the organization, with what the caller may do on it and
+ * its whole setup.
+ */
+export type RepoDetail = {
+    /**
+     * The default branch of the repository.
+     */
+    default_branch: string;
+    /**
+     * The identifier of the repository.
+     */
+    id: string;
+    /**
+     * The name of the repository, as the routes name it.
+     */
+    name: string;
+    /**
+     * The account of the repository on the SCM.
+     */
+    namespace: string;
+    /**
+     * What the caller may do on the repository.
+     */
+    permission: Permission;
+    /**
+     * What CIHub found about the rules and the configuration file of the
+     * default branch.
+     */
+    setup: RepoSetup;
 };
 
 /**
@@ -1067,32 +1118,12 @@ export type RepoSetup = {
      * When CIHub read the setup; `null` before the first read.
      */
     checked_at?: string | null;
-    /**
-     * The configuration file at the head of the default branch.
-     */
-    config: ConfigFile;
-    /**
-     * The default branch of the repository, whose rules and file the setup
-     * reads.
-     */
-    default_branch: string;
-    /**
-     * The account of the repository on the SCM.
-     */
-    namespace: string;
+    config?: ConfigFile | null;
     /**
      * The target branch of the queue of the default branch, with `started`;
      * `null` otherwise.
      */
     queue?: string | null;
-    /**
-     * The name of the repository, as the routes name it.
-     */
-    repo: string;
-    /**
-     * The identifier of the repository.
-     */
-    repo_id: string;
     /**
      * When an admin asked to read the setup again, while that read waits;
      * `null` otherwise.
@@ -1101,7 +1132,8 @@ export type RepoSetup = {
     /**
      * The four rules that a queue needs, always in this order:
      * `update_restriction_missing`, `app_not_exempt`,
-     * `test_branches_not_excluded`, `up_to_date_required`.
+     * `test_branches_not_excluded`, `up_to_date_required`; empty before the
+     * first read.
      */
     rules: Array<RuleCheck>;
     /**
@@ -1346,29 +1378,6 @@ export type Setup = {
 };
 
 /**
- * A page of the setups of the repositories that the App reaches, by
- * name.
- */
-export type SetupList = {
-    /**
-     * How many entries the list has, every page together.
-     */
-    count: number;
-    /**
-     * The `from` of the next page; `null` on the last page.
-     */
-    cursor?: string | null;
-    /**
-     * More entries follow this page.
-     */
-    has_more: boolean;
-    /**
-     * The setups of the page.
-     */
-    setups: Array<RepoSetup>;
-};
-
-/**
  * The verdict of the setup of a repository, computed by the server in this
  * order: `started` (the default branch has its queue), `checking` (no read
  * yet, or a read asked after the last one), `invalid_config` (the file is
@@ -1377,6 +1386,25 @@ export type SetupList = {
  * the merges), `ready`.
  */
 export type SetupState = 'started' | 'checking' | 'ready' | 'ready_with_warnings' | 'cannot_merge' | 'invalid_config';
+
+/**
+ * The verdict of the setup of a repository, and when CIHub read it.
+ */
+export type SetupSummary = {
+    /**
+     * When CIHub read the setup; `null` before the first read.
+     */
+    checked_at?: string | null;
+    /**
+     * When an admin asked to read the setup again, while that read waits;
+     * `null` otherwise.
+     */
+    requested_at?: string | null;
+    /**
+     * The verdict of the setup.
+     */
+    state: SetupState;
+};
 
 /**
  * The median time in a state of the PRs merged in a period; a PR that did
@@ -1777,7 +1805,7 @@ export type ListAuditResponses = {
 
 export type ListAuditResponse = ListAuditResponses[keyof ListAuditResponses];
 
-export type ListPrsData = {
+export type ListOrgPrsData = {
     body?: never;
     path: {
         /**
@@ -1787,18 +1815,9 @@ export type ListPrsData = {
     };
     query?: {
         /**
-         * Only the PRs of this author, whatever the case of the login; `@me` for
-         * the person of the session.
+         * Only the PRs of this author, whatever the case of the login.
          */
         author?: string;
-        /**
-         * Only the PRs of this repository.
-         */
-        repo?: string;
-        /**
-         * Only the PRs of this queue of `repo`.
-         */
-        queue?: string;
         /**
          * Only the PRs in these states, separated by commas: `not_ready`,
          * `pending`, `testing`, `tests_passed`, `pending_failure`, `merged`,
@@ -1833,13 +1852,11 @@ export type ListPrsData = {
     url: '/orgs/{org}/prs';
 };
 
-export type ListPrsErrors = {
+export type ListOrgPrsErrors = {
     /**
      * - `invalid_request`: The body, the path or the query of the request is not valid.
      * - `limit_out_of_range`: `limit` is from 1 to 100.
      * - `invalid_cursor`: `from` is not a `cursor` that this list gave.
-     * - `me_needs_session`: `@me` names the person of a session; an API token stands for no person.
-     * - `queue_needs_repo`: `queue` names a queue of the repository that `repo` names.
      */
     400: Problem;
     /**
@@ -1851,8 +1868,6 @@ export type ListPrsErrors = {
      */
     403: Problem;
     /**
-     * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -1866,16 +1881,16 @@ export type ListPrsErrors = {
     500: Problem;
 };
 
-export type ListPrsError = ListPrsErrors[keyof ListPrsErrors];
+export type ListOrgPrsError = ListOrgPrsErrors[keyof ListOrgPrsErrors];
 
-export type ListPrsResponses = {
+export type ListOrgPrsResponses = {
     /**
      * A page of PRs.
      */
     200: PrList;
 };
 
-export type ListPrsResponse = ListPrsResponses[keyof ListPrsResponses];
+export type ListOrgPrsResponse = ListOrgPrsResponses[keyof ListOrgPrsResponses];
 
 export type ListOrgQueuesData = {
     body?: never;
@@ -1887,9 +1902,10 @@ export type ListOrgQueuesData = {
     };
     query?: {
         /**
-         * Only the queues of this repository.
+         * Only the queues of the repositories whose name holds this text,
+         * whatever its case; from 1 to 100 characters.
          */
-        repo?: string;
+        q?: string;
         /**
          * The `cursor` of the previous page.
          */
@@ -1953,11 +1969,22 @@ export type ListReposData = {
     };
     query?: {
         /**
+         * Only the repositories whose setup is in these states, separated by
+         * commas: `started`, `checking`, `ready`, `ready_with_warnings`,
+         * `cannot_merge`, `invalid_config`.
+         */
+        state?: string;
+        /**
+         * Only the repositories whose name holds this text, whatever its case;
+         * from 1 to 100 characters.
+         */
+        q?: string;
+        /**
          * The `cursor` of the previous page.
          */
         from?: string;
         /**
-         * How many entries, from 1 to 100; 50 by default.
+         * How many repositories, from 1 to 100; 50 by default.
          */
         limit?: number;
     };
@@ -2012,7 +2039,7 @@ export type GetRepoData = {
          */
         org: string;
         /**
-         * The name of the repository.
+         * The name of the repository in the organization.
          */
         repo: string;
     };
@@ -2050,10 +2077,107 @@ export type GetRepoResponses = {
     /**
      * The repository.
      */
-    200: Repo;
+    200: RepoDetail;
 };
 
 export type GetRepoResponse = GetRepoResponses[keyof GetRepoResponses];
+
+export type ListRepoPrsData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: {
+        /**
+         * Only the PRs of the queue of this target branch.
+         */
+        queue?: string;
+        /**
+         * Only the PRs of this author, whatever the case of the login.
+         */
+        author?: string;
+        /**
+         * Only the PRs in these states, separated by commas: `not_ready`,
+         * `pending`, `testing`, `tests_passed`, `pending_failure`, `merged`,
+         * `failed`, `cancelled`.
+         */
+        state?: string;
+        /**
+         * Submitted at or after this time (RFC 3339).
+         */
+        submitted_since?: string;
+        /**
+         * Submitted before this time (RFC 3339).
+         */
+        submitted_until?: string;
+        /**
+         * Reached their state at or after this time (RFC 3339).
+         */
+        state_changed_since?: string;
+        /**
+         * The order of a list of PRs.
+         */
+        sort?: 'newest' | 'position';
+        /**
+         * The `cursor` of the previous page.
+         */
+        from?: string;
+        /**
+         * How many PRs, from 1 to 100; 50 by default.
+         */
+        limit?: number;
+    };
+    url: '/orgs/{org}/repos/{repo}/prs';
+};
+
+export type ListRepoPrsErrors = {
+    /**
+     * - `invalid_request`: The body, the path or the query of the request is not valid.
+     * - `limit_out_of_range`: `limit` is from 1 to 100.
+     * - `invalid_cursor`: `from` is not a `cursor` that this list gave.
+     */
+    400: Problem;
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type ListRepoPrsError = ListRepoPrsErrors[keyof ListRepoPrsErrors];
+
+export type ListRepoPrsResponses = {
+    /**
+     * A page of PRs.
+     */
+    200: PrList;
+};
+
+export type ListRepoPrsResponse = ListRepoPrsResponses[keyof ListRepoPrsResponses];
 
 export type GetPrData = {
     body?: never;
@@ -2684,7 +2808,7 @@ export type GetHealthResponses = {
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
 
-export type ResyncQueueData = {
+export type SyncQueueData = {
     body?: never;
     path: {
         /**
@@ -2701,10 +2825,10 @@ export type ResyncQueueData = {
         queue: string;
     };
     query?: never;
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/resync';
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/sync';
 };
 
-export type ResyncQueueErrors = {
+export type SyncQueueErrors = {
     /**
      * - `unauthorized`: No API token or session, or one that is unknown or expired.
      */
@@ -2730,115 +2854,14 @@ export type ResyncQueueErrors = {
     500: Problem;
 };
 
-export type ResyncQueueError = ResyncQueueErrors[keyof ResyncQueueErrors];
+export type SyncQueueError = SyncQueueErrors[keyof SyncQueueErrors];
 
-export type ResyncQueueResponses = {
+export type SyncQueueResponses = {
     /**
      * The queue takes the request.
      */
     202: unknown;
 };
-
-export type ResyncRepoData = {
-    body?: never;
-    path: {
-        /**
-         * The slug of the organization.
-         */
-        org: string;
-        /**
-         * The name of the repository in the organization.
-         */
-        repo: string;
-    };
-    query?: never;
-    url: '/orgs/{org}/repos/{repo}/resync';
-};
-
-export type ResyncRepoErrors = {
-    /**
-     * - `unauthorized`: No API token or session, or one that is unknown or expired.
-     */
-    401: Problem;
-    /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
-     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
-     */
-    403: Problem;
-    /**
-     * - `repo_not_found`: The organization has no repository with this name.
-     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
-     */
-    404: Problem;
-    /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
-     */
-    429: Problem;
-    /**
-     * - `internal`: The server failed; the logs of the instance say why.
-     */
-    500: Problem;
-};
-
-export type ResyncRepoError = ResyncRepoErrors[keyof ResyncRepoErrors];
-
-export type ResyncRepoResponses = {
-    /**
-     * CIHub takes the request.
-     */
-    202: unknown;
-};
-
-export type GetSetupData = {
-    body?: never;
-    path: {
-        /**
-         * The slug of the organization.
-         */
-        org: string;
-        /**
-         * The name of the repository in the organization.
-         */
-        repo: string;
-    };
-    query?: never;
-    url: '/orgs/{org}/repos/{repo}/setup';
-};
-
-export type GetSetupErrors = {
-    /**
-     * - `unauthorized`: No API token or session, or one that is unknown or expired.
-     */
-    401: Problem;
-    /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
-     */
-    403: Problem;
-    /**
-     * - `repo_not_found`: The organization has no repository with this name.
-     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
-     */
-    404: Problem;
-    /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
-     */
-    429: Problem;
-    /**
-     * - `internal`: The server failed; the logs of the instance say why.
-     */
-    500: Problem;
-};
-
-export type GetSetupError = GetSetupErrors[keyof GetSetupErrors];
-
-export type GetSetupResponses = {
-    /**
-     * The setup.
-     */
-    200: RepoSetup;
-};
-
-export type GetSetupResponse = GetSetupResponses[keyof GetSetupResponses];
 
 export type GetRunData = {
     body?: never;
@@ -2848,12 +2871,16 @@ export type GetRunData = {
          */
         org: string;
         /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+        /**
          * The identifier of the run.
          */
         run_id: string;
     };
     query?: never;
-    url: '/orgs/{org}/runs/{run_id}';
+    url: '/orgs/{org}/repos/{repo}/runs/{run_id}';
 };
 
 export type GetRunErrors = {
@@ -2866,6 +2893,7 @@ export type GetRunErrors = {
      */
     403: Problem;
     /**
+     * - `repo_not_found`: The organization has no repository with this name.
      * - `run_not_found`: The organization has no run with this identifier.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
@@ -2891,91 +2919,23 @@ export type GetRunResponses = {
 
 export type GetRunResponse = GetRunResponses[keyof GetRunResponses];
 
-export type ListSetupsData = {
+export type SyncRepoData = {
     body?: never;
     path: {
         /**
          * The slug of the organization.
          */
         org: string;
-    };
-    query?: {
         /**
-         * Only the setups in these states, separated by commas: `started`,
-         * `checking`, `ready`, `ready_with_warnings`, `cannot_merge`,
-         * `invalid_config`.
+         * The name of the repository in the organization.
          */
-        state?: string;
-        /**
-         * Only the repositories whose name holds this text, whatever its case;
-         * from 1 to 100 characters.
-         */
-        q?: string;
-        /**
-         * The `cursor` of the previous page.
-         */
-        from?: string;
-        /**
-         * How many setups, from 1 to 100; 50 by default.
-         */
-        limit?: number;
-    };
-    url: '/orgs/{org}/setups';
-};
-
-export type ListSetupsErrors = {
-    /**
-     * - `invalid_request`: The body, the path or the query of the request is not valid.
-     * - `limit_out_of_range`: `limit` is from 1 to 100.
-     * - `invalid_cursor`: `from` is not a `cursor` that this list gave.
-     */
-    400: Problem;
-    /**
-     * - `unauthorized`: No API token or session, or one that is unknown or expired.
-     */
-    401: Problem;
-    /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
-     */
-    403: Problem;
-    /**
-     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
-     */
-    404: Problem;
-    /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
-     */
-    429: Problem;
-    /**
-     * - `internal`: The server failed; the logs of the instance say why.
-     */
-    500: Problem;
-};
-
-export type ListSetupsError = ListSetupsErrors[keyof ListSetupsErrors];
-
-export type ListSetupsResponses = {
-    /**
-     * A page of setups.
-     */
-    200: SetupList;
-};
-
-export type ListSetupsResponse = ListSetupsResponses[keyof ListSetupsResponses];
-
-export type ResyncSetupsData = {
-    body?: never;
-    path: {
-        /**
-         * The slug of the organization.
-         */
-        org: string;
+        repo: string;
     };
     query?: never;
-    url: '/orgs/{org}/setups/resync';
+    url: '/orgs/{org}/repos/{repo}/sync';
 };
 
-export type ResyncSetupsErrors = {
+export type SyncRepoErrors = {
     /**
      * - `unauthorized`: No API token or session, or one that is unknown or expired.
      */
@@ -2986,6 +2946,7 @@ export type ResyncSetupsErrors = {
      */
     403: Problem;
     /**
+     * - `repo_not_found`: The organization has no repository with this name.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2999,9 +2960,9 @@ export type ResyncSetupsErrors = {
     500: Problem;
 };
 
-export type ResyncSetupsError = ResyncSetupsErrors[keyof ResyncSetupsErrors];
+export type SyncRepoError = SyncRepoErrors[keyof SyncRepoErrors];
 
-export type ResyncSetupsResponses = {
+export type SyncRepoResponses = {
     /**
      * CIHub takes the request.
      */
@@ -3172,3 +3133,38 @@ export type DeleteUserSessionResponses = {
 };
 
 export type DeleteUserSessionResponse = DeleteUserSessionResponses[keyof DeleteUserSessionResponses];
+
+export type SyncUserData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/user/sync';
+};
+
+export type SyncUserErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+};
+
+export type SyncUserError = SyncUserErrors[keyof SyncUserErrors];
+
+export type SyncUserResponses = {
+    /**
+     * CIHub takes the request.
+     */
+    202: unknown;
+};

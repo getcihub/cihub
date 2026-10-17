@@ -186,7 +186,7 @@ closed_enum! {
         #[serde(rename = "item.restart_requested")]
         #[strum(serialize = "item.restart_requested")]
         ItemRestartRequested,
-        /// A webhook, the tick or a resync read the state of a PR.
+        /// A webhook, the tick or a sync read the state of a PR.
         #[serde(rename = "pr.observed")]
         #[strum(serialize = "pr.observed")]
         PrObserved,

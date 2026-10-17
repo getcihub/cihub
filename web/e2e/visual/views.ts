@@ -337,7 +337,7 @@ export const VIEWS: View[] = [
     name: "run-loading",
     url: DRAWER,
     ready: "skeleton",
-    hold: ({ path }) => path.startsWith("/orgs/acme/runs/"),
+    hold: ({ path }) => /^\/orgs\/acme\/repos\/[^/]+\/runs\//.test(path),
   },
   {
     name: "tab-loading",

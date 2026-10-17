@@ -41,7 +41,7 @@ export const Route = createFileRoute("/orgs/$org")({
 
     if (access === "granted") {
       // The PRs of the person give the title of the tab on every page of the organization.
-      const mine = minePrsReads(params.org);
+      const mine = minePrsReads(params.org, me.login);
       await Promise.allSettled([queryClient.query(mine.live), queryClient.query(mine.merged)]);
     }
 

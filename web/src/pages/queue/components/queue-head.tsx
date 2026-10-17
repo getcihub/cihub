@@ -40,7 +40,7 @@ export function QueueHead({
         </div>
         <div className="ml-auto flex gap-2">
           <QueueActions path={path} queue={queue} isAdmin={isAdmin} />
-          <SubmitPr path={path} isDisabled={queue.access === "suspended"} onSent={showNotice} />
+          <SubmitPr path={path} isDisabled={queue.is_suspended} onSent={showNotice} />
         </div>
       </PageHeader>
       <Toast>{notice}</Toast>

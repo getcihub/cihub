@@ -510,43 +510,66 @@ Decisions:
 
 - **Goal**: a person who installs the App goes from GitHub to the first queue of a repository without help. Before
   that queue, the dashboard says what the branch rules of the repository miss and what its `.cihub.yaml` holds
-  (`GOAL.md`: simple to install, every decision explained).
+  (`GOAL.md`: simple to install, every decision explained). A person reads in CIHub only the repositories that
+  GitHub shows them.
 - **Content**:
   - The Setup URL of the App, `GET /auth/github/installed`, with "Redirect on update". It trusts no
     `installation_id`: it starts the sign-in again, and only the installations that the token of the person lists
     count.
-  - Every sign-in connects at once, as a sync would, the installations of the person that CIHub does not know yet,
-    at most 10 (`specs/GITHUB.md`, "Sign-in and roles").
+  - Every sign-in connects at once, in its transaction and without another call to the SCM, every installation of
+    the person that CIHub does not know yet: `GET /user/installations` gives its account and `suspended_at`, as a
+    sync would read them (`specs/GITHUB.md`, "Sign-in and roles").
+  - The token of the person: CIHub keeps it on `users`, encrypted with the key `database.secret`
+    (`CIHUB_DATABASE_SECRET`), and refreshes it, one refresh at a time per person (a refresh token works once). The
+    sign-out of the last session of the person deletes it, as the daily maintenance once every session has expired;
+    a refused refresh deletes it and the permissions of the person.
+  - The access per repository: `repo_permissions` gives what each person may do on each repository (`read`,
+    `write`, `admin`, from the `permissions` that the SCM gives for the person). The job `sync_user` reads with the
+    token of the person their installations and their repositories (one call per page of 100), in class
+    `interactive`, when a request of the person comes more than 1 hour after `users.synced_at`, at the sign-in and
+    at `POST /user/sync`; it connects the installations that CIHub does not know yet. A request of a session on a
+    repository, or on an organization, whose access is older than 1 hour checks it again on the SCM with the token
+    of the person (never with the token of an installation); without an answer, `503 scm_unavailable`. A repository
+    without `read` answers `404 repo_not_found`, and no list or stream of the organization shows it; without a
+    known permission, no access. The actions follow the permission of the repository (`write`: submit, cancel and
+    restart a PR; `admin`: change a queue, ask for a sync); the role in the organization stays for what covers the
+    whole organization (the audit log). An API token belongs to its organization and reads every repository of it,
+    within its scopes.
   - The setup of a repository: what CIHub found about its branch rules and the configuration file at the head of its
     default branch, with a state (`started`, `checking`, `ready`, `ready_with_warnings`, `cannot_merge`,
-    `invalid_config`), computed by the server. The job `read_setup` reads it at the discovery of a repository, then
-    once a day spread over the day (class `repair`), and at a `resync` of an admin (class `interactive`, at most
-    once a minute per repository, 50 repositories for the organization). It is kept in `repo_setups`, outside the
-    log.
-  - `GET /orgs/{org}/setups` (with `state` and a search `q`), `GET /orgs/{org}/repos/{repo}/setup`,
-    `POST /orgs/{org}/repos/{repo}/resync` and `POST /orgs/{org}/setups/resync` (`queues:write`); the `GET` routes
-    read Postgres only.
+    `invalid_config`), computed by the server. The job `read_repo_setup` reads it at the discovery of a repository,
+    then once a day spread over the day (class `repair`), and at a sync that an admin asks for (class `interactive`,
+    at most once a minute per repository). It is kept in `repo_setups`, outside the log.
+  - `GET /orgs/{org}/repos` (`Repo`, with `permission` and the verdict of the setup; filters `state` and `q`),
+    `GET /orgs/{org}/repos/{repo}` (`RepoDetail`, with the whole setup), `POST /orgs/{org}/repos/{repo}/sync`
+    (`queues:write`) and `POST /user/sync`; the `GET` routes read Postgres, but for the check of the access of a
+    person.
   - A repository that the App no longer reaches gets `repos.removed_at`, and its queues `access.lost`, then
-    `access.restored` when it comes back; `Org.access` says when every connection of an organization is suspended.
-  - Pages: `/welcome` for a person without an organization (it replaces "No organization yet"), "Connecting" after
-    the Setup URL, "Start your first queue" with a search and "Check again" (admins), the setup of a repository
-    before its queue, the lost access of an organization and of a queue. A page reads again every 2 seconds, for 60
-    seconds at most, while it waits for a read; the first `/cihub merge` still shows through `queue_changed`.
-- **Frozen interfaces**: the routes and the types `RepoSetup`, `SetupState`, `SetupList`, `OrgAccess`; the table
-  `repo_setups`.
+    `access.restored` when it comes back; `Org.is_suspended` says when every connection of an organization is
+    suspended.
+  - Pages: `/welcome` for a person without an organization (it replaces "No organization yet"),
+    `/orgs/$org/repos`, the repositories with their setup, a search, "Connecting" while the first read waits after
+    the Setup URL, and the way to the first queue; the setup of a repository before its queue
+    (`/orgs/$org/repos/$repo`, "Check again" for `admin`); the lost access of an organization and of a queue. A page
+    reads again every 2 seconds, for 60 seconds at most, while it waits for a read; the first `/cihub merge` still
+    shows through `queue_changed`. The buttons of a page follow the `permission` of its repository.
+- **Frozen interfaces**: the routes and the types `Repo`, `RepoDetail`, `Permission`, `SetupSummary`,
+  `RepoSetup`, `SetupState`; `Org.is_suspended` and `Queue.is_suspended`; the tables `repo_setups` and
+  `repo_permissions`, the columns of the token on `users`.
 - **Exit criterion**: on the simulator, a person without an organization installs the App, comes back through the
   Setup URL, sees "Connecting" then the setup of each repository (`cannot_merge`, `invalid_config` with its line,
   `ready`); a fixed rule and "Check again" turn a repository to `ready`, and a `/cihub merge` to `started` without
   a reload (`web/e2e/onboarding.spec.ts`); a Setup URL with an `installation_id` that the person does not reach
-  creates nothing and gives no role; showing a setup calls the SCM zero times, and the setup of another
-  organization answers `404 org_not_found` (principles VII and VIII).
+  creates nothing and gives no role; a person without access to a private repository on the SCM gets `404
+  repo_not_found` on it and finds it in no list and no stream, and loses a repository within an hour of losing it
+  on the SCM; showing a setup with an access read less than an hour ago calls the SCM zero times, and the setup of
+  another organization answers `404 org_not_found` (principles VII and VIII).
 - **Decisions** (October 16, 2026, validated by the project lead):
-  - Vocabulary: `sync` is the internal copy of an object of the SCM; `resync` the public action that reads again
-    from the SCM; `setup` what CIHub found about a repository, with a verdict; `check` stays the checks of the CI.
+  - Vocabulary: `setup` is what CIHub found about a repository, with a verdict; `check` stays the checks of the CI.
     So `Queue.config_check` becomes `Queue.setup`, `config_checks` becomes `queue_setups` and `check_config`
     becomes `read_setup`: a repository and its queue show the same setup, before and after the first queue.
-  - The two `resync` routes take `queues:write`: a read in class `interactive` goes ahead of the merges, and a token
-    of `queues:read` must not spend the budget of an installation.
+  - The sync of a setup takes `queues:write`: a read in class `interactive` goes ahead of the merges, and a token of
+    `queues:read` must not spend the budget of an installation.
   - The "request sent" state of a member waits for a check on the App of staging: GitHub does not document a return
     to the Setup URL after a request.
   - The mockups v20 give the screens; the specs win where they differ: an organization that the App left still
@@ -554,6 +577,32 @@ Decisions:
     queue of another branch reads the file of that branch; the buttons of the configuration come with the form of
     "Next"; the server writes every sentence.
   - The work starts from PR #143 (one queue per target branch) without waiting for its merge.
+- **Decisions** (October 17, 2026, validated by the project lead):
+  - One word, `sync`: a sync copies an object of the SCM into CIHub, and `POST …/sync` asks for one now. `resync`
+    is gone from the routes and the code.
+  - CIHub keeps the token of the person (`specs/LESSONS.md`, "Forget the token of the person at the end of the
+    sign-in"), and a person reads only the repositories that the SCM shows them, checked again after an hour, on
+    the SCM with their token; `503 scm_unavailable` when it does not answer.
+  - The sign-in connects every unknown installation of the person, not 10 at most: the list that it reads already
+    gives what a sync reads.
+  - Everything that belongs to a repository is under it: `GET /orgs/{org}/repos/{repo}/prs` (filter `queue`) and
+    `GET /orgs/{org}/repos/{repo}/runs/{run_id}`; `GET /orgs/{org}/prs` and `GET /orgs/{org}/queues` only search
+    across the repositories, without the filters `repo` and `queue` (`400 queue_needs_repo` is gone), and
+    `/orgs/{org}/queues` takes `q`. No `@me`: the dashboard passes the login of its person
+    (`400 me_needs_session` is gone).
+  - No action stands where an identifier can (`specs/API.md`): no sync of every setup of an organization, only
+    `POST /orgs/{org}/repos/{repo}/sync`.
+  - `GET /orgs/{org}/repos` gives the verdict of each setup, `GET /orgs/{org}/repos/{repo}` the whole setup;
+    `GET /orgs/{org}/setups` and `GET …/repos/{repo}/setup` are gone. The page of the repositories is
+    `/orgs/$org/repos`, not `/orgs/$org/start`.
+  - `Org.access` and `Queue.access` (`ok`, `suspended`) become `is_suspended`.
+  - `Permission` gives `read`, `write` and `admin` on a repository, from the scopes of the caller until WP5 reads
+    them per person.
+  - The work packages come one after the other: WP1 (the Setup URL, the sign-in that connects the installations,
+    the token kept and refreshed, `repos.removed_at`, `access.lost` of a repository, `Org.is_suspended`), WP5 (the
+    access per repository), WP3 (the setup reads and the bodies of the routes), WP4 (the pages), WP2 (the world of
+    the simulator for `web/e2e/onboarding.spec.ts`); each one brings the changes of the simulator that its tests
+    need.
 - **Tracking**:
   - Done (October 16, 2026): WP0, the interfaces. `Queue.config_check` becomes `Queue.setup` (`Setup`), the table
     `config_checks` becomes `queue_setups` and the job `check_config` becomes `read_setup`, without a change of
@@ -562,6 +611,19 @@ Decisions:
     final document and scopes, which answer `404 route_not_found` until their bodies come; the table `repo_setups`,
     the enum `repo_config_state` (`RepoConfigState` in `cihub-domain`) and `repos.removed_at`;
     `Scm::branch_rules_url`; the constant `SETUP_PATH`; the empty pages `/welcome` and `/orgs/$org/start`.
+  - Done (October 17, 2026): WP0, the interfaces after the decisions of October 17. `GET /orgs/{org}/repos` and
+    `GET /orgs/{org}/repos/{repo}` move to the merge queue, which knows the queues: `Repo` (with `permission` and
+    `setup`, a `SetupSummary`) and `RepoDetail` (with `setup`, a `RepoSetup` without the fields of the repository,
+    whose `config` is `null` before the first read); until WP3, a setup is `started` when the default branch has
+    its queue, `checking` otherwise, and the list leaves out the repositories with `removed_at`. `Permission` comes
+    from the scopes of the caller. `POST /orgs/{org}/repos/{repo}/sync` and `POST /user/sync` answer
+    `404 route_not_found` until WP3 and WP1. `GET /orgs/{org}/repos/{repo}/prs` and
+    `GET /orgs/{org}/repos/{repo}/runs/{run_id}` replace the filters `repo` and `queue` of `GET /orgs/{org}/prs` and
+    `GET /orgs/{org}/runs/{run_id}`; `GET /orgs/{org}/queues` takes `q`; `@me`, `me_needs_session` and
+    `queue_needs_repo` are gone; `…/queues/{queue}/resync` becomes `…/sync`, the audit action `queue.sync` and the
+    function `sync_queue`; `is_suspended` on `Org` and `Queue`; `SetupList`, `OrgAccess` and `QueueAccess` are gone; the
+    page `/orgs/$org/start` becomes `/orgs/$org/repos`. Test:
+    `the_api_lists_the_repositories_with_their_setup`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

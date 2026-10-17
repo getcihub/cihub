@@ -118,8 +118,6 @@ pub enum ErrorCode {
     LimitOutOfRange,
     InvalidCursor,
     UnknownPriority,
-    MeNeedsSession,
-    QueueNeedsRepo,
     DeviceCodePending,
     DeviceCodeExpired,
     Unauthorized,
@@ -155,8 +153,6 @@ impl ErrorCode {
             | Self::LimitOutOfRange
             | Self::InvalidCursor
             | Self::UnknownPriority
-            | Self::MeNeedsSession
-            | Self::QueueNeedsRepo
             | Self::DeviceCodePending
             | Self::DeviceCodeExpired => 400,
             Self::Unauthorized => 401,
@@ -184,10 +180,6 @@ impl ErrorCode {
             Self::UnknownPriority => {
                 "The name of the priority is not `urgent`, `high`, `medium` or `low`."
             }
-            Self::MeNeedsSession => {
-                "`@me` names the person of a session; an API token stands for no person."
-            }
-            Self::QueueNeedsRepo => "`queue` names a queue of the repository that `repo` names.",
             Self::DeviceCodePending => {
                 "The person has not approved or denied the code yet: ask again after `interval` \
                  seconds."
@@ -366,8 +358,9 @@ pub struct Org {
     /// `member` has `queues:read` and `prs:write`; `null` for an API token.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::MembershipRole>))]
     pub role: Option<MembershipRole>,
-    /// Whether CIHub reaches the SCM accounts of the organization.
-    pub access: OrgAccess,
+    /// Every connection of the organization to the SCM is suspended: CIHub
+    /// reaches none of its accounts, and its queues are paused.
+    pub is_suspended: bool,
 }
 
 page! {
@@ -378,7 +371,8 @@ page! {
     }
 }
 
-/// A repository of the organization.
+/// A repository of the organization, with what the caller may do on it and
+/// the verdict of its setup; `RepoDetail` gives its whole setup.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Repo {
@@ -397,6 +391,51 @@ pub struct Repo {
     /// The default branch of the repository.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub default_branch: String,
+    /// What the caller may do on the repository.
+    pub permission: Permission,
+    /// The verdict of the setup of the repository.
+    pub setup: SetupSummary,
+}
+
+/// A repository of the organization, with what the caller may do on it and
+/// its whole setup.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RepoDetail {
+    /// The identifier of the repository.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "repo_06cx8fn2w6gkyc9x5csgnm5r1dmqz3s0")
+    )]
+    pub id: String,
+    /// The account of the repository on the SCM.
+    #[cfg_attr(feature = "openapi", schema(example = "acme"))]
+    pub namespace: String,
+    /// The name of the repository, as the routes name it.
+    #[cfg_attr(feature = "openapi", schema(example = "web"))]
+    pub name: String,
+    /// The default branch of the repository.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub default_branch: String,
+    /// What the caller may do on the repository.
+    pub permission: Permission,
+    /// What CIHub found about the rules and the configuration file of the
+    /// default branch.
+    pub setup: RepoSetup,
+}
+
+/// What the caller may do on a repository: `read` its queues, its PRs and
+/// its setup; `write`: submit, cancel and restart a PR; `admin`: change the
+/// state of a queue and read a setup or a queue again from the SCM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct Permission {
+    /// The caller reads the repository.
+    pub read: bool,
+    /// The caller acts on the PRs of the repository.
+    pub write: bool,
+    /// The caller acts on the queues and the setup of the repository.
+    pub admin: bool,
 }
 
 page! {
@@ -463,8 +502,10 @@ pub struct Queue {
         schema(example = "9f2c4e1a7b3d5f60812a4c6e8b0d2f4a6c8e0b1d")
     )]
     pub target_head_sha: Option<String>,
-    /// Whether CIHub reaches the repository of the queue on the SCM.
-    pub access: QueueAccess,
+    /// CIHub no longer reaches the repository of the queue on the SCM: the
+    /// App is suspended or uninstalled, and the queue is paused until the
+    /// access comes back.
+    pub is_suspended: bool,
     /// The target branch has a configuration file, valid or not; without
     /// it, the queue takes the defaults.
     pub has_config_file: bool,
@@ -516,17 +557,6 @@ pub struct Queue {
     /// What the last setup read found about the rules of the SCM that the
     /// queue needs.
     pub setup: Setup,
-}
-
-/// Whether CIHub reaches the repository of a queue on the SCM: `ok`, or
-/// `suspended` when the App is suspended or uninstalled, and the queue is
-/// paused until the access comes back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum QueueAccess {
-    Ok,
-    Suspended,
 }
 
 page! {
@@ -1346,7 +1376,7 @@ pub struct AuditEntry {
         schema(example = "audit_06cx8fn2xagkyc9x5csgnm5r2hmqf441")
     )]
     pub id: String,
-    /// What was done: `queue.state_requested`, `queue.resync`,
+    /// What was done: `queue.state_requested`, `queue.sync`,
     /// `item.cancel_requested` or `item.restart_requested`.
     #[cfg_attr(feature = "openapi", schema(example = "queue.state_requested"))]
     pub action: String,
@@ -1422,28 +1452,35 @@ pub struct Setup {
     pub checked_at: Option<OffsetDateTime>,
 }
 
+/// The verdict of the setup of a repository, and when CIHub read it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SetupSummary {
+    /// The verdict of the setup.
+    pub state: SetupState,
+    /// When CIHub read the setup; `null` before the first read.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-16T09:00:00Z")
+    )]
+    pub checked_at: Option<OffsetDateTime>,
+    /// When an admin asked to read the setup again, while that read waits;
+    /// `null` otherwise.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-16T09:05:00Z")
+    )]
+    pub requested_at: Option<OffsetDateTime>,
+}
+
 /// The setup of a repository: what CIHub found about the rules of its
 /// default branch and its configuration file, with a verdict. Every field
 /// comes from Postgres: showing a setup calls the SCM zero times.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RepoSetup {
-    /// The identifier of the repository.
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "repo_06cx8fn2w6gkyc9x5csgnm5r1dmqz3s0")
-    )]
-    pub repo_id: String,
-    /// The name of the repository, as the routes name it.
-    #[cfg_attr(feature = "openapi", schema(example = "web"))]
-    pub repo: String,
-    /// The account of the repository on the SCM.
-    #[cfg_attr(feature = "openapi", schema(example = "acme"))]
-    pub namespace: String,
-    /// The default branch of the repository, whose rules and file the setup
-    /// reads.
-    #[cfg_attr(feature = "openapi", schema(example = "main"))]
-    pub default_branch: String,
     /// The verdict of the setup.
     pub state: SetupState,
     /// The target branch of the queue of the default branch, with `started`;
@@ -1452,7 +1489,8 @@ pub struct RepoSetup {
     pub queue: Option<String>,
     /// The four rules that a queue needs, always in this order:
     /// `update_restriction_missing`, `app_not_exempt`,
-    /// `test_branches_not_excluded`, `up_to_date_required`.
+    /// `test_branches_not_excluded`, `up_to_date_required`; empty before the
+    /// first read.
     pub rules: Vec<RuleCheck>,
     /// The default branch did not exist at the last read: no queue can merge
     /// into it.
@@ -1464,8 +1502,9 @@ pub struct RepoSetup {
         schema(example = "https://scm.example.com/acme/web/settings/rules")
     )]
     pub rules_url: Option<String>,
-    /// The configuration file at the head of the default branch.
-    pub config: ConfigFile,
+    /// The configuration file at the head of the default branch; `null`
+    /// before the first read.
+    pub config: Option<ConfigFile>,
     /// When CIHub read the setup; `null` before the first read.
     #[serde(with = "time::serde::rfc3339::option")]
     #[cfg_attr(
@@ -1586,25 +1625,6 @@ pub enum ConfigFileState {
     Invalid,
 }
 
-page! {
-    /// A page of the setups of the repositories that the App reaches, by
-    /// name.
-    pub struct SetupList {
-        /// The setups of the page.
-        pub setups: Vec<RepoSetup>,
-    }
-}
-
-/// Whether CIHub reaches the SCM accounts of an organization: `ok`, or
-/// `suspended` when every connection of the organization is suspended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum OrgAccess {
-    Ok,
-    Suspended,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1652,13 +1672,12 @@ mod tests {
     }
 
     #[test]
-    fn a_config_file_state_and_an_org_access_are_snake_case() {
+    fn the_states_of_a_config_file_are_snake_case() {
         let files = [
             (ConfigFileState::None, "none"),
             (ConfigFileState::Valid, "valid"),
             (ConfigFileState::Invalid, "invalid"),
         ];
-        let accesses = [(OrgAccess::Ok, "ok"), (OrgAccess::Suspended, "suspended")];
 
         for (state, text) in files {
             let json = serde_json::to_value(state).unwrap();
@@ -1667,11 +1686,6 @@ mod tests {
                 serde_json::from_value::<ConfigFileState>(json).unwrap(),
                 state
             );
-        }
-        for (access, text) in accesses {
-            let json = serde_json::to_value(access).unwrap();
-            assert_eq!(json, text);
-            assert_eq!(serde_json::from_value::<OrgAccess>(json).unwrap(), access);
         }
     }
 

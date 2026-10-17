@@ -277,7 +277,7 @@ mod tests {
             "is_default_branch": branch == "main",
             "state": "running", "mode": "single", "state_changed_at": "2026-10-01T09:00:00Z",
             "state_changed_by": null, "strategy": "pipelined", "target_head_sha": null,
-            "access": "ok", "has_config_file": false, "config_sha": null, "config_error": null,
+            "is_suspended": false, "has_config_file": false, "config_sha": null, "config_error": null,
             "repo": "app", "merged_last_24h": 0, "failed_last_24h": 0,
             "failed_or_cancelled_last_24h": 0, "last_merged_at": null,
             "counts": { "not_ready": 0, "pending": 0, "testing": 0, "pending_failure": 0,
