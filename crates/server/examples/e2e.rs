@@ -22,18 +22,20 @@ use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::get;
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, ConnectionId, MembershipRole, OrgId, Permission,
-    QueueId, RepoId,
+    CheckConclusion, CheckKind, CheckReport, ConnectionId, ConnectionKind, MembershipRole, OrgId,
+    Permission, QueueId, RepoId,
 };
 use cihub_platform::{
-    Delivery, Executors, QueueNewsFeed, find_route, run_router, run_subscriptions, run_worker,
-    store_delivery,
+    Delivery, Executors, QueueNewsFeed, SYNC_USER, find_route, run_router, run_subscriptions,
+    run_worker, store_delivery, sync_user_executor,
 };
 use cihub_scm::sim::{PrChange, Sim};
 use cihub_scm::{
     ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmUser, SignInRequest,
 };
-use cihub_store::{MIGRATOR, PgPool, begin_system, create_event_partitions, migrate};
+use cihub_store::{
+    DatabaseCipher, MIGRATOR, PgPool, begin_system, create_event_partitions, migrate,
+};
 use cihub_web::{Dashboard, GithubWebhooks};
 use secrecy::SecretString;
 use serde_json::Value;
@@ -47,6 +49,8 @@ use ulid::Ulid;
 const ADDR: &str = "127.0.0.1:18090";
 const PUBLIC_URL: &str = "http://127.0.0.1:18090";
 const DATABASE: &str = "cihub_e2e";
+/// Seals the tokens of the people of the world; a test secret.
+const DATABASE_SECRET: &str = "the database secret of the e2e world";
 const REQUIRED: &str = "ci";
 /// The file of `acme/web`: its queue tests every PR, so that the pages show
 /// runs.
@@ -105,8 +109,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(now),
         Some(PUBLIC_URL.to_owned()),
     );
+    let cipher = Arc::new(DatabaseCipher::new(&SecretString::from(DATABASE_SECRET))?);
     let mut executors = Executors::default();
     (module.executors)(&mut executors);
+    executors.register(
+        SYNC_USER,
+        sync_user_executor(sim.clone(), Arc::clone(&cipher), ConnectionKind::GithubApp),
+    );
 
     let cancel = CancellationToken::new();
     let idle = Duration::from_millis(100);
@@ -168,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let dashboard = Dashboard {
         scm: sim.clone(),
+        cipher: Some(cipher),
         public_url: Some(PUBLIC_URL.to_owned()),
         news: QueueNewsFeed::start(pool.clone(), cancel.clone()).await?,
     };

@@ -1,13 +1,14 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use cihub_domain::{CheckReport, JobClass, Permission};
+use cihub_domain::{CheckReport, JobClass, MembershipRole, Permission};
+use secrecy::SecretString;
 use time::OffsetDateTime;
 
 use crate::{
     ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
-    ScmError, ScmInstallation, ScmMember, ScmRepo, ScmUser, SetupFinding, SignInCode,
-    SignInRequest, SignedIn, StatusUpdate,
+    ScmAccount, ScmError, ScmInstallation, ScmMember, ScmPersonReach, ScmPersonToken, ScmRepo,
+    ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -276,11 +277,53 @@ pub trait Scm: Send + Sync {
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String>;
 
     /// Exchanges the code of a sign-in, reads the person and the
-    /// installations of the App that they reach, with their role in each,
-    /// then forgets the credentials of the person: CIHub never keeps them. An
-    /// installation where the person has no role is absent. No connection
-    /// makes the calls, so no budget of a connection applies.
-    fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn>;
+    /// installations of the App that they reach, with their role in each, and
+    /// gives the token of the person. An installation where the person has no
+    /// role has no membership. No connection makes the calls, so no budget of
+    /// a connection applies: the calls with the token of a person spend the
+    /// rate limit of the person.
+    fn sign_in<'a>(
+        &'a self,
+        code: &'a SignInCode,
+        class: JobClass,
+    ) -> ScmFuture<'a, (SignedIn, ScmPersonToken)>;
+
+    /// A new token for the person of `refresh`, which then works no more.
+    /// `AccessLost` when the SCM refuses it: the person signs in again.
+    fn refresh_person_token<'a>(
+        &'a self,
+        refresh: &'a SecretString,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonToken>;
+
+    /// The installations of the App that the person of `token` reaches, and
+    /// the repositories of each one with their permission. `AccessLost` when
+    /// the SCM refuses the token.
+    fn person_reach<'a>(
+        &'a self,
+        token: &'a SecretString,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonReach>;
+
+    /// The permission of the person of `token` on `repo`; `None` when they do
+    /// not see it. `AccessLost` when the SCM refuses the token.
+    fn person_permission<'a>(
+        &'a self,
+        token: &'a SecretString,
+        repo: &'a RepoRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Permission>;
+
+    /// The role of `person`, whose token is `token`, in `account`; `None`
+    /// without one. The owner of the account of a person is its `admin`.
+    /// `AccessLost` when the SCM refuses the token.
+    fn person_role<'a>(
+        &'a self,
+        token: &'a SecretString,
+        person: &'a ScmUser,
+        account: &'a ScmAccount,
+        class: JobClass,
+    ) -> ScmFuture<'a, Option<MembershipRole>>;
 
     /// The members of the account of `connection`, with their role. The
     /// owner of the account of a person is its only member, as `admin`.

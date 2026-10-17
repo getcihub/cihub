@@ -82,15 +82,24 @@ CREATE TABLE repos (
 CREATE INDEX repos_org_id ON repos (org_id);
 
 -- `name` and `avatar_url` come from a sign-in or from the members of an
--- account: a person that CIHub only met in a delivery has neither.
+-- account: a person that CIHub only met in a delivery has neither. The token
+-- of the person on the SCM comes from their sign-in, sealed with the key of
+-- `database.secret` (nonce, then ciphertext and tag); it reads what the
+-- person reaches, and goes with their last session. `synced_at` is the last
+-- read of their installations and repositories.
 CREATE TABLE users (
-    id          text        PRIMARY KEY,
-    external_id text        NOT NULL UNIQUE,
-    login       text        NOT NULL,
-    name        text,
-    avatar_url  text,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    updated_at  timestamptz NOT NULL DEFAULT now()
+    id                           text        PRIMARY KEY,
+    external_id                  text        NOT NULL UNIQUE,
+    login                        text        NOT NULL,
+    name                         text,
+    avatar_url                   text,
+    scm_token                    bytea,
+    scm_token_expires_at         timestamptz,
+    scm_refresh_token            bytea,
+    scm_refresh_token_expires_at timestamptz,
+    synced_at                    timestamptz,
+    created_at                   timestamptz NOT NULL DEFAULT now(),
+    updated_at                   timestamptz NOT NULL DEFAULT now()
 );
 
 -- The PRs of a person, by their login whatever its case.

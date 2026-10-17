@@ -139,6 +139,7 @@ pub enum ErrorCode {
     PollingTooFast,
     Internal,
     SignInUnavailable,
+    ScmUnavailable,
 }
 
 impl ErrorCode {
@@ -167,7 +168,7 @@ impl ErrorCode {
             Self::PrAlreadyQueued | Self::ItemEnded | Self::ItemNotInTest => 409,
             Self::RateLimited | Self::TooManyStreams | Self::PollingTooFast => 429,
             Self::Internal => 500,
-            Self::SignInUnavailable => 503,
+            Self::SignInUnavailable | Self::ScmUnavailable => 503,
         }
     }
 
@@ -189,7 +190,8 @@ impl ErrorCode {
             }
             Self::Unauthorized => "No API token or session, or one that is unknown or expired.",
             Self::ScopeMissing => {
-                "The token, or the role of the user of the session, lacks the scope of the route."
+                "The token, or the role of the user of the session or their permission on the \
+                 repository, lacks the scope of the route."
             }
             Self::CsrfRefused => {
                 "A request of a session that can change a state lacks the header `X-CSRF-Token`, \
@@ -228,6 +230,10 @@ impl ErrorCode {
             Self::Internal => "The server failed; the logs of the instance say why.",
             Self::SignInUnavailable => {
                 "The instance has no public address or no sign-in client: nobody signs in to it."
+            }
+            Self::ScmUnavailable => {
+                "The SCM did not answer the check of the access of the person of the session: \
+                 try again in a moment."
             }
         }
     }

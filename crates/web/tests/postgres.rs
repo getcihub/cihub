@@ -5,13 +5,16 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use cihub_domain::{ApiScope, ApiTokenId, MembershipRole, OrgId, QueueId, SessionId, UserId};
+use cihub_domain::{
+    ApiScope, ApiTokenId, MembershipRole, OrgId, QueueId, RepoId, SessionId, UserId,
+};
 use cihub_platform::{QueueNewsFeed, notify_queue_changed};
 use cihub_scm::sim::Sim;
 use cihub_scm::{ScmAccount, ScmUser, SignInRequest};
 use cihub_store::{
-    NewApiToken, NewSession, begin_org, begin_system, create_api_token, create_session, csrf_token,
-    ensure_user, new_api_token_secret, new_session_secret, record_membership, record_profile,
+    DatabaseCipher, NewApiToken, NewSession, begin_org, begin_system, create_api_token,
+    create_session, csrf_token, ensure_user, new_api_token_secret, new_session_secret,
+    record_membership, record_profile,
 };
 use cihub_web::{Dashboard, GithubWebhooks};
 use ring::hmac;
@@ -47,6 +50,9 @@ async fn start_until(pool: &PgPool, sim: Arc<Sim>, cancel: CancellationToken) ->
     };
     let dashboard = Dashboard {
         scm: sim,
+        cipher: Some(Arc::new(
+            DatabaseCipher::new(&SecretString::from("a database secret of 32 bytes ab")).unwrap(),
+        )),
         public_url: Some(PUBLIC_URL.to_owned()),
         news: QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
@@ -353,6 +359,106 @@ async fn the_stream_carries_the_changes_of_the_organization_only(pool: PgPool) {
             .is_none_or(|end| end.ends_with("\r\n0\r\n\r\n")),
         "{end:?}"
     );
+}
+
+/// The stream of a person carries the changes of the queues of the
+/// repositories that they read only.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_stream_of_a_person_carries_their_repositories_only(pool: PgPool) {
+    let cancel = CancellationToken::new();
+    let addr = start_until(&pool, Arc::new(Sim::new()), cancel.clone()).await;
+    let secret = session(&pool, MembershipRole::Member).await;
+    let (shown, hidden) = (QueueId::from_ulid(Ulid(32)), QueueId::from_ulid(Ulid(33)));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{a}', '{org}', 'c', '40', 'acme', 'web', 'main'),
+                    ('{b}', '{org}', 'c', '41', 'acme', 'secret', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{shown}', '{org}', '{a}', 'main'), ('{hidden}', '{org}', '{b}', 'main');
+         INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
+             VALUES ('{org}', '{a}', '{user}', 'read', now());",
+        a = RepoId::from_ulid(Ulid(40)),
+        b = RepoId::from_ulid(Ulid(41)),
+        org = OrgId::from_ulid(Ulid(7)),
+        user = UserId::from_ulid(Ulid(5)),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    let request = format!(
+        "GET /api/v1/orgs/acme/stream HTTP/1.1\r\nHost: {addr}\r\nCookie: {}\r\n\r\n",
+        session_cookie(&secret)
+    );
+
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let head = read_until(&mut stream, "retry: 1000").await.unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    for queue in [hidden, shown] {
+        notify_queue_changed(&mut tx, OrgId::from_ulid(Ulid(7)), queue, None)
+            .await
+            .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let events = read_until(&mut stream, &shown.to_string()).await.unwrap();
+
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(!events.contains(&hidden.to_string()), "{events}");
+    cancel.cancel();
+}
+
+/// The sign-out of the last session of a person forgets their token, and
+/// what it read; another session keeps it.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_last_sign_out_forgets_the_token_of_the_person(pool: PgPool) {
+    token(&pool, 9, &[]).await;
+    let sim = Arc::new(Sim::new());
+    let ada = ScmUser {
+        external_id: "5".into(),
+        login: "ada".into(),
+    };
+    sim.add_installation(
+        "1",
+        ScmAccount {
+            external_id: "1".into(),
+            path: "acme".into(),
+        },
+        &[],
+    );
+    sim.set_member("1", &ada, MembershipRole::Member);
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+    let has_token = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let has: bool =
+            sqlx::query_scalar("SELECT scm_token IS NOT NULL FROM users WHERE login = 'ada'")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        has
+    };
+    let sign_out = |callback: Answer| {
+        let addr = addr.clone();
+        async move {
+            let session = cookie_set(&callback.raw_head, "__Host-cihub_session").unwrap();
+            let csrf = csrf_token(&SecretString::from(session.clone()));
+            let cookie = format!("__Host-cihub_session={session}");
+            let headers = [("Cookie", cookie.as_str()), ("X-CSRF-Token", csrf.as_str())];
+            call_with(&addr, "POST", "/auth/sign-out", &headers)
+                .await
+                .status
+        }
+    };
+
+    let first = sign_in(&addr, &sim, &ada, "/").await;
+    let second = sign_in(&addr, &sim, &ada, "/").await;
+
+    assert!(has_token().await, "a sign-in keeps the token");
+    assert_eq!(sign_out(first).await, 204);
+    assert!(has_token().await, "the other session keeps the token");
+    assert_eq!(sign_out(second).await, 204);
+    assert!(!has_token().await, "the last sign-out forgets the token");
 }
 
 /// The stream answers as the other routes: `404` on another organization,

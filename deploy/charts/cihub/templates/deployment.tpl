@@ -73,6 +73,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.github.existingSecret | quote }}
                   key: {{ .Values.github.clientSecretKey | quote }}
+            - name: CIHUB_DATABASE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret | quote }}
+                  key: {{ .Values.database.secretKey | quote }}
             {{- end }}
           ports:
             - name: http

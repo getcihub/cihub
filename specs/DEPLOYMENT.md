@@ -32,6 +32,11 @@ The private key stays outside the repository, and the file gives only its path.
 CIHUB_GITHUB_APP_ID = "123456"
 CIHUB_GITHUB_PRIVATE_KEY_FILE = "/Users/<you>/.config/cihub/cihub-test.private-key.pem"
 CIHUB_GITHUB_WEBHOOK_SECRET = "<the webhook secret of the App>"
+# With the sign-in: the client of the App, and a secret of at least 32 bytes
+# (`openssl rand -hex 32`) that seals the tokens of the people who sign in.
+CIHUB_GITHUB_CLIENT_ID = "Iv23li…"
+CIHUB_GITHUB_CLIENT_SECRET = "<the client secret of the App>"
+CIHUB_DATABASE_SECRET = "<64 hexadecimal digits>"
 ```
 
 The first time, `mise trust mise.local.toml` authorizes the file. To receive webhooks locally, the webhook URL
@@ -54,6 +59,7 @@ startup, with a message that names the key and the file, or the variable.
 | Key                       | Variable                        | Default              | Role                                                                        |
 | ------------------------- | ------------------------------- | -------------------- | --------------------------------------------------------------------------- |
 | `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
+| `database.secret`         | `CIHUB_DATABASE_SECRET`         | none                 | Secret of at least 32 bytes that seals the tokens of the people who sign in (AES-256-GCM, `specs/SECURITY.md`); required with the sign-in; a lost or changed secret signs every person out |
 | `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
 | `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
 | `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in; the status and the comment of a PR link to its page there |
@@ -71,6 +77,7 @@ startup, with a message that names the key and the file, or the variable.
 # /etc/cihub/server.yaml
 database:
   url: postgres://cihub:…@db/cihub
+  secret: …
 http:
   addr: 0.0.0.0:8080
 internal:
@@ -88,9 +95,9 @@ github:
 ```
 
 One file serves every replica. On Kubernetes, a ConfigMap carries the
-file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_GITHUB_WEBHOOK_SECRET` and
-`CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `github.private_key`, `github.webhook_secret` or
-`github.client_secret` is a secret (`specs/SECURITY.md`).
+file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_DATABASE_SECRET`,
+`CIHUB_GITHUB_WEBHOOK_SECRET` and `CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `database.secret`,
+`github.private_key`, `github.webhook_secret` or `github.client_secret` is a secret (`specs/SECURITY.md`).
 
 ```sh
 cihub-server migrate --config /etc/cihub/server.yaml
@@ -161,9 +168,10 @@ docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 
-The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL`, and
-`github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and,
-when `github.clientId` is set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`. The
+The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
+`github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), and `github.existingSecret`
+gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and, when `github.clientId` is
+set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
 CIHub does not call the Kubernetes API. `deploy/charts/cihub/README.md`, generated, lists the values.
 
@@ -190,9 +198,9 @@ carries: `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET`, `CIHUB_GITHUB_PRI
 `CIHUB_GITHUB_PRIVATE_KEY`, and, when they are set, `CIHUB_GITHUB_URL`, `CIHUB_GITHUB_CLIENT_ID` with
 `CIHUB_GITHUB_CLIENT_SECRET` for the sign-in, `CIHUB_HTTP_PUBLIC_URL`, `CIHUB_LOG_FILTER` and `CIHUB_LOG_FORMAT`. The
 cluster has its own Postgres and the chart fixes the addresses of the pod: `CIHUB_DATABASE_URL`, `CIHUB_HTTP_ADDR` and
-`CIHUB_INTERNAL_ADDR` stay out. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that bring the webhooks of the
+`CIHUB_INTERNAL_ADDR` stay out, and the script draws `CIHUB_DATABASE_SECRET` into the Secret of Postgres. With `CIHUB_SMOKE_KEEP=1`, it ends with the commands that bring the webhooks of the
 App to the cluster: a port-forward to the Service, a tunnel to it, and the tunnel as the webhook URL of the App; with
-the sign-in, the Callback URL that the App must have.
+the sign-in, the Callback URL and the Setup URL that the App must have.
 
 ```sh
 CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run smoke

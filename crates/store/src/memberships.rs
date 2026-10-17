@@ -12,6 +12,8 @@ pub struct Membership {
     pub role: MembershipRole,
     /// Every connection of the organization is suspended.
     pub is_org_suspended: bool,
+    /// When the SCM last gave the role.
+    pub refreshed_at: OffsetDateTime,
 }
 
 /// Every connection of the organization `o` is suspended: CIHub reaches none
@@ -80,19 +82,20 @@ pub async fn forget_memberships_before(
 /// Postgres fails, or a row does not match the vocabulary of `cihub-domain`.
 pub async fn memberships_of(pool: &PgPool, user_id: UserId) -> Result<Vec<Membership>, StoreError> {
     let mut tx = begin_system(pool).await?;
-    let rows: Vec<(String, String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT o.id, o.slug, m.role::text, {ORG_IS_SUSPENDED}
+    let rows: Vec<(String, String, String, bool, OffsetDateTime)> =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT o.id, o.slug, m.role::text, {ORG_IS_SUSPENDED}, m.refreshed_at
          FROM memberships m JOIN orgs o ON o.id = m.org_id
          WHERE m.user_id = $1 ORDER BY o.slug"
-    )))
-    .bind(user_id.to_string())
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(StoreError::Query)?;
+        )))
+        .bind(user_id.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(StoreError::Query)?;
 
     tx.commit().await.map_err(StoreError::Query)?;
     rows.into_iter()
-        .map(|(org_id, org_slug, role, is_org_suspended)| {
+        .map(|(org_id, org_slug, role, is_org_suspended, refreshed_at)| {
             Ok(Membership {
                 org_id: org_id
                     .parse()
@@ -102,6 +105,7 @@ pub async fn memberships_of(pool: &PgPool, user_id: UserId) -> Result<Vec<Member
                     .map_err(StoreError::read("membership", &org_id))?,
                 org_slug,
                 is_org_suspended,
+                refreshed_at,
             })
         })
         .collect()

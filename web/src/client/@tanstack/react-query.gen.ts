@@ -182,7 +182,7 @@ export const listAuditQueryKey = (options: Options<ListAuditData>) => createQuer
  * The changes of the queues and the actions on the PRs that a person or a
  * token asked for, newest first.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listAuditOptions = (options: Options<ListAuditData>) => queryOptions<ListAuditResponse, ListAuditError, ListAuditResponse, ReturnType<typeof listAuditQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -206,7 +206,7 @@ export const listOrgPrsQueryKey = (options: Options<ListOrgPrsData>) => createQu
  * current submission of each PR in each queue, with the PRs that merge before
  * it and an estimate. Without a filter, every PR, live or ended.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listOrgPrsOptions = (options: Options<ListOrgPrsData>) => queryOptions<ListOrgPrsResponse, ListOrgPrsError, ListOrgPrsResponse, ReturnType<typeof listOrgPrsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -229,7 +229,7 @@ export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => cr
  * Every queue of the organization, with its counters and its settings, by
  * repository name then target branch: the overview of the dashboard.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listOrgQueuesOptions = (options: Options<ListOrgQueuesData>) => queryOptions<ListOrgQueuesResponse, ListOrgQueuesError, ListOrgQueuesResponse, ReturnType<typeof listOrgQueuesQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -253,7 +253,7 @@ export const listReposQueryKey = (options: Options<ListReposData>) => createQuer
  * then name, each with what the caller may do on it and the verdict of its
  * setup. Reads Postgres only.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listReposOptions = (options: Options<ListReposData>) => queryOptions<ListReposResponse, ListReposError, ListReposResponse, ReturnType<typeof listReposQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -276,7 +276,7 @@ export const getRepoQueryKey = (options: Options<GetRepoData>) => createQueryKey
  * The repository, whatever the case of its name, with what the caller may
  * do on it and its whole setup. Reads Postgres only.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getRepoOptions = (options: Options<GetRepoData>) => queryOptions<GetRepoResponse, GetRepoError, GetRepoResponse, ReturnType<typeof getRepoQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -300,7 +300,7 @@ export const listRepoPrsQueryKey = (options: Options<ListRepoPrsData>) => create
  * current submission of each PR in each queue, with the PRs that merge
  * before it and an estimate. Without a filter, every PR, live or ended.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listRepoPrsOptions = (options: Options<ListRepoPrsData>) => queryOptions<ListRepoPrsResponse, ListRepoPrsError, ListRepoPrsResponse, ReturnType<typeof listRepoPrsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -323,7 +323,7 @@ export const getPrQueryKey = (options: Options<GetPrData>) => createQueryKey('ge
  * The last submission of the PR to a queue of the repository, with the PRs
  * that merge before it and an estimate.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getPrOptions = (options: Options<GetPrData>) => queryOptions<GetPrResponse, GetPrError, GetPrResponse, ReturnType<typeof getPrQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -344,7 +344,7 @@ export const getPrOptions = (options: Options<GetPrData>) => queryOptions<GetPrR
  * Takes the PR out of its queue: its current submission ends `cancelled`
  * (`admin_requested`), and stays readable.
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const cancelMutation = (options?: Partial<Options<CancelData>>): UseMutationOptions<unknown, CancelError, Options<CancelData>> => {
     const mutationOptions: UseMutationOptions<unknown, CancelError, Options<CancelData>> = {
@@ -368,7 +368,7 @@ export const listEventsQueryKey = (options: Options<ListEventsData>) => createQu
  * The history of the PR in the queues of the repository, every submission
  * together, oldest first.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listEventsOptions = (options: Options<ListEventsData>) => queryOptions<ListEventsResponse, ListEventsError, ListEventsResponse, ReturnType<typeof listEventsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -389,7 +389,7 @@ export const listEventsOptions = (options: Options<ListEventsData>) => queryOpti
  * Tests again the current submission of the PR, in `testing` or
  * `pending_failure` (`tests_restarted_by_api_request`).
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const restartMutation = (options?: Partial<Options<RestartData>>): UseMutationOptions<unknown, RestartError, Options<RestartData>> => {
     const mutationOptions: UseMutationOptions<unknown, RestartError, Options<RestartData>> = {
@@ -413,7 +413,7 @@ export const restartMutation = (options?: Partial<Options<RestartData>>): UseMut
  * refusals that need a read of the SCM, such as a queue that accepts
  * nothing, come later, on the PR.
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const submitMutation = (options?: Partial<Options<SubmitData>>): UseMutationOptions<unknown, SubmitError, Options<SubmitData>> => {
     const mutationOptions: UseMutationOptions<unknown, SubmitError, Options<SubmitData>> = {
@@ -437,7 +437,7 @@ export const listRepoQueuesQueryKey = (options: Options<ListRepoQueuesData>) => 
  * The queues of the repository with their counters and their settings, by
  * target branch. The first `/cihub merge` on a PR of a branch creates its queue.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listRepoQueuesOptions = (options: Options<ListRepoQueuesData>) => queryOptions<ListRepoQueuesResponse, ListRepoQueuesError, ListRepoQueuesResponse, ReturnType<typeof listRepoQueuesQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -460,7 +460,7 @@ export const getQueueQueryKey = (options: Options<GetQueueData>) => createQueryK
  * The queue with its counters, its window, its settings and the last check
  * of its configuration: the page of the queue in the dashboard.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getQueueOptions = (options: Options<GetQueueData>) => queryOptions<GetQueueResponse, GetQueueError, GetQueueResponse, ReturnType<typeof getQueueQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -481,7 +481,7 @@ export const getQueueOptions = (options: Options<GetQueueData>) => queryOptions<
  * Asks the queue for `running`, `paused` or `draining`; the queue changes
  * at its next reconciliation.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const updateQueueMutation = (options?: Partial<Options<UpdateQueueData>>): UseMutationOptions<unknown, UpdateQueueError, Options<UpdateQueueData>> => {
     const mutationOptions: UseMutationOptions<unknown, UpdateQueueError, Options<UpdateQueueData>> = {
@@ -506,7 +506,7 @@ export const graphQueryKey = (options: Options<GraphData>) => createQueryKey('gr
  * that the test of each one merges before it, and the last run of each live
  * group.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const graphOptions = (options: Options<GraphData>) => queryOptions<GraphResponse, GraphError, GraphResponse, ReturnType<typeof graphQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -533,7 +533,7 @@ export const getHealthQueryKey = (options: Options<GetHealthData>) => createQuer
  * log, which arrive a few seconds after the log; the medians and the 90th
  * percentiles are within 5 %.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getHealthOptions = (options: Options<GetHealthData>) => queryOptions<GetHealthResponse, GetHealthError, GetHealthResponse, ReturnType<typeof getHealthQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -555,7 +555,7 @@ export const getHealthOptions = (options: Options<GetHealthData>) => queryOption
  * head of the target branch and its configuration: the way out after an
  * incident.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const syncQueueMutation = (options?: Partial<Options<SyncQueueData>>): UseMutationOptions<unknown, SyncQueueError, Options<SyncQueueData>> => {
     const mutationOptions: UseMutationOptions<unknown, SyncQueueError, Options<SyncQueueData>> = {
@@ -581,7 +581,7 @@ export const getRunQueryKey = (options: Options<GetRunData>) => createQueryKey('
  * the CI reads its run identifier in the last segment of its branch; a run of
  * another repository answers `run_not_found`.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getRunOptions = (options: Options<GetRunData>) => queryOptions<GetRunResponse, GetRunError, GetRunResponse, ReturnType<typeof getRunQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -602,7 +602,7 @@ export const getRunOptions = (options: Options<GetRunData>) => queryOptions<GetR
  * Asks CIHub to read the setup of the repository from the SCM now, at most
  * once a minute; its `requested_at` shows the read until it ends.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const syncRepoMutation = (options?: Partial<Options<SyncRepoData>>): UseMutationOptions<unknown, SyncRepoError, Options<SyncRepoData>> => {
     const mutationOptions: UseMutationOptions<unknown, SyncRepoError, Options<SyncRepoData>> = {
@@ -691,7 +691,8 @@ export const deleteUserSessionMutation = (options?: Partial<Options<DeleteUserSe
  * Sync the user
  *
  * Asks CIHub to read again from the SCM now the installations and the
- * repositories that the person of the session reaches.
+ * repositories that the person of the session reaches, at most once a
+ * minute.
  *
  * **Access**: the session of a person: the dashboard, or the command line.
  */

@@ -320,6 +320,8 @@ struct PrFilter {
     org: String,
     author: Option<String>,
     repo: Option<String>,
+    /// The repositories that a person reads; `None` for every one.
+    repos: Option<Vec<String>>,
     queue: Option<String>,
     states: Vec<ItemState>,
     submitted_since: Option<OffsetDateTime>,
@@ -357,6 +359,11 @@ fn push_filter(sql: &mut QueryBuilder<Postgres>, filter: &PrFilter) {
     }
     if let Some(queue) = &filter.queue {
         sql.push(" AND i.queue_id = ").push_bind(queue.clone());
+    }
+    if let Some(repos) = &filter.repos {
+        sql.push(" AND i.queue_id IN (SELECT id FROM queues WHERE repo_id = ANY(")
+            .push_bind(repos.clone())
+            .push("))");
     }
     if !filter.states.is_empty() {
         sql.push(" AND i.state IN (");
@@ -450,6 +457,7 @@ async fn pr_list(
         org: grant.org_id.to_string(),
         author: query.author.clone(),
         repo: repo.map(|repo| repo.to_string()),
+        repos: grant.repo_filter(),
         queue,
         states: query.state.clone(),
         submitted_since: query.submitted_since,

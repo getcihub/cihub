@@ -9,12 +9,14 @@ use std::path::Path;
 
 use anyhow::{Context, bail};
 use cihub_github::{GithubConfig, SignInClient};
+use cihub_store::MIN_DATABASE_SECRET_BYTES;
 use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 14] = [
     "database.url",
+    "database.secret",
     "http.addr",
     "http.public_url",
     "internal.addr",
@@ -37,6 +39,8 @@ pub struct Config {
     /// `https://ci.example.com`; without it, nobody signs in to the dashboard.
     pub public_url: Option<String>,
     pub database_url: SecretString,
+    /// Seals the tokens of the people who sign in; the sign-in needs it.
+    pub database_secret: Option<SecretString>,
     pub logs: Logs,
     pub github: Option<GithubApp>,
 }
@@ -100,13 +104,34 @@ impl Config {
             })?,
         };
 
+        let github = github_app(&sources)?;
+        let database_secret = sources.non_empty("database.secret");
+        let has_sign_in = github
+            .as_ref()
+            .is_some_and(|github| github.config.sign_in.is_some());
+        if has_sign_in && database_secret.is_none() {
+            bail!(
+                "the sign-in needs {}: it seals the tokens of the people who sign in",
+                names("database.secret")
+            );
+        }
+        if let Some(secret) = &database_secret
+            && secret.value.len() < MIN_DATABASE_SECRET_BYTES
+        {
+            bail!(
+                "{} has at least {MIN_DATABASE_SECRET_BYTES} bytes",
+                secret.origin
+            );
+        }
+
         Ok(Self {
             internal_addr,
             http_addr,
             public_url,
             database_url: database_url.value.into(),
+            database_secret: database_secret.map(|secret| secret.value.into()),
             logs,
-            github: github_app(&sources)?,
+            github,
         })
     }
 }
@@ -295,6 +320,7 @@ mod tests {
             variables,
             [
                 "CIHUB_DATABASE_URL",
+                "CIHUB_DATABASE_SECRET",
                 "CIHUB_HTTP_ADDR",
                 "CIHUB_HTTP_PUBLIC_URL",
                 "CIHUB_INTERNAL_ADDR",
@@ -483,20 +509,42 @@ github:
     }
 
     #[test]
-    fn the_sign_in_needs_the_client_id_and_its_secret() {
+    fn the_sign_in_needs_the_client_id_its_secret_and_the_database_secret() {
         let app = "github:\n  app_id: 123\n  private_key: key\n  webhook_secret: s\n";
         let client_id = ("CIHUB_GITHUB_CLIENT_ID", "Iv1.client");
         let client_secret = ("CIHUB_GITHUB_CLIENT_SECRET", "secret");
+        let database_secret = ("CIHUB_DATABASE_SECRET", "a database secret of 32 bytes ab");
+        let short = ("CIHUB_DATABASE_SECRET", "short");
 
-        let both = load(Some(app), &[DATABASE, client_id, client_secret]).unwrap();
-        let alone = load(Some(app), &[DATABASE, client_id]).unwrap_err();
+        let both = load(
+            Some(app),
+            &[DATABASE, database_secret, client_id, client_secret],
+        )
+        .unwrap();
+        let alone = load(Some(app), &[DATABASE, database_secret, client_id]).unwrap_err();
+        let unsealed = load(Some(app), &[DATABASE, client_id, client_secret]).unwrap_err();
+        let too_short = load(Some(app), &[DATABASE, short, client_id, client_secret]).unwrap_err();
 
         let sign_in = both.github.unwrap().config.sign_in.unwrap();
         assert_eq!(sign_in.client_id, "Iv1.client");
         assert_eq!(sign_in.client_secret.expose_secret(), "secret");
         assert!(
+            both.database_secret.is_some(),
+            "the secret seals the tokens"
+        );
+        assert!(
             alone.to_string().starts_with("the sign-in needs both"),
             "{alone}"
+        );
+        assert!(
+            unsealed
+                .to_string()
+                .starts_with("the sign-in needs CIHUB_DATABASE_SECRET"),
+            "{unsealed}"
+        );
+        assert!(
+            too_short.to_string().contains("at least 32 bytes"),
+            "{too_short}"
         );
     }
 }

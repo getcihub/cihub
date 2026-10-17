@@ -5,9 +5,11 @@
 //! migrate` applies them, and `cihub-server start` refuses to start while one
 //! is missing.
 
+mod cipher;
 mod device_codes;
 mod events;
 mod memberships;
+mod persons;
 mod sessions;
 mod tokens;
 mod users;
@@ -15,6 +17,7 @@ mod users;
 use std::collections::BTreeSet;
 
 use cihub_domain::OrgId;
+pub use cipher::{DatabaseCipher, MIN_DATABASE_SECRET_BYTES};
 pub use device_codes::{
     DevicePoll, NewDeviceCode, answer_device_code, create_device_code, new_device_code_secret,
     new_user_code, poll_device_code,
@@ -26,11 +29,16 @@ pub use events::{
 pub use memberships::{
     Membership, ORG_IS_SUSPENDED, forget_memberships_before, memberships_of, record_membership,
 };
+pub use persons::{
+    PersonToken, forget_person_token, forget_tokens_without_session, keep_person_token,
+    lock_person_token, person_synced_at, readable_repos, record_person_sync,
+    record_repo_permission, repo_permission_of,
+};
 use secrecy::{ExposeSecret, SecretString};
 pub use sessions::{
     CLI_SESSION_IDLE_LIFETIME, NewSession, SessionClient, SessionGrant, authenticate_session,
-    create_session, csrf_token, delete_session, delete_session_by_id, new_cli_session_secret,
-    new_session_secret, new_sign_in_secret,
+    create_session, csrf_token, delete_session, delete_session_by_id, delete_sessions_of,
+    new_cli_session_secret, new_session_secret, new_sign_in_secret,
 };
 use sqlx::migrate::{MigrateError, Migrator};
 pub use sqlx::{PgPool, Postgres, Transaction};
@@ -72,6 +80,12 @@ pub enum StoreError {
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]
     Migrate(#[source] MigrateError),
+    #[error("`database.secret` is shorter than {MIN_DATABASE_SECRET_BYTES} bytes")]
+    ShortDatabaseSecret,
+    #[error("cannot seal a secret with the database secret")]
+    Seal,
+    #[error("a sealed secret does not open with the database secret")]
+    Unseal,
 }
 
 impl StoreError {

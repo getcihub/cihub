@@ -116,7 +116,13 @@ if ! secret_exists cihub-postgres; then
   # the chart reads the URL under uri. sslmode=require: CloudNativePG serves TLS.
   kubectl -n "$ns" create secret generic cihub-postgres --type=kubernetes.io/basic-auth \
     --from-literal=username=cihub --from-literal=password="$db_password" \
-    --from-literal=uri="postgres://cihub:${db_password}@cihub-postgres-rw.${ns}.svc:5432/cihub?sslmode=require"
+    --from-literal=uri="postgres://cihub:${db_password}@cihub-postgres-rw.${ns}.svc:5432/cihub?sslmode=require" \
+    --from-literal=secret="$(openssl rand -hex 32)"
+fi
+# The chart reads the database secret with the sign-in; a cluster kept from
+# before it lacks the key.
+if [ -z "$(kubectl -n "$ns" get secret cihub-postgres -o go-template='{{index .data "secret"}}')" ]; then
+  kubectl -n "$ns" patch secret cihub-postgres --type merge -p "{\"stringData\":{\"secret\":\"$(openssl rand -hex 32)\"}}"
 fi
 if [ "$github" = 1 ]; then
   webhook_secret="$CIHUB_GITHUB_WEBHOOK_SECRET"

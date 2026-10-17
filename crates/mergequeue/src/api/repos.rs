@@ -4,8 +4,8 @@ use axum::http::StatusCode;
 use cihub_api_types::{
     ErrorCode, Permission, Repo, RepoDetail, RepoList, RepoSetup, SetupState, SetupSummary,
 };
-use cihub_domain::ApiScope;
-use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, Page, cursor_of};
+use cihub_domain::{ApiScope, Permission as Level};
+use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, Page, cursor_of};
 use serde::de::{Error as _, IntoDeserializer};
 use serde::{Deserialize, Deserializer};
 
@@ -42,13 +42,25 @@ fn setup_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<SetupS
         .collect()
 }
 
-/// A repository, and the target branch of the queue of its default branch.
-type RepoRow = (String, String, String, String, Option<String>);
+/// A repository, the target branch of the queue of its default branch, and
+/// the permission of the person of the request on it.
+type RepoRow = (
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 /// Until the setup of a repository is read, its verdict says only whether its
 /// default branch has its queue.
 const REPO_SOURCE: &str = "repos r
      LEFT JOIN queues q ON q.repo_id = r.id AND q.target_branch = r.default_branch";
+
+/// The permission of the person `$5` of the request on each repository.
+const PERMISSION_SOURCE: &str =
+    "LEFT JOIN repo_permissions p ON p.repo_id = r.id AND p.user_id = $5";
 
 /// List the repositories
 ///
@@ -82,9 +94,12 @@ pub(super) async fn list_repos(
     let wants = |wanted: SetupState| query.state.is_empty() || query.state.contains(&wanted);
     let (started, checking) = (wants(SetupState::Started), wants(SetupState::Checking));
 
+    let (repos, user) = (grant.repo_filter(), user_of(&grant));
+
     let filter = "r.removed_at IS NULL
          AND ($1::text IS NULL OR strpos(lower(r.name), lower($1)) > 0)
-         AND (($2 AND q.id IS NOT NULL) OR ($3 AND q.id IS NULL))";
+         AND (($2 AND q.id IS NOT NULL) OR ($3 AND q.id IS NULL))
+         AND ($4::text[] IS NULL OR r.id = ANY($4))";
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT count(*) FROM {REPO_SOURCE} WHERE {filter}"
@@ -92,6 +107,7 @@ pub(super) async fn list_repos(
     .bind(&name)
     .bind(started)
     .bind(checking)
+    .bind(&repos)
     .fetch_one(&mut *tx)
     .await?;
     let (namespace, after_name, id) = match page.after.clone() {
@@ -101,15 +117,17 @@ pub(super) async fn list_repos(
     // A repository deleted then created again keeps its row: the identifier
     // tells two repositories of the same name apart.
     let rows: Vec<RepoRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch
-         FROM {REPO_SOURCE}
+        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch, p.permission::text
+         FROM {REPO_SOURCE} {PERMISSION_SOURCE}
          WHERE {filter}
-           AND ($4::text IS NULL OR (r.namespace, r.name, r.id) > ($4, $5, $6))
-         ORDER BY r.namespace, r.name, r.id LIMIT $7"
+           AND ($6::text IS NULL OR (r.namespace, r.name, r.id) > ($6, $7, $8))
+         ORDER BY r.namespace, r.name, r.id LIMIT $9"
     )))
     .bind(&name)
     .bind(started)
     .bind(checking)
+    .bind(&repos)
+    .bind(&user)
     .bind(namespace)
     .bind(after_name)
     .bind(id)
@@ -117,11 +135,10 @@ pub(super) async fn list_repos(
     .fetch_all(&mut *tx)
     .await?;
 
-    let permission = permission_of(&grant);
     let repos = rows
         .into_iter()
-        .map(|row| repo_of(row, permission))
-        .collect();
+        .map(|row| repo_of(row, &grant))
+        .collect::<Result<Vec<_>, _>>()?;
     let (repos, has_more): (Vec<Repo>, bool) = page.split(repos);
     let cursor = repos
         .last()
@@ -157,14 +174,14 @@ pub(super) async fn get_repo(
     let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
     // The SCM does not tell names apart by their case.
     let row: Option<RepoRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch
+        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch, NULL::text
          FROM {REPO_SOURCE}
          WHERE lower(r.name) = lower($1) ORDER BY r.id LIMIT 1"
     )))
     .bind(&path.repo)
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((id, namespace, name, default_branch, queue)) = row else {
+    let Some((id, namespace, name, default_branch, queue, _)) = row else {
         return Err(ApiError::new(
             ErrorCode::RepoNotFound,
             format!("repository `{}` not found", path.repo),
@@ -215,8 +232,18 @@ pub(super) async fn sync_repo(
     ))
 }
 
+/// The person of the request, whose permission a list gives; `None` for a
+/// token.
+fn user_of(grant: &ApiGrant) -> Option<String> {
+    match grant.actor {
+        GrantActor::User(user_id) => Some(user_id.to_string()),
+        GrantActor::Token(_) => None,
+    }
+}
+
 /// What the scopes of the caller let it do on a repository of the
-/// organization.
+/// organization: on a route of a repository, those of the permission of a
+/// person on it.
 fn permission_of(grant: &ApiGrant) -> Permission {
     Permission {
         read: grant.scopes.contains(&ApiScope::QueuesRead),
@@ -233,8 +260,19 @@ fn state_of(queue: Option<&String>) -> SetupState {
     }
 }
 
-fn repo_of((id, namespace, name, default_branch, queue): RepoRow, permission: Permission) -> Repo {
-    Repo {
+/// A repository of a list: a person gets their permission on it, a token
+/// that of its scopes.
+fn repo_of(
+    (id, namespace, name, default_branch, queue, level): RepoRow,
+    grant: &ApiGrant,
+) -> Result<Repo, ApiError> {
+    let permission = match (grant.actor, level) {
+        (GrantActor::User(_), Some(level)) => permission_of_level(level.parse()?),
+        (GrantActor::User(_), None) => permission_of_level(Level::None),
+        (GrantActor::Token(_), _) => permission_of(grant),
+    };
+
+    Ok(Repo {
         id,
         namespace,
         name,
@@ -245,5 +283,13 @@ fn repo_of((id, namespace, name, default_branch, queue): RepoRow, permission: Pe
             checked_at: None,
             requested_at: None,
         },
+    })
+}
+
+fn permission_of_level(level: Level) -> Permission {
+    Permission {
+        read: level >= Level::Read,
+        write: level >= Level::Write,
+        admin: level >= Level::Admin,
     }
 }

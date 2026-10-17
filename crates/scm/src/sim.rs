@@ -12,15 +12,15 @@ use cihub_domain::{
     CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
     Permission, PrState, ReviewDecision,
 };
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
 
 use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
     RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode,
-    SignInRequest, SignedIn, StatusUpdate, code_challenge,
+    ScmMember, ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmProfile, ScmRepo,
+    ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate, code_challenge,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -176,6 +176,11 @@ struct State {
     /// The page that a browser opens to sign in, for a test in a browser;
     /// `sim:authorize` without it.
     sign_in_page: Option<String>,
+    /// The person of each token that a sign-in or a refresh gave, by token.
+    person_tokens: BTreeMap<String, String>,
+    /// The person of each refresh token not used yet, by refresh token.
+    refresh_tokens: BTreeMap<String, String>,
+    next_person_token: u64,
     lost: BTreeSet<String>,
     faults: VecDeque<Fault>,
     random: Option<RandomFaults>,
@@ -620,6 +625,19 @@ impl Sim {
         })
     }
 
+    /// Revokes every token of `user`, as a person who removes the
+    /// authorization of the App: their calls fail with `AccessLost`.
+    pub fn revoke_person(&self, user: &ScmUser) {
+        self.with(|state| {
+            state
+                .person_tokens
+                .retain(|_, person| *person != user.external_id);
+            state
+                .refresh_tokens
+                .retain(|_, person| *person != user.external_id);
+        });
+    }
+
     /// Suspends the connection `connection_external_id`, or makes it active
     /// again: a suspended connection fails every call with `AccessLost`.
     pub fn set_access(&self, connection_external_id: &str, active: bool) {
@@ -812,6 +830,55 @@ impl State {
             connection_external_id: Some(connection_external_id.to_owned()),
             event: ScmEvent::ConnectionChanged,
         });
+    }
+
+    /// A new token for the person `user`, valid 8 hours, and its refresh.
+    fn person_token(&mut self, user: &str) -> ScmPersonToken {
+        self.next_person_token += 1;
+        let (access, refresh) = (
+            format!("sim-token-{}", self.next_person_token),
+            format!("sim-refresh-{}", self.next_person_token),
+        );
+        self.person_tokens.insert(access.clone(), user.to_owned());
+        self.refresh_tokens.insert(refresh.clone(), user.to_owned());
+
+        ScmPersonToken {
+            access: access.into(),
+            access_lifetime: Some(time::Duration::hours(8)),
+            refresh: Some(refresh.into()),
+            refresh_lifetime: Some(time::Duration::days(180)),
+        }
+    }
+
+    /// The person of `token`.
+    fn person_of(&self, token: &SecretString) -> Result<String, ScmError> {
+        self.person_tokens
+            .get(token.expose_secret())
+            .cloned()
+            .ok_or_else(|| ScmError::AccessLost("the token of the person is refused".into()))
+    }
+
+    /// What `user` may do on the repository `repo_external_id`: the
+    /// permission given to them, or `admin` for an admin of the account of
+    /// its installation.
+    fn permission_of_person(&self, repo_external_id: &str, user: &str) -> Permission {
+        let Some(repo) = self.repos.get(repo_external_id) else {
+            return Permission::None;
+        };
+        if let Some(permission) = repo.permissions.get(user) {
+            return *permission;
+        }
+
+        let is_admin = self
+            .members
+            .get(&repo.connection)
+            .and_then(|members| members.get(user))
+            .is_some_and(|member| member.role == MembershipRole::Admin);
+        if is_admin {
+            Permission::Admin
+        } else {
+            Permission::None
+        }
     }
 
     fn installation(&self, external_id: &str) -> Option<ScmInstallation> {
@@ -1751,7 +1818,11 @@ impl Scm for Sim {
         ))
     }
 
-    fn sign_in<'a>(&'a self, code: &'a SignInCode, class: JobClass) -> ScmFuture<'a, SignedIn> {
+    fn sign_in<'a>(
+        &'a self,
+        code: &'a SignInCode,
+        class: JobClass,
+    ) -> ScmFuture<'a, (SignedIn, ScmPersonToken)> {
         self.record_call("sign_in", class, move |state| {
             let refused = || ScmError::Validation("the code of the sign-in is not valid".into());
             let (user, request) = state
@@ -1784,12 +1855,100 @@ impl Scm for Sim {
                 .get(&user.external_id)
                 .cloned()
                 .unwrap_or_default();
-            Ok(SignedIn {
+            let token = state.person_token(&user.external_id);
+            let signed_in = SignedIn {
                 user,
                 profile,
                 installations,
                 memberships,
+            };
+            Ok((signed_in, token))
+        })
+    }
+
+    fn refresh_person_token<'a>(
+        &'a self,
+        refresh: &'a SecretString,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonToken> {
+        self.record_call("refresh_person_token", class, move |state| {
+            let user = state
+                .refresh_tokens
+                .remove(refresh.expose_secret())
+                .ok_or_else(|| ScmError::AccessLost("the refresh token is refused".into()))?;
+            Ok(state.person_token(&user))
+        })
+    }
+
+    fn person_reach<'a>(
+        &'a self,
+        token: &'a SecretString,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonReach> {
+        self.record_call("person_reach", class, move |state| {
+            let user = state.person_of(token)?;
+            let reached: Vec<String> = state
+                .members
+                .iter()
+                .filter(|(_, members)| members.contains_key(&user))
+                .map(|(installation, _)| installation.clone())
+                .filter(|installation| state.installations.contains_key(installation))
+                .collect();
+            let installations = reached
+                .iter()
+                .filter_map(|installation| state.installation(installation))
+                .collect();
+            let repos = state
+                .repos
+                .iter()
+                .filter(|(_, repo)| reached.contains(&repo.connection))
+                .map(|(external_id, repo)| ScmPersonRepo {
+                    connection_external_id: repo.connection.clone(),
+                    repo_external_id: external_id.clone(),
+                    permission: state.permission_of_person(external_id, &user),
+                })
+                .filter(|repo| repo.permission != Permission::None)
+                .collect();
+            Ok(ScmPersonReach {
+                installations,
+                repos,
             })
+        })
+    }
+
+    fn person_permission<'a>(
+        &'a self,
+        token: &'a SecretString,
+        repo: &'a RepoRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, Permission> {
+        self.record_call("person_permission", class, move |state| {
+            let user = state.person_of(token)?;
+            Ok(state.permission_of_person(&repo.external_id, &user))
+        })
+    }
+
+    fn person_role<'a>(
+        &'a self,
+        token: &'a SecretString,
+        person: &'a ScmUser,
+        account: &'a ScmAccount,
+        class: JobClass,
+    ) -> ScmFuture<'a, Option<MembershipRole>> {
+        self.record_call("person_role", class, move |state| {
+            state.person_of(token)?;
+            let role = state
+                .installations
+                .iter()
+                .filter(|(_, installation)| installation.account.external_id == account.external_id)
+                .find_map(|(external_id, _)| {
+                    state
+                        .members
+                        .get(external_id)
+                        .and_then(|members| members.get(&person.external_id))
+                        .map(|member| member.role)
+                });
+            Ok(role)
         })
     }
 
@@ -1990,7 +2149,7 @@ mod tests {
             "https://evil.example",
         );
         let forged = exchange(sim.authorize(&person, &request), "other", url);
-        let signed_in = sim.sign_in(&first, JobClass::Interactive).await.unwrap();
+        let (signed_in, _) = sim.sign_in(&first, JobClass::Interactive).await.unwrap();
         let mut refused = Vec::new();
         for code in [&replayed, &elsewhere, &forged] {
             refused.push(sim.sign_in(code, JobClass::Interactive).await);

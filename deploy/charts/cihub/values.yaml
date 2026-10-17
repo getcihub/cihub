@@ -42,6 +42,8 @@ database:
   existingSecret: ""
   # -- Key of the URL in that Secret.
   key: uri
+  # -- Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set.
+  secretKey: secret
 
 github:
   # -- github.com, or the address of a GitHub Enterprise Server.

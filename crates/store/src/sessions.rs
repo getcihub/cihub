@@ -204,3 +204,18 @@ pub async fn delete_session_by_id(pool: &PgPool, id: SessionId) -> Result<(), St
         .map_err(StoreError::Query)?;
     Ok(())
 }
+
+/// Ends every session of `user_id`, of the dashboard and of the command
+/// line: the SCM refused the token of the person.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn delete_sessions_of(pool: &PgPool, user_id: UserId) -> Result<(), StoreError> {
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(user_id.to_string())
+        .execute(pool)
+        .await
+        .map_err(StoreError::Query)?;
+    Ok(())
+}
