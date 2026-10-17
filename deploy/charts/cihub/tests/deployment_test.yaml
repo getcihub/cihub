@@ -52,6 +52,27 @@ tests:
             valueFrom:
               secretKeyRef: { name: cihub-github, key: client-secret }
 
+  - it: takes the key of the encrypted data only when its key in the Secret is set
+    template: deployment.tpl
+    set:
+      database.secretKey: data-key
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_SECRET
+            valueFrom:
+              secretKeyRef: { name: cihub-postgres, key: data-key }
+
+  - it: has no key of the encrypted data without its key in the Secret
+    template: deployment.tpl
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_SECRET
+          any: true
+
   - it: has no client secret without a client ID
     template: deployment.tpl
     asserts:

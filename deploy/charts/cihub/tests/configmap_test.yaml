@@ -12,6 +12,10 @@ tests:
       - equal:
           path: data["server.yaml"]
           value: |
+            database:
+              connection_timeout: 30
+              idle_timeout: 600
+              pool_size: 10
             github:
               app_id: "123456"
               private_key_file: /etc/cihub/github/private-key.pem
@@ -31,6 +35,10 @@ tests:
       - equal:
           path: data["server.yaml"]
           value: |
+            database:
+              connection_timeout: 30
+              idle_timeout: 600
+              pool_size: 10
             github:
               app_id: "123456"
               client_id: Iv23li.client
@@ -39,6 +47,30 @@ tests:
             http:
               addr: 0.0.0.0:8080
               public_url: https://ci.example.com
+            internal:
+              addr: 0.0.0.0:8081
+            log:
+              filter: info
+              format: json
+  - it: gives the settings of the pool
+    set:
+      database.poolSize: 25
+      database.idleTimeout: 120
+      database.connectionTimeout: 5
+    asserts:
+      - equal:
+          path: data["server.yaml"]
+          value: |
+            database:
+              connection_timeout: 5
+              idle_timeout: 120
+              pool_size: 25
+            github:
+              app_id: "123456"
+              private_key_file: /etc/cihub/github/private-key.pem
+              url: https://github.com
+            http:
+              addr: 0.0.0.0:8080
             internal:
               addr: 0.0.0.0:8081
             log:

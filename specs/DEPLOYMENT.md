@@ -54,6 +54,10 @@ startup, with a message that names the key and the file, or the variable.
 | Key                       | Variable                        | Default              | Role                                                                        |
 | ------------------------- | ------------------------------- | -------------------- | --------------------------------------------------------------------------- |
 | `database.url`            | `CIHUB_DATABASE_URL`            | none, required       | `postgres://user:password@host/database`, secret; the user is neither a superuser nor `BYPASSRLS` |
+| `database.pool_size`      | `CIHUB_DATABASE_POOL_SIZE`      | `10`                 | Largest number of connections of each process to Postgres                   |
+| `database.idle_timeout`   | `CIHUB_DATABASE_IDLE_TIMEOUT`   | `600`                | Seconds after which an unused connection is closed                          |
+| `database.connection_timeout` | `CIHUB_DATABASE_CONNECTION_TIMEOUT` | `30`         | Seconds that a query waits for a connection of the pool before it fails     |
+| `database.secret`         | `CIHUB_DATABASE_SECRET`         | none                 | Key of the data that CIHub encrypts in Postgres, secret; no data uses it yet |
 | `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
 | `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
 | `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in; the status and the comment of a PR link to its page there |
@@ -71,6 +75,10 @@ startup, with a message that names the key and the file, or the variable.
 # /etc/cihub/server.yaml
 database:
   url: postgres://cihub:…@db/cihub
+  pool_size: 10
+  idle_timeout: 600
+  connection_timeout: 30
+  secret: …
 http:
   addr: 0.0.0.0:8080
 internal:
@@ -89,8 +97,9 @@ github:
 
 One file serves every replica. On Kubernetes, a ConfigMap carries the
 file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_GITHUB_WEBHOOK_SECRET` and
-`CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `github.private_key`, `github.webhook_secret` or
-`github.client_secret` is a secret (`specs/SECURITY.md`).
+`CIHUB_GITHUB_CLIENT_SECRET`. A file that carries `database.url`, `database.secret`, `github.private_key`,
+`github.webhook_secret` or `github.client_secret` is a secret (`specs/SECURITY.md`). The connections to Postgres
+are `database.pool_size` for each replica: the sum over the replicas stays under the `max_connections` of Postgres.
 
 ```sh
 cihub-server migrate --config /etc/cihub/server.yaml
@@ -161,9 +170,10 @@ docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 
-The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL`, and
-`github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and,
-when `github.clientId` is set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`. The
+The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
+`database.secretKey` is set, `CIHUB_DATABASE_SECRET` to the server pods; `github.existingSecret` gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and,
+when `github.clientId` is set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, and `database.poolSize`,
+`database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
 CIHub does not call the Kubernetes API. `deploy/charts/cihub/README.md`, generated, lists the values.
 

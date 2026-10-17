@@ -13,6 +13,7 @@ mod tokens;
 mod users;
 
 use std::collections::BTreeSet;
+use std::time::Duration;
 
 use cihub_domain::OrgId;
 pub use device_codes::{
@@ -31,6 +32,7 @@ pub use sessions::{
     new_session_secret, new_sign_in_secret,
 };
 use sqlx::migrate::{MigrateError, Migrator};
+use sqlx::postgres::PgPoolOptions;
 pub use sqlx::{PgPool, Postgres, Transaction};
 pub use tokens::{
     ApiTokenGrant, NewApiToken, authenticate, create_api_token, new_api_token_secret,
@@ -86,11 +88,25 @@ impl StoreError {
     }
 }
 
+/// The limits of the connection pool.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PoolSettings {
+    pub size: u32,
+    /// A connection unused for this long is closed.
+    pub idle_timeout: Duration,
+    /// The longest wait for a connection of the pool.
+    pub connection_timeout: Duration,
+}
+
 /// # Errors
 ///
 /// Postgres cannot be reached or refuses the connection.
-pub async fn connect(url: &SecretString) -> Result<PgPool, StoreError> {
-    PgPool::connect(url.expose_secret())
+pub async fn connect(url: &SecretString, pool: PoolSettings) -> Result<PgPool, StoreError> {
+    PgPoolOptions::new()
+        .max_connections(pool.size)
+        .idle_timeout(pool.idle_timeout)
+        .acquire_timeout(pool.connection_timeout)
+        .connect(url.expose_secret())
         .await
         .map_err(StoreError::Connect)
 }
