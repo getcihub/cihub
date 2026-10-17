@@ -503,8 +503,8 @@ pub struct Queue {
     )]
     pub target_head_sha: Option<String>,
     /// CIHub no longer reaches the repository of the queue on the SCM: the
-    /// App is suspended or uninstalled, and the queue is paused until the
-    /// access comes back.
+    /// App is suspended or uninstalled, or no longer reaches the repository,
+    /// and the queue is paused until the access comes back.
     pub is_suspended: bool,
     /// The target branch has a configuration file, valid or not; without
     /// it, the queue takes the defaults.

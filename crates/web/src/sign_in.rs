@@ -1,5 +1,6 @@
 //! The sign-in to the dashboard through the SCM (`specs/GITHUB.md`): its start
-//! sends the person to the SCM, and its callback creates the session. A
+//! sends the person to the SCM, and its callback creates the session. The
+//! Setup URL of the App starts it again after an install or an update. A
 //! failure brings the person back to the sign-in page with `?error=failed`,
 //! and the log says why. A person without an organization gets a session too:
 //! the dashboard then asks them to install the App.
@@ -10,12 +11,12 @@ use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::http::header::SET_COOKIE;
 use axum::response::{AppendHeaders, IntoResponse, Redirect, Response};
-use cihub_domain::{JobClass, SessionId};
+use cihub_domain::{ConnectionKind, JobClass, SessionId, UserId};
 use cihub_github::SIGN_IN_CALLBACK_PATH;
 use cihub_platform::{PlatformError, record_sign_in};
 use cihub_scm::{Scm, ScmError, SignInCode, SignInRequest, code_challenge};
 use cihub_store::{
-    NewSession, PgPool, StoreError, create_session, csrf_token, new_session_secret,
+    NewSession, PgPool, StoreError, begin_system, create_session, csrf_token, new_session_secret,
     new_sign_in_secret,
 };
 use secrecy::{ExposeSecret, SecretString};
@@ -26,17 +27,22 @@ use tracing::{info, warn};
 use crate::session::{CSRF_COOKIE, SESSION_COOKIE, cookie, is_same_text, set_cookie};
 
 /// The cookie that keeps the `state` and the PKCE verifier of a sign-in in
-/// progress, and the page to open after it.
+/// progress, the installation that the Setup URL named, and the page to open
+/// after it.
 const SIGN_IN_COOKIE: &str = "__Host-cihub_sign_in";
 const SIGN_IN_SECONDS: i64 = 600;
 pub(crate) const SESSION_LIFETIME: Duration = Duration::days(14);
 const FAILED: &str = "/sign-in?error=failed";
+/// The page of a person whom the Setup URL brought back, when the installation
+/// that it named is not one of their organizations.
+const WELCOME: &str = "/welcome";
 
 #[derive(Clone)]
 pub(crate) struct SignIn {
     pub pool: PgPool,
     pub now: fn() -> OffsetDateTime,
     pub scm: Arc<dyn Scm>,
+    pub kind: ConnectionKind,
     /// The root address of the instance; without it, nobody signs in.
     pub public_url: Option<String>,
 }
@@ -69,7 +75,43 @@ pub(crate) struct Start {
 
 /// Sends the person to the page of the SCM where they sign in.
 pub(crate) async fn start(State(sign_in): State<SignIn>, Query(start): Query<Start>) -> Response {
-    match address_of_sign_in(&sign_in, &start) {
+    sign_in_again(&sign_in, "", page_after(start.next.as_deref()))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Installed {
+    installation_id: Option<String>,
+    /// `install` or `update`.
+    setup_action: Option<String>,
+}
+
+/// Signs again the person whom the SCM sends back after an install or an
+/// update of the App. The installation that the address names proves
+/// nothing: anyone can write it. Only the installations that the token of
+/// the person lists count, and the one of the address chooses the page to
+/// open once signed in.
+pub(crate) async fn installed(
+    State(sign_in): State<SignIn>,
+    Query(installed): Query<Installed>,
+) -> Response {
+    let setup = setup_of(&installed).unwrap_or_default();
+
+    sign_in_again(&sign_in, &setup, "/")
+}
+
+/// `<installation>-<action>`, with digits and `install` or `update` only, so
+/// that the cookie keeps nothing else.
+fn setup_of(installed: &Installed) -> Option<String> {
+    let installation = installed.installation_id.as_deref()?;
+    let action = installed.setup_action.as_deref().unwrap_or("install");
+    let is_number = !installation.is_empty() && installation.bytes().all(|b| b.is_ascii_digit());
+    let is_action = matches!(action, "install" | "update");
+
+    (is_number && is_action).then(|| format!("{installation}-{action}"))
+}
+
+fn sign_in_again(sign_in: &SignIn, setup: &str, next: &str) -> Response {
+    match address_of_sign_in(sign_in, setup, next) {
         Ok((address, kept)) => (
             AppendHeaders([(
                 SET_COOKIE,
@@ -84,7 +126,11 @@ pub(crate) async fn start(State(sign_in): State<SignIn>, Query(start): Query<Sta
 
 /// The address of the sign-in on the SCM, and the value of the cookie that
 /// keeps what the callback checks.
-fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String), SignInFailure> {
+fn address_of_sign_in(
+    sign_in: &SignIn,
+    setup: &str,
+    next: &str,
+) -> Result<(String, String), SignInFailure> {
     let redirect_url = callback_url(sign_in)?;
     let state = new_sign_in_secret().map_err(SignInFailure::Store)?;
     let verifier = new_sign_in_secret().map_err(SignInFailure::Store)?;
@@ -99,10 +145,9 @@ fn address_of_sign_in(sign_in: &SignIn, start: &Start) -> Result<(String, String
         .sign_in_url(&request)
         .ok_or(SignInFailure::NotConfigured)?;
     let kept = format!(
-        "{}.{}.{}",
+        "{}.{}.{setup}.{next}",
         request.state,
         verifier.expose_secret(),
-        page_after(start.next.as_deref())
     );
     Ok((address, kept))
 }
@@ -157,8 +202,9 @@ async fn session_of_callback(
     callback: Callback,
 ) -> Result<(SecretString, String), SignInFailure> {
     let kept = cookie(headers, SIGN_IN_COOKIE).ok_or(SignInFailure::NotStarted)?;
-    let mut parts = kept.expose_secret().splitn(3, '.');
-    let (Some(state), Some(verifier), Some(next)) = (parts.next(), parts.next(), parts.next())
+    let mut parts = kept.expose_secret().splitn(4, '.');
+    let (Some(state), Some(verifier), Some(setup), Some(next)) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return Err(SignInFailure::NotStarted);
     };
@@ -181,9 +227,15 @@ async fn session_of_callback(
         .await
         .map_err(SignInFailure::Scm)?;
     let now = (sign_in.now)();
-    let user_id = record_sign_in(&sign_in.pool, &signed_in, now)
+    let user_id = record_sign_in(&sign_in.pool, sign_in.kind, &signed_in, now)
         .await
         .map_err(SignInFailure::Platform)?;
+    let next = match setup.split_once('-') {
+        Some((installation, action)) => {
+            page_of_installation(sign_in, user_id, installation, action).await?
+        }
+        None => next.to_owned(),
+    };
 
     #[expect(
         clippy::disallowed_methods,
@@ -207,7 +259,39 @@ async fn session_of_callback(
         organizations = signed_in.memberships.len(),
         "signed in"
     );
-    Ok((secret, next.to_owned()))
+    Ok((secret, next))
+}
+
+/// The repositories of the organization of `installation` when the person
+/// has a role in it, so that they follow its first reads; `/welcome`
+/// otherwise.
+async fn page_of_installation(
+    sign_in: &SignIn,
+    user_id: UserId,
+    installation: &str,
+    action: &str,
+) -> Result<String, SignInFailure> {
+    let mut tx = begin_system(&sign_in.pool)
+        .await
+        .map_err(SignInFailure::Store)?;
+    let slug: Option<String> = sqlx::query_scalar(
+        "SELECT o.slug FROM scm_connections c
+         JOIN orgs o ON o.id = c.org_id
+         JOIN memberships m ON m.org_id = c.org_id AND m.user_id = $3
+         WHERE c.kind = $1::connection_kind AND c.external_id = $2",
+    )
+    .bind(sign_in.kind.as_str())
+    .bind(installation)
+    .bind(user_id.to_string())
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(SignInFailure::Query)?;
+    tx.commit().await.map_err(SignInFailure::Query)?;
+
+    Ok(slug.map_or_else(
+        || WELCOME.to_owned(),
+        |slug| format!("/orgs/{slug}/repos?connecting={action}"),
+    ))
 }
 
 fn failed(err: &SignInFailure) -> Response {
@@ -232,6 +316,26 @@ fn page_after(next: Option<&str>) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_setup_url_keeps_a_number_and_an_action_only() {
+        let setup = |installation_id: Option<&str>, setup_action: Option<&str>| {
+            setup_of(&Installed {
+                installation_id: installation_id.map(str::to_owned),
+                setup_action: setup_action.map(str::to_owned),
+            })
+        };
+
+        assert_eq!(
+            setup(Some("42"), Some("update")).as_deref(),
+            Some("42-update")
+        );
+        assert_eq!(setup(Some("42"), None).as_deref(), Some("42-install"));
+        assert_eq!(setup(Some("4.2"), Some("install")), None);
+        assert_eq!(setup(Some("42"), Some("request")), None);
+        assert_eq!(setup(Some(""), Some("install")), None);
+        assert_eq!(setup(None, Some("install")), None);
+    }
 
     #[test]
     fn the_page_after_the_sign_in_stays_on_this_site() {

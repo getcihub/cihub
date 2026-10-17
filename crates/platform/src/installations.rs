@@ -163,6 +163,57 @@ pub async fn run_sync_installations(
     slug_taken.map_or(Ok(()), Err)
 }
 
+/// Connects, as a sync would, each installation of `installations` that
+/// CIHub does not know yet, and returns how many organizations it created. A
+/// slug already taken does not stop the others: the full sync tries again.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub(crate) async fn connect_installations(
+    pool: &PgPool,
+    kind: ConnectionKind,
+    installations: &[ScmInstallation],
+    now: OffsetDateTime,
+) -> Result<usize, PlatformError> {
+    let listed: Vec<&str> = installations
+        .iter()
+        .map(|installation| installation.external_id.as_str())
+        .collect();
+    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    let known: Vec<String> = sqlx::query_scalar(
+        "SELECT external_id FROM scm_connections
+         WHERE kind = $1::connection_kind AND external_id = ANY($2)",
+    )
+    .bind(kind.as_str())
+    .bind(&listed)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?;
+    tx.commit().await.map_err(PlatformError::Query)?;
+
+    let mut connected = 0;
+    for installation in installations {
+        if known.contains(&installation.external_id) || installation.is_suspended {
+            continue;
+        }
+        let synced = converge_installation(
+            pool,
+            kind,
+            &installation.external_id,
+            Some(installation),
+            now,
+        )
+        .await;
+        if synced.is_ok() {
+            connected += 1;
+        }
+        keep_slug_taken(synced, &mut None)?;
+    }
+
+    Ok(connected)
+}
+
 fn keep_slug_taken(
     synced: Result<(), PlatformError>,
     slug_taken: &mut Option<PlatformError>,
@@ -394,7 +445,8 @@ async fn update_connection(
 }
 
 /// Deposits the fact `kind` in the inbox of each queue of `connection`, and
-/// marks them dirty.
+/// marks them dirty. A queue of a repository that the connection no longer
+/// reaches keeps its lost access when the connection comes back.
 async fn give_to_queues(
     conn: &mut PgConnection,
     connection: &KnownConnection,
@@ -403,13 +455,43 @@ async fn give_to_queues(
 ) -> Result<(), PlatformError> {
     let queues: Vec<String> = sqlx::query_scalar(
         "SELECT q.id FROM queues q JOIN repos r ON r.id = q.repo_id
-         WHERE r.connection_id = $1 ORDER BY q.id",
+         WHERE r.connection_id = $1 AND ($2 OR r.removed_at IS NULL) ORDER BY q.id",
     )
     .bind(connection.id.to_string())
+    .bind(*kind == EventKind::AccessLost)
     .fetch_all(&mut *conn)
     .await
     .map_err(PlatformError::Query)?;
 
+    give_to(conn, connection.org_id, queues, kind, now).await
+}
+
+/// Deposits the fact `kind` in the inbox of each queue of the repositories
+/// `repos` of `org_id`, and marks them dirty.
+pub(crate) async fn give_to_repo_queues(
+    conn: &mut PgConnection,
+    org_id: OrgId,
+    repos: &[String],
+    kind: &EventKind,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    let queues: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM queues WHERE repo_id = ANY($1) ORDER BY id")
+            .bind(repos)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(PlatformError::Query)?;
+
+    give_to(conn, org_id, queues, kind, now).await
+}
+
+async fn give_to(
+    conn: &mut PgConnection,
+    org_id: OrgId,
+    queues: Vec<String>,
+    kind: &EventKind,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
     for queue in queues {
         let queue_id: QueueId = queue
             .parse()
@@ -421,7 +503,7 @@ async fn give_to_queues(
         let id = EventId::new();
         let fact = Event {
             id,
-            org_id: connection.org_id,
+            org_id,
             queue_id,
             actor: Actor::System,
             occurred_at: now,

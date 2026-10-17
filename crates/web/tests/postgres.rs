@@ -498,6 +498,23 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     assert_eq!(audit.status, 403, "{}", audit.body);
     assert_eq!(other.status, 404, "{}", other.body);
     assert_eq!(anonymous.status, 401);
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE scm_connections SET suspended_at = now()")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let suspended = call_with(&addr, "GET", "/api/v1/orgs/acme", &with_session).await;
+    let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
+    let suspended: serde_json::Value = serde_json::from_str(&suspended.body).unwrap();
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+
+    assert_eq!(
+        (&suspended["is_suspended"], &orgs["orgs"][0]["is_suspended"]),
+        (&true.into(), &true.into()),
+        "every connection of the organization is suspended"
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -735,7 +752,13 @@ fn cookie_set(raw_head: &str, name: &str) -> Option<String> {
 /// Starts a sign-in, signs `person` in on the simulator, and returns the
 /// answer of the callback.
 async fn sign_in(addr: &str, sim: &Sim, person: &ScmUser, next: &str) -> Answer {
-    let started = call_with(addr, "GET", &format!("/auth/github?next={next}"), &[]).await;
+    sign_in_from(addr, sim, person, &format!("/auth/github?next={next}")).await
+}
+
+/// Signs `person` in on the simulator from the address `start`, which starts
+/// a sign-in, and returns the answer of the callback.
+async fn sign_in_from(addr: &str, sim: &Sim, person: &ScmUser, start: &str) -> Answer {
+    let started = call_with(addr, "GET", start, &[]).await;
     let location = header_values(&started.raw_head, "location").pop().unwrap();
     let query = location.split_once('?').unwrap().1;
     let param = |name: &str| {
@@ -810,6 +833,78 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
         serde_json::json!([{ "slug": "acme", "role": "member", "is_suspended": false }])
     );
     assert_eq!(instance["app_install_url"], "sim:install");
+}
+
+/// The Setup URL signs the person in again. An installation that the person
+/// reaches becomes an organization at once, whose repositories open; one that
+/// they do not reach creates nothing and gives no role, whatever the address
+/// says.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_setup_url_trusts_only_the_installations_of_the_person(pool: PgPool) {
+    let sim = Arc::new(Sim::new());
+    let (ada, bob) = (
+        ScmUser {
+            external_id: "5".into(),
+            login: "ada".into(),
+        },
+        ScmUser {
+            external_id: "6".into(),
+            login: "bob".into(),
+        },
+    );
+    let account = |external_id: &str, path: &str| ScmAccount {
+        external_id: external_id.into(),
+        path: path.into(),
+    };
+
+    sim.add_installation("7", account("70", "globex"), &[]);
+    sim.set_member("7", &ada, MembershipRole::Admin);
+    sim.add_installation("8", account("80", "initech"), &[]);
+    sim.set_member("8", &bob, MembershipRole::Admin);
+    let addr = start_with(&pool, Arc::clone(&sim)).await;
+    let installed = |installation: &str| {
+        format!("/auth/github/installed?installation_id={installation}&setup_action=install")
+    };
+
+    let reached = sign_in_from(&addr, &sim, &ada, &installed("7")).await;
+    let forged = sign_in_from(&addr, &sim, &ada, &installed("8")).await;
+    let updated = sign_in_from(
+        &addr,
+        &sim,
+        &ada,
+        "/auth/github/installed?installation_id=7&setup_action=update",
+    )
+    .await;
+
+    assert_eq!(
+        header_values(&reached.raw_head, "location"),
+        ["/orgs/globex/repos?connecting=install"]
+    );
+    assert_eq!(header_values(&forged.raw_head, "location"), ["/welcome"]);
+    assert_eq!(
+        header_values(&updated.raw_head, "location"),
+        ["/orgs/globex/repos?connecting=update"]
+    );
+    let session = cookie_set(&forged.raw_head, "__Host-cihub_session").unwrap();
+    let cookie = format!("__Host-cihub_session={session}");
+    let orgs = call_with(
+        &addr,
+        "GET",
+        "/api/v1/user/orgs",
+        &[("Cookie", cookie.as_str())],
+    )
+    .await;
+    let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
+    assert_eq!(
+        orgs["orgs"],
+        serde_json::json!([{ "slug": "globex", "role": "admin", "is_suspended": false }])
+    );
+    let mut tx = begin_system(&pool).await.unwrap();
+    let slugs: Vec<String> = sqlx::query_scalar("SELECT slug FROM orgs ORDER BY slug")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(slugs, ["globex"], "the installation of bob stays unknown");
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

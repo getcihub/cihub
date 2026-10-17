@@ -7371,7 +7371,7 @@
           },
           "is_suspended": {
             "type": "boolean",
-            "description": "CIHub no longer reaches the repository of the queue on the SCM: the\nApp is suspended or uninstalled, and the queue is paused until the\naccess comes back."
+            "description": "CIHub no longer reaches the repository of the queue on the SCM: the\nApp is suspended or uninstalled, or no longer reaches the repository,\nand the queue is paused until the access comes back."
           },
           "last_merged_at": {
             "type": [

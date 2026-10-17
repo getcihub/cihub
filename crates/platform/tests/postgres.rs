@@ -2,6 +2,7 @@
 
 #![allow(clippy::unwrap_used, reason = "test code: a panic is a failed test")]
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -23,8 +24,8 @@ use cihub_platform::{
 };
 use cihub_scm::sim::Sim;
 use cihub_scm::{
-    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmMembership, ScmProfile,
-    ScmUser, SignedIn,
+    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmInstallation,
+    ScmMembership, ScmProfile, ScmUser, SignedIn,
 };
 use cihub_store::{
     Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
@@ -1284,6 +1285,52 @@ async fn a_suspension_gives_access_lost_to_each_queue_then_access_restored(pool:
     assert_eq!(given_facts(&pool).await, expected);
 }
 
+/// A repository that the installation no longer lists keeps its row with
+/// `removed_at`, and its queues lose their access; they get it back when the
+/// repository comes back.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_back(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let job = sync_repos_job(org(), connection(), "w");
+    let facts = |kind: &str| {
+        [queue(1), queue(2), queue(3)]
+            .map(|queue| (queue.to_string(), kind.to_owned()))
+            .to_vec()
+    };
+    let removed_at = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let at: Option<OffsetDateTime> =
+            sqlx::query_scalar("SELECT removed_at FROM repos WHERE id = 'r'")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        at
+    };
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.add_repo(&sim_repo("1", "1", "app"), "main", &[]);
+
+    run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap();
+
+    assert_eq!(removed_at().await, None);
+    assert_eq!(given_facts(&pool).await, [] as [(String, String); 0]);
+
+    sim.move_repo("1", "2");
+    run_sync_repos(&pool, &sim, &job, at(10)).await.unwrap();
+    run_sync_repos(&pool, &sim, &job, at(20)).await.unwrap();
+
+    assert_eq!(removed_at().await, Some(at(10)));
+    assert_eq!(given_facts(&pool).await, facts("access.lost"));
+
+    sim.move_repo("1", "1");
+    run_sync_repos(&pool, &sim, &job, at(30)).await.unwrap();
+
+    let mut expected = facts("access.lost");
+    expected.extend(facts("access.restored"));
+    assert_eq!(removed_at().await, None);
+    assert_eq!(given_facts(&pool).await, expected);
+}
+
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_deleted_installation_suspends_its_connection(pool: PgPool) {
     seed(&pool).await;
@@ -1573,6 +1620,7 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     let signed_in = |memberships| SignedIn {
         user: person("5", "ada"),
         profile: ScmProfile::default(),
+        installations: Vec::new(),
         memberships,
     };
     let first = signed_in(vec![
@@ -1584,11 +1632,13 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
         org_id: org(),
         org_slug: "org".into(),
         role: MembershipRole::Admin,
+        is_org_suspended: false,
     };
     let in_globex = Membership {
         org_id: globex,
         org_slug: "globex".into(),
         role: MembershipRole::Member,
+        is_org_suspended: false,
     };
     let mut tx = begin_system(&pool).await.unwrap();
 
@@ -1605,19 +1655,87 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     .unwrap();
     tx.commit().await.unwrap();
 
-    let user_id = record_sign_in(&pool, &first, at(0)).await.unwrap();
+    let user_id = record_sign_in(&pool, ConnectionKind::GithubApp, &first, at(0))
+        .await
+        .unwrap();
 
     assert_eq!(
         memberships_of(&pool, user_id).await.unwrap(),
         std::slice::from_ref(&in_org)
     );
 
-    let again = record_sign_in(&pool, &second, at(60)).await.unwrap();
+    let again = record_sign_in(&pool, ConnectionKind::GithubApp, &second, at(60))
+        .await
+        .unwrap();
 
     assert_eq!(again, user_id);
     assert_eq!(
         memberships_of(&pool, user_id).await.unwrap(),
         [in_globex, in_org]
+    );
+}
+
+/// A sign-in connects at once the installations of the person that CIHub does
+/// not know yet, as a sync would, and gives the role of the person in them; a
+/// suspended installation, or one whose slug is taken, gives nothing and stops
+/// nothing.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_in_connects_the_installations_that_cihub_does_not_know(pool: PgPool) {
+    seed(&pool).await;
+    let installation = |external_id: &str, path: &str, is_suspended| ScmInstallation {
+        external_id: external_id.into(),
+        account: account(&format!("10{external_id}"), path),
+        permissions: BTreeMap::new(),
+        is_suspended,
+    };
+    let membership = |installation: &str| ScmMembership {
+        connection_external_id: installation.into(),
+        role: MembershipRole::Admin,
+    };
+    let signed_in = SignedIn {
+        user: person("5", "ada"),
+        profile: ScmProfile::default(),
+        installations: vec![
+            installation("1", "org", false),
+            installation("7", "acme", false),
+            installation("8", "paused", true),
+            installation("9", "org", false),
+        ],
+        memberships: ["1", "7", "8", "9"].map(membership).to_vec(),
+    };
+
+    let user_id = record_sign_in(&pool, KIND, &signed_in, at(0))
+        .await
+        .unwrap();
+    let again = record_sign_in(&pool, KIND, &signed_in, at(60))
+        .await
+        .unwrap();
+
+    let slugs: Vec<String> = memberships_of(&pool, user_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|membership| membership.org_slug)
+        .collect();
+    assert_eq!(again, user_id);
+    assert_eq!(slugs, ["acme", "org"], "the slug of `9` is taken");
+    let mut tx = begin_system(&pool).await.unwrap();
+    let connections: Vec<String> =
+        sqlx::query_scalar("SELECT external_id FROM scm_connections ORDER BY 1")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    let jobs: Vec<String> = sqlx::query_scalar(
+        "SELECT j.type FROM jobs j JOIN orgs o ON o.id = j.org_id WHERE o.slug = 'acme'",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(connections, ["1", "7"]);
+    assert_eq!(
+        jobs,
+        ["sync_repos"],
+        "the new organization reads its repositories"
     );
 }
 
@@ -1667,6 +1785,7 @@ async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: 
             name: Some("Ada Lovelace".into()),
             avatar_url: Some("https://avatars.example.com/u/5?v=1".into()),
         },
+        installations: Vec::new(),
         memberships: Vec::new(),
     };
     let profile = |avatar_url: &str| UserProfile {
@@ -1675,7 +1794,9 @@ async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: 
         avatar_url: Some(avatar_url.into()),
     };
 
-    let user_id = record_sign_in(&pool, &signed_in, at(0)).await.unwrap();
+    let user_id = record_sign_in(&pool, ConnectionKind::GithubApp, &signed_in, at(0))
+        .await
+        .unwrap();
 
     assert_eq!(
         profile_of(&pool, user_id).await.unwrap(),

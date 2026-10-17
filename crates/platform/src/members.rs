@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use cihub_domain::{ConnectionId, JobClass, OrgId, UserId};
+use cihub_domain::{ConnectionId, ConnectionKind, JobClass, OrgId, UserId};
 use cihub_scm::{Scm, ScmUser, SignedIn};
 use cihub_store::{
     PgPool, begin_org, begin_system, ensure_user, forget_memberships_before, record_avatar,
@@ -17,6 +17,7 @@ use tracing::info;
 use crate::connections::{
     active_connection, outcome_of, request_for_each_connection, sync_installation_after,
 };
+use crate::installations::connect_installations;
 use crate::{Job, Outcome, PlatformError};
 
 pub const SYNC_MEMBERS: &str = "sync_members";
@@ -121,20 +122,30 @@ pub fn sync_members_executor(
 }
 
 /// Records the person of a sign-in, their profile, and their role in each
-/// organization that CIHub knows among those that the SCM gave. An
-/// installation that CIHub has not synced yet, or that is suspended, gives no
-/// organization. The sign-in deletes no membership: it reads only the
-/// installations that the person reaches, so the hourly read of the members
-/// decides who left. Returns the user.
+/// organization among those that the SCM gave. The sign-in first connects
+/// the installations of the person that CIHub does not know yet, as a sync
+/// would; a suspended installation gives no organization. The sign-in deletes
+/// no membership: it reads only the installations that the person reaches, so
+/// the hourly read of the members decides who left. Returns the user.
 ///
 /// # Errors
 ///
 /// Postgres fails, or a row does not match the identifiers of `cihub-domain`.
 pub async fn record_sign_in(
     pool: &PgPool,
+    kind: ConnectionKind,
     signed_in: &SignedIn,
     now: OffsetDateTime,
 ) -> Result<UserId, PlatformError> {
+    let connected = connect_installations(pool, kind, &signed_in.installations, now).await?;
+    if connected > 0 {
+        info!(
+            login = signed_in.user.login,
+            organizations = connected,
+            "installations connected at a sign-in"
+        );
+    }
+
     let installations: Vec<&str> = signed_in
         .memberships
         .iter()
