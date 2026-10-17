@@ -24,8 +24,9 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use cihub_api_types::API_PREFIX;
+use cihub_domain::ConnectionKind;
 use cihub_github::{
-    ReceivedDelivery, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH, WEBHOOK_PATH, WebhookError,
+    ReceivedDelivery, SETUP_PATH, SIGN_IN_CALLBACK_PATH, SIGN_IN_PATH, WEBHOOK_PATH, WebhookError,
 };
 use cihub_platform::{Delivery, ModuleApi, PlatformError, QueueNewsFeed, store_delivery};
 use cihub_scm::Scm;
@@ -104,11 +105,13 @@ fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashbo
         pool: pool.clone(),
         now,
         scm: Arc::clone(&dashboard.scm),
+        kind: ConnectionKind::GithubApp,
         public_url: dashboard.public_url.clone(),
     };
     Router::new()
         .route(SIGN_IN_PATH, get(sign_in::start))
         .route(SIGN_IN_CALLBACK_PATH, get(sign_in::callback))
+        .route(SETUP_PATH, get(sign_in::installed))
         .with_state(state)
 }
 

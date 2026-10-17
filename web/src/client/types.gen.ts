@@ -831,8 +831,8 @@ export type Queue = {
     is_default_branch: boolean;
     /**
      * CIHub no longer reaches the repository of the queue on the SCM: the
-     * App is suspended or uninstalled, and the queue is paused until the
-     * access comes back.
+     * App is suspended or uninstalled, or no longer reaches the repository,
+     * and the queue is paused until the access comes back.
      */
     is_suspended: boolean;
     /**

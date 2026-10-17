@@ -26,8 +26,8 @@ use cihub_platform::{
 };
 use cihub_scm::Scm;
 use cihub_store::{
-    PgPool, SessionClient, SessionGrant, authenticate, authenticate_session, delete_session_by_id,
-    memberships_of, profile_of,
+    ORG_IS_SUSPENDED, PgPool, SessionClient, SessionGrant, authenticate, authenticate_session,
+    delete_session_by_id, memberships_of, profile_of,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -654,7 +654,7 @@ async fn list_user_orgs(
         .map(|membership| Org {
             slug: membership.org_slug,
             role: Some(membership.role),
-            is_suspended: false,
+            is_suspended: membership.is_org_suspended,
         })
         .collect();
     let (orgs, has_more) = page.split(rows);
@@ -718,10 +718,12 @@ async fn get_org(
     ApiPath(org): ApiPath<String>,
 ) -> Result<Json<Org>, ApiError> {
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    let slug: String = sqlx::query_scalar("SELECT slug FROM orgs WHERE id = $1")
-        .bind(grant.org_id.to_string())
-        .fetch_one(&mut *tx)
-        .await?;
+    let (slug, is_suspended): (String, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT o.slug, {ORG_IS_SUSPENDED} FROM orgs o WHERE o.id = $1"
+    )))
+    .bind(grant.org_id.to_string())
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     let role = match grant.actor {
@@ -736,7 +738,7 @@ async fn get_org(
     Ok(Json(Org {
         slug,
         role,
-        is_suspended: false,
+        is_suspended,
     }))
 }
 

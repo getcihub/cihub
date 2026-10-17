@@ -599,8 +599,8 @@ Decisions:
   - `Permission` gives `read`, `write` and `admin` on a repository, from the scopes of the caller until WP5 reads
     them per person.
   - The work packages come one after the other: WP1 (the Setup URL, the sign-in that connects the installations,
-    the token kept and refreshed, `repos.removed_at`, `access.lost` of a repository, `Org.is_suspended`), WP5 (the
-    access per repository), WP3 (the setup reads and the bodies of the routes), WP4 (the pages), WP2 (the world of
+    `repos.removed_at`, `access.lost` of a repository, `Org.is_suspended`), WP5 (the token of the person kept and
+    refreshed, `sync_user` and `POST /user/sync`, the access per repository), WP3 (the setup reads and the bodies of the routes), WP4 (the pages), WP2 (the world of
     the simulator for `web/e2e/onboarding.spec.ts`); each one brings the changes of the simulator that its tests
     need.
 - **Tracking**:
@@ -617,13 +617,28 @@ Decisions:
     whose `config` is `null` before the first read); until WP3, a setup is `started` when the default branch has
     its queue, `checking` otherwise, and the list leaves out the repositories with `removed_at`. `Permission` comes
     from the scopes of the caller. `POST /orgs/{org}/repos/{repo}/sync` and `POST /user/sync` answer
-    `404 route_not_found` until WP3 and WP1. `GET /orgs/{org}/repos/{repo}/prs` and
+    `404 route_not_found` until WP3 and WP5. `GET /orgs/{org}/repos/{repo}/prs` and
     `GET /orgs/{org}/repos/{repo}/runs/{run_id}` replace the filters `repo` and `queue` of `GET /orgs/{org}/prs` and
     `GET /orgs/{org}/runs/{run_id}`; `GET /orgs/{org}/queues` takes `q`; `@me`, `me_needs_session` and
     `queue_needs_repo` are gone; `…/queues/{queue}/resync` becomes `…/sync`, the audit action `queue.sync` and the
     function `sync_queue`; `is_suspended` on `Org` and `Queue`; `SetupList`, `OrgAccess` and `QueueAccess` are gone; the
     page `/orgs/$org/start` becomes `/orgs/$org/repos`. Test:
     `the_api_lists_the_repositories_with_their_setup`.
+  - Done (October 17, 2026): WP1, the Setup URL and the sign-in. The token of the person moves to WP5, which uses
+    it: kept before, it would be a secret that nothing reads. `GET /auth/github/installed` starts the sign-in again;
+    its `installation_id` (digits) and `setup_action` (`install` or `update`) go in the cookie of the sign-in and
+    only choose the page after it, `/orgs/{org}/repos?connecting=…` for an organization where the person has a role,
+    `/welcome` otherwise. `SignedIn.installations` gives every installation that the person reaches, and
+    `record_sign_in` connects first those that CIHub does not know (`connect_installations`: `converge_installation`
+    as a sync, a slug taken or a suspension skipped). `sync_repos` sets and clears `repos.removed_at` and gives
+    `access.lost` and `access.restored` to the queues of the repository; the end of the suspension of a connection
+    restores no queue of a removed repository; `Queue.is_suspended` counts a removed repository. `Org.is_suspended`
+    is true when the organization has connections and every one is suspended (`ORG_IS_SUSPENDED` in
+    `cihub-store`). The Setup URL in `specs/GITHUB.md` (step 8), `INSTALL.md` and `scripts/smoke.sh`. Tests:
+    `the_setup_url_trusts_only_the_installations_of_the_person`,
+    `a_sign_in_connects_the_installations_that_cihub_does_not_know`,
+    `a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_back`, and the suspension of an
+    organization in `a_session_acts_with_the_role_of_its_user_in_the_organization`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

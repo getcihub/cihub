@@ -249,6 +249,7 @@ To receive the webhooks of the App:
 then a tunnel to localhost:8080, and https://<tunnel>/webhooks/github as the webhook URL of the App.
 NEXT
   if [ -n "${CIHUB_GITHUB_CLIENT_ID:-}" ]; then
-    echo "The sign-in sends back to ${CIHUB_HTTP_PUBLIC_URL:-<CIHUB_HTTP_PUBLIC_URL, not set>}/auth/github/callback, the Callback URL of the App."
+    echo "The sign-in sends back to ${CIHUB_HTTP_PUBLIC_URL:-<CIHUB_HTTP_PUBLIC_URL, not set>}/auth/github/callback, the Callback URL of the App,"
+    echo "and an install to ${CIHUB_HTTP_PUBLIC_URL:-<CIHUB_HTTP_PUBLIC_URL, not set>}/auth/github/installed, its Setup URL."
   fi
 fi

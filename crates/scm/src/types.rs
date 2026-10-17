@@ -183,12 +183,15 @@ pub struct SignInCode {
     pub redirect_url: String,
 }
 
-/// A person who signed in, and the role of the person in each installation
-/// of the App that they reach.
+/// A person who signed in, the installations of the App that they reach,
+/// and their role in each one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignedIn {
     pub user: ScmUser,
     pub profile: ScmProfile,
+    /// Every installation that the person reaches, as a sync reads it: the
+    /// sign-in connects those that CIHub does not know yet.
+    pub installations: Vec<ScmInstallation>,
     pub memberships: Vec<ScmMembership>,
 }
 
