@@ -6,15 +6,21 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context, bail};
 use cihub_github::{GithubConfig, SignInClient};
+use cihub_store::PoolSettings;
 use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 17] = [
     "database.url",
+    "database.pool_size",
+    "database.idle_timeout",
+    "database.connection_timeout",
+    "database.secret",
     "http.addr",
     "http.public_url",
     "internal.addr",
@@ -36,9 +42,24 @@ pub struct Config {
     /// The address where people reach the instance, such as
     /// `https://ci.example.com`; without it, nobody signs in to the dashboard.
     pub public_url: Option<String>,
-    pub database_url: SecretString,
+    pub database: Database,
     pub logs: Logs,
     pub github: Option<GithubApp>,
+}
+
+#[derive(Debug)]
+pub struct Database {
+    pub url: SecretString,
+    pub pool: PoolSettings,
+    /// The key of the data that CIHub encrypts in Postgres.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the encryption of the data comes in its own change"
+        )
+    )]
+    pub secret: Option<SecretString>,
 }
 
 #[derive(Debug)]
@@ -50,6 +71,10 @@ pub struct GithubApp {
 const DEFAULT_INTERNAL_ADDR: &str = "127.0.0.1:8081";
 const DEFAULT_HTTP_ADDR: &str = "0.0.0.0:8080";
 const DEFAULT_GITHUB_URL: &str = "https://github.com";
+// The defaults of sqlx.
+const DEFAULT_POOL_SIZE: u32 = 10;
+const DEFAULT_IDLE_TIMEOUT_SECONDS: u32 = 600;
+const DEFAULT_CONNECTION_TIMEOUT_SECONDS: u32 = 30;
 
 impl Config {
     pub fn load(file: Option<&Path>) -> anyhow::Result<Self> {
@@ -81,9 +106,7 @@ impl Config {
             .non_empty("http.public_url")
             .map(|found| public_url(&found))
             .transpose()?;
-        let Some(database_url) = sources.non_empty("database.url") else {
-            bail!("{} is required", names("database.url"));
-        };
+        let database = database(&sources)?;
 
         let log_format = match sources.get("log.format") {
             None => LogFormat::Json,
@@ -104,11 +127,37 @@ impl Config {
             internal_addr,
             http_addr,
             public_url,
-            database_url: database_url.value.into(),
+            database,
             logs,
             github: github_app(&sources)?,
         })
     }
+}
+
+fn database(sources: &Sources<impl Fn(&str) -> Option<String>>) -> anyhow::Result<Database> {
+    let Some(url) = sources.non_empty("database.url") else {
+        bail!("{} is required", names("database.url"));
+    };
+    let seconds = |key, default| {
+        sources
+            .positive(key, default)
+            .map(|seconds| Duration::from_secs(seconds.into()))
+    };
+
+    Ok(Database {
+        url: url.value.into(),
+        pool: PoolSettings {
+            size: sources.positive("database.pool_size", DEFAULT_POOL_SIZE)?,
+            idle_timeout: seconds("database.idle_timeout", DEFAULT_IDLE_TIMEOUT_SECONDS)?,
+            connection_timeout: seconds(
+                "database.connection_timeout",
+                DEFAULT_CONNECTION_TIMEOUT_SECONDS,
+            )?,
+        },
+        secret: sources
+            .non_empty("database.secret")
+            .map(|secret| secret.value.into()),
+    })
 }
 
 /// The root address of the instance, without its last `/`: the sign-in
@@ -188,6 +237,20 @@ impl<G: Fn(&str) -> Option<String>> Sources<G> {
 
     fn non_empty(&self, key: &str) -> Option<Found> {
         self.get(key).filter(|found| !found.value.is_empty())
+    }
+
+    fn positive(&self, key: &str, default: u32) -> anyhow::Result<u32> {
+        let Some(found) = self.get(key) else {
+            return Ok(default);
+        };
+        match found.value.parse() {
+            Ok(value) if value > 0 => Ok(value),
+            _ => bail!(
+                "{} `{}` must be a positive integer",
+                found.origin,
+                found.value
+            ),
+        }
     }
 
     fn addr(&self, key: &str, default: &str) -> anyhow::Result<SocketAddr> {
@@ -295,6 +358,10 @@ mod tests {
             variables,
             [
                 "CIHUB_DATABASE_URL",
+                "CIHUB_DATABASE_POOL_SIZE",
+                "CIHUB_DATABASE_IDLE_TIMEOUT",
+                "CIHUB_DATABASE_CONNECTION_TIMEOUT",
+                "CIHUB_DATABASE_SECRET",
                 "CIHUB_HTTP_ADDR",
                 "CIHUB_HTTP_PUBLIC_URL",
                 "CIHUB_INTERNAL_ADDR",
@@ -317,6 +384,15 @@ mod tests {
         assert_eq!(config.internal_addr, DEFAULT_INTERNAL_ADDR.parse().unwrap());
         assert_eq!(config.http_addr, DEFAULT_HTTP_ADDR.parse().unwrap());
         assert_eq!(config.logs.format(), LogFormat::Json);
+        assert_eq!(
+            config.database.pool,
+            PoolSettings {
+                size: 10,
+                idle_timeout: Duration::from_secs(600),
+                connection_timeout: Duration::from_secs(30),
+            }
+        );
+        assert!(config.database.secret.is_none());
         assert!(config.github.is_none());
     }
 
@@ -325,6 +401,10 @@ mod tests {
         let file = "
 database:
   url: postgres://cihub@db/cihub
+  pool_size: 25
+  idle_timeout: 120
+  connection_timeout: 5
+  secret: data-key
 http:
   addr: 0.0.0.0:9090
 internal:
@@ -341,9 +421,18 @@ github:
         let config = load(Some(file), &[]).unwrap();
 
         assert_eq!(
-            config.database_url.expose_secret(),
+            config.database.url.expose_secret(),
             "postgres://cihub@db/cihub"
         );
+        assert_eq!(
+            config.database.pool,
+            PoolSettings {
+                size: 25,
+                idle_timeout: Duration::from_secs(120),
+                connection_timeout: Duration::from_secs(5),
+            }
+        );
+        assert_eq!(config.database.secret.unwrap().expose_secret(), "data-key");
         assert_eq!(config.http_addr, "0.0.0.0:9090".parse().unwrap());
         assert_eq!(config.internal_addr, "127.0.0.1:9091".parse().unwrap());
         assert_eq!(config.logs.format(), LogFormat::Pretty);
@@ -362,7 +451,7 @@ github:
             &[("CIHUB_DATABASE_URL", "postgres://var/cihub")],
         )
         .unwrap();
-        assert_eq!(config.database_url.expose_secret(), "postgres://var/cihub");
+        assert_eq!(config.database.url.expose_secret(), "postgres://var/cihub");
         assert_eq!(config.http_addr, "0.0.0.0:9090".parse().unwrap());
     }
 
@@ -408,6 +497,21 @@ github:
             ("log:\n  filter: info,=[\n", &[], "`log.filter` in /etc"),
             ("", &[("CIHUB_LOG_FORMAT", "text")], "CIHUB_LOG_FORMAT"),
             ("log:\n  format: text\n", &[], "`log.format` in /etc"),
+            (
+                "",
+                &[("CIHUB_DATABASE_POOL_SIZE", "0")],
+                "CIHUB_DATABASE_POOL_SIZE",
+            ),
+            (
+                "database:\n  idle_timeout: -1\n",
+                &[],
+                "`database.idle_timeout` in /etc",
+            ),
+            (
+                "database:\n  connection_timeout: 5s\n",
+                &[],
+                "`database.connection_timeout` in /etc",
+            ),
         ] {
             let mut vars = vars.to_vec();
             vars.push(DATABASE);
