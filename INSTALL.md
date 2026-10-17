@@ -33,7 +33,8 @@ From a clone of this repository:
 cp deploy/compose/.env.example deploy/compose/.env
 # Fill in deploy/compose/.env: two Postgres passwords, the App ID, the webhook secret,
 # the path of the private key and, for the dashboard, the address of this
-# instance, the Client ID and the client secret.
+# instance, the Client ID, the client secret, and a database secret of at least
+# 32 bytes that seals the tokens of the people who sign in.
 docker compose -f deploy/compose/compose.yaml up -d
 ```
 

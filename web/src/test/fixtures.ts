@@ -1,4 +1,4 @@
-import type { Graph, ItemState, Pr, Queue } from "@/client/types.gen";
+import type { Graph, ItemState, Permission, Pr, Queue, RepoDetail } from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
 import type { Me } from "@/domain/session/session";
 import { type Answer, type Answers, problem } from "./app";
@@ -111,6 +111,30 @@ export function itemOf(number: number, state: ItemState, changes: Partial<Pr> = 
 
 export const noGraph: Graph = { target_head_sha: null, nodes: [], edges: [], runs: [] };
 
+/** What an admin of a repository may do on it. */
+export const ADMIN: Permission = { read: true, write: true, admin: true };
+
+/** The repository `name` of `acme`, where the person has `permission`, before the read of its setup. */
+export function repoOf(name: string, permission: Permission = ADMIN): RepoDetail {
+  return {
+    id: `repo_${name}`,
+    namespace: "acme",
+    name,
+    default_branch: "main",
+    permission,
+    setup: {
+      state: "started",
+      queue: "main",
+      rules: [],
+      target_branch_missing: false,
+      rules_url: null,
+      config: null,
+      checked_at: null,
+      requested_at: null,
+    },
+  };
+}
+
 /** The read of the live PRs of the queue `queue` of `acme/web`, as its page asks for it. */
 export function liveOf(queue = "main"): string {
   return `/api/v1/orgs/acme/repos/web/prs?queue=${queue}&state=${LIVE_STATES}&sort=position&limit=100`;
@@ -135,6 +159,7 @@ export function answersOfQueuePage(live: Pr[]): Answers {
     ...answersOfMe(ada),
     ...answersOfMine("acme"),
     "/api/v1/orgs/acme/queues": [200, pageOf("queues", [queue])],
+    "/api/v1/orgs/acme/repos/web": [200, repoOf("web")],
     "/api/v1/orgs/acme/repos/web/queues/main": [200, detailOf(queue)],
     "/api/v1/orgs/acme/repos/web/queues/main/graph": [200, noGraph],
     [liveOf()]: [200, pageOf("prs", live)],

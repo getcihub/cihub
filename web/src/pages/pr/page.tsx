@@ -18,6 +18,7 @@ import {
 } from "@/pages/pr/components/drawer-frame";
 import { History } from "@/pages/pr/components/history";
 import { Journey } from "@/pages/pr/components/journey";
+import { useRepoPermission } from "@/hooks/use-repo-permission";
 import { PrActions } from "@/pages/pr/components/pr-actions";
 import { RunSection, RunSectionSkeleton } from "@/pages/pr/components/run-section";
 
@@ -27,6 +28,7 @@ const route = getRouteApi("/orgs/$org/repos/$repo/queues/$queue/prs/$number");
 export function PrDrawer() {
   const { org, repo, queue, number } = route.useParams();
   const path = { org, repo, queue };
+  const permission = useRepoPermission(org, repo);
   const [{ data: item }, { data: events }] = useSuspenseQueries({ queries: prReads(path, number) });
   const ahead = item.ahead.length;
   const lastWait = events.events.findLast((event) => event.type === "item.readiness_changed");
@@ -47,7 +49,7 @@ export function PrDrawer() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <ItemStateBadge state={item.state} />
-            {!hasEnded && <PrActions path={path} item={item} onSent={showNotice} />}
+            {!hasEnded && permission.write && <PrActions path={path} item={item} onSent={showNotice} />}
           </div>
           {notice && (
             <Alert role="status" className="mt-2.5 px-2.5 py-2">

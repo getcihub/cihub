@@ -1,5 +1,7 @@
 use cihub_domain::JobClass;
-use cihub_store::{begin_system, create_event_partitions, next_month};
+use cihub_store::{
+    begin_system, create_event_partitions, forget_tokens_without_session, next_month,
+};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
 use time::{Date, Duration, Month, OffsetDateTime, Time};
@@ -40,7 +42,7 @@ pub async fn request_maintenance(
 }
 
 /// Creates the partitions of `events` for the month of `now` and the next,
-/// then deletes the done jobs past their retention, the expired sessions and device codes, and drops the old partitions of `events` that snapshots cover.
+/// then deletes the done jobs past their retention, the expired sessions and device codes, the tokens of the people without a session, and drops the old partitions of `events` that snapshots cover.
 /// Each step can run twice without harm.
 ///
 /// # Errors
@@ -69,6 +71,9 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         .await
         .map_err(PlatformError::Query)?
         .rows_affected();
+    let tokens = forget_tokens_without_session(&mut tx)
+        .await
+        .map_err(PlatformError::Store)?;
     let (dropped, kept) = drop_old_event_partitions(&mut tx, now).await?;
 
     tx.commit().await.map_err(PlatformError::Query)?;
@@ -80,6 +85,7 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         jobs,
         sessions,
         device_codes,
+        tokens,
         partitions = dropped.len(),
         "maintenance done"
     );

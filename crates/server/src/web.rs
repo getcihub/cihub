@@ -38,6 +38,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         .context("the changes of the queues cannot be heard")?;
     let dashboard = Dashboard {
         scm,
+        cipher: github.cipher,
         public_url,
         news,
     };

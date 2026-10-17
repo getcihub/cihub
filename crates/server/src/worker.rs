@@ -7,9 +7,9 @@ use cihub_domain::{ConnectionId, ConnectionKind};
 use cihub_github::GithubApp;
 use cihub_platform::{
     ConnectionBudget, Executors, JOB_POLL, MAINTENANCE, SWEEP_DELIVERIES, SYNC_INSTALLATION,
-    SYNC_INSTALLATIONS, SYNC_MEMBERS, SYNC_REPOS, execute_maintenance, run_budget_writer,
-    sweep_executor, sync_installation_executor, sync_installations_executor, sync_members_executor,
-    sync_repos_executor,
+    SYNC_INSTALLATIONS, SYNC_MEMBERS, SYNC_REPOS, SYNC_USER, execute_maintenance,
+    run_budget_writer, sweep_executor, sync_installation_executor, sync_installations_executor,
+    sync_members_executor, sync_repos_executor, sync_user_executor,
 };
 use cihub_scm::Scm;
 
@@ -37,6 +37,12 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         sync_installation_executor(Arc::clone(&scm), kind),
     );
 
+    if let Some(cipher) = github.cipher {
+        executors.register(
+            SYNC_USER,
+            sync_user_executor(Arc::clone(&scm), cipher, kind),
+        );
+    }
     executors.register(SYNC_INSTALLATIONS, sync_installations_executor(scm, kind));
     let worker = cihub_platform::run_worker(
         pool.clone(),

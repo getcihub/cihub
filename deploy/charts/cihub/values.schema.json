@@ -40,8 +40,8 @@
           "type": "integer"
         },
         "secretKey": {
-          "default": "",
-          "description": "Key, in that Secret, of the key of the data that CIHub encrypts in Postgres, `database.secret` of `server.yaml`; empty, the server has none.",
+          "default": "secret",
+          "description": "Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set.",
           "title": "secretKey",
           "type": "string"
         }

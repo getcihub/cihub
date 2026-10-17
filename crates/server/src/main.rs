@@ -22,7 +22,7 @@ use anyhow::{Context, bail};
 use cihub_github::GithubApp;
 use cihub_mergequeue::Translate;
 use cihub_scm::Scm;
-use cihub_store::{MIGRATOR, PgPool};
+use cihub_store::{DatabaseCipher, MIGRATOR, PgPool};
 use clap::{Parser, Subcommand};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -87,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Migrate => migrate::run(&pool).await,
         Command::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
         Command::Start => {
-            let github = start_github(&pool, github).await?;
+            let github = start_github(&pool, github, database.secret.as_ref()).await?;
             start::run(internal_addr, http_addr, public_url, pool, github).await
         }
     }
@@ -97,9 +97,15 @@ async fn main() -> anyhow::Result<()> {
 struct Github {
     app: Arc<GithubApp>,
     webhook_secret: SecretString,
+    /// Seals the tokens of the people; `None` when nobody signs in.
+    cipher: Option<Arc<DatabaseCipher>>,
 }
 
-async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyhow::Result<Github> {
+async fn start_github(
+    pool: &PgPool,
+    github: Option<config::GithubApp>,
+    database_secret: Option<&SecretString>,
+) -> anyhow::Result<Github> {
     let Some(github) = github else {
         bail!(
             "GitHub is not configured: set the keys github.app_id, github.private_key or \
@@ -125,9 +131,15 @@ async fn start_github(pool: &PgPool, github: Option<config::GithubApp>) -> anyho
         "GitHub App configured"
     );
 
+    let cipher = database_secret
+        .map(DatabaseCipher::new)
+        .transpose()
+        .context("the database secret cannot seal the tokens")?;
+
     Ok(Github {
         app: Arc::new(client),
         webhook_secret,
+        cipher: cipher.map(Arc::new),
     })
 }
 

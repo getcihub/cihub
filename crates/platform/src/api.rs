@@ -7,7 +7,7 @@ use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, PROBLEM_JSON, Problem};
-use cihub_domain::{ApiScope, ApiTokenId, OrgId, UserId};
+use cihub_domain::{ApiScope, ApiTokenId, OrgId, RepoId, UserId};
 use cihub_store::{PgPool, Postgres, Transaction, begin_org};
 use serde::de::DeserializeOwned;
 use tracing::error;
@@ -21,6 +21,10 @@ pub struct ApiGrant {
     pub org_id: OrgId,
     pub actor: GrantActor,
     pub scopes: Vec<ApiScope>,
+    /// The repositories that a person reads, for the lists of the
+    /// organization; `None` for every repository: an API token, or a route of
+    /// a repository that the person reads.
+    pub repos: Option<Vec<RepoId>>,
 }
 
 /// Who acts: an API token, or a user through a session of the dashboard,
@@ -32,9 +36,17 @@ pub enum GrantActor {
 }
 
 impl ApiGrant {
+    /// The identifiers of [`ApiGrant::repos`], as a filter of a query: a
+    /// `NULL` array keeps every repository.
+    pub fn repo_filter(&self) -> Option<Vec<String>> {
+        self.repos
+            .as_ref()
+            .map(|repos| repos.iter().map(ToString::to_string).collect())
+    }
+
     /// # Errors
     ///
-    /// The token, or the role of the user, lacks `scope`.
+    /// The token, or the role or the permission of the user, lacks `scope`.
     pub fn require(&self, scope: ApiScope) -> Result<(), ApiError> {
         if self.scopes.contains(&scope) {
             return Ok(());
@@ -42,7 +54,7 @@ impl ApiGrant {
 
         let who = match self.actor {
             GrantActor::Token(_) => "the token",
-            GrantActor::User(_) => "the role of the user",
+            GrantActor::User(_) => "the role or the permission of the user",
         };
         Err(ApiError::new(
             ErrorCode::ScopeMissing,

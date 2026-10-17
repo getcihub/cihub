@@ -23,7 +23,7 @@ use cihub_scm::{
     ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode,
     SignInRequest,
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
@@ -586,7 +586,13 @@ async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
             "POST",
             "/login/oauth/access_token",
             200,
-            json!({ "access_token": "ghu_person", "token_type": "bearer" }),
+            json!({
+                "access_token": "ghu_person",
+                "expires_in": 28_800,
+                "refresh_token": "ghr_person",
+                "refresh_token_expires_in": 15_897_600,
+                "token_type": "bearer",
+            }),
         ),
         answer(
             "GET",
@@ -625,12 +631,19 @@ async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
         role: MembershipRole::Admin,
     };
 
-    let signed_in = app
+    let (signed_in, token) = app
         .sign_in(&sign_in_code(), JobClass::Interactive)
         .await
         .unwrap();
 
     replay.finish();
+    assert_eq!(token.access.expose_secret(), "ghu_person");
+    assert_eq!(token.access_lifetime, Some(Duration::hours(8)));
+    assert_eq!(
+        token.refresh.as_ref().map(ExposeSecret::expose_secret),
+        Some("ghr_person")
+    );
+    assert_eq!(token.refresh_lifetime, Some(Duration::days(184)));
     let octocat = ScmUser {
         external_id: "5".into(),
         login: "octocat".into(),
@@ -642,6 +655,158 @@ async fn a_sign_in_gives_the_role_of_the_person_in_each_installation() {
     assert_eq!(signed_in.user, octocat);
     assert_eq!(signed_in.profile, profile);
     assert_eq!(signed_in.memberships, [membership("7"), membership("8")]);
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: a token
+/// of a person needs their consent in a browser.
+#[tokio::test]
+async fn the_token_of_a_person_reads_what_they_reach() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let token = SecretString::from("ghu_person");
+    let repository =
+        |id: u64, permissions: serde_json::Value| json!({ "id": id, "permissions": permissions });
+    let exchanges = vec![
+        answer(
+            "GET",
+            "/user/installations?per_page=100",
+            200,
+            json!({
+                "total_count": 1,
+                "installations": [{
+                    "id": 7,
+                    "account": { "id": 70, "login": "acme", "type": "Organization" },
+                    "suspended_at": null,
+                }],
+            }),
+        ),
+        answer(
+            "GET",
+            "/user/installations/7/repositories?per_page=100",
+            200,
+            json!({
+                "total_count": 4,
+                "repositories": [
+                    repository(1, json!({ "admin": true, "push": true, "pull": true })),
+                    repository(2, json!({ "maintain": true, "pull": true })),
+                    repository(3, json!({ "triage": true })),
+                    repository(4, json!({})),
+                ],
+            }),
+        ),
+        answer(
+            "GET",
+            "/repos/acme/secret",
+            404,
+            json!({ "message": "Not Found" }),
+        ),
+        answer(
+            "GET",
+            "/user/memberships/orgs/acme",
+            200,
+            json!({ "state": "active", "role": "member" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app_with_sign_in(&replay.url, now);
+    let person = ScmUser {
+        external_id: "5".into(),
+        login: "octocat".into(),
+    };
+    let account = |external_id: &str, path: &str| ScmAccount {
+        external_id: external_id.into(),
+        path: path.into(),
+    };
+
+    let reach = app
+        .person_reach(&token, JobClass::Interactive)
+        .await
+        .unwrap();
+    let hidden = app
+        .person_permission(&token, &repo("7", "acme", "secret"), JobClass::Interactive)
+        .await
+        .unwrap();
+    let in_acme = app
+        .person_role(
+            &token,
+            &person,
+            &account("70", "acme"),
+            JobClass::Interactive,
+        )
+        .await
+        .unwrap();
+    let in_own = app
+        .person_role(
+            &token,
+            &person,
+            &account("5", "octocat"),
+            JobClass::Interactive,
+        )
+        .await
+        .unwrap();
+
+    replay.finish();
+    let permissions: Vec<(String, Permission)> = reach
+        .repos
+        .iter()
+        .map(|repo| (repo.repo_external_id.clone(), repo.permission))
+        .collect();
+    assert_eq!(reach.installations[0].external_id, "7");
+    assert_eq!(
+        permissions,
+        [
+            ("1".to_owned(), Permission::Admin),
+            ("2".to_owned(), Permission::Write),
+            ("3".to_owned(), Permission::Read),
+        ],
+        "maintain acts as push, triage as pull, and nothing as no access"
+    );
+    assert_eq!(hidden, Permission::None);
+    assert_eq!(in_acme, Some(MembershipRole::Member));
+    assert_eq!(in_own, Some(MembershipRole::Admin), "no call for the owner");
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: GitHub
+/// refuses a refresh token used once, and a revoked token.
+#[tokio::test]
+async fn a_refused_token_of_a_person_is_an_access_lost() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let exchanges = vec![
+        answer(
+            "POST",
+            "/login/oauth/access_token",
+            200,
+            json!({ "error": "bad_refresh_token" }),
+        ),
+        answer(
+            "GET",
+            "/repos/acme/web",
+            401,
+            json!({ "message": "Bad credentials" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app_with_sign_in(&replay.url, now);
+
+    let refused = app
+        .refresh_person_token(&SecretString::from("ghr_used"), JobClass::Interactive)
+        .await;
+    let revoked = app
+        .person_permission(
+            &SecretString::from("ghu_revoked"),
+            &repo("7", "acme", "web"),
+            JobClass::Interactive,
+        )
+        .await;
+
+    replay.finish();
+    assert!(
+        matches!(refused, Err(ScmError::AccessLost(_))),
+        "{refused:?}"
+    );
+    assert!(
+        matches!(revoked, Err(ScmError::AccessLost(_))),
+        "{revoked:?}"
+    );
 }
 
 #[tokio::test]
