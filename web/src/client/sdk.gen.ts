@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListPrsData, ListPrsErrors, ListPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, ResyncQueueData, ResyncQueueErrors, ResyncQueueResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgPrsData, ListOrgPrsErrors, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListRepoPrsData, ListRepoPrsErrors, ListRepoPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, SyncQueueData, SyncQueueErrors, SyncQueueResponses, SyncRepoData, SyncRepoErrors, SyncRepoResponses, SyncUserData, SyncUserErrors, SyncUserResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -137,15 +137,15 @@ export const listAudit = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
- * List PRs
+ * List the PRs of the organization
  *
- * The PRs in the queues of the organization: the current submission of each
- * PR in each queue, with the PRs that merge before it and an estimate.
- * Without a filter, every PR, live or ended.
+ * The PRs in the queues of every repository of the organization: the
+ * current submission of each PR in each queue, with the PRs that merge before
+ * it and an estimate. Without a filter, every PR, live or ended.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listPrs = <ThrowOnError extends boolean = false>(options: Options<ListPrsData, ThrowOnError>): RequestResult<ListPrsResponses, ListPrsErrors, ThrowOnError> => (options.client ?? client).get<ListPrsResponses, ListPrsErrors, ThrowOnError>({
+export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Options<ListOrgPrsData, ThrowOnError>): RequestResult<ListOrgPrsResponses, ListOrgPrsErrors, ThrowOnError> => (options.client ?? client).get<ListOrgPrsResponses, ListOrgPrsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
@@ -158,9 +158,8 @@ export const listPrs = <ThrowOnError extends boolean = false>(options: Options<L
 /**
  * List the queues of the organization
  *
- * Every queue of the organization, or of one repository, with its counters
- * and its settings, by repository name then target branch: the overview of the
- * dashboard.
+ * Every queue of the organization, with its counters and its settings, by
+ * repository name then target branch: the overview of the dashboard.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -178,7 +177,8 @@ export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Opt
  * List the repositories
  *
  * The repositories of the organization that the App reaches, by namespace
- * then name.
+ * then name, each with what the caller may do on it and the verdict of its
+ * setup. Reads Postgres only.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -195,7 +195,8 @@ export const listRepos = <ThrowOnError extends boolean = false>(options: Options
 /**
  * Get a repository
  *
- * The repository, whatever the case of its name.
+ * The repository, whatever the case of its name, with what the caller may
+ * do on it and its whole setup. Reads Postgres only.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -206,6 +207,25 @@ export const getRepo = <ThrowOnError extends boolean = false>(options: Options<G
             type: 'apiKey'
         }],
     url: '/orgs/{org}/repos/{repo}',
+    ...options
+});
+
+/**
+ * List the PRs of a repository
+ *
+ * The PRs in the queues of the repository, or of one of its queues: the
+ * current submission of each PR in each queue, with the PRs that merge
+ * before it and an estimate. Without a filter, every PR, live or ended.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listRepoPrs = <ThrowOnError extends boolean = false>(options: Options<ListRepoPrsData, ThrowOnError>): RequestResult<ListRepoPrsResponses, ListRepoPrsErrors, ThrowOnError> => (options.client ?? client).get<ListRepoPrsResponses, ListRepoPrsErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/prs',
     ...options
 });
 
@@ -405,7 +425,7 @@ export const getHealth = <ThrowOnError extends boolean = false>(options: Options
 });
 
 /**
- * Read a queue again
+ * Sync a queue
  *
  * Reads again from the SCM each live PR, the checks of each live run, the
  * head of the target branch and its configuration: the way out after an
@@ -413,13 +433,13 @@ export const getHealth = <ThrowOnError extends boolean = false>(options: Options
  *
  * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
  */
-export const resyncQueue = <ThrowOnError extends boolean = false>(options: Options<ResyncQueueData, ThrowOnError>): RequestResult<ResyncQueueResponses, ResyncQueueErrors, ThrowOnError> => (options.client ?? client).post<ResyncQueueResponses, ResyncQueueErrors, ThrowOnError>({
+export const syncQueue = <ThrowOnError extends boolean = false>(options: Options<SyncQueueData, ThrowOnError>): RequestResult<SyncQueueResponses, SyncQueueErrors, ThrowOnError> => (options.client ?? client).post<SyncQueueResponses, SyncQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
             in: 'cookie',
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/orgs/{org}/repos/{repo}/queues/{queue}/resync',
+    url: '/orgs/{org}/repos/{repo}/queues/{queue}/sync',
     ...options
 });
 
@@ -428,7 +448,8 @@ export const resyncQueue = <ThrowOnError extends boolean = false>(options: Optio
  *
  * The run, its test branch, the PRs that it tests and their predecessors,
  * every check observed on it, and the live runs that depend on it. A job of
- * the CI reads its run identifier in the last segment of its branch.
+ * the CI reads its run identifier in the last segment of its branch; a run of
+ * another repository answers `run_not_found`.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -438,7 +459,25 @@ export const getRun = <ThrowOnError extends boolean = false>(options: Options<Ge
             name: '__Host-cihub_session',
             type: 'apiKey'
         }],
-    url: '/orgs/{org}/runs/{run_id}',
+    url: '/orgs/{org}/repos/{repo}/runs/{run_id}',
+    ...options
+});
+
+/**
+ * Sync the setup of a repository
+ *
+ * Asks CIHub to read the setup of the repository from the SCM now, at most
+ * once a minute; its `requested_at` shows the read until it ends.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const syncRepo = <ThrowOnError extends boolean = false>(options: Options<SyncRepoData, ThrowOnError>): RequestResult<SyncRepoResponses, SyncRepoErrors, ThrowOnError> => (options.client ?? client).post<SyncRepoResponses, SyncRepoErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/sync',
     ...options
 });
 
@@ -516,5 +555,23 @@ export const deleteUserSession = <ThrowOnError extends boolean = false>(options?
             type: 'apiKey'
         }],
     url: '/user/session',
+    ...options
+});
+
+/**
+ * Sync the user
+ *
+ * Asks CIHub to read again from the SCM now the installations and the
+ * repositories that the person of the session reaches.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const syncUser = <ThrowOnError extends boolean = false>(options?: Options<SyncUserData, ThrowOnError>): RequestResult<SyncUserResponses, SyncUserErrors, ThrowOnError> => (options?.client ?? client).post<SyncUserResponses, SyncUserErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/user/sync',
     ...options
 });

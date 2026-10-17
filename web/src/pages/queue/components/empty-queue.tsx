@@ -83,7 +83,7 @@ export function EmptyQueue({
       title="No pull request in the queue"
       actions={
         <>
-          <SubmitPr path={path} isDisabled={queue.access === "suspended"} onSent={onSent} />
+          <SubmitPr path={path} isDisabled={queue.is_suspended} onSent={onSent} />
           <CopyCommand />
         </>
       }

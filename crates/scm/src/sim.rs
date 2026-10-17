@@ -1724,6 +1724,10 @@ impl Scm for Sim {
         self.record_call("app_install_url", class, |_| Ok("sim:install".to_owned()))
     }
 
+    fn branch_rules_url(&self, _repo: &RepoRef) -> Option<String> {
+        None
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         let page = self
             .with(|state| state.sign_in_page.clone())

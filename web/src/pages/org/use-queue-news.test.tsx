@@ -150,7 +150,7 @@ describe("the stream of an organization", () => {
   it.each<[string, Partial<Queue>, string]>([
     ["draining", { state: "draining" }, "Live"],
     ["paused", { state: "paused" }, "Not live"],
-    ["without access", { access: "suspended" }, "Not live"],
+    ["without access", { is_suspended: true }, "Not live"],
   ])("shows a queue %s as %s while the stream is open", async (_, changes, mark) => {
     vi.stubGlobal("EventSource", FakeEventSource);
     renderApp("/orgs/acme/repos/web/queues/main", {

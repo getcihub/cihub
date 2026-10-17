@@ -28,7 +28,7 @@ describe("the actions on a PR", () => {
       answersFor({
         [`${PR}/118`]: [200, testing],
         [`${PR}/118/events?limit=100`]: [200, pageOf("events", [])],
-        "/api/v1/orgs/acme/runs/run_1": [404, problem(404, "run_not_found")],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [404, problem(404, "run_not_found")],
         [`${PR}/118/cancel`]: [202, null],
       }),
     );

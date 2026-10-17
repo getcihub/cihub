@@ -30,7 +30,7 @@ use tracing::{Instrument, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
 use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
-use crate::config::{load_config, request_config_checks};
+use crate::config::{load_config, request_queue_setups};
 use crate::jobs::{
     SubmitPr, connection_job, new_event_id, refresh_after, refresh_at, submit, user_of,
 };
@@ -970,9 +970,9 @@ async fn request_submission(
 /// The scheduler looks for the queues to cover this often.
 const COVER_EVERY: time::Duration = time::Duration::hours(1);
 
-/// How often the scheduler looks for the queues whose configuration check
-/// is due; often enough that a check comes soon after a new queue.
-const CONFIG_CHECKS_SWEEP_EVERY: time::Duration = time::Duration::minutes(5);
+/// How often the scheduler looks for the queues whose setup read is due;
+/// often enough that a read comes soon after a new queue.
+const QUEUE_SETUPS_SWEEP_EVERY: time::Duration = time::Duration::minutes(5);
 
 /// Marks dirty the queues whose oldest event after their last snapshot is
 /// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that
@@ -1055,12 +1055,12 @@ pub(crate) async fn run_scheduler(
     }
 
     let mut next_cover = clock();
-    // The checks of a start would compete with the work that waited for it.
-    let mut next_config_checks = clock() + CONFIG_CHECKS_SWEEP_EVERY;
+    // The setup reads of a start would compete with the work that waited for it.
+    let mut next_queue_setups = clock() + QUEUE_SETUPS_SWEEP_EVERY;
     while !cancel.is_cancelled() {
         let now = clock();
         cover_if_due(&pool, now, &mut next_cover).await;
-        check_configs_if_due(&pool, now, &mut next_config_checks).await;
+        read_queue_setups_if_due(&pool, now, &mut next_queue_setups).await;
 
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
@@ -1102,22 +1102,22 @@ async fn cover_if_due(pool: &PgPool, now: OffsetDateTime, next_cover: &mut Offse
     }
 }
 
-async fn check_configs_if_due(
+async fn read_queue_setups_if_due(
     pool: &PgPool,
     now: OffsetDateTime,
-    next_checks: &mut OffsetDateTime,
+    next_reads: &mut OffsetDateTime,
 ) {
-    if now < *next_checks {
+    if now < *next_reads {
         return;
     }
 
-    *next_checks = now + CONFIG_CHECKS_SWEEP_EVERY;
-    match request_config_checks(pool, now).await {
+    *next_reads = now + QUEUE_SETUPS_SWEEP_EVERY;
+    match request_queue_setups(pool, now).await {
         Ok(0) => {}
-        Ok(queues) => info!(queues, "checks of the configuration requested"),
+        Ok(queues) => info!(queues, "setup reads of the queues requested"),
         Err(err) => warn!(
             error = &err as &dyn Error,
-            "checks of the configuration not requested"
+            "setup reads of the queues not requested"
         ),
     }
 }

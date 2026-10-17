@@ -33,9 +33,9 @@ CREATE INDEX queues_work ON queues (next_tick_at) WHERE dirty OR next_tick_at IS
 
 SELECT cihub_tenant_table('queues');
 
--- The last check of the configuration of the SCM of a queue. Not a column of
--- `queues`: the lease of the queues skips a locked row.
-CREATE TABLE config_checks (
+-- The last setup read of a queue: what the rules of the SCM miss. Not a column
+-- of `queues`: the lease of the queues skips a locked row.
+CREATE TABLE queue_setups (
     org_id     text        NOT NULL REFERENCES orgs (id),
     queue_id   text        PRIMARY KEY,
     findings   jsonb       NOT NULL,
@@ -43,4 +43,4 @@ CREATE TABLE config_checks (
     FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
 );
 
-SELECT cihub_tenant_table('config_checks');
+SELECT cihub_tenant_table('queue_setups');

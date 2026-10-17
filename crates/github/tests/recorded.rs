@@ -689,6 +689,18 @@ async fn the_sign_in_address_carries_the_client_and_the_challenge() {
     assert_eq!(without_client, None);
 }
 
+#[test]
+fn the_rules_of_a_repository_are_on_its_settings_page() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+
+    let url = app("https://github.example.com", now).branch_rules_url(&repo("7", "acme", "web"));
+
+    assert_eq!(
+        url.as_deref(),
+        Some("https://github.example.com/acme/web/settings/rules")
+    );
+}
+
 /// Written by hand from the documentation of GitHub, not recorded: the
 /// recording by the `github` example does not read the members yet.
 #[tokio::test]

@@ -84,7 +84,7 @@ export function PrDrawer() {
       )}
       {item.run_id && (
         <Suspense fallback={<RunSectionSkeleton />}>
-          <RunSection org={org} runId={item.run_id} />
+          <RunSection org={org} repo={repo} runId={item.run_id} />
         </Suspense>
       )}
       <History events={events.events} />

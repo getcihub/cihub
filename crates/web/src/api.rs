@@ -1,8 +1,7 @@
 //! `/api/v1` (`specs/API.md`): the authentication of each
 //! request by its API token or by the session of a person, the rate limit
 //! of each of them, the routes of the platform (`/user`, `/instance`,
-//! `/orgs/{org}`, its repositories and its audit log, the sign-in of the
-//! command line), the routes of the modules, and the `OpenAPI` document of all
+//! `/orgs/{org}` and its audit log, the sign-in of the command line), the routes of the modules, and the `OpenAPI` document of all
 //! of them.
 
 use std::collections::{BTreeMap, HashMap};
@@ -18,7 +17,7 @@ use axum::routing::{delete, get, post};
 use axum::{Extension, Json, Router};
 use cihub_api_types::{
     AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
-    OrgList, Problem, QueueChanged, Repo, RepoList, User,
+    OrgList, Problem, QueueChanged, User,
 };
 use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
 use cihub_platform::{
@@ -110,8 +109,8 @@ impl Modify for Security {
         ),
         (
             name = "Organizations",
-            description = "An organization is the account of an installation of the App: its \
-                           repositories and its audit log."
+            description = "An organization is the account of an installation of the App, with \
+                           its audit log."
         ),
         (
             name = "Live updates",
@@ -122,14 +121,13 @@ impl Modify for Security {
         get_user,
         list_user_orgs,
         delete_user_session,
+        sync_user,
         start_device_sign_in,
         get_device_session,
         approve_device_code,
         deny_device_code,
         get_instance,
         get_org,
-        list_repos,
-        get_repo,
         list_audit,
         stream
     ),
@@ -145,8 +143,6 @@ impl Modify for Security {
         OrgList,
         Problem,
         QueueChanged,
-        Repo,
-        RepoList,
         User
     )),
     modifiers(&Security)
@@ -310,6 +306,7 @@ pub(crate) fn router(
         .route("/user", get(get_user))
         .route("/user/orgs", get(list_user_orgs))
         .route("/user/session", delete(delete_user_session))
+        .route("/user/sync", post(sync_user))
         .route(
             "/device-codes/{user_code}/approve",
             post(approve_device_code),
@@ -317,8 +314,6 @@ pub(crate) fn router(
         .route("/device-codes/{user_code}/deny", post(deny_device_code))
         .route("/instance", get(get_instance))
         .route("/orgs/{org}", get(get_org))
-        .route("/orgs/{org}/repos", get(list_repos))
-        .route("/orgs/{org}/repos/{repo}", get(get_repo))
         .route("/orgs/{org}/audit", get(list_audit))
         .with_state(state.clone())
         .merge(
@@ -583,6 +578,26 @@ async fn delete_user_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Sync the user
+///
+/// Asks CIHub to read again from the SCM now the installations and the
+/// repositories that the person of the session reaches.
+#[utoipa::path(
+    post,
+    path = "/user/sync",
+    tag = "Session",
+    responses((status = 202, description = "CIHub takes the request.")),
+    security(("session" = []))
+)]
+async fn sync_user(session: Option<Extension<SessionGrant>>) -> Result<StatusCode, ApiError> {
+    session_of(session)?;
+
+    Err(ApiError::new(
+        ErrorCode::RouteNotFound,
+        "the sync of a person is not served yet".to_owned(),
+    ))
+}
+
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 struct PageQuery {
@@ -639,6 +654,7 @@ async fn list_user_orgs(
         .map(|membership| Org {
             slug: membership.org_slug,
             role: Some(membership.role),
+            is_suspended: false,
         })
         .collect();
     let (orgs, has_more) = page.split(rows);
@@ -717,127 +733,11 @@ async fn get_org(
             .map(|membership| membership.role),
     };
 
-    Ok(Json(Org { slug, role }))
-}
-
-/// List the repositories
-///
-/// The repositories of the organization that the App reaches, by namespace
-/// then name.
-#[utoipa::path(
-    get,
-    path = "/orgs/{org}/repos",
-    tag = "Organizations",
-    params(
-        ("org" = String, Path, description = "The slug of the organization.", example = "acme"),
-        PageQuery
-    ),
-    responses(
-        (status = 200, description = "A page of repositories.", body = RepoList),
-        PageErrors
-    ),
-    security(("token" = ["queues:read"]))
-)]
-async fn list_repos(
-    grant: ApiGrant,
-    State(state): State<ApiState>,
-    ApiPath(org): ApiPath<String>,
-    ApiQuery(query): ApiQuery<PageQuery>,
-) -> Result<Json<RepoList>, ApiError> {
-    grant.require(ApiScope::QueuesRead)?;
-    let page: Page<(String, String, String)> =
-        Page::read("repos", query.from.as_deref(), query.limit)?;
-
-    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM repos")
-        .fetch_one(&mut *tx)
-        .await?;
-    let (namespace, name, id) = match page.after.clone() {
-        Some((namespace, name, id)) => (Some(namespace), Some(name), Some(id)),
-        None => (None, None, None),
-    };
-    // A repository deleted then created again keeps its row: the identifier
-    // tells two repositories of the same name apart.
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
-        "SELECT id, namespace, name, default_branch FROM repos
-         WHERE $1::text IS NULL OR (namespace, name, id) > ($1, $2, $3)
-         ORDER BY namespace, name, id LIMIT $4",
-    )
-    .bind(namespace)
-    .bind(name)
-    .bind(id)
-    .bind(page.rows())
-    .fetch_all(&mut *tx)
-    .await?;
-    let repos = rows.into_iter().map(repo_of).collect();
-    let (repos, has_more): (Vec<Repo>, bool) = page.split(repos);
-    let cursor = repos
-        .last()
-        .filter(|_| has_more)
-        .map(|repo| cursor_of("repos", (&repo.namespace, &repo.name, &repo.id)));
-
-    Ok(Json(RepoList {
-        repos,
-        has_more,
-        count: u64::try_from(count)?,
-        cursor,
+    Ok(Json(Org {
+        slug,
+        role,
+        is_suspended: false,
     }))
-}
-
-fn repo_of((id, namespace, name, default_branch): (String, String, String, String)) -> Repo {
-    Repo {
-        id,
-        namespace,
-        name,
-        default_branch,
-    }
-}
-
-/// The errors of the route of a repository.
-struct RepoErrors;
-
-impl utoipa::IntoResponses for RepoErrors {
-    fn responses() -> BTreeMap<String, RefOr<DocumentResponse>> {
-        error_responses(&[ErrorCode::RepoNotFound])
-    }
-}
-
-/// Get a repository
-#[utoipa::path(
-    get,
-    path = "/orgs/{org}/repos/{repo}",
-    tag = "Organizations",
-    description = "The repository, whatever the case of its name.",
-    params(
-        ("org" = String, Path, description = "The slug of the organization.", example = "acme"),
-        ("repo" = String, Path, description = "The name of the repository.", example = "web")
-    ),
-    responses((status = 200, description = "The repository.", body = Repo), RepoErrors),
-    security(("token" = ["queues:read"]))
-)]
-async fn get_repo(
-    grant: ApiGrant,
-    State(state): State<ApiState>,
-    ApiPath((org, repo)): ApiPath<(String, String)>,
-) -> Result<Json<Repo>, ApiError> {
-    grant.require(ApiScope::QueuesRead)?;
-
-    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    // The SCM does not tell names apart by their case.
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT id, namespace, name, default_branch FROM repos
-         WHERE lower(name) = lower($1) ORDER BY id LIMIT 1",
-    )
-    .bind(&repo)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    row.map(|row| Json(repo_of(row))).ok_or_else(|| {
-        ApiError::new(
-            ErrorCode::RepoNotFound,
-            format!("repository `{repo}` not found"),
-        )
-    })
 }
 
 /// List the audit log
