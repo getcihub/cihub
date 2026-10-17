@@ -53,7 +53,17 @@ too: the dashboard asks them to install the App, whose page comes from `GET /app
 `/installations/new`), read once. With the token of the person, CIHub reads `GET /user` (the login, the name and the avatar), every page of
 `GET /user/installations`, and, for each installation on an organization, `GET /user/memberships/orgs/{org}`: an
 active membership gives `admin` or `member`; on the account of a person, only its owner is `admin`; another kind
-of account gives no role. CIHub then forgets the token: it never stores it. The sign-in first connects, as a sync would, every installation that the person reaches and that CIHub does not
+of account gives no role. CIHub keeps the token, sealed (`specs/SECURITY.md`), and asks for the sync of the
+person (`sync_user`): with their token, it reads `GET /user/installations` and, for each one, every page of `GET
+/user/installations/{id}/repositories`, whose `permissions` give the permission of the person on each repository
+(`admin`; `maintain` or `push` give `write`; `triage` or `pull` give `read`), connects the installations that CIHub
+does not know, and replaces the rows of the person in `repo_permissions`. The sync runs at the sign-in, at `POST
+/user/sync`, at a request of the person more than an hour after the last one, and for the members of an organization
+whose connection finds new repositories. A request on a repository whose permission is older than an hour reads `GET
+/repos/{owner}/{repo}` with the token of the person (`404` for a repository that they do not see), and a request on
+an organization whose role is older than an hour reads `GET /user/memberships/orgs/{org}`. A token that ends is
+refreshed through `POST <url>/login/oauth/access_token` with `grant_type=refresh_token`; GitHub answers a used or
+revoked refresh token with an `error`, and a revoked token with `401`. The sign-in first connects, as a sync would, every installation that the person reaches and that CIHub does not
 know yet: `GET /user/installations` gives its account, its permissions and `suspended_at`, the fields that `GET
 /app/installations/{id}` gives, so it costs no other call; the new organization then reads its repositories
 (`sync_repos`). A suspended installation, or one whose slug another organization has, gives no organization. The

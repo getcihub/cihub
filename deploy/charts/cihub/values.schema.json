@@ -20,6 +20,12 @@
           "description": "Key of the URL in that Secret.",
           "title": "key",
           "type": "string"
+        },
+        "secretKey": {
+          "default": "secret",
+          "description": "Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set.",
+          "title": "secretKey",
+          "type": "string"
         }
       },
       "required": [],

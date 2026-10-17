@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use cihub_domain::{
     Actor, ApiScope, ConnectionId, ConnectionKind, ConnectionMode, Event, EventId, EventKind,
-    JobClass, MembershipRole, OrgId, QueueId,
+    JobClass, MembershipRole, OrgId, Permission, QueueId, RepoId, UserId,
 };
 use cihub_platform::{
     ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
@@ -18,19 +18,22 @@ use cihub_platform::{
     pending_deliveries, record_budgets, record_sign_in, release_leases, request_installations_sync,
     request_installations_sync_at_start, request_maintenance, request_member_syncs,
     request_repo_syncs, run_budget_writer, run_maintenance, run_router, run_sync_installation,
-    run_sync_installations, run_sync_members, run_sync_repos, run_worker, schedule_tick,
-    store_delivery, sync_installation_executor, sync_installation_job, sync_members_job,
-    sync_repos_job, until_next_tick,
+    run_sync_installations, run_sync_members, run_sync_repos, run_sync_user, run_worker,
+    schedule_tick, store_delivery, sync_installation_executor, sync_installation_job,
+    sync_members_job, sync_repos_job, sync_user_job, token_of_person, until_next_tick,
 };
+use cihub_scm::Scm;
 use cihub_scm::sim::Sim;
 use cihub_scm::{
     ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmInstallation,
-    ScmMembership, ScmProfile, ScmUser, SignedIn,
+    ScmMembership, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest, SignedIn,
+    code_challenge,
 };
 use cihub_store::{
-    Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
+    DatabaseCipher, Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
     create_event_partitions, memberships_of, profile_of,
 };
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgPool};
 use time::{Duration, OffsetDateTime};
@@ -1590,6 +1593,19 @@ async fn each_active_connection_is_read_once_an_hour(pool: PgPool) {
     );
 }
 
+fn cipher() -> DatabaseCipher {
+    DatabaseCipher::new(&SecretString::from("a database secret of 32 bytes ab")).unwrap()
+}
+
+fn person_token() -> ScmPersonToken {
+    ScmPersonToken {
+        access: SecretString::from("token"),
+        access_lifetime: Some(Duration::hours(8)),
+        refresh: None,
+        refresh_lifetime: None,
+    }
+}
+
 fn person(external_id: &str, login: &str) -> ScmUser {
     ScmUser {
         external_id: external_id.into(),
@@ -1633,12 +1649,14 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
         org_slug: "org".into(),
         role: MembershipRole::Admin,
         is_org_suspended: false,
+        refreshed_at: at(0),
     };
     let in_globex = Membership {
         org_id: globex,
         org_slug: "globex".into(),
         role: MembershipRole::Member,
         is_org_suspended: false,
+        refreshed_at: at(60),
     };
     let mut tx = begin_system(&pool).await.unwrap();
 
@@ -1655,18 +1673,30 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     .unwrap();
     tx.commit().await.unwrap();
 
-    let user_id = record_sign_in(&pool, ConnectionKind::GithubApp, &first, at(0))
-        .await
-        .unwrap();
+    let user_id = record_sign_in(
+        &pool,
+        ConnectionKind::GithubApp,
+        &cipher(),
+        (&first, &person_token()),
+        at(0),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         memberships_of(&pool, user_id).await.unwrap(),
         std::slice::from_ref(&in_org)
     );
 
-    let again = record_sign_in(&pool, ConnectionKind::GithubApp, &second, at(60))
-        .await
-        .unwrap();
+    let again = record_sign_in(
+        &pool,
+        ConnectionKind::GithubApp,
+        &cipher(),
+        (&second, &person_token()),
+        at(60),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(again, user_id);
     assert_eq!(
@@ -1704,12 +1734,18 @@ async fn a_sign_in_connects_the_installations_that_cihub_does_not_know(pool: PgP
         memberships: ["1", "7", "8", "9"].map(membership).to_vec(),
     };
 
-    let user_id = record_sign_in(&pool, KIND, &signed_in, at(0))
+    let user_id = record_sign_in(&pool, KIND, &cipher(), (&signed_in, &person_token()), at(0))
         .await
         .unwrap();
-    let again = record_sign_in(&pool, KIND, &signed_in, at(60))
-        .await
-        .unwrap();
+    let again = record_sign_in(
+        &pool,
+        KIND,
+        &cipher(),
+        (&signed_in, &person_token()),
+        at(60),
+    )
+    .await
+    .unwrap();
 
     let slugs: Vec<String> = memberships_of(&pool, user_id)
         .await
@@ -1737,6 +1773,165 @@ async fn a_sign_in_connects_the_installations_that_cihub_does_not_know(pool: PgP
         ["sync_repos"],
         "the new organization reads its repositories"
     );
+}
+
+/// The sync of a person reads with their token the repositories that they
+/// reach, connects the installations that CIHub does not know, and replaces
+/// their permissions; a token that the SCM refuses is forgotten with what it
+/// read.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_sync_of_a_person_records_what_their_token_reaches(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+    let repo = |connection: &str, external_id: &str, name: &str| RepoRef {
+        connection: ConnectionRef {
+            id: connection_ref_id(),
+            external_id: connection.into(),
+        },
+        external_id: external_id.into(),
+        namespace: "acme".into(),
+        name: name.into(),
+    };
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.add_installation("7", account("70", "acme"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    sim.set_member("7", &ada, MembershipRole::Member);
+    let lib = RepoId::from_ulid(Ulid(90));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         VALUES ($1, $2, $3, '9', 'acme', 'lib', 'main')",
+    )
+    .bind(lib.to_string())
+    .bind(org().to_string())
+    .bind(connection().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    sim.add_repo(&repo("1", "9", "lib"), "main", &[]);
+    sim.set_permission(&repo("1", "9", "lib"), &ada, Permission::Write)
+        .unwrap();
+    let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
+    let job = sync_user_job(user_id, "w");
+
+    let read = run_sync_user(&pool, &sim, &cipher(), KIND, &job, at(10))
+        .await
+        .unwrap();
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let permissions: Vec<(String, String)> =
+        sqlx::query_as("SELECT repo_id, permission::text FROM repo_permissions")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(read, 1);
+    assert_eq!(permissions, [(lib.to_string(), "write".to_owned())]);
+    let slugs: Vec<String> = orgs(&pool).await.into_iter().map(|org| org.0).collect();
+    assert_eq!(
+        slugs,
+        ["acme", "org"],
+        "the sync connects the installation 7"
+    );
+
+    sim.revoke_person(&ada);
+    let read = run_sync_user(&pool, &sim, &cipher(), KIND, &job, at(20))
+        .await
+        .unwrap();
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let left: (i64, bool) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM repo_permissions),
+                (SELECT scm_token IS NULL FROM users WHERE login = 'ada')",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(read, 0);
+    assert_eq!(
+        left,
+        (0, true),
+        "a refused token is forgotten with what it read"
+    );
+}
+
+/// A token that ends within minutes is refreshed once, and the refresh
+/// token works no more; a refused refresh forgets the token.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_token_that_ends_is_refreshed_once(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
+    let late = at(0) + Duration::hours(8);
+
+    let early = token_of_person(&pool, &sim, &cipher(), user_id, at(60))
+        .await
+        .unwrap();
+    let refreshed = token_of_person(&pool, &sim, &cipher(), user_id, late)
+        .await
+        .unwrap();
+    let kept = token_of_person(&pool, &sim, &cipher(), user_id, late)
+        .await
+        .unwrap();
+
+    let refreshes = || {
+        sim.calls()
+            .iter()
+            .filter(|call| call.name == "refresh_person_token")
+            .count()
+    };
+    assert_eq!(
+        early.as_ref().map(ExposeSecret::expose_secret),
+        Some("sim-token-1")
+    );
+    assert_eq!(
+        refreshed.as_ref().map(ExposeSecret::expose_secret),
+        Some("sim-token-2")
+    );
+    assert_eq!(
+        kept.as_ref().map(ExposeSecret::expose_secret),
+        Some("sim-token-2")
+    );
+    assert_eq!(refreshes(), 1, "the new token serves until it ends");
+
+    sim.revoke_person(&ada);
+    let refused = token_of_person(&pool, &sim, &cipher(), user_id, late + Duration::hours(8))
+        .await
+        .unwrap();
+
+    assert!(refused.is_none(), "a refused refresh forgets the token");
+}
+
+fn connection_ref_id() -> ConnectionId {
+    ConnectionId::from_ulid(Ulid(9))
+}
+
+/// Signs `person` in on `sim` at `now` and records it, their token
+/// included; returns the user.
+async fn signed_in_on(pool: &PgPool, sim: &Sim, person: &ScmUser, now: OffsetDateTime) -> UserId {
+    let request = SignInRequest {
+        redirect_url: "https://ci.example.com/auth/github/callback".into(),
+        state: "state".into(),
+        code_challenge: code_challenge(&SecretString::from("verifier")),
+    };
+    let code = SignInCode {
+        code: SecretString::from(sim.authorize(person, &request)),
+        code_verifier: SecretString::from("verifier"),
+        redirect_url: request.redirect_url.clone(),
+    };
+    let (signed_in, token) = Scm::sign_in(sim, &code, JobClass::Interactive)
+        .await
+        .unwrap();
+
+    record_sign_in(pool, KIND, &cipher(), (&signed_in, &token), now)
+        .await
+        .unwrap()
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -1794,9 +1989,15 @@ async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: 
         avatar_url: Some(avatar_url.into()),
     };
 
-    let user_id = record_sign_in(&pool, ConnectionKind::GithubApp, &signed_in, at(0))
-        .await
-        .unwrap();
+    let user_id = record_sign_in(
+        &pool,
+        ConnectionKind::GithubApp,
+        &cipher(),
+        (&signed_in, &person_token()),
+        at(0),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         profile_of(&pool, user_id).await.unwrap(),

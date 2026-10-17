@@ -315,7 +315,12 @@ pub(super) async fn list_org_queues(
 
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
 
-    let list = queue_list(&mut tx, None, name, &page, (state.clock)()).await?;
+    let scope = QueueScope {
+        repo: None,
+        name,
+        repos: grant.repo_filter(),
+    };
+    let list = queue_list(&mut tx, &scope, &page, (state.clock)()).await?;
     Ok(Json(list))
 }
 
@@ -342,27 +347,41 @@ pub(super) async fn list_repo_queues(
 
     let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
 
-    let list = queue_list(&mut tx, Some(repo), None, &page, (state.clock)()).await?;
+    let scope = QueueScope {
+        repo: Some(repo.to_string()),
+        name: None,
+        repos: None,
+    };
+    let list = queue_list(&mut tx, &scope, &page, (state.clock)()).await?;
     Ok(Json(list))
 }
 
-/// The page of the queues of the organization of the transaction, of the
-/// repository `repo`, or of the repositories whose name holds `name`.
+/// Which queues of the organization of the transaction a list gives: those
+/// of a repository, of the repositories whose name holds `name`, and of the
+/// repositories that a person reads (`None` for every one).
+struct QueueScope {
+    repo: Option<String>,
+    name: Option<String>,
+    repos: Option<Vec<String>>,
+}
+
+/// The page of the queues that `scope` keeps.
 async fn queue_list(
     conn: &mut PgConnection,
-    repo: Option<RepoId>,
-    name: Option<String>,
+    scope: &QueueScope,
     page: &Page<QueueKey>,
     now: OffsetDateTime,
 ) -> Result<QueueList, ApiError> {
-    let repo = repo.map(|repo| repo.to_string());
+    let QueueScope { repo, name, repos } = scope;
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM queues q JOIN repos r ON r.id = q.repo_id
          WHERE ($1::text IS NULL OR q.repo_id = $1)
-           AND ($2::text IS NULL OR strpos(lower(r.name), lower($2)) > 0)",
+           AND ($2::text IS NULL OR strpos(lower(r.name), lower($2)) > 0)
+           AND ($3::text[] IS NULL OR q.repo_id = ANY($3))",
     )
-    .bind(&repo)
-    .bind(&name)
+    .bind(repo)
+    .bind(name)
+    .bind(repos)
     .fetch_one(&mut *conn)
     .await?;
     let (after_repo, after_name, after_id) = match page.after.clone() {
@@ -377,16 +396,18 @@ async fn queue_list(
              FROM {QUEUE_SOURCE}
              WHERE ($2::text IS NULL OR q.repo_id = $2)
                AND ($3::text IS NULL OR strpos(lower(r.name), lower($3)) > 0)
-               AND ($4::text IS NULL OR (r.name, q.target_branch, q.id) > ($4, $5, $6))
+               AND ($4::text[] IS NULL OR q.repo_id = ANY($4))
+               AND ($5::text IS NULL OR (r.name, q.target_branch, q.id) > ($5, $6, $7))
              ORDER BY r.name, q.target_branch, q.id
-             LIMIT $7
+             LIMIT $8
          ) q
          {COUNT_SOURCE}
          ORDER BY q.repo, q.target_branch, q.id"
     )))
     .bind(now)
-    .bind(&repo)
-    .bind(&name)
+    .bind(repo)
+    .bind(name)
+    .bind(repos)
     .bind(after_repo)
     .bind(after_name)
     .bind(after_id)

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use cihub_domain::{ConnectionId, JobClass, Permission};
-use cihub_scm::{ConnectionRef, ScmError, SignInCode};
+use cihub_scm::{ConnectionRef, ScmError, ScmPersonToken, SignInCode};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
@@ -278,7 +278,15 @@ impl GithubApp {
         let now = (self.clock)();
         let url = format!("{}{path}", self.api_url);
         let request = self.api_request(Method::GET, url, token.expose_secret(), JSON);
-        page_outside_budgets(request, path, now).await
+        let (answer, next) = page_outside_budgets(request, path, now).await?;
+        if answer.status == StatusCode::UNAUTHORIZED {
+            return Err(ScmError::AccessLost(format!(
+                "the token of the person is refused: {}",
+                answer.message()
+            )));
+        }
+
+        Ok((answer, next))
     }
 
     /// Exchanges the code of a sign-in for the token of the person. GitHub
@@ -286,23 +294,62 @@ impl GithubApp {
     pub(crate) async fn exchange_sign_in_code(
         &self,
         code: &SignInCode,
-    ) -> Result<SecretString, ScmError> {
+    ) -> Result<ScmPersonToken, ScmError> {
+        let token = self
+            .ask_person_token(serde_json::json!({
+                "code": code.code.expose_secret(),
+                "code_verifier": code.code_verifier.expose_secret(),
+                "redirect_uri": code.redirect_url,
+            }))
+            .await?;
+
+        token.map_err(|error| {
+            ScmError::Validation(format!("the code of the sign-in is refused: {error}"))
+        })
+    }
+
+    /// Trades `refresh` for a new token of its person. GitHub answers a
+    /// refused refresh token with `200` and an `error` field.
+    pub(crate) async fn refresh_person(
+        &self,
+        refresh: &SecretString,
+    ) -> Result<ScmPersonToken, ScmError> {
+        let token = self
+            .ask_person_token(serde_json::json!({
+                "grant_type": "refresh_token",
+                "refresh_token": refresh.expose_secret(),
+            }))
+            .await?;
+
+        token.map_err(|error| {
+            ScmError::AccessLost(format!(
+                "the refresh token of the person is refused: {error}"
+            ))
+        })
+    }
+
+    /// Asks `/login/oauth/access_token` for a token of a person, with the
+    /// client of the App and `grant`; the inner error is the refusal of
+    /// GitHub.
+    async fn ask_person_token(
+        &self,
+        grant: serde_json::Value,
+    ) -> Result<Result<ScmPersonToken, String>, ScmError> {
         #[derive(Deserialize)]
         struct Exchanged {
             access_token: Option<String>,
+            expires_in: Option<i64>,
+            refresh_token: Option<String>,
+            refresh_token_expires_in: Option<i64>,
             error: Option<String>,
         }
 
         let client = self.sign_in.as_ref().ok_or_else(|| {
             ScmError::Forbidden("the GitHub App has no client for the sign-in".into())
         })?;
-        let body = serde_json::json!({
-            "client_id": client.client_id,
-            "client_secret": client.client_secret.expose_secret(),
-            "code": code.code.expose_secret(),
-            "code_verifier": code.code_verifier.expose_secret(),
-            "redirect_uri": code.redirect_url,
-        });
+        let mut body = grant;
+        body["client_id"] = client.client_id.clone().into();
+        body["client_secret"] = client.client_secret.expose_secret().into();
         let request = self
             .http
             .post(format!("{}/login/oauth/access_token", self.web_url))
@@ -316,13 +363,15 @@ impl GithubApp {
         }
 
         let exchanged: Exchanged = answer.json()?;
-        match (exchanged.access_token, exchanged.error) {
-            (Some(token), None) => Ok(SecretString::from(token)),
-            (_, error) => Err(ScmError::Validation(format!(
-                "the code of the sign-in is refused: {}",
-                error.as_deref().unwrap_or("no token")
-            ))),
-        }
+        Ok(match (exchanged.access_token, exchanged.error) {
+            (Some(token), None) => Ok(ScmPersonToken {
+                access: SecretString::from(token),
+                access_lifetime: exchanged.expires_in.map(Duration::seconds),
+                refresh: exchanged.refresh_token.map(SecretString::from),
+                refresh_lifetime: exchanged.refresh_token_expires_in.map(Duration::seconds),
+            }),
+            (_, error) => Err(error.unwrap_or_else(|| "no token".to_owned())),
+        })
     }
 
     fn as_app(

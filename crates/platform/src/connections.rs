@@ -12,6 +12,7 @@ use tracing::info;
 
 use crate::installations::{give_to_repo_queues, request_installation_sync};
 use crate::jobs::hour_window;
+use crate::persons::request_member_user_syncs;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 pub const SYNC_REPOS: &str = "sync_repos";
@@ -136,7 +137,8 @@ pub async fn run_sync_repos(
     .fetch_all(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
-    let written = sqlx::query(
+    // `xmax` is 0 on a row that the statement inserted, not updated.
+    let inserted: Vec<bool> = sqlx::query_scalar(
         "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                             default_branch)
          SELECT r.id, $2, $3, r.external_id, r.namespace, r.name, r.default_branch
@@ -144,7 +146,8 @@ pub async fn run_sync_repos(
               AS r (id, external_id, namespace, name, default_branch)
          ON CONFLICT (connection_id, external_id) DO UPDATE
          SET namespace = EXCLUDED.namespace, name = EXCLUDED.name,
-             default_branch = EXCLUDED.default_branch, removed_at = NULL",
+             default_branch = EXCLUDED.default_branch, removed_at = NULL
+         RETURNING xmax = 0",
     )
     .bind(&ids)
     .bind(org_id.to_string())
@@ -153,7 +156,7 @@ pub async fn run_sync_repos(
     .bind(column(|repo| &repo.namespace))
     .bind(column(|repo| &repo.name))
     .bind(column(|repo| &repo.default_branch))
-    .execute(&mut *tx)
+    .fetch_all(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
     let removed: Vec<String> = sqlx::query_scalar(
@@ -170,8 +173,11 @@ pub async fn run_sync_repos(
 
     give_to_repo_queues(&mut tx, org_id, &removed, &EventKind::AccessLost, now).await?;
     give_to_repo_queues(&mut tx, org_id, &restored, &EventKind::AccessRestored, now).await?;
+    if inserted.contains(&true) || !restored.is_empty() {
+        request_member_user_syncs(&mut tx, org_id, connection_id, now).await?;
+    }
     tx.commit().await.map_err(PlatformError::Query)?;
-    let written = usize::try_from(written.rows_affected()).unwrap_or(usize::MAX);
+    let written = inserted.len();
     info!(
         org_id = %org_id,
         connection_id = %connection_id,

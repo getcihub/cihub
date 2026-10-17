@@ -880,6 +880,26 @@ async fn serve_api(
     api: cihub_platform::ModuleApi,
     cancel: CancellationToken,
 ) -> (String, String) {
+    serve_api_with(pool, api, Arc::new(Sim::new()), cancel).await
+}
+
+/// The secret that seals the tokens of the people in these tests.
+const DATABASE_SECRET: &str = "a database secret of 32 bytes ab";
+
+/// The clock of the web role of these tests.
+fn web_clock() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap()
+}
+
+/// Serves `api` behind the web role until `cancel`, where people sign in on
+/// `scm`, and returns its address and a token of the organization with every
+/// scope.
+async fn serve_api_with(
+    pool: &PgPool,
+    api: cihub_platform::ModuleApi,
+    scm: Arc<dyn Scm>,
+    cancel: CancellationToken,
+) -> (String, String) {
     let secret = cihub_store::new_api_token_secret().unwrap();
     let scopes = [
         ApiScope::QueuesRead,
@@ -903,15 +923,17 @@ async fn serve_api(
     let webhooks = cihub_web::GithubWebhooks {
         secret: SecretString::from("unused"),
     };
-    let fixed = || OffsetDateTime::from_unix_timestamp(1_790_000_000).unwrap();
     let dashboard = cihub_web::Dashboard {
-        scm: Arc::new(Sim::new()),
+        scm,
+        cipher: Some(Arc::new(
+            cihub_store::DatabaseCipher::new(&SecretString::from(DATABASE_SECRET)).unwrap(),
+        )),
         public_url: None,
         news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
             .unwrap(),
     };
-    let router = cihub_web::router(pool.clone(), fixed, webhooks, vec![api], dashboard);
+    let router = cihub_web::router(pool.clone(), web_clock, webhooks, vec![api], dashboard);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
 
@@ -5912,6 +5934,22 @@ async fn session_of(pool: &PgPool, n: u128, login: &str, role: MembershipRole) -
     cihub_store::record_membership(&mut tx, org(), user_id, role, session.created_at)
         .await
         .unwrap();
+    // The SCM gives the admin of an organization `admin` on its
+    // repositories, and its members `write` here.
+    let permission = match role {
+        MembershipRole::Admin => "admin",
+        MembershipRole::Member => "write",
+    };
+    sqlx::query(
+        "INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
+         SELECT org_id, id, $1, $2::permission, $3 FROM repos",
+    )
+    .bind(user_id.to_string())
+    .bind(permission)
+    .bind(session.created_at)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
     secret
 }
@@ -6015,6 +6053,223 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
         [serde_json::json!({ "external_id": "71", "login": "grace" })]
     );
     q.stop().await;
+}
+
+/// A person reads in CIHub only the repositories that the SCM shows them,
+/// checked again with their token once their access is an hour old: a
+/// repository that they do not see answers `404` and leaves the lists; a
+/// fresh access calls the SCM zero times; an SCM that does not answer gives
+/// `503`; a token that the SCM refuses ends every session of the person.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Arc::new(Sim::new());
+    let ada = ScmUser {
+        external_id: "70".into(),
+        login: "ada".into(),
+    };
+    let account = ScmAccount {
+        external_id: "1".into(),
+        path: "acme".into(),
+    };
+    let repo_on_scm = |external_id: &str, name: &str| RepoRef {
+        connection: ConnectionRef {
+            id: connection(),
+            external_id: "1".into(),
+        },
+        external_id: external_id.into(),
+        namespace: "acme".into(),
+        name: name.into(),
+    };
+    let (app, secret) = (repo_on_scm("200", "app"), repo_on_scm("201", "secret"));
+    sim.add_installation("1", account, &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    sim.add_repo(&app, "main", &[]);
+    sim.add_repo(&secret, "main", &[]);
+    sim.set_permission(&app, &ada, Permission::Write).unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                            default_branch)
+             VALUES ('{secret}', '{org}', '{connection}', '201', 'acme', 'secret', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{queue}', '{org}', '{secret}', 'main');",
+        secret = RepoId::from_ulid(Ulid(80)),
+        queue = QueueId::from_ulid(Ulid(81)),
+        org = org(),
+        connection = connection(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let session = signed_in(&pool, &sim, &ada).await;
+    let cancel = CancellationToken::new();
+    let deliveries = Arc::new(Mutex::new(HashMap::new()));
+    let module = cihub_mergequeue::module(
+        pool.clone(),
+        sim.clone(),
+        translate(&deliveries),
+        "scheduler".into(),
+        Arc::new(clock),
+        None,
+    );
+    let (addr, _) = serve_api_with(&pool, module.api, sim.clone(), cancel.clone()).await;
+    let get = |path: &'static str| {
+        let (addr, session) = (addr.clone(), session.clone());
+        async move { read_as(&addr, &session, path).await }
+    };
+    let person_calls = || {
+        sim.calls()
+            .iter()
+            .filter(|call| call.name.starts_with("person_"))
+            .count()
+    };
+    let age = |table: &'static str, column: &'static str| {
+        let pool = pool.clone();
+        async move {
+            let mut tx = begin_system(&pool).await.unwrap();
+            sqlx::query(AssertSqlSafe(format!("UPDATE {table} SET {column} = $1")))
+                .bind(web_clock() - Duration::hours(2))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+        }
+    };
+
+    let hidden = get("/orgs/acme/repos/secret").await;
+    let shown = get("/orgs/acme/repos/app").await;
+    let calls = person_calls();
+    let again = get("/orgs/acme/repos/app/queues/main").await;
+    let repos = get("/orgs/acme/repos").await;
+    let queues = get("/orgs/acme/queues").await;
+
+    assert_eq!(
+        (hidden.0, &hidden.1["code"]),
+        (404, &serde_json::json!("repo_not_found"))
+    );
+    assert_eq!(shown.0, 200, "{}", shown.1);
+    assert_eq!(
+        shown.1["permission"],
+        serde_json::json!({ "read": true, "write": true, "admin": false })
+    );
+    assert_eq!(again.0, 200, "{}", again.1);
+    assert_eq!(
+        person_calls(),
+        calls,
+        "a fresh access calls the SCM zero times"
+    );
+    let names = |list: &Value, entries: &str, field: &str| -> Vec<Value> {
+        list[entries]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry[field].clone())
+            .collect()
+    };
+    assert_eq!(names(&repos.1, "repos", "name"), ["app"]);
+    assert_eq!(names(&queues.1, "queues", "repo"), ["app"]);
+
+    sim.set_permission(&app, &ada, Permission::None).unwrap();
+    age("repo_permissions", "checked_at").await;
+    let lost = get("/orgs/acme/repos/app").await;
+
+    assert_eq!(
+        (lost.0, &lost.1["code"]),
+        (404, &serde_json::json!("repo_not_found")),
+        "an access older than an hour is checked again"
+    );
+
+    age("memberships", "refreshed_at").await;
+    sim.fail(Fault {
+        call: Some("person_role"),
+        error: ScmError::Unavailable("down".into()),
+        times: 1,
+    });
+    let unavailable = get("/orgs/acme").await;
+
+    assert_eq!(
+        (unavailable.0, &unavailable.1["code"]),
+        (503, &serde_json::json!("scm_unavailable"))
+    );
+
+    sim.revoke_person(&ada);
+    let refused = get("/orgs/acme").await;
+    let after = get("/user").await;
+
+    assert_eq!(refused.0, 401, "{}", refused.1);
+    assert_eq!(after.0, 401, "the sessions of the person ended");
+    cancel.cancel();
+}
+
+/// Signs `person` in on `sim` as the dashboard would: a session, their role
+/// in `acme` read now, and their token, sealed.
+async fn signed_in(pool: &PgPool, sim: &Sim, person: &ScmUser) -> SecretString {
+    let request = cihub_scm::SignInRequest {
+        redirect_url: "https://ci.example.com/auth/github/callback".into(),
+        state: "state".into(),
+        code_challenge: cihub_scm::code_challenge(&SecretString::from("verifier")),
+    };
+    let code = cihub_scm::SignInCode {
+        code: SecretString::from(sim.authorize(person, &request)),
+        code_verifier: SecretString::from("verifier"),
+        redirect_url: request.redirect_url.clone(),
+    };
+    let (_, token) = sim.sign_in(&code, JobClass::Interactive).await.unwrap();
+    let cipher = cihub_store::DatabaseCipher::new(&SecretString::from(DATABASE_SECRET)).unwrap();
+    let user_id = UserId::from_ulid(Ulid(70));
+    let secret = cihub_store::new_session_secret().unwrap();
+    let session = cihub_store::NewSession {
+        id: SessionId::from_ulid(Ulid(70)),
+        user_id,
+        created_at: web_clock(),
+        expires_at: web_clock() + Duration::days(14),
+    };
+    let token = cihub_store::PersonToken {
+        access: token.access,
+        access_expires_at: None,
+        refresh: None,
+        refresh_expires_at: None,
+    };
+    let mut tx = begin_system(pool).await.unwrap();
+
+    cihub_store::ensure_user(&mut tx, user_id, &person.external_id, &person.login)
+        .await
+        .unwrap();
+    cihub_store::create_session(&mut tx, &session, &secret)
+        .await
+        .unwrap();
+    cihub_store::keep_person_token(&mut tx, &cipher, user_id, &token)
+        .await
+        .unwrap();
+    cihub_store::record_membership(&mut tx, org(), user_id, MembershipRole::Member, web_clock())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    secret
+}
+
+/// `GET path` with the session of `secret`: its status and its body.
+async fn read_as(addr: &str, secret: &SecretString, path: &str) -> (u16, Value) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let request = format!(
+        "GET /api/v1{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\
+         Cookie: __Host-cihub_session={}\r\n\r\n",
+        secret.expose_secret(),
+    );
+    let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await.unwrap();
+    let status = answer[9..12].parse().unwrap();
+    let body = answer
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body)
+        .unwrap_or_default();
+
+    (status, serde_json::from_str(body).unwrap_or(Value::Null))
 }
 
 const FACT_TABLES: [&str; 7] = [

@@ -432,6 +432,7 @@ version = "0.2.1"
 dependencies = [
  "cihub-domain",
  "rand",
+ "ring",
  "secrecy",
  "serde_json",
  "sha2 0.11.0",

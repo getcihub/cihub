@@ -30,7 +30,7 @@ use cihub_github::{
 };
 use cihub_platform::{Delivery, ModuleApi, PlatformError, QueueNewsFeed, store_delivery};
 use cihub_scm::Scm;
-use cihub_store::{PgPool, begin_system};
+use cihub_store::{DatabaseCipher, PgPool, begin_system};
 use secrecy::SecretString;
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
@@ -46,11 +46,13 @@ pub struct GithubWebhooks {
     pub secret: SecretString,
 }
 
-/// What the dashboard needs: the SCM where people sign in, the root address
-/// of the instance, which the SCM sends them back to, and the changes of the
-/// queues, which its pages follow.
+/// What the dashboard needs: the SCM where people sign in, the cipher that
+/// seals their tokens, the root address of the instance, which the SCM sends
+/// them back to, and the changes of the queues, which its pages follow.
 pub struct Dashboard {
     pub scm: Arc<dyn Scm>,
+    /// `None` when nobody signs in: the sign-in keeps a token, sealed.
+    pub cipher: Option<Arc<DatabaseCipher>>,
     pub public_url: Option<String>,
     pub news: QueueNewsFeed,
 }
@@ -93,6 +95,7 @@ pub fn router(
                 now,
                 modules,
                 dashboard.scm,
+                dashboard.cipher,
                 dashboard.news,
                 dashboard.public_url,
             ),
@@ -105,6 +108,7 @@ fn sign_in_routes(pool: &PgPool, now: fn() -> OffsetDateTime, dashboard: &Dashbo
         pool: pool.clone(),
         now,
         scm: Arc::clone(&dashboard.scm),
+        cipher: dashboard.cipher.clone(),
         kind: ConnectionKind::GithubApp,
         public_url: dashboard.public_url.clone(),
     };

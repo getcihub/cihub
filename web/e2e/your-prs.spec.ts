@@ -44,12 +44,12 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   expect(comment).toContain("[Open in CIHub](http://127.0.0.1:18090/orgs/acme/repos/api/queues/main/prs/2)");
 });
 
-test("a member pauses nothing", async ({ page }) => {
+test("a person who writes to the repository pauses nothing", async ({ page }) => {
   await signInAsAda(page);
   await page.goto("/orgs/acme/repos/web/queues/main");
 
   const pause = page.getByRole("button", { name: "Pause" });
 
   await expect(pause).toBeDisabled();
-  await expect(pause).toHaveAttribute("title", "Needs the admin role");
+  await expect(pause).toHaveAttribute("title", "Needs the admin permission on the repository");
 });

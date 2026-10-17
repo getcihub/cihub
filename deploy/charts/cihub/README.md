@@ -48,6 +48,7 @@ Kubernetes: `>=1.25.0-0`
 | affinity | object | `{}` | Affinity of the pods. |
 | database.existingSecret | required | `""` | Secret that holds the URL of Postgres, `database.url` of `server.yaml`. The role is neither a superuser nor `BYPASSRLS` (CIHub refuses it at startup) and owns the database: the migration Job uses the same URL. |
 | database.key | string | `"uri"` | Key of the URL in that Secret. |
+| database.secretKey | string | `"secret"` | Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set. |
 | deploymentAnnotations | object | `{}` | Annotations of the Deployment. |
 | fullnameOverride | string | `""` | Replaces the full name of the resources. |
 | github.appId | required | `""` | Identifier of the GitHub App (specs/GITHUB.md). |

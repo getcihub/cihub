@@ -1,7 +1,8 @@
 //! `GET /orgs/{org}/stream`: the changes of the queues of an organization, as
-//! server-sent events, for the pages of the dashboard.
+//! server-sent events, for the pages of the dashboard. A person hears only the
+//! queues of the repositories that they read.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -11,11 +12,11 @@ use axum::http::HeaderName;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::response::{IntoResponse, Response};
 use cihub_api_types::{ErrorCode, QueueChanged};
-use cihub_domain::{ApiScope, OrgId};
+use cihub_domain::{ApiScope, OrgId, QueueId};
 use cihub_platform::{
     ApiError, ApiGrant, ApiPath, GrantActor, QueueNews, QueueNewsFeed, error_responses,
 };
-use cihub_store::PgPool;
+use cihub_store::{PgPool, begin_org};
 use tokio::io::{AsyncWriteExt, DuplexStream};
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
@@ -113,8 +114,14 @@ pub(crate) async fn stream(
     let (writer, reader) = tokio::io::duplex(BUFFER_BYTES);
     let news = streams.news.subscribe();
     let stopped = streams.news.stopped().clone();
+    let mut audience = Audience {
+        pool: streams.pool.clone(),
+        org: grant.org_id,
+        repos: grant.repo_filter().map(|repos| repos.into_iter().collect()),
+        queues: HashMap::new(),
+    };
     tokio::spawn(async move {
-        write_events(writer, news, &stopped, grant.org_id).await;
+        write_events(writer, news, &stopped, &mut audience).await;
         drop(opened);
     });
 
@@ -148,13 +155,48 @@ fn open_for(streams: &Streams, caller: GrantActor) -> Result<Opened, ApiError> {
     })
 }
 
-/// Writes the events of `org` until the server stops, the page leaves or
-/// reads nothing, changes are lost, or the stream is old enough.
+/// Who a stream speaks to: the organization, and the repositories that a
+/// person reads; `None` for every repository, for a token.
+struct Audience {
+    pool: PgPool,
+    org: OrgId,
+    repos: Option<HashSet<String>>,
+    /// Whether the stream shows each queue that it met.
+    queues: HashMap<QueueId, bool>,
+}
+
+impl Audience {
+    /// Whether the stream shows the queue `queue_id`; `None` when Postgres
+    /// fails, which ends the stream. A queue created after the stream opened
+    /// is read once.
+    async fn shows(&mut self, queue_id: QueueId) -> Option<bool> {
+        let Some(repos) = &self.repos else {
+            return Some(true);
+        };
+        if let Some(shown) = self.queues.get(&queue_id) {
+            return Some(*shown);
+        }
+
+        let mut tx = begin_org(&self.pool, self.org).await.ok()?;
+        let repo: Option<String> = sqlx::query_scalar("SELECT repo_id FROM queues WHERE id = $1")
+            .bind(queue_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()?;
+        let shown = repo.is_some_and(|repo| repos.contains(&repo));
+        self.queues.insert(queue_id, shown);
+        Some(shown)
+    }
+}
+
+/// Writes the events of the organization of `audience` until the server
+/// stops, the page leaves or reads nothing, changes are lost, or the stream
+/// is old enough.
 async fn write_events(
     mut writer: DuplexStream,
     mut news: Receiver<QueueNews>,
     stopped: &CancellationToken,
-    org: OrgId,
+    audience: &mut Audience,
 ) {
     let mut ping = tokio::time::interval(PING_EVERY);
     let end = Instant::now() + STREAM_LIFETIME;
@@ -168,7 +210,7 @@ async fn write_events(
         if !matches!(written, Ok(Ok(()))) {
             return;
         }
-        text = next_text(&mut news, &mut ping, stopped, end, org).await;
+        text = next_text(&mut news, &mut ping, stopped, end, audience).await;
     }
 }
 
@@ -178,7 +220,7 @@ async fn next_text(
     ping: &mut Interval,
     stopped: &CancellationToken,
     end: Instant,
-    org: OrgId,
+    audience: &mut Audience,
 ) -> Option<String> {
     loop {
         let received = tokio::select! {
@@ -188,7 +230,10 @@ async fn next_text(
             received = news.recv() => received,
         };
         match received {
-            Ok(QueueNews::Changed(change)) if change.org_id == org => {
+            Ok(QueueNews::Changed(change)) if change.org_id == audience.org => {
+                if !audience.shows(change.queue_id).await? {
+                    continue;
+                }
                 let data = QueueChanged {
                     queue_id: change.queue_id.to_string(),
                     seq: change.seq,
