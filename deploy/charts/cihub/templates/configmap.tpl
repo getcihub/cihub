@@ -1,7 +1,7 @@
 {{- include "cihub.required" . -}}
 # server.yaml without its secrets (specs/DEPLOYMENT.md): CIHUB_DATABASE_URL,
-# CIHUB_GITHUB_WEBHOOK_SECRET and CIHUB_GITHUB_CLIENT_SECRET come from the
-# environment, the private key from a file of its Secret.
+# CIHUB_DATABASE_SECRET, CIHUB_GITHUB_WEBHOOK_SECRET and
+# CIHUB_GITHUB_CLIENT_SECRET come from the environment, the private key from a file of its Secret.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -22,7 +22,12 @@ data:
     {{- with .Values.github.clientId }}
     {{- $_ := set $github "client_id" . }}
     {{- end }}
+    {{- $database := dict
+      "pool_size" (int .Values.database.poolSize)
+      "idle_timeout" (int .Values.database.idleTimeout)
+      "connection_timeout" (int .Values.database.connectionTimeout) }}
     {{- $file := dict
+      "database" $database
       "http" $http
       "internal" (dict "addr" "0.0.0.0:8081")
       "log" (dict "filter" .Values.log.filter "format" .Values.log.format)
