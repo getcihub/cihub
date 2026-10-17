@@ -1382,7 +1382,7 @@ pub struct AuditEntry {
         schema(example = "audit_06cx8fn2xagkyc9x5csgnm5r2hmqf441")
     )]
     pub id: String,
-    /// What was done: `queue.state_requested`, `queue.sync`,
+    /// What was done: `queue.state_requested`, `queue.sync`, `repo.sync`,
     /// `item.cancel_requested` or `item.restart_requested`.
     #[cfg_attr(feature = "openapi", schema(example = "queue.state_requested"))]
     pub action: String,

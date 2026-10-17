@@ -6406,7 +6406,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "description": "What was done: `queue.state_requested`, `queue.sync`,\n`item.cancel_requested` or `item.restart_requested`.",
+            "description": "What was done: `queue.state_requested`, `queue.sync`, `repo.sync`,\n`item.cancel_requested` or `item.restart_requested`.",
             "example": "queue.state_requested"
           },
           "actor_user_id": {
