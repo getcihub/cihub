@@ -12,6 +12,7 @@ mod repos;
 mod runs;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -25,7 +26,7 @@ use cihub_api_types::{
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
-use cihub_scm::ScmUser;
+use cihub_scm::{Scm, ScmUser};
 use cihub_store::{PgPool, Postgres, Transaction};
 use serde::Deserialize;
 use serde_json::Value;
@@ -40,6 +41,8 @@ use crate::jobs::Account;
 struct ApiState {
     pool: PgPool,
     clock: Clock,
+    /// Gives the page of the rules of a repository; the routes make no call.
+    scm: Arc<dyn Scm>,
 }
 
 #[derive(OpenApi)]
@@ -139,7 +142,7 @@ pub(crate) fn openapi() -> utoipa::openapi::OpenApi {
 }
 
 /// The routes of the module and their `OpenAPI` document.
-pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
+pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
     let routes = Router::new()
         .route("/orgs/{org}/queues", get(queues::list_org_queues))
         .route(
@@ -185,7 +188,7 @@ pub(crate) fn api(pool: PgPool, clock: Clock) -> ModuleApi {
             post(prs::restart),
         )
         .route("/orgs/{org}/repos/{repo}/runs/{run_id}", get(runs::get_run))
-        .with_state(ApiState { pool, clock });
+        .with_state(ApiState { pool, clock, scm });
     ModuleApi {
         routes,
         openapi: openapi(),

@@ -16,6 +16,7 @@ mod log;
 mod merge;
 mod projection;
 mod repair;
+mod repo_setup;
 mod scheduler;
 mod surfaces;
 mod target;
@@ -31,6 +32,7 @@ pub use config::request_queue_setups;
 pub use jobs::{REFRESH_PRS, queue_status_context};
 pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::sync_queue;
+pub use repo_setup::{READ_REPO_SETUP, request_repo_setups};
 pub use scheduler::{
     Reconciler, Translate, pass_connection_deliveries, wake_live_queues, wake_uncovered,
 };
@@ -141,7 +143,7 @@ pub fn module(
         dashboard_url,
     };
     Module {
-        api: api::api(pool.clone(), clock.clone()),
+        api: api::api(pool.clone(), clock.clone(), Arc::clone(&scm)),
         executors: Box::new(move |executors| {
             register!(executors, scm, REFRESH_PRS, jobs::refresh);
             register!(executors, scm, SUBMIT_PR, jobs::submit_pr);
@@ -152,6 +154,7 @@ pub fn module(
             register!(executors, scm, REFRESH_TARGET, repair::read_target);
             register!(executors, scm, LOAD_CONFIG, config::load);
             register!(executors, scm, READ_SETUP, config::read_setup);
+            register!(executors, scm, READ_REPO_SETUP, repo_setup::read_repo_setup);
             register!(executors, scm, PR_COMMAND, command::run_pr_command);
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);

@@ -17,7 +17,7 @@ use cihub_domain::{
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
     Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, request_queue_setups, wake_uncovered,
+    queue_status_context, rebuild, request_queue_setups, request_repo_setups, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -837,7 +837,7 @@ impl SimQueue {
                      OR EXISTS (SELECT 1 FROM jobs
                                 WHERE state = 'running'
                                    OR (state = 'queued'
-                                       AND (type <> 'read_setup' OR run_after <= $1)))
+                                       AND (type NOT IN ('read_setup', 'read_repo_setup') OR run_after <= $1)))
                      OR EXISTS (SELECT 1 FROM queues WHERE dirty)",
             )
             .bind(self.clock.now())
@@ -4478,27 +4478,85 @@ async fn the_api_lists_no_queue_for_an_organization_without_one(pool: PgPool) {
 }
 
 /// `GET /orgs/{org}/repos` gives the repositories that the App reaches, with
-/// what the token may do on them and the verdict of their setup, which says
-/// only whether the default branch has its queue until a setup read; `GET
-/// /orgs/{org}/repos/{repo}` gives the whole setup.
+/// what the token may do on them and the verdict of their setup, which the
+/// server computes from the last read; `GET /orgs/{org}/repos/{repo}` gives the
+/// whole setup; `POST …/sync` asks for a read, which shows until it ends.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     seed(&pool).await;
-
-    let mut tx = begin_system(&pool).await.unwrap();
-    sqlx::raw_sql(AssertSqlSafe(format!(
+    let id = |n: u128| RepoId::from_ulid(Ulid(n)).to_string();
+    let setup = |repo: String, head: &str, findings: &str, state: &str, file: &str| {
+        format!(
+            "INSERT INTO repo_setups (org_id, repo_id, branch, head_sha, findings, config_state,
+                                      config_path, config_error, config_line, config_column,
+                                      config_text, entries, checked_at)
+             VALUES ('{org}', '{repo}', 'main', {head}, '{findings}', '{state}', {file},
+                     '2026-10-01T09:00:00Z');",
+            org = org(),
+        )
+    };
+    let no_file = "NULL, NULL, NULL, NULL, NULL, '{}'";
+    let rule = |code: &str| format!(r#"[{{"code": "{code}", "message": "m"}}]"#);
+    let mut sql = Vec::new();
+    for (n, name) in [
+        (70, "docs"),
+        (72, "lib"),
+        (73, "site"),
+        (74, "blog"),
+        (75, "wiki"),
+        (76, "gone"),
+    ] {
+        sql.push(format!(
+            "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                                default_branch)
+                 VALUES ('{}', '{}', '{}', '{n}', 'acme', '{name}', 'main');",
+            id(n),
+            org(),
+            connection(),
+        ));
+    }
+    sql.push(format!(
         "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                             default_branch, removed_at)
-             VALUES ('{docs}', '{org}', '{connection}', '201', 'acme', 'docs', 'main', NULL),
-                    ('{old}', '{org}', '{connection}', '202', 'acme', 'old', 'main', now());",
-        docs = RepoId::from_ulid(Ulid(70)),
-        old = RepoId::from_ulid(Ulid(71)),
-        org = org(),
-        connection = connection(),
-    )))
-    .execute(&mut *tx)
-    .await
-    .unwrap();
+             VALUES ('{}', '{}', '{}', '71', 'acme', 'old', 'main', now());",
+        id(71),
+        org(),
+        connection(),
+    ));
+    sql.push(setup(
+        id(72),
+        "'abc'",
+        "[]",
+        "invalid",
+        "'.cihub.yaml', '`batching.size` is from 1 to 100', 6, 3, 'version: 1\n', '{main}'",
+    ));
+    sql.push(setup(
+        id(73),
+        "'abc'",
+        &rule("app_not_exempt"),
+        "none",
+        no_file,
+    ));
+    sql.push(setup(
+        id(74),
+        "'abc'",
+        &rule("up_to_date_required"),
+        "none",
+        no_file,
+    ));
+    sql.push(setup(
+        id(75),
+        "'abc'",
+        "[]",
+        "valid",
+        "'.cihub.yaml', NULL, NULL, NULL, 'version: 1\nqueues:\n  - branch: main\n    strategy: batched\n', '{main}'",
+    ));
+    sql.push(setup(id(76), "NULL", "[]", "none", no_file));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(sql.concat()))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
 
     let cancel = CancellationToken::new();
@@ -4509,52 +4567,106 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     };
 
     let (status, listed) = get("/orgs/acme/repos").await;
-    let (_, checking) = get("/orgs/acme/repos?state=checking,ready").await;
+    let (_, blocked) = get("/orgs/acme/repos?state=cannot_merge").await;
     let (_, found) = get("/orgs/acme/repos?q=DO").await;
     let unknown = get("/orgs/acme/repos?state=lost").await;
     let (_, docs) = get("/orgs/acme/repos/DOCS").await;
-    let sync = call(&addr, &token, "POST", "/orgs/acme/repos/docs/sync", None).await;
+    let (_, lib) = get("/orgs/acme/repos/lib").await;
+    let (_, site) = get("/orgs/acme/repos/site").await;
+    let (_, wiki) = get("/orgs/acme/repos/wiki").await;
+    let (_, gone) = get("/orgs/acme/repos/gone").await;
 
     assert_eq!(status, 200, "{listed}");
-    let states: Vec<_> = listed["repos"]
+    let states: Vec<(Value, Value)> = listed["repos"]
         .as_array()
         .unwrap()
         .iter()
         .map(|repo| (repo["name"].clone(), repo["setup"]["state"].clone()))
         .collect();
+    let expected = [
+        ("app", "started"),
+        ("blog", "ready_with_warnings"),
+        ("docs", "checking"),
+        ("gone", "cannot_merge"),
+        ("lib", "invalid_config"),
+        ("site", "cannot_merge"),
+        ("wiki", "ready"),
+    ]
+    .map(|(name, state)| (Value::from(name), Value::from(state)));
     assert_eq!(
-        states,
-        [
-            ("app".into(), "started".into()),
-            ("docs".into(), "checking".into())
-        ],
+        states, expected,
         "a repository that the App no longer reaches is not listed"
     );
     assert_eq!(
         listed["repos"][0]["permission"],
         serde_json::json!({ "read": true, "write": true, "admin": true })
     );
-    assert_eq!(checking["repos"][0]["name"], "docs");
-    assert_eq!(checking["count"], 1);
+    assert_eq!(blocked["count"], 2);
     assert_eq!(found["repos"][0]["name"], "docs");
-    assert_eq!(found["count"], 1);
     assert_eq!(
         (unknown.0, &unknown.1["code"]),
         (400, &serde_json::json!("invalid_request"))
     );
     assert_eq!(docs["name"], "docs", "the case of a name does not matter");
+    assert_eq!(docs["setup"]["config"], Value::Null, "no read yet");
+    assert_eq!(docs["setup"]["rules"], serde_json::json!([]));
     assert_eq!(
-        docs["setup"],
-        serde_json::json!({
-            "state": "checking", "queue": null, "rules": [], "target_branch_missing": false,
-            "rules_url": null, "config": null, "checked_at": null, "requested_at": null
-        })
+        (
+            &lib["setup"]["config"]["state"],
+            &lib["setup"]["config"]["line"],
+            &lib["setup"]["config"]["text"],
+            &lib["setup"]["config"]["strategy"],
+        ),
+        (
+            &"invalid".into(),
+            &6.into(),
+            &"version: 1\n".into(),
+            &"pipelined".into()
+        ),
+        "a file that is not valid shows its text, and the defaults: {lib}"
     );
+    let app_not_exempt = &site["setup"]["rules"][1];
+    assert_eq!(site["setup"]["rules"].as_array().unwrap().len(), 4);
     assert_eq!(
-        (sync.0, &sync.1["code"]),
-        (404, &serde_json::json!("route_not_found")),
-        "the sync of a setup comes with its read"
+        (
+            &app_not_exempt["code"],
+            &app_not_exempt["passed"],
+            &app_not_exempt["blocks_merge"]
+        ),
+        (&"app_not_exempt".into(), &false.into(), &true.into())
     );
+    assert!(
+        app_not_exempt["message"]
+            .as_str()
+            .unwrap()
+            .contains("bypass list")
+    );
+    assert_eq!(site["setup"]["rules"][0]["message"], Value::Null, "{site}");
+    assert_eq!(wiki["setup"]["config"]["strategy"], "batched");
+    assert_eq!(
+        wiki["setup"]["config"]["text"],
+        Value::Null,
+        "a valid file shows no text"
+    );
+    assert_eq!(gone["setup"]["target_branch_missing"], true);
+    assert_eq!(gone["setup"]["rules"], serde_json::json!([]));
+
+    let sync = call(&addr, &token, "POST", "/orgs/acme/repos/wiki/sync", None).await;
+    let again = call(&addr, &token, "POST", "/orgs/acme/repos/wiki/sync", None).await;
+    let (_, wiki) = get("/orgs/acme/repos/wiki").await;
+
+    assert_eq!((sync.0, again.0), (202, 202));
+    assert_eq!(wiki["setup"]["state"], "checking", "the asked read waits");
+    assert_eq!(wiki["setup"]["requested_at"], "2026-10-01T10:00:00Z");
+    let mut tx = begin_system(&pool).await.unwrap();
+    let (jobs, audits): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM jobs WHERE type = 'read_repo_setup'),
+                (SELECT count(*) FROM audit_log WHERE action = 'repo.sync')",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!((jobs, audits), (1, 2), "one read per minute");
     cancel.cancel();
 }
 
@@ -4862,6 +4974,81 @@ async fn partition_exists(pool: &PgPool, name: &str) -> bool {
 
 /// The scheduler asks for a setup read of a queue that has none, or whose
 /// read is one hour old, while CIHub reaches its repository.
+/// The setup of a repository is read at its discovery, then once a day at a
+/// moment that it keeps: the rules of its default branch and its file at its
+/// head, whose error keeps its line.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_setup_of_a_repository_is_read_at_its_discovery_then_every_day(pool: PgPool) {
+    let q = SimQueue::new(pool.clone()).await;
+    let config = "version: 1\nqueues:\n  - branch: main\n    batching:\n      size: 500\n";
+    target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+    let now = q.clock.now();
+    let read = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let row: (
+            Option<String>,
+            Value,
+            String,
+            Option<i32>,
+            Vec<String>,
+            OffsetDateTime,
+        ) = sqlx::query_as(
+            "SELECT head_sha, findings, config_state::text, config_line, entries, checked_at
+                 FROM repo_setups",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        row
+    };
+
+    assert_eq!(request_repo_setups(&pool, now).await.unwrap(), 1);
+    assert_eq!(
+        request_repo_setups(&pool, now).await.unwrap(),
+        0,
+        "a read that waits is not asked again"
+    );
+    q.settle().await;
+
+    let (head, findings, config, line, entries, checked_at) = read().await;
+    assert!(head.is_some());
+    assert_eq!(
+        findings[0]["code"], "update_restriction_missing",
+        "{findings}"
+    );
+    assert_eq!((config.as_str(), line), ("invalid", Some(5)));
+    assert_eq!(
+        entries,
+        [] as [String; 0],
+        "a file that does not parse has no entry"
+    );
+    assert_eq!(
+        request_repo_setups(&pool, checked_at + Duration::hours(23))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        request_repo_setups(&pool, checked_at + Duration::hours(25))
+            .await
+            .unwrap(),
+        1
+    );
+    let mut tx = begin_system(&pool).await.unwrap();
+    let run_after: OffsetDateTime = sqlx::query_scalar(
+        "SELECT run_after FROM jobs WHERE type = 'read_repo_setup' AND state = 'queued'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    let later = checked_at + Duration::hours(25);
+    assert!(
+        run_after >= later && run_after < later + Duration::days(1),
+        "{run_after}: within the day"
+    );
+    q.stop().await;
+}
+
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_setup_of_a_queue_is_read_every_hour(pool: PgPool) {
     seed(&pool).await;

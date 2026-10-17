@@ -17,7 +17,8 @@ CREATE TABLE repo_setups (
     config_error  text,
     config_line   integer,
     config_column integer,
-    -- Only when the file is not valid.
+    -- The file as read: the API gives the strategy and the settings of the
+    -- default branch from it, and its text only when it is not valid.
     config_text   text,
     entries       text[]            NOT NULL DEFAULT '{}',
     checked_at    timestamptz       NOT NULL,

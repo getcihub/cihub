@@ -41,7 +41,7 @@ setup (`Repo`), and the repository alone its whole setup (`RepoDetail`), whose f
 | GET                | `/orgs/{org}`                                            | The organization (`slug`), the `role` of the person of the session in it, `null` for a token, and `is_suspended` (every connection of the organization is suspended); any token or session of the organization            |
 | GET                | `/orgs/{org}/repos`                                      | The repositories that the App reaches, by namespace then name, each a `Repo`; filters `state` (states of the setup, separated by commas; an unknown state answers `400 invalid_request`) and `q` (a part of the name, whatever its case, 1 to 100 characters); `queues:read` |
 | GET                | `/orgs/{org}/repos/{repo}`                               | The repository with its whole setup, a `RepoDetail`; `404 repo_not_found`; `queues:read`                                                                                                                                                      |
-| POST               | `/orgs/{org}/repos/{repo}/sync`                          | Admin: read the setup of the repository from the SCM now (class `interactive`, at most once a minute); `202`; `queues:write`; `404 route_not_found` until lot 16 serves it                                                                   |
+| POST               | `/orgs/{org}/repos/{repo}/sync`                          | Admin: read the setup of the repository from the SCM now (class `interactive`, at most once a minute); `202`; `queues:write`                                                                   |
 | GET                | `/orgs/{org}/queues`                                     | The queues of every repository of the organization, by repository name then target branch, each a `Queue`; filter `q` (a part of the name of the repository, whatever its case, 1 to 100 characters)                                         |
 | GET                | `/orgs/{org}/repos/{repo}/queues`                        | The queues of the repository, by target branch, each a `Queue`                                                                                                                                                                                 |
 | GET, PATCH         | `…`                                                      | Read a `Queue`, or request a `state` (`running`, `paused`, `draining`); deletion is deferred                                                                                                                                                    |
@@ -98,10 +98,13 @@ a queue needs, in the order of the findings (`update_restriction_missing`, `app_
 when it fails), empty before the first read; `target_branch_missing`; `rules_url`, the page of the SCM that changes the rules (`null` when the SCM
 has none); `config`, `null` before the first read (`ConfigFile`: `state` `none`, `valid` or `invalid`, `path`, `sha` the head that was read,
 `error` with its `line` and `column`, `text` only when invalid and at most 64 KiB, `entries` the `branch` of each
-entry of the file as written, and the `strategy` and the `settings` of the default branch, from the file or the
+entry of the file as written (none for a file that does not parse), and the `strategy` and the `settings` of the default branch, from the file or the
 defaults); `checked_at`, `null` before the first read; and `requested_at`, the time of a sync while its read
 waits. A queue shows the same findings in `Queue.setup`. Every field comes from Postgres: showing a setup calls the
-SCM zero times. Until lot 16 reads the setups, the state is `started` or `checking`, and the rest is empty.
+SCM zero times. The job `read_repo_setup` reads it at the discovery of a repository, then once a day at a
+moment of the day that the repository keeps (class `repair`), and at `POST …/repos/{repo}/sync` (class
+`interactive`, at most once a minute), which writes `repo.sync` in the audit log; a page reads the setup again
+while `requested_at` shows.
 
 A PR (`Pr` in `cihub-api-types`) is its last submission (an item of `specs/DOMAIN.md`), with `id`, the identifier
 of the item, its `number`, `repo` and `queue`. It carries `state_reason`, the code of the closed vocabulary, and

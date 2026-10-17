@@ -11,7 +11,7 @@ export type ActorKind = 'system' | 'bot' | 'user';
  */
 export type AuditEntry = {
     /**
-     * What was done: `queue.state_requested`, `queue.sync`,
+     * What was done: `queue.state_requested`, `queue.sync`, `repo.sync`,
      * `item.cancel_requested` or `item.restart_requested`.
      */
     action: string;

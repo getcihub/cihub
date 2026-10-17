@@ -663,6 +663,19 @@ Decisions:
     `the_stream_of_a_person_carries_their_repositories_only`, `the_last_sign_out_forgets_the_token_of_the_person`,
     `a_sealed_value_opens_only_with_its_key_and_its_place`, the recorded tests of the token of a person, and
     `the_sign_in_needs_the_client_id_its_secret_and_the_database_secret`.
+  - Done (October 17, 2026): WP3, the setup reads and the bodies of the routes. `read_repo_setup` reads the head of
+    the default branch (`null` when it is gone, without a finding nor a file), `check_setup` and the configuration
+    file at that head, checked as the queue of the branch would load it, and keeps them in `repo_setups` with the
+    text of the file, from which the API gives the strategy and the settings of the default branch.
+    `request_repo_setups`, in the sweep of the setups of the scheduler (every 5 minutes), asks for it at once for a
+    repository never read and once a day at a moment that the repository keeps; `POST …/repos/{repo}/sync` asks
+    for it in class `interactive`, at most once a minute, and writes `repo.sync` in the audit log; `requested_at`
+    comes from that read while it waits, without a column. The server computes the state in SQL, so that the
+    filter `state` reads it; the four `RuleCheck` come from the findings, with their sentences; `rules_url` comes
+    from `Scm::branch_rules_url`, which makes no call. A file that does not parse has no entry. The simulator finds
+    `update_restriction_missing` on every branch: a repository there is at best `ready_with_warnings` until WP2
+    models the rules. Tests: `the_api_lists_the_repositories_with_their_setup`,
+    `the_setup_of_a_repository_is_read_at_its_discovery_then_every_day`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
