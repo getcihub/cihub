@@ -129,6 +129,28 @@ async fn a_rate_limit_pauses_the_connection_until_its_reset() {
     replay.finish();
 }
 
+#[tokio::test]
+async fn an_empty_repository_has_no_branch() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let empty = Exchange {
+        method: "GET".into(),
+        path: "/repos/acme/app/git/ref/heads/main".into(),
+        request: None,
+        status: 409,
+        headers: BTreeMap::new(),
+        body: Some(json!({ "message": "Git Repository is empty." })),
+        text: None,
+    };
+    let replay = Replay::start(vec![token("7", now), empty]).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+
+    let head = app.branch_head(&repo, "main", JobClass::Repair).await;
+
+    assert_eq!(head, Ok(None));
+    replay.finish();
+}
+
 fn page(path: &str, attempts: serde_json::Value, next: Option<&str>) -> Exchange {
     let headers = next
         .map(|next| {

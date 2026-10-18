@@ -668,7 +668,9 @@ impl GithubApp {
 
         let rest = format!("/git/ref/heads/{}", encode(branch));
         let answer = self.rest(repo, class, Method::GET, &rest, None).await?;
-        if answer.status == StatusCode::NOT_FOUND {
+        // GitHub answers 409 "Git Repository is empty" for a repository
+        // without a commit: it has no branch.
+        if matches!(answer.status, StatusCode::NOT_FOUND | StatusCode::CONFLICT) {
             return Ok(None);
         }
 
