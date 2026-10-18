@@ -20,7 +20,7 @@ function Banner({
 }) {
   return (
     // A banner describes the queue as the page opens: it informs, it does not interrupt.
-    <Alert variant={variant} role="status">
+    <Alert isBanner variant={variant} role="status">
       {icon}
       <AlertContent>
         <AlertTitle>{title}</AlertTitle>

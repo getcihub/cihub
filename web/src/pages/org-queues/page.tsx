@@ -3,7 +3,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { useDeferredValue, useEffect } from "react";
 
 import type { Repo, RepoList as RepoListOfOrg } from "@/client/types.gen";
-import { PlusIcon } from "@/components/icons/plus-icon";
+import { QueuesIcon } from "@/components/icons/queues-icon";
 import { SearchIcon } from "@/components/icons/search-icon";
 import { MinePrs } from "@/components/mine/mine";
 import { COMMAND } from "@/components/queue/copy-command";
@@ -146,8 +146,8 @@ export function OrgQueuesPage() {
 /** The organization has no queue yet: where to start. */
 function NoQueueYet({ org, count }: { org: string; count: number }) {
   return (
-    <Alert variant="info" role="status" className="items-start">
-      <PlusIcon />
+    <Alert isBanner variant="info" role="status">
+      <QueuesIcon />
       <AlertContent>
         <AlertTitle>No queue yet in {org}.</AlertTitle>
         <AlertDescription>

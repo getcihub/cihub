@@ -8,21 +8,46 @@ const alertVariants = cva(
   {
     variants: {
       variant: {
-        info: "border-info-border bg-info-muted [&>svg]:text-info",
-        warning: "border-warning-border bg-warning-muted [&>svg]:text-warning",
-        destructive: "border-destructive-border bg-destructive-muted [&>svg]:text-destructive",
+        info: "[&>svg]:text-info",
+        warning: "[&>svg]:text-warning",
+        destructive: "[&>svg]:text-destructive",
+      },
+      isBanner: {
+        false: "",
+        true: "border-border bg-card",
       },
     },
+    compoundVariants: [
+      { variant: "info", isBanner: false, className: "border-info-border bg-info-muted" },
+      { variant: "warning", isBanner: false, className: "border-warning-border bg-warning-muted" },
+      {
+        variant: "destructive",
+        isBanner: false,
+        className: "border-destructive-border bg-destructive-muted",
+      },
+      { variant: "info", isBanner: true, className: "shadow-[inset_2px_0_0_var(--color-info)]" },
+      { variant: "warning", isBanner: true, className: "shadow-[inset_2px_0_0_var(--color-warning)]" },
+      {
+        variant: "destructive",
+        isBanner: true,
+        className: "shadow-[inset_2px_0_0_var(--color-destructive)]",
+      },
+    ],
     defaultVariants: {
       variant: "info",
+      isBanner: false,
     },
   },
 );
 
-/** A message in the color of its tone: an icon first, then an `AlertContent`. */
+/**
+ * A message in the color of its tone: an icon first, then an `AlertContent`. A banner, the state of a page that
+ * stays while the page is open, keeps a neutral surface and shows its tone in its icon and a rule on its left.
+ */
 export function Alert({
   className,
   variant = "info",
+  isBanner = false,
   ...props
 }: ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
   return (
@@ -30,7 +55,7 @@ export function Alert({
       data-slot="alert"
       data-variant={variant}
       role="alert"
-      className={cn(alertVariants({ variant }), className)}
+      className={cn(alertVariants({ variant, isBanner }), className)}
       {...props}
     />
   );

@@ -21,6 +21,15 @@ describe("Alert", () => {
     expect(alert.querySelector("[data-slot=alert-description]")).toHaveTextContent("Try again.");
   });
 
+  it("keeps a neutral surface as a banner, with its tone in a rule on its left", () => {
+    render(<Alert variant="warning" isBanner />);
+
+    const alert = screen.getByRole("alert");
+
+    expect(alert).toHaveClass("bg-card", "border-border", "shadow-[inset_2px_0_0_var(--color-warning)]");
+    expect(alert).not.toHaveClass("bg-warning-muted");
+  });
+
   it("takes the role and the classes of the caller over its own", () => {
     render(<Alert role="status" className="px-4" />);
 
