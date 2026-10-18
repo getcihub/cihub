@@ -443,7 +443,10 @@ github:
                 connection_timeout: Duration::from_secs(5),
             }
         );
-        assert_eq!(config.database.secret.unwrap().expose_secret(), "a database secret of 32 bytes ab");
+        assert_eq!(
+            config.database.secret.unwrap().expose_secret(),
+            "a database secret of 32 bytes ab"
+        );
         assert_eq!(config.http_addr, "0.0.0.0:9090".parse().unwrap());
         assert_eq!(config.internal_addr, "127.0.0.1:9091".parse().unwrap());
         assert_eq!(config.logs.format(), LogFormat::Pretty);
