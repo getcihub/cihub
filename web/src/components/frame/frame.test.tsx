@@ -31,9 +31,9 @@ describe("Frame", () => {
     );
   });
 
-  it("lists the repositories with their number of queues, opens the only queue of a repository, and closes on Escape", async () => {
+  it("lists every repository with its number of queues, opens the only queue of a repository, and closes on Escape", async () => {
     renderInRouter(
-      <Frame me={ada} org="acme" queues={queues}>
+      <Frame me={ada} org="acme" queues={queues} repos={["api", "docs", "web"]}>
         page
       </Frame>,
     );
@@ -52,6 +52,10 @@ describe("Frame", () => {
     expect(within(menu).getByRole("link", { name: /^acme\/api\s*1$/ })).toHaveAttribute(
       "href",
       "/orgs/acme/repos/api/queues/main",
+    );
+    expect(within(menu).getByRole("link", { name: /^acme\/docs$/ })).toHaveAttribute(
+      "href",
+      "/orgs/acme/repos/docs",
     );
 
     await userEvent.keyboard("{Escape}");

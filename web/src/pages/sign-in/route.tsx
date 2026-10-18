@@ -16,11 +16,10 @@ export const Route = createFileRoute("/sign-in")({
   loaderDeps: ({ search: { next } }) => ({ next }),
   loader: async ({ context, deps }) => {
     const me = await readMe(context.queryClient);
-    if (me && me.orgs.length > 0) {
+    if (me) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error -- the router stops on a thrown redirect
-      throw redirect({ href: deps.next ?? "/" });
+      throw redirect({ href: me.orgs.length > 0 ? (deps.next ?? "/") : "/welcome" });
     }
-    return { me };
   },
   component: SignInPage,
   pendingComponent: PendingPage,

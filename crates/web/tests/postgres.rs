@@ -984,12 +984,12 @@ async fn the_setup_url_trusts_only_the_installations_of_the_person(pool: PgPool)
 
     assert_eq!(
         header_values(&reached.raw_head, "location"),
-        ["/orgs/globex/repos?connecting=install"]
+        ["/orgs/globex?connecting=install"]
     );
     assert_eq!(header_values(&forged.raw_head, "location"), ["/welcome"]);
     assert_eq!(
         header_values(&updated.raw_head, "location"),
-        ["/orgs/globex/repos?connecting=update"]
+        ["/orgs/globex?connecting=update"]
     );
     let session = cookie_set(&forged.raw_head, "__Host-cihub_session").unwrap();
     let cookie = format!("__Host-cihub_session={session}");

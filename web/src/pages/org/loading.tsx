@@ -23,7 +23,7 @@ export function OrgLayoutLoading() {
       <TopBar>
         <TopBarLogo />
       </TopBar>
-      {isQueue ? <QueueSkeleton /> : <QueuesSkeleton where={org} />}
+      {isQueue ? <QueueSkeleton /> : <QueuesSkeleton where={org} title="Repositories" />}
     </>
   );
 }

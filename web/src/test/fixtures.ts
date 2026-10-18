@@ -1,4 +1,13 @@
-import type { Graph, ItemState, Permission, Pr, Queue, RepoDetail } from "@/client/types.gen";
+import type {
+  Graph,
+  ItemState,
+  Permission,
+  Pr,
+  Queue,
+  Repo,
+  RepoDetail,
+  SetupState,
+} from "@/client/types.gen";
 import { LIVE_STATES } from "@/domain/queue/queries";
 import type { Me } from "@/domain/session/session";
 import { type Answer, type Answers, problem } from "./app";
@@ -113,6 +122,18 @@ export const noGraph: Graph = { target_head_sha: null, nodes: [], edges: [], run
 
 /** What an admin of a repository may do on it. */
 export const ADMIN: Permission = { read: true, write: true, admin: true };
+
+/** The repository `name` of `acme` in a list, whose setup is `state`. */
+export function repoRowOf(name: string, state: SetupState, permission: Permission = ADMIN): Repo {
+  return {
+    id: `repo_${name}`,
+    namespace: "acme",
+    name,
+    default_branch: "main",
+    permission,
+    setup: { state, checked_at: new Date().toISOString(), requested_at: null },
+  };
+}
 
 /** The repository `name` of `acme`, where the person has `permission`, before the read of its setup. */
 export function repoOf(name: string, permission: Permission = ADMIN): RepoDetail {

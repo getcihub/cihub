@@ -10,6 +10,8 @@ const signedIn: Answers = {
   ...answersOfMine("acme-labs"),
   "/api/v1/orgs/acme/queues": [200, pageOf("queues", [queueOf("web", "main")])],
   "/api/v1/orgs/acme-labs/queues": [200, pageOf("queues", [])],
+  "/api/v1/orgs/acme/repos": [200, pageOf("repos", [])],
+  "/api/v1/orgs/acme-labs/repos": [200, pageOf("repos", [])],
 };
 
 afterEach(() => {
@@ -32,7 +34,9 @@ describe("the routes of the dashboard", () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/orgs/acme-labs");
     });
-    expect(await screen.findByRole("heading", { name: "No queue yet" })).toBeInTheDocument();
+    expect(
+      await screen.findByText("The App reaches no repository of this organization yet."),
+    ).toBeInTheDocument();
   });
 
   it("say that an organization without a role is out of reach", async () => {
@@ -62,8 +66,11 @@ describe("the routes of the dashboard", () => {
     }
   });
 
-  it("say that a repository that has no queue is not found", async () => {
-    renderApp("/orgs/acme/repos/nope", signedIn);
+  it("say that a repository that the person does not read is not found", async () => {
+    renderApp("/orgs/acme/repos/nope", {
+      ...signedIn,
+      "/api/v1/orgs/acme/repos/nope": [404, problem(404, "repo_not_found")],
+    });
 
     expect(await screen.findByRole("heading", { level: 1, name: "Page not found" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Repository: All repositories" })).toBeInTheDocument();

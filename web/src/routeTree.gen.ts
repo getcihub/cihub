@@ -16,7 +16,7 @@ import { Route as welcomeRouteRouteImport } from './pages/welcome/route'
 import { Route as redirectsOrgsRouteImport } from './pages/redirects/orgs'
 import { Route as orgRouteRouteImport } from './pages/org/route'
 import { Route as orgQueuesRouteRouteImport } from './pages/org-queues/route'
-import { Route as reposRouteRouteImport } from './pages/repos/route'
+import { Route as redirectsReposRouteImport } from './pages/redirects/repos'
 import { Route as repoQueuesRouteRouteImport } from './pages/repo-queues/route'
 import { Route as redirectsQueuesRouteImport } from './pages/redirects/queues'
 import { Route as queueRouteRouteImport } from './pages/queue/route'
@@ -57,7 +57,7 @@ const orgQueuesRouteRoute = orgQueuesRouteRouteImport.update({
   path: '/',
   getParentRoute: () => orgRouteRoute,
 } as any)
-const reposRouteRoute = reposRouteRouteImport.update({
+const redirectsReposRoute = redirectsReposRouteImport.update({
   id: '/repos/',
   path: '/repos/',
   getParentRoute: () => orgRouteRoute,
@@ -91,7 +91,7 @@ export interface FileRoutesByFullPath {
   '/orgs/$org': typeof orgRouteRouteWithChildren
   '/orgs/': typeof redirectsOrgsRoute
   '/orgs/$org/': typeof orgQueuesRouteRoute
-  '/orgs/$org/repos/': typeof reposRouteRoute
+  '/orgs/$org/repos/': typeof redirectsReposRoute
   '/orgs/$org/repos/$repo/': typeof repoQueuesRouteRoute
   '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteRouteWithChildren
   '/orgs/$org/repos/$repo/queues/': typeof redirectsQueuesRoute
@@ -104,7 +104,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof welcomeRouteRoute
   '/orgs': typeof redirectsOrgsRoute
   '/orgs/$org': typeof orgQueuesRouteRoute
-  '/orgs/$org/repos': typeof reposRouteRoute
+  '/orgs/$org/repos': typeof redirectsReposRoute
   '/orgs/$org/repos/$repo': typeof repoQueuesRouteRoute
   '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteRouteWithChildren
   '/orgs/$org/repos/$repo/queues': typeof redirectsQueuesRoute
@@ -119,7 +119,7 @@ export interface FileRoutesById {
   '/orgs/$org': typeof orgRouteRouteWithChildren
   '/orgs/': typeof redirectsOrgsRoute
   '/orgs/$org/': typeof orgQueuesRouteRoute
-  '/orgs/$org/repos/': typeof reposRouteRoute
+  '/orgs/$org/repos/': typeof redirectsReposRoute
   '/orgs/$org/repos/$repo/': typeof repoQueuesRouteRoute
   '/orgs/$org/repos/$repo/queues/$queue': typeof queueRouteRouteWithChildren
   '/orgs/$org/repos/$repo/queues/': typeof redirectsQueuesRoute
@@ -233,7 +233,7 @@ declare module '@tanstack/react-router' {
       id: '/orgs/$org/repos/'
       path: '/repos'
       fullPath: '/orgs/$org/repos/'
-      preLoaderRoute: typeof reposRouteRouteImport
+      preLoaderRoute: typeof redirectsReposRouteImport
       parentRoute: typeof orgRouteRoute
     }
     '/orgs/$org/repos/$repo/': {
@@ -281,7 +281,7 @@ const queueRouteRouteWithChildren = queueRouteRoute._addFileChildren(
 
 interface orgRouteRouteChildren {
   orgQueuesRouteRoute: typeof orgQueuesRouteRoute
-  reposRouteRoute: typeof reposRouteRoute
+  redirectsReposRoute: typeof redirectsReposRoute
   repoQueuesRouteRoute: typeof repoQueuesRouteRoute
   queueRouteRoute: typeof queueRouteRouteWithChildren
   redirectsQueuesRoute: typeof redirectsQueuesRoute
@@ -289,7 +289,7 @@ interface orgRouteRouteChildren {
 
 const orgRouteRouteChildren: orgRouteRouteChildren = {
   orgQueuesRouteRoute: orgQueuesRouteRoute,
-  reposRouteRoute: reposRouteRoute,
+  redirectsReposRoute: redirectsReposRoute,
   repoQueuesRouteRoute: repoQueuesRouteRoute,
   queueRouteRoute: queueRouteRouteWithChildren,
   redirectsQueuesRoute: redirectsQueuesRoute,

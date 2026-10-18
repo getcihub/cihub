@@ -676,6 +676,23 @@ Decisions:
     `update_restriction_missing` on every branch: a repository there is at best `ready_with_warnings` until WP2
     models the rules. Tests: `the_api_lists_the_repositories_with_their_setup`,
     `the_setup_of_a_repository_is_read_at_its_discovery_then_every_day`.
+  - Done (October 17, 2026): WP4, the pages, after the mockups v20. `/welcome` replaces "No organization yet":
+    the three steps, the installation of the App, "Check again" (`POST /user/sync`, then the organizations read
+    again until one comes), and the sign-out of GitHub to use another account; `/` and `/sign-in` lead a person
+    without an organization there. The page of an organization, `/orgs/$org`, lists its repositories, by name,
+    each with its queues on one line below it (branch, state, counters), or, without a queue, the verdict of its
+    setup (`SetupStateBadge`) and the way to its first one; a search past 5 repositories (`?q=`); with
+    `?connecting=` after the Setup URL, which leads there, the card "Connecting" until the first reads end, then
+    the address without it. `/orgs/$org/repos` leads to it, and the picker of the repositories of the frame
+    names every repository, those without a queue too; the page of a repository takes its name as title. `/orgs/$org/repos/$repo` shows the setup of the default branch before the queues
+    (the rules with the sentences of the server and the link to change them, the file with the line of its error
+    or the defaults, how the first queue starts), and "Check again" for an admin of the repository; a repository
+    without a queue is no longer "not found". A page that waits for a read reads again every 2 seconds, for 60
+    seconds at most (`readAgainWhile`); a change of a queue reads the repositories again. A banner says that an
+    organization is suspended (`Org.is_suspended`). Left out, as the decisions say: the state "request sent" of
+    a member, and the buttons of the configuration; the mockup checks every repository at once, which the API
+    no longer offers. Tests: `pages/welcome/page.test.tsx`, `pages/org-queues/page.test.tsx`,
+    `pages/repo-queues/page.test.tsx`, the views `welcome`, `org-empty` and `repo-setup` of `web:shots`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
