@@ -53,7 +53,7 @@ configuration checker, in phase 1).
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, hardening                           | 4     | 11b, 13    | Q8        | to do                                    |
-| 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | to do                                    |
+| 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | done                                     |
 
 ```mermaid
 flowchart LR
@@ -704,6 +704,19 @@ Decisions:
     configuration, which comes with "Next". A repository whose default branch has its queue is `started`, so the
     list shows no dot for its warnings. Tests: `pages/org-queues/page.test.tsx`, the view `org-start-open` of
     `web:shots`, `e2e/queues.spec.ts`.
+  - Done (October 18, 2026): WP2, the world of the simulator and the exit criterion. The simulator restricts the
+    updates of a branch (`Sim::set_update_restriction`, with or without the exemption of the App, over the test
+    branches or not) and gives the findings that GitHub would give; a branch without a restriction still gives
+    `update_restriction_missing`, as the contract suite expects. `Sim::serve_install_at` makes the address of the
+    installation a page of the test server. The server of the browser tests adds `noor`, who owns `initech`, where
+    the App is not installed: `/sim/install` installs it and comes back through the Setup URL, `/sim/exempt` fixes
+    the rule of a repository; it runs `sync_repos`, which a new connection needs. The scheduler waited up to 30
+    seconds when idle, longer than its look for the repositories never read: it now wakes for that look too. The
+    "request sent" state of a member still waits for the check on the App of staging. Tests:
+    `e2e/onboarding.spec.ts`, `the_update_restriction_of_a_branch_gives_its_findings`; the rest of the criterion
+    comes from WP1, WP3 and WP5 (`the_setup_url_trusts_only_the_installations_of_the_person`,
+    `a_person_reads_only_the_repositories_that_the_scm_shows_them`, the `org_not_found` of
+    `the_api_lists_the_repositories_with_their_setup`).
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

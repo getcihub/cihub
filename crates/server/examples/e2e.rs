@@ -11,6 +11,12 @@
 //! yet, a PR of `marie` and two of `ada`, all green, and a CI that passes
 //! each test commit but those that test #3; the page `/sim/merge` comments
 //! `/cihub merge` on a PR, `/sim/comment` gives the last comment of a PR.
+//!
+//! `noor` owns `initech` on the simulator, where the App is not installed
+//! yet: the page `/sim/install` installs it and comes back through the Setup
+//! URL. The branch rules of `initech/app` let CIHub merge, and it has a green
+//! PR of `noor`; those of `initech/site` do not, until `/sim/exempt`; the
+//! `.cihub.yaml` of `initech/docs` is not valid.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -25,11 +31,12 @@ use cihub_domain::{
     CheckConclusion, CheckKind, CheckReport, ConnectionId, ConnectionKind, MembershipRole, OrgId,
     Permission, QueueId, RepoId,
 };
+use cihub_github::SETUP_PATH;
 use cihub_platform::{
-    Delivery, Executors, QueueNewsFeed, SYNC_USER, find_route, run_router, run_subscriptions,
-    run_worker, store_delivery, sync_user_executor,
+    Delivery, Executors, QueueNewsFeed, SYNC_REPOS, SYNC_USER, find_route, run_router,
+    run_subscriptions, run_worker, store_delivery, sync_repos_executor, sync_user_executor,
 };
-use cihub_scm::sim::{PrChange, Sim};
+use cihub_scm::sim::{PrChange, Sim, UpdateRestriction};
 use cihub_scm::{
     ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmUser, SignInRequest,
 };
@@ -55,6 +62,10 @@ const REQUIRED: &str = "ci";
 /// The file of `acme/web`: its queue tests every PR, so that the pages show
 /// runs.
 const WEB_CONFIG: &str = "version: 1\nqueues:\n  - branch: main\n    direct_merge_mode: off\n";
+/// The file of `initech/docs`: its fourth line is out of range.
+const DOCS_CONFIG: &str = "version: 1\nqueues:\n  - branch: main\n    batching: { size: 50 }\n";
+/// The installation of the App on `initech`, once `/sim/install` adds it.
+const INITECH_INSTALLATION: &str = "300";
 
 /// The deliveries of the simulator, by the identifier that their stored
 /// payload holds.
@@ -75,11 +86,12 @@ fn person(id: &str, login: &str) -> ScmUser {
     }
 }
 
-fn people() -> [(ScmUser, &'static str); 2] {
+fn people() -> [(ScmUser, &'static str); 3] {
     [
         // Not `1`: the bot of the simulator is the account `1`.
         (person("101", "ada"), "member of acme"),
         (person("102", "grace"), "no organization"),
+        (person("103", "noor"), "owner of initech"),
     ]
 }
 
@@ -99,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     seed(&pool).await?;
     world(&sim)?;
     sim.serve_sign_in_at(&format!("{PUBLIC_URL}/sim/authorize"));
+    sim.serve_install_at(&format!("{PUBLIC_URL}/sim/install"));
 
     let deliveries = Deliveries::default();
     let module = cihub_mergequeue::module(
@@ -112,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cipher = Arc::new(DatabaseCipher::new(&SecretString::from(DATABASE_SECRET))?);
     let mut executors = Executors::default();
     (module.executors)(&mut executors);
+    executors.register(SYNC_REPOS, sync_repos_executor(sim.clone()));
     executors.register(
         SYNC_USER,
         sync_user_executor(sim.clone(), Arc::clone(&cipher), ConnectionKind::GithubApp),
@@ -181,18 +195,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public_url: Some(PUBLIC_URL.to_owned()),
         news: QueueNewsFeed::start(pool.clone(), cancel.clone()).await?,
     };
-    let sign_in_page = Router::new()
-        .route("/sim/authorize", get(authorize_page))
-        .route("/sim/sign-in", get(sign_in_as))
-        .route("/sim/merge", get(comment_merge))
-        .route("/sim/comment", get(last_comment))
-        .with_state(sim);
+    let sim_pages = simulator_pages(sim);
     let router =
-        cihub_web::router(pool, now, webhooks, vec![module.api], dashboard).merge(sign_in_page);
+        cihub_web::router(pool, now, webhooks, vec![module.api], dashboard).merge(sim_pages);
     let listener = TcpListener::bind(ADDR).await?;
 
     cihub_web::serve(listener, router, cancel).await?;
     Ok(())
+}
+
+/// The pages of the simulator: the sign-in, the installation of the App, and
+/// the actions of a person on the SCM.
+fn simulator_pages(sim: Arc<Sim>) -> Router {
+    Router::new()
+        .route("/sim/authorize", get(authorize_page))
+        .route("/sim/sign-in", get(sign_in_as))
+        .route("/sim/merge", get(comment_merge))
+        .route("/sim/comment", get(last_comment))
+        .route("/sim/install", get(install_page))
+        .route("/sim/installed", get(install_on_initech))
+        .route("/sim/exempt", get(exempt_the_app))
+        .with_state(sim)
 }
 
 /// Drops and creates `cihub_e2e` on the server of `DATABASE_URL`, then applies
@@ -258,29 +281,35 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// A repository of `acme`, as the seed and the simulator name it; `None` for
-/// another name.
-fn acme_repo(name: &str) -> Option<RepoRef> {
-    let external_id = match name {
-        "web" => "1000",
-        "api" => "1001",
+/// A repository of `acme` or of `initech`, as the seed and the simulator
+/// name it; `None` for another name. CIHub gives `initech` its connection at
+/// the sign-in that follows the installation: until then, the identifier of
+/// its connection is a placeholder that the simulator does not read.
+fn world_repo(name: &str) -> Option<RepoRef> {
+    let (external_id, namespace, connection, connection_external_id) = match name {
+        "web" => ("1000", "acme", 1, "100"),
+        "api" => ("1001", "acme", 1, "100"),
+        "app" => ("3000", "initech", 3, INITECH_INSTALLATION),
+        "site" => ("3001", "initech", 3, INITECH_INSTALLATION),
+        "docs" => ("3002", "initech", 3, INITECH_INSTALLATION),
         _ => return None,
     };
     Some(RepoRef {
         connection: ConnectionRef {
-            id: ConnectionId::from_ulid(Ulid(1)),
-            external_id: "100".into(),
+            id: ConnectionId::from_ulid(Ulid(connection)),
+            external_id: connection_external_id.into(),
         },
         external_id: external_id.into(),
-        namespace: "acme".into(),
+        namespace: namespace.into(),
         name: name.into(),
     })
 }
 
 /// The installations of the two organizations on the simulator, who is a
-/// member of which, and `acme/web`, whose branch `main` requires `ci`.
+/// member of which, `acme/web`, whose branch `main` requires `ci`, and the
+/// repositories of `initech`.
 fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _] = people();
+    let [(ada, _), _, _] = people();
     for (installation, account, slug) in [("100", "10", "acme"), ("200", "20", "globex")] {
         let account = ScmAccount {
             external_id: account.into(),
@@ -291,7 +320,7 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     sim.set_member("100", &ada, MembershipRole::Member);
 
     for name in ["web", "api"] {
-        let repo = acme_repo(name).ok_or("unknown repository")?;
+        let repo = world_repo(name).ok_or("unknown repository")?;
         let mut files = vec![("README.md", name)];
         if name == "web" {
             files.push((".cihub.yaml", WEB_CONFIG));
@@ -304,6 +333,51 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
         sim.set_rules(&repo, "main", rules)?;
         sim.set_permission(&repo, &ada, Permission::Write)?;
     }
+
+    initech(sim)
+}
+
+/// The repositories of `initech`, which `noor` owns, before the installation
+/// of the App.
+fn initech(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
+    let [_, _, (noor, _)] = people();
+    let exempt = UpdateRestriction {
+        is_app_exempt: true,
+        covers_test_branches: false,
+    };
+    let repos = [
+        ("app", None, exempt),
+        (
+            "site",
+            None,
+            UpdateRestriction {
+                is_app_exempt: false,
+                ..exempt
+            },
+        ),
+        ("docs", Some(DOCS_CONFIG), exempt),
+    ];
+    sim.set_member(INITECH_INSTALLATION, &noor, MembershipRole::Admin);
+
+    for (name, config, restriction) in repos {
+        let repo = world_repo(name).ok_or("unknown repository")?;
+        let mut files = vec![("README.md", name)];
+        if let Some(config) = config {
+            files.push((".cihub.yaml", config));
+        }
+        sim.add_repo(&repo, "main", &files);
+        sim.set_update_restriction(&repo, "main", Some(restriction))?;
+        sim.set_permission(&repo, &noor, Permission::Admin)?;
+    }
+
+    let app = world_repo("app").ok_or("unknown repository")?;
+    open_pr(
+        sim,
+        &app,
+        ("first-feature", "Add the first feature"),
+        &noor,
+        true,
+    )?;
 
     Ok(())
 }
@@ -351,8 +425,8 @@ fn failed() -> CheckReport {
 
 /// Opens the PRs of `acme/web`, and `ada` submits each one with a comment.
 fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _] = people();
-    let web = acme_repo("web").ok_or("unknown repository")?;
+    let [(ada, _), _, _] = people();
+    let web = world_repo("web").ok_or("unknown repository")?;
     let prs = [
         (
             ("export-csv", "Export invoices as CSV"),
@@ -386,8 +460,8 @@ fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 /// Opens the PRs of `acme/api`, which has no queue yet: #1 of `marie`, #2 of
 /// `ada`.
 fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _] = people();
-    let api = acme_repo("api").ok_or("unknown repository")?;
+    let [(ada, _), _, _] = people();
+    let api = world_repo("api").ok_or("unknown repository")?;
 
     open_pr(
         sim,
@@ -418,7 +492,7 @@ fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 /// and fails those that test #3, until `cancel`. The runs of `acme/web` keep testing, for the page of a
 /// queue in test.
 async fn pass_api_tests(pool: PgPool, sim: Arc<Sim>, cancel: CancellationToken) {
-    let Some(api) = acme_repo("api") else {
+    let Some(api) = world_repo("api") else {
         return;
     };
     let mut passed_shas = HashSet::new();
@@ -490,7 +564,7 @@ async fn comment_merge(
         return Html("no such PR").into_response();
     };
 
-    let Some(repo) = acme_repo(&get("repo")) else {
+    let Some(repo) = world_repo(&get("repo")) else {
         return Html("no such repository").into_response();
     };
 
@@ -508,9 +582,52 @@ async fn last_comment(
     let get = |name: &str| query.get(name).cloned().unwrap_or_default();
     let number = get("number").parse().unwrap_or_default();
 
-    acme_repo(&get("repo"))
+    world_repo(&get("repo"))
         .and_then(|repo| sim.comments(&repo, number).pop())
         .unwrap_or_default()
+}
+
+/// `GET /sim/install`: the page of the SCM that installs the App, with the
+/// account where it goes.
+async fn install_page() -> Html<&'static str> {
+    Html(
+        "<!doctype html><title>Simulator</title><h1>Install the App</h1>\
+         <ul><li><a href=\"/sim/installed\">Install on initech</a></li></ul>",
+    )
+}
+
+/// `GET /sim/installed`: installs the App on `initech`, then sends the person
+/// to the Setup URL of CIHub, as the SCM does.
+async fn install_on_initech(State(sim): State<Arc<Sim>>) -> Redirect {
+    let account = ScmAccount {
+        external_id: "30".into(),
+        path: "initech".into(),
+    };
+    sim.add_installation(INITECH_INSTALLATION, account, &[("contents", "write")]);
+
+    Redirect::to(&format!(
+        "{SETUP_PATH}?installation_id={INITECH_INSTALLATION}&setup_action=install"
+    ))
+}
+
+/// `GET /sim/exempt?repo=site`: the rule of `main` lets the App through, as
+/// an owner who fixes it on the SCM.
+async fn exempt_the_app(
+    State(sim): State<Arc<Sim>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> String {
+    let Some(repo) = query.get("repo").and_then(|name| world_repo(name)) else {
+        return "no such repository".into();
+    };
+    let exempt = UpdateRestriction {
+        is_app_exempt: true,
+        covers_test_branches: false,
+    };
+
+    match sim.set_update_restriction(&repo, "main", Some(exempt)) {
+        Ok(()) => "exempt".into(),
+        Err(err) => err.to_string(),
+    }
 }
 
 fn stored_delivery(deliveries: &Deliveries, payload: &Value) -> Option<ScmDelivery> {

@@ -16,9 +16,9 @@ use cihub_domain::{
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
-    Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
-    enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries, release_leases,
-    schedule_tick, until_next_tick,
+    Delivery, Job, MIN_WAIT, QueueWakeup, TICK, acquire_leases, begin_reconciliation,
+    delete_delivery, enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries,
+    release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
@@ -1085,8 +1085,17 @@ pub(crate) async fn run_scheduler(
             warn!(error = &err as &dyn Error, "next tick not read");
             TICK
         });
+        // An idle scheduler waits up to `TICK`: the look for the new
+        // repositories must not wait that long.
+        let until_new_repo_setups = (next_new_repo_setups - clock())
+            .max(time::Duration::ZERO)
+            .unsigned_abs();
         wakeup
-            .wait_or_pause(wait, &cancel, "queue notifications lost")
+            .wait_or_pause(
+                wait.min(until_new_repo_setups.max(MIN_WAIT)),
+                &cancel,
+                "queue notifications lost",
+            )
             .await;
     }
 
