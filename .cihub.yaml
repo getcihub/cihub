@@ -1,18 +1,6 @@
 version: 1
 queues:
-  - name: hotfix
-    branch: main
-    strategy: sequential
-    route_conditions:
-      - head ~= ^hotfix/
-    queue_conditions:
-      - -draft
-      - -label = do-not-merge
-      - check-success = Build Success
-    merge_conditions:
-      - check-success = Build Success
-  - name: main
-    branch: main
+  - branch: main
     strategy: batched
     batching: { size: 3, max_wait_minutes: 1 }
     queue_conditions:
