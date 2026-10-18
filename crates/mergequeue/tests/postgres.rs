@@ -16,9 +16,9 @@ use cihub_domain::{
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
-    Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, RepoSetupSweep, SNAPSHOT_EVERY,
-    Translate, queue_status_context, rebuild, request_queue_setups, request_repo_setups,
-    wake_uncovered,
+    Clock, INBOX_PER_RECONCILIATION, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler,
+    RepoSetupSweep, SNAPSHOT_EVERY, Translate, queue_status_context, rebuild, request_queue_setups,
+    request_repo_setups, wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -1363,6 +1363,60 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     );
 }
 
+/// A backlog beyond the limit of a reconciliation keeps the queue dirty: the
+/// next reconciliation takes the rest without another change.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_backlog_beyond_the_limit_wakes_the_queue_again(pool: PgPool) {
+    seed(&pool).await;
+
+    let backlog = u64::try_from(INBOX_PER_RECONCILIATION).unwrap() + 1;
+    let mut tx = begin_system(&pool).await.unwrap();
+    for n in 0..backlog {
+        let fact = Event {
+            id: EventId::from_ulid(Ulid(1000 + u128::from(n))),
+            org_id: org(),
+            queue_id: queue(),
+            actor: Actor::System,
+            occurred_at: clock(),
+            cause_id: None,
+            kind: EventKind::TargetPushed {
+                before: None,
+                after: format!("{n:040x}"),
+                sender_id: Some(user()),
+            },
+        };
+
+        cihub_store::deposit_fact(&mut tx, &fact, clock())
+            .await
+            .unwrap();
+    }
+
+    cihub_platform::mark_dirty(&mut tx, queue()).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let reconciler = Reconciler {
+        translate: translate(&Arc::new(Mutex::new(HashMap::new()))),
+        dashboard_url: None,
+    };
+    let state = |pool: PgPool| async move {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let state: (i64, bool) =
+            sqlx::query_as("SELECT (SELECT count(*) FROM queue_inbox), (SELECT dirty FROM queues)")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        state
+    };
+
+    reconciler.reconcile(&pool, queue(), &clock).await.unwrap();
+
+    assert_eq!(state(pool.clone()).await, (1, true));
+
+    reconciler.reconcile(&pool, queue(), &clock).await.unwrap();
+
+    assert_eq!(state(pool).await, (0, false));
+}
+
 /// A GitHub that gives an installation token, then answers every call with
 /// a rate limit spent until `reset`.
 async fn rate_limited_github(reset: OffsetDateTime) -> String {
@@ -2285,6 +2339,66 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     );
     assert_eq!((&items[1].0, items[1].3, items[1].4), (&pushed, 10, true));
     assert_ne!(items[1].1, "cancelled");
+    q.stop().await;
+}
+
+/// A push that resubmits the PR meets the `queue_conditions` on its new head:
+/// the new item waits in `not_ready` until the head meets them.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_resubmission_meets_the_queue_conditions_on_the_new_head(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n    queue_conditions:\n      - check-success = lint\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.report_check(&repo(), &head, check("lint", true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+
+    assert_ne!(item_state(&pool, number).await, "not_ready");
+
+    let pushed = sim
+        .commit(&repo(), &head, &[("f1.txt", Some("y"))])
+        .unwrap();
+
+    sim.push(&repo(), "pr-1", &pushed, &bob()).unwrap();
+    sim.report_check(&repo(), &pushed, check(REQUIRED, true))
+        .unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let current: (String, String, serde_json::Value) = sqlx::query_as(
+        "SELECT pr_head_sha, state::text, block_reasons FROM queue_items
+         WHERE pr_number = $1 AND is_current",
+    )
+    .bind(i64::try_from(number).unwrap())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+
+    drop(tx);
+    assert_eq!(
+        current,
+        (
+            pushed,
+            "not_ready".into(),
+            serde_json::json!([{ "kind": "queue_conditions_unmet", "conditions": ["check-success = lint"] }])
+        )
+    );
     q.stop().await;
 }
 
@@ -4576,6 +4690,7 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     let (_, site) = get("/orgs/acme/repos/site").await;
     let (_, wiki) = get("/orgs/acme/repos/wiki").await;
     let (_, gone) = get("/orgs/acme/repos/gone").await;
+    let old = get("/orgs/acme/repos/old").await;
 
     assert_eq!(status, 200, "{listed}");
     let states: Vec<(Value, Value)> = listed["repos"]
@@ -4607,6 +4722,11 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     assert_eq!(
         (unknown.0, &unknown.1["code"]),
         (400, &serde_json::json!("invalid_request"))
+    );
+    assert_eq!(
+        (old.0, &old.1["code"]),
+        (404, &serde_json::json!("repo_not_found")),
+        "a repository that the App no longer reaches is not read either"
     );
     assert_eq!(docs["name"], "docs", "the case of a name does not matter");
     assert_eq!(docs["setup"]["config"], Value::Null, "no read yet");

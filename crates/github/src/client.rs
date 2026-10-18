@@ -484,7 +484,14 @@ impl GithubApp {
         }
 
         let path = format!("/app/installations/{installation}/access_tokens");
-        let (status, _, body) = fetch(self.as_app(Method::POST, &path, now)?).await?;
+        let fetched = fetch(self.as_app(Method::POST, &path, now)?).await;
+        let (status, _, body) = match fetched {
+            Ok(fetched) => fetched,
+            Err(err) => {
+                self.observe(connection.id, Observation::Failed, now);
+                return Err(err);
+            }
+        };
         let answer = Answer { status, body };
         match status {
             StatusCode::CREATED => {}
@@ -492,6 +499,7 @@ impl GithubApp {
                 return Err(ScmError::AccessLost(answer.message()));
             }
             status if status.is_server_error() => {
+                self.observe(connection.id, Observation::Failed, now);
                 return Err(ScmError::Unavailable(answer.message()));
             }
             _ => return Err(ScmError::Protocol(answer.message())),
@@ -578,12 +586,16 @@ fn classify(
     }
 
     if status == StatusCode::FORBIDDEN || status == StatusCode::TOO_MANY_REQUESTS {
+        // GitHub answers 429 for a rate limit only; a 403 also refuses an
+        // action, and goes to the caller without the markers of a limit.
         let limited = if header("x-ratelimit-remaining") == Some(0) {
             Some((reset_at.unwrap_or(now + SECONDARY_WAIT), false))
         } else if let Some(seconds) = header("retry-after") {
             Some((now + Duration::seconds(seconds), true))
         } else if answer.message().contains("secondary rate limit") {
             Some((now + SECONDARY_WAIT, true))
+        } else if status == StatusCode::TOO_MANY_REQUESTS {
+            Some((reset_at.unwrap_or(now + SECONDARY_WAIT), true))
         } else {
             None
         };
@@ -689,6 +701,20 @@ mod tests {
             observation,
             Observation::Answered { rate: None, .. }
         ));
+    }
+
+    #[test]
+    fn a_too_many_requests_answer_without_a_marker_waits_a_minute() {
+        let (observation, error) = classify(&answer(429, "slow down"), &headers(&[]), at(0));
+
+        assert_eq!(error, Some(ScmError::RateLimited { until: at(60) }));
+        assert_eq!(
+            observation,
+            Observation::RateLimited {
+                until: at(60),
+                secondary: true
+            }
+        );
     }
 
     #[test]

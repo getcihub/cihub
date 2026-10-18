@@ -174,13 +174,9 @@ pub(crate) async fn read_repo_setup(
     })?;
     let mut tx = begin_org(pool, org).await?;
     let target = RepoTarget::load(&mut tx, repo_id).await?;
-    let branch: String = sqlx::query_scalar("SELECT default_branch FROM repos WHERE id = $1")
-        .bind(repo_id.to_string())
-        .fetch_one(&mut *tx)
-        .await?;
     drop(tx);
 
-    let read = read(scm, &target.repo, branch, job.class).await?;
+    let read = read(scm, &target.repo, target.default_branch.clone(), job.class).await?;
 
     let mut tx = begin_org(pool, org).await?;
     keep(&mut tx, &target, &read, now).await?;

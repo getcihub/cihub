@@ -76,6 +76,8 @@ pub(crate) struct Reading<'a> {
     /// status of the queue, which they may require.
     pub rules: &'a RequiredChecks,
     pub own_status: &'a str,
+    /// The `branch_protection_injection` of the settings of the queue.
+    pub injection: BranchProtectionInjection,
     pub class: JobClass,
     pub now: OffsetDateTime,
 }
@@ -92,34 +94,25 @@ pub(crate) async fn unmet_conditions(
     reading: &Reading<'_>,
 ) -> Result<Vec<String>, Failure> {
     let mut unmet = file_conditions(scm, target, config, pr, reading).await?;
-    unmet.extend(injected(target, config, pr, reading)?);
+    unmet.extend(injected(pr, reading));
     Ok(unmet)
 }
 
 /// With `branch_protection_injection: both`, each check that the rules
 /// require and that has not passed on the head of the PR, as
 /// `check-success = <name>`.
-fn injected(
-    target: &QueueTarget,
-    config: Option<&RepoConfig>,
-    pr: &PrSnapshot,
-    reading: &Reading<'_>,
-) -> Result<Vec<String>, Failure> {
-    let injection = target
-        .settings_in(config)?
-        .branch_protection_injection
-        .value;
-    if injection != BranchProtectionInjection::Both {
-        return Ok(Vec::new());
+fn injected(pr: &PrSnapshot, reading: &Reading<'_>) -> Vec<String> {
+    if reading.injection != BranchProtectionInjection::Both {
+        return Vec::new();
     }
 
-    Ok(reading
+    reading
         .rules
         .names
         .iter()
         .filter(|name| *name != reading.own_status && !check_passed(pr, name))
         .map(|name| format!("check-success = {name}"))
-        .collect())
+        .collect()
 }
 
 async fn file_conditions(
@@ -206,7 +199,7 @@ pub(crate) async fn submission_choices(
     let mut unmet = conditions
         .unmet(&ctx)
         .map_err(|err| Failure::Never(err.to_string()))?;
-    unmet.extend(injected(target, config, pr, reading)?);
+    unmet.extend(injected(pr, reading));
     let priority = first_met(rules, &ctx, |rule| &rule.conditions)?.map(|rule| rule.priority);
     let profile = first_met(profiles, &ctx, |profile| &profile.conditions)?
         .map(|profile| profile.name.clone());
@@ -256,17 +249,19 @@ mod tests {
             names: BTreeSet::from(["ci".to_owned(), "lint".to_owned(), "own".to_owned()]),
             up_to_date: false,
         };
+        let config = target.config().unwrap();
+        let settings = target.settings_in(config.as_ref()).unwrap();
         let reading = Reading {
             sender: &Sender::default(),
             rules: &rules,
             own_status: "own",
+            injection: settings.branch_protection_injection.value,
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
         };
         let mut pr = test_pr(Mergeability::Blocked, ReviewDecision::Approved, checks);
         pr.labels.insert("ready".to_owned());
 
-        let config = target.config().unwrap();
         let result = unmet_conditions(&Sim::new(), &target, config.as_ref(), &pr, &reading).await;
 
         result.unwrap_or_else(|_| panic!("the conditions evaluate"))
@@ -316,6 +311,7 @@ priority_rules:
             sender: &Sender::default(),
             rules: &rules,
             own_status: "own",
+            injection: BranchProtectionInjection::Merge,
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
         };

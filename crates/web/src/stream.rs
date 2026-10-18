@@ -71,6 +71,9 @@ impl Drop for Opened {
         let mut open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(count) = open.get_mut(&self.caller) {
             *count = count.saturating_sub(1);
+            if *count == 0 {
+                open.remove(&self.caller);
+            }
         }
     }
 }

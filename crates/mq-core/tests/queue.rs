@@ -636,6 +636,31 @@ fn a_blocked_pr_stays_not_ready() {
 }
 
 #[test]
+fn a_later_submission_replaces_the_one_that_waits() {
+    let mut w = world();
+    let control = |c| EventKind::QueueControlRequested { control: c };
+    w.fact(Actor::System, control(QueueControl::Pause));
+
+    assert_eq!(w.submit_only(1, 0, Priority::MEDIUM), Outcome::Applied);
+    assert_eq!(
+        w.submit_only(1, 0, Priority::MEDIUM),
+        Outcome::Ignored,
+        "the same submission twice"
+    );
+    assert_eq!(
+        w.submit_only(1, 1, Priority::MEDIUM),
+        Outcome::Applied,
+        "a new head"
+    );
+    assert_eq!(w.snapshot.requests.len(), 1, "one submission waits");
+
+    w.fact(Actor::System, control(QueueControl::Resume));
+    assert_eq!(w.item(1).unwrap().head_sha, head(1, 1));
+
+    assert_replays(&w);
+}
+
+#[test]
 fn pause_stops_decisions_and_keeps_submissions() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);

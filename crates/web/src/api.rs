@@ -64,10 +64,10 @@ pub(crate) struct ApiState {
     pub now: fn() -> OffsetDateTime,
     scm: Arc<dyn Scm>,
     /// Opens the tokens of the people; `None` when nobody signs in.
-    cipher: Option<Arc<DatabaseCipher>>,
+    pub(crate) cipher: Option<Arc<DatabaseCipher>>,
     /// The root address of the instance, where the dashboard is.
     pub public_url: Option<String>,
-    windows: Arc<Mutex<HashMap<Caller, (i64, u32)>>>,
+    windows: Arc<Mutex<Windows>>,
 }
 
 /// Who calls, for the rate limit.
@@ -75,6 +75,13 @@ pub(crate) struct ApiState {
 enum Caller {
     Token(ApiTokenId),
     Session(SessionId),
+}
+
+/// The requests of the current minute, per caller.
+#[derive(Default)]
+struct Windows {
+    minute: i64,
+    counts: HashMap<Caller, u32>,
 }
 
 struct Security;
@@ -458,13 +465,13 @@ async fn by_cookie(
     let secret = cookie(headers, SESSION_COOKIE)
         .filter(|secret| SessionClient::of(secret) == Some(SessionClient::Dashboard))
         .ok_or_else(ApiError::unauthorized)?;
-    let authenticated = by_session(state, &secret, path, now).await;
-
-    if authenticated.is_ok() && needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
+    // Before the session acts: a cross-site request costs no SCM call and
+    // no job.
+    if needs_csrf_token(method) && !has_csrf_token(headers, &secret) {
         return Err(csrf_refused());
     }
 
-    authenticated
+    by_session(state, &secret, path, now).await
 }
 
 /// A session, and on a route of an organization the grant of its user there
@@ -642,8 +649,11 @@ fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u
     let minute = now.unix_timestamp().div_euclid(60);
     let mut windows = state.windows.lock().unwrap_or_else(PoisonError::into_inner);
 
-    windows.retain(|_, (window, _)| *window == minute);
-    let (_, count) = windows.entry(caller).or_insert((minute, 0));
+    if windows.minute != minute {
+        windows.minute = minute;
+        windows.counts.clear();
+    }
+    let count = windows.counts.entry(caller).or_insert(0);
     if *count >= REQUESTS_PER_MINUTE {
         let elapsed = now.unix_timestamp().rem_euclid(60);
         return Some(u64::try_from(60 - elapsed).unwrap_or(60));

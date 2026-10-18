@@ -20,20 +20,14 @@ const route = getRouteApi("/orgs/$org/repos/$repo/");
 export function RepoQueuesPage() {
   const { org, repo: name } = route.useParams();
   const now = useNow();
-  const { repo, hasGivenUp, checkAgain } = useRepoSetup(org, name);
+  const setup = useRepoSetup(org, name);
   const queues = useOrgQueues(org).filter((queue) => queue.repo === name);
   const mine = useMinePrs(org).filter((pr) => pr.repo === name);
 
   return (
     <Page>
       <OverviewHead where={org} title={name} />
-      <RepoSetup
-        repo={repo}
-        hasQueue={queues.length > 0}
-        now={now}
-        hasGivenUp={hasGivenUp}
-        checkAgain={checkAgain}
-      />
+      <RepoSetup {...setup} hasQueue={queues.length > 0} now={now} />
       {queues.length > 0 && (
         <>
           <MinePrs org={org} prs={mine} queues={queues} />

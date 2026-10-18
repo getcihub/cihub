@@ -1,44 +1,41 @@
 import { type ReactNode, useState } from "react";
 
-import type { ConfigFile, RepoDetail } from "@/client/types.gen";
+import type { ConfigFile } from "@/client/types.gen";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";
 import { SetupStateBadge } from "@/components/setup/setup-state-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardHint, CardTitle } from "@/components/ui/card";
 import { Prose } from "@/components/ui/prose";
-import { isSetupRead } from "@/domain/setup/queries";
+import type { RepoSetupRead } from "@/hooks/use-repo-setup";
 import { cn } from "@/lib/cn";
 import { timeAgo } from "@/lib/time";
 
 /**
  * The setup of a repository: the rules of its default branch, its configuration file, and, before its first
  * queue, how the queue starts. An admin of the repository asks for a read again with "Check again". Once a queue
- * runs, the setup folds into its head, and opens by itself while a point fails; a click flips it.
+ * runs, the setup folds into its head, and opens by itself while a point fails; a click flips it, until the
+ * verdict changes.
  */
 export function RepoSetup({
   repo,
-  hasQueue,
-  now,
+  isChecking,
   hasGivenUp,
   checkAgain,
-}: {
-  repo: RepoDetail;
-  hasQueue: boolean;
-  now: number;
-  /** The read takes longer than the page waits: it says so, and reads no more. */
-  hasGivenUp: boolean;
-  checkAgain: { run: () => void; isPending: boolean } | null;
-}) {
+  hasQueue,
+  now,
+}: RepoSetupRead & { hasQueue: boolean; now: number }) {
   const { setup, default_branch: branch } = repo;
-  const isChecking = !isSetupRead(setup);
   const hasFailure =
     setup.target_branch_missing ||
     setup.config?.state === "invalid" ||
     setup.rules.some((rule) => !rule.passed);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const isOpen = (!hasQueue || isChecking || hasFailure) !== isFlipped;
+  const isOpenByDefault = !hasQueue || isChecking || hasFailure;
+  // The choice of the person, with the verdict it answered: a new verdict opens or folds the card by itself.
+  const [choice, setChoice] = useState<{ isOpen: boolean; byDefault: boolean } | null>(null);
+  const isOpen = choice?.byDefault === isOpenByDefault ? choice.isOpen : isOpenByDefault;
 
   return (
     <Card className="p-0">
@@ -54,18 +51,12 @@ export function RepoSetup({
               ? "Checking now"
               : setup.checked_at && `Checked ${timeAgo(setup.checked_at, now)}`}
           {checkAgain && (
-            <Button
-              isPending={checkAgain.isPending || (isChecking && !hasGivenUp)}
-              pendingText="Checking"
-              onClick={checkAgain.run}
-            >
-              Check again
-            </Button>
+            <CheckAgainButton checkAgain={checkAgain} isChecking={isChecking} hasGivenUp={hasGivenUp} />
           )}
           <Button
             aria-expanded={isOpen}
             onClick={() => {
-              setIsFlipped(!isFlipped);
+              setChoice({ isOpen: !isOpen, byDefault: isOpenByDefault });
             }}
           >
             {isOpen ? "Hide" : "Show"}

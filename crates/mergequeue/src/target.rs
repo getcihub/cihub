@@ -11,6 +11,7 @@ pub(crate) struct RepoTarget {
     pub repo_id: RepoId,
     pub org_id: OrgId,
     pub repo: RepoRef,
+    pub default_branch: String,
 }
 
 /// What a queue acts on: its repository and its target branch.
@@ -197,16 +198,17 @@ impl RepoTarget {
         conn: &mut PgConnection,
         repo: RepoId,
     ) -> Result<Self, MergeQueueError> {
-        type RepoRow = (String, String, String, String, String, String);
+        type RepoRow = (String, String, String, String, String, String, String);
         let row: Option<RepoRow> = sqlx::query_as(
-            "SELECT r.org_id, r.external_id, r.namespace, r.name, c.id, c.external_id
+            "SELECT r.org_id, r.external_id, r.namespace, r.name, r.default_branch,
+                    c.id, c.external_id
              FROM repos r JOIN scm_connections c ON c.id = r.connection_id
              WHERE r.id = $1",
         )
         .bind(repo.to_string())
         .fetch_optional(conn)
         .await?;
-        let (org, external_id, namespace, name, connection, cext) =
+        let (org, external_id, namespace, name, default_branch, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
 
         Ok(Self {
@@ -221,6 +223,7 @@ impl RepoTarget {
                 namespace,
                 name,
             },
+            default_branch,
         })
     }
 }

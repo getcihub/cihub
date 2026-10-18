@@ -1534,9 +1534,20 @@ pub struct RepoSetup {
 /// not valid), `cannot_merge` (a rule blocks the merges, or the default
 /// branch is missing), `ready_with_warnings` (a rule fails without blocking
 /// the merges), `ready`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::EnumString,
+    strum::IntoStaticStr,
+)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum SetupState {
     Started,
     Checking,

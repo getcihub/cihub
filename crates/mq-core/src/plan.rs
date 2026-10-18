@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
 use crate::apply::apply_seen;
-use crate::graph::{insertion_index, position_at, predecessors, renumber};
+use crate::graph::{insertion_index, overlap, position_at, predecessors, renumber, targets};
 use crate::ids::IdGen;
 use crate::snapshot::{PrObservation, Request, Subject};
 use crate::surface::{BatchWait, Surface, surface};
@@ -166,7 +166,12 @@ pub fn plan(
             {
                 let item_id = *item_id;
                 apply_seen(&mut state, &event, &mut |next| {
-                    concluded.extend(next.items.get(&item_id).map(|item| surface(next, item)));
+                    let order = next.queue_order();
+                    concluded.extend(
+                        next.items
+                            .get(&item_id)
+                            .map(|item| surface(next, &order, item)),
+                    );
                 })?;
             } else {
                 apply_seen(&mut state, &event, &mut |_| {})?;
@@ -1362,12 +1367,13 @@ enum Next<'a> {
 
 /// The first pending item whose predecessors are all in groups, at `index` in
 /// `order`. With the batching of its profile, the pending items of the same
-/// profile that follow it join it, up to `batching.size`, until an item that
-/// is not pending, is `no_batch` or has another profile: a batch merges with
-/// one set of settings. A batch that is not full waits until its oldest
-/// member has waited `batching.max_wait_minutes` in the queue, unless the
-/// item right behind it closes it: the batch cannot grow, and that item would
-/// wait for nothing.
+/// profile and of the same lane that follow it join it, up to
+/// `batching.size`, until an item that is not pending, is `no_batch`, has
+/// another profile or is in another lane: a batch merges with one set of
+/// settings, and its run tests every member on top of the predecessors of the
+/// first. A batch that is not full waits until its oldest member has waited
+/// `batching.max_wait_minutes` in the queue, unless the item right behind it
+/// closes it: the batch cannot grow, and that item would wait for nothing.
 fn next_group<'a>(
     s: &Snapshot,
     order: &[&'a Item],
@@ -1393,14 +1399,15 @@ fn next_group<'a>(
     }
 
     let size = usize::try_from(settings.batching_size.value).unwrap_or(usize::MAX);
-    let members: Vec<&Item> = order[index..]
-        .iter()
-        .take_while(|i| i.state == ItemState::Pending && !i.no_batch && i.profile == first.profile)
-        .take(size)
-        .copied()
-        .collect();
+    let lane = predecessors(s, order, index);
+    let mut members = vec![first];
+    while members.len() < size && joins_batch(s, order, index + members.len(), &members, &lane) {
+        members.push(order[index + members.len()]);
+    }
+
     let closed = order.get(index + members.len()).is_some_and(|i| {
-        i.state == ItemState::Pending && (i.no_batch || i.profile != first.profile)
+        i.state == ItemState::Pending
+            && !joins_batch(s, order, index + members.len(), &members, &lane)
     });
     if closed {
         return Some(Next::Form { index, members });
@@ -1420,6 +1427,36 @@ fn next_group<'a>(
         }),
         _ => Some(Next::Form { index, members }),
     }
+}
+
+/// Whether `order[position]` joins the batch of `members`, which the run of
+/// the batch tests on top of `lane`, the predecessors of its first member:
+/// the item waits, accepts a batch, has the profile of the batch, overlaps
+/// a member, and depends on nothing outside the batch that `lane` does not
+/// contain, so that its test contains all its predecessors.
+fn joins_batch(
+    s: &Snapshot,
+    order: &[&Item],
+    position: usize,
+    members: &[&Item],
+    lane: &[ItemId],
+) -> bool {
+    let Some(item) = order.get(position) else {
+        return false;
+    };
+    let first = members[0];
+    let is_member = |id: &ItemId| members.iter().any(|m| m.id == *id);
+
+    item.state == ItemState::Pending
+        && !item.no_batch
+        && item.profile == first.profile
+        && members
+            .iter()
+            .any(|m| overlap(targets(s, m), targets(s, item)))
+        && predecessors(s, order, position)
+            .iter()
+            .filter(|id| !is_member(id))
+            .eq(lane)
 }
 
 /// The speculation window of a queue whose last change set it to `window`:
@@ -1733,13 +1770,14 @@ fn surfaces(
         .map(|surface| (surface.pr_number, surface))
         .collect();
 
-    let waiting = match next_group(s, &s.queue_order(), settings, now) {
+    let order = s.queue_order();
+    let waiting = match next_group(s, &order, settings, now) {
         Some(Next::Wait { members, until }) => Some((members, until)),
         _ => None,
     };
 
     for item in live_items(s) {
-        let mut surface = surface(s, item);
+        let mut surface = surface(s, &order, item);
         if let Some((members, until)) = &waiting
             && members.iter().any(|m| m.id == item.id)
         {

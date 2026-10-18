@@ -190,56 +190,6 @@
     },
     {
       "method": "GET",
-      "path": "/repos/nlecoy/analysr/rules/branches/main",
-      "status": 200,
-      "headers": {
-        "content-type": "application/json; charset=utf-8",
-        "x-ratelimit-limit": "8850",
-        "x-ratelimit-remaining": "8796",
-        "x-ratelimit-reset": "1791546629",
-        "x-ratelimit-resource": "core",
-        "x-ratelimit-used": "54"
-      },
-      "body": [
-        {
-          "parameters": {
-            "allowed_merge_methods": [
-              "merge",
-              "squash",
-              "rebase"
-            ],
-            "dismiss_stale_reviews_on_push": false,
-            "require_code_owner_review": false,
-            "require_extra_approval_for_unattributed_changes": true,
-            "require_last_push_approval": false,
-            "required_approving_review_count": 1,
-            "required_review_thread_resolution": false,
-            "required_reviewers": []
-          },
-          "ruleset_id": 24785407,
-          "ruleset_source": "nlecoy/analysr",
-          "ruleset_source_type": "Repository",
-          "type": "pull_request"
-        },
-        {
-          "parameters": {
-            "do_not_enforce_on_create": false,
-            "required_status_checks": [
-              {
-                "context": "cihub-contract-ci"
-              }
-            ],
-            "strict_required_status_checks_policy": false
-          },
-          "ruleset_id": 24785407,
-          "ruleset_source": "nlecoy/analysr",
-          "ruleset_source_type": "Repository",
-          "type": "required_status_checks"
-        }
-      ]
-    },
-    {
-      "method": "GET",
       "path": "/repos/nlecoy/analysr/branches/main/protection/required_status_checks",
       "status": 404,
       "headers": {
@@ -1389,7 +1339,7 @@
     },
     {
       "method": "GET",
-      "path": "/repos/nlecoy/analysr/rules/branches/main",
+      "path": "/repos/nlecoy/analysr/rules/branches/main?per_page=100",
       "status": 200,
       "headers": {
         "content-type": "application/json; charset=utf-8",

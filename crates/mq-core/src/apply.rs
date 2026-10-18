@@ -122,12 +122,39 @@ fn request(snapshot: &mut Snapshot, event: &Event, request: Request) -> Outcome 
         return Outcome::Ignored;
     }
 
+    // A later submission of a PR carries the head and the settings that the
+    // person wants now; a second cancellation or restart of an item adds
+    // nothing to the first.
+    let pending: Vec<EventId> = snapshot
+        .requests
+        .iter()
+        .filter(|(_, r)| same_subject(r, &request))
+        .map(|(id, _)| *id)
+        .collect();
+    if !pending.is_empty() && !matches!(request, Request::Submit { .. }) {
+        return Outcome::Ignored;
+    }
+
+    for id in pending {
+        snapshot.requests.remove(&id);
+    }
+
     snapshot.requests.insert(event.id, request);
     if request_possible(snapshot, &snapshot.requests[&event.id]) {
         Outcome::Applied
     } else {
         snapshot.requests.remove(&event.id);
         Outcome::Ignored
+    }
+}
+
+/// Whether two requests of a person act on the same PR or the same item.
+fn same_subject(a: &Request, b: &Request) -> bool {
+    match (a, b) {
+        (Request::Submit { pr_number: x, .. }, Request::Submit { pr_number: y, .. }) => x == y,
+        (Request::Cancel { item_id: x, .. }, Request::Cancel { item_id: y, .. })
+        | (Request::Restart { item_id: x, .. }, Request::Restart { item_id: y, .. }) => x == y,
+        _ => false,
     }
 }
 
@@ -150,68 +177,35 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             submitted_via,
             profile,
             ..
-        } => {
-            let pending = snapshot
-                .requests
-                .values()
-                .any(|r| matches!(r, Request::Submit { pr_number: n, .. } if n == pr_number));
-
-            if pending {
-                return Outcome::Ignored;
-            }
-
-            request(
-                snapshot,
-                event,
-                Request::Submit {
-                    pr_number: *pr_number,
-                    head_sha: head_sha.clone(),
-                    priority: *priority,
-                    no_batch: *no_batch,
-                    direct: *direct,
-                    submitted_via: *submitted_via,
-                    profile: profile.clone(),
-                },
-            )
-        }
-        EventKind::ItemCancelRequested { item_id, by_admin } => {
-            let pending = snapshot
-                .requests
-                .values()
-                .any(|r| matches!(r, Request::Cancel { item_id: i, .. } if i == item_id));
-
-            if pending {
-                return Outcome::Ignored;
-            }
-
-            request(
-                snapshot,
-                event,
-                Request::Cancel {
-                    item_id: *item_id,
-                    by_admin: *by_admin,
-                },
-            )
-        }
-        EventKind::ItemRestartRequested { item_id, by_api } => {
-            let pending = snapshot
-                .requests
-                .values()
-                .any(|r| matches!(r, Request::Restart { item_id: i, .. } if i == item_id));
-
-            if pending {
-                return Outcome::Ignored;
-            }
-
-            request(
-                snapshot,
-                event,
-                Request::Restart {
-                    item_id: *item_id,
-                    by_api: *by_api,
-                },
-            )
-        }
+        } => request(
+            snapshot,
+            event,
+            Request::Submit {
+                pr_number: *pr_number,
+                head_sha: head_sha.clone(),
+                priority: *priority,
+                no_batch: *no_batch,
+                direct: *direct,
+                submitted_via: *submitted_via,
+                profile: profile.clone(),
+            },
+        ),
+        EventKind::ItemCancelRequested { item_id, by_admin } => request(
+            snapshot,
+            event,
+            Request::Cancel {
+                item_id: *item_id,
+                by_admin: *by_admin,
+            },
+        ),
+        EventKind::ItemRestartRequested { item_id, by_api } => request(
+            snapshot,
+            event,
+            Request::Restart {
+                item_id: *item_id,
+                by_api: *by_api,
+            },
+        ),
         EventKind::PrObserved {
             pr_number,
             state,

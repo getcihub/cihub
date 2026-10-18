@@ -1,8 +1,9 @@
 import { type VariantProps, cva } from "class-variance-authority";
 import { AnimatePresence, m } from "motion/react";
-import { type ComponentProps, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ComponentProps, type ReactNode, useId, useRef, useState } from "react";
 
 import { cn } from "@/lib/cn";
+import { useCloseOutside } from "./hooks/use-close-outside";
 import { transitions } from "./motion";
 
 interface Props {
@@ -26,29 +27,9 @@ export function Menu({ label, trigger, triggerClassName, align, children }: Prop
   const button = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const closeOutside = (event: MouseEvent) => {
-      if (!(event.target instanceof Node && container.current?.contains(event.target))) {
-        setIsOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-        button.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [isOpen]);
+  useCloseOutside(container, button, isOpen, () => {
+    setIsOpen(false);
+  });
 
   return (
     <div

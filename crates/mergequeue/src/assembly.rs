@@ -128,9 +128,11 @@ fn numbers(prs: &[u64]) -> String {
 ///
 /// # Errors
 ///
-/// The file is not valid, or it gives an empty list.
-fn required_statuses_of_file(text: &str, branch: &str) -> Result<Option<Vec<String>>, JobError> {
-    let config = RepoConfig::parse(text).map_err(|err| err.job_error())?;
+/// The file gives an empty list.
+fn required_statuses_of_file(
+    config: &RepoConfig,
+    branch: &str,
+) -> Result<Option<Vec<String>>, JobError> {
     let setting = config.queue(branch).and_then(|queue| {
         queue
             .settings
@@ -165,8 +167,8 @@ pub(crate) async fn required_statuses(
         .map_err(|err| err.job_error())?;
     let (listed, merge_checks, injection) = match file {
         Some(text) => {
-            let listed = required_statuses_of_file(&text, branch)?;
             let config = RepoConfig::parse(&text).map_err(|err| err.job_error())?;
+            let listed = required_statuses_of_file(&config, branch)?;
             let settings = config.settings(branch).map_err(|err| err.job_error())?;
             let injection = settings.branch_protection_injection.value;
             (listed, config.merge_checks(branch), injection)
@@ -451,10 +453,12 @@ fn give_up(
     let last = attempts >= MAX_ATTEMPTS;
     match step {
         Step::GiveUp(error, culprit) => Err((error, culprit)),
-        Step::Wait(text) => Ok(text),
+        Step::Wait(text) if !last => Ok(text),
         Step::Transient(text) if attempts < ASSEMBLY_ATTEMPTS && !last => Ok(text),
         Step::Passing(text) if elapsed < ASSEMBLY_WAIT && !last => Ok(text),
-        Step::Transient(_) | Step::Passing(_) => Err((JobError::RetryExhausted, None)),
+        Step::Wait(_) | Step::Transient(_) | Step::Passing(_) => {
+            Err((JobError::RetryExhausted, None))
+        }
     }
 }
 
@@ -627,6 +631,15 @@ mod tests {
         assert!(retry(passing(), MAX_ATTEMPTS - 1, minutes(1)));
         assert!(!retry(passing(), MAX_ATTEMPTS, minutes(1)));
         assert!(retry(Step::Wait("predecessor".into()), 1, minutes(1)));
+        assert!(retry(
+            Step::Wait("predecessor".into()),
+            MAX_ATTEMPTS - 1,
+            minutes(1)
+        ));
+        assert_eq!(
+            give_up(Step::Wait("predecessor".into()), MAX_ATTEMPTS, minutes(1)),
+            Err((JobError::RetryExhausted, None))
+        );
         assert_eq!(
             give_up(Step::GiveUp(JobError::MergeConflict, None), 1, minutes(0)),
             Err((JobError::MergeConflict, None))
@@ -749,7 +762,10 @@ mod tests {
             ),
         ];
         for (text, branch, want) in cases {
-            assert_eq!(required_statuses_of_file(&text, branch), want, "{text}");
+            let listed = RepoConfig::parse(&text)
+                .map_err(|err| err.job_error())
+                .and_then(|config| required_statuses_of_file(&config, branch));
+            assert_eq!(listed, want, "{text}");
         }
     }
 

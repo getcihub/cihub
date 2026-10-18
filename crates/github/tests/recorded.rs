@@ -129,6 +129,41 @@ async fn a_rate_limit_pauses_the_connection_until_its_reset() {
     replay.finish();
 }
 
+/// Written by hand from `specs/RELIABILITY.md`: three failures in a row on
+/// the connection, on the token endpoint too, and the connection probes.
+#[tokio::test]
+async fn failures_of_the_token_endpoint_make_the_connection_unavailable() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let failing = || {
+        answer(
+            "POST",
+            "/app/installations/7/access_tokens",
+            502,
+            json!({ "message": "bad gateway" }),
+        )
+    };
+    let replay = Replay::start(vec![failing(), failing(), failing()]).await;
+    let app = app(&replay.url, now);
+    let urgent = app.budget_urgent();
+    let repo = repo("7", "acme", "app");
+    let read = || app.branch_head(&repo, "main", JobClass::Repair);
+    for _ in 0..3 {
+        assert!(matches!(read().await, Err(ScmError::Unavailable(_))));
+    }
+
+    tokio::time::timeout(StdDuration::from_secs(1), urgent.notified())
+        .await
+        .expect("the change of mode is written at once");
+    let probed = read().await;
+
+    assert_eq!(
+        probed,
+        Err(ScmError::Unavailable("waiting for the next probe".into())),
+        "the connection waits for its probe without a call"
+    );
+    replay.finish();
+}
+
 #[tokio::test]
 async fn an_empty_repository_has_no_branch() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
@@ -268,7 +303,7 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
             200,
             json!({
                 "id": 7,
-                "account": { "id": 70, "login": "acme" },
+                "account": { "id": 70, "login": "acme", "type": "Organization" },
                 "permissions": { "contents": "write", "metadata": "read" },
                 "suspended_at": null,
             }),
@@ -372,7 +407,14 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
             "GET",
             &format!("{rules}/main?per_page=100"),
             200,
-            json!([{ "type": "update", "ruleset_id": 5 }, { "type": "pull_request", "ruleset_id": 6 }]),
+            json!([
+                { "type": "update", "ruleset_id": 5 },
+                { "type": "pull_request", "ruleset_id": 6 },
+                { "type": "required_status_checks", "ruleset_id": 6, "parameters": {
+                    "strict_required_status_checks_policy": true,
+                    "required_status_checks": [{ "context": "ci" }]
+                }},
+            ]),
         ),
         answer(
             "GET",
@@ -393,15 +435,6 @@ async fn the_setup_check_reads_the_rulesets_of_the_branch_and_of_the_test_branch
             &format!("{rules}/cihub-merge/check/1?per_page=100"),
             200,
             json!([{ "type": "pull_request", "ruleset_id": 6 }]),
-        ),
-        answer(
-            "GET",
-            &format!("{rules}/main"),
-            200,
-            json!([{ "type": "required_status_checks", "ruleset_id": 6, "parameters": {
-                "strict_required_status_checks_policy": true,
-                "required_status_checks": [{ "context": "ci" }]
-            }}]),
         ),
         answer(
             "GET",
@@ -535,13 +568,13 @@ async fn the_installations_of_the_app_come_from_every_page() {
     let second = "/app/installations?per_page=100&page=2";
     let acme = json!({
         "id": 7,
-        "account": { "id": 70, "login": "acme" },
+        "account": { "id": 70, "login": "acme", "type": "Organization" },
         "permissions": { "contents": "write", "metadata": "read" },
         "suspended_at": null,
     });
     let globex = json!({
         "id": 9,
-        "account": { "id": 90, "login": "globex" },
+        "account": { "id": 90, "login": "globex", "type": "Organization" },
         "permissions": {},
         "suspended_at": "2026-09-01T10:00:00Z",
     });

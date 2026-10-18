@@ -927,6 +927,29 @@ impl State {
         }
     }
 
+    /// The installations that `user` reaches: those of the accounts where
+    /// they have a role, and those of the repositories where they have a
+    /// permission, as an outside collaborator does.
+    fn reach_of_person(&self, user: &str) -> Vec<String> {
+        let by_role = self
+            .members
+            .iter()
+            .filter(|(_, members)| members.contains_key(user))
+            .map(|(installation, _)| installation.as_str());
+        let by_permission = self
+            .repos
+            .iter()
+            .filter(|(external_id, _)| {
+                self.permission_of_person(external_id, user) != Permission::None
+            })
+            .map(|(_, repo)| repo.connection.as_str());
+        let reached: BTreeSet<&str> = by_role
+            .chain(by_permission)
+            .filter(|installation| self.installations.contains_key(*installation))
+            .collect();
+        reached.into_iter().map(str::to_owned).collect()
+    }
+
     fn installation(&self, external_id: &str) -> Option<ScmInstallation> {
         let mut installation = self.installations.get(external_id)?.clone();
         installation.is_suspended = self.lost.contains(external_id);
@@ -1571,7 +1594,9 @@ impl Scm for Sim {
             match ctx.repo.mergeability(pr, &head)? {
                 Mergeability::Mergeable => {}
                 Mergeability::Behind => {
-                    return Err(ScmError::Forbidden("the head must be up to date".into()));
+                    return Err(ScmError::MergeRejected(
+                        "the head must be up to date".into(),
+                    ));
                 }
                 other => return Err(ScmError::MergeRejected(format!("PR {other}"))),
             }
@@ -1908,9 +1933,10 @@ impl Scm for Sim {
                     })
                 })
                 .collect();
-            let installations = memberships
+            let installations = state
+                .reach_of_person(&user.external_id)
                 .iter()
-                .filter_map(|membership| state.installation(&membership.connection_external_id))
+                .filter_map(|installation| state.installation(installation))
                 .collect();
             let profile = state
                 .profiles
@@ -1949,13 +1975,7 @@ impl Scm for Sim {
     ) -> ScmFuture<'a, ScmPersonReach> {
         self.record_call("person_reach", class, move |state| {
             let user = state.person_of(token)?;
-            let reached: Vec<String> = state
-                .members
-                .iter()
-                .filter(|(_, members)| members.contains_key(&user))
-                .map(|(installation, _)| installation.clone())
-                .filter(|installation| state.installations.contains_key(installation))
-                .collect();
+            let reached = state.reach_of_person(&user);
             let installations = reached
                 .iter()
                 .filter_map(|installation| state.installation(installation))
@@ -2451,6 +2471,20 @@ mod tests {
         sim.set_rules(&repo, "main", rules).unwrap();
 
         assert_eq!(read().await, Mergeability::Behind);
+        let merge = PrMerge {
+            number,
+            head_sha: head,
+            tested_sha: String::new(),
+            method: MergeMethod::Squash,
+            title: "behind".into(),
+            message: String::new(),
+        };
+        let refused = sim.merge_pr(&repo, &merge, JobClass::Merge).await;
+
+        assert!(
+            matches!(refused, Err(ScmError::MergeRejected(_))),
+            "GitHub refuses the merge of a PR behind its base: {refused:?}"
+        );
         sim.change_pr(
             &repo,
             number,
@@ -2459,6 +2493,46 @@ mod tests {
         .unwrap();
 
         assert_eq!(read().await, Mergeability::Unknown);
+    }
+
+    #[tokio::test]
+    async fn an_outside_collaborator_reaches_the_installation_of_the_repository() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+        let person = ScmUser {
+            external_id: "8".into(),
+            login: "grace".into(),
+        };
+        let request = SignInRequest {
+            redirect_url: "https://ci.example.com/auth/callback".into(),
+            state: "state".into(),
+            code_challenge: code_challenge(&"verifier".into()),
+        };
+        sim.set_permission(&repo, &person, Permission::Read)
+            .unwrap();
+        let code = SignInCode {
+            code: sim.authorize(&person, &request).into(),
+            code_verifier: "verifier".into(),
+            redirect_url: request.redirect_url.clone(),
+        };
+
+        let (signed_in, token) = sim.sign_in(&code, JobClass::Interactive).await.unwrap();
+        let reach = sim
+            .person_reach(&token.access, JobClass::Interactive)
+            .await
+            .unwrap();
+
+        assert_eq!(signed_in.memberships, []);
+        assert_eq!(signed_in.installations.len(), 1);
+        assert_eq!(signed_in.installations, reach.installations);
+        assert_eq!(
+            reach.repos,
+            [ScmPersonRepo {
+                connection_external_id: repo.connection.external_id.clone(),
+                repo_external_id: repo.external_id.clone(),
+                permission: Permission::Read,
+            }]
+        );
     }
 
     fn deliveries(count: u64) -> Sim {

@@ -24,7 +24,7 @@ pub(crate) fn targets<'a>(snapshot: &'a Snapshot, item: &Item) -> &'a ImpactedTa
         .map_or(&ALL, |t| &t.value.targets)
 }
 
-fn overlap(a: &ImpactedTargets, b: &ImpactedTargets) -> bool {
+pub(crate) fn overlap(a: &ImpactedTargets, b: &ImpactedTargets) -> bool {
     match (a, b) {
         (ImpactedTargets::All, _) | (_, ImpactedTargets::All) => true,
         (ImpactedTargets::Targets(a), ImpactedTargets::Targets(b)) => !a.is_disjoint(b),

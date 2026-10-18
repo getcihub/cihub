@@ -9,7 +9,7 @@ use cihub_config::RepoConfig;
 use cihub_domain::{ApiScope, Permission as Level};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, Page, cursor_of};
 use cihub_scm::{ConnectionRef, RepoRef};
-use serde::de::{Error as _, IntoDeserializer};
+use serde::de::Error as _;
 use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use sqlx::types::Json as Stored;
@@ -47,9 +47,8 @@ fn setup_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<SetupS
 
     text.split(',')
         .map(|name| {
-            let state: Result<SetupState, serde::de::value::Error> =
-                SetupState::deserialize(name.into_deserializer());
-            state.map_err(|_| D::Error::custom(format!("unknown state `{name}`")))
+            name.parse()
+                .map_err(|_| D::Error::custom(format!("unknown state `{name}`")))
         })
         .collect()
 }
@@ -122,7 +121,7 @@ pub(super) async fn list_repos(
     let page: Page<(String, String, String)> =
         Page::read("repos", query.from.as_deref(), query.limit)?;
     let name = name_part(query.q)?;
-    let states: Vec<&str> = query.state.iter().map(|state| state_name(*state)).collect();
+    let states: Vec<&str> = query.state.iter().map(|state| (*state).into()).collect();
     let (repos, user) = (grant.repo_filter(), user_of(&grant));
 
     // `$4` names the person of the request, whose permission a row gives.
@@ -250,7 +249,7 @@ pub(super) async fn get_repo(
                 s.config_line, s.config_column, s.config_text, s.entries, s.checked_at,
                 w.requested_at
          FROM {SETUP_SOURCE}
-         WHERE lower(r.name) = lower($1) ORDER BY r.id LIMIT 1"
+         WHERE r.removed_at IS NULL AND lower(r.name) = lower($1) ORDER BY r.id LIMIT 1"
     )))
     .bind(&path.repo)
     .fetch_optional(&mut *tx)
@@ -272,7 +271,7 @@ pub(super) async fn get_repo(
         name: row.name.clone(),
     };
     let setup = RepoSetup {
-        state: state_of_name(&row.state)?,
+        state: row.state.parse()?,
         rules: rules_of(&row),
         target_branch_missing: row.is_read && row.head_sha.is_none(),
         rules_url: state.scm.branch_rules_url(&repo),
@@ -459,23 +458,6 @@ fn permission_of(grant: &ApiGrant) -> Permission {
     }
 }
 
-fn state_name(state: SetupState) -> &'static str {
-    match state {
-        SetupState::Started => "started",
-        SetupState::Checking => "checking",
-        SetupState::Ready => "ready",
-        SetupState::ReadyWithWarnings => "ready_with_warnings",
-        SetupState::CannotMerge => "cannot_merge",
-        SetupState::InvalidConfig => "invalid_config",
-    }
-}
-
-fn state_of_name(name: &str) -> Result<SetupState, ApiError> {
-    let state: Result<SetupState, serde::de::value::Error> =
-        SetupState::deserialize(name.into_deserializer());
-    Ok(state?)
-}
-
 /// A repository of a list: a person gets their permission on it, a token
 /// that of its scopes.
 fn repo_of(
@@ -495,7 +477,7 @@ fn repo_of(
         default_branch,
         permission,
         setup: SetupSummary {
-            state: state_of_name(&state)?,
+            state: state.parse()?,
             checked_at,
             requested_at,
         },
@@ -512,21 +494,10 @@ fn permission_of_level(level: Level) -> Permission {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::repo_setup::READ_REPO_SETUP;
 
     #[test]
-    fn each_state_has_its_name() {
-        for state in [
-            SetupState::Started,
-            SetupState::Checking,
-            SetupState::Ready,
-            SetupState::ReadyWithWarnings,
-            SetupState::CannotMerge,
-            SetupState::InvalidConfig,
-        ] {
-            assert_eq!(state_of_name(state_name(state)).unwrap(), state);
-        }
+    fn the_sql_names_the_job_of_the_setup() {
         assert_eq!(
             READ_REPO_SETUP, "read_repo_setup",
             "the name that the SQL reads"

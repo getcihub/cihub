@@ -352,7 +352,8 @@ async fn begin_repo(
 async fn repo_id(conn: &mut PgConnection, name: &str) -> Result<RepoId, ApiError> {
     // The SCM does not tell names apart by their case.
     let id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM repos WHERE lower(name) = lower($1) ORDER BY id LIMIT 1",
+        "SELECT id FROM repos WHERE removed_at IS NULL AND lower(name) = lower($1)
+         ORDER BY id LIMIT 1",
     )
     .bind(name)
     .fetch_optional(conn)

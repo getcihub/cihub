@@ -79,13 +79,6 @@ impl Priority {
             .find(|(n, _)| *n == name)
             .map(|&(_, p)| p)
     }
-
-    pub fn name(self) -> Option<&'static str> {
-        Self::NAMES
-            .iter()
-            .find(|(_, p)| *p == self)
-            .map(|&(n, _)| n)
-    }
 }
 
 /// Why a `not_ready` item cannot enter the queue yet.
@@ -131,14 +124,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn priority_names_round_trip() {
-        for name in ["urgent", "high", "medium", "low"] {
-            assert_eq!(
-                Priority::from_name(name).and_then(Priority::name),
-                Some(name)
-            );
-        }
-        assert_eq!(Priority(42).name(), None);
+    fn priority_names_give_their_value() {
+        assert_eq!(Priority::from_name("urgent"), Some(Priority::URGENT));
+        assert_eq!(Priority::from_name("high"), Some(Priority::HIGH));
+        assert_eq!(Priority::from_name("medium"), Some(Priority::MEDIUM));
+        assert_eq!(Priority::from_name("low"), Some(Priority::LOW));
+        assert_eq!(Priority::from_name("later"), None);
     }
 
     #[test]

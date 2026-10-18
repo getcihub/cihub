@@ -49,10 +49,9 @@ pub struct BatchWait {
     pub closes_at: OffsetDateTime,
 }
 
-/// The surface of `item` in `s`.
-pub(crate) fn surface(s: &Snapshot, item: &Item) -> Surface {
-    let position = s
-        .queue_order()
+/// The surface of `item` in `s`, whose queue order is `order`.
+pub(crate) fn surface(s: &Snapshot, order: &[&Item], item: &Item) -> Surface {
+    let position = order
         .iter()
         .position(|i| i.id == item.id)
         .map(|rank| rank + 1);

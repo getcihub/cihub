@@ -115,24 +115,29 @@ pub async fn claim_jobs(
              WHERE state = 'running' AND locked_until > $2 AND connection_id IS NOT NULL
              GROUP BY connection_id
          ), candidates AS (
-             SELECT idempotency_key, connection_id, class, run_after FROM jobs
-             WHERE ((state = 'queued' AND run_after <= $2)
-                    OR (state = 'running' AND locked_until <= $2))
+             -- A connection at its quota is left out before the window, so
+             -- that its backlog does not hide the jobs of the others.
+             SELECT j.idempotency_key, j.connection_id, j.class, j.run_after,
+                    coalesce(p.n, 0) AS in_progress
+             FROM jobs j LEFT JOIN in_progress p USING (connection_id)
+             WHERE ((j.state = 'queued' AND j.run_after <= $2)
+                    OR (j.state = 'running' AND j.locked_until <= $2))
+               AND coalesce(p.n, 0) < $5
                AND NOT EXISTS (
                    SELECT 1 FROM scm_connections s
-                   WHERE s.id = jobs.connection_id AND s.paused_until > $2
+                   WHERE s.id = j.connection_id AND s.paused_until > $2
                )
-             ORDER BY class, run_after, idempotency_key
+             ORDER BY j.class, j.run_after, j.idempotency_key
              LIMIT $4 * 10
          ), eligible AS (
-             SELECT c.idempotency_key FROM (
-                 SELECT idempotency_key, connection_id, class, run_after,
+             SELECT idempotency_key FROM (
+                 SELECT idempotency_key, connection_id, in_progress,
                         row_number() OVER (
                             PARTITION BY connection_id ORDER BY class, run_after, idempotency_key
                         ) AS rank
                  FROM candidates
-             ) c LEFT JOIN in_progress p USING (connection_id)
-             WHERE c.connection_id IS NULL OR c.rank + coalesce(p.n, 0) <= $5
+             ) c
+             WHERE connection_id IS NULL OR rank + in_progress <= $5
          ), chosen AS (
              -- The state is checked again on the locked row: a concurrent
              -- worker can claim a candidate after the snapshot of this query.

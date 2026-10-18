@@ -7,15 +7,16 @@ import { CheckIcon } from "@/components/icons/check-icon";
 import { ErrorIcon } from "@/components/icons/error-icon";
 import { WarningIcon } from "@/components/icons/warning-icon";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";
 import { SetupStateBadge } from "@/components/setup/setup-state-badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Prose } from "@/components/ui/prose";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { isSetupRead } from "@/domain/setup/queries";
+import { isSetupBlocked } from "@/domain/setup/queries";
 import { useRepoSetup } from "@/hooks/use-repo-setup";
 import { cn } from "@/lib/cn";
 import { plural, shortSha } from "@/lib/text";
@@ -107,7 +108,7 @@ function StartRow({
   onSync: () => void;
 }) {
   const { state } = repo.setup;
-  const isBlocked = state === "cannot_merge" || state === "invalid_config";
+  const isBlocked = isSetupBlocked(state);
   const detailId = `start-${repo.id}`;
 
   return (
@@ -159,24 +160,25 @@ function StartDetailSkeleton() {
 
 /** What the repository still needs: its rules, its settings, then the first command. */
 function StartDetail({ org, name, onSync }: { org: string; name: string; onSync: () => void }) {
-  const { repo, hasGivenUp, checkAgain } = useRepoSetup(org, name, onSync);
+  const { repo, isChecking, hasGivenUp, checkAgain } = useRepoSetup(org, name, onSync);
   const { setup, default_branch: branch } = repo;
-  const isChecking = !isSetupRead(setup);
-  const isBlocked = setup.state === "cannot_merge" || setup.state === "invalid_config";
+  const isBlocked = isSetupBlocked(setup.state);
   const check = checkAgain && (
-    <Button
-      isPending={checkAgain.isPending || (isChecking && !hasGivenUp)}
-      pendingText="Checking"
-      onClick={checkAgain.run}
-    >
-      Check again
-    </Button>
+    <CheckAgainButton checkAgain={checkAgain} isChecking={isChecking} hasGivenUp={hasGivenUp} />
   );
+  // One "Check again" for the row: under the rules when they fail, else under the file.
+  const isCheckUnderRules =
+    !isChecking && (setup.target_branch_missing || setup.rules.some((rule) => !rule.passed));
 
   return (
     <>
       <RulesLine repo={repo} isChecking={isChecking} check={check} />
-      <SettingsLine org={org} repo={repo} config={setup.config ?? null} check={check} />
+      <SettingsLine
+        org={org}
+        repo={repo}
+        config={setup.config ?? null}
+        check={isCheckUnderRules ? null : check}
+      />
       {hasGivenUp && (
         <p className="text-md text-muted-foreground" role="status">
           Not read yet: reload the page in a moment.

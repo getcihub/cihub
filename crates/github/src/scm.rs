@@ -2,7 +2,7 @@
 //! and writes in REST. Each value of GitHub becomes a neutral value here
 //! (`specs/GITHUB.md`).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use cihub_domain::{
@@ -25,6 +25,7 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::GithubApp;
 use crate::client::{Answer, JSON, Request};
+use crate::sign_in::Installation;
 use crate::translate::status_conclusion;
 
 const CHECKS_FRAGMENT: &str = "
@@ -335,35 +336,6 @@ impl GraphqlPr {
     }
 }
 
-#[derive(Deserialize)]
-struct Installation {
-    id: u64,
-    account: Account,
-    #[serde(default)]
-    permissions: BTreeMap<String, String>,
-    suspended_at: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Account {
-    id: u64,
-    login: String,
-}
-
-impl Installation {
-    fn into_neutral(self) -> ScmInstallation {
-        ScmInstallation {
-            external_id: self.id.to_string(),
-            account: ScmAccount {
-                external_id: self.account.id.to_string(),
-                path: self.account.login,
-            },
-            permissions: self.permissions,
-            is_suspended: self.suspended_at.is_some(),
-        }
-    }
-}
-
 /// Encodes a part of a path or of a query, keeping `/`, which the branch
 /// names of GitHub contain.
 pub(crate) fn encode(text: &str) -> String {
@@ -477,6 +449,17 @@ struct BranchRule {
     #[serde(rename = "type")]
     kind: String,
     ruleset_id: Option<u64>,
+    #[serde(default)]
+    parameters: Value,
+}
+
+/// The classic branch protection of a branch, next to its rules.
+#[derive(Deserialize)]
+struct Protection {
+    #[serde(default)]
+    strict: bool,
+    #[serde(default)]
+    contexts: Vec<String>,
 }
 
 impl GithubApp {
@@ -493,6 +476,46 @@ impl GithubApp {
         }
 
         expect(answer, &[StatusCode::OK])?.json()
+    }
+
+    /// What `rules` and the classic protection of `branch` require.
+    async fn required_checks_of(
+        &self,
+        repo: &RepoRef,
+        branch: &str,
+        class: JobClass,
+        rules: &[BranchRule],
+    ) -> Result<RequiredChecks, ScmError> {
+        let mut required = RequiredChecks::default();
+        for rule in rules {
+            if rule.kind != "required_status_checks" {
+                continue;
+            }
+
+            let checks = rule.parameters["required_status_checks"].as_array();
+            let contexts = checks
+                .into_iter()
+                .flatten()
+                .filter_map(|check| check["context"].as_str());
+            required.names.extend(contexts.map(str::to_owned));
+
+            required.up_to_date |= rule.parameters["strict_required_status_checks_policy"]
+                .as_bool()
+                .unwrap_or(false);
+        }
+
+        let rest = format!(
+            "/branches/{}/protection/required_status_checks",
+            encode(branch)
+        );
+        let classic = self.rest(repo, class, Method::GET, &rest, None).await?;
+        if classic.status != StatusCode::NOT_FOUND && !needs_paid_plan(&classic) {
+            let protection: Protection = expect(classic, &[StatusCode::OK])?.json()?;
+            required.names.extend(protection.contexts);
+            required.up_to_date |= protection.strict;
+        }
+
+        Ok(required)
     }
 
     fn repo_path(repo: &RepoRef, rest: &str) -> String {
@@ -696,7 +719,7 @@ impl GithubApp {
         }
 
         if answer.status == StatusCode::UNPROCESSABLE_ENTITY
-            && answer.message().contains("does not exist")
+            && answer.message().contains("Reference does not exist")
         {
             let body = json!({ "ref": format!("refs/heads/{branch}"), "sha": sha });
             let created = self
@@ -769,59 +792,8 @@ impl Scm for GithubApp {
         class: JobClass,
     ) -> ScmFuture<'a, RequiredChecks> {
         Box::pin(async move {
-            #[derive(Deserialize)]
-            struct Rule {
-                #[serde(rename = "type")]
-                kind: String,
-                #[serde(default)]
-                parameters: Value,
-            }
-
-            #[derive(Deserialize)]
-            struct Protection {
-                #[serde(default)]
-                strict: bool,
-                #[serde(default)]
-                contexts: Vec<String>,
-            }
-
-            let mut required = RequiredChecks::default();
-            let rest = format!("/rules/branches/{}", encode(branch));
-            let rules = self.rest(repo, class, Method::GET, &rest, None).await?;
-            let rules: Vec<Rule> = if needs_paid_plan(&rules) {
-                Vec::new()
-            } else {
-                expect(rules, &[StatusCode::OK])?.json()?
-            };
-            for rule in rules {
-                if rule.kind != "required_status_checks" {
-                    continue;
-                }
-
-                let checks = rule.parameters["required_status_checks"].as_array();
-                let contexts = checks
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|check| check["context"].as_str());
-                required.names.extend(contexts.map(str::to_owned));
-
-                required.up_to_date |= rule.parameters["strict_required_status_checks_policy"]
-                    .as_bool()
-                    .unwrap_or(false);
-            }
-
-            let rest = format!(
-                "/branches/{}/protection/required_status_checks",
-                encode(branch)
-            );
-            let classic = self.rest(repo, class, Method::GET, &rest, None).await?;
-            if classic.status != StatusCode::NOT_FOUND && !needs_paid_plan(&classic) {
-                let protection: Protection = expect(classic, &[StatusCode::OK])?.json()?;
-                required.names.extend(protection.contexts);
-                required.up_to_date |= protection.strict;
-            }
-
-            Ok(required)
+            let rules = self.branch_rules(repo, branch, class).await?;
+            self.required_checks_of(repo, branch, class, &rules).await
         })
     }
 
@@ -1371,7 +1343,7 @@ impl Scm for GithubApp {
             }
 
             let installation: Installation = expect(answer, &[StatusCode::OK])?.json()?;
-            Ok(Some(installation.into_neutral()))
+            Ok(Some(installation.neutral()))
         })
     }
 
@@ -1382,7 +1354,7 @@ impl Scm for GithubApp {
             while let Some(page) = path.take() {
                 let (answer, next) = self.send_as_app(Method::GET, &page).await?;
                 let listed: Vec<Installation> = expect(answer, &[StatusCode::OK])?.json()?;
-                installations.extend(listed.into_iter().map(Installation::into_neutral));
+                installations.extend(listed.iter().map(Installation::neutral));
                 path = next;
             }
 
@@ -1448,7 +1420,8 @@ impl Scm for GithubApp {
                 }
             }
 
-            if self.required_checks(repo, branch, class).await?.up_to_date {
+            let required = self.required_checks_of(repo, branch, class, &rules).await?;
+            if required.up_to_date {
                 findings.push(SetupFinding::UpToDateRequired);
             }
 

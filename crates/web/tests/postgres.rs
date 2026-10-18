@@ -45,14 +45,29 @@ async fn start_with(pool: &PgPool, sim: Arc<Sim>) -> String {
 
 /// Serves the web role until `cancel`.
 async fn start_until(pool: &PgPool, sim: Arc<Sim>, cancel: CancellationToken) -> String {
+    let cipher =
+        DatabaseCipher::new(&SecretString::from("a database secret of 32 bytes ab")).unwrap();
+
+    serve_with(pool, sim, Some(Arc::new(cipher)), cancel).await
+}
+
+/// Serves the web role of an instance where nobody signs in.
+async fn start_without_sign_in(pool: &PgPool) -> String {
+    serve_with(pool, Arc::new(Sim::new()), None, CancellationToken::new()).await
+}
+
+async fn serve_with(
+    pool: &PgPool,
+    sim: Arc<Sim>,
+    cipher: Option<Arc<DatabaseCipher>>,
+    cancel: CancellationToken,
+) -> String {
     let github = GithubWebhooks {
         secret: SecretString::from(SECRET),
     };
     let dashboard = Dashboard {
         scm: sim,
-        cipher: Some(Arc::new(
-            DatabaseCipher::new(&SecretString::from("a database secret of 32 bytes ab")).unwrap(),
-        )),
+        cipher,
         public_url: Some(PUBLIC_URL.to_owned()),
         news: QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
@@ -691,6 +706,20 @@ async fn ask_session(addr: &str, device_code: &str) -> Answer {
 fn code_of(answer: &Answer) -> String {
     let problem: serde_json::Value = serde_json::from_str(&answer.body).unwrap();
     problem["code"].as_str().unwrap_or_default().to_owned()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_device_code_needs_a_sign_in_client(pool: PgPool) {
+    let addr = start_without_sign_in(&pool).await;
+
+    let created = call_with(&addr, "POST", "/api/v1/device-codes", &[]).await;
+
+    assert_eq!(
+        (created.status, code_of(&created)),
+        (503, "sign_in_unavailable".into()),
+        "{}",
+        created.body
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { getRepoOptions, listReposOptions } from "@/client/@tanstack/react-query.gen";
-import type { RepoList, SetupSummary } from "@/client/types.gen";
+import type { RepoList, SetupState, SetupSummary } from "@/client/types.gen";
 import { readKeyOf } from "@/domain/queue/queries";
 
 /** An organization has a few hundred repositories at most: one page of the most that a page holds. */
@@ -20,6 +20,11 @@ export function repoOptions(org: string, repo: string): ReturnType<typeof getRep
 /** The server read the setup, and no read that an admin asked for waits. */
 export function isSetupRead(setup: Pick<SetupSummary, "state" | "requested_at">): boolean {
   return setup.state !== "checking" && !setup.requested_at;
+}
+
+/** A point of the setup blocks the first queue: a rule stops every merge, or the file is not valid. */
+export function isSetupBlocked(state: SetupState): boolean {
+  return state === "cannot_merge" || state === "invalid_config";
 }
 
 /** A list of repositories waits for a read: one of them is checked, or, after an install, none came yet. */

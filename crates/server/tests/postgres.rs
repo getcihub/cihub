@@ -380,6 +380,7 @@ async fn the_command_line_signs_in_with_a_code_that_its_person_approves(pool: Pg
         .env("CIHUB_INTERNAL_ADDR", &internal)
         .env("CIHUB_HTTP_ADDR", &public)
         .env("CIHUB_HTTP_PUBLIC_URL", format!("http://{public}"))
+        .env("CIHUB_DATABASE_SECRET", "a database secret of 32 bytes ab")
         .spawn()
         .unwrap();
     let config = std::env::temp_dir().join(format!("cihub-{}", public.replace(':', "-")));

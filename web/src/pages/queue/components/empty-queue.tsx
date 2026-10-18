@@ -3,6 +3,7 @@ import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueueIllustration } from "@/components/ui/illustrations";
 import type { QueuePath } from "@/domain/queue/queries";
+import { useRepoPermission } from "@/hooks/use-repo-permission";
 import { timeAgo } from "@/lib/time";
 import { SubmitPr } from "./submit-pr";
 
@@ -18,6 +19,7 @@ export function EmptyQueue({
   now: number;
   onSent: (notice: string) => void;
 }) {
+  const permission = useRepoPermission(path.org, path.repo);
   const label = queue.settings.enqueue_label;
   const lastMerge = queue.last_merged_at
     ? `; the last merge was ${timeAgo(queue.last_merged_at, now)}`
@@ -29,7 +31,7 @@ export function EmptyQueue({
       title="No pull request in the queue"
       actions={
         <>
-          <SubmitPr path={path} isDisabled={queue.is_suspended} onSent={onSent} />
+          <SubmitPr path={path} isDisabled={queue.is_suspended || !permission.write} onSent={onSent} />
           <CopyCommand />
         </>
       }

@@ -7,9 +7,9 @@ use cihub_domain::{
 };
 use cihub_scm::{ConnectionRef, RepoRef, Scm, ScmAccount, ScmError, ScmPersonToken, ScmUser};
 use cihub_store::{
-    DatabaseCipher, Membership, PersonToken, PgPool, begin_org, begin_system, forget_person_token,
-    keep_person_token, lock_person_token, person_synced_at, record_membership, record_person_sync,
-    record_repo_permission, repo_permission_of,
+    DatabaseCipher, Membership, PersonToken, PgPool, Postgres, Transaction, begin_org,
+    begin_system, forget_person_token, keep_person_token, lock_person_token, person_synced_at,
+    record_membership, record_person_sync, record_repo_permission, repo_permission_of,
 };
 use secrecy::SecretString;
 use serde_json::json;
@@ -167,11 +167,7 @@ pub async fn token_of_person(
             Ok(Some(refreshed.access))
         }
         None | Some(Err(ScmError::AccessLost(_))) => {
-            forget_person_token(&mut tx, user_id)
-                .await
-                .map_err(PlatformError::Store)?;
-            tx.commit().await.map_err(PlatformError::Query)?;
-            info!(user_id = %user_id, "token of the person refused or ended");
+            forget_token_in(tx, user_id).await?;
             Ok(None)
         }
         Some(Err(err)) => Err(PlatformError::Scm(err)),
@@ -180,7 +176,14 @@ pub async fn token_of_person(
 
 /// Forgets the token of `user_id` and what it read, after the SCM refused it.
 async fn forget_token(pool: &PgPool, user_id: UserId) -> Result<(), PlatformError> {
-    let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    let tx = begin_system(pool).await.map_err(PlatformError::Store)?;
+    forget_token_in(tx, user_id).await
+}
+
+async fn forget_token_in(
+    mut tx: Transaction<'static, Postgres>,
+    user_id: UserId,
+) -> Result<(), PlatformError> {
     forget_person_token(&mut tx, user_id)
         .await
         .map_err(PlatformError::Store)?;
@@ -356,23 +359,26 @@ pub async fn role_now(
     .fetch_one(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
+    drop(tx);
+
     let person = ScmUser { external_id, login };
     let account = ScmAccount {
         external_id: account,
         path: membership.org_slug.clone(),
     };
-
     let role = match scm
         .person_role(&token, &person, &account, JobClass::Interactive)
         .await
     {
         Err(ScmError::AccessLost(_)) => {
-            drop(tx);
             forget_token(pool, user_id).await?;
             return Ok(Access::SignInAgain);
         }
         role => role.map_err(PlatformError::Scm)?,
     };
+    let mut tx = begin_org(pool, membership.org_id)
+        .await
+        .map_err(PlatformError::Store)?;
     match role {
         Some(role) => record_membership(&mut tx, membership.org_id, user_id, role, now)
             .await
