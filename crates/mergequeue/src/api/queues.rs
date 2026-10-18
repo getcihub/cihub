@@ -48,7 +48,7 @@ pub(super) const QUEUE_COLUMNS: &str = "q.id, q.repo_id, r.name AS repo, q.targe
     q.target_branch = r.default_branch AS is_default_branch, q.state::text AS state, q.mode::text AS mode,
     coalesce(q.state_changed_at, q.created_at) AS state_changed_at,
     u.login AS state_changed_by, q.target_head_sha, q.window_size,
-    c.suspended_at IS NOT NULL AS is_suspended, q.config_text, q.config_sha, q.config_error";
+    (c.suspended_at IS NOT NULL OR r.removed_at IS NOT NULL) AS is_suspended, q.config_text, q.config_sha, q.config_error";
 
 pub(super) const QUEUE_SOURCE: &str = "queues q
     JOIN repos r ON r.id = q.repo_id
