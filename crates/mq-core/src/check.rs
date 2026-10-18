@@ -62,8 +62,9 @@ pub fn check(snapshot: &Snapshot, settings: &QueueSettings) -> Vec<Violation> {
             violations.push(Violation::TestingWithoutRun { item_id: item.id });
         }
 
-        if let Some(group) = group.filter(|g| !g.state.is_terminal()) {
-            let expected = group.state.member_state().unwrap_or(ItemState::TestsPassed);
+        if let Some(group) = group.filter(|g| !g.state.is_terminal())
+            && let Some(expected) = group.state.member_state()
+        {
             let merged_ahead =
                 group.state == GroupState::TestsPassed && item.state == ItemState::Merged;
             if item.state != expected && !merged_ahead {

@@ -6,8 +6,8 @@ mod common;
 
 use cihub_config::{Layer, Setting};
 use cihub_domain::{
-    Actor, CheckConclusion, EventKind, GroupKind, ItemId, ItemState, JobError, OptimizationMode,
-    PrState, Priority, Reason, RunStatus, UserId,
+    Actor, CheckConclusion, EventKind, GroupKind, ImpactedTargets, ItemId, ItemState, JobError,
+    OptimizationMode, PrState, Priority, QueueMode, Reason, RunStatus, UserId,
 };
 use common::{World, head, settings, transitioned};
 use time::Duration;
@@ -26,6 +26,37 @@ fn batching(size: u32, window: u32) -> impl FnOnce(&mut Layer) {
 
 fn world(size: u32, window: u32) -> World {
     World::new(settings(batching(size, window)))
+}
+
+/// A queue in parallel mode with batches of `size` in a window of `window`.
+fn parallel(size: u32, window: u32) -> World {
+    World::new(settings(|l| {
+        batching(size, window)(l);
+        l.mode = Some(Setting::new(QueueMode::Parallel));
+    }))
+}
+
+/// Submits the PR, then the targets of its head.
+fn submit_in_lanes(w: &mut World, pr: u64, targets: &[&str]) {
+    w.submit(pr, Priority::MEDIUM);
+    w.fact(
+        Actor::System,
+        EventKind::TargetsReceived {
+            pr_number: pr,
+            head_sha: head(pr, 0),
+            targets: ImpactedTargets::Targets(targets.iter().map(|t| (*t).into()).collect()),
+        },
+    );
+}
+
+/// The PRs that the group of `pr` tests on top of.
+fn predecessors(w: &World, pr: u64) -> Vec<u64> {
+    let group = w.item(pr).unwrap().group_id.unwrap();
+    w.snapshot.groups[&group]
+        .predecessor_ids
+        .iter()
+        .map(|id| w.snapshot.items[id].pr_number)
+        .collect()
 }
 
 /// The kind and the PRs of each group, in the order of the queue.
@@ -122,6 +153,47 @@ fn a_full_batch_forms_at_once_and_tests_its_members_in_one_run() {
     assert_eq!(branches.len(), 1);
     let members: Vec<_> = branches[0].members.iter().map(|h| h.sha.clone()).collect();
     assert_eq!(members, vec![head(1, 0), head(2, 0), head(3, 0)]);
+    assert_replays(&w);
+}
+
+#[test]
+fn a_batch_holds_the_prs_of_one_lane() {
+    let mut w = parallel(4, 4);
+    submit_in_lanes(&mut w, 1, &["//a"]);
+    submit_in_lanes(&mut w, 2, &["//a"]);
+    submit_in_lanes(&mut w, 3, &["//b"]);
+    submit_in_lanes(&mut w, 4, &["//a"]);
+
+    assert_eq!(
+        groups(&w),
+        vec![(GroupKind::Batch, vec![1, 2]), (GroupKind::Single, vec![3]),],
+        "the PR of another lane right behind closes the batch of 2, and the last PR waits alone"
+    );
+    assert_eq!(predecessors(&w, 3), vec![]);
+    assert_replays(&w);
+}
+
+#[test]
+fn a_pr_that_depends_on_another_lane_does_not_join_the_batch() {
+    let mut w = parallel(4, 4);
+    w.submit_no_batch(1);
+    w.fact(
+        Actor::System,
+        EventKind::TargetsReceived {
+            pr_number: 1,
+            head_sha: head(1, 0),
+            targets: ImpactedTargets::Targets(["//b".into()].into()),
+        },
+    );
+    submit_in_lanes(&mut w, 2, &["//a"]);
+    submit_in_lanes(&mut w, 3, &["//a", "//b"]);
+
+    assert_eq!(
+        groups(&w),
+        vec![(GroupKind::Single, vec![1]), (GroupKind::Single, vec![2]),],
+        "a batch of 2 and 3 would test 3 without 1, so 3 waits alone"
+    );
+    assert_eq!(w.item(3).unwrap().group_id, None);
     assert_replays(&w);
 }
 
