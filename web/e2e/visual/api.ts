@@ -447,10 +447,11 @@ const EVENTS: Record<string, Event[]> = {
 
 const PEOPLE: Record<
   Exclude<Person, "nobody">,
-  { login: string; orgs: { slug: string; role: "admin" | "member" }[] }
+  { login: string; name?: string; orgs: { slug: string; role: "admin" | "member" }[] }
 > = {
   ada: {
     login: "ada",
+    name: "Ada Lovelace",
     orgs: [
       { slug: "acme", role: "admin" },
       { slug: "acme-labs", role: "member" },
@@ -467,9 +468,9 @@ function answerOfSession(path: string, person: Person): Answer | null {
     return [401, problem(401, "unauthorized")];
   }
 
-  const { login, orgs } = PEOPLE[person];
+  const { login, name, orgs } = PEOPLE[person];
   if (path === "/user") {
-    return [200, { login }];
+    return [200, { login, name }];
   }
   if (path === "/user/orgs") {
     return [200, listOf("orgs", orgs)];
