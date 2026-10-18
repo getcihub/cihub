@@ -1,6 +1,7 @@
 use cihub_domain::JobClass;
 use cihub_store::{
-    begin_system, create_event_partitions, forget_tokens_without_session, next_month,
+    begin_system, create_event_partitions, forget_permissions_before,
+    forget_tokens_without_session, next_month,
 };
 use serde_json::json;
 use sqlx::{AssertSqlSafe, PgConnection, PgPool};
@@ -14,6 +15,11 @@ pub const MAINTENANCE: &str = "maintenance";
 pub(crate) const ENDED_JOB_RETENTION: Duration = Duration::days(3);
 
 pub(crate) const EVENT_RETENTION: Duration = Duration::days(90);
+
+/// A permission outlives the sign-out so that the next sign-in shows the
+/// repositories at once; past the life of a session, a person who comes back
+/// may have lost them on the SCM, and waits for their sync instead.
+pub(crate) const PERMISSION_RETENTION: Duration = Duration::days(14);
 
 pub fn maintenance_job(day: Date) -> Job {
     Job {
@@ -76,6 +82,9 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
     let tokens = forget_tokens_without_session(&mut tx)
         .await
         .map_err(PlatformError::Store)?;
+    let permissions = forget_permissions_before(&mut tx, now - PERMISSION_RETENTION)
+        .await
+        .map_err(PlatformError::Store)?;
     let (dropped, kept) = drop_old_event_partitions(&mut tx, now).await?;
 
     tx.commit().await.map_err(PlatformError::Query)?;
@@ -88,6 +97,7 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         sessions,
         device_codes,
         tokens,
+        permissions,
         partitions = dropped.len(),
         "maintenance done"
     );

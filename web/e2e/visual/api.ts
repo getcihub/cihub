@@ -470,7 +470,7 @@ function answerOfSession(path: string, person: Person): Answer | null {
 
   const { login, name, orgs } = PEOPLE[person];
   if (path === "/user") {
-    return [200, { login, name }];
+    return [200, { login, name, synced_at: "2026-10-01T09:00:00Z" }];
   }
   if (path === "/user/orgs") {
     return [200, listOf("orgs", orgs)];

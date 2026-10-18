@@ -1,21 +1,24 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useDeferredValue, useEffect } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 
-import type { Repo, RepoList as RepoListOfOrg } from "@/client/types.gen";
+import { getUserOptions, syncUserMutation } from "@/client/@tanstack/react-query.gen";
+import type { Repo, RepoList as RepoListOfOrg, User } from "@/client/types.gen";
 import { QueuesIcon } from "@/components/icons/queues-icon";
 import { SearchIcon } from "@/components/icons/search-icon";
 import { MinePrs } from "@/components/mine/mine";
 import { COMMAND } from "@/components/queue/copy-command";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { Alert, AlertContent, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Page } from "@/components/ui/page";
 import { SectionCount, SectionHead, SectionTitle } from "@/components/ui/section";
+import { Failure } from "@/components/session/parts";
 import { Spinner } from "@/components/ui/spinner";
 import { needsAttention } from "@/domain/queue/attention";
-import { isListWaiting, reposOptions } from "@/domain/setup/queries";
+import { isListWaiting, readReposAgain, reposOptions } from "@/domain/setup/queries";
 import { useMe } from "@/hooks/use-me";
 import { useMinePrs } from "@/hooks/use-mine-prs";
 import { useNow } from "@/hooks/use-now";
@@ -34,7 +37,8 @@ const SEARCHED_FROM = 5;
  * The repositories of an organization, after the PRs of the person: those with a queue first, one row per queue,
  * the ones whose queues need someone at the top; then the others, each one opening in place on what it needs to
  * start. After an install, the Setup URL opens it with `?connecting=`: the page says that CIHub connects the
- * organization while the first reads wait, then drops the parameter.
+ * organization while the first reads wait, then drops the parameter. Before the first read of the repositories
+ * of the person ends, an empty list waits for it too; after it, "Check again" asks for another one.
  */
 export function OrgQueuesPage() {
   const { org } = route.useParams();
@@ -47,14 +51,34 @@ export function OrgQueuesPage() {
   // A new search keeps the page, and its field, while its list loads.
   const search = useDeferredValue(q);
   const isConnecting = connecting !== undefined;
-  const wait = useReadAgain((data: RepoListOfOrg | undefined) => isListWaiting(data, isConnecting));
+  const queryClient = useQueryClient();
+  const firstRead = useReadAgain((data: User | undefined) => !data?.synced_at);
+  const { data: user } = useSuspenseQuery({
+    ...getUserOptions(),
+    refetchInterval: firstRead.refetchInterval,
+  });
+  const isFirstRead = !user.synced_at;
+  const [hasAskedAgain, setHasAskedAgain] = useState(false);
+  const wait = useReadAgain((data: RepoListOfOrg | undefined) =>
+    isListWaiting(data, isConnecting || isFirstRead || hasAskedAgain),
+  );
   const { data: all } = useSuspenseQuery(reposOptions(org, undefined));
   const { data: list } = useSuspenseQuery({
     ...reposOptions(org, search),
     refetchInterval: wait.refetchInterval,
   });
-  const isWaiting = isListWaiting(list, isConnecting);
+  const isWaiting = isListWaiting(list, isConnecting || isFirstRead || (hasAskedAgain && !wait.isOver));
   const hasGivenUp = isWaiting && wait.isOver;
+  const isReading = !isConnecting && isWaiting && !hasGivenUp && list.repos.length === 0;
+  const sync = useMutation({
+    ...syncUserMutation(),
+    onSettled: () => readReposAgain(queryClient, org),
+    onSuccess: () => {
+      setHasAskedAgain(true);
+      wait.restart();
+    },
+  });
+  const wasFirstRead = useRef(isFirstRead);
   const hasQueue = (repo: Repo) => queues.some((queue) => queue.repo === repo.name);
   const needsSomeone = (repo: Repo) =>
     queues.some((queue) => queue.repo === repo.name && needsAttention(queue));
@@ -68,6 +92,14 @@ export function OrgQueuesPage() {
       void navigate({ search: (kept) => ({ ...kept, connecting: undefined }), replace: true });
     }
   }, [isConnecting, isWaiting, navigate]);
+
+  // The list read last may predate the end of the first read.
+  useEffect(() => {
+    if (wasFirstRead.current && !isFirstRead) {
+      void readReposAgain(queryClient, org);
+    }
+    wasFirstRead.current = isFirstRead;
+  }, [isFirstRead, queryClient, org]);
 
   return (
     <Page>
@@ -92,6 +124,7 @@ export function OrgQueuesPage() {
       {isConnecting && isWaiting && !hasGivenUp && (
         <Connecting org={org} isUpdate={connecting === "update"} />
       )}
+      {isReading && <Reading org={org} isFirstRead={isFirstRead} />}
       {hasGivenUp && (
         <p className="text-md text-muted-foreground" role="status">
           The reads take longer than a minute: the page stopped waiting. Reload it in a moment.
@@ -126,15 +159,27 @@ export function OrgQueuesPage() {
           />
         </>
       )}
-      {list.repos.length === 0 && (
-        <Card>
-          <p className="px-4 py-6 text-md text-muted-foreground">
+      {list.repos.length === 0 && !isReading && (
+        <Card className="flex items-center justify-between gap-3 px-4 py-6">
+          <p className="text-md text-muted-foreground">
             {search
               ? `No repository matches “${search}”.`
               : "The App reaches no repository of this organization yet."}
           </p>
+          {!search && (
+            <Button
+              isPending={sync.isPending}
+              pendingText="Checking"
+              onClick={() => {
+                sync.mutate({});
+              }}
+            >
+              Check again
+            </Button>
+          )}
         </Card>
       )}
+      {sync.isError && <Failure className="mb-0">The check failed. Try again in a moment.</Failure>}
       <p className="text-md text-muted-foreground">
         Missing a repository? The App reaches only the repositories that an owner chose for it.{" "}
         {me.app_install_url && <a href={me.app_install_url}>Add repositories</a>}
@@ -156,6 +201,23 @@ function NoQueueYet({ org, count }: { org: string; count: number }) {
         </AlertDescription>
       </AlertContent>
     </Alert>
+  );
+}
+
+/** The wait for a read of the repositories that the person reaches: the first one, or one that they asked for. */
+function Reading({ org, isFirstRead }: { org: string; isFirstRead: boolean }) {
+  return (
+    <Card className="flex items-start gap-3 p-4" role="status">
+      <Spinner className="mt-1 size-4" />
+      <div>
+        <h2 className="text-xl font-semibold">Reading your repositories</h2>
+        <p className="text-md text-secondary-foreground">
+          {isFirstRead
+            ? `One moment: CIHub reads on GitHub the repositories of ${org} that your account reaches.`
+            : `CIHub reads again on GitHub the repositories of ${org} that your account reaches.`}
+        </p>
+      </div>
+    </Card>
   );
 }
 

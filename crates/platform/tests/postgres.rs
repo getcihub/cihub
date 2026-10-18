@@ -824,6 +824,32 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
+    let mut tx = begin_system(&pool).await.unwrap();
+    for (user, checked_at) in [
+        ("user-9", now - Duration::days(15)),
+        ("user-10", now - Duration::days(13)),
+    ] {
+        sqlx::query(
+            "INSERT INTO users (id, external_id, login, synced_at)
+             VALUES ($1, $1, $1, $2) ON CONFLICT (id) DO UPDATE SET synced_at = $2",
+        )
+        .bind(user)
+        .bind(checked_at)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
+             VALUES ($1, 'r', $2, 'read', $3)",
+        )
+        .bind(org().to_string())
+        .bind(user)
+        .bind(checked_at)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
     for (id, expires_at) in [("expired", now), ("live", now + Duration::days(1))] {
         sqlx::query(
             "INSERT INTO sessions (id, user_id, token_hash, created_at, expires_at)
@@ -875,6 +901,18 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         .unwrap();
 
     assert_eq!(device_codes, ["live"]);
+    let permissions: Vec<String> = sqlx::query_scalar("SELECT user_id FROM repo_permissions")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    let synced: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM users WHERE synced_at IS NOT NULL ORDER BY 1")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+
+    assert_eq!(permissions, ["user-10"], "a permission lasts 14 days");
+    assert_eq!(synced, ["user-10"]);
     let partitions: Vec<String> = sqlx::query_scalar(
         "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
          WHERE i.inhparent = 'events'::regclass ORDER BY 1",
@@ -2061,6 +2099,7 @@ async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: 
         login: "ada".into(),
         name: Some("Ada Lovelace".into()),
         avatar_url: Some(avatar_url.into()),
+        synced_at: None,
     };
 
     let user_id = record_sign_in(

@@ -80,7 +80,7 @@ describe("the routes of the dashboard", () => {
     const router = renderApp("/orgs/acme", {
       ...answersOfMe(ada),
       "/api/v1/user": [
-        [200, { login: ada.login }],
+        [200, { login: ada.login, synced_at: ada.synced_at }],
         [401, problem(401, "unauthorized")],
       ],
       "/api/v1/orgs/acme/queues": [401, problem(401, "unauthorized")],

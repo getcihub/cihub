@@ -309,6 +309,17 @@ reason no longer holds.
   person, encrypted, refreshes it, and reads with it what the person reaches (lot 16, October 17, 2026).
 - **Would change if**: the token of an installation can list the repositories that a person reaches.
 
+### Forget the permissions of a person at their sign-out
+
+- **Tried / considered**: the sign-out of the last session forgets the token of the person and the permissions that
+  it read; the next sign-in reads them again in a `sync_user` job.
+- **Why not**: the dashboard opens on the organization before the job ends, and its lists show no repository
+  until a reload. The permissions now outlive the sign-out for 14 days, the life of a dashboard session; the token does not,
+  since the next sign-in gives a new one. Keeping the token too was rejected: it serves no person without a
+  session, and its refresh token lasts months (October 18, 2026).
+- **Would change if**: a list must never show a repository that the person lost on the SCM, even for the seconds
+  of a sync.
+
 ### Trust a `blocked` PR state as is
 
 - **Tried / considered**: keep a PR out of the queue while GitHub reports it `blocked`.

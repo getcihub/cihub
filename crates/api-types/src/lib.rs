@@ -278,6 +278,14 @@ pub struct User {
         schema(example = "https://avatars.example.com/u/1")
     )]
     pub avatar_url: Option<String>,
+    /// When CIHub last read from the SCM the repositories that the person
+    /// reaches; `null` until the first read ends, which their lists wait for.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-11T09:00:00Z")
+    )]
+    pub synced_at: Option<OffsetDateTime>,
 }
 
 /// `POST /device-codes`: a sign-in of the command line, which waits for its

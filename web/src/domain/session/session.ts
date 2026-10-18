@@ -48,6 +48,8 @@ export interface Me {
   login: string;
   name?: string | null;
   avatar_url?: string | null;
+  /** When CIHub last read the repositories that the person reaches; `null` until the first read ends. */
+  synced_at?: string | null;
   orgs: Org[];
   version: string;
   app_install_url?: string | null;
@@ -88,6 +90,7 @@ export function meOf(
     login: user.login,
     name: user.name,
     avatar_url: user.avatar_url,
+    synced_at: user.synced_at,
     orgs: orgs.orgs,
     version: instance.version,
     app_install_url: instance.app_install_url,
