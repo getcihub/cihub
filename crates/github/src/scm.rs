@@ -1515,6 +1515,13 @@ impl Scm for GithubApp {
         Box::pin(self.install_address())
     }
 
+    fn branch_rules_url(&self, repo: &RepoRef) -> Option<String> {
+        Some(format!(
+            "{}/{}/{}/settings/rules",
+            self.web_url, repo.namespace, repo.name
+        ))
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         self.sign_in_address(request)
     }

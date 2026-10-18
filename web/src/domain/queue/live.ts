@@ -70,7 +70,7 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         if (!isReadOfOrg(key, org)) {
           return false;
         }
-        if (key._id === "listOrgQueues" || key._id === "listPrs" || key._id === "getRun") {
+        if (["listOrgQueues", "listOrgPrs", "listRepoPrs", "getRun"].includes(key._id ?? "")) {
           return true;
         }
         // The Health reads its facts again on its own timer (`healthOptions`).

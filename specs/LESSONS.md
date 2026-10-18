@@ -288,6 +288,15 @@ reason no longer holds.
   on the device page of GitHub.
 - **Would change if**: a sign-in needs no typing, for example on a device without a keyboard.
 
+### Forget the token of the person at the end of the sign-in
+
+- **Tried / considered**: the sign-in reads the installations and the memberships of the person with their token,
+  then forgets it; the role in the organization gives the access to every repository of it.
+- **Why not**: a member of an organization then reads in CIHub a private repository that GitHub hides from them,
+  and keeps the access that they had at the sign-in for the 14 days of the session. CIHub keeps the token of the
+  person, encrypted, refreshes it, and reads with it what the person reaches (lot 16, October 17, 2026).
+- **Would change if**: the token of an installation can list the repositories that a person reaches.
+
 ### Trust a `blocked` PR state as is
 
 - **Tried / considered**: keep a PR out of the queue while GitHub reports it `blocked`.
@@ -338,22 +347,44 @@ reason no longer holds.
 
 ### Write a job result in a column of `queues`
 
-- **Tried / considered**: keep the check of the configuration of the SCM in `queues.config_findings`, written by
-  the job `check_config`.
+- **Tried / considered**: keep the setup of a queue, what the rules of the SCM miss, in `queues.config_findings`,
+  written by the job `read_setup`.
 - **Why not**: the lease of the queues takes their rows with `FOR UPDATE SKIP LOCKED`. While the job holds the
-  row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The check has
-  its own table, `config_checks`. A job that must write `queues` calls `mark_dirty` in its transaction, as
+  row, the scheduler skips a dirty queue, and nothing wakes it before the next tick (30 seconds). The setup has
+  its own table, `queue_setups`. A job that must write `queues` calls `mark_dirty` in its transaction, as
   `load_config` does.
 
 ## API
 
 ### An action after a colon in the last segment of a route
 
-- **Tried / considered**: `POST …/queues/{queue}:resync`, `…/prs/{number}:cancel`, `…/prs/{number}:restart` and
+- **Tried / considered**: `POST …/queues/{queue}:sync`, `…/prs/{number}:cancel`, `…/prs/{number}:restart` and
   `…/prs:batchGet`, the custom methods of the Google API design guide.
 - **Why not**: axum routes whole segments only. A handler took every `POST` on the queue or the PR and cut the
   segment by hand, a wrong method answered `404` instead of `405`, and the paths of the `OpenAPI` document were
-  not those of the router. An action is a segment of its own: `…/resync`, `…/prs/{number}/cancel`.
+  not those of the router. An action is a segment of its own: `…/sync`, `…/prs/{number}/cancel`.
+
+### An action next to the identifiers of a collection
+
+- **Tried / considered**: `POST /orgs/{org}/repos/resync` and `POST /orgs/{org}/setups/resync`, to read again
+  the setups of the repositories of an organization.
+- **Why not**: a repository can be named `resync`: the action takes the place of an identifier, and hides the
+  route of that repository. An action comes after the identifier of the resource that it acts on
+  (`…/repos/{repo}/sync`), or under a segment that names no identifier (`/user/sync`).
+
+### `@me` for the person of the session in a filter
+
+- **Tried / considered**: `GET /orgs/{org}/prs?author=@me`, with `400 me_needs_session` for a token.
+- **Why not**: the syntax comes from the search of another product, and the filter then reads differently for a
+  session and a token. The dashboard knows the login of its person (`GET /user`) and passes it.
+
+### Filters of a repository on a list of the organization
+
+- **Tried / considered**: `GET /orgs/{org}/prs?repo=web&queue=main` and `GET /orgs/{org}/queues?repo=web`, with
+  `400 queue_needs_repo` when `queue` came without `repo`.
+- **Why not**: two routes gave one list, and the access to a repository was checked in a filter instead of the
+  path. What belongs to a repository is under it (`/orgs/{org}/repos/{repo}/prs?queue=main`); a list of the
+  organization only searches across its repositories.
 
 ### A counter of failures that keeps the failure of a PR that came back
 

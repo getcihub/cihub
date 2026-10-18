@@ -240,9 +240,9 @@ async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
 async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let addr = start(&pool).await;
     let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
-    let writer = token(&pool, 2, &[ApiScope::PrsWrite]).await;
+    let admin = token(&pool, 2, &[ApiScope::QueuesWrite]).await;
 
-    let anonymous = call(&addr, "GET", "/api/v1/orgs/acme/repos", None).await;
+    let anonymous = call(&addr, "GET", "/api/v1/orgs/acme/audit", None).await;
 
     assert_eq!(anonymous.status, 401);
     assert!(
@@ -254,18 +254,18 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     assert_eq!(problem["code"], "unauthorized");
     assert_eq!(problem["status"], 401);
     assert_eq!(
-        call(&addr, "GET", "/api/v1/orgs/acme/repos", Some("cht_unknown"))
+        call(&addr, "GET", "/api/v1/orgs/acme/audit", Some("cht_unknown"))
             .await
             .status,
         401
     );
 
-    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&writer)).await;
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/audit", Some(&reader)).await;
     assert_eq!(forbidden.status, 403, "{}", forbidden.body);
-    let repos = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
-    assert_eq!(repos.status, 200, "{}", repos.body);
-    let repos: serde_json::Value = serde_json::from_str(&repos.body).unwrap();
-    assert_eq!(repos["repos"][0]["name"], "app");
+    let audit = call(&addr, "GET", "/api/v1/orgs/acme/audit", Some(&admin)).await;
+    assert_eq!(audit.status, 200, "{}", audit.body);
+    let audit: serde_json::Value = serde_json::from_str(&audit.body).unwrap();
+    assert_eq!(audit["entries"], serde_json::json!([]));
 
     let unknown = call(&addr, "GET", "/api/v1/nothing", Some(&reader)).await;
     assert_eq!(unknown.status, 404);
@@ -276,8 +276,8 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     let document: serde_json::Value = serde_json::from_str(&document.body).unwrap();
     assert!(document["openapi"].as_str().unwrap().starts_with("3.1"));
     assert_eq!(
-        document["paths"]["/orgs/{org}/repos"]["get"]["security"],
-        serde_json::json!([{ "token": ["queues:read"] }, { "session": [] }])
+        document["paths"]["/orgs/{org}/audit"]["get"]["security"],
+        serde_json::json!([{ "token": ["queues:write"] }, { "session": [] }])
     );
 }
 
@@ -397,14 +397,14 @@ async fn a_token_past_its_requests_of_the_minute_waits(pool: PgPool) {
 
     for _ in 0..cihub_web::REQUESTS_PER_MINUTE {
         assert_eq!(
-            call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader))
+            call(&addr, "GET", "/api/v1/orgs/acme", Some(&reader))
                 .await
                 .status,
             200
         );
     }
 
-    let limited = call(&addr, "GET", "/api/v1/orgs/acme/repos", Some(&reader)).await;
+    let limited = call(&addr, "GET", "/api/v1/orgs/acme", Some(&reader)).await;
     assert_eq!(limited.status, 429);
     assert!(limited.head.contains("retry-after: 20"), "{}", limited.head);
     let problem: serde_json::Value = serde_json::from_str(&limited.body).unwrap();
@@ -462,17 +462,15 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
     let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
     let org = call_with(&addr, "GET", "/api/v1/orgs/acme", &with_session).await;
-    let repos = call_with(&addr, "GET", "/api/v1/orgs/ACME/repos", &with_session).await;
-    let repo = call_with(&addr, "GET", "/api/v1/orgs/acme/repos/APP", &with_session).await;
+    let upper = call_with(&addr, "GET", "/api/v1/orgs/ACME", &with_session).await;
     let audit = call_with(&addr, "GET", "/api/v1/orgs/acme/audit", &with_session).await;
-    let other = call_with(&addr, "GET", "/api/v1/orgs/globex/repos", &with_session).await;
+    let other = call_with(&addr, "GET", "/api/v1/orgs/globex", &with_session).await;
     let anonymous = call_with(&addr, "GET", "/api/v1/user", &unknown).await;
 
     assert_eq!(me.status, 200, "{}", me.body);
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
     let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
     let org: serde_json::Value = serde_json::from_str(&org.body).unwrap();
-    let repo: serde_json::Value = serde_json::from_str(&repo.body).unwrap();
     assert_eq!(
         me,
         serde_json::json!({
@@ -484,13 +482,19 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     assert_eq!(
         orgs,
         serde_json::json!({
-            "orgs": [{ "slug": "acme", "role": "member" }],
+            "orgs": [{ "slug": "acme", "role": "member", "is_suspended": false }],
             "has_more": false, "count": 1, "cursor": null
         })
     );
-    assert_eq!(org, serde_json::json!({ "slug": "acme", "role": "member" }));
-    assert_eq!(repo["name"], "app", "the case of a name does not matter");
-    assert_eq!(repos.status, 200, "{}", repos.body);
+    assert_eq!(
+        org,
+        serde_json::json!({ "slug": "acme", "role": "member", "is_suspended": false })
+    );
+    assert_eq!(
+        upper.status, 200,
+        "the case of a slug does not matter: {}",
+        upper.body
+    );
     assert_eq!(audit.status, 403, "{}", audit.body);
     assert_eq!(other.status, 404, "{}", other.body);
     assert_eq!(anonymous.status, 401);
@@ -518,7 +522,7 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
     assert_eq!(instance.status, 200, "{}", instance.body);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&org.body).unwrap(),
-        serde_json::json!({ "slug": "acme", "role": null }),
+        serde_json::json!({ "slug": "acme", "role": null, "is_suspended": false }),
         "a token has no role"
     );
     assert_eq!(signed_out.status, 204);
@@ -633,7 +637,10 @@ async fn the_command_line_signs_in_once_its_person_approves_the_code(pool: PgPoo
 
     let me: serde_json::Value = serde_json::from_str(&me.body).unwrap();
     assert_eq!(me["login"], "ada");
-    assert_eq!(org.body, r#"{"slug":"acme","role":"member"}"#);
+    assert_eq!(
+        org.body,
+        r#"{"slug":"acme","role":"member","is_suspended":false}"#
+    );
     assert_eq!(
         in_cookie.status, 401,
         "a session of the command line is no cookie"
@@ -800,7 +807,7 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
     assert_eq!(me["login"], "ada");
     assert_eq!(
         orgs["orgs"],
-        serde_json::json!([{ "slug": "acme", "role": "member" }])
+        serde_json::json!([{ "slug": "acme", "role": "member", "is_suspended": false }])
     );
     assert_eq!(instance["app_install_url"], "sim:install");
 }

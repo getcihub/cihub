@@ -14,7 +14,7 @@ const QUEUE_STATES: Record<string, { label: string; tone: Tone }> = {
 
 /** The state of a queue, unless something stops it: a lost access, a file that is not valid. */
 export function QueueStateBadge({ queue }: { queue: Queue }) {
-  if (queue.access === "suspended") {
+  if (queue.is_suspended) {
     return <Badge tone="destructive">Access lost</Badge>;
   }
   if (queue.config_error) {

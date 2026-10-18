@@ -165,6 +165,10 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 - **One CIHub comment per PR**. Codecov's `Pull` has `commentid`, `bundle_analysis_commentid` and
   `sentry_commentid`: one column per module. A module writes a section of the comment of `pr_comments`, or
   `pr_comments` gains a `module` column in its key; never a column per module.
+- **A setup is a cache of reads of the SCM** (lot 16): `queue_setups` (per queue) and `repo_setups` (per
+  repository, its default branch and its file, with the enum `repo_config_state`) hold one row per subject,
+  outside the log, as `pr_titles`; no state of a queue depends on them. A repository that the SCM no longer lists
+  keeps its row with `repos.removed_at`: its queues keep their log.
 
 ## What stays as it is, and why
 

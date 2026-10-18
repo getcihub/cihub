@@ -3,8 +3,8 @@
 import { queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgQueues, listPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, resyncQueue, startDeviceSignIn, submit, updateQueue } from '../sdk.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListPrsData, ListPrsError, ListPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, ResyncQueueData, ResyncQueueError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgPrs, listOrgQueues, listRepoPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, startDeviceSignIn, submit, syncQueue, syncRepo, syncUser, updateQueue } from '../sdk.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgPrsData, ListOrgPrsError, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListRepoPrsData, ListRepoPrsError, ListRepoPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, SyncQueueData, SyncQueueError, SyncRepoData, SyncRepoError, SyncUserData, SyncUserError, UpdateQueueData, UpdateQueueError } from '../types.gen';
 
 /**
  * Start a sign-in of the command line
@@ -197,20 +197,20 @@ export const listAuditOptions = (options: Options<ListAuditData>) => queryOption
     queryKey: listAuditQueryKey(options)
 });
 
-export const listPrsQueryKey = (options: Options<ListPrsData>) => createQueryKey('listPrs', options);
+export const listOrgPrsQueryKey = (options: Options<ListOrgPrsData>) => createQueryKey('listOrgPrs', options);
 
 /**
- * List PRs
+ * List the PRs of the organization
  *
- * The PRs in the queues of the organization: the current submission of each
- * PR in each queue, with the PRs that merge before it and an estimate.
- * Without a filter, every PR, live or ended.
+ * The PRs in the queues of every repository of the organization: the
+ * current submission of each PR in each queue, with the PRs that merge before
+ * it and an estimate. Without a filter, every PR, live or ended.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
-export const listPrsOptions = (options: Options<ListPrsData>) => queryOptions<ListPrsResponse, ListPrsError, ListPrsResponse, ReturnType<typeof listPrsQueryKey>>({
+export const listOrgPrsOptions = (options: Options<ListOrgPrsData>) => queryOptions<ListOrgPrsResponse, ListOrgPrsError, ListOrgPrsResponse, ReturnType<typeof listOrgPrsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
-        const { data } = await listPrs({
+        const { data } = await listOrgPrs({
             ...options,
             ...queryKey[0],
             signal,
@@ -218,7 +218,7 @@ export const listPrsOptions = (options: Options<ListPrsData>) => queryOptions<Li
         });
         return data;
     },
-    queryKey: listPrsQueryKey(options)
+    queryKey: listOrgPrsQueryKey(options)
 });
 
 export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => createQueryKey('listOrgQueues', options);
@@ -226,9 +226,8 @@ export const listOrgQueuesQueryKey = (options: Options<ListOrgQueuesData>) => cr
 /**
  * List the queues of the organization
  *
- * Every queue of the organization, or of one repository, with its counters
- * and its settings, by repository name then target branch: the overview of the
- * dashboard.
+ * Every queue of the organization, with its counters and its settings, by
+ * repository name then target branch: the overview of the dashboard.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -251,7 +250,8 @@ export const listReposQueryKey = (options: Options<ListReposData>) => createQuer
  * List the repositories
  *
  * The repositories of the organization that the App reaches, by namespace
- * then name.
+ * then name, each with what the caller may do on it and the verdict of its
+ * setup. Reads Postgres only.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -273,7 +273,8 @@ export const getRepoQueryKey = (options: Options<GetRepoData>) => createQueryKey
 /**
  * Get a repository
  *
- * The repository, whatever the case of its name.
+ * The repository, whatever the case of its name, with what the caller may
+ * do on it and its whole setup. Reads Postgres only.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -288,6 +289,30 @@ export const getRepoOptions = (options: Options<GetRepoData>) => queryOptions<Ge
         return data;
     },
     queryKey: getRepoQueryKey(options)
+});
+
+export const listRepoPrsQueryKey = (options: Options<ListRepoPrsData>) => createQueryKey('listRepoPrs', options);
+
+/**
+ * List the PRs of a repository
+ *
+ * The PRs in the queues of the repository, or of one of its queues: the
+ * current submission of each PR in each queue, with the PRs that merge
+ * before it and an estimate. Without a filter, every PR, live or ended.
+ *
+ * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ */
+export const listRepoPrsOptions = (options: Options<ListRepoPrsData>) => queryOptions<ListRepoPrsResponse, ListRepoPrsError, ListRepoPrsResponse, ReturnType<typeof listRepoPrsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listRepoPrs({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listRepoPrsQueryKey(options)
 });
 
 export const getPrQueryKey = (options: Options<GetPrData>) => createQueryKey('getPr', options);
@@ -524,7 +549,7 @@ export const getHealthOptions = (options: Options<GetHealthData>) => queryOption
 });
 
 /**
- * Read a queue again
+ * Sync a queue
  *
  * Reads again from the SCM each live PR, the checks of each live run, the
  * head of the target branch and its configuration: the way out after an
@@ -532,10 +557,10 @@ export const getHealthOptions = (options: Options<GetHealthData>) => queryOption
  *
  * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
  */
-export const resyncQueueMutation = (options?: Partial<Options<ResyncQueueData>>): UseMutationOptions<unknown, ResyncQueueError, Options<ResyncQueueData>> => {
-    const mutationOptions: UseMutationOptions<unknown, ResyncQueueError, Options<ResyncQueueData>> = {
+export const syncQueueMutation = (options?: Partial<Options<SyncQueueData>>): UseMutationOptions<unknown, SyncQueueError, Options<SyncQueueData>> => {
+    const mutationOptions: UseMutationOptions<unknown, SyncQueueError, Options<SyncQueueData>> = {
         mutationFn: async (fnOptions) => {
-            const { data } = await resyncQueue({
+            const { data } = await syncQueue({
                 ...options,
                 ...fnOptions,
                 throwOnError: true
@@ -553,7 +578,8 @@ export const getRunQueryKey = (options: Options<GetRunData>) => createQueryKey('
  *
  * The run, its test branch, the PRs that it tests and their predecessors,
  * every check observed on it, and the live runs that depend on it. A job of
- * the CI reads its run identifier in the last segment of its branch.
+ * the CI reads its run identifier in the last segment of its branch; a run of
+ * another repository answers `run_not_found`.
  *
  * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
  */
@@ -569,6 +595,28 @@ export const getRunOptions = (options: Options<GetRunData>) => queryOptions<GetR
     },
     queryKey: getRunQueryKey(options)
 });
+
+/**
+ * Sync the setup of a repository
+ *
+ * Asks CIHub to read the setup of the repository from the SCM now, at most
+ * once a minute; its `requested_at` shows the read until it ends.
+ *
+ * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ */
+export const syncRepoMutation = (options?: Partial<Options<SyncRepoData>>): UseMutationOptions<unknown, SyncRepoError, Options<SyncRepoData>> => {
+    const mutationOptions: UseMutationOptions<unknown, SyncRepoError, Options<SyncRepoData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await syncRepo({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const getUserQueryKey = (options?: Options<GetUserData>) => createQueryKey('getUser', options);
 
@@ -629,6 +677,28 @@ export const deleteUserSessionMutation = (options?: Partial<Options<DeleteUserSe
     const mutationOptions: UseMutationOptions<DeleteUserSessionResponse, DeleteUserSessionError, Options<DeleteUserSessionData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await deleteUserSession({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Sync the user
+ *
+ * Asks CIHub to read again from the SCM now the installations and the
+ * repositories that the person of the session reaches.
+ *
+ * **Access**: the session of a person: the dashboard, or the command line.
+ */
+export const syncUserMutation = (options?: Partial<Options<SyncUserData>>): UseMutationOptions<unknown, SyncUserError, Options<SyncUserData>> => {
+    const mutationOptions: UseMutationOptions<unknown, SyncUserError, Options<SyncUserData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await syncUser({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

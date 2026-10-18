@@ -56,7 +56,9 @@ pub use settings::{
     Trigger, UpdateMethod,
 };
 pub use state::{GroupState, ItemState, QueueState};
-pub use tenancy::{ApiScope, ConnectionKind, ConnectionMode, DeviceCodeState, MembershipRole};
+pub use tenancy::{
+    ApiScope, ConnectionKind, ConnectionMode, DeviceCodeState, MembershipRole, RepoConfigState,
+};
 pub use token::{
     API_TOKEN_PREFIX, CLI_SESSION_TOKEN_PREFIX, DEVICE_CODE_PREFIX, SESSION_TOKEN_PREFIX,
     format_api_token, format_cli_session_token, format_device_code, format_session_token,

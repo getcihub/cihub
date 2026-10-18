@@ -71,6 +71,8 @@ CREATE TABLE repos (
     namespace      text        NOT NULL,
     name           text        NOT NULL,
     default_branch text        NOT NULL,
+    -- Set when the SCM no longer lists the repository in its connection.
+    removed_at     timestamptz,
     created_at     timestamptz NOT NULL DEFAULT now(),
     UNIQUE (org_id, id),
     UNIQUE (connection_id, external_id),

@@ -63,7 +63,7 @@ export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue:
   const [done, setDone] = useState<RequestedQueueState | null>(null);
   const update = useQueueMutation(updateQueueMutation());
   const choices: RequestedQueueState[] = queue.state === "running" ? ["paused", "draining"] : ["running"];
-  const isLost = queue.access === "suspended";
+  const isLost = queue.is_suspended;
   const request = asked && STATE_REQUESTS[asked];
 
   // The queue takes the request at its next reconciliation; the stream brings its new state.

@@ -9,7 +9,7 @@ use serde_json::Value;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
 
-use super::{ApiState, RunErrors, RunPath};
+use super::{ApiState, RunErrors, RunPath, begin_repo};
 
 fn run_not_found(run_id: &str) -> ApiError {
     ApiError::new(ErrorCode::RunNotFound, format!("run `{run_id}` not found"))
@@ -43,10 +43,11 @@ struct RunRow {
 ///
 /// The run, its test branch, the PRs that it tests and their predecessors,
 /// every check observed on it, and the live runs that depend on it. A job of
-/// the CI reads its run identifier in the last segment of its branch.
+/// the CI reads its run identifier in the last segment of its branch; a run of
+/// another repository answers `run_not_found`.
 #[utoipa::path(
     get,
-    path = "/orgs/{org}/runs/{run_id}",
+    path = "/orgs/{org}/repos/{repo}/runs/{run_id}",
     tag = "Runs",
     params(RunPath),
     responses((status = 200, description = "The run.", body = Run), RunErrors),
@@ -59,9 +60,9 @@ pub(super) async fn get_run(
 ) -> Result<Json<Run>, ApiError> {
     grant.require(ApiScope::QueuesRead)?;
 
-    let RunPath { org, run_id } = path;
+    let RunPath { org, repo, run_id } = path;
     let _: RunId = run_id.parse().map_err(|_| run_not_found(&run_id))?;
-    let mut tx = grant.begin_in_org(&state.pool, &org).await?;
+    let (mut tx, repo) = begin_repo(&state, &grant, &org, &repo).await?;
     let run: RunRow = sqlx::query_as(
         "SELECT id, queue_id, group_id, attempt, status::text, status_reason::text, test_branch,
                 test_sha, base_sha, draft_pr_number, tested_pr_numbers, head_shas,
@@ -71,9 +72,11 @@ pub(super) async fn get_run(
                 CASE WHEN status IN ('failed', 'timed_out') THEN status_reason::text END
                     AS failure_reason,
                 failure_causing_statuses, conflict_culprit
-         FROM test_runs WHERE id = $1",
+         FROM test_runs
+         WHERE id = $1 AND queue_id IN (SELECT id FROM queues WHERE repo_id = $2)",
     )
     .bind(&run_id)
+    .bind(repo.to_string())
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| run_not_found(&run_id))?;
