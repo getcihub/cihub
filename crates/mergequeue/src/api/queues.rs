@@ -68,6 +68,21 @@ impl QueueRow {
     }
 }
 
+/// The settings of a queue that its page shows.
+pub(super) fn settings_summary(settings: &QueueSettings) -> SettingsSummary {
+    SettingsSummary {
+        batching_enabled: settings.batching_enabled.value,
+        batching_size: settings.batching_size.value,
+        batching_max_wait_minutes: settings.batching_max_wait_minutes.value,
+        failure_budget_retries: settings.failure_budget_retries.value,
+        merge_method: settings.merge_method.value,
+        enqueue_label: settings
+            .label_commands_enabled
+            .value
+            .then(|| settings.enqueue_label.value.clone()),
+    }
+}
+
 /// The queue of the branch `branch` of the repository `repo`.
 pub(super) async fn queue_row(
     conn: &mut PgConnection,
@@ -235,17 +250,7 @@ impl QueueFacts {
                 floor: settings.window_floor.value,
                 ceiling: settings.window_ceiling.value,
             },
-            settings: SettingsSummary {
-                batching_enabled: settings.batching_enabled.value,
-                batching_size: settings.batching_size.value,
-                batching_max_wait_minutes: settings.batching_max_wait_minutes.value,
-                failure_budget_retries: settings.failure_budget_retries.value,
-                merge_method: settings.merge_method.value,
-                enqueue_label: settings
-                    .label_commands_enabled
-                    .value
-                    .then(|| settings.enqueue_label.value.clone()),
-            },
+            settings: settings_summary(&settings),
             setup,
             state_changed_at: row.state_changed_at,
             state_changed_by: row.state_changed_by,

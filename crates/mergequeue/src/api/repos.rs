@@ -2,14 +2,26 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use cihub_api_types::{
-    ErrorCode, Permission, Repo, RepoDetail, RepoList, RepoSetup, SetupState, SetupSummary,
+    ConfigFile, ConfigFileState, ErrorCode, Permission, Repo, RepoDetail, RepoList, RepoSetup,
+    RuleCheck, SetupState, SetupSummary,
 };
+use cihub_config::RepoConfig;
 use cihub_domain::{ApiScope, Permission as Level};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, Page, cursor_of};
+use cihub_scm::{ConnectionRef, RepoRef};
 use serde::de::{Error as _, IntoDeserializer};
 use serde::{Deserialize, Deserializer};
+use serde_json::json;
+use sqlx::types::Json as Stored;
+use time::OffsetDateTime;
 
-use super::{ApiState, RepoErrors, RepoListErrors, RepoPath, name_part};
+use super::queues::settings_summary;
+use super::{ApiState, RepoErrors, RepoListErrors, RepoPath, audit, begin_repo, name_part};
+use crate::repo_setup::sync_repo_setup;
+use crate::target::queue_settings;
+
+/// The text of a file that is not valid, which a setup shows up to this size.
+const MAX_SHOWN_TEXT_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -42,25 +54,44 @@ fn setup_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<SetupS
         .collect()
 }
 
-/// A repository, the target branch of the queue of its default branch, and
-/// the permission of the person of the request on it.
+/// A repository, its queue on its default branch, its last setup read, and
+/// the read of its setup that an admin asked for and that waits.
+const SETUP_SOURCE: &str = "repos r
+     JOIN scm_connections c ON c.id = r.connection_id
+     LEFT JOIN queues q ON q.repo_id = r.id AND q.target_branch = r.default_branch
+     LEFT JOIN repo_setups s ON s.repo_id = r.id
+     LEFT JOIN LATERAL (
+         SELECT min(j.created_at) AS requested_at FROM jobs j
+         WHERE j.type = 'read_repo_setup' AND j.class = 'interactive'
+           AND j.state IN ('queued', 'running') AND j.payload ->> 'repo_id' = r.id
+     ) w ON true";
+
+/// The verdict of a setup, in the order of `SetupState`: the queue of the
+/// default branch first, then a read that waits, the file, the rules that
+/// block the merges or a branch that is gone, the other rules.
+const SETUP_STATE: &str = "CASE
+     WHEN q.id IS NOT NULL THEN 'started'
+     WHEN s.repo_id IS NULL OR w.requested_at IS NOT NULL THEN 'checking'
+     WHEN s.config_state = 'invalid' THEN 'invalid_config'
+     WHEN s.head_sha IS NULL
+       OR s.findings @> '[{\"code\": \"app_not_exempt\"}]'
+       OR s.findings @> '[{\"code\": \"test_branches_not_excluded\"}]' THEN 'cannot_merge'
+     WHEN jsonb_array_length(s.findings) > 0 THEN 'ready_with_warnings'
+     ELSE 'ready'
+ END";
+
+/// A repository of a list: its identity, its verdict, when its setup was read
+/// and asked for, and the permission of the person of the request on it.
 type RepoRow = (
     String,
     String,
     String,
     String,
-    Option<String>,
+    String,
+    Option<OffsetDateTime>,
+    Option<OffsetDateTime>,
     Option<String>,
 );
-
-/// Until the setup of a repository is read, its verdict says only whether its
-/// default branch has its queue.
-const REPO_SOURCE: &str = "repos r
-     LEFT JOIN queues q ON q.repo_id = r.id AND q.target_branch = r.default_branch";
-
-/// The permission of the person `$5` of the request on each repository.
-const PERMISSION_SOURCE: &str =
-    "LEFT JOIN repo_permissions p ON p.repo_id = r.id AND p.user_id = $5";
 
 /// List the repositories
 ///
@@ -91,23 +122,30 @@ pub(super) async fn list_repos(
     let page: Page<(String, String, String)> =
         Page::read("repos", query.from.as_deref(), query.limit)?;
     let name = name_part(query.q)?;
-    let wants = |wanted: SetupState| query.state.is_empty() || query.state.contains(&wanted);
-    let (started, checking) = (wants(SetupState::Started), wants(SetupState::Checking));
-
+    let states: Vec<&str> = query.state.iter().map(|state| state_name(*state)).collect();
     let (repos, user) = (grant.repo_filter(), user_of(&grant));
 
-    let filter = "r.removed_at IS NULL
-         AND ($1::text IS NULL OR strpos(lower(r.name), lower($1)) > 0)
-         AND (($2 AND q.id IS NOT NULL) OR ($3 AND q.id IS NULL))
-         AND ($4::text[] IS NULL OR r.id = ANY($4))";
+    // `$4` names the person of the request, whose permission a row gives.
+    let listed = format!(
+        "WITH listed AS (
+             SELECT r.id, r.namespace, r.name, r.default_branch, {SETUP_STATE} AS state,
+                    s.checked_at, w.requested_at, p.permission::text AS permission
+             FROM {SETUP_SOURCE}
+             LEFT JOIN repo_permissions p ON p.repo_id = r.id AND p.user_id = $4
+             WHERE r.removed_at IS NULL
+               AND ($1::text IS NULL OR strpos(lower(r.name), lower($1)) > 0)
+               AND ($3::text[] IS NULL OR r.id = ANY($3))
+         )"
+    );
+    let filter = "(cardinality($2::text[]) = 0 OR state = ANY($2))";
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
     let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT count(*) FROM {REPO_SOURCE} WHERE {filter}"
+        "{listed} SELECT count(*) FROM listed WHERE {filter}"
     )))
     .bind(&name)
-    .bind(started)
-    .bind(checking)
+    .bind(&states)
     .bind(&repos)
+    .bind(&user)
     .fetch_one(&mut *tx)
     .await?;
     let (namespace, after_name, id) = match page.after.clone() {
@@ -117,15 +155,14 @@ pub(super) async fn list_repos(
     // A repository deleted then created again keeps its row: the identifier
     // tells two repositories of the same name apart.
     let rows: Vec<RepoRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch, p.permission::text
-         FROM {REPO_SOURCE} {PERMISSION_SOURCE}
-         WHERE {filter}
-           AND ($6::text IS NULL OR (r.namespace, r.name, r.id) > ($6, $7, $8))
-         ORDER BY r.namespace, r.name, r.id LIMIT $9"
+        "{listed}
+         SELECT id, namespace, name, default_branch, state, checked_at, requested_at, permission
+         FROM listed
+         WHERE {filter} AND ($5::text IS NULL OR (namespace, name, id) > ($5, $6, $7))
+         ORDER BY namespace, name, id LIMIT $8"
     )))
     .bind(&name)
-    .bind(started)
-    .bind(checking)
+    .bind(&states)
     .bind(&repos)
     .bind(&user)
     .bind(namespace)
@@ -152,6 +189,38 @@ pub(super) async fn list_repos(
     }))
 }
 
+/// A repository and the whole of its last setup read.
+#[derive(sqlx::FromRow)]
+struct DetailRow {
+    id: String,
+    namespace: String,
+    name: String,
+    default_branch: String,
+    external_id: String,
+    connection_id: String,
+    connection_external_id: String,
+    queue: Option<String>,
+    state: String,
+    is_read: bool,
+    head_sha: Option<String>,
+    findings: Option<Stored<Vec<StoredFinding>>>,
+    config_state: Option<String>,
+    config_path: Option<String>,
+    config_error: Option<String>,
+    config_line: Option<i32>,
+    config_column: Option<i32>,
+    config_text: Option<String>,
+    entries: Option<Vec<String>>,
+    checked_at: Option<OffsetDateTime>,
+    requested_at: Option<OffsetDateTime>,
+}
+
+/// A finding as `read_repo_setup` keeps it.
+#[derive(Deserialize)]
+struct StoredFinding {
+    code: String,
+}
+
 /// Get a repository
 ///
 /// The repository, whatever the case of its name, with what the caller may
@@ -173,37 +242,171 @@ pub(super) async fn get_repo(
 
     let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
     // The SCM does not tell names apart by their case.
-    let row: Option<RepoRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.namespace, r.name, r.default_branch, q.target_branch, NULL::text
-         FROM {REPO_SOURCE}
+    let row: Option<DetailRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "SELECT r.id, r.namespace, r.name, r.default_branch, r.external_id,
+                c.id AS connection_id, c.external_id AS connection_external_id,
+                q.target_branch AS queue, {SETUP_STATE} AS state, s.repo_id IS NOT NULL AS is_read,
+                s.head_sha, s.findings, s.config_state::text, s.config_path, s.config_error,
+                s.config_line, s.config_column, s.config_text, s.entries, s.checked_at,
+                w.requested_at
+         FROM {SETUP_SOURCE}
          WHERE lower(r.name) = lower($1) ORDER BY r.id LIMIT 1"
     )))
     .bind(&path.repo)
     .fetch_optional(&mut *tx)
     .await?;
-    let Some((id, namespace, name, default_branch, queue, _)) = row else {
+    let Some(row) = row else {
         return Err(ApiError::new(
             ErrorCode::RepoNotFound,
             format!("repository `{}` not found", path.repo),
         ));
     };
 
-    Ok(Json(RepoDetail {
-        id,
-        namespace,
-        name,
-        default_branch,
-        permission: permission_of(&grant),
-        setup: RepoSetup {
-            state: state_of(queue.as_ref()),
-            queue,
-            rules: Vec::new(),
-            target_branch_missing: false,
-            rules_url: None,
-            config: None,
-            checked_at: None,
-            requested_at: None,
+    let repo = RepoRef {
+        connection: ConnectionRef {
+            id: row.connection_id.parse()?,
+            external_id: row.connection_external_id.clone(),
         },
+        external_id: row.external_id.clone(),
+        namespace: row.namespace.clone(),
+        name: row.name.clone(),
+    };
+    let setup = RepoSetup {
+        state: state_of_name(&row.state)?,
+        rules: rules_of(&row),
+        target_branch_missing: row.is_read && row.head_sha.is_none(),
+        rules_url: state.scm.branch_rules_url(&repo),
+        config: config_of(&row)?,
+        checked_at: row.checked_at,
+        requested_at: row.requested_at,
+        queue: row.queue,
+    };
+    Ok(Json(RepoDetail {
+        id: row.id,
+        namespace: row.namespace,
+        name: row.name,
+        default_branch: row.default_branch,
+        permission: permission_of(&grant),
+        setup,
+    }))
+}
+
+/// The four rules that a queue needs, in the order of the findings; none
+/// before a read of the default branch.
+fn rules_of(row: &DetailRow) -> Vec<RuleCheck> {
+    let (Some(findings), Some(_)) = (&row.findings, &row.head_sha) else {
+        return Vec::new();
+    };
+    let branch = &row.default_branch;
+
+    RULES
+        .iter()
+        .map(|rule| {
+            let passed = !findings.0.iter().any(|finding| finding.code == rule.code);
+            RuleCheck {
+                code: rule.code.to_owned(),
+                passed,
+                blocks_merge: rule.blocks_merge,
+                title: if passed {
+                    (rule.passed)(branch)
+                } else {
+                    (rule.failed)(branch)
+                },
+                message: (!passed).then(|| (rule.change)(branch)),
+            }
+        })
+        .collect()
+}
+
+/// A rule of the SCM that a queue needs: what it says when it passes and
+/// when it fails, and what to change.
+struct Rule {
+    code: &'static str,
+    blocks_merge: bool,
+    passed: fn(&str) -> String,
+    failed: fn(&str) -> String,
+    change: fn(&str) -> String,
+}
+
+const RULES: [Rule; 4] = [
+    Rule {
+        code: "update_restriction_missing",
+        blocks_merge: false,
+        passed: |branch| format!("A rule restricts the updates of `{branch}`"),
+        failed: |branch| format!("No rule restricts the updates of `{branch}`"),
+        change: |branch| {
+            format!(
+                "add a ruleset that restricts the updates of `{branch}`, with the App of CIHub in \
+                 its bypass list, in exempt mode: without it, a PR can merge without the queue"
+            )
+        },
+    },
+    Rule {
+        code: "app_not_exempt",
+        blocks_merge: true,
+        passed: |branch| format!("The App of CIHub may update `{branch}`"),
+        failed: |branch| {
+            format!("A rule restricts the updates of `{branch}` without an exemption for the App")
+        },
+        change: |_| {
+            "add the App of CIHub to the bypass list of the ruleset, in exempt mode".to_owned()
+        },
+    },
+    Rule {
+        code: "test_branches_not_excluded",
+        blocks_merge: true,
+        passed: |_| "No rule covers the test branches of CIHub".to_owned(),
+        failed: |_| "A rule covers `cihub-temp/**` or `cihub-merge/**`".to_owned(),
+        change: |_| {
+            "exclude `cihub-temp/**/*` and `cihub-merge/**/*` from every ruleset".to_owned()
+        },
+    },
+    Rule {
+        code: "up_to_date_required",
+        blocks_merge: false,
+        passed: |branch| format!("`{branch}` asks for no branch up to date"),
+        failed: |branch| format!("`{branch}` asks for branches up to date"),
+        change: |branch| {
+            format!(
+                "turn off \"Require branches to be up to date before merging\" on `{branch}`, \
+                 unless the queue merges directly"
+            )
+        },
+    },
+];
+
+/// The configuration file of the last read, with the strategy and the
+/// settings of the default branch: from a valid file, or the defaults.
+fn config_of(row: &DetailRow) -> Result<Option<ConfigFile>, ApiError> {
+    let Some(state) = row.config_state.as_deref() else {
+        return Ok(None);
+    };
+    let state = match state {
+        "valid" => ConfigFileState::Valid,
+        "invalid" => ConfigFileState::Invalid,
+        _ => ConfigFileState::None,
+    };
+    let config = match (state, &row.config_text) {
+        (ConfigFileState::Valid, Some(text)) => Some(RepoConfig::parse(text)?),
+        _ => None,
+    };
+    let settings = queue_settings(config.as_ref(), &row.default_branch)?;
+    let text = row
+        .config_text
+        .as_ref()
+        .filter(|text| state == ConfigFileState::Invalid && text.len() <= MAX_SHOWN_TEXT_BYTES);
+
+    Ok(Some(ConfigFile {
+        state,
+        path: row.config_path.clone(),
+        sha: row.head_sha.clone(),
+        error: row.config_error.clone(),
+        line: row.config_line.map(u32::try_from).transpose()?,
+        column: row.config_column.map(u32::try_from).transpose()?,
+        text: text.cloned(),
+        entries: row.entries.clone().unwrap_or_default(),
+        strategy: settings.strategy.value,
+        settings: settings_summary(&settings),
     }))
 }
 
@@ -221,15 +424,19 @@ pub(super) async fn get_repo(
 )]
 pub(super) async fn sync_repo(
     grant: ApiGrant,
-    State(_state): State<ApiState>,
-    ApiPath(_path): ApiPath<RepoPath>,
+    State(state): State<ApiState>,
+    ApiPath(path): ApiPath<RepoPath>,
 ) -> Result<StatusCode, ApiError> {
     grant.require(ApiScope::QueuesWrite)?;
 
-    Err(ApiError::new(
-        ErrorCode::RouteNotFound,
-        "the sync of a setup is not served yet".to_owned(),
-    ))
+    let (mut tx, repo) = begin_repo(&state, &grant, &path.org, &path.repo).await?;
+    let now = (state.clock)();
+
+    sync_repo_setup(&mut tx, repo, now).await?;
+    audit(&mut tx, &grant, "repo.sync", &repo.to_string(), json!({})).await?;
+    tx.commit().await?;
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 /// The person of the request, whose permission a list gives; `None` for a
@@ -252,18 +459,27 @@ fn permission_of(grant: &ApiGrant) -> Permission {
     }
 }
 
-fn state_of(queue: Option<&String>) -> SetupState {
-    if queue.is_some() {
-        SetupState::Started
-    } else {
-        SetupState::Checking
+fn state_name(state: SetupState) -> &'static str {
+    match state {
+        SetupState::Started => "started",
+        SetupState::Checking => "checking",
+        SetupState::Ready => "ready",
+        SetupState::ReadyWithWarnings => "ready_with_warnings",
+        SetupState::CannotMerge => "cannot_merge",
+        SetupState::InvalidConfig => "invalid_config",
     }
+}
+
+fn state_of_name(name: &str) -> Result<SetupState, ApiError> {
+    let state: Result<SetupState, serde::de::value::Error> =
+        SetupState::deserialize(name.into_deserializer());
+    Ok(state?)
 }
 
 /// A repository of a list: a person gets their permission on it, a token
 /// that of its scopes.
 fn repo_of(
-    (id, namespace, name, default_branch, queue, level): RepoRow,
+    (id, namespace, name, default_branch, state, checked_at, requested_at, level): RepoRow,
     grant: &ApiGrant,
 ) -> Result<Repo, ApiError> {
     let permission = match (grant.actor, level) {
@@ -279,9 +495,9 @@ fn repo_of(
         default_branch,
         permission,
         setup: SetupSummary {
-            state: state_of(queue.as_ref()),
-            checked_at: None,
-            requested_at: None,
+            state: state_of_name(&state)?,
+            checked_at,
+            requested_at,
         },
     })
 }
@@ -291,5 +507,29 @@ fn permission_of_level(level: Level) -> Permission {
         read: level >= Level::Read,
         write: level >= Level::Write,
         admin: level >= Level::Admin,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repo_setup::READ_REPO_SETUP;
+
+    #[test]
+    fn each_state_has_its_name() {
+        for state in [
+            SetupState::Started,
+            SetupState::Checking,
+            SetupState::Ready,
+            SetupState::ReadyWithWarnings,
+            SetupState::CannotMerge,
+            SetupState::InvalidConfig,
+        ] {
+            assert_eq!(state_of_name(state_name(state)).unwrap(), state);
+        }
+        assert_eq!(
+            READ_REPO_SETUP, "read_repo_setup",
+            "the name that the SQL reads"
+        );
     }
 }
