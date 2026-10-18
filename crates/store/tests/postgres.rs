@@ -111,8 +111,8 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                             default_branch)
              VALUES ('repo-{n}', '{org}', 'connection-{n}', '{n}', 'account-{n}', 'name', 'main');
-         INSERT INTO queues (id, org_id, repo_id, target_branch, name, snapshot_seq, snapshot)
-             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 'main', 1, '{{}}');
+         INSERT INTO queues (id, org_id, repo_id, target_branch, snapshot_seq, snapshot)
+             VALUES ('{queue}', '{org}', 'repo-{n}', 'main', 1, '{{}}');
          INSERT INTO webhook_inbox (delivery_id, org_id, event, payload, received_at)
              VALUES ('delivery-{n}', '{org}', 'push', '{{}}', '2026-09-15T00:00:00Z');
          INSERT INTO jobs (idempotency_key, type, class, org_id, payload, run_after, created_at)
@@ -415,8 +415,8 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
     let user_id = insert_user(&mut tx).await;
 
     sqlx::query(
-        "INSERT INTO queues (id, org_id, repo_id, target_branch, name)
-         VALUES ($1, $2, 'repo-1', 'next', 'next')",
+        "INSERT INTO queues (id, org_id, repo_id, target_branch)
+         VALUES ($1, $2, 'repo-1', 'next')",
     )
     .bind(QueueId::from_ulid(Ulid(1)).to_string())
     .bind(org(1).to_string())
@@ -442,6 +442,7 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
             deletions: 1,
             changed_files: 2,
             sender_permission: None,
+            profile: None,
         },
     );
     let created = event(

@@ -55,7 +55,7 @@ export function whereOf(pr: Pr, isPaused: boolean, branch: string): string {
 
 /** The queue of `pr` among `queues`; `undefined` while their read does not have it yet. */
 export function queueOfPr(pr: Pr, queues: Queue[]): Queue | undefined {
-  return queues.find((queue) => queue.repo === pr.repo && queue.name === pr.queue);
+  return queues.find((queue) => queue.repo === pr.repo && queue.target_branch === pr.queue);
 }
 
 /** The title of the tab: where the first PR of the person is, "#124 2nd in line · CIHub", from any page. */
@@ -67,7 +67,7 @@ export function tabTitleOf(firstPr: Pr | undefined, queues: Queue[]): string {
 export function whereAmong(pr: Pr, queues: Queue[]): string {
   const queue = queueOfPr(pr, queues);
 
-  return whereOf(pr, queue?.state === "paused", queue?.target_branch ?? pr.queue);
+  return whereOf(pr, queue?.state === "paused", pr.queue);
 }
 
 /** The estimate of the server, as "about 12 min"; `null` without one. */

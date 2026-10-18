@@ -1,6 +1,6 @@
 //! Queue settings, their sources, and the strategy table.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::RangeInclusive;
 
 use cihub_domain::{
@@ -53,12 +53,16 @@ macro_rules! settings {
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct QueueSettings {
             $($(#[$meta])* pub $field: Sourced<$ty>,)+
+            /// The settings of each profile of the queue, by name: the
+            /// settings of the queue, with those that the profile sets.
+            pub profiles: BTreeMap<String, QueueSettings>,
         }
 
         impl QueueSettings {
             fn merge(layers: &[(Source, &Layer)]) -> Self {
                 Self {
                     $($field: pick(layers, |layer| layer.$field.as_ref(), || $default),)+
+                    profiles: BTreeMap::new(),
                 }
             }
         }
@@ -156,11 +160,39 @@ impl QueueSettings {
     /// A value out of range in any source, or effective values that do not
     /// go together.
     pub fn resolve(queue: &Layer, defaults: &Layer) -> Result<Self, ConfigError> {
-        for layer in [queue, defaults] {
+        Self::resolve_layers(&[queue, defaults])
+    }
+
+    /// The settings of a profile: those that it sets, then those of its
+    /// queue.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::resolve`].
+    pub fn resolve_profile(
+        profile: &Layer,
+        queue: &Layer,
+        defaults: &Layer,
+    ) -> Result<Self, ConfigError> {
+        Self::resolve_layers(&[profile, queue, defaults])
+    }
+
+    /// The settings of the profile `name`; the settings of the queue without
+    /// a profile, or for a profile that the file no longer has.
+    pub fn of_profile(&self, name: Option<&str>) -> &Self {
+        name.and_then(|name| self.profiles.get(name))
+            .unwrap_or(self)
+    }
+
+    /// Merges `layers`, from the strongest, over the strategy and the
+    /// defaults.
+    fn resolve_layers(layers: &[&Layer]) -> Result<Self, ConfigError> {
+        for layer in layers {
             layer.validate()?;
         }
 
-        let mut sources = vec![(Source::File, queue), (Source::File, defaults)];
+        let mut sources: Vec<(Source, &Layer)> =
+            layers.iter().map(|&layer| (Source::File, layer)).collect();
         let strategy_layer = strategy_layer(Self::merge(&sources).strategy.value);
 
         sources.push((Source::Strategy, &strategy_layer));

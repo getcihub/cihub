@@ -846,8 +846,13 @@ fn pending_failure(
 
             let run = s.latest_run(group.id)?;
             let cause = s.cause(Subject::Group(group.id));
+            let item = s.items.get(group.item_ids.first()?)?;
+            let budget = settings
+                .of_profile(item.profile.as_deref())
+                .failure_budget_retries
+                .value;
 
-            if run.attempt <= settings.failure_budget_retries.value {
+            if run.attempt <= budget {
                 let room = if group.kind == GroupKind::Bisection {
                     bisection_room(s, settings) > 0
                 } else {
@@ -858,7 +863,7 @@ fn pending_failure(
                     return None;
                 }
 
-                let first_pr = s.items.get(group.item_ids.first()?)?.pr_number;
+                let first_pr = item.pr_number;
                 return Some(Step {
                     cause,
                     kinds: vec![
@@ -1356,11 +1361,13 @@ enum Next<'a> {
 }
 
 /// The first pending item whose predecessors are all in groups, at `index` in
-/// `order`. With batching, the pending items that follow it join it, up to
-/// `batching.size`, until an item that is not pending or is `no_batch`. A batch
-/// that is not full waits until its oldest member has waited
-/// `batching.max_wait_minutes` in the queue, unless the item right behind it is
-/// `no_batch`: the batch cannot grow, and that item would wait for nothing.
+/// `order`. With the batching of its profile, the pending items of the same
+/// profile that follow it join it, up to `batching.size`, until an item that
+/// is not pending, is `no_batch` or has another profile: a batch merges with
+/// one set of settings. A batch that is not full waits until its oldest
+/// member has waited `batching.max_wait_minutes` in the queue, unless the
+/// item right behind it closes it: the batch cannot grow, and that item would
+/// wait for nothing.
 fn next_group<'a>(
     s: &Snapshot,
     order: &[&'a Item],
@@ -1377,6 +1384,7 @@ fn next_group<'a>(
     })?;
 
     let first = order[index];
+    let settings = settings.of_profile(first.profile.as_deref());
     if !settings.batching_enabled.value || first.no_batch {
         return Some(Next::Form {
             index,
@@ -1387,13 +1395,13 @@ fn next_group<'a>(
     let size = usize::try_from(settings.batching_size.value).unwrap_or(usize::MAX);
     let members: Vec<&Item> = order[index..]
         .iter()
-        .take_while(|i| i.state == ItemState::Pending && !i.no_batch)
+        .take_while(|i| i.state == ItemState::Pending && !i.no_batch && i.profile == first.profile)
         .take(size)
         .copied()
         .collect();
-    let closed = order
-        .get(index + members.len())
-        .is_some_and(|i| i.state == ItemState::Pending && i.no_batch);
+    let closed = order.get(index + members.len()).is_some_and(|i| {
+        i.state == ItemState::Pending && (i.no_batch || i.profile != first.profile)
+    });
     if closed {
         return Some(Next::Form { index, members });
     }
@@ -1737,6 +1745,10 @@ fn surfaces(
         {
             surface.batch_wait = Some(BatchWait {
                 members: members.len(),
+                size: settings
+                    .of_profile(item.profile.as_deref())
+                    .batching_size
+                    .value,
                 closes_at: *until,
             });
         }

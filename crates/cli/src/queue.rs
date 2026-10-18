@@ -1,7 +1,8 @@
 //! `cihub queue`: the merge queue, through the public API (`specs/API.md`).
 //! The repository comes from `--repo`, else from the remote `origin` of git,
-//! and its owner is the slug of the organization; the queue comes from
-//! `--queue`, else from the only queue of the repository.
+//! and its owner is the slug of the organization. A PR goes to the queue of
+//! its base branch; the other commands take the queue of `--branch`, else
+//! the queue of the default branch of the repository.
 
 use std::io::Write;
 
@@ -20,17 +21,18 @@ pub(crate) struct QueueArgs {
     /// The repository, as `owner/name`; the remote `origin` of git by default.
     #[arg(long, global = true, value_name = "OWNER/NAME", value_parser = repo::from_arg)]
     repo: Option<(String, String)>,
-    /// The queue of the repository, by its name; needed when the repository
-    /// has more than one queue.
+    /// The target branch of the queue of `status`, `graph`, `pause`, `resume`
+    /// and `drain`; the default branch of the repository without it. The
+    /// commands on a PR ignore it: a PR is in the queue of its base branch.
     #[arg(long, global = true)]
-    queue: Option<String>,
+    branch: Option<String>,
     #[command(subcommand)]
     command: QueueCommand,
 }
 
 #[derive(Subcommand)]
 enum QueueCommand {
-    /// Submits a PR.
+    /// Submits a PR to the queue of its base branch.
     Merge {
         pr: u64,
         /// `urgent`, `high`, `medium`, `low`, or a value from 0 to 255.
@@ -38,11 +40,23 @@ enum QueueCommand {
         priority: Option<String>,
         #[arg(long)]
         no_batch: bool,
+        /// A profile of the queue; the `conditions` of the profiles decide
+        /// without it.
+        #[arg(long)]
+        profile: Option<String>,
     },
-    /// Takes the PR out of its queue, whatever `--queue` names.
+    /// Takes the PR out of its queue.
     Cancel { pr: u64 },
-    /// Tests the PR again, in its queue, whatever `--queue` names.
+    /// Tests the PR again, in its queue.
     Restart { pr: u64 },
+    #[command(flatten)]
+    OnQueue(QueueAction),
+}
+
+/// A command on one queue: the one of `--branch`, else the one of the
+/// default branch of the repository.
+#[derive(Subcommand)]
+enum QueueAction {
     /// The state of the queue, or of a PR.
     Status { pr: Option<u64> },
     /// The merge graph of the queue.
@@ -72,32 +86,26 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
         org: &owner,
         repo: &name,
     };
-    let queues = client.queues(repo).await?.queues;
-    let queue = pick_queue(queues, args.queue.as_deref(), &format!("{owner}/{name}"))?;
-    let path = QueuePath {
-        org: &owner,
-        repo: &name,
-        queue: &queue.name,
-    };
 
     match args.command {
         QueueCommand::Merge {
             pr,
             priority,
             no_batch,
+            profile,
         } => {
             let priority = priority.map(|text| match text.parse::<u8>() {
                 Ok(value) => PriorityInput::Value(value),
                 Err(_) => PriorityInput::Name(text),
             });
             let request = SubmitPr {
-                queue: Some(queue.name.clone()),
                 priority,
                 no_batch,
+                profile,
                 direct: false,
             };
             client.submit(repo, pr, &request).await?;
-            writeln!(out, "#{pr} submitted to `{}`", queue.name)?;
+            writeln!(out, "#{pr} submitted")?;
         }
         QueueCommand::Cancel { pr } => {
             client.cancel(repo, pr).await?;
@@ -107,14 +115,40 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
             client.restart(repo, pr).await?;
             writeln!(out, "#{pr}: restart asked")?;
         }
-        QueueCommand::Status { pr } => status(out, &client, path, &queue, pr).await?,
-        QueueCommand::Graph => graph(out, &client, path).await?,
-        QueueCommand::Pause => set_state(out, &client, path, RequestedQueueState::Paused).await?,
-        QueueCommand::Resume => {
-            set_state(out, &client, path, RequestedQueueState::Running).await?;
+        QueueCommand::OnQueue(action) => {
+            on_queue(out, &client, repo, args.branch.as_deref(), action).await?;
         }
-        QueueCommand::Drain => {
-            set_state(out, &client, path, RequestedQueueState::Draining).await?;
+    }
+
+    Ok(())
+}
+
+/// `action` on the queue of `branch`, else on the queue of the default branch
+/// of `repo`.
+async fn on_queue(
+    out: &mut impl Write,
+    client: &Client,
+    repo: RepoPath<'_>,
+    branch: Option<&str>,
+    action: QueueAction,
+) -> anyhow::Result<()> {
+    let queues = client.queues(repo).await?.queues;
+    let queue = pick_queue(queues, branch, &format!("{}/{}", repo.org, repo.repo))?;
+    let path = QueuePath {
+        org: repo.org,
+        repo: repo.repo,
+        queue: &queue.target_branch,
+    };
+
+    match action {
+        QueueAction::Status { pr } => status(out, client, path, &queue, pr).await?,
+        QueueAction::Graph => graph(out, client, path).await?,
+        QueueAction::Pause => set_state(out, client, path, RequestedQueueState::Paused).await?,
+        QueueAction::Resume => {
+            set_state(out, client, path, RequestedQueueState::Running).await?;
+        }
+        QueueAction::Drain => {
+            set_state(out, client, path, RequestedQueueState::Draining).await?;
         }
     }
 
@@ -129,11 +163,7 @@ async fn status(
     pr: Option<u64>,
 ) -> anyhow::Result<()> {
     let Some(pr) = pr else {
-        writeln!(
-            out,
-            "queue `{}` on `{}`: {}",
-            queue.name, queue.target_branch, queue.state
-        )?;
+        writeln!(out, "queue of `{}`: {}", queue.target_branch, queue.state)?;
         if let Some(error) = &queue.config_error {
             writeln!(out, "  configuration file not valid: {error}")?;
         }
@@ -204,7 +234,7 @@ async fn set_state(
     client.set_queue_state(path, state).await?;
     writeln!(
         out,
-        "queue `{}`: {} asked",
+        "queue of `{}`: {} asked",
         path.queue,
         serde_json::to_string(&state)?
     )?;
@@ -212,23 +242,28 @@ async fn set_state(
 }
 
 fn pick_queue(mut queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyhow::Result<Queue> {
-    let names = queues
+    let branches = queues
         .iter()
-        .map(|q| q.name.as_str())
+        .map(|q| q.target_branch.as_str())
         .collect::<Vec<_>>()
         .join(", ");
     if let Some(wanted) = wanted {
         return queues
             .into_iter()
-            .find(|q| q.name == wanted)
-            .with_context(|| format!("{repo} has no queue `{wanted}`: {names}"));
+            .find(|q| q.target_branch == wanted)
+            .with_context(|| format!("{repo} has no queue of `{wanted}`: {branches}"));
     }
-    match queues.len() {
-        0 => bail!(
+    if queues.is_empty() {
+        bail!(
             "{repo} has no queue yet: comment `/cihub merge` on a PR of its default branch to create one"
+        );
+    }
+    match queues.iter().position(|q| q.is_default_branch) {
+        Some(index) => Ok(queues.remove(index)),
+        None if queues.len() == 1 => Ok(queues.remove(0)),
+        None => bail!(
+            "{repo} has no queue on its default branch: choose one with `--branch` ({branches})"
         ),
-        1 => Ok(queues.remove(0)),
-        _ => bail!("{repo} has more than one queue: choose one with `--queue` ({names})"),
     }
 }
 
@@ -236,9 +271,10 @@ fn pick_queue(mut queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyho
 mod tests {
     use super::*;
 
-    fn queue(name: &str) -> Queue {
+    fn queue(branch: &str) -> Queue {
         serde_json::from_value(serde_json::json!({
-            "id": format!("queue-{name}"), "repo_id": "r", "name": name, "target_branch": name,
+            "id": format!("queue-{branch}"), "repo_id": "r", "target_branch": branch,
+            "is_default_branch": branch == "main",
             "state": "running", "mode": "single", "state_changed_at": "2026-10-01T09:00:00Z",
             "state_changed_by": null, "strategy": "pipelined", "target_head_sha": null,
             "access": "ok", "has_config_file": false, "config_sha": null, "config_error": null,
@@ -257,17 +293,26 @@ mod tests {
     }
 
     #[test]
-    fn the_queue_is_the_named_one_or_the_only_one() {
-        let only = pick_queue(vec![queue("main")], None, "acme/app").unwrap();
-        assert_eq!(only.name, "main");
-        let two = || vec![queue("main"), queue("hotfix")];
+    fn the_queue_is_the_one_of_the_branch_else_the_default_one() {
+        let only = pick_queue(vec![queue("release/1.0")], None, "acme/app").unwrap();
+        assert_eq!(only.target_branch, "release/1.0");
+        let two = || vec![queue("release/2.0"), queue("main")];
         assert_eq!(
-            pick_queue(two(), Some("hotfix"), "acme/app").unwrap().name,
-            "hotfix"
+            pick_queue(two(), Some("release/2.0"), "acme/app")
+                .unwrap()
+                .target_branch,
+            "release/2.0"
         );
-        let error = pick_queue(two(), None, "acme/app").unwrap_err().to_string();
-        assert!(error.contains("--queue"), "{error}");
-        assert!(error.contains("main, hotfix"), "{error}");
+        assert_eq!(
+            pick_queue(two(), None, "acme/app").unwrap().target_branch,
+            "main"
+        );
+        let releases = vec![queue("release/1.0"), queue("release/2.0")];
+        let error = pick_queue(releases, None, "acme/app")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("--branch"), "{error}");
+        assert!(error.contains("release/1.0, release/2.0"), "{error}");
         assert!(pick_queue(two(), Some("x"), "acme/app").is_err());
         assert!(pick_queue(Vec::new(), None, "acme/app").is_err());
     }

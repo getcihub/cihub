@@ -26,7 +26,7 @@ interface Props {
   me: Me;
   /** The organization of the URL. */
   org: string;
-  /** Its queues, by repository then name; empty once access is lost. */
+  /** Its queues, by repository then target branch; empty once access is lost. */
   queues: Queue[];
   /** The repository and the queue of the URL, if any. */
   repo?: string | undefined;
@@ -68,7 +68,7 @@ export function Frame({ me, org, queues, repo, queue, children }: Props) {
   // The frame names only a repository and a queue that exist: a wrong address shows "not found" under it.
   const knownRepo = queues.some((candidate) => candidate.repo === repo) ? repo : undefined;
   const queuesOfRepo = queues.filter((candidate) => candidate.repo === knownRepo);
-  const knownQueue = queuesOfRepo.some((candidate) => candidate.name === queue) ? queue : undefined;
+  const knownQueue = queuesOfRepo.some((candidate) => candidate.target_branch === queue) ? queue : undefined;
 
   return (
     <>
@@ -200,7 +200,7 @@ function RepoLink({
       <Link
         className={className}
         to="/orgs/$org/repos/$repo/queues/$queue"
-        params={{ org, repo, queue: onlyQueue.name }}
+        params={{ org, repo, queue: onlyQueue.target_branch }}
       >
         {label}
       </Link>
@@ -237,13 +237,13 @@ function QueuePicker({
     <Menu label="Queue" trigger={<PickerLabel text={queue} />} triggerClassName={PICKER} align="left">
       {queues.map((candidate) => (
         <Link
-          key={candidate.name}
-          className={menuItemVariants({ isCurrent: candidate.name === queue })}
+          key={candidate.target_branch}
+          className={menuItemVariants({ isCurrent: candidate.target_branch === queue })}
           to="/orgs/$org/repos/$repo/queues/$queue"
-          params={{ org, repo, queue: candidate.name }}
+          params={{ org, repo, queue: candidate.target_branch }}
         >
           <span className={cn("size-1.75 flex-none rounded-full", toneOf(candidate))} />
-          <b className="font-semibold">{candidate.name}</b>
+          <b className="font-semibold">{candidate.target_branch}</b>
           <MenuHint>
             {candidate.config_error ? "invalid" : `${String(inQueueCount(candidate.counts))} in the queue`}
           </MenuHint>

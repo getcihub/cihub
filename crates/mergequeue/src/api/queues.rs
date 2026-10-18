@@ -29,9 +29,9 @@ pub(super) struct QueueRow {
     pub(super) id: String,
     repo_id: String,
     repo: String,
-    pub(super) name: String,
     target_branch: String,
-    pub(super) state: String,
+    is_default_branch: bool,
+    state: String,
     mode: String,
     state_changed_at: OffsetDateTime,
     state_changed_by: Option<String>,
@@ -44,8 +44,8 @@ pub(super) struct QueueRow {
 }
 
 /// The columns of [`QueueRow`], read from [`QUEUE_SOURCE`].
-pub(super) const QUEUE_COLUMNS: &str = "q.id, q.repo_id, r.name AS repo, q.name, q.target_branch,
-    q.state::text AS state, q.mode::text AS mode,
+pub(super) const QUEUE_COLUMNS: &str = "q.id, q.repo_id, r.name AS repo, q.target_branch,
+    q.target_branch = r.default_branch AS is_default_branch, q.state::text AS state, q.mode::text AS mode,
     coalesce(q.state_changed_at, q.created_at) AS state_changed_at,
     u.login AS state_changed_by, q.target_head_sha, q.window_size,
     c.suspended_at IS NOT NULL AS is_suspended, q.config_text, q.config_sha, q.config_error";
@@ -64,33 +64,24 @@ impl QueueRow {
             .map(RepoConfig::parse)
             .transpose()?;
 
-        Ok(queue_settings(
-            config.as_ref(),
-            &self.target_branch,
-            &self.name,
-        )?)
+        Ok(queue_settings(config.as_ref(), &self.target_branch)?)
     }
 }
 
-/// The queue `name` of the repository `repo`.
+/// The queue of the branch `branch` of the repository `repo`.
 pub(super) async fn queue_row(
     conn: &mut PgConnection,
     repo: &RepoId,
-    name: &str,
+    branch: &str,
 ) -> Result<QueueRow, ApiError> {
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT {QUEUE_COLUMNS} FROM {QUEUE_SOURCE} WHERE q.repo_id = $1 AND q.name = $2"
+        "SELECT {QUEUE_COLUMNS} FROM {QUEUE_SOURCE} WHERE q.repo_id = $1 AND q.target_branch = $2"
     )))
     .bind(repo.to_string())
-    .bind(name)
+    .bind(branch)
     .fetch_optional(conn)
     .await?
-    .ok_or_else(|| {
-        ApiError::new(
-            ErrorCode::QueueNotFound,
-            format!("queue `{name}` not found"),
-        )
-    })
+    .ok_or_else(|| ApiError::new(ErrorCode::QueueNotFound, format!("no queue of `{branch}`")))
 }
 
 /// A transaction of the organization of the URL, and the queue that the URL
@@ -267,16 +258,16 @@ impl QueueFacts {
             id: row.id,
             repo_id: row.repo_id,
             repo: row.repo,
-            name: row.name,
             target_branch: row.target_branch,
+            is_default_branch: row.is_default_branch,
             config_sha: row.config_sha,
             config_error: row.config_error,
         })
     }
 }
 
-/// The sort key of a queue in a list: the name of its repository, its name
-/// and its identifier.
+/// The sort key of a queue in a list: the name of its repository, its
+/// target branch and its identifier.
 type QueueKey = (String, String, String);
 
 #[derive(Deserialize, utoipa::IntoParams)]
@@ -303,7 +294,7 @@ pub(super) struct PageQuery {
 /// List the queues of the organization
 ///
 /// Every queue of the organization, or of one repository, with its counters
-/// and its settings, by repository name then queue name: the overview of the
+/// and its settings, by repository name then target branch: the overview of the
 /// dashboard.
 #[utoipa::path(
     get,
@@ -338,7 +329,7 @@ pub(super) async fn list_org_queues(
 /// List the queues of a repository
 ///
 /// The queues of the repository with their counters and their settings, by
-/// name. The first `/cihub merge` on a PR of a branch creates its queue.
+/// target branch. The first `/cihub merge` on a PR of a branch creates its queue.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues",
@@ -387,12 +378,12 @@ async fn queue_list(
              SELECT {QUEUE_COLUMNS}
              FROM {QUEUE_SOURCE}
              WHERE ($2::text IS NULL OR q.repo_id = $2)
-               AND ($3::text IS NULL OR (r.name, q.name, q.id) > ($3, $4, $5))
-             ORDER BY r.name, q.name, q.id
+               AND ($3::text IS NULL OR (r.name, q.target_branch, q.id) > ($3, $4, $5))
+             ORDER BY r.name, q.target_branch, q.id
              LIMIT $6
          ) q
          {COUNT_SOURCE}
-         ORDER BY q.repo, q.name, q.id"
+         ORDER BY q.repo, q.target_branch, q.id"
     )))
     .bind(now)
     .bind(&repo)
@@ -413,7 +404,7 @@ async fn queue_list(
     let cursor = queues
         .last()
         .filter(|_| has_more)
-        .map(|queue| cursor_of("queues", (&queue.repo, &queue.name, &queue.id)));
+        .map(|queue| cursor_of("queues", (&queue.repo, &queue.target_branch, &queue.id)));
     Ok(QueueList {
         queues,
         has_more,

@@ -168,7 +168,7 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 
 ## What stays as it is, and why
 
-- `pr_surfaces` (per queue and PR) and `pr_comments` (per PR, shared by the queues of a branch): different keys,
+- `pr_surfaces` (per queue and PR) and `pr_comments` (per PR, shared by the queues that it enters): different keys,
   different lifetimes.
 - `webhook_inbox` (raw deliveries, per connection) and `queue_inbox` (translated facts, per queue): two stages,
   and only the scheduler writes the log.

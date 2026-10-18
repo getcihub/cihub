@@ -72,7 +72,7 @@ You do not create a queue. Comment on an approved, green pull request of the def
 The first command creates the queue of the branch, with the default settings, and submits the pull request.
 CIHub answers with a comment that it keeps up to date, and a commit status `CIHub Merge Queue (<branch>)`. Other
 commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high|medium|low|0-255`,
-`--no-batch`, `--queue=<name>`. A queue on another branch, or a second queue, comes from `.cihub.yaml` (below).
+`--no-batch`. A queue on another branch comes from `.cihub.yaml` (below); a branch has one queue.
 
 CIHub checks the protection of the branch for you, once the queue exists:
 
@@ -112,14 +112,17 @@ Then write the file, with only the keys below, and explain each choice.
 
 Rules of the file (version 1):
 - It starts with `version: 1`. Top-level keys: `queues` (a list),
-  `priority_rules` (a list) and `defaults` (any queue setting, without `name`,
-  `branch` or conditions). An unknown key is an error.
-- Each queue has `name` (unique in the file) and `branch`. Several queues can
-  target the same branch: a pull request goes to the first one, in file
-  order, whose `route_conditions` pass (a queue without them takes every
-  pull request), else to the first queue of the branch.
-- If the file has no queue for the default branch, that branch has a queue
-  named after it. Other branches have a queue only with an entry.
+  `priority_rules` (a list) and `defaults` (any queue setting and the
+  conditions, without `branch` or `profiles`). An unknown key is an error.
+- Each queue has a `branch`, unique in the file: a branch has one queue, and
+  a pull request goes to the queue of its base branch. A `branch` can be a
+  glob (`release/*`): each branch that it matches gets its own queue, and an
+  entry that names a branch wins over a glob. For an urgent pull request,
+  use `priority_rules`, not a second queue.
+- If the file has no queue for the default branch, that branch still has
+  one. Other branches have a queue only with an entry.
+- YAML anchors (`&name`, `*name`) and merge keys (`<<: *name`) work, to
+  write a list of conditions or a set of settings once.
 - `strategy`: `sequential` (one test at a time), `pipelined` (default: tests
   in parallel, each on top of the ones ahead) or `batched` (`pipelined` with
   several pull requests per test; a failed batch is split to find the
@@ -150,10 +153,16 @@ Rules of the file (version 1):
 - `required_statuses`: a list of check names for the test commit; without
   the key, they come from the branch rules. With no required check at all,
   every test fails.
-- `route_conditions`: which pull requests go to this queue.
-  `queue_conditions`: what a pull request must meet to enter the queue.
+- `queue_conditions`: what a pull request must meet to enter the queue.
   `merge_conditions`: only `check-success = <name>` items, which add
-  required checks on the test commit.
+  required checks on the test commit. Those of `defaults` come first, and
+  each queue adds its own.
+- `profiles` (in a queue): a list of `{ name, conditions, merge_method,
+  merge_commit_title, batching, failure_budget }` for a kind of pull request
+  in the same queue, such as dependency updates. The first profile whose
+  `conditions` match, read once at the submission, gives these settings;
+  `/cihub merge --profile=<name>` names one. A batch holds one profile.
+  A profile cannot set `fast_forward`, nor the settings of the whole queue.
 - `priority_rules`: a list of `{ name, conditions, priority }`, where priority
   is `urgent` (0), `high` (10), `medium` (100, default), `low` (200) or 0-255;
   a lower number goes first; the first rule that matches wins.
@@ -169,7 +178,7 @@ changes_requested, review_required, none; `=` or `!=`), approved-reviews-by,
 changes-requested-reviews-by, review-requested, review-threads-unresolved,
 check-success, check-neutral, check-skipped, check-failure, check-pending,
 label, author, sender, sender-permission (none < read < write < admin), files,
-additions, deletions, base, head, queue-name, pr-age. Durations are `<n>m`,
+additions, deletions, base, head, pr-age. Durations are `<n>m`,
 `<n>h` or `<n>d`. A boolean attribute alone is true, without an operator
 (`-draft` means "not a draft"). In YAML, quote a condition that starts with
 `#` or holds `[` or `]`.

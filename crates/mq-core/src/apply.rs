@@ -148,6 +148,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             no_batch,
             direct,
             submitted_via,
+            profile,
             ..
         } => {
             let pending = snapshot
@@ -169,6 +170,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                     no_batch: *no_batch,
                     direct: *direct,
                     submitted_via: *submitted_via,
+                    profile: profile.clone(),
                 },
             )
         }
@@ -510,6 +512,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 no_batch,
                 direct,
                 submitted_via,
+                profile,
             }) = submission.cloned()
             else {
                 return Err(ApplyError::NoSubmission { event_id: event.id });
@@ -536,6 +539,7 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     state_reason: *reason,
                     priority,
                     no_batch,
+                    profile,
                     force_enqueued: direct,
                     submitted_via,
                     position: None,

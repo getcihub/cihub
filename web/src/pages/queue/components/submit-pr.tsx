@@ -24,7 +24,7 @@ const submission = z.object({
 
 const EMPTY: z.input<typeof submission> = { number: "", priority: "medium", isAlone: false };
 
-/** Submits a PR to the queue: the queue reads it, then takes it or says why not. */
+/** Submits a PR to the queue of its base branch: the queue reads it, then takes it or says why not. */
 export function SubmitPr({
   path,
   isDisabled,
@@ -41,7 +41,7 @@ export function SubmitPr({
     validators: { onSubmit: submission },
     onSubmit: async ({ value }) => {
       const number = Number(value.number);
-      const body = { queue: path.queue, priority: value.priority, no_batch: value.isAlone };
+      const body = { priority: value.priority, no_batch: value.isAlone };
       try {
         await submit.mutateAsync({ path: { org: path.org, repo: path.repo, number }, body });
       } catch {
@@ -50,7 +50,9 @@ export function SubmitPr({
       }
       setIsOpen(false);
       form.reset();
-      onSent(`#${String(number)} sent: the queue reads it, then takes it or says why on the pull request.`);
+      onSent(
+        `#${String(number)} sent: the queue of its base branch reads it, then takes it or says why on the pull request.`,
+      );
     },
   });
 

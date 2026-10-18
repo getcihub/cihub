@@ -16,7 +16,7 @@ The `cihub` command line acts as a person too: `cihub auth login` asks `POST /de
 
 ## Names in the URL
 
-A route names the organization by its slug, then the repository and the queue by their names: `/orgs/acme/repos/web/queues/main`. A PR belongs to its repository: `/orgs/acme/repos/web/prs/118`; its base branch gives its queue. The case of the slug and of the repository does not matter. An organization that the token or the person does not belong to answers `404 org_not_found`, as one that does not exist.
+A route names the organization by its slug, then the repository by its name and the queue by its target branch, percent-encoded: `/orgs/acme/repos/web/queues/main`, `/orgs/acme/repos/web/queues/release%2F2.0`. A PR belongs to its repository: `/orgs/acme/repos/web/prs/118`; its base branch gives its queue. The case of the slug and of the repository does not matter. An organization that the token or the person does not belong to answers `404 org_not_found`, as one that does not exist.
 
 ## Requests that the queue does later
 
@@ -47,7 +47,7 @@ An error is a `application/problem+json` document (RFC 9457). Decide on its `cod
   "type": "about:blank",
   "title": "Not Found",
   "status": 404,
-  "detail": "queue `main` not found",
+  "detail": "no queue of `main`",
   "code": "queue_not_found"
 }
 ```

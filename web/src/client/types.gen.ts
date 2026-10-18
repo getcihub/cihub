@@ -188,7 +188,7 @@ export type DeviceCodeToken = {
  * The machine code of an error: a client decides on it, never on
  * `detail`. Each code has one HTTP status.
  */
-export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'me_needs_session' | 'queue_needs_repo' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'queue_not_accepting' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
+export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'me_needs_session' | 'queue_needs_repo' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
 
 /**
  * An event of the log of a queue about a PR.
@@ -593,7 +593,13 @@ export type Pr = {
      */
     priority: number;
     /**
-     * The name of the queue, as the routes name it.
+     * The profile of the queue that gives the settings of the PR (its merge
+     * method, its batches, its failure budget); `null` for those of the
+     * queue.
+     */
+    profile?: string | null;
+    /**
+     * The target branch of the queue, as the routes name it.
      */
     queue: string;
     /**
@@ -764,6 +770,10 @@ export type Queue = {
      */
     id: string;
     /**
+     * The branch of the queue is the default branch of its repository.
+     */
+    is_default_branch: boolean;
+    /**
      * When the last current item reached `merged`; `null` if no item merged.
      */
     last_merged_at?: string | null;
@@ -786,10 +796,6 @@ export type Queue = {
      * only on top of those that change the same targets.
      */
     mode: QueueMode;
-    /**
-     * The name of the queue in its repository, as the routes name it.
-     */
-    name: string;
     /**
      * The name of the repository of the queue, as the routes name it.
      */
@@ -823,7 +829,8 @@ export type Queue = {
      */
     strategy: Strategy;
     /**
-     * The branch that the queue merges into.
+     * The branch that the queue merges into, which names the queue in the
+     * routes: a repository has one queue per branch.
      */
     target_branch: string;
     /**
@@ -907,7 +914,7 @@ export type QueueHealth = {
 };
 
 /**
- * A page of queues, by repository name then queue name.
+ * A page of queues, by repository name then target branch.
  */
 export type QueueList = {
     /**
@@ -1210,10 +1217,10 @@ export type SubmitPr = {
     no_batch?: boolean;
     priority?: PriorityInput | null;
     /**
-     * The queue of the repository; without it, the base branch of the PR
-     * chooses, as for a command in a comment.
+     * A profile of the queue of the base branch of the PR; without it, the
+     * `conditions` of the profiles decide.
      */
-    queue?: string | null;
+    profile?: string | null;
 };
 
 export type SubmittedVia = 'comment' | 'label' | 'api';
@@ -1652,7 +1659,7 @@ export type ListPrsErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2149,12 +2156,10 @@ export type SubmitErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
     /**
-     * - `queue_not_accepting`: The queue is `draining` or `switching_modes`: it accepts no new PR.
      * - `pr_already_queued`: The PR is already in a queue of the repository, and its item has not ended.
      */
     409: Problem;
@@ -2255,7 +2260,7 @@ export type GetQueueData = {
          */
         repo: string;
         /**
-         * The name of the queue in the repository.
+         * The target branch of the queue, percent-encoded: `release%2F2.0`.
          */
         queue: string;
     };
@@ -2274,7 +2279,7 @@ export type GetQueueErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2311,7 +2316,7 @@ export type UpdateQueueData = {
          */
         repo: string;
         /**
-         * The name of the queue in the repository.
+         * The target branch of the queue, percent-encoded: `release%2F2.0`.
          */
         queue: string;
     };
@@ -2335,7 +2340,7 @@ export type UpdateQueueErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2370,7 +2375,7 @@ export type GraphData = {
          */
         repo: string;
         /**
-         * The name of the queue in the repository.
+         * The target branch of the queue, percent-encoded: `release%2F2.0`.
          */
         queue: string;
     };
@@ -2389,7 +2394,7 @@ export type GraphErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2426,7 +2431,7 @@ export type GetHealthData = {
          */
         repo: string;
         /**
-         * The name of the queue in the repository.
+         * The target branch of the queue, percent-encoded: `release%2F2.0`.
          */
         queue: string;
     };
@@ -2461,7 +2466,7 @@ export type GetHealthErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;
@@ -2498,7 +2503,7 @@ export type ResyncQueueData = {
          */
         repo: string;
         /**
-         * The name of the queue in the repository.
+         * The target branch of the queue, percent-encoded: `release%2F2.0`.
          */
         queue: string;
     };
@@ -2518,7 +2523,7 @@ export type ResyncQueueErrors = {
     403: Problem;
     /**
      * - `repo_not_found`: The organization has no repository with this name.
-     * - `queue_not_found`: The repository has no queue with this name.
+     * - `queue_not_found`: The repository has no queue of this branch.
      * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
      */
     404: Problem;

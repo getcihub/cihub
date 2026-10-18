@@ -72,7 +72,7 @@ describe("the actions on a queue", () => {
 
     expect(await screen.findByText(/^#124 sent/)).toBeInTheDocument();
     expect(await sentChanges()).toEqual([
-      ["POST", `${PR}/124/submit`, { queue: "main", priority: "high", no_batch: false }, "token"],
+      ["POST", `${PR}/124/submit`, { priority: "high", no_batch: false }, "token"],
     ]);
   });
 

@@ -7,5 +7,7 @@ mod file;
 mod settings;
 
 pub use error::{ConfigError, ConfigErrorKind, Position};
-pub use file::{FILE_NAMES, PriorityRule, QueueConfig, RepoConfig, find_config_file};
+pub use file::{
+    FILE_NAMES, PriorityRule, ProfileConfig, QueueConfig, RepoConfig, find_config_file,
+};
 pub use settings::{Layer, QueueSettings, Setting, Source, Sourced};

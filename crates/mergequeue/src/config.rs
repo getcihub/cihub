@@ -90,7 +90,7 @@ pub(crate) async fn load(
     let read = read_config_file(scm, &target.repo, &request.sha, job.class).await?;
     let checked = read.and_then(|text| match text {
         Some(text) => RepoConfig::parse(&text)
-            .and_then(|config| config.settings(&target.target_branch, &target.name))
+            .and_then(|config| config.settings(&target.target_branch))
             .map(|_| Some(text)),
         None => Ok(None),
     });

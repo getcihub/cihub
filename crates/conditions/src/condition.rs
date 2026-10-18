@@ -87,6 +87,24 @@ enum Pattern {
     Glob(GlobMatcher),
 }
 
+/// A glob as `*=` reads it: `*` and `?` stay in one `/` segment, `**`
+/// crosses them.
+#[derive(Clone, Debug)]
+pub struct Glob(GlobMatcher);
+
+impl Glob {
+    /// # Errors
+    ///
+    /// `pattern` is not a valid glob.
+    pub fn new(pattern: &str) -> Result<Self, ParseErrorKind> {
+        glob(pattern).map(Self)
+    }
+
+    pub fn is_match(&self, text: &str) -> bool {
+        self.0.is_match(text)
+    }
+}
+
 impl Condition {
     pub fn attribute(&self) -> Attribute {
         match self.test {
@@ -449,13 +467,17 @@ fn pattern(op: Operator, value: &str) -> Result<Pattern, ParseErrorKind> {
         Operator::Regex => Regex::new(value)
             .map(Pattern::Regex)
             .map_err(|e| ParseErrorKind::InvalidRegex(regex_cause(&e))),
-        Operator::Glob => GlobBuilder::new(value)
-            .literal_separator(true)
-            .build()
-            .map(|glob| Pattern::Glob(glob.compile_matcher()))
-            .map_err(|e| ParseErrorKind::InvalidGlob(e.kind().to_string())),
+        Operator::Glob => glob(value).map(Pattern::Glob),
         _ => Ok(Pattern::Exact(value.to_owned())),
     }
+}
+
+fn glob(value: &str) -> Result<GlobMatcher, ParseErrorKind> {
+    GlobBuilder::new(value)
+        .literal_separator(true)
+        .build()
+        .map(|glob| glob.compile_matcher())
+        .map_err(|e| ParseErrorKind::InvalidGlob(e.kind().to_string()))
 }
 
 /// The last line of a `regex` error. The lines before it repeat the pattern
@@ -507,6 +529,19 @@ mod tests {
             let condition: Condition = s.parse().unwrap_or_else(|e| panic!("{s}: {e}"));
             assert_eq!(condition.as_str(), s);
         }
+    }
+
+    #[test]
+    fn a_glob_stays_in_one_segment_unless_double() {
+        let release = Glob::new("release/*").unwrap();
+        assert!(release.is_match("release/2.0"));
+        assert!(!release.is_match("release/2.0/fix"));
+        assert!(!release.is_match("main"));
+        assert!(Glob::new("team/**").unwrap().is_match("team/a/b"));
+        assert!(matches!(
+            Glob::new("release/[").unwrap_err(),
+            ParseErrorKind::InvalidGlob(_)
+        ));
     }
 
     #[test]

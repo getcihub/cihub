@@ -272,6 +272,33 @@ fn a_culprit_fails_after_its_budget_and_its_successor_restarts() {
 }
 
 #[test]
+fn a_culprit_spends_the_budget_of_its_profile() {
+    let mut settings = settings(|l| {
+        window(2)(l);
+        l.failure_budget_retries = Some(Setting::new(0));
+    });
+    let mut flaky = settings.clone();
+
+    flaky.failure_budget_retries.value = 1;
+    settings.profiles.insert("flaky".into(), flaky);
+    let mut w = World::new(settings);
+    w.submit_profile(1, "flaky");
+
+    w.assemble_all();
+    w.report(1, CheckConclusion::Failure);
+    assert_eq!(
+        reason(&w, 1),
+        Reason::FailureBudgetRetry,
+        "its profile retries"
+    );
+
+    w.assemble_all();
+    w.report(1, CheckConclusion::Failure);
+    assert!(failed_with(&w, Reason::TestRunRequiredStatusFailed));
+    assert_replays(&w);
+}
+
+#[test]
 fn a_failure_behind_a_live_predecessor_waits() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);

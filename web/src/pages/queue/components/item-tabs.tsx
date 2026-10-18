@@ -40,14 +40,20 @@ const HEAD_CELL = "border-b border-divider px-4 py-2 text-left text-md font-medi
 
 const CELL = "px-4 py-2.25";
 
-/** The priority of `item` by its name, "urgent" and "high" in color; a value that has no name, as a number. */
+/**
+ * The priority of `item` by its name, "urgent" and "high" in color; a value that has no name, as a number. Then
+ * its profile, whose settings it takes.
+ */
 function Priority({ item }: { item: Pr }) {
   const name = PRIORITIES[item.priority];
 
   return (
-    <span className={cn("text-base text-secondary-foreground", name && PRIORITY_TONES[name])}>
-      {name ?? item.priority}
-    </span>
+    <>
+      <span className={cn("text-base text-secondary-foreground", name && PRIORITY_TONES[name])}>
+        {name ?? item.priority}
+      </span>
+      {item.profile && <span className="text-base text-muted-foreground"> · {item.profile}</span>}
+    </>
   );
 }
 
