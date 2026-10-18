@@ -2,9 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Me } from "@/domain/session/session";
 import { type Answers, mockSessionCookie, problem, renderApp, sentChanges } from "@/test/app";
-import { ada, answersOfMe, answersOfQueuePage, detailOf, itemOf, queueOf } from "@/test/fixtures";
+import { answersOfQueuePage, detailOf, itemOf, queueOf, repoOf } from "@/test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
 const PR = "/api/v1/orgs/acme/repos/web/prs";
@@ -48,13 +47,30 @@ describe("the actions on a queue", () => {
     expect(screen.queryByText("Pausing the queue…")).not.toBeInTheDocument();
   });
 
-  it("let a member pause nothing", async () => {
-    const member: Me = { ...ada, orgs: [{ slug: "acme", role: "member", is_suspended: false }] };
-    renderApp("/orgs/acme/repos/web/queues/main", answersFor(answersOfMe(member)));
+  it("let a person who writes to the repository pause nothing", async () => {
+    const writer = repoOf("web", { read: true, write: true, admin: false });
+    renderApp(
+      "/orgs/acme/repos/web/queues/main",
+      answersFor({ "/api/v1/orgs/acme/repos/web": [200, writer] }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Submit a pull request" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pause" })).toHaveAttribute(
+      "title",
+      "Needs the admin permission on the repository",
+    );
+  });
+
+  it("let a person who reads the repository submit nothing", async () => {
+    const reader = repoOf("web", { read: true, write: false, admin: false });
+    renderApp(
+      "/orgs/acme/repos/web/queues/main",
+      answersFor({ "/api/v1/orgs/acme/repos/web": [200, reader] }),
+    );
 
     expect(await screen.findByRole("button", { name: "Pause" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Pause" })).toHaveAttribute("title", "Needs the admin role");
-    expect(screen.getByRole("button", { name: "Submit a pull request" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Submit a pull request" })).toBeDisabled();
   });
 
   it("submit a PR with its priority, after the form checks its number", async () => {

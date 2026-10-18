@@ -19,15 +19,19 @@ use cihub_api_types::{
     AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
     OrgList, Problem, QueueChanged, User,
 };
-use cihub_domain::{ApiScope, ApiTokenId, JobClass, SessionId};
+use cihub_domain::{
+    ApiScope, ApiTokenId, JobClass, MembershipRole, OrgId, Permission, RepoId, SessionId, UserId,
+};
 use cihub_platform::{
-    ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, PAGE_ERRORS, Page, QueueNewsFeed,
-    cursor_of, document_error, error_responses,
+    Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, PAGE_ERRORS, Page,
+    PlatformError, QueueNewsFeed, cursor_of, document_error, error_responses, repo_permission_now,
+    request_user_sync, request_user_sync_when_old, role_now,
 };
 use cihub_scm::Scm;
 use cihub_store::{
-    ORG_IS_SUSPENDED, PgPool, SessionClient, SessionGrant, authenticate, authenticate_session,
-    delete_session_by_id, memberships_of, profile_of,
+    DatabaseCipher, ORG_IS_SUSPENDED, PgPool, SessionClient, SessionGrant, authenticate,
+    authenticate_session, begin_org, begin_system, delete_session_by_id, delete_sessions_of,
+    forget_tokens_without_session, memberships_of, profile_of, readable_repos,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -59,6 +63,8 @@ pub(crate) struct ApiState {
     pub pool: PgPool,
     pub now: fn() -> OffsetDateTime,
     scm: Arc<dyn Scm>,
+    /// Opens the tokens of the people; `None` when nobody signs in.
+    cipher: Option<Arc<DatabaseCipher>>,
     /// The root address of the instance, where the dashboard is.
     pub public_url: Option<String>,
     windows: Arc<Mutex<HashMap<Caller, (i64, u32)>>>,
@@ -219,7 +225,8 @@ fn document_access(path: &str, operation: &mut Operation, changes_state: bool) {
         }
         Some(scopes) if scopes.is_empty() => "**Access**: any API token or session.".to_owned(),
         Some(scopes) => format!(
-            "**Scope**: {}, for an API token or for the role of the user of a session.",
+            "**Scope**: {}, for an API token, or for the role of the user of a session or their \
+             permission on the repository of the route.",
             scopes.join(", ")
         ),
     };
@@ -234,7 +241,8 @@ fn document_access(path: &str, operation: &mut Operation, changes_state: bool) {
         None => access,
     });
     if path.starts_with("/orgs/{org}") {
-        codes.push(ErrorCode::OrgNotFound);
+        // A session checks the access of its person on the SCM after an hour.
+        codes.extend([ErrorCode::OrgNotFound, ErrorCode::ScmUnavailable]);
     }
     if scopes.is_some_and(|scopes| !scopes.is_empty()) {
         codes.push(ErrorCode::ScopeMissing);
@@ -282,6 +290,7 @@ pub(crate) fn router(
     now: fn() -> OffsetDateTime,
     modules: Vec<ModuleApi>,
     scm: Arc<dyn Scm>,
+    cipher: Option<Arc<DatabaseCipher>>,
     news: QueueNewsFeed,
     public_url: Option<String>,
 ) -> Router {
@@ -299,6 +308,7 @@ pub(crate) fn router(
         pool,
         now,
         scm,
+        cipher,
         public_url,
         windows: Arc::default(),
     };
@@ -430,6 +440,7 @@ async fn by_token(
             org_id: grant.org_id,
             actor: GrantActor::Token(grant.id),
             scopes: grant.scopes,
+            repos: None,
         },
     ))
 }
@@ -456,9 +467,13 @@ async fn by_cookie(
     authenticated
 }
 
-/// A session, and on a route of an organization the grant of the role of
-/// its user there. An organization where the user has no role answers
-/// `404`, as for a token of another organization.
+/// A session, and on a route of an organization the grant of its user there
+/// (`specs/SECURITY.md`): on a route of a repository, the scopes of their
+/// permission on it; elsewhere, the scopes of their role and the
+/// repositories that they read. An access older than an hour is checked
+/// again on the SCM with the token of the person. An organization where the
+/// user has no role answers `404`, as for a token of another organization,
+/// and a repository that they do not read too.
 async fn by_session(
     state: &ApiState,
     secret: &SecretString,
@@ -473,23 +488,135 @@ async fn by_session(
         return Ok(Authenticated::Session(session, None));
     };
 
-    let memberships = memberships_of(&state.pool, session.user_id).await?;
-    let membership = memberships
+    let user_id = session.user_id;
+    let org_not_found = || {
+        ApiError::new(
+            ErrorCode::OrgNotFound,
+            format!("organization `{slug}` not found"),
+        )
+    };
+    let membership = memberships_of(&state.pool, user_id)
+        .await?
         .into_iter()
         .find(|membership| membership.org_slug.eq_ignore_ascii_case(slug))
-        .ok_or_else(|| {
-            ApiError::new(
-                ErrorCode::OrgNotFound,
-                format!("organization `{slug}` not found"),
-            )
-        })?;
-    let grant = ApiGrant {
-        org_id: membership.org_id,
-        actor: GrantActor::User(session.user_id),
-        scopes: membership.role.scopes().to_vec(),
+        .ok_or_else(org_not_found)?;
+    let cipher = state.cipher.as_deref().ok_or_else(sign_in_again)?;
+    let role = role_now(
+        &state.pool,
+        state.scm.as_ref(),
+        cipher,
+        user_id,
+        &membership,
+        now,
+    )
+    .await;
+    let role = granted(state, user_id, role)
+        .await?
+        .ok_or_else(org_not_found)?;
+    if let Err(err) = request_user_sync_when_old(&state.pool, user_id, now).await {
+        warn!(
+            error = &err as &dyn Error,
+            "sync of the person not requested"
+        );
+    }
+
+    let Some(name) = repo_of_path(path) else {
+        let mut tx = begin_org(&state.pool, membership.org_id).await?;
+        let repos = readable_repos(&mut tx, user_id).await?;
+        tx.commit().await?;
+        let grant = ApiGrant {
+            org_id: membership.org_id,
+            actor: GrantActor::User(user_id),
+            scopes: role.scopes().to_vec(),
+            repos: Some(repos),
+        };
+        return Ok(Authenticated::Session(session, Some(grant)));
     };
 
+    let permission = repo_permission_now(
+        &state.pool,
+        state.scm.as_ref(),
+        cipher,
+        user_id,
+        membership.org_id,
+        name,
+        now,
+    )
+    .await;
+    let grant = repo_grant(
+        (membership.org_id, user_id, role),
+        name,
+        granted(state, user_id, permission).await?,
+    )?;
     Ok(Authenticated::Session(session, Some(grant)))
+}
+
+/// What a check of the access gave, or why the request stops: `503` when the
+/// SCM does not answer, `401` when the person must sign in again, whose
+/// sessions then end.
+async fn granted<T>(
+    state: &ApiState,
+    user_id: UserId,
+    access: Result<Access<T>, PlatformError>,
+) -> Result<T, ApiError> {
+    match access {
+        Ok(Access::Granted(granted)) => Ok(granted),
+        Ok(Access::SignInAgain) => {
+            delete_sessions_of(&state.pool, user_id).await?;
+            Err(sign_in_again())
+        }
+        Err(PlatformError::Scm(err)) => {
+            warn!(
+                error = &err as &dyn Error,
+                "access of the person not checked"
+            );
+            Err(ApiError::new(
+                ErrorCode::ScmUnavailable,
+                "the SCM did not answer the check of the access".into(),
+            ))
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn sign_in_again() -> ApiError {
+    ApiError::new(
+        ErrorCode::Unauthorized,
+        "the SCM refuses the token of the person, or CIHub has none: sign in again".into(),
+    )
+}
+
+/// The grant of a route of the repository `name`, from the permission of
+/// the person on it. A repository that the organization does not have is
+/// left to the route, which answers `404` with the scopes of `role`.
+fn repo_grant(
+    (org_id, user_id, role): (OrgId, UserId, MembershipRole),
+    name: &str,
+    permission: Option<(RepoId, Permission)>,
+) -> Result<ApiGrant, ApiError> {
+    let scopes = match permission {
+        Some((_, Permission::None)) => {
+            return Err(ApiError::new(
+                ErrorCode::RepoNotFound,
+                format!("repository `{name}` not found"),
+            ));
+        }
+        Some((_, Permission::Read)) => vec![ApiScope::QueuesRead],
+        Some((_, Permission::Write)) => vec![ApiScope::QueuesRead, ApiScope::PrsWrite],
+        Some((_, Permission::Admin)) => vec![
+            ApiScope::QueuesRead,
+            ApiScope::QueuesWrite,
+            ApiScope::PrsWrite,
+        ],
+        None => role.scopes().to_vec(),
+    };
+
+    Ok(ApiGrant {
+        org_id,
+        actor: GrantActor::User(user_id),
+        scopes,
+        repos: None,
+    })
 }
 
 /// The slug of the organization that the path names, as `/orgs/{org}/…`.
@@ -498,6 +625,17 @@ fn org_of_path(path: &str) -> Option<&str> {
         .split('/')
         .next()
         .filter(|slug| !slug.is_empty())
+}
+
+/// The name of the repository that the path names, as
+/// `/orgs/{org}/repos/{repo}/…`.
+fn repo_of_path(path: &str) -> Option<&str> {
+    let mut segments = path.strip_prefix("/orgs/")?.split('/').skip(1);
+
+    (segments.next() == Some("repos"))
+        .then(|| segments.next())
+        .flatten()
+        .filter(|name| !name.is_empty())
 }
 
 fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u64> {
@@ -513,6 +651,14 @@ fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u
 
     *count += 1;
     None
+}
+
+/// Forgets the token of each person whose last session ended.
+pub(crate) async fn forget_tokens_of_the_gone(pool: &PgPool) -> Result<(), ApiError> {
+    let mut tx = begin_system(pool).await?;
+    forget_tokens_without_session(&mut tx).await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// The session of the request; `401` for an API token, which stands for no
@@ -575,13 +721,15 @@ async fn delete_user_session(
     let session = session_of(session)?;
 
     delete_session_by_id(&state.pool, session.id).await?;
+    forget_tokens_of_the_gone(&state.pool).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Sync the user
 ///
 /// Asks CIHub to read again from the SCM now the installations and the
-/// repositories that the person of the session reaches.
+/// repositories that the person of the session reaches, at most once a
+/// minute.
 #[utoipa::path(
     post,
     path = "/user/sync",
@@ -589,13 +737,19 @@ async fn delete_user_session(
     responses((status = 202, description = "CIHub takes the request.")),
     security(("session" = []))
 )]
-async fn sync_user(session: Option<Extension<SessionGrant>>) -> Result<StatusCode, ApiError> {
-    session_of(session)?;
+async fn sync_user(
+    State(state): State<ApiState>,
+    session: Option<Extension<SessionGrant>>,
+) -> Result<StatusCode, ApiError> {
+    let session = session_of(session)?;
+    let now = (state.now)();
+    let minute = format!("asked-{}", now.unix_timestamp().div_euclid(60));
 
-    Err(ApiError::new(
-        ErrorCode::RouteNotFound,
-        "the sync of a person is not served yet".to_owned(),
-    ))
+    let mut tx = begin_system(&state.pool).await?;
+    request_user_sync(&mut tx, session.user_id, &minute, now).await?;
+    tx.commit().await?;
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 #[derive(Deserialize, utoipa::IntoParams)]

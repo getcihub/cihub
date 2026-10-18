@@ -51,7 +51,7 @@ Kubernetes: `>=1.25.0-0`
 | database.idleTimeout | int | `600` | Seconds after which an unused connection is closed. |
 | database.key | string | `"uri"` | Key of the URL in that Secret. |
 | database.poolSize | int | `10` | Largest number of connections of each replica to Postgres; the sum over the replicas stays under the `max_connections` of Postgres. |
-| database.secretKey | string | `""` | Key, in that Secret, of the key of the data that CIHub encrypts in Postgres, `database.secret` of `server.yaml`; empty, the server has none. |
+| database.secretKey | string | `"secret"` | Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set. |
 | deploymentAnnotations | object | `{}` | Annotations of the Deployment. |
 | fullnameOverride | string | `""` | Replaces the full name of the resources. |
 | github.appId | required | `""` | Identifier of the GitHub App (specs/GITHUB.md). |

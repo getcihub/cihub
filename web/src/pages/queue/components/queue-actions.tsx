@@ -92,7 +92,7 @@ export function QueueActions({ path, queue, isAdmin }: { path: QueuePath; queue:
         <Button
           key={state}
           disabled={!isAdmin || isLost}
-          title={isAdmin ? undefined : "Needs the admin role"}
+          title={isAdmin ? undefined : "Needs the admin permission on the repository"}
           onClick={() => {
             update.reset();
             setAsked(state);

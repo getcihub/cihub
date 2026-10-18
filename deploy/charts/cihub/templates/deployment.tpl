@@ -62,13 +62,6 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
             {{- include "cihub.databaseEnv" . | nindent 12 }}
-            {{- if .Values.database.secretKey }}
-            - name: CIHUB_DATABASE_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.database.existingSecret | quote }}
-                  key: {{ .Values.database.secretKey | quote }}
-            {{- end }}
             - name: CIHUB_GITHUB_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
@@ -80,6 +73,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.github.existingSecret | quote }}
                   key: {{ .Values.github.clientSecretKey | quote }}
+            - name: CIHUB_DATABASE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret | quote }}
+                  key: {{ .Values.database.secretKey | quote }}
             {{- end }}
           ports:
             - name: http

@@ -6,15 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MergeMethod, Mergeability, Permission,
-    PrState, ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
+    Permission, PrState, ReviewDecision,
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
     RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
-    ScmMember, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
+    ScmMember, ScmPersonReach, ScmPersonToken, ScmRepo, ScmUser, SetupFinding, SignInCode,
+    SignInRequest, SignedIn, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -1526,8 +1528,47 @@ impl Scm for GithubApp {
         self.sign_in_address(request)
     }
 
-    fn sign_in<'a>(&'a self, code: &'a SignInCode, _class: JobClass) -> ScmFuture<'a, SignedIn> {
+    fn sign_in<'a>(
+        &'a self,
+        code: &'a SignInCode,
+        _class: JobClass,
+    ) -> ScmFuture<'a, (SignedIn, ScmPersonToken)> {
         Box::pin(self.sign_in_person(code))
+    }
+
+    fn refresh_person_token<'a>(
+        &'a self,
+        refresh: &'a SecretString,
+        _class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonToken> {
+        Box::pin(self.refresh_person(refresh))
+    }
+
+    fn person_reach<'a>(
+        &'a self,
+        token: &'a SecretString,
+        _class: JobClass,
+    ) -> ScmFuture<'a, ScmPersonReach> {
+        Box::pin(self.reach_of_person(token))
+    }
+
+    fn person_permission<'a>(
+        &'a self,
+        token: &'a SecretString,
+        repo: &'a RepoRef,
+        _class: JobClass,
+    ) -> ScmFuture<'a, Permission> {
+        Box::pin(self.permission_of_person(token, repo))
+    }
+
+    fn person_role<'a>(
+        &'a self,
+        token: &'a SecretString,
+        person: &'a ScmUser,
+        account: &'a ScmAccount,
+        _class: JobClass,
+    ) -> ScmFuture<'a, Option<MembershipRole>> {
+        Box::pin(self.role_in_account(token, person, account))
     }
 
     fn members<'a>(

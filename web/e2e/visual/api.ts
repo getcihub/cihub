@@ -677,10 +677,43 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
     return answerOfPrList(query, prList[1] ?? "", prList[2]);
   }
   return (
+    answerOfRepo(path, person) ??
     answerOfQueue(path, query) ??
     answerOfPr(path) ??
     answerOfRun(path) ?? [404, problem(404, "route_not_found")]
   );
+}
+
+/** A repository of `acme` and its setup: an admin of the organization administers it, a member writes to it. */
+function answerOfRepo(path: string, person: Person): Answer | null {
+  const match = /^\/orgs\/acme\/repos\/([^/]+)$/.exec(path);
+  if (!match) {
+    return null;
+  }
+
+  const name = match[1] ?? "";
+  const orgs = person === "nobody" ? [] : PEOPLE[person].orgs;
+  const isAdmin = orgs.some((org) => org.slug === "acme" && org.role === "admin");
+  return [
+    200,
+    {
+      id: `repo_${name}`,
+      namespace: "acme",
+      name,
+      default_branch: "main",
+      permission: { read: true, write: true, admin: isAdmin },
+      setup: {
+        state: "started",
+        queue: "main",
+        rules: [],
+        target_branch_missing: false,
+        rules_url: null,
+        config: null,
+        checked_at: null,
+        requested_at: null,
+      },
+    },
+  ];
 }
 
 function answerOfRun(path: string): Answer | null {

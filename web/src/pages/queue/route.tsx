@@ -2,6 +2,7 @@ import { noop } from "@tanstack/react-query";
 import { createFileRoute, notFound, stripSearchParams } from "@tanstack/react-router";
 import { z } from "zod";
 
+import { getRepoOptions } from "@/client/@tanstack/react-query.gen";
 import { NotFoundPage } from "@/components/errors/not-found-page";
 import { QueueSkeleton } from "@/components/queue/queue-skeleton";
 import { periodOfSearch } from "@/domain/queue/period";
@@ -45,6 +46,7 @@ export const Route = createFileRoute("/orgs/$org/repos/$repo/queues/$queue")({
       void queryClient.query(healthOptions({ org, repo, queue }, periodOfSearch(deps))).catch(noop);
     }
     await Promise.allSettled([
+      queryClient.query(getRepoOptions({ path: { org, repo } })),
       queryClient.query(reads.detail),
       queryClient.query(reads.graph),
       queryClient.query(reads.live),

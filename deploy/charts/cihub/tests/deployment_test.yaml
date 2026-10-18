@@ -40,7 +40,7 @@ tests:
               - key: private-key.pem
                 path: private-key.pem
 
-  - it: takes the client secret of the sign-in only with a client ID
+  - it: takes the client secret of the sign-in and the database secret only with a client ID
     template: deployment.tpl
     set:
       github.clientId: Iv23li.client
@@ -51,35 +51,25 @@ tests:
             name: CIHUB_GITHUB_CLIENT_SECRET
             valueFrom:
               secretKeyRef: { name: cihub-github, key: client-secret }
-
-  - it: takes the key of the encrypted data only when its key in the Secret is set
-    template: deployment.tpl
-    set:
-      database.secretKey: data-key
-    asserts:
       - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: CIHUB_DATABASE_SECRET
             valueFrom:
-              secretKeyRef: { name: cihub-postgres, key: data-key }
+              secretKeyRef: { name: cihub-postgres, key: secret }
 
-  - it: has no key of the encrypted data without its key in the Secret
-    template: deployment.tpl
-    asserts:
-      - notContains:
-          path: spec.template.spec.containers[0].env
-          content:
-            name: CIHUB_DATABASE_SECRET
-          any: true
-
-  - it: has no client secret without a client ID
+  - it: has no client secret and no database secret without a client ID
     template: deployment.tpl
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
             name: CIHUB_GITHUB_CLIENT_SECRET
+          any: true
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_SECRET
           any: true
 
   - it: probes the internal address

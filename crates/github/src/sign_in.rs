@@ -5,10 +5,11 @@
 
 use std::collections::BTreeMap;
 
-use cihub_domain::{JobClass, MembershipRole};
+use cihub_domain::{JobClass, MembershipRole, Permission};
 use cihub_scm::{
-    ConnectionRef, ScmAccount, ScmError, ScmInstallation, ScmMember, ScmMembership, ScmProfile,
-    ScmUser, SignInCode, SignInRequest, SignedIn,
+    ConnectionRef, RepoRef, ScmAccount, ScmError, ScmInstallation, ScmMember, ScmMembership,
+    ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest,
+    SignedIn,
 };
 use reqwest::{Method, StatusCode, Url};
 use secrecy::SecretString;
@@ -70,6 +71,48 @@ impl Installation {
     }
 }
 
+/// A repository that a person reads, with the permissions of the person.
+#[derive(Deserialize)]
+struct Repository {
+    id: u64,
+    #[serde(default)]
+    permissions: RepositoryPermissions,
+}
+
+#[derive(Default, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the permissions of a repository, as GitHub gives them"
+)]
+struct RepositoryPermissions {
+    #[serde(default)]
+    admin: bool,
+    #[serde(default)]
+    maintain: bool,
+    #[serde(default)]
+    push: bool,
+    #[serde(default)]
+    triage: bool,
+    #[serde(default)]
+    pull: bool,
+}
+
+impl RepositoryPermissions {
+    /// `maintain` acts as `push`, and `triage` as `pull`: CIHub has no
+    /// action between them.
+    fn permission(&self) -> Permission {
+        if self.admin {
+            Permission::Admin
+        } else if self.maintain || self.push {
+            Permission::Write
+        } else if self.triage || self.pull {
+            Permission::Read
+        } else {
+            Permission::None
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct Account {
     id: u64,
@@ -117,17 +160,21 @@ impl GithubApp {
         Some(address.into())
     }
 
-    pub(crate) async fn sign_in_person(&self, code: &SignInCode) -> Result<SignedIn, ScmError> {
+    pub(crate) async fn sign_in_person(
+        &self,
+        code: &SignInCode,
+    ) -> Result<(SignedIn, ScmPersonToken), ScmError> {
         let token = self.exchange_sign_in_code(code).await?;
-        let (answer, _) = self.get_as_person(&token, "/user").await?;
+        let access = &token.access;
+        let (answer, _) = self.get_as_person(access, "/user").await?;
         let user: Person = expect(answer, &[StatusCode::OK])?.json()?;
-        let listed = self.installations_of_person(&token).await?;
+        let listed = self.installations_of_person(access).await?;
         let installations = listed.iter().map(Installation::neutral).collect();
         let mut memberships = Vec::new();
 
         for installation in listed {
             let role = self
-                .role_of_person(&token, &user, &installation.account)
+                .role_of_person(access, &user, &installation.account)
                 .await?;
             if let Some(role) = role {
                 memberships.push(ScmMembership {
@@ -137,7 +184,7 @@ impl GithubApp {
             }
         }
 
-        Ok(SignedIn {
+        let signed_in = SignedIn {
             user: user.user(),
             profile: ScmProfile {
                 name: user.name,
@@ -145,7 +192,80 @@ impl GithubApp {
             },
             installations,
             memberships,
+        };
+        Ok((signed_in, token))
+    }
+
+    /// The installations that the person of `token` reaches, and the
+    /// repositories of each one with the permission of the person.
+    pub(crate) async fn reach_of_person(
+        &self,
+        token: &SecretString,
+    ) -> Result<ScmPersonReach, ScmError> {
+        #[derive(Deserialize)]
+        struct Page {
+            repositories: Vec<Repository>,
+        }
+
+        let listed = self.installations_of_person(token).await?;
+        let mut repos = Vec::new();
+        for installation in &listed {
+            let mut path = Some(format!(
+                "/user/installations/{}/repositories?per_page=100",
+                installation.id
+            ));
+            while let Some(page) = path.take() {
+                let (answer, next) = self.get_as_person(token, &page).await?;
+                let page: Page = expect(answer, &[StatusCode::OK])?.json()?;
+                repos.extend(page.repositories.into_iter().map(|repo| ScmPersonRepo {
+                    connection_external_id: installation.id.to_string(),
+                    repo_external_id: repo.id.to_string(),
+                    permission: repo.permissions.permission(),
+                }));
+                path = next;
+            }
+        }
+
+        Ok(ScmPersonReach {
+            installations: listed.iter().map(Installation::neutral).collect(),
+            repos: repos
+                .into_iter()
+                .filter(|repo| repo.permission != Permission::None)
+                .collect(),
         })
+    }
+
+    /// The permission of the person of `token` on `repo`: GitHub answers
+    /// `404` for a repository that the person does not see.
+    pub(crate) async fn permission_of_person(
+        &self,
+        token: &SecretString,
+        repo: &RepoRef,
+    ) -> Result<Permission, ScmError> {
+        let path = format!("/repos/{}/{}", encode(&repo.namespace), encode(&repo.name));
+        let (answer, _) = self.get_as_person(token, &path).await?;
+        if answer.status == StatusCode::NOT_FOUND {
+            return Ok(Permission::None);
+        }
+
+        let repo: Repository = expect(answer, &[StatusCode::OK])?.json()?;
+        Ok(repo.permissions.permission())
+    }
+
+    /// The role of `person` in `account`, with the token of the person: the
+    /// owner of the account of a person is its `admin`, and an organization
+    /// gives the role of an active member.
+    pub(crate) async fn role_in_account(
+        &self,
+        token: &SecretString,
+        person: &ScmUser,
+        account: &ScmAccount,
+    ) -> Result<Option<MembershipRole>, ScmError> {
+        if account.external_id == person.external_id {
+            return Ok(Some(MembershipRole::Admin));
+        }
+
+        self.role_in_organization(token, &account.path).await
     }
 
     async fn installations_of_person(
@@ -181,19 +301,29 @@ impl GithubApp {
         person: &Person,
         account: &Account,
     ) -> Result<Option<MembershipRole>, ScmError> {
-        #[derive(Deserialize)]
-        struct Membership {
-            state: String,
-            role: String,
-        }
-
         match account.kind.as_str() {
             "Organization" => {}
             "User" => return Ok((account.id == person.id).then_some(MembershipRole::Admin)),
             _ => return Ok(None),
         }
 
-        let path = format!("/user/memberships/orgs/{}", encode(&account.login));
+        self.role_in_organization(token, &account.login).await
+    }
+
+    /// The role of the person of `token` in the organization `login`: an
+    /// active membership gives it; `None` when GitHub refuses the read.
+    async fn role_in_organization(
+        &self,
+        token: &SecretString,
+        login: &str,
+    ) -> Result<Option<MembershipRole>, ScmError> {
+        #[derive(Deserialize)]
+        struct Membership {
+            state: String,
+            role: String,
+        }
+
+        let path = format!("/user/memberships/orgs/{}", encode(login));
         let (answer, _) = self.get_as_person(token, &path).await?;
         if matches!(answer.status, StatusCode::NOT_FOUND | StatusCode::FORBIDDEN) {
             return Ok(None);

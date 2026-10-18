@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cihub_domain::{
-    CheckConclusion, CheckReport, ConnectionId, MembershipRole, MergeMethod, Mergeability, PrState,
-    ReviewDecision,
+    CheckConclusion, CheckReport, ConnectionId, MembershipRole, MergeMethod, Mergeability,
+    Permission, PrState, ReviewDecision,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest, Sha256};
@@ -193,6 +193,35 @@ pub struct SignedIn {
     /// sign-in connects those that CIHub does not know yet.
     pub installations: Vec<ScmInstallation>,
     pub memberships: Vec<ScmMembership>,
+}
+
+/// The token of a person on the SCM, which reads what the person reaches, and
+/// how long it and its refresh last.
+#[derive(Debug)]
+pub struct ScmPersonToken {
+    pub access: SecretString,
+    /// `None` for a token that does not expire.
+    pub access_lifetime: Option<time::Duration>,
+    /// Gives a new token once, then no more.
+    pub refresh: Option<SecretString>,
+    pub refresh_lifetime: Option<time::Duration>,
+}
+
+/// What the token of a person reaches: the installations of the App, and the
+/// repositories of each one with the permission of the person.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScmPersonReach {
+    pub installations: Vec<ScmInstallation>,
+    pub repos: Vec<ScmPersonRepo>,
+}
+
+/// A repository that a person reaches through an installation of the App.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScmPersonRepo {
+    /// The installation, as the `external_id` of its connection.
+    pub connection_external_id: String,
+    pub repo_external_id: String,
+    pub permission: Permission,
 }
 
 /// What a person shows of themselves on the SCM.

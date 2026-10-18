@@ -124,7 +124,7 @@ export const getOrg = <ThrowOnError extends boolean = false>(options: Options<Ge
  * The changes of the queues and the actions on the PRs that a person or a
  * token asked for, newest first.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listAudit = <ThrowOnError extends boolean = false>(options: Options<ListAuditData, ThrowOnError>): RequestResult<ListAuditResponses, ListAuditErrors, ThrowOnError> => (options.client ?? client).get<ListAuditResponses, ListAuditErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -143,7 +143,7 @@ export const listAudit = <ThrowOnError extends boolean = false>(options: Options
  * current submission of each PR in each queue, with the PRs that merge before
  * it and an estimate. Without a filter, every PR, live or ended.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Options<ListOrgPrsData, ThrowOnError>): RequestResult<ListOrgPrsResponses, ListOrgPrsErrors, ThrowOnError> => (options.client ?? client).get<ListOrgPrsResponses, ListOrgPrsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -161,7 +161,7 @@ export const listOrgPrs = <ThrowOnError extends boolean = false>(options: Option
  * Every queue of the organization, with its counters and its settings, by
  * repository name then target branch: the overview of the dashboard.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Options<ListOrgQueuesData, ThrowOnError>): RequestResult<ListOrgQueuesResponses, ListOrgQueuesErrors, ThrowOnError> => (options.client ?? client).get<ListOrgQueuesResponses, ListOrgQueuesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -180,7 +180,7 @@ export const listOrgQueues = <ThrowOnError extends boolean = false>(options: Opt
  * then name, each with what the caller may do on it and the verdict of its
  * setup. Reads Postgres only.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listRepos = <ThrowOnError extends boolean = false>(options: Options<ListReposData, ThrowOnError>): RequestResult<ListReposResponses, ListReposErrors, ThrowOnError> => (options.client ?? client).get<ListReposResponses, ListReposErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -198,7 +198,7 @@ export const listRepos = <ThrowOnError extends boolean = false>(options: Options
  * The repository, whatever the case of its name, with what the caller may
  * do on it and its whole setup. Reads Postgres only.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getRepo = <ThrowOnError extends boolean = false>(options: Options<GetRepoData, ThrowOnError>): RequestResult<GetRepoResponses, GetRepoErrors, ThrowOnError> => (options.client ?? client).get<GetRepoResponses, GetRepoErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -217,7 +217,7 @@ export const getRepo = <ThrowOnError extends boolean = false>(options: Options<G
  * current submission of each PR in each queue, with the PRs that merge
  * before it and an estimate. Without a filter, every PR, live or ended.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listRepoPrs = <ThrowOnError extends boolean = false>(options: Options<ListRepoPrsData, ThrowOnError>): RequestResult<ListRepoPrsResponses, ListRepoPrsErrors, ThrowOnError> => (options.client ?? client).get<ListRepoPrsResponses, ListRepoPrsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -235,7 +235,7 @@ export const listRepoPrs = <ThrowOnError extends boolean = false>(options: Optio
  * The last submission of the PR to a queue of the repository, with the PRs
  * that merge before it and an estimate.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getPr = <ThrowOnError extends boolean = false>(options: Options<GetPrData, ThrowOnError>): RequestResult<GetPrResponses, GetPrErrors, ThrowOnError> => (options.client ?? client).get<GetPrResponses, GetPrErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -253,7 +253,7 @@ export const getPr = <ThrowOnError extends boolean = false>(options: Options<Get
  * Takes the PR out of its queue: its current submission ends `cancelled`
  * (`admin_requested`), and stays readable.
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const cancel = <ThrowOnError extends boolean = false>(options: Options<CancelData, ThrowOnError>): RequestResult<CancelResponses, CancelErrors, ThrowOnError> => (options.client ?? client).post<CancelResponses, CancelErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -271,7 +271,7 @@ export const cancel = <ThrowOnError extends boolean = false>(options: Options<Ca
  * The history of the PR in the queues of the repository, every submission
  * together, oldest first.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listEvents = <ThrowOnError extends boolean = false>(options: Options<ListEventsData, ThrowOnError>): RequestResult<ListEventsResponses, ListEventsErrors, ThrowOnError> => (options.client ?? client).get<ListEventsResponses, ListEventsErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -289,7 +289,7 @@ export const listEvents = <ThrowOnError extends boolean = false>(options: Option
  * Tests again the current submission of the PR, in `testing` or
  * `pending_failure` (`tests_restarted_by_api_request`).
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const restart = <ThrowOnError extends boolean = false>(options: Options<RestartData, ThrowOnError>): RequestResult<RestartResponses, RestartErrors, ThrowOnError> => (options.client ?? client).post<RestartResponses, RestartErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -309,7 +309,7 @@ export const restart = <ThrowOnError extends boolean = false>(options: Options<R
  * refusals that need a read of the SCM, such as a queue that accepts
  * nothing, come later, on the PR.
  *
- * **Scope**: `prs:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `prs:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const submit = <ThrowOnError extends boolean = false>(options: Options<SubmitData, ThrowOnError>): RequestResult<SubmitResponses, SubmitErrors, ThrowOnError> => (options.client ?? client).post<SubmitResponses, SubmitErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -331,7 +331,7 @@ export const submit = <ThrowOnError extends boolean = false>(options: Options<Su
  * The queues of the repository with their counters and their settings, by
  * target branch. The first `/cihub merge` on a PR of a branch creates its queue.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const listRepoQueues = <ThrowOnError extends boolean = false>(options: Options<ListRepoQueuesData, ThrowOnError>): RequestResult<ListRepoQueuesResponses, ListRepoQueuesErrors, ThrowOnError> => (options.client ?? client).get<ListRepoQueuesResponses, ListRepoQueuesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -349,7 +349,7 @@ export const listRepoQueues = <ThrowOnError extends boolean = false>(options: Op
  * The queue with its counters, its window, its settings and the last check
  * of its configuration: the page of the queue in the dashboard.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getQueue = <ThrowOnError extends boolean = false>(options: Options<GetQueueData, ThrowOnError>): RequestResult<GetQueueResponses, GetQueueErrors, ThrowOnError> => (options.client ?? client).get<GetQueueResponses, GetQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -367,7 +367,7 @@ export const getQueue = <ThrowOnError extends boolean = false>(options: Options<
  * Asks the queue for `running`, `paused` or `draining`; the queue changes
  * at its next reconciliation.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const updateQueue = <ThrowOnError extends boolean = false>(options: Options<UpdateQueueData, ThrowOnError>): RequestResult<UpdateQueueResponses, UpdateQueueErrors, ThrowOnError> => (options.client ?? client).patch<UpdateQueueResponses, UpdateQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -390,7 +390,7 @@ export const updateQueue = <ThrowOnError extends boolean = false>(options: Optio
  * that the test of each one merges before it, and the last run of each live
  * group.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const graph = <ThrowOnError extends boolean = false>(options: Options<GraphData, ThrowOnError>): RequestResult<GraphResponses, GraphErrors, ThrowOnError> => (options.client ?? client).get<GraphResponses, GraphErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -412,7 +412,7 @@ export const graph = <ThrowOnError extends boolean = false>(options: Options<Gra
  * log, which arrive a few seconds after the log; the medians and the 90th
  * percentiles are within 5 %.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getHealth = <ThrowOnError extends boolean = false>(options: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, GetHealthErrors, ThrowOnError> => (options.client ?? client).get<GetHealthResponses, GetHealthErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -431,7 +431,7 @@ export const getHealth = <ThrowOnError extends boolean = false>(options: Options
  * head of the target branch and its configuration: the way out after an
  * incident.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const syncQueue = <ThrowOnError extends boolean = false>(options: Options<SyncQueueData, ThrowOnError>): RequestResult<SyncQueueResponses, SyncQueueErrors, ThrowOnError> => (options.client ?? client).post<SyncQueueResponses, SyncQueueErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -451,7 +451,7 @@ export const syncQueue = <ThrowOnError extends boolean = false>(options: Options
  * the CI reads its run identifier in the last segment of its branch; a run of
  * another repository answers `run_not_found`.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const getRun = <ThrowOnError extends boolean = false>(options: Options<GetRunData, ThrowOnError>): RequestResult<GetRunResponses, GetRunErrors, ThrowOnError> => (options.client ?? client).get<GetRunResponses, GetRunErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -469,7 +469,7 @@ export const getRun = <ThrowOnError extends boolean = false>(options: Options<Ge
  * Asks CIHub to read the setup of the repository from the SCM now, at most
  * once a minute; its `requested_at` shows the read until it ends.
  *
- * **Scope**: `queues:write`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const syncRepo = <ThrowOnError extends boolean = false>(options: Options<SyncRepoData, ThrowOnError>): RequestResult<SyncRepoResponses, SyncRepoErrors, ThrowOnError> => (options.client ?? client).post<SyncRepoResponses, SyncRepoErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -491,7 +491,7 @@ export const syncRepo = <ThrowOnError extends boolean = false>(options: Options<
  * changes: open it again after `retry` milliseconds, and read the queues
  * again.
  *
- * **Scope**: `queues:read`, for an API token or for the role of the user of a session.
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */
 export const stream = <ThrowOnError extends boolean = false>(options: Options<StreamData, ThrowOnError, StreamResponse>): Promise<ServerSentEventsResult<StreamResponses>> => (options.client ?? client).sse.get<StreamResponses, StreamErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }, {
@@ -562,7 +562,8 @@ export const deleteUserSession = <ThrowOnError extends boolean = false>(options?
  * Sync the user
  *
  * Asks CIHub to read again from the SCM now the installations and the
- * repositories that the person of the session reaches.
+ * repositories that the person of the session reaches, at most once a
+ * minute.
  *
  * **Access**: the session of a person: the dashboard, or the command line.
  */

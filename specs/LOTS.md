@@ -639,6 +639,30 @@ Decisions:
     `a_sign_in_connects_the_installations_that_cihub_does_not_know`,
     `a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_back`, and the suspension of an
     organization in `a_session_acts_with_the_role_of_its_user_in_the_organization`.
+  - Done (October 17, 2026): WP5, the token of the person and the access per repository. The sign-in keeps the
+    token and its refresh token on `users`, sealed by `DatabaseCipher` (`cihub-store`: AES-256-GCM, a key that
+    HKDF-SHA256 derives from `database.secret`, `ring` already in the workspace, so no new dependency), each bound
+    to its row and its column; `database.secret` (`CIHUB_DATABASE_SECRET`, at least 32 bytes) is required with the
+    sign-in, in Compose, the chart (key `database.secretKey` of the Secret of Postgres) and the smoke test.
+    `token_of_person` refreshes a token that ends within 5 minutes under the lock of its row, and forgets it when
+    the SCM refuses it; the sign-out of the last session and the daily maintenance forget the tokens of the people
+    without a session. `Scm` gains `refresh_person_token`, `person_reach`, `person_permission` and `person_role`,
+    on GitHub and on the simulator (`Sim::revoke_person`). `sync_user` (class `interactive`) reads what the token
+    reaches, connects the unknown installations and replaces the rows of the person in `repo_permissions` (the
+    enum `permission` of `cihub-domain`); it runs at the sign-in, at `POST /user/sync` (once a minute), at a
+    request more than an hour after `users.synced_at`, and for the members of an organization whose connection
+    finds new repositories. The middleware of `cihub-web` checks again, with the token of the person, a role or a
+    permission older than an hour (`role_now`, `repo_permission_now`): on a route of a repository, the scopes come
+    from the permission, and a repository without `read` answers `404`; elsewhere, `ApiGrant.repos` gives the
+    repositories that the person reads, which `/orgs/{org}/repos`, `/queues`, `/prs` and the stream filter; `503
+    scm_unavailable` when the SCM does not answer, `401` and every session ended when it refuses the token.
+    `Repo.permission` in a list is the permission of the person on each repository. The buttons of the dashboard
+    follow it (`useRepoPermission`): pause and the sync with `admin`, the submission, the cancel and the restart
+    with `write`. Tests: `a_person_reads_only_the_repositories_that_the_scm_shows_them`,
+    `the_sync_of_a_person_records_what_their_token_reaches`, `a_token_that_ends_is_refreshed_once`,
+    `the_stream_of_a_person_carries_their_repositories_only`, `the_last_sign_out_forgets_the_token_of_the_person`,
+    `a_sealed_value_opens_only_with_its_key_and_its_place`, the recorded tests of the token of a person, and
+    `the_sign_in_needs_the_client_id_its_secret_and_the_database_secret`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

@@ -3,8 +3,7 @@ import { QueueStateBadge } from "@/components/queue/queue-state-badge";
 import { PageHeader, PageLocation, PageTitle } from "@/components/ui/page";
 import { Toast } from "@/components/ui/toast";
 import type { QueuePath } from "@/domain/queue/queries";
-import { membershipOf } from "@/domain/session/session";
-import { useMe } from "@/hooks/use-me";
+import { useRepoPermission } from "@/hooks/use-repo-permission";
 import type { SentNotice } from "@/hooks/use-sent-notice";
 import { QueueActions } from "./queue-actions";
 import { SubmitPr } from "./submit-pr";
@@ -23,8 +22,7 @@ export function QueueHead({
   queue: Queue;
   sent: SentNotice;
 }) {
-  const me = useMe();
-  const isAdmin = membershipOf(me, path.org)?.role === "admin";
+  const permission = useRepoPermission(path.org, path.repo);
 
   return (
     <>
@@ -39,8 +37,8 @@ export function QueueHead({
           </div>
         </div>
         <div className="ml-auto flex gap-2">
-          <QueueActions path={path} queue={queue} isAdmin={isAdmin} />
-          <SubmitPr path={path} isDisabled={queue.is_suspended} onSent={showNotice} />
+          <QueueActions path={path} queue={queue} isAdmin={permission.admin} />
+          <SubmitPr path={path} isDisabled={queue.is_suspended || !permission.write} onSent={showNotice} />
         </div>
       </PageHeader>
       <Toast>{notice}</Toast>

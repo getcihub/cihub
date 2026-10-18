@@ -4,10 +4,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use cihub_domain::{ConnectionId, ConnectionKind, JobClass, OrgId, UserId};
-use cihub_scm::{Scm, ScmUser, SignedIn};
+use cihub_scm::{Scm, ScmPersonToken, ScmUser, SignedIn};
 use cihub_store::{
-    PgPool, begin_org, begin_system, ensure_user, forget_memberships_before, record_avatar,
-    record_membership, record_profile,
+    DatabaseCipher, PgPool, begin_org, begin_system, ensure_user, forget_memberships_before,
+    record_avatar, record_membership, record_profile,
 };
 use serde_json::json;
 use sqlx::PgConnection;
@@ -18,6 +18,7 @@ use crate::connections::{
     active_connection, outcome_of, request_for_each_connection, sync_installation_after,
 };
 use crate::installations::connect_installations;
+use crate::persons::{keep_token, request_user_sync};
 use crate::{Job, Outcome, PlatformError};
 
 pub const SYNC_MEMBERS: &str = "sync_members";
@@ -121,8 +122,9 @@ pub fn sync_members_executor(
     }
 }
 
-/// Records the person of a sign-in, their profile, and their role in each
-/// organization among those that the SCM gave. The sign-in first connects
+/// Records the person of a sign-in, their profile, their token, sealed, and
+/// their role in each organization among those that the SCM gave, then asks
+/// for the read of their repositories. The sign-in first connects
 /// the installations of the person that CIHub does not know yet, as a sync
 /// would; a suspended installation gives no organization. The sign-in deletes
 /// no membership: it reads only the installations that the person reaches, so
@@ -134,7 +136,8 @@ pub fn sync_members_executor(
 pub async fn record_sign_in(
     pool: &PgPool,
     kind: ConnectionKind,
-    signed_in: &SignedIn,
+    cipher: &DatabaseCipher,
+    (signed_in, token): (&SignedIn, &ScmPersonToken),
     now: OffsetDateTime,
 ) -> Result<UserId, PlatformError> {
     let connected = connect_installations(pool, kind, &signed_in.installations, now).await?;
@@ -184,6 +187,14 @@ pub async fn record_sign_in(
             .map_err(PlatformError::Store)?;
     }
 
+    keep_token(&mut tx, cipher, user_id, token, now).await?;
+    request_user_sync(
+        &mut tx,
+        user_id,
+        &format!("signed-in-{}", now.unix_timestamp()),
+        now,
+    )
+    .await?;
     tx.commit().await.map_err(PlatformError::Query)?;
     Ok(user_id)
 }

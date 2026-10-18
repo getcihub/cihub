@@ -67,7 +67,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 28] = [
+const TENANT_TABLES: [&str; 29] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -86,6 +86,7 @@ const TENANT_TABLES: [&str; 28] = [
     "pr_titles",
     "queue_setups",
     "repo_setups",
+    "repo_permissions",
     "pr_comments",
     "memberships",
     "log_cursors",
@@ -159,6 +160,8 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{org}', 'repo-{n}', 'main', '[]', 'none', '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role, refreshed_at)
              VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');
+         INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
+             VALUES ('{org}', 'repo-{n}', 'user-1', 'read', '2026-09-15T00:00:00Z');
          INSERT INTO log_cursors (org_id, queue_id, subscription, seq)
              VALUES ('{org}', '{queue}', 'analytics', 1);
          INSERT INTO an_item_conclusions (item_id, org_id, queue_id, conclusion, reason,
@@ -820,13 +823,17 @@ async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
     let mut tx = begin_system(&pool).await.unwrap();
     let user_id = insert_user(&mut tx).await;
     let now = at(30 * 86_400);
-    let expected =
-        [(1, MembershipRole::Admin), (2, MembershipRole::Member)].map(|(n, role)| Membership {
-            org_id: org(n),
-            org_slug: format!("org-{n}"),
-            role,
-            is_org_suspended: false,
-        });
+    let expected = [
+        (1, MembershipRole::Admin, 1),
+        (2, MembershipRole::Member, 0),
+    ]
+    .map(|(n, role, minutes)| Membership {
+        org_id: org(n),
+        org_slug: format!("org-{n}"),
+        role,
+        is_org_suspended: false,
+        refreshed_at: now + Duration::minutes(minutes),
+    });
 
     tx.commit().await.unwrap();
     for n in [1, 2] {

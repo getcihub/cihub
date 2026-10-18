@@ -9,6 +9,8 @@ use axum::response::{IntoResponse, Response};
 use cihub_api_types::ErrorCode;
 use cihub_platform::ApiError;
 use cihub_store::{PgPool, csrf_token, delete_session};
+
+use crate::api::forget_tokens_of_the_gone;
 use secrecy::SecretString;
 
 /// The cookie that holds the secret of the session; no script reads it.
@@ -84,8 +86,9 @@ pub(crate) fn csrf_refused() -> ApiError {
     )
 }
 
-/// Deletes the session of the request and clears its cookies. Without a
-/// session, it only clears the cookies.
+/// Deletes the session of the request and clears its cookies, and forgets
+/// the token of the person when it was their last session. Without a session,
+/// it only clears the cookies.
 pub(crate) async fn sign_out(
     State(pool): State<PgPool>,
     headers: HeaderMap,
@@ -95,6 +98,7 @@ pub(crate) async fn sign_out(
             return Err(csrf_refused());
         }
         delete_session(&pool, &secret).await?;
+        forget_tokens_of_the_gone(&pool).await?;
     }
 
     let mut response = StatusCode::NO_CONTENT.into_response();

@@ -227,7 +227,7 @@ export type DeviceCodeToken = {
  * The machine code of an error: a client decides on it, never on
  * `detail`. Each code has one HTTP status.
  */
-export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable';
+export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable' | 'scm_unavailable';
 
 /**
  * An event of the log of a queue about a PR.
@@ -1731,6 +1731,10 @@ export type GetOrgErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetOrgError = GetOrgErrors[keyof GetOrgErrors];
@@ -1777,7 +1781,7 @@ export type ListAuditErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -1792,6 +1796,10 @@ export type ListAuditErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListAuditError = ListAuditErrors[keyof ListAuditErrors];
@@ -1864,7 +1872,7 @@ export type ListOrgPrsErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -1879,6 +1887,10 @@ export type ListOrgPrsErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListOrgPrsError = ListOrgPrsErrors[keyof ListOrgPrsErrors];
@@ -1930,7 +1942,7 @@ export type ListOrgQueuesErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -1946,6 +1958,10 @@ export type ListOrgQueuesErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListOrgQueuesError = ListOrgQueuesErrors[keyof ListOrgQueuesErrors];
@@ -2003,7 +2019,7 @@ export type ListReposErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2018,6 +2034,10 @@ export type ListReposErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListReposError = ListReposErrors[keyof ListReposErrors];
@@ -2053,7 +2073,7 @@ export type GetRepoErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2069,6 +2089,10 @@ export type GetRepoErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetRepoError = GetRepoErrors[keyof GetRepoErrors];
@@ -2149,7 +2173,7 @@ export type ListRepoPrsErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2166,6 +2190,10 @@ export type ListRepoPrsErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListRepoPrsError = ListRepoPrsErrors[keyof ListRepoPrsErrors];
@@ -2209,7 +2237,7 @@ export type GetPrErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2226,6 +2254,10 @@ export type GetPrErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetPrError = GetPrErrors[keyof GetPrErrors];
@@ -2269,7 +2301,7 @@ export type CancelErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2291,6 +2323,10 @@ export type CancelErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type CancelError = CancelErrors[keyof CancelErrors];
@@ -2343,7 +2379,7 @@ export type ListEventsErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2360,6 +2396,10 @@ export type ListEventsErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListEventsError = ListEventsErrors[keyof ListEventsErrors];
@@ -2403,7 +2443,7 @@ export type RestartErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2425,6 +2465,10 @@ export type RestartErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type RestartError = RestartErrors[keyof RestartErrors];
@@ -2467,7 +2511,7 @@ export type SubmitErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2488,6 +2532,10 @@ export type SubmitErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type SubmitError = SubmitErrors[keyof SubmitErrors];
@@ -2536,7 +2584,7 @@ export type ListRepoQueuesErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2552,6 +2600,10 @@ export type ListRepoQueuesErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type ListRepoQueuesError = ListRepoQueuesErrors[keyof ListRepoQueuesErrors];
@@ -2591,7 +2643,7 @@ export type GetQueueErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2608,6 +2660,10 @@ export type GetQueueErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetQueueError = GetQueueErrors[keyof GetQueueErrors];
@@ -2651,7 +2707,7 @@ export type UpdateQueueErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2669,6 +2725,10 @@ export type UpdateQueueErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type UpdateQueueError = UpdateQueueErrors[keyof UpdateQueueErrors];
@@ -2706,7 +2766,7 @@ export type GraphErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2723,6 +2783,10 @@ export type GraphErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GraphError = GraphErrors[keyof GraphErrors];
@@ -2778,7 +2842,7 @@ export type GetHealthErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2795,6 +2859,10 @@ export type GetHealthErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetHealthError = GetHealthErrors[keyof GetHealthErrors];
@@ -2834,7 +2902,7 @@ export type SyncQueueErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2852,6 +2920,10 @@ export type SyncQueueErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type SyncQueueError = SyncQueueErrors[keyof SyncQueueErrors];
@@ -2889,7 +2961,7 @@ export type GetRunErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -2906,6 +2978,10 @@ export type GetRunErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type GetRunError = GetRunErrors[keyof GetRunErrors];
@@ -2941,7 +3017,7 @@ export type SyncRepoErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
      */
     403: Problem;
@@ -2958,6 +3034,10 @@ export type SyncRepoErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type SyncRepoError = SyncRepoErrors[keyof SyncRepoErrors];
@@ -2987,7 +3067,7 @@ export type StreamErrors = {
      */
     401: Problem;
     /**
-     * - `scope_missing`: The token, or the role of the user of the session, lacks the scope of the route.
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
      */
     403: Problem;
     /**
@@ -3003,6 +3083,10 @@ export type StreamErrors = {
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
 };
 
 export type StreamError = StreamErrors[keyof StreamErrors];

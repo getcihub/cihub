@@ -16,8 +16,8 @@ use cihub_github::SIGN_IN_CALLBACK_PATH;
 use cihub_platform::{PlatformError, record_sign_in};
 use cihub_scm::{Scm, ScmError, SignInCode, SignInRequest, code_challenge};
 use cihub_store::{
-    NewSession, PgPool, StoreError, begin_system, create_session, csrf_token, new_session_secret,
-    new_sign_in_secret,
+    DatabaseCipher, NewSession, PgPool, StoreError, begin_system, create_session, csrf_token,
+    new_session_secret, new_sign_in_secret,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
@@ -42,6 +42,7 @@ pub(crate) struct SignIn {
     pub pool: PgPool,
     pub now: fn() -> OffsetDateTime,
     pub scm: Arc<dyn Scm>,
+    pub cipher: Option<Arc<DatabaseCipher>>,
     pub kind: ConnectionKind,
     /// The root address of the instance; without it, nobody signs in.
     pub public_url: Option<String>,
@@ -49,7 +50,10 @@ pub(crate) struct SignIn {
 
 #[derive(Debug, thiserror::Error)]
 enum SignInFailure {
-    #[error("the instance has no public address, or the App has no client for the sign-in")]
+    #[error(
+        "the instance has no public address or no database secret, or the App has no client for \
+         the sign-in"
+    )]
     NotConfigured,
     #[error("no sign-in in progress in this browser")]
     NotStarted,
@@ -221,15 +225,25 @@ async fn session_of_callback(
         code_verifier: verifier.to_owned().into(),
         redirect_url: callback_url(sign_in)?,
     };
-    let signed_in = sign_in
+    let cipher = sign_in
+        .cipher
+        .as_deref()
+        .ok_or(SignInFailure::NotConfigured)?;
+    let (signed_in, token) = sign_in
         .scm
         .sign_in(&code, JobClass::Interactive)
         .await
         .map_err(SignInFailure::Scm)?;
     let now = (sign_in.now)();
-    let user_id = record_sign_in(&sign_in.pool, sign_in.kind, &signed_in, now)
-        .await
-        .map_err(SignInFailure::Platform)?;
+    let user_id = record_sign_in(
+        &sign_in.pool,
+        sign_in.kind,
+        cipher,
+        (&signed_in, &token),
+        now,
+    )
+    .await
+    .map_err(SignInFailure::Platform)?;
     let next = match setup.split_once('-') {
         Some((installation, action)) => {
             page_of_installation(sign_in, user_id, installation, action).await?
