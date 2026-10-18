@@ -304,7 +304,7 @@ async fn page_of_installation(
 
     Ok(slug.map_or_else(
         || WELCOME.to_owned(),
-        |slug| format!("/orgs/{slug}/repos?connecting={action}"),
+        |slug| format!("/orgs/{slug}?connecting={action}"),
     ))
 }
 

@@ -134,6 +134,16 @@ struct Pr {
     merged_sha: Option<String>,
 }
 
+/// A rule that restricts the updates of a branch, as
+/// [`Sim::set_update_restriction`] sets it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UpdateRestriction {
+    /// The App passes the rule, so the queue can merge.
+    pub is_app_exempt: bool,
+    /// The rule covers the test branches of the queue too.
+    pub covers_test_branches: bool,
+}
+
 /// Who reviewed a PR, and whose review it asks for.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Reviews {
@@ -155,6 +165,7 @@ struct Repo {
     comments: BTreeMap<String, (u64, String)>,
     acknowledged: BTreeSet<String>,
     rules: BTreeMap<String, RequiredChecks>,
+    restrictions: BTreeMap<String, UpdateRestriction>,
     permissions: BTreeMap<String, Permission>,
 }
 
@@ -176,6 +187,9 @@ struct State {
     /// The page that a browser opens to sign in, for a test in a browser;
     /// `sim:authorize` without it.
     sign_in_page: Option<String>,
+    /// The page that installs the App, for a test in a browser; `sim:install`
+    /// without it.
+    install_page: Option<String>,
     /// The person of each token that a sign-in or a refresh gave, by token.
     person_tokens: BTreeMap<String, String>,
     /// The person of each refresh token not used yet, by refresh token.
@@ -243,6 +257,7 @@ impl Sim {
                 comments: BTreeMap::new(),
                 acknowledged: BTreeSet::new(),
                 rules: BTreeMap::new(),
+                restrictions: BTreeMap::new(),
                 permissions: BTreeMap::new(),
             };
             let added = state
@@ -466,6 +481,30 @@ impl Sim {
         })
     }
 
+    /// Restricts the updates of the branch `branch` with `restriction`, or
+    /// lifts the restriction with `None`. Only the setup of the repository
+    /// reads it: a merge does not check it.
+    ///
+    /// # Errors
+    ///
+    /// `NotFound` for an unknown repository.
+    pub fn set_update_restriction(
+        &self,
+        repo: &RepoRef,
+        branch: &str,
+        restriction: Option<UpdateRestriction>,
+    ) -> Result<(), ScmError> {
+        self.with_repo(&repo.external_id, |ctx| {
+            match restriction {
+                Some(restriction) => ctx.repo.restrictions.insert(branch.to_owned(), restriction),
+                None => ctx.repo.restrictions.remove(branch),
+            };
+            let repo_external_id = ctx.repo_external_id.clone();
+            ctx.emit(ScmEvent::RulesChanged { repo_external_id });
+            Ok(())
+        })
+    }
+
     /// Sets the reviews of the PR `number`, and sends its delivery. The
     /// review decision does not follow: [`PrChange::Review`] sets it.
     ///
@@ -609,6 +648,13 @@ impl Sim {
     /// server serves it, and signs a person in with [`Sim::authorize`].
     pub fn serve_sign_in_at(&self, page: &str) {
         self.with(|state| state.sign_in_page = Some(page.to_owned()));
+    }
+
+    /// Makes the address that installs the App a page that a browser opens: a
+    /// test server serves it, and installs the App with
+    /// [`Sim::add_installation`].
+    pub fn serve_install_at(&self, page: &str) {
+        self.with(|state| state.install_page = Some(page.to_owned()));
     }
 
     /// Signs `user` in on the page of the SCM for `request`, as after their
@@ -1761,7 +1807,18 @@ impl Scm for Sim {
         let branch = branch.to_owned();
         self.call("check_setup", repo, class, move |ctx| {
             ctx.repo.branch_head(&branch)?;
-            let mut findings = vec![SetupFinding::UpdateRestrictionMissing];
+            let mut findings = Vec::new();
+            match ctx.repo.restrictions.get(&branch) {
+                None => findings.push(SetupFinding::UpdateRestrictionMissing),
+                Some(restriction) => {
+                    if !restriction.is_app_exempt {
+                        findings.push(SetupFinding::AppNotExempt);
+                    }
+                    if restriction.covers_test_branches {
+                        findings.push(SetupFinding::TestBranchesNotExcluded);
+                    }
+                }
+            }
             if ctx
                 .repo
                 .rules
@@ -1799,7 +1856,12 @@ impl Scm for Sim {
     }
 
     fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String> {
-        self.record_call("app_install_url", class, |_| Ok("sim:install".to_owned()))
+        self.record_call("app_install_url", class, |state| {
+            Ok(state
+                .install_page
+                .clone()
+                .unwrap_or_else(|| "sim:install".to_owned()))
+        })
     }
 
     fn branch_rules_url(&self, _repo: &RepoRef) -> Option<String> {
@@ -2326,6 +2388,41 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn the_update_restriction_of_a_branch_gives_its_findings() {
+        let repo = repo();
+        let sim = Sim::new();
+        sim.add_repo(&repo, "main", &[]);
+        let findings = async |restriction| {
+            sim.set_update_restriction(&repo, "main", restriction)
+                .unwrap();
+            sim.check_setup(&repo, "main", JobClass::Repair)
+                .await
+                .unwrap()
+        };
+        let blocked = UpdateRestriction {
+            is_app_exempt: false,
+            covers_test_branches: true,
+        };
+        let exempt = UpdateRestriction {
+            is_app_exempt: true,
+            covers_test_branches: false,
+        };
+
+        assert_eq!(
+            findings(None).await,
+            [SetupFinding::UpdateRestrictionMissing]
+        );
+        assert_eq!(
+            findings(Some(blocked)).await,
+            [
+                SetupFinding::AppNotExempt,
+                SetupFinding::TestBranchesNotExcluded
+            ]
+        );
+        assert_eq!(findings(Some(exempt)).await, []);
     }
 
     #[tokio::test]

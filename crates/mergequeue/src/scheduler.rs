@@ -16,9 +16,9 @@ use cihub_domain::{
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
-    Delivery, Job, QueueWakeup, TICK, acquire_leases, begin_reconciliation, delete_delivery,
-    enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries, release_leases,
-    schedule_tick, until_next_tick,
+    Delivery, Job, MIN_WAIT, QueueWakeup, TICK, acquire_leases, begin_reconciliation,
+    delete_delivery, enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries,
+    release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
@@ -38,7 +38,7 @@ use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
-use crate::repo_setup::request_repo_setups;
+use crate::repo_setup::{RepoSetupSweep, request_repo_setups};
 use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, QueueLog, parse_id};
@@ -975,6 +975,10 @@ const COVER_EVERY: time::Duration = time::Duration::hours(1);
 /// often enough that a read comes soon after a new queue.
 const QUEUE_SETUPS_SWEEP_EVERY: time::Duration = time::Duration::minutes(5);
 
+/// How often the scheduler looks for the repositories never read: a person
+/// who installs the App waits for their setup on the page.
+const NEW_REPO_SETUPS_SWEEP_EVERY: time::Duration = time::Duration::seconds(10);
+
 /// Marks dirty the queues whose oldest event after their last snapshot is
 /// older than [`COVER_AFTER`]: their reconciliation keeps a snapshot, so that
 /// the old partitions of `events` can go. Returns their number.
@@ -1058,10 +1062,12 @@ pub(crate) async fn run_scheduler(
     let mut next_cover = clock();
     // The setup reads of a start would compete with the work that waited for it.
     let mut next_queue_setups = clock() + QUEUE_SETUPS_SWEEP_EVERY;
+    let mut next_new_repo_setups = clock();
     while !cancel.is_cancelled() {
         let now = clock();
         cover_if_due(&pool, now, &mut next_cover).await;
         read_queue_setups_if_due(&pool, now, &mut next_queue_setups).await;
+        read_new_repo_setups_if_due(&pool, now, &mut next_new_repo_setups).await;
 
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
@@ -1079,8 +1085,17 @@ pub(crate) async fn run_scheduler(
             warn!(error = &err as &dyn Error, "next tick not read");
             TICK
         });
+        // An idle scheduler waits up to `TICK`: the look for the new
+        // repositories must not wait that long.
+        let until_new_repo_setups = (next_new_repo_setups - clock())
+            .max(time::Duration::ZERO)
+            .unsigned_abs();
         wakeup
-            .wait_or_pause(wait, &cancel, "queue notifications lost")
+            .wait_or_pause(
+                wait.min(until_new_repo_setups.max(MIN_WAIT)),
+                &cancel,
+                "queue notifications lost",
+            )
             .await;
     }
 
@@ -1121,7 +1136,27 @@ async fn read_queue_setups_if_due(
             "setup reads of the queues not requested"
         ),
     }
-    match request_repo_setups(pool, now).await {
+    request_repo_setups_logged(pool, RepoSetupSweep::All, now).await;
+}
+
+/// Asks for the setup reads of the repositories never read, when the last
+/// look is [`NEW_REPO_SETUPS_SWEEP_EVERY`] old; the first look comes at the
+/// start, so that a repository found meanwhile waits for no sweep.
+async fn read_new_repo_setups_if_due(
+    pool: &PgPool,
+    now: OffsetDateTime,
+    next_reads: &mut OffsetDateTime,
+) {
+    if now < *next_reads {
+        return;
+    }
+
+    *next_reads = now + NEW_REPO_SETUPS_SWEEP_EVERY;
+    request_repo_setups_logged(pool, RepoSetupSweep::New, now).await;
+}
+
+async fn request_repo_setups_logged(pool: &PgPool, sweep: RepoSetupSweep, now: OffsetDateTime) {
+    match request_repo_setups(pool, sweep, now).await {
         Ok(0) => {}
         Ok(repos) => info!(repos, "setup reads of the repositories requested"),
         Err(err) => warn!(

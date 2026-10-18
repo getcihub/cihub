@@ -22,7 +22,7 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   const commented = await page.request.get("/sim/merge?repo=api&number=1&login=ada");
   expect(await commented.text()).toBe("commented");
 
-  const card = page.getByRole("link", { name: /acme\/api\s*main/ });
+  const card = page.locator('a[href="/orgs/acme/repos/api/queues/main"]');
   await expect(card).toBeVisible(READ_AGAIN);
   await card.click();
 

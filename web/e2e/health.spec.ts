@@ -24,7 +24,7 @@ test("the Health of a queue shows a merged PR and a failed one", async ({ page }
 
   // #1 merges; the CI fails each run of #3, past the failure budget of one retry.
   await commentMerge(page, 1);
-  const card = page.getByRole("link", { name: /acme\/api\s*main/ });
+  const card = page.locator('a[href="/orgs/acme/repos/api/queues/main"]');
   await expect(card).toBeVisible(READ_AGAIN);
   await commentMerge(page, 3);
   await card.click();

@@ -9,5 +9,5 @@ const route = getRouteApi("/orgs/$org/repos/$repo/");
 export function RepoQueuesPageError(props: ErrorComponentProps) {
   const { org, repo } = route.useParams();
 
-  return <ServerErrorPage {...props} head={<OverviewHead where={`${org}/${repo}`} />} />;
+  return <ServerErrorPage {...props} head={<OverviewHead where={org} title={repo} />} />;
 }

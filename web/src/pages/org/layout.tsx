@@ -1,8 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { Outlet, getRouteApi, useParams } from "@tanstack/react-router";
 
 import { Frame } from "@/components/frame/frame";
+import { ErrorIcon } from "@/components/icons/error-icon";
+import { Alert, AlertContent, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { tabTitleOf } from "@/domain/pr/words";
-import { type Me } from "@/domain/session/session";
+import { reposOptions } from "@/domain/setup/queries";
+import { type Me, membershipOf } from "@/domain/session/session";
 import { useMe } from "@/hooks/use-me";
 import { useMinePrs } from "@/hooks/use-mine-prs";
 import { useOrgQueues } from "@/hooks/use-org-queues";
@@ -33,6 +37,8 @@ export function OrgLayout() {
 
 function OrgFrame({ me, org }: { me: Me; org: string }) {
   const queues = useOrgQueues(org);
+  // The picker of the repositories adds those without a queue once they load.
+  const repos = useQuery(reposOptions(org, undefined)).data?.repos.map((candidate) => candidate.name);
   const [firstPr] = useMinePrs(org);
   const { repo, queue } = useParams({ strict: false });
 
@@ -41,9 +47,26 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
   useDocumentTitle(tabTitleOf(firstPr, queues));
 
   return (
-    <Frame me={me} org={org} queues={queues} repo={repo} queue={queue}>
+    <Frame me={me} org={org} queues={queues} repos={repos} repo={repo} queue={queue}>
+      {membershipOf(me, org)?.is_suspended && <SuspendedBanner org={org} />}
       <Outlet />
       <MoveNotice org={org} queues={queues} />
     </Frame>
+  );
+}
+
+/** Every installation of the App on the organization is suspended: the pages still open, and nothing merges. */
+function SuspendedBanner({ org }: { org: string }) {
+  return (
+    <Alert variant="destructive" role="status" className="mx-6 mt-4">
+      <ErrorIcon />
+      <AlertContent>
+        <AlertTitle>CIHub lost its access to {org}.</AlertTitle>
+        <AlertDescription>
+          The GitHub App is suspended or removed from this organization. Its queues keep their pull requests
+          and their order, and merge nothing until an owner gives the access back on GitHub.
+        </AlertDescription>
+      </AlertContent>
+    </Alert>
   );
 }

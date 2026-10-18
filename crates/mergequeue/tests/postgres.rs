@@ -16,8 +16,9 @@ use cihub_domain::{
 };
 use cihub_github::{GithubApp, GithubConfig};
 use cihub_mergequeue::{
-    Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, SNAPSHOT_EVERY, Translate,
-    queue_status_context, rebuild, request_queue_setups, request_repo_setups, wake_uncovered,
+    Clock, MergeQueueError, QueueLog, REFRESH_PRS, Reconciler, RepoSetupSweep, SNAPSHOT_EVERY,
+    Translate, queue_status_context, rebuild, request_queue_setups, request_repo_setups,
+    wake_uncovered,
 };
 use cihub_mq_core::plan;
 use cihub_platform::{
@@ -5002,9 +5003,16 @@ async fn the_setup_of_a_repository_is_read_at_its_discovery_then_every_day(pool:
         row
     };
 
-    assert_eq!(request_repo_setups(&pool, now).await.unwrap(), 1);
     assert_eq!(
-        request_repo_setups(&pool, now).await.unwrap(),
+        request_repo_setups(&pool, RepoSetupSweep::All, now)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        request_repo_setups(&pool, RepoSetupSweep::All, now)
+            .await
+            .unwrap(),
         0,
         "a read that waits is not asked again"
     );
@@ -5023,13 +5031,20 @@ async fn the_setup_of_a_repository_is_read_at_its_discovery_then_every_day(pool:
         "a file that does not parse has no entry"
     );
     assert_eq!(
-        request_repo_setups(&pool, checked_at + Duration::hours(23))
+        request_repo_setups(&pool, RepoSetupSweep::New, checked_at + Duration::hours(25))
+            .await
+            .unwrap(),
+        0,
+        "the often sweep looks at the repositories never read only"
+    );
+    assert_eq!(
+        request_repo_setups(&pool, RepoSetupSweep::All, checked_at + Duration::hours(23))
             .await
             .unwrap(),
         0
     );
     assert_eq!(
-        request_repo_setups(&pool, checked_at + Duration::hours(25))
+        request_repo_setups(&pool, RepoSetupSweep::All, checked_at + Duration::hours(25))
             .await
             .unwrap(),
         1

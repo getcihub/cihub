@@ -57,11 +57,15 @@ function readOrgAgain(queryClient: QueryClient, org: string): Promise<void> {
 /**
  * Reads again what the changes of the queues `queueIds` of `org` show: their reads, the run of a drawer, the
  * queues and the PRs of the person. A queue that the page does not know yet is new: the list of the queues gives
- * it. A read in flight goes on.
+ * it, and the repositories too, as it starts the setup of its own. A read in flight goes on.
  */
 function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<string>): Promise<void> {
   const queues = queryClient.getQueryData<QueueList>(orgQueuesOptions(org).queryKey);
   const changed = queues?.queues.filter((entry) => queueIds.has(entry.id)) ?? [];
+  const reads = ["listOrgQueues", "listOrgPrs", "listRepoPrs", "getRun"];
+  if (changed.length < queueIds.size) {
+    reads.push("listRepos", "getRepo");
+  }
 
   return queryClient.invalidateQueries(
     {
@@ -70,7 +74,7 @@ function readQueuesAgain(queryClient: QueryClient, org: string, queueIds: Set<st
         if (!isReadOfOrg(key, org)) {
           return false;
         }
-        if (["listOrgQueues", "listOrgPrs", "listRepoPrs", "getRun"].includes(key._id ?? "")) {
+        if (reads.includes(key._id ?? "")) {
           return true;
         }
         // The Health reads its facts again on its own timer (`healthOptions`).

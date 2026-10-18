@@ -4,7 +4,7 @@ import { getRouteApi, useMatchRoute } from "@tanstack/react-router";
 
 import { TopBar, TopBarLogo } from "@/components/frame/frame";
 import { QueueSkeleton } from "@/components/queue/queue-skeleton";
-import { QueuesSkeleton } from "@/components/queue/queues-skeleton";
+import { ReposSkeleton } from "@/components/setup/repos-skeleton";
 
 const route = getRouteApi("/orgs/$org");
 
@@ -23,7 +23,7 @@ export function OrgLayoutLoading() {
       <TopBar>
         <TopBarLogo />
       </TopBar>
-      {isQueue ? <QueueSkeleton /> : <QueuesSkeleton where={org} />}
+      {isQueue ? <QueueSkeleton /> : <ReposSkeleton org={org} />}
     </>
   );
 }

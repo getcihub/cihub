@@ -21,7 +21,7 @@ test("a person signs in and sees their organization", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/orgs\/acme$/);
   await expect(page.getByRole("button", { name: "Organization: acme" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Queues" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
 });
 
 test("a member cannot change the state of a queue", async ({ page }) => {
@@ -58,6 +58,7 @@ test("a refused sign-in says that it failed", async ({ page }) => {
 test("a person without an organization is asked to install the App", async ({ page }) => {
   await signIn(page, /sign in as grace/i);
 
-  await expect(page.getByRole("heading", { name: "No organization yet" })).toBeVisible();
+  await expect(page).toHaveURL(/\/welcome$/);
+  await expect(page.getByRole("heading", { name: "Welcome to CIHub, @grace" })).toBeVisible();
   await expect(page.getByRole("link", { name: "sign out of GitHub" })).toBeVisible();
 });

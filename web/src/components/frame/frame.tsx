@@ -28,6 +28,8 @@ interface Props {
   org: string;
   /** Its queues, by repository then target branch; empty once access is lost. */
   queues: Queue[];
+  /** The names of its repositories, those without a queue too; none while they load. */
+  repos?: string[];
   /** The repository and the queue of the URL, if any. */
   repo?: string | undefined;
   queue?: string | undefined;
@@ -63,10 +65,11 @@ export function TopBarLogo({ org }: { org?: string }) {
 }
 
 /** The top bar of every page of an organization: CIHub / organization / repository / queue. */
-export function Frame({ me, org, queues, repo, queue, children }: Props) {
+export function Frame({ me, org, queues, repos = [], repo, queue, children }: Props) {
   const { startSignOut, hasSignOutFailed } = useSignOut();
+  const names = [...new Set([...repos, ...queues.map((candidate) => candidate.repo)])].sort();
   // The frame names only a repository and a queue that exist: a wrong address shows "not found" under it.
-  const knownRepo = queues.some((candidate) => candidate.repo === repo) ? repo : undefined;
+  const knownRepo = repo !== undefined && names.includes(repo) ? repo : undefined;
   const queuesOfRepo = queues.filter((candidate) => candidate.repo === knownRepo);
   const knownQueue = queuesOfRepo.some((candidate) => candidate.target_branch === queue) ? queue : undefined;
 
@@ -76,10 +79,10 @@ export function Frame({ me, org, queues, repo, queue, children }: Props) {
         <TopBarLogo org={org} />
         <nav className="flex min-w-0 items-center gap-0.5 font-medium" aria-label="Where you are">
           <OrgPicker me={me} org={org} />
-          {queues.length > 0 && (
+          {names.length > 0 && (
             <>
               <span className="text-waiting">/</span>
-              <RepoPicker org={org} queues={queues} repo={knownRepo} />
+              <RepoPicker org={org} names={names} queues={queues} repo={knownRepo} />
             </>
           )}
           {knownRepo && knownQueue && (
@@ -144,9 +147,17 @@ function OrgPicker({ me, org }: { me: Me; org: string }) {
   );
 }
 
-function RepoPicker({ org, queues, repo }: { org: string; queues: Queue[]; repo: string | undefined }) {
-  const repos = [...new Set(queues.map((candidate) => candidate.repo))];
-
+function RepoPicker({
+  org,
+  names,
+  queues,
+  repo,
+}: {
+  org: string;
+  names: string[];
+  queues: Queue[];
+  repo: string | undefined;
+}) {
   return (
     <Menu
       label="Repository"
@@ -155,10 +166,10 @@ function RepoPicker({ org, queues, repo }: { org: string; queues: Queue[]; repo:
       align="left"
     >
       <Link className={menuItemVariants({ isCurrent: !repo })} to="/orgs/$org" params={{ org }}>
-        All repositories<MenuHint>{queues.length}</MenuHint>
+        All repositories<MenuHint>{names.length}</MenuHint>
       </Link>
       <MenuSeparator />
-      {repos.map((name) => (
+      {names.map((name) => (
         <RepoLink
           key={name}
           org={org}
@@ -171,7 +182,7 @@ function RepoPicker({ org, queues, repo }: { org: string; queues: Queue[]; repo:
   );
 }
 
-/** A repository of the picker: its only queue, else the page that lists its queues. */
+/** A repository of the picker, with the number of its queues: its only queue, else its page. */
 function RepoLink({
   org,
   repo,
@@ -190,7 +201,7 @@ function RepoLink({
         <span className="text-muted-foreground">{org}/</span>
         <b className="font-semibold">{repo}</b>
       </span>
-      <MenuHint>{queues.length}</MenuHint>
+      {queues.length > 0 && <MenuHint>{queues.length}</MenuHint>}
     </>
   );
   const [onlyQueue] = queues;

@@ -46,17 +46,27 @@ pub(crate) fn read_repo_setup_job(repo: &RepoTarget, subject: &str, class: JobCl
     }
 }
 
+/// Which repositories a sweep of the setups looks at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepoSetupSweep {
+    /// The repositories never read: a sweep often, and cheap, as they are few.
+    New,
+    /// The repositories never read, and those read more than a day ago.
+    All,
+}
+
 /// Asks, in the class `repair`, for the read of the setup of each repository
-/// that the App reaches whose connection is not suspended, without a read
-/// waiting: at once for a repository never read, and at a moment of the day
-/// that it keeps for one read more than a day ago. Returns the number of new
-/// requests.
+/// of `sweep` that the App reaches whose connection is not suspended, without
+/// a read waiting: at once for a repository never read, and at a moment of
+/// the day that it keeps for one read more than a day ago. Returns the number
+/// of new requests.
 ///
 /// # Errors
 ///
 /// Postgres fails.
 pub async fn request_repo_setups(
     pool: &PgPool,
+    sweep: RepoSetupSweep,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
     let mut tx = begin_system(pool).await?;
@@ -66,7 +76,7 @@ pub async fn request_repo_setups(
          JOIN scm_connections c ON c.id = r.connection_id
          LEFT JOIN repo_setups s ON s.repo_id = r.id
          WHERE r.removed_at IS NULL AND c.suspended_at IS NULL
-           AND (s.checked_at IS NULL OR s.checked_at <= $1)
+           AND (s.checked_at IS NULL OR ($4 AND s.checked_at <= $1))
            AND NOT EXISTS (
                SELECT 1 FROM jobs j
                WHERE j.type = $3 AND j.state IN ('queued', 'running')
@@ -77,6 +87,7 @@ pub async fn request_repo_setups(
     .bind(now - READ_REPO_SETUP_EVERY)
     .bind(READ_REPO_SETUP_EVERY.whole_seconds())
     .bind(READ_REPO_SETUP)
+    .bind(sweep == RepoSetupSweep::All)
     .fetch_all(&mut *tx)
     .await?;
 

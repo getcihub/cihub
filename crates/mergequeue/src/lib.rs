@@ -32,7 +32,7 @@ pub use config::request_queue_setups;
 pub use jobs::{REFRESH_PRS, queue_status_context};
 pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::sync_queue;
-pub use repo_setup::{READ_REPO_SETUP, request_repo_setups};
+pub use repo_setup::{READ_REPO_SETUP, RepoSetupSweep, request_repo_setups};
 pub use scheduler::{
     Reconciler, Translate, pass_connection_deliveries, wake_live_queues, wake_uncovered,
 };

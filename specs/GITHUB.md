@@ -68,7 +68,7 @@ know yet: `GET /user/installations` gives its account, its permissions and `susp
 /app/installations/{id}` gives, so it costs no other call; the new organization then reads its repositories
 (`sync_repos`). A suspended installation, or one whose slug another organization has, gives no organization. The
 *Setup URL*, `GET /auth/github/installed`, starts the sign-in again: its `installation_id` proves nothing, since
-anyone can write it, and only chooses the page to open once signed in, `/orgs/{org}/repos?connecting=install` (or
+anyone can write it, and only chooses the page to open once signed in, `/orgs/{org}?connecting=install` (or
 `update`) when the installation is an organization where the person has a role, `/welcome` otherwise. The sign-in deletes no membership: `/user/installations`
 lists only the installations that the person reaches through a repository, and GitHub can refuse the read of a
 membership (single sign-on not authorized, allow list of addresses); the hourly read decides who left. Every hour, the `sync_members` job

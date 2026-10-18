@@ -5,6 +5,7 @@ import type { Queue } from "@/client/types.gen";
 import { cardVariants } from "@/components/ui/card";
 import { useFlip } from "@/components/ui/hooks/use-flip";
 import { Input } from "@/components/ui/input";
+import { needsAttention } from "@/domain/queue/attention";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/cn";
@@ -13,16 +14,6 @@ import { QueueStateBadge } from "./queue-state-badge";
 
 /** From this many queues, a filter helps to find one. */
 const FILTER_FROM = 8;
-
-/** A queue that someone must look at: it does not run, or a PR in it failed its tests. */
-function needsAttention(queue: Queue): boolean {
-  return (
-    queue.is_suspended ||
-    Boolean(queue.config_error) ||
-    queue.state !== "running" ||
-    queue.counts.pending_failure > 0
-  );
-}
 
 /** The cards of `queues`, the ones that need someone first, then in the order of the API. */
 export function QueueCards({ org, queues }: { org: string; queues: Queue[] }) {

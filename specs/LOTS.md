@@ -53,7 +53,7 @@ configuration checker, in phase 1).
 | 13  | `parallel` strategy                                    | 4     | 12         | —         | to do                                    |
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, hardening                           | 4     | 11b, 13    | Q8        | to do                                    |
-| 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | to do                                    |
+| 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | done                                     |
 
 ```mermaid
 flowchart LR
@@ -676,6 +676,47 @@ Decisions:
     `update_restriction_missing` on every branch: a repository there is at best `ready_with_warnings` until WP2
     models the rules. Tests: `the_api_lists_the_repositories_with_their_setup`,
     `the_setup_of_a_repository_is_read_at_its_discovery_then_every_day`.
+  - Done (October 17, 2026): WP4, the pages, after the mockups v20. `/welcome` replaces "No organization yet":
+    the three steps, the installation of the App, "Check again" (`POST /user/sync`, then the organizations read
+    again until one comes), and the sign-out of GitHub to use another account; `/` and `/sign-in` lead a person
+    without an organization there. The page of an organization, `/orgs/$org`, lists its repositories, by name,
+    each with its queues on one line below it (branch, state, counters), or, without a queue, the verdict of its
+    setup (`SetupStateBadge`) and the way to its first one; a search past 5 repositories (`?q=`); with
+    `?connecting=` after the Setup URL, which leads there, the card "Connecting" until the first reads end, then
+    the address without it. `/orgs/$org/repos` leads to it, and the picker of the repositories of the frame
+    names every repository, those without a queue too; the page of a repository takes its name as title. `/orgs/$org/repos/$repo` shows the setup of the default branch before the queues
+    (the rules with the sentences of the server and the link to change them, the file with the line of its error
+    or the defaults, how the first queue starts), and "Check again" for an admin of the repository; a repository
+    without a queue is no longer "not found". A page that waits for a read reads again every 2 seconds, for 60
+    seconds at most (`readAgainWhile`); a change of a queue reads the repositories again. A banner says that an
+    organization is suspended (`Org.is_suspended`). Left out, as the decisions say: the state "request sent" of
+    a member, and the buttons of the configuration; the mockup checks every repository at once, which the API
+    no longer offers. Tests: `pages/welcome/page.test.tsx`, `pages/org-queues/page.test.tsx`,
+    `pages/repo-queues/page.test.tsx`, the views `welcome`, `org-empty` and `repo-setup` of `web:shots`.
+  - Done (October 18, 2026): WP4 after the mockups v21. The page of an organization shows the repositories with a
+    queue first, in a table with one row per queue (the name of the repository on its first row, with a dot when
+    its setup is not ready), the ones whose queues need someone at the top; then the others, under "Not started"
+    (or "Repositories" before the first queue), each row opening in place (`?open=`) on its branch rules, its
+    settings and the first command, with "Check again" for an admin; past 10 of them, the first 8 and "Show the
+    other repositories"; a banner "No queue yet" before the first queue. The setup of a repository folds once a
+    queue runs, and opens by itself while a point fails. Left out: the "Check again" of every repository at once,
+    which the API does not offer; the search by branch, as `q` searches the names; the builder of the
+    configuration, which comes with "Next". A repository whose default branch has its queue is `started`, so the
+    list shows no dot for its warnings. Tests: `pages/org-queues/page.test.tsx`, the view `org-start-open` of
+    `web:shots`, `e2e/queues.spec.ts`.
+  - Done (October 18, 2026): WP2, the world of the simulator and the exit criterion. The simulator restricts the
+    updates of a branch (`Sim::set_update_restriction`, with or without the exemption of the App, over the test
+    branches or not) and gives the findings that GitHub would give; a branch without a restriction still gives
+    `update_restriction_missing`, as the contract suite expects. `Sim::serve_install_at` makes the address of the
+    installation a page of the test server. The server of the browser tests adds `noor`, who owns `initech`, where
+    the App is not installed: `/sim/install` installs it and comes back through the Setup URL, `/sim/exempt` fixes
+    the rule of a repository; it runs `sync_repos`, which a new connection needs. The scheduler waited up to 30
+    seconds when idle, longer than its look for the repositories never read: it now wakes for that look too. The
+    "request sent" state of a member still waits for the check on the App of staging. Tests:
+    `e2e/onboarding.spec.ts`, `the_update_restriction_of_a_branch_gives_its_findings`; the rest of the criterion
+    comes from WP1, WP3 and WP5 (`the_setup_url_trusts_only_the_installations_of_the_person`,
+    `a_person_reads_only_the_repositories_that_the_scm_shows_them`,
+    `the_api_answers_not_found_outside_the_organization_of_the_token`).
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

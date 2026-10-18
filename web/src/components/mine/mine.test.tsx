@@ -23,6 +23,7 @@ describe("Your pull requests", () => {
       ...answersOfMe(ada),
       ...answersOfMine("acme", [pr]),
       "/api/v1/orgs/acme/queues": [200, pageOf("queues", [queueOf("web", "main")])],
+      "/api/v1/orgs/acme/repos": [200, pageOf("repos", [])],
     });
 
     const mine = await screen.findByRole("region", { name: "Your pull requests" });

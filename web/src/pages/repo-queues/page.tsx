@@ -4,22 +4,47 @@ import { MinePrs } from "@/components/mine/mine";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { QueueCards } from "@/components/queue/queue-cards";
 import { Page } from "@/components/ui/page";
+import { SectionCount, SectionHead, SectionTitle } from "@/components/ui/section";
 import { useMinePrs } from "@/hooks/use-mine-prs";
+import { useNow } from "@/hooks/use-now";
 import { useOrgQueues } from "@/hooks/use-org-queues";
+import { useRepoSetup } from "@/hooks/use-repo-setup";
+import { RepoSetup } from "./components/repo-setup";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/");
 
-/** The queues of a repository, after the PRs of the person in it. */
+/**
+ * A repository: the setup of its default branch, which a read follows every 2 seconds while it waits, then its
+ * queues, after the PRs of the person in it.
+ */
 export function RepoQueuesPage() {
-  const { org, repo } = route.useParams();
-  const queues = useOrgQueues(org).filter((queue) => queue.repo === repo);
-  const mine = useMinePrs(org).filter((pr) => pr.repo === repo);
+  const { org, repo: name } = route.useParams();
+  const now = useNow();
+  const { repo, hasGivenUp, checkAgain } = useRepoSetup(org, name);
+  const queues = useOrgQueues(org).filter((queue) => queue.repo === name);
+  const mine = useMinePrs(org).filter((pr) => pr.repo === name);
 
   return (
     <Page>
-      <OverviewHead where={`${org}/${repo}`} />
-      <MinePrs org={org} prs={mine} queues={queues} />
-      <QueueCards org={org} queues={queues} />
+      <OverviewHead where={org} title={name} />
+      <RepoSetup
+        repo={repo}
+        hasQueue={queues.length > 0}
+        now={now}
+        hasGivenUp={hasGivenUp}
+        checkAgain={checkAgain}
+      />
+      {queues.length > 0 && (
+        <>
+          <MinePrs org={org} prs={mine} queues={queues} />
+          <SectionHead>
+            <SectionTitle>
+              Queues<SectionCount>{queues.length}</SectionCount>
+            </SectionTitle>
+          </SectionHead>
+          <QueueCards org={org} queues={queues} />
+        </>
+      )}
     </Page>
   );
 }

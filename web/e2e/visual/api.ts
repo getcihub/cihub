@@ -684,36 +684,107 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
   );
 }
 
+/** The repositories of `acme` without a queue: `handbook`, whose App is not exempt, and `landing`, ready. */
+const WITHOUT_QUEUE: Record<string, "cannot_merge" | "ready"> = {
+  handbook: "cannot_merge",
+  landing: "ready",
+};
+
+/** The rules of a repository without a queue, as the server writes them. */
+function rulesOf(name: string) {
+  const isBlocked = WITHOUT_QUEUE[name] === "cannot_merge";
+  return [
+    {
+      code: "update_restriction_missing",
+      passed: true,
+      blocks_merge: false,
+      title: "A rule restricts the updates of `main`",
+    },
+    {
+      code: "app_not_exempt",
+      passed: !isBlocked,
+      blocks_merge: true,
+      title: isBlocked
+        ? "A rule restricts the updates of `main` without an exemption for the App"
+        : "The App of CIHub may update `main`",
+      message: isBlocked ? "add the App of CIHub to the bypass list of the ruleset, in exempt mode" : null,
+    },
+    {
+      code: "test_branches_not_excluded",
+      passed: true,
+      blocks_merge: true,
+      title: "No rule covers the test branches of CIHub",
+    },
+    {
+      code: "up_to_date_required",
+      passed: true,
+      blocks_merge: false,
+      title: "`main` asks for no branch up to date",
+    },
+  ];
+}
+
 /** A repository of `acme` and its setup: an admin of the organization administers it, a member writes to it. */
+function repoOf(name: string, person: Person) {
+  const orgs = person === "nobody" ? [] : PEOPLE[person].orgs;
+  const isAdmin = orgs.some((org) => org.slug === "acme" && org.role === "admin");
+  const state = WITHOUT_QUEUE[name] ?? "started";
+  return {
+    id: `repo_${name}`,
+    namespace: "acme",
+    name,
+    default_branch: "main",
+    permission: { read: true, write: true, admin: isAdmin },
+    setup: {
+      state,
+      queue: state === "started" ? "main" : null,
+      rules: rulesOf(name),
+      target_branch_missing: false,
+      rules_url: `https://github.com/acme/${name}/settings/rules`,
+      config: {
+        state: "none",
+        path: null,
+        sha: "9f2c4e1",
+        error: null,
+        line: null,
+        column: null,
+        text: null,
+        entries: [],
+        strategy: "pipelined",
+        settings: {
+          batching_enabled: false,
+          batching_size: 1,
+          batching_max_wait_minutes: 0,
+          failure_budget_retries: 1,
+          merge_method: "squash",
+        },
+      },
+      checked_at: ago(4),
+      requested_at: null,
+    },
+  };
+}
+
 function answerOfRepo(path: string, person: Person): Answer | null {
+  if (path === "/orgs/acme-labs/repos") {
+    return [200, listOf("repos", [])];
+  }
+  if (path === "/orgs/acme/repos") {
+    const names = [...new Set([...QUEUES.map((queue) => queue.repo), ...Object.keys(WITHOUT_QUEUE)])].sort();
+    const repos = names.map((name) => {
+      const { setup, ...repo } = repoOf(name, person);
+      return { ...repo, setup: { state: setup.state, checked_at: setup.checked_at, requested_at: null } };
+    });
+    return [200, listOf("repos", repos)];
+  }
   const match = /^\/orgs\/acme\/repos\/([^/]+)$/.exec(path);
   if (!match) {
     return null;
   }
 
   const name = match[1] ?? "";
-  const orgs = person === "nobody" ? [] : PEOPLE[person].orgs;
-  const isAdmin = orgs.some((org) => org.slug === "acme" && org.role === "admin");
-  return [
-    200,
-    {
-      id: `repo_${name}`,
-      namespace: "acme",
-      name,
-      default_branch: "main",
-      permission: { read: true, write: true, admin: isAdmin },
-      setup: {
-        state: "started",
-        queue: "main",
-        rules: [],
-        target_branch_missing: false,
-        rules_url: null,
-        config: null,
-        checked_at: null,
-        requested_at: null,
-      },
-    },
-  ];
+  const isKnown = name in WITHOUT_QUEUE || QUEUES.some((queue) => queue.repo === name);
+  return isKnown ? [200, repoOf(name, person)] : [404, problem(404, "repo_not_found")];
 }
 
 function answerOfRun(path: string): Answer | null {
