@@ -291,8 +291,8 @@ fn github_app(
 
     let app = names("github.app_id");
     let private_key = match (
-        sources.get("github.private_key"),
-        sources.get("github.private_key_file"),
+        sources.non_empty("github.private_key"),
+        sources.non_empty("github.private_key_file"),
     ) {
         (Some(key), None) => key.value,
         (None, Some(path)) => std::fs::read_to_string(&path.value)
@@ -308,7 +308,7 @@ fn github_app(
     };
 
     let url = sources
-        .get("github.url")
+        .non_empty("github.url")
         .map_or_else(|| DEFAULT_GITHUB_URL.to_owned(), |url| url.value);
 
     Ok(Some(GithubApp {
@@ -580,6 +580,25 @@ github:
         assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
         assert_eq!(app.config.app_id, "123");
         assert!(app.config.sign_in.is_none());
+    }
+
+    #[test]
+    fn an_empty_github_variable_is_not_a_value() {
+        let app = load(
+            Some("github:\n  private_key: key\n  webhook_secret: s\n"),
+            &[
+                DATABASE,
+                ("CIHUB_GITHUB_APP_ID", "123"),
+                ("CIHUB_GITHUB_PRIVATE_KEY_FILE", ""),
+                ("CIHUB_GITHUB_URL", ""),
+            ],
+        )
+        .unwrap()
+        .github
+        .unwrap();
+
+        assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
+        assert_eq!(app.config.private_key.expose_secret(), "key");
     }
 
     #[test]

@@ -82,6 +82,14 @@ pub(crate) async fn start_device_sign_in(
             "the instance has no public address".into(),
         ));
     };
+    // Without the cipher, nobody signs in on the dashboard, so nobody
+    // approves the code.
+    if state.cipher.is_none() {
+        return Err(ApiError::new(
+            ErrorCode::SignInUnavailable,
+            "the instance has no database secret, so nobody signs in".into(),
+        ));
+    }
 
     let now = (state.now)();
     let device_code = new_device_code_secret()?;
