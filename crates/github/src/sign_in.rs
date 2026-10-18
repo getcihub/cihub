@@ -49,7 +49,7 @@ impl Person {
 }
 
 #[derive(Deserialize)]
-struct Installation {
+pub(crate) struct Installation {
     id: u64,
     account: Account,
     #[serde(default)]
@@ -58,7 +58,7 @@ struct Installation {
 }
 
 impl Installation {
-    fn neutral(&self) -> ScmInstallation {
+    pub(crate) fn neutral(&self) -> ScmInstallation {
         ScmInstallation {
             external_id: self.id.to_string(),
             account: ScmAccount {
