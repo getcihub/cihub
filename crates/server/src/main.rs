@@ -75,13 +75,13 @@ async fn main() -> anyhow::Result<()> {
         internal_addr,
         http_addr,
         public_url,
-        database_url,
+        database,
         logs,
         github,
     } = Config::load(cli.config.as_deref())?;
 
     logs.init()?;
-    let pool = cihub_store::connect(&database_url).await?;
+    let pool = cihub_store::connect(&database.url, database.pool).await?;
     cihub_store::check_role(&pool).await?;
     match cli.command {
         Command::Migrate => migrate::run(&pool).await,
