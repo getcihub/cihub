@@ -34,7 +34,8 @@ pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::sync_queue;
 pub use repo_setup::{READ_REPO_SETUP, RepoSetupSweep, request_repo_setups};
 pub use scheduler::{
-    Reconciler, Translate, pass_connection_deliveries, wake_live_queues, wake_uncovered,
+    INBOX_PER_RECONCILIATION, Reconciler, Translate, pass_connection_deliveries, wake_live_queues,
+    wake_uncovered,
 };
 
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};

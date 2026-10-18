@@ -513,26 +513,28 @@ pub(crate) async fn refresh(
     let mut facts = Vec::with_capacity(prs.len());
 
     for pr in &prs {
+        let submission = submissions.get(&pr.number);
         // The new submission comes before the observation, which cancels the
         // old item: the queue keeps the observation for the new one.
-        let resubmitted = submissions
-            .get(&pr.number)
-            .and_then(|submission| resubmission(&settings, &target, pr, submission));
+        let resubmitted =
+            submission.and_then(|submission| resubmission(&settings, &target, pr, submission));
+        // An admitted item no longer depends on its conditions; a new
+        // submission meets them on its new head, or waits.
+        let admitted = resubmitted.is_none() && submission.is_some_and(|s| s.admitted);
         facts.extend(resubmitted);
-        // An admitted item no longer depends on its conditions.
-        let unmet = match submissions.get(&pr.number) {
-            Some(Submission { admitted: true, .. }) => Vec::new(),
-            submission => {
-                let sender = submission.map(|s| s.sender.clone()).unwrap_or_default();
-                let reading = Reading {
-                    sender: &sender,
-                    rules: &required,
-                    own_status: &own,
-                    class: job.class,
-                    now,
-                };
-                unmet_conditions(scm, &target, config.as_ref(), pr, &reading).await?
-            }
+        let unmet = if admitted {
+            Vec::new()
+        } else {
+            let sender = submission.map(|s| s.sender.clone()).unwrap_or_default();
+            let reading = Reading {
+                sender: &sender,
+                rules: &required,
+                own_status: &own,
+                injection: settings.branch_protection_injection.value,
+                class: job.class,
+                now,
+            };
+            unmet_conditions(scm, &target, config.as_ref(), pr, &reading).await?
         };
         let kind = observed(pr, &required, &own, unmet);
         facts.push((Actor::System, kind));
@@ -688,33 +690,19 @@ async fn sender_of(
     }))
 }
 
-/// The default branch of `repo`.
-async fn default_branch_of(pool: &PgPool, repo: RepoId) -> Result<String, Failure> {
-    let mut tx = begin_system(pool).await?;
-    let default_branch = sqlx::query_scalar("SELECT default_branch FROM repos WHERE id = $1")
-        .bind(repo.to_string())
-        .fetch_one(&mut *tx)
-        .await?;
-
-    tx.commit().await?;
-
-    Ok(default_branch)
-}
-
 /// The queue of `branch`, if it takes submissions.
 async fn open_queue(
     pool: &PgPool,
-    repo: RepoId,
+    repo: &RepoTarget,
     branch: &str,
-    default_branch: &str,
 ) -> Result<Option<QueueTarget>, Failure> {
     let mut tx = begin_system(pool).await?;
-    let queue = QueueTarget::of_branch(&mut tx, repo, branch).await?;
+    let queue = QueueTarget::of_branch(&mut tx, repo.repo_id, branch).await?;
 
     tx.commit().await?;
 
     match queue {
-        Some(queue) if queue.takes_submissions(default_branch)? => Ok(Some(queue)),
+        Some(queue) if queue.takes_submissions(&repo.default_branch)? => Ok(Some(queue)),
         _ => Ok(None),
     }
 }
@@ -727,7 +715,6 @@ async fn create_queue(
     scm: &dyn Scm,
     repo: &RepoTarget,
     branch: &str,
-    default_branch: &str,
     class: JobClass,
 ) -> Result<(), Failure> {
     let Some(head) = scm.branch_head(&repo.repo, branch, class).await? else {
@@ -740,7 +727,7 @@ async fn create_queue(
             .transpose()
     });
     let is_named = matches!(&checked, Ok(Some((_, config))) if config.queue(branch).is_some());
-    if !is_named && branch != default_branch {
+    if !is_named && branch != repo.default_branch {
         return Ok(());
     }
 
@@ -781,19 +768,31 @@ async fn create_queue(
     Ok(())
 }
 
-/// Why the queue refuses the submission, if it does: a command while the
-/// commands are off, a label that is not the label of the queue, or that the
-/// PR no longer has.
-fn refusal(settings: &QueueSettings, request: &SubmitPr, pr: &PrSnapshot) -> Option<&'static str> {
+/// Why the queue refuses the submission, if it does, as the reply says it: a
+/// command while the commands are off, a label that is not the label of the
+/// queue, or that the PR no longer has.
+fn refusal(
+    settings: &QueueSettings,
+    target: &QueueTarget,
+    request: &SubmitPr,
+    pr: &PrSnapshot,
+) -> Option<String> {
     let label = &settings.enqueue_label.value;
+    let branch = &target.target_branch;
     match request.via {
-        SubmittedVia::Comment if !settings.commands_enabled.value => Some("commands disabled"),
+        SubmittedVia::Comment if !settings.commands_enabled.value => {
+            Some(format!("the commands are off for the queue of `{branch}`."))
+        }
         SubmittedVia::Label
             if !settings.label_commands_enabled.value || request.label.as_ref() != Some(label) =>
         {
-            Some("not the label of the queue")
+            Some(format!(
+                "the label is not the label of the queue of `{branch}`."
+            ))
         }
-        SubmittedVia::Label if !pr.labels.contains(label) => Some("label removed"),
+        SubmittedVia::Label if !pr.labels.contains(label) => {
+            Some(format!("the PR no longer has the label `{label}`."))
+        }
         _ => None,
     }
 }
@@ -830,17 +829,16 @@ async fn queue_of_pr(
     request: &SubmitPr,
     class: JobClass,
 ) -> Result<Option<QueueTarget>, Failure> {
-    let default_branch = default_branch_of(pool, repo.repo_id).await?;
-    let queue = open_queue(pool, repo.repo_id, &pr.base_branch, &default_branch).await?;
+    let queue = open_queue(pool, repo, &pr.base_branch).await?;
 
     // A label is a setting of a queue: only a command creates one.
     if queue.is_some() || request.via != SubmittedVia::Comment {
         return Ok(queue);
     }
 
-    create_queue(pool, scm, repo, &pr.base_branch, &default_branch, class).await?;
+    create_queue(pool, scm, repo, &pr.base_branch, class).await?;
 
-    open_queue(pool, repo.repo_id, &pr.base_branch, &default_branch).await
+    open_queue(pool, repo, &pr.base_branch).await
 }
 
 async fn submission_accounts(
@@ -958,24 +956,21 @@ pub(crate) async fn submit_pr(
         .required_checks(&target.repo, &target.target_branch, job.class)
         .await?;
     let own = queue_status_context(&target.target_branch);
+    let config = target.config()?;
+    let settings = target.settings_in(config.as_ref())?;
+    if let Some(text) = refusal(&settings, &target, &request, &pr) {
+        info!(pr_number, reason = text, "submission dropped");
+        return refuse(text).await;
+    }
+
     let reading = Reading {
         sender: &sender,
         rules: &required,
         own_status: &own,
+        injection: settings.branch_protection_injection.value,
         class: job.class,
         now,
     };
-
-    let config = target.config()?;
-    if let Some(reason) = refusal(&target.settings_in(config.as_ref())?, &request, &pr) {
-        info!(pr_number, reason, "submission dropped");
-        return refuse(format!(
-            "the commands are off for the queue of `{}`.",
-            target.target_branch
-        ))
-        .await;
-    }
-
     let choices = submission_choices(scm, &target, config.as_ref(), &pr, &reading).await?;
     let profile = match named_profile(&request, config.as_ref(), &target.target_branch) {
         Ok(named) => named.or(choices.profile),

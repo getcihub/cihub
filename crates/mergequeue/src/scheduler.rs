@@ -51,8 +51,9 @@ pub type Translate =
 const LEASES_PER_PASS: i64 = 50;
 
 /// A reconciliation reads at most this many deliveries and facts; the rest
-/// waits for the next one, which the queue, still dirty, asks for at once.
-const INBOX_PER_RECONCILIATION: i64 = 200;
+/// waits for the next one, which the reconciliation asks for at once by
+/// marking the queue dirty again.
+pub const INBOX_PER_RECONCILIATION: i64 = 200;
 
 /// A pass over the deliveries of the connections reads at most this many.
 const CONNECTION_DELIVERIES_PER_PASS: i64 = 100;
@@ -184,6 +185,13 @@ impl Reconciler {
 
         log.cover(conn, now).await?;
         schedule_tick(conn, queue, plan.wake_at).await?;
+
+        // `begin_reconciliation` cleared `dirty`: a backlog beyond the limit
+        // would wait for an unrelated change.
+        let limit = usize::try_from(INBOX_PER_RECONCILIATION).unwrap_or(usize::MAX);
+        if given_ids.len() >= limit || deliveries.len() >= limit {
+            mark_dirty(conn, queue).await?;
+        }
 
         // The pages read the queue again once this transaction commits.
         if written + decisions > 0 {
@@ -794,12 +802,10 @@ async fn route_pr_change(
         return Ok(());
     };
 
+    let branch_queue = QueueTarget::of_branch(conn, repo, change.base_branch).await?;
+
     // The welcome job checks the settings of the queue of the branch.
-    if change.opened
-        && QueueTarget::of_branch(conn, repo, change.base_branch)
-            .await?
-            .is_some()
-    {
+    if change.opened && branch_queue.is_some() {
         let job = welcome_job(
             delivery.org_id,
             delivery.connection,
@@ -828,8 +834,7 @@ async fn route_pr_change(
         let Some(label) = change.label_added else {
             return Ok(());
         };
-        let queue = QueueTarget::of_branch(conn, repo, change.base_branch).await?;
-        let wanted = queue.is_some_and(|queue| {
+        let wanted = branch_queue.is_some_and(|queue| {
             queue.settings().is_ok_and(|settings| {
                 settings.label_commands_enabled.value && settings.enqueue_label.value == label
             })

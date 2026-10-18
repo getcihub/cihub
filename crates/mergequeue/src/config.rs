@@ -190,10 +190,18 @@ pub(crate) async fn read_setup(
 ) -> Result<(), Failure> {
     let target = target_of(pool, job).await?;
     let branch = &target.target_branch;
-    let found = match scm.check_setup(&target.repo, branch, job.class).await {
-        Ok(findings) => findings.into_iter().map(CheckFinding::Setup).collect(),
-        Err(ScmError::NotFound(what)) => missing_branch(scm, &target, job.class, what).await?,
-        Err(err) => return Err(err.into()),
+    // The rules of a branch that no longer exists still answer: its head
+    // says whether it does.
+    let head = scm.branch_head(&target.repo, branch, job.class).await?;
+    let found: Vec<CheckFinding> = if head.is_some() {
+        scm.check_setup(&target.repo, branch, job.class)
+            .await?
+            .into_iter()
+            .map(CheckFinding::Setup)
+            .collect()
+    } else {
+        info!("target branch gone");
+        vec![CheckFinding::TargetBranchMissing]
     };
     let findings: Vec<Finding> = found
         .into_iter()
@@ -263,25 +271,4 @@ impl CheckFinding {
             }
         }
     }
-}
-
-/// The finding of a check that the SCM answered `NotFound`: a repository that
-/// is gone answers it too, and only a gone branch is a finding.
-async fn missing_branch(
-    scm: &dyn Scm,
-    target: &QueueTarget,
-    class: JobClass,
-    what: String,
-) -> Result<Vec<CheckFinding>, Failure> {
-    if scm
-        .branch_head(&target.repo, &target.target_branch, class)
-        .await?
-        .is_some()
-    {
-        return Err(ScmError::NotFound(what).into());
-    }
-
-    info!("target branch gone");
-
-    Ok(vec![CheckFinding::TargetBranchMissing])
 }

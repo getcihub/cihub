@@ -139,13 +139,12 @@ pub(crate) async fn merge_pr(
     let settings = target.settings()?;
     let item_id = request.item_id;
 
-    if !still_to_merge(pool, &request).await? {
+    let Some(item) = item_to_merge(pool, &request).await? else {
         info!(%item_id, "item no longer waits for its merge");
         return Ok(());
-    }
+    };
 
-    let profile = profile_of(pool, item_id).await?;
-    let settings = settings.of_profile(profile.as_deref());
+    let settings = settings.of_profile(item.profile.as_deref());
     let landed = land(scm, settings, &target, &request, job.class).await;
     let scm_error = landed.as_ref().err().map(|err| error_chain(err));
     let failed = |error| EventKind::MergeFailed {
@@ -289,43 +288,34 @@ async fn direct_merge_possible(
     Ok(names.iter().all(|name| check_passed(pr, name)))
 }
 
-/// The profile of the item, whose settings give the method and the title of
-/// its merge.
-async fn profile_of(pool: &PgPool, item_id: ItemId) -> Result<Option<String>, Failure> {
-    let mut tx = begin_system(pool).await?;
-    let profile = sqlx::query_scalar("SELECT profile FROM queue_items WHERE id = $1")
-        .bind(item_id.to_string())
-        .fetch_one(&mut *tx)
-        .await?;
-
-    tx.commit().await?;
-
-    Ok(profile)
+/// What the merge of an item needs from it.
+struct ItemToMerge {
+    /// The profile whose settings give the method and the title of the merge.
+    profile: Option<String>,
 }
 
-/// The item is still `tests_passed`, proved by the run of the request, or
-/// still `pending` for a direct merge.
-async fn still_to_merge(pool: &PgPool, request: &MergePr) -> Result<bool, Failure> {
+/// The item of `request`, while it still waits for its merge: `tests_passed`,
+/// proved by the run of the request, or `pending` for a direct merge.
+async fn item_to_merge(pool: &PgPool, request: &MergePr) -> Result<Option<ItemToMerge>, Failure> {
     let mut tx = begin_system(pool).await?;
-    let state = if request.run_id.is_some() {
-        ItemState::TestsPassed
-    } else {
-        ItemState::Pending
-    };
-    let to_merge: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM queue_items
-                        WHERE id = $1 AND state = $2::item_state
-                          AND verified_by_run_id IS NOT DISTINCT FROM $3)",
+    let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT state::text, verified_by_run_id, profile FROM queue_items WHERE id = $1",
     )
     .bind(request.item_id.to_string())
-    .bind(state.as_str())
-    .bind(request.run_id.map(|run_id| run_id.to_string()))
-    .fetch_one(&mut *tx)
+    .fetch_optional(&mut *tx)
     .await?;
 
     tx.commit().await?;
 
-    Ok(to_merge)
+    let wanted = if request.run_id.is_some() {
+        ItemState::TestsPassed
+    } else {
+        ItemState::Pending
+    };
+    let proof = request.run_id.map(|run_id| run_id.to_string());
+    Ok(row
+        .filter(|(state, verified_by, _)| state == wanted.as_str() && *verified_by == proof)
+        .map(|(_, _, profile)| ItemToMerge { profile }))
 }
 
 #[cfg(test)]
