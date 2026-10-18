@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, m } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useCloseOutside } from "@/components/ui/hooks/use-close-outside";
 import { transitions } from "@/components/ui/motion";
 import { RangeCalendar } from "@/components/ui/range-calendar";
 import { Select } from "@/components/ui/select";
@@ -89,29 +90,9 @@ export function PeriodPicker({ path, period, now }: { path: QueuePath; period: H
   const isCustom = !("range" in period);
   const isOpen = draft !== null;
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const closeOutside = (event: MouseEvent) => {
-      if (!(event.target instanceof Node && container.current?.contains(event.target))) {
-        setDraft(null);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setDraft(null);
-        trigger.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [isOpen]);
+  useCloseOutside(container, trigger, isOpen, () => {
+    setDraft(null);
+  });
 
   const apply = (chosen: { from: number; to: number }) => {
     setDraft(null);

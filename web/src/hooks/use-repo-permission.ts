@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { getRepoOptions } from "@/client/@tanstack/react-query.gen";
 import type { Permission } from "@/client/types.gen";
+import { repoOptions } from "@/domain/setup/queries";
 
 const NONE: Permission = { read: false, write: false, admin: false };
 
@@ -10,6 +10,6 @@ const NONE: Permission = { read: false, write: false, admin: false };
  * or when its read fails: a button that the server would refuse never shows as active.
  */
 export function useRepoPermission(org: string, repo: string): Permission {
-  const { data } = useQuery(getRepoOptions({ path: { org, repo } }));
+  const { data } = useQuery(repoOptions(org, repo));
   return data?.permission ?? NONE;
 }

@@ -15,6 +15,7 @@ import {
   noGraph,
   pageOf,
   queueOf,
+  repoOf,
 } from "@/test/fixtures";
 
 const QUEUE = "/api/v1/orgs/acme/repos/web/queues/main";
@@ -39,6 +40,7 @@ function answersFor(changes: Answers): Answers {
     ...answersOfMe(ada),
     ...answersOfMine("acme"),
     "/api/v1/orgs/acme/queues": [200, pageOf("queues", [entry])],
+    "/api/v1/orgs/acme/repos/web": [200, repoOf("web")],
     [QUEUE]: [200, detailOf(entry)],
     [`${QUEUE}/graph`]: [200, noGraph],
     [LIVE]: [200, pageOf("prs", [])],
@@ -184,6 +186,20 @@ describe("the page of a queue", () => {
     expect(within(empty).getByRole("button", { name: "Submit a pull request" })).toBeEnabled();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Tabs of the pull requests" })).not.toBeInTheDocument();
+  });
+
+  it("lets no one without write on the repository submit, in the head nor in the empty queue", async () => {
+    const reader = repoOf("web", { read: true, write: false, admin: false });
+    renderApp(
+      "/orgs/acme/repos/web/queues/main",
+      answersFor({ "/api/v1/orgs/acme/repos/web": [200, reader] }),
+    );
+    await emptyQueue();
+
+    for (const submit of screen.getAllByRole("button", { name: "Submit a pull request" })) {
+      expect(submit).toBeDisabled();
+    }
+    expect(screen.getAllByRole("button", { name: "Submit a pull request" })).toHaveLength(2);
   });
 
   it("names no label when the labels of the queue do not submit", async () => {

@@ -7,6 +7,8 @@ import { useReadAgain } from "./use-read-again";
 
 export interface RepoSetupRead {
   repo: RepoDetail;
+  /** The server reads the setup: the page waits for it. */
+  isChecking: boolean;
   /** The read takes longer than the page waits: the page says so, and reads no more. */
   hasGivenUp: boolean;
   /** "Check again", for an admin of the repository only. */
@@ -34,10 +36,12 @@ export function useRepoSetup(org: string, name: string, onSync?: () => void): Re
       onSync?.();
     },
   });
+  const isChecking = !isSetupRead(repo.setup);
 
   return {
     repo,
-    hasGivenUp: !isSetupRead(repo.setup) && wait.isOver,
+    isChecking,
+    hasGivenUp: isChecking && wait.isOver,
     checkAgain: repo.permission.admin
       ? {
           run: () => {

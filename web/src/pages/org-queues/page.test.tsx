@@ -93,6 +93,58 @@ describe("the page of an organization", () => {
     expect(router.state.location.search).toEqual({ open: "docs" });
   });
 
+  it("gives one check to a repository whose rules and file both fail", async () => {
+    const blocked = repoOf("docs");
+    renderApp(
+      "/orgs/acme?open=docs",
+      answersFor({
+        [REPOS]: [200, pageOf("repos", [repoRowOf("docs", "invalid_config")])],
+        [`${REPOS}/docs`]: [
+          200,
+          {
+            ...blocked,
+            setup: {
+              ...blocked.setup,
+              state: "invalid_config",
+              queue: null,
+              checked_at: new Date().toISOString(),
+              rules: [
+                {
+                  code: "app_not_exempt",
+                  passed: false,
+                  blocks_merge: true,
+                  title: "A rule restricts the updates of `main` without an exemption for the App",
+                },
+              ],
+              config: {
+                state: "invalid",
+                path: ".cihub.yaml",
+                sha: "abc",
+                error: "unknown key `stratgy`",
+                line: 3,
+                column: 5,
+                text: "version: 1\nqueues:\n  - stratgy: batched\n",
+                entries: [],
+                strategy: "pipelined",
+                settings: {
+                  batching_enabled: false,
+                  batching_size: 1,
+                  batching_max_wait_minutes: 0,
+                  failure_budget_retries: 1,
+                  merge_method: "squash",
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(await screen.findByText(/is not valid:/)).toBeInTheDocument();
+    expect(screen.getByText(/without an exemption for the App/)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Check again" })).toHaveLength(1);
+  });
+
   it("shows how the first queue starts on a repository that is ready", async () => {
     const ready = repoOf("site");
     renderApp(
