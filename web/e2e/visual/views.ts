@@ -107,6 +107,7 @@ export const VIEWS: View[] = [
     act: (page) => page.getByRole("searchbox").fill("zzz"),
   },
   { name: "org-empty", url: "/orgs/acme-labs", ready: "reaches no repository", themes: BOTH },
+  { name: "org-start-open", url: "/orgs/acme?open=handbook", ready: "Fix the points above", themes: BOTH },
   { name: "repo-overview", url: "/orgs/acme/repos/web", ready: "release" },
   { name: "repo-setup", url: "/orgs/acme/repos/handbook", ready: "blocks every merge", themes: BOTH },
   { name: "queue-live", url: QUEUE_PAGE, ready: QUEUE_READY, themes: BOTH, viewports: [WIDE, NARROW] },

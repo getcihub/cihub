@@ -693,6 +693,17 @@ Decisions:
     a member, and the buttons of the configuration; the mockup checks every repository at once, which the API
     no longer offers. Tests: `pages/welcome/page.test.tsx`, `pages/org-queues/page.test.tsx`,
     `pages/repo-queues/page.test.tsx`, the views `welcome`, `org-empty` and `repo-setup` of `web:shots`.
+  - Done (October 18, 2026): WP4 after the mockups v21. The page of an organization shows the repositories with a
+    queue first, in a table with one row per queue (the name of the repository on its first row, with a dot when
+    its setup is not ready), the ones whose queues need someone at the top; then the others, under "Not started"
+    (or "Repositories" before the first queue), each row opening in place (`?open=`) on its branch rules, its
+    settings and the first command, with "Check again" for an admin; past 10 of them, the first 8 and "Show the
+    other repositories"; a banner "No queue yet" before the first queue. The setup of a repository folds once a
+    queue runs, and opens by itself while a point fails. Left out: the "Check again" of every repository at once,
+    which the API does not offer; the search by branch, as `q` searches the names; the builder of the
+    configuration, which comes with "Next". A repository whose default branch has its queue is `started`, so the
+    list shows no dot for its warnings. Tests: `pages/org-queues/page.test.tsx`, the view `org-start-open` of
+    `web:shots`, `e2e/queues.spec.ts`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

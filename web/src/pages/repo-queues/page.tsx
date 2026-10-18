@@ -1,17 +1,14 @@
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 
-import { syncRepoMutation } from "@/client/@tanstack/react-query.gen";
-import type { RepoDetail } from "@/client/types.gen";
 import { MinePrs } from "@/components/mine/mine";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { QueueCards } from "@/components/queue/queue-cards";
 import { Page } from "@/components/ui/page";
-import { isSetupRead, repoOptions } from "@/domain/setup/queries";
+import { SectionCount, SectionHead, SectionTitle } from "@/components/ui/section";
 import { useMinePrs } from "@/hooks/use-mine-prs";
 import { useNow } from "@/hooks/use-now";
 import { useOrgQueues } from "@/hooks/use-org-queues";
-import { useReadAgain } from "@/hooks/use-read-again";
+import { useRepoSetup } from "@/hooks/use-repo-setup";
 import { RepoSetup } from "./components/repo-setup";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/");
@@ -22,26 +19,10 @@ const route = getRouteApi("/orgs/$org/repos/$repo/");
  */
 export function RepoQueuesPage() {
   const { org, repo: name } = route.useParams();
-  const queryClient = useQueryClient();
   const now = useNow();
-  const wait = useReadAgain((data: RepoDetail | undefined) => !data || !isSetupRead(data.setup));
-  const read = repoOptions(org, name);
-  const { data: repo } = useSuspenseQuery({ ...read, refetchInterval: wait.refetchInterval });
-  const sync = useMutation({
-    ...syncRepoMutation(),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: read.queryKey }),
-    onSuccess: wait.restart,
-  });
+  const { repo, hasGivenUp, checkAgain } = useRepoSetup(org, name);
   const queues = useOrgQueues(org).filter((queue) => queue.repo === name);
   const mine = useMinePrs(org).filter((pr) => pr.repo === name);
-  const checkAgain = repo.permission.admin
-    ? {
-        run: () => {
-          sync.mutate({ path: { org, repo: name } });
-        },
-        isPending: sync.isPending,
-      }
-    : null;
 
   return (
     <Page>
@@ -50,12 +31,17 @@ export function RepoQueuesPage() {
         repo={repo}
         hasQueue={queues.length > 0}
         now={now}
-        hasGivenUp={!isSetupRead(repo.setup) && wait.isOver}
+        hasGivenUp={hasGivenUp}
         checkAgain={checkAgain}
       />
       {queues.length > 0 && (
         <>
           <MinePrs org={org} prs={mine} queues={queues} />
+          <SectionHead>
+            <SectionTitle>
+              Queues<SectionCount>{queues.length}</SectionCount>
+            </SectionTitle>
+          </SectionHead>
           <QueueCards org={org} queues={queues} />
         </>
       )}

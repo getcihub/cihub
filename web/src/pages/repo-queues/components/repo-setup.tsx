@@ -1,12 +1,10 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
-import type { ConfigFile, RepoDetail, RuleCheck } from "@/client/types.gen";
-import { CheckIcon } from "@/components/icons/check-icon";
-import { ErrorIcon } from "@/components/icons/error-icon";
-import { WarningIcon } from "@/components/icons/warning-icon";
+import type { ConfigFile, RepoDetail } from "@/client/types.gen";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { ConfigText } from "@/components/setup/config-text";
+import { SetupRules } from "@/components/setup/setup-rules";
 import { SetupStateBadge } from "@/components/setup/setup-state-badge";
-import { Alert, AlertContent, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardHint, CardTitle } from "@/components/ui/card";
 import { Prose } from "@/components/ui/prose";
@@ -16,7 +14,8 @@ import { timeAgo } from "@/lib/time";
 
 /**
  * The setup of a repository: the rules of its default branch, its configuration file, and, before its first
- * queue, how the queue starts. An admin of the repository asks for a read again with "Check again".
+ * queue, how the queue starts. An admin of the repository asks for a read again with "Check again". Once a queue
+ * runs, the setup folds into its head, and opens by itself while a point fails; a click flips it.
  */
 export function RepoSetup({
   repo,
@@ -34,10 +33,16 @@ export function RepoSetup({
 }) {
   const { setup, default_branch: branch } = repo;
   const isChecking = !isSetupRead(setup);
+  const hasFailure =
+    setup.target_branch_missing ||
+    setup.config?.state === "invalid" ||
+    setup.rules.some((rule) => !rule.passed);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const isOpen = (!hasQueue || isChecking || hasFailure) !== isFlipped;
 
   return (
-    <Card className="mb-5 p-0">
-      <CardHeader>
+    <Card className="p-0">
+      <CardHeader className={cn(!isOpen && "border-b-0")}>
         <CardTitle>
           Setup of <code>{branch}</code>
         </CardTitle>
@@ -57,30 +62,42 @@ export function RepoSetup({
               Check again
             </Button>
           )}
+          <Button
+            aria-expanded={isOpen}
+            onClick={() => {
+              setIsFlipped(!isFlipped);
+            }}
+          >
+            {isOpen ? "Hide" : "Show"}
+          </Button>
         </CardHint>
       </CardHeader>
-      <Section
-        title={
-          <>
-            1 · The rules of <code>{branch}</code>
-          </>
-        }
-      >
-        <Rules repo={repo} isChecking={isChecking} />
-      </Section>
-      <Section title="2 · The configuration" tag="optional">
-        <Configuration branch={branch} config={setup.config ?? null} />
-      </Section>
-      {!hasQueue && (
-        <Section title="3 · Start the queue">
-          <p className="mb-2 text-md text-secondary-foreground">
-            Comment on an approved pull request that targets <code>{branch}</code>:
-          </p>
-          <CopyCommand />
-          <p className="mt-2 text-md text-muted-foreground">
-            The queue appears in CIHub at this first <code>{COMMAND}</code>.
-          </p>
-        </Section>
+      {isOpen && (
+        <>
+          <Section
+            title={
+              <>
+                1 · The rules of <code>{branch}</code>
+              </>
+            }
+          >
+            <SetupRules repo={repo} isChecking={isChecking} />
+          </Section>
+          <Section title="2 · The configuration" tag="optional">
+            <Configuration branch={branch} config={setup.config ?? null} />
+          </Section>
+          {!hasQueue && (
+            <Section title="3 · Start the queue">
+              <p className="mb-2 text-md text-secondary-foreground">
+                Comment on an approved pull request that targets <code>{branch}</code>:
+              </p>
+              <CopyCommand />
+              <p className="mt-2 text-md text-muted-foreground">
+                The queue appears in CIHub at this first <code>{COMMAND}</code>.
+              </p>
+            </Section>
+          )}
+        </>
       )}
     </Card>
   );
@@ -98,70 +115,6 @@ function Section({ title, tag, children }: { title: ReactNode; tag?: string; chi
   );
 }
 
-/** The four rules that a queue needs, as the server read them; the link to change them on the SCM. */
-function Rules({ repo, isChecking }: { repo: RepoDetail; isChecking: boolean }) {
-  const { setup } = repo;
-
-  if (setup.target_branch_missing) {
-    return (
-      <Alert variant="destructive" role="status">
-        <ErrorIcon />
-        <AlertContent>
-          <AlertTitle>
-            The branch <code>{repo.default_branch}</code> does not exist: no queue can merge into it.
-          </AlertTitle>
-        </AlertContent>
-      </Alert>
-    );
-  }
-  if (setup.rules.length === 0) {
-    return (
-      <p className="text-md text-muted-foreground">{isChecking ? "Reading the rules…" : "Not read yet."}</p>
-    );
-  }
-
-  return (
-    <>
-      <ul className="flex flex-col gap-2">
-        {setup.rules.map((rule) => (
-          <Rule key={rule.code} rule={rule} />
-        ))}
-      </ul>
-      {setup.rules.some((rule) => !rule.passed) && setup.rules_url && (
-        <a className="mt-3 inline-block text-md" href={setup.rules_url}>
-          Open the rules of {repo.name} on GitHub →
-        </a>
-      )}
-    </>
-  );
-}
-
-function Rule({ rule }: { rule: RuleCheck }) {
-  const tone = rule.passed ? "text-success" : rule.blocks_merge ? "text-destructive" : "text-warning";
-  const icon = rule.passed ? <CheckIcon /> : rule.blocks_merge ? <ErrorIcon /> : <WarningIcon />;
-
-  return (
-    <li className="text-md">
-      <div className="flex items-center gap-2">
-        <span className={cn("flex-none [&>svg]:size-4", tone)}>{icon}</span>
-        <span>
-          <Prose text={rule.title} />
-        </span>
-        {!rule.passed && (
-          <span className="text-sm text-muted-foreground">
-            {rule.blocks_merge ? "blocks every merge" : "warning"}
-          </span>
-        )}
-      </div>
-      {rule.message && (
-        <p className="ml-6 text-md text-secondary-foreground">
-          <Prose text={rule.message} />
-        </p>
-      )}
-    </li>
-  );
-}
-
 /** The configuration file at the head of the default branch: none and the defaults, its entries, or its error. */
 function Configuration({ branch, config }: { branch: string; config: ConfigFile | null }) {
   if (!config) {
@@ -174,7 +127,7 @@ function Configuration({ branch, config }: { branch: string; config: ConfigFile 
         <p className="mb-2 text-md text-secondary-foreground">
           <code>{config.path ?? ".cihub.yaml"}</code> is not valid: <Prose text={config.error ?? ""} />
         </p>
-        {config.text && <FileText text={config.text} errorLine={config.line ?? null} />}
+        {config.text && <ConfigText text={config.text} errorLine={config.line ?? null} />}
         <p className="mt-2 text-md text-muted-foreground">
           A <code>{COMMAND}</code> still creates the queue of <code>{branch}</code>, but each new test run
           fails until the file is fixed on <code>{branch}</code>.
@@ -231,27 +184,5 @@ function Configuration({ branch, config }: { branch: string; config: ConfigFile 
         )}
       </dl>
     </>
-  );
-}
-
-/** The text of a file that is not valid, with the line of its error marked. */
-function FileText({ text, errorLine }: { text: string; errorLine: number | null }) {
-  return (
-    <pre className="overflow-x-auto rounded-sm border border-border bg-muted py-1.5 font-mono text-md">
-      {text.split("\n").map((line, index) => {
-        const number = index + 1;
-        return (
-          <span
-            key={number}
-            className={cn("block px-3", number === errorLine && "bg-destructive-muted text-destructive")}
-          >
-            <i className="mr-3 inline-block w-6 text-right text-muted-foreground not-italic select-none">
-              {number}
-            </i>
-            {line}
-          </span>
-        );
-      })}
-    </pre>
   );
 }

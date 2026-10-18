@@ -17,13 +17,14 @@ async function signInAsAda(page: Page) {
 test("the repositories and their queues lead to the page of a queue", async ({ page }) => {
   await signInAsAda(page);
 
-  const card = page.locator('a[href="/orgs/acme/repos/web/queues/main"]');
+  const link = page.locator('a[href="/orgs/acme/repos/web/queues/main"]');
+  const cells = page.getByRole("row").filter({ has: link }).getByRole("cell");
 
-  await expect(card).toContainText("3 in the queue", QUEUE_SETTLES);
-  await expect(card).toContainText("2 testing");
-  await expect(card).toContainText("Running");
+  await expect(cells.nth(3)).toHaveText("3", QUEUE_SETTLES);
+  await expect(cells.nth(4)).toHaveText("2");
+  await expect(cells.nth(2)).toHaveText("Running");
 
-  await card.click();
+  await link.click();
 
   await expect(page).toHaveURL(/\/orgs\/acme\/repos\/web\/queues\/main$/);
   await expect(page.getByRole("heading", { level: 1, name: /main/ })).toBeVisible();
