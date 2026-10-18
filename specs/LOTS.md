@@ -715,8 +715,8 @@ Decisions:
     "request sent" state of a member still waits for the check on the App of staging. Tests:
     `e2e/onboarding.spec.ts`, `the_update_restriction_of_a_branch_gives_its_findings`; the rest of the criterion
     comes from WP1, WP3 and WP5 (`the_setup_url_trusts_only_the_installations_of_the_person`,
-    `a_person_reads_only_the_repositories_that_the_scm_shows_them`, the `org_not_found` of
-    `the_api_lists_the_repositories_with_their_setup`).
+    `a_person_reads_only_the_repositories_that_the_scm_shows_them`,
+    `the_api_answers_not_found_outside_the_organization_of_the_token`).
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
