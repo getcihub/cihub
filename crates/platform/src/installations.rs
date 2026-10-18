@@ -119,7 +119,7 @@ pub async fn run_sync_installation(
 }
 
 /// Reads every installation of the App and converges each connection; a
-/// connection whose installation the SCM no longer lists is deleted.
+/// connection whose installation the SCM no longer lists is suspended.
 /// A slug already taken does not stop the others.
 ///
 /// # Errors

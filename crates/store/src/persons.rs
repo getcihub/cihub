@@ -192,10 +192,14 @@ pub async fn record_person_sync(
         .execute(&mut *conn)
         .await
         .map_err(StoreError::Query)?;
+    // A request records a permission in its own transaction: one committed
+    // between the delete and this insert must not fail the sync.
     sqlx::query(
         "INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
          SELECT p.org_id, p.repo_id, $4, p.permission::permission, $5
-         FROM unnest($1::text[], $2::text[], $3::text[]) AS p (org_id, repo_id, permission)",
+         FROM unnest($1::text[], $2::text[], $3::text[]) AS p (org_id, repo_id, permission)
+         ON CONFLICT (repo_id, user_id) DO UPDATE
+         SET permission = EXCLUDED.permission, checked_at = EXCLUDED.checked_at",
     )
     .bind(column(|(org, _, _)| org.to_string()))
     .bind(column(|(_, repo, _)| repo.to_string()))
@@ -215,7 +219,8 @@ pub async fn record_person_sync(
 }
 
 /// Records the permission of `user_id` on `repo_id` of the organization of
-/// the transaction, as the SCM gave it at `now`; `None` deletes it.
+/// the transaction, as the SCM gave it at `now`. A `None` is recorded too:
+/// a refusal serves as long as a grant before the SCM is asked again.
 ///
 /// # Errors
 ///
@@ -228,16 +233,6 @@ pub async fn record_repo_permission(
     permission: Permission,
     now: OffsetDateTime,
 ) -> Result<(), StoreError> {
-    if permission == Permission::None {
-        sqlx::query("DELETE FROM repo_permissions WHERE repo_id = $1 AND user_id = $2")
-            .bind(repo_id.to_string())
-            .bind(user_id.to_string())
-            .execute(conn)
-            .await
-            .map_err(StoreError::Query)?;
-        return Ok(());
-    }
-
     sqlx::query(
         "INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
          VALUES ($1, $2, $3, $4::permission, $5)

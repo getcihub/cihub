@@ -11,15 +11,15 @@ use cihub_domain::{
     JobClass, MembershipRole, OrgId, Permission, QueueId, RepoId, UserId,
 };
 use cihub_platform::{
-    ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
+    Access, ConnectionBudget, Delivery, Executors, JOB_LOCK, JOBS_PER_CONNECTION, Job, LEASE_TTL,
     MAX_ATTEMPTS, MIN_WAIT, Outcome, PlatformError, QueueWakeup, Retry, Subscription, TICK, Wake,
     acquire_leases, backoff, begin_reconciliation, claim_jobs, complete_job, create_token,
     delete_delivery, deliver_all, enqueue_job, fail_job, find_route, lock_queue, maintenance_job,
-    pending_deliveries, record_budgets, record_sign_in, release_leases, request_installations_sync,
-    request_installations_sync_at_start, request_maintenance, request_member_syncs,
-    request_repo_syncs, run_budget_writer, run_maintenance, run_router, run_sync_installation,
-    run_sync_installations, run_sync_members, run_sync_repos, run_sync_user, run_worker,
-    schedule_tick, store_delivery, sync_installation_executor, sync_installation_job,
+    pending_deliveries, record_budgets, record_sign_in, release_leases, repo_permission_now,
+    request_installations_sync, request_installations_sync_at_start, request_maintenance,
+    request_member_syncs, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
+    run_sync_installation, run_sync_installations, run_sync_members, run_sync_repos, run_sync_user,
+    run_worker, schedule_tick, store_delivery, sync_installation_executor, sync_installation_job,
     sync_members_job, sync_repos_job, sync_user_job, token_of_person, until_next_tick,
 };
 use cihub_scm::Scm;
@@ -402,6 +402,41 @@ async fn a_connection_gets_no_more_jobs_past_its_quota(pool: PgPool) {
     );
 }
 
+/// The backlog of a connection at its quota sorts first: it must not hide
+/// the job of another connection behind the window of the claim.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_connection_at_its_quota_does_not_hide_the_jobs_of_the_others(pool: PgPool) {
+    seed(&pool).await;
+    let other = ConnectionId::from_ulid(Ulid(2));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+         VALUES ($1, $2, '2', 'github_app', '2', $3, '{}')",
+    )
+    .bind(other.to_string())
+    .bind(org().to_string())
+    .bind(at(0))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    for n in 0..JOBS_PER_CONNECTION + 20 {
+        enqueue(&pool, &job(&format!("j{n:03}"), JobClass::Speculate), at(0)).await;
+    }
+    let of_other = Job {
+        connection: Some(other),
+        queue_id: None,
+        ..job("other", JobClass::Speculate)
+    };
+    enqueue(&pool, &of_other, at(0)).await;
+    let first = claim(&pool, "a", at(1), JOBS_PER_CONNECTION).await;
+
+    assert_eq!(first.len(), usize::try_from(JOBS_PER_CONNECTION).unwrap());
+    assert!(!first.contains(&"other".to_owned()));
+    assert_eq!(claim(&pool, "b", at(2), 1).await, ["other"]);
+}
+
 fn budget(paused_until: Option<OffsetDateTime>) -> ConnectionBudget {
     ConnectionBudget {
         mode: ConnectionMode::Normal,
@@ -781,6 +816,9 @@ async fn maintenance_runs_once_a_day_and_purges_old_rows(pool: PgPool) {
         complete_job(&mut tx, key, "a", finished).await.unwrap();
         tx.commit().await.unwrap();
     }
+    enqueue(&pool, &system_job("refused"), at(0)).await;
+    claim(&pool, "a", at(0), 1).await;
+    fail(&pool, "refused", now - Duration::days(4), Retry::Never).await;
 
     sqlx::query("INSERT INTO users (id, external_id, login) VALUES ('user-9', '9', 'hubot')")
         .execute(&pool)
@@ -1856,6 +1894,42 @@ async fn the_sync_of_a_person_records_what_their_token_reaches(pool: PgPool) {
         (0, true),
         "a refused token is forgotten with what it read"
     );
+}
+
+/// A refusal of the SCM serves as long as a grant: the next request within
+/// the hour asks the SCM nothing.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_refused_repository_is_not_asked_again_within_the_hour(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    sim.add_repo(&sim_repo("1", "9", "lib"), "main", &[]);
+    let lib = RepoId::from_ulid(Ulid(90));
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         VALUES ($1, $2, $3, '9', 'acme', 'lib', 'main')",
+    )
+    .bind(lib.to_string())
+    .bind(org().to_string())
+    .bind(connection().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
+    let cipher = cipher();
+    let read = |now| repo_permission_now(&pool, &sim, &cipher, user_id, org(), "lib", now);
+
+    let first = read(at(10)).await.unwrap();
+    let calls = sim.calls().len();
+    let second = read(at(20)).await.unwrap();
+
+    assert_eq!(first, Access::Granted(Some((lib, Permission::None))));
+    assert_eq!(second, first);
+    assert_eq!(sim.calls().len(), calls, "the refusal is kept for an hour");
 }
 
 /// A token that ends within minutes is refreshed once, and the refresh

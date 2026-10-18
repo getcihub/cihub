@@ -11,7 +11,7 @@ use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain};
 
 pub const MAINTENANCE: &str = "maintenance";
 
-pub(crate) const DONE_JOB_RETENTION: Duration = Duration::days(3);
+pub(crate) const ENDED_JOB_RETENTION: Duration = Duration::days(3);
 
 pub(crate) const EVENT_RETENTION: Duration = Duration::days(90);
 
@@ -42,7 +42,7 @@ pub async fn request_maintenance(
 }
 
 /// Creates the partitions of `events` for the month of `now` and the next,
-/// then deletes the done jobs past their retention, the expired sessions and device codes, the tokens of the people without a session, and drops the old partitions of `events` that snapshots cover.
+/// then deletes the ended jobs past their retention, the expired sessions and device codes, the tokens of the people without a session, and drops the old partitions of `events` that snapshots cover.
 /// Each step can run twice without harm.
 ///
 /// # Errors
@@ -53,12 +53,14 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         .await
         .map_err(PlatformError::Store)?;
     let mut tx = begin_system(pool).await.map_err(PlatformError::Store)?;
-    let jobs = sqlx::query("DELETE FROM jobs WHERE state = 'done' AND finished_at < $1")
-        .bind(now - DONE_JOB_RETENTION)
-        .execute(&mut *tx)
-        .await
-        .map_err(PlatformError::Query)?
-        .rows_affected();
+    let jobs = sqlx::query(
+        "DELETE FROM jobs WHERE state IN ('done', 'failed', 'dead') AND finished_at < $1",
+    )
+    .bind(now - ENDED_JOB_RETENTION)
+    .execute(&mut *tx)
+    .await
+    .map_err(PlatformError::Query)?
+    .rows_affected();
     let sessions = sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
         .bind(now)
         .execute(&mut *tx)
