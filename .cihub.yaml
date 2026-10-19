@@ -1,16 +1,25 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
 version: 1
 queues:
   - branch: main
     strategy: batched
-    batching: { size: 3, max_wait_minutes: 1 }
+    batching:
+      size: 3
+      max_wait_minutes: 1
     queue_conditions:
-      - -draft
-      - -label = do-not-merge
-      - check-success = Build Success
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - Build Success
     merge_conditions:
-      - check-success = Build Success
+      checks:
+        success:
+          - Build Success
 priority_rules:
   - name: renovate
     conditions:
-      - author = cihub-renovate[bot]
+      author: cihub-renovate[bot]
     priority: low

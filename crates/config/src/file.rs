@@ -1,7 +1,6 @@
 //! The `.cihub.yaml` model, read with the position of each value.
 
 use std::collections::HashSet;
-use std::fmt;
 
 use cihub_conditions::{Conditions, Expr, Glob};
 use cihub_domain::{
@@ -9,9 +8,10 @@ use cihub_domain::{
     Priority, QueueMode, Strategy, Trigger, UpdateMethod,
 };
 use serde::Deserialize;
-use serde::de::{self, Deserializer, IgnoredAny, MapAccess, Visitor};
+use serde::de::{Deserializer, IgnoredAny};
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter, Spanned};
 
+use crate::conditions::{RawNode, Reader};
 use crate::settings::in_range;
 use crate::{ConfigError, ConfigErrorKind, Layer, Position, QueueSettings, Setting};
 
@@ -104,9 +104,10 @@ impl RepoConfig {
     /// The first error in the file.
     pub fn parse(text: &str) -> Result<Self, ConfigError> {
         check_version(text)?;
-        let file: RawFile = serde_saphyr::from_str(text).map_err(|e| yaml_error(&e))?;
+        let file: RawFile = from_str(text)?;
+        let reader = Reader { text };
         let (defaults, queue_conditions, merge_conditions) = match file.defaults {
-            Some(raw) => defaults(raw, text)?,
+            Some(raw) => defaults(raw, reader)?,
             None => Default::default(),
         };
 
@@ -115,7 +116,7 @@ impl RepoConfig {
         let mut queues = Vec::with_capacity(file.queues.len());
 
         for raw in file.queues {
-            let (queue, branch_at) = queue(raw, text)?;
+            let (queue, branch_at) = queue(raw, reader)?;
             if !branches.insert(queue.branch.clone()) {
                 return Err(ConfigError::parsing(
                     branch_at,
@@ -132,7 +133,7 @@ impl RepoConfig {
         let priority_rules = file
             .priority_rules
             .into_iter()
-            .map(|rule| priority_rule(rule, text))
+            .map(|rule| priority_rule(rule, reader))
             .collect::<Result<_, _>>()?;
 
         Ok(Self {
@@ -229,7 +230,7 @@ fn check_version(text: &str) -> Result<(), ConfigError> {
         #[serde(default)]
         version: Option<Spanned<u32>>,
     }
-    let probe: Option<Probe> = serde_saphyr::from_str(text).map_err(|e| yaml_error(&e))?;
+    let probe: Option<Probe> = from_str(text)?;
     let bad_version = |position, message: String| ConfigError {
         kind: ConfigErrorKind::BadVersion,
         position,
@@ -246,6 +247,13 @@ fn check_version(text: &str) -> Result<(), ConfigError> {
         )),
         Some(_) => Ok(()),
     }
+}
+
+/// Only `true` and `false` are booleans: YAML 1.1 also reads `yes`, `no`,
+/// `on` and `off` as booleans, which would turn a label `no` into `false`.
+fn from_str<'de, T: Deserialize<'de>>(text: &'de str) -> Result<T, ConfigError> {
+    let options = serde_saphyr::options! { strict_booleans: true };
+    serde_saphyr::from_str_with_options(text, options).map_err(|e| yaml_error(&e))
 }
 
 fn yaml_error(error: &serde_saphyr::Error) -> ConfigError {
@@ -278,8 +286,8 @@ struct RawFile {
 #[serde(default, deny_unknown_fields)]
 struct RawQueue {
     branch: Value<String>,
-    queue_conditions: Value<Vec<Spanned<RawExpr>>>,
-    merge_conditions: Value<Vec<Spanned<RawExpr>>>,
+    queue_conditions: Value<RawNode>,
+    merge_conditions: Value<RawNode>,
     profiles: Value<Vec<Spanned<RawProfile>>>,
     strategy: Value<Strategy>,
     mode: Value<QueueMode>,
@@ -345,8 +353,8 @@ struct RawLabelCommands {
 #[serde(deny_unknown_fields)]
 struct RawProfile {
     name: Spanned<String>,
-    #[serde(default)]
-    conditions: Vec<Spanned<RawExpr>>,
+    #[serde(default, deserialize_with = "present")]
+    conditions: Value<RawNode>,
     #[serde(default)]
     merge_method: Value<MergeMethod>,
     #[serde(default)]
@@ -361,7 +369,7 @@ struct RawProfile {
 #[serde(deny_unknown_fields)]
 struct RawPriorityRule {
     name: Spanned<String>,
-    conditions: Vec<Spanned<RawExpr>>,
+    conditions: Spanned<RawNode>,
     priority: Spanned<RawPriority>,
 }
 
@@ -379,7 +387,7 @@ fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Optio
 /// The queue and the position of its branch.
 fn queue(
     raw: Spanned<RawQueue>,
-    text: &str,
+    reader: Reader<'_>,
 ) -> Result<(QueueConfig, Option<Position>), ConfigError> {
     let queue_at = position(&raw);
     let mut raw = raw.value;
@@ -389,14 +397,13 @@ fn queue(
         .map(|v| (position(&v), v.value))
         .ok_or_else(|| ConfigError::parsing(queue_at, "a queue needs a `branch`"))?;
     let pattern = branch_pattern(&branch, branch_at)?;
-    let list = |value: Value<Vec<Spanned<RawExpr>>>| value.map(|v| v.value).unwrap_or_default();
     let profiles = raw
         .profiles
         .take()
         .map(|v| v.value)
         .unwrap_or_default()
         .into_iter()
-        .map(|raw| profile(raw, text))
+        .map(|raw| profile(raw, reader))
         .collect::<Result<Vec<_>, _>>()?;
     let mut names = HashSet::new();
 
@@ -412,8 +419,8 @@ fn queue(
     let queue = QueueConfig {
         branch,
         pattern,
-        queue_conditions: conditions(&list(raw.queue_conditions.take()), text)?,
-        merge_conditions: merge_conditions(&list(raw.merge_conditions.take()), text)?,
+        queue_conditions: reader.conditions(raw.queue_conditions.take().as_ref())?,
+        merge_conditions: reader.merge_conditions(raw.merge_conditions.take().as_ref())?,
         settings: layer(raw)?,
         profiles: profiles.into_iter().map(|(profile, _)| profile).collect(),
     };
@@ -436,7 +443,7 @@ fn branch_pattern(branch: &str, at: Option<Position>) -> Result<Option<Glob>, Co
 /// The profile and the position of its name.
 fn profile(
     raw: Spanned<RawProfile>,
-    text: &str,
+    reader: Reader<'_>,
 ) -> Result<(ProfileConfig, Option<Position>), ConfigError> {
     let raw = raw.value;
     let at = position(&raw.name);
@@ -462,7 +469,10 @@ fn profile(
     };
     let profile = ProfileConfig {
         name: raw.name.value,
-        conditions: conditions(&raw.conditions, text)?,
+        conditions: match raw.conditions.as_ref() {
+            Some(node) => reader.selecting_conditions(node)?,
+            None => Conditions::default(),
+        },
         settings,
     };
 
@@ -470,7 +480,10 @@ fn profile(
 }
 
 /// The settings and the conditions of `defaults`.
-fn defaults(raw: RawQueue, text: &str) -> Result<(Layer, Conditions, Conditions), ConfigError> {
+fn defaults(
+    raw: RawQueue,
+    reader: Reader<'_>,
+) -> Result<(Layer, Conditions, Conditions), ConfigError> {
     let queue_only = [
         ("branch", raw.branch.as_ref().and_then(position)),
         ("profiles", raw.profiles.as_ref().and_then(position)),
@@ -483,9 +496,8 @@ fn defaults(raw: RawQueue, text: &str) -> Result<(Layer, Conditions, Conditions)
     }
 
     let mut raw = raw;
-    let list = |value: Value<Vec<Spanned<RawExpr>>>| value.map(|v| v.value).unwrap_or_default();
-    let queue_conditions = conditions(&list(raw.queue_conditions.take()), text)?;
-    let merge_conditions = merge_conditions(&list(raw.merge_conditions.take()), text)?;
+    let queue_conditions = reader.conditions(raw.queue_conditions.take().as_ref())?;
+    let merge_conditions = reader.merge_conditions(raw.merge_conditions.take().as_ref())?;
 
     Ok((layer(raw)?, queue_conditions, merge_conditions))
 }
@@ -557,7 +569,7 @@ fn layer(raw: RawQueue) -> Result<Layer, ConfigError> {
     })
 }
 
-fn priority_rule(raw: RawPriorityRule, text: &str) -> Result<PriorityRule, ConfigError> {
+fn priority_rule(raw: RawPriorityRule, reader: Reader<'_>) -> Result<PriorityRule, ConfigError> {
     let priority = match raw.priority.value {
         RawPriority::Value(value) => Priority(value),
         RawPriority::Name(name) => Priority::from_name(&name).ok_or_else(|| {
@@ -569,109 +581,9 @@ fn priority_rule(raw: RawPriorityRule, text: &str) -> Result<PriorityRule, Confi
     };
     Ok(PriorityRule {
         name: raw.name.value,
-        conditions: conditions(&raw.conditions, text)?,
+        conditions: reader.selecting_conditions(&raw.conditions)?,
         priority,
     })
-}
-
-/// A condition string, or a block with one key.
-enum RawExpr {
-    Condition(String),
-    Block(fn(Vec<Expr>) -> Expr, Vec<Spanned<RawExpr>>),
-}
-
-fn conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
-    exprs(list, text).map(Conditions)
-}
-
-/// `merge_conditions` accept only `check-success = <name>` at the first
-/// level for now.
-fn merge_conditions(list: &[Spanned<RawExpr>], text: &str) -> Result<Conditions, ConfigError> {
-    let conditions = conditions(list, text)?;
-    for (node, expr) in list.iter().zip(&conditions.0) {
-        let checked = matches!(expr, Expr::Condition(c) if c.required_check().is_some());
-        if !checked {
-            return Err(ConfigError::parsing(
-                position(node),
-                format!("merge_conditions accept only `check-success = <name>`, not `{expr}`"),
-            ));
-        }
-    }
-    Ok(conditions)
-}
-
-fn exprs(list: &[Spanned<RawExpr>], text: &str) -> Result<Vec<Expr>, ConfigError> {
-    list.iter().map(|node| expr(node, text)).collect()
-}
-
-fn expr(node: &Spanned<RawExpr>, text: &str) -> Result<Expr, ConfigError> {
-    match &node.value {
-        RawExpr::Condition(source) => source.parse().map(Expr::Condition).map_err(|e| {
-            let start = Position::of(&node.referenced);
-            let quote = node
-                .referenced
-                .span()
-                .byte_offset()
-                .and_then(|offset| text.get(usize::try_from(offset).ok()?..))
-                .is_some_and(|rest| rest.starts_with(['"', '\'']));
-            let column_in_condition = u64::try_from(e.column).unwrap_or(u64::MAX);
-            ConfigError::parsing(
-                Some(Position {
-                    line: start.line,
-                    column: start.column + column_in_condition - 1 + u64::from(quote),
-                }),
-                e.kind.to_string(),
-            )
-        }),
-        RawExpr::Block(block, list) => exprs(list, text).map(block),
-    }
-}
-
-impl<'de> Deserialize<'de> for RawExpr {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(RawExprVisitor)
-    }
-}
-
-struct RawExprVisitor;
-
-impl<'de> Visitor<'de> for RawExprVisitor {
-    type Value = RawExpr;
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a condition, or a block with one key `and`, `or` or `not`")
-    }
-
-    fn visit_str<E: de::Error>(self, v: &str) -> Result<RawExpr, E> {
-        Ok(RawExpr::Condition(v.to_owned()))
-    }
-
-    // `- #label = 0` is a YAML comment, so the element is null.
-    fn visit_unit<E: de::Error>(self) -> Result<RawExpr, E> {
-        Err(E::custom(
-            "empty condition: quote a condition that starts with `#`",
-        ))
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<RawExpr, A::Error> {
-        let Some(key) = map.next_key::<String>()? else {
-            return Err(de::Error::invalid_length(0, &self));
-        };
-
-        let block: fn(_) -> _ = match key.as_str() {
-            "and" => Expr::And,
-            "or" => Expr::Or,
-            "not" => Expr::Not,
-            _ => return Err(de::Error::unknown_field(&key, &["and", "or", "not"])),
-        };
-        let list = map.next_value()?;
-
-        if map.next_key::<String>()?.is_some() {
-            return Err(de::Error::custom("a condition block has exactly one key"));
-        }
-
-        Ok(RawExpr::Block(block, list))
-    }
 }
 
 #[cfg(test)]
@@ -682,51 +594,78 @@ mod tests {
     use crate::Source;
 
     /// The example of the spec, section Configuration.
-    const SPEC_EXAMPLE: &str = r#"version: 1
+    const SPEC_EXAMPLE: &str = r"version: 1
 queues:
   - branch: main
     strategy: batched                     # sequential | pipelined | batched | parallel
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
-    queue_conditions:                     # admission : la PR elle-meme
-      - review-decision = approved
-      - -draft
-      - -label = do-not-merge
-      - check-success = lint
-    merge_conditions:                     # sur le commit speculatif
-      - check-success = build
-      - check-success = integration-tests
-    window: { floor: 2, ceiling: 20 }
-    batching: { size: 8, max_wait_minutes: 5 }
-    failure_budget: { retries: 1 }
+    queue_conditions:                     # admission: the PR itself
+      review_decision: approved
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - lint
+    merge_conditions:                     # on the speculative commit
+      checks:
+        success:
+          - build
+          - integration-tests
+    window:
+      floor: 2
+      ceiling: 20
+    batching:
+      size: 8
+      max_wait_minutes: 5
+    failure_budget:
+      retries: 1
     pending_failure_depth: 1
     optimistic_merging: true
     profiles:                             # settings of a kind of PR, in the same train
       - name: dependencies
         conditions:                       # choose the profile, once, at the submission
-          - author = dependabot[bot]
+          author:
+            - dependabot[bot]
+            - cihub-renovate[bot]
         merge_method: merge_commit
-        batching: { size: 8, max_wait_minutes: 15 }
-        failure_budget: { retries: 2 }
-  - branch: "release/*"                   # a queue for each branch that the glob matches
+        batching:
+          size: 8
+          max_wait_minutes: 15
+        failure_budget:
+          retries: 2
+  - branch: release/*                     # a queue for each branch that the glob matches
     strategy: sequential
     merge_method: fast_forward
     queue_conditions:
-      - sender-permission >= write
+      sender_permission:
+        min: write
 priority_rules:
   - name: urgent
-    conditions: [ label = urgent ]
+    conditions:
+      any:
+        - labels:
+            any:
+              - urgent
+              - hotfix
+        - head:
+            matches: hotfix/**
     priority: urgent                      # urgent | high | medium | low | 0-255
   - name: dependabot
     conditions:
-      - author = dependabot[bot]            # une liste en ligne coupe le YAML sur les crochets
+      author: dependabot[bot]
     priority: low
-defaults:                                 # tout reglage d'une file ; chaque file peut le remplacer
-  label_commands: { enqueue_label: ready-to-merge }
+defaults:                                 # any queue setting; each queue can override it
+  label_commands:
+    enqueue_label: ready-to-merge
   merge_commit_title: pr_title            # pr_title | pr_title_and_number
   queue_conditions:                       # every queue adds its own after them
-    - -label = do-not-merge
-"#;
+    labels:
+      none:
+        - do-not-merge
+";
 
     fn error(yaml: &str) -> ConfigError {
         RepoConfig::parse(yaml).unwrap_err()
@@ -771,7 +710,7 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         let settings = QueueSettings::resolve(&main.settings, &config.defaults).unwrap();
         assert_eq!(settings.batching_size.value, 8);
         assert_eq!(settings.batching_size.source, Source::File);
-        assert_eq!(settings.batching_size.at, Some(at(16, 23)));
+        assert_eq!(settings.batching_size.at, Some(at(25, 13)));
         assert_eq!(settings.batching_enabled.source, Source::Strategy);
         assert_eq!(settings.enqueue_label.value, "ready-to-merge");
         assert_eq!(settings.enqueue_label.source, Source::File);
@@ -782,33 +721,39 @@ defaults:                                 # tout reglage d'une file ; chaque fil
         };
 
         assert_eq!(main.queue_conditions.eval(&ctx), Ok(false));
+        assert_eq!(
+            config.priority_rules[0].conditions.0[0].to_string(),
+            "any: [labels.any: urgent, hotfix; head.matches: hotfix/**]"
+        );
+        assert_eq!(config.merge_checks("main"), ["build", "integration-tests"]);
     }
 
     #[test]
     fn merge_conditions_accept_only_required_checks() {
         let config = RepoConfig::parse(&queue(
-            "    merge_conditions:\n      - check-success = build\n      - check-success = \"e2e tests\"\n",
+            "    merge_conditions:\n      checks:\n        success:\n          - build\n          - e2e tests\n",
         ))
         .unwrap();
         assert_eq!(config.merge_checks("main"), ["build", "e2e tests"]);
         assert_eq!(config.merge_checks("other"), [] as [String; 0]);
-        for (body, shown) in [
-            ("      - label = ready\n", "label = ready"),
-            ("      - -check-success = build\n", "-check-success = build"),
+        for (body, shown, position) in [
+            ("      labels: ready\n", "labels: ready", at(5, 7)),
             (
-                "      - check-success ~= ^build\n",
-                "check-success ~= ^build",
+                "      checks:\n        success:\n          any:\n            - a\n",
+                "checks.success.any: a",
+                at(7, 11),
             ),
             (
-                "      - or:\n          - check-success = a\n",
-                "or: [check-success = a]",
+                "      any:\n        - checks:\n            success: a\n",
+                "any: [checks.success: a]",
+                at(5, 7),
             ),
         ] {
             let error = error(&queue(&format!("    merge_conditions:\n{body}")));
-            assert_eq!(error.position, Some(at(5, 9)), "{body}");
+            assert_eq!(error.position, Some(position), "{body}");
             assert_eq!(
                 error.message,
-                format!("merge_conditions accept only `check-success = <name>`, not `{shown}`")
+                format!("merge_conditions accept only `checks.success`, not `{shown}`")
             );
         }
     }
@@ -889,33 +834,234 @@ queues:
     }
 
     #[test]
-    fn reports_condition_errors_at_their_character() {
-        let e = error(&queue(
-            "    queue_conditions:\n      - -draft\n      - lable = x\n",
-        ));
+    fn reports_condition_errors_at_their_key_or_value() {
+        let conditions = |body: &str| error(&queue(&format!("    queue_conditions:\n{body}")));
+
+        let e = conditions("      draft: false\n      lables: x\n");
+        assert_eq!(e.position, Some(at(6, 7)));
+        assert_eq!(e.message, "unknown attribute `lables`");
+
+        let e = conditions("      checks:\n        green: [a]\n");
         assert_eq!(e.position, Some(at(6, 9)));
-        assert_eq!(e.message, "unknown attribute `lable`");
+        assert_eq!(e.message, "unknown attribute `checks.green`");
 
-        let e = error(&queue("    queue_conditions:\n      - label ~= (\n"));
-        assert_eq!(e.position, Some(at(5, 18)));
+        let e = conditions("      labels:\n        some: [a]\n");
+        assert_eq!(e.position, Some(at(6, 9)));
+        assert_eq!(
+            e.message,
+            "unknown key `some` under `labels`: expected all, any, none, all_match, any_match, none_match, count"
+        );
 
-        let e = error(&queue("    queue_conditions:\n      - \"#label >= x\"\n"));
-        assert_eq!(e.position, Some(at(5, 20)));
-        assert_eq!(e.message, "`x` is not an integer");
+        let e = conditions("      title:\n        regex: (\n");
+        assert_eq!(e.position, Some(at(6, 16)));
+        assert_eq!(
+            e.message,
+            "title.regex: invalid regular expression: unclosed group"
+        );
 
-        let e = error(&queue(
-            "    queue_conditions:\n      - or:\n          - label = a\n          - draft = true\n",
-        ));
+        let e = conditions("      files:\n        count:\n          max: x\n");
+        assert_eq!(e.position, Some(at(7, 16)));
+        assert_eq!(
+            e.message,
+            "files.count.max: `x` is not an integer from 0 to 4294967295"
+        );
 
-        assert_eq!(e.position, Some(at(7, 19)));
+        let e = conditions("      review_decision:\n        - approved\n        - ok\n");
+        assert_eq!(e.position, Some(at(7, 11)));
+
+        let e = conditions("      additions:\n        max: [1, 2]\n");
+        assert_eq!(e.message, "additions.max: takes one value, not a list");
+
+        let e = conditions("      additions:\n        min: 10\n        max: 5\n");
+        assert_eq!(e.position, Some(at(7, 14)));
+        assert_eq!(e.message, "additions.max: below `min`");
+
+        let e = conditions("      labels:\n        count:\n          max: 1\n          min: 2\n");
+        assert_eq!(e.position, Some(at(7, 16)));
+        assert_eq!(e.message, "labels.count.max: below `min`");
+
+        let e = conditions("      sender_permission:\n        min: admin\n        max: read\n");
+        assert_eq!(e.position, Some(at(7, 14)));
+        assert_eq!(e.message, "sender_permission.max: below `min`");
+
+        let e = conditions("      pr_age: 2h\n");
+        assert_eq!(e.position, Some(at(5, 15)));
+        assert_eq!(e.message, "pr_age: expected a key (min, max), not a value");
+
+        let e = conditions("      draft:\n");
+        assert_eq!(e.message, "draft: missing value");
+
+        let e = conditions("      draft: no\n");
+        assert_eq!(e.message, "draft: `no` is not `true` or `false`");
+
+        let config =
+            RepoConfig::parse(&queue("    queue_conditions:\n      labels: [no, on]\n")).unwrap();
+        assert_eq!(
+            config.queue_conditions("main").0[1].to_string(),
+            "labels: on"
+        );
+
+        let e = conditions("      labels: [a]\n      labels: [b]\n");
+        assert_eq!(e.position.map(|p| p.line), Some(6));
+
+        let e = conditions("      labels:\n        any:\n          - [a]\n");
+        assert_eq!(e.position, Some(at(7, 13)));
+        assert_eq!(e.message, "expected a value or a list of values");
+
+        let e = conditions("      - draft: false\n");
+        assert_eq!(e.message, "expected a map of conditions");
+
+        let e = conditions("      any:\n        labels: [a]\n");
+        assert_eq!(e.message, "`any` takes a list of condition maps");
+
+        let e = conditions("      any:\n        - or: x\n");
+        assert_eq!(e.position, Some(at(6, 11)));
+        assert_eq!(e.message, "unknown attribute `or`");
+
+        let e = conditions("      checks: [lint]\n");
+        assert!(
+            e.message.starts_with("expected a map of check states"),
+            "{e}"
+        );
     }
 
     #[test]
-    fn explains_a_condition_that_yaml_reads_as_a_comment() {
-        let e = error(&queue("    queue_conditions:\n      - #label = 0\n"));
+    fn refuses_empty_maps_and_a_second_form_of_a_key() {
+        let conditions = |body: &str| error(&queue(&format!("    queue_conditions:\n{body}")));
+
+        for (body, message) in [
+            (
+                "      labels: {}\n",
+                "expected the operators of `labels`, not an empty map",
+            ),
+            ("      checks: {}\n", "not an empty map"),
+            ("      any: []\n", "`any` takes a list of condition maps"),
+            (
+                "      all:\n        - {}\n",
+                "expected a map of conditions, not an empty map",
+            ),
+            (
+                "      files:\n        count: {}\n",
+                "expected `min` or `max`, not an empty map",
+            ),
+            (
+                "      checks.success: lint\n",
+                "unknown attribute `checks.success`",
+            ),
+            (
+                "      files:\n        count.min: 1\n",
+                "unknown key `count.min` under `files`",
+            ),
+            (
+                "      files:\n        count:\n          least: 1\n",
+                "unknown key `least` under `count`",
+            ),
+        ] {
+            let e = conditions(body);
+            assert!(e.message.contains(message), "{body}: {e}");
+        }
+    }
+
+    #[test]
+    fn accepts_a_min_equal_to_the_max() {
+        let body = "    queue_conditions:\n      additions:\n        min: 5\n        max: 5\n";
+
+        assert!(RepoConfig::parse(&queue(body)).is_ok());
+    }
+
+    #[test]
+    fn keeps_a_number_as_the_file_writes_it() {
+        let config = RepoConfig::parse(&queue(
+            "    queue_conditions:\n      checks:\n        success:\n          - 3.10\n          - 1.0\n          - 0x10\n      additions:\n        max: 50\n",
+        ))
+        .unwrap();
+        let shown: Vec<String> = config
+            .queue_conditions("main")
+            .0
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+
+        assert_eq!(
+            shown,
+            [
+                "checks.success: 3.10",
+                "checks.success: 1.0",
+                "checks.success: 0x10",
+                "additions.max: 50"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_merge_condition_error_points_at_its_key() {
+        let e = error(&queue(
+            "    merge_conditions:\n      checks:\n        success: [ci]\n      labels: [ready]\n",
+        ));
+        assert_eq!(e.position, Some(at(7, 7)));
+
+        let nested = "    merge_conditions:\n      checks:\n        success:\n          all: [a]\n          any: [b]\n        pending: [c]\n";
+        let e = error(&queue(nested));
+        assert_eq!(e.position, Some(at(8, 11)));
         assert!(
-            e.message.contains("quote a condition that starts with `#`"),
-            "{e}"
+            e.message.ends_with("not `checks.success.any: b`"),
+            "{}",
+            e.message
+        );
+
+        let e = error(&queue(&nested.replace("          any: [b]\n", "")));
+        assert_eq!(e.position, Some(at(8, 9)));
+        assert!(
+            e.message.ends_with("not `checks.pending: c`"),
+            "{}",
+            e.message
+        );
+    }
+
+    #[test]
+    fn an_empty_conditions_map_of_a_profile_or_a_rule_is_refused() {
+        let profile = |conditions: &str| {
+            queue(&format!(
+                "    profiles:\n      - name: bots\n        conditions:{conditions}\n"
+            ))
+        };
+        let rule = |conditions: &str| {
+            format!(
+                "version: 1\npriority_rules:\n  - name: a\n    priority: high\n    conditions:{conditions}\n"
+            )
+        };
+
+        let empty = "expected a map of conditions, not an empty map";
+        for (yaml, position, message) in [
+            (profile(" {}"), at(6, 21), empty),
+            (profile(""), at(6, 19), "expected a map of conditions"),
+            (rule(" {}"), at(5, 17), empty),
+            (rule(""), at(5, 15), "expected a map of conditions"),
+        ] {
+            let e = error(&yaml);
+            assert_eq!(e.position, Some(position), "{yaml}");
+            assert_eq!(e.message, message, "{yaml}");
+        }
+
+        let named = queue("    profiles:\n      - name: bots\n");
+        assert!(
+            RepoConfig::parse(&named).unwrap().queues[0].profiles[0]
+                .conditions
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_block_holds_maps_of_one_or_several_conditions() {
+        let config = RepoConfig::parse(&queue(
+            "    queue_conditions:\n      none:\n        - draft: true\n        - author: bob\n          labels: [wip]\n",
+        ))
+        .unwrap();
+
+        assert_eq!(
+            config.queue_conditions("main").0[0].to_string(),
+            "none: [draft: true; all: [author: bob; labels: wip]]"
         );
     }
 
@@ -987,7 +1133,8 @@ queues:
 queues:
   - branch: main
     queue_conditions: &checks
-      - check-success = ci
+      checks:
+        success: [ci]
     <<: &fast
       strategy: batched
       batching: { size: 8 }
@@ -1032,16 +1179,17 @@ queues:
         let text = "version: 1
 defaults:
   queue_conditions:
-    - -draft
+    draft: false
   merge_conditions:
-    - check-success = build
+    checks:
+      success: [build]
 queues:
   - branch: main
     queue_conditions:
-      - label = ready
+      labels: [ready]
     merge_conditions:
-      - check-success = e2e
-      - check-success = build
+      checks:
+        success: [e2e, build]
 ";
         let config = RepoConfig::parse(text).unwrap();
         let shown = |branch: &str| {
@@ -1053,8 +1201,8 @@ queues:
                 .collect::<Vec<_>>()
         };
 
-        assert_eq!(shown("main"), ["-draft", "label = ready"]);
-        assert_eq!(shown("dev"), ["-draft"]);
+        assert_eq!(shown("main"), ["draft: false", "labels: ready"]);
+        assert_eq!(shown("dev"), ["draft: false"]);
         assert_eq!(config.merge_checks("main"), ["build", "e2e"]);
         assert_eq!(config.merge_checks("dev"), ["build"]);
     }
@@ -1069,7 +1217,7 @@ queues:
     profiles:
       - name: dependencies
         conditions:
-          - author = dependabot[bot]
+          author: dependabot[bot]
         merge_method: merge_commit
         batching: { size: 8 }
         failure_budget: { retries: 2 }
@@ -1126,7 +1274,7 @@ queues:
     fn reads_priorities_by_name_or_value() {
         let rules = |priority: &str| {
             RepoConfig::parse(&format!(
-                "version: 1\npriority_rules:\n  - name: r\n    conditions: [draft]\n    priority: {priority}\n"
+                "version: 1\npriority_rules:\n  - name: r\n    conditions: {{ draft: true }}\n    priority: {priority}\n"
             ))
         };
         assert_eq!(

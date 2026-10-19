@@ -179,21 +179,21 @@ fn a_draining_queue_refuses_new_submissions() {
 fn unmet_queue_conditions_keep_a_pr_out_of_the_queue() {
     let mut w = world();
     w.submit_only(1, 0, Priority::MEDIUM);
-    w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
+    w.observe(1, |pr| pr.unmet_conditions = vec!["labels: ready".into()]);
 
     let item = w.item(1).unwrap();
     assert_eq!(item.state, ItemState::NotReady);
     assert_eq!(
         item.block_reasons,
         [BlockReason::QueueConditionsUnmet {
-            conditions: vec!["label = ready".into()]
+            conditions: vec!["labels: ready".into()]
         }]
     );
 
     w.observe(1, |_| {});
     assert_eq!(w.state(1), Some(ItemState::Testing));
 
-    w.observe(1, |pr| pr.unmet_conditions = vec!["label = ready".into()]);
+    w.observe(1, |pr| pr.unmet_conditions = vec!["labels: ready".into()]);
     assert_eq!(w.state(1), Some(ItemState::Testing));
 
     assert_replays(&w);

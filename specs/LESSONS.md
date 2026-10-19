@@ -255,6 +255,18 @@ reason no longer holds.
   profile sets only the settings of a PR: `strategy`, `window` or `trigger` describe the whole train, and
   `fast_forward` moves the target onto a test commit that the other PRs of the train do not descend from.
 
+### Conditions as strings of a small language
+
+- **Tried / considered**: write each condition as a string, `[-][#]attribute [operator value]` (`-draft`,
+  `-label = do-not-merge`, `#approved-reviews-by >= 2`, `~=` for a regex, `*=` for a glob), in a list with
+  `and`, `or` and `not` blocks.
+- **Why not**: it is the syntax of another product. Its symbols must be learned, two forms say the same thing
+  (`-label = x` and `label != x`), its meaning on a list does not show (`!=` negates "any", `~=` keeps it),
+  several values need a block or several lines, and a string needs its own parser, its quotes and its escapes.
+  The dashboard writes the file through a form, which maps to keys, not to a string to build. The conditions are
+  typed YAML maps (`specs/CONFIGURATION.md`): a schema can describe them for an editor or an agent, and an
+  explanation shows the path and the values that fail.
+
 ## GitHub
 
 ### An App creation wizard (manifest flow)

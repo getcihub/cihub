@@ -2,19 +2,19 @@ use std::fmt;
 
 use crate::{Attribute, Condition, Context, EvalError};
 
-/// A list of conditions, as written under `queue_conditions`,
-/// `merge_conditions` or a priority rule: all of them must hold.
+/// The conditions of a map, as written under `queue_conditions`,
+/// `merge_conditions`, a profile or a priority rule: all of them must hold.
 #[derive(Clone, Debug, Default)]
 pub struct Conditions(pub Vec<Expr>);
 
-/// One element of a condition list: a condition, or a block with one key.
+/// One condition of a map, or a block `all`, `any` or `none` of maps.
 #[derive(Clone, Debug)]
 pub enum Expr {
     Condition(Condition),
-    And(Vec<Expr>),
-    Or(Vec<Expr>),
-    /// True when the whole list does not hold.
-    Not(Vec<Expr>),
+    All(Vec<Expr>),
+    Any(Vec<Expr>),
+    /// True when no element holds.
+    None(Vec<Expr>),
 }
 
 impl Conditions {
@@ -30,8 +30,8 @@ impl Conditions {
         self.0.iter().any(|expr| expr.uses(attribute))
     }
 
-    /// The text of each element of the list that does not hold, in order,
-    /// to explain why a PR waits.
+    /// The text of each condition that does not hold, in the order of the
+    /// file, to explain why a PR waits.
     ///
     /// # Errors
     ///
@@ -47,19 +47,20 @@ impl Conditions {
     }
 }
 
-/// A condition as the file writes it; a block as its key and its list.
+/// A condition as its path and its values; a block as its key and its
+/// elements, separated by `;` as a value list uses `,`.
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (key, list) = match self {
-            Self::Condition(condition) => return f.write_str(condition.as_str()),
-            Self::And(list) => ("and", list),
-            Self::Or(list) => ("or", list),
-            Self::Not(list) => ("not", list),
+            Self::Condition(condition) => return condition.fmt(f),
+            Self::All(list) => ("all", list),
+            Self::Any(list) => ("any", list),
+            Self::None(list) => ("none", list),
         };
         write!(f, "{key}: [")?;
         for (n, expr) in list.iter().enumerate() {
             if n > 0 {
-                f.write_str(", ")?;
+                f.write_str("; ")?;
             }
             write!(f, "{expr}")?;
         }
@@ -74,16 +75,16 @@ impl Expr {
     pub fn eval(&self, ctx: &Context) -> Result<bool, EvalError> {
         match self {
             Self::Condition(condition) => condition.eval(ctx),
-            Self::And(list) => all(list, ctx),
-            Self::Or(list) => has(list, ctx, true),
-            Self::Not(list) => has(list, ctx, false),
+            Self::All(list) => all(list, ctx),
+            Self::Any(list) => has(list, ctx, true),
+            Self::None(list) => has(list, ctx, true).map(|any| !any),
         }
     }
 
     pub fn uses(&self, attribute: Attribute) -> bool {
         match self {
             Self::Condition(condition) => condition.attribute() == attribute,
-            Self::And(list) | Self::Or(list) | Self::Not(list) => {
+            Self::All(list) | Self::Any(list) | Self::None(list) => {
                 list.iter().any(|expr| expr.uses(attribute))
             }
         }
@@ -111,14 +112,25 @@ mod tests {
     use cihub_domain::{CheckConclusion, Permission, ReviewDecision};
 
     use super::*;
-    use crate::Check;
+    use crate::{Check, Operator};
 
-    fn condition(s: &str) -> Expr {
-        Expr::Condition(s.parse().unwrap())
+    fn conditions(attribute: Attribute, operator: Operator, values: &[&str]) -> Vec<Expr> {
+        let values: Vec<String> = values.iter().map(|&v| v.to_owned()).collect();
+        Condition::build(attribute, operator, &values)
+            .unwrap()
+            .into_iter()
+            .map(Expr::Condition)
+            .collect()
     }
 
-    fn holds(condition: &str, ctx: &Context) -> bool {
-        condition.parse::<Condition>().unwrap().eval(ctx).unwrap()
+    fn condition(attribute: Attribute, operator: Operator, values: &[&str]) -> Expr {
+        let mut list = conditions(attribute, operator, values);
+        assert_eq!(list.len(), 1);
+        list.remove(0)
+    }
+
+    fn holds(attribute: Attribute, operator: Operator, values: &[&str], ctx: &Context) -> bool {
+        all(&conditions(attribute, operator, values), ctx).unwrap()
     }
 
     fn pr() -> Context {
@@ -150,104 +162,199 @@ mod tests {
     }
 
     #[test]
-    fn list_operators_match_any_element_and_ne_matches_none() {
+    fn list_operators() {
+        use Attribute::Labels;
         let ctx = pr();
-        assert!(holds("label = ready", &ctx));
-        assert!(!holds("label = blocked", &ctx));
-        assert!(holds("label != blocked", &ctx));
-        assert!(!holds("label != ready", &ctx));
-        assert!(holds("-label = do-not-merge", &ctx));
-        assert!(holds("label ~= ^area/", &ctx));
-        assert!(holds("#label = 2", &ctx));
-        assert!(holds("-#label > 2", &ctx));
+
+        assert!(holds(Labels, Operator::Is, &["ready", "area/ci"], &ctx));
+        assert!(!holds(Labels, Operator::All, &["ready", "blocked"], &ctx));
+        assert!(holds(Labels, Operator::Any, &["blocked", "ready"], &ctx));
+        assert!(!holds(Labels, Operator::Any, &["blocked"], &ctx));
+        assert!(holds(Labels, Operator::None, &["blocked", "wip"], &ctx));
+        assert!(!holds(Labels, Operator::None, &["blocked", "ready"], &ctx));
+        assert!(holds(Labels, Operator::Count, &["2"], &ctx));
+        assert!(holds(Labels, Operator::CountMin, &["1"], &ctx));
+        assert!(!holds(Labels, Operator::CountMax, &["1"], &ctx));
     }
 
     #[test]
-    fn glob_star_stays_in_one_segment() {
-        let ctx = pr();
-        assert!(holds("files *= src/**/*.rs", &ctx));
-        assert!(!holds("files *= src/*.rs", &ctx));
-        assert!(holds("files *= *.md", &ctx));
+    fn globs_match_any_every_or_no_element() {
+        use Attribute::Files;
+        let mut ctx = pr();
+
+        assert!(holds(Files, Operator::AnyMatch, &["src/**/*.rs"], &ctx));
+        assert!(!holds(Files, Operator::AnyMatch, &["src/*.rs"], &ctx));
+        assert!(holds(Files, Operator::AllMatch, &["src/**", "*.md"], &ctx));
+        assert!(!holds(Files, Operator::AllMatch, &["src/**"], &ctx));
+        assert!(holds(Files, Operator::NoneMatch, &["migrations/**"], &ctx));
+        assert!(!holds(Files, Operator::NoneMatch, &["*.md"], &ctx));
+
+        ctx.files = Some(Vec::new());
+
+        assert!(!holds(Files, Operator::AllMatch, &["**"], &ctx));
     }
 
     #[test]
-    fn regex_matches_anywhere() {
+    fn string_operators() {
         let ctx = pr();
-        assert!(holds("title ~= queue", &ctx));
-        assert!(!holds("title ~= ^queue", &ctx));
+
+        assert!(holds(
+            Attribute::Author,
+            Operator::Is,
+            &["bob", "alice"],
+            &ctx
+        ));
+        assert!(!holds(Attribute::Author, Operator::Not, &["alice"], &ctx));
+        assert!(holds(Attribute::Base, Operator::Matches, &["ma*"], &ctx));
+        assert!(holds(Attribute::Title, Operator::Regex, &["queue"], &ctx));
+        assert!(!holds(Attribute::Title, Operator::Regex, &["^queue"], &ctx));
     }
 
     #[test]
     fn checks_are_grouped_by_conclusion() {
         let ctx = pr();
-        assert!(holds("check-success = lint", &ctx));
-        assert!(holds("check-failure = build", &ctx));
-        assert!(holds("check-pending = e2e", &ctx));
-        assert!(!holds("check-success = e2e", &ctx));
-    }
 
-    #[test]
-    fn unmet_names_each_element_that_does_not_hold() {
-        let conditions = Conditions(vec![
-            condition("label = ready"),
-            condition("label = blocked"),
-            Expr::Or(vec![condition("author = bob"), condition("number < 10")]),
-            Expr::Not(vec![condition("author = alice")]),
-            Expr::And(vec![condition("number = 42")]),
-        ]);
-        assert_eq!(
-            conditions.unmet(&pr()),
-            Ok(vec![
-                "label = blocked".to_owned(),
-                "or: [author = bob, number < 10]".to_owned(),
-                "not: [author = alice]".to_owned(),
-            ])
-        );
-        let threads = Conditions(vec![condition("#review-threads-unresolved = 0")]);
-        assert_eq!(
-            threads.unmet(&pr()),
-            Err(EvalError::NotLoaded(Attribute::ReviewThreadsUnresolved))
-        );
+        assert!(holds(
+            Attribute::CheckSuccess,
+            Operator::Is,
+            &["lint"],
+            &ctx
+        ));
+        assert!(holds(
+            Attribute::CheckFailure,
+            Operator::Is,
+            &["build"],
+            &ctx
+        ));
+        assert!(holds(Attribute::CheckPending, Operator::Is, &["e2e"], &ctx));
+        assert!(!holds(
+            Attribute::CheckSuccess,
+            Operator::Is,
+            &["e2e"],
+            &ctx
+        ));
+        assert!(holds(
+            Attribute::CheckSkipped,
+            Operator::Count,
+            &["0"],
+            &ctx
+        ));
+        assert!(holds(
+            Attribute::CheckNeutral,
+            Operator::Count,
+            &["0"],
+            &ctx
+        ));
     }
 
     #[test]
     fn compares_numbers_durations_and_choices() {
         let mut ctx = pr();
-        assert!(holds("number >= 42", &ctx));
-        assert!(holds("pr-age > 2h", &ctx));
-        assert!(holds("review-decision = approved", &ctx));
-        assert!(holds("review-decision != review_required", &ctx));
+
+        assert!(holds(Attribute::Number, Operator::Is, &["42"], &ctx));
+        assert!(holds(Attribute::Number, Operator::Min, &["42"], &ctx));
+        assert!(!holds(Attribute::Number, Operator::Max, &["41"], &ctx));
+        assert!(holds(Attribute::PrAge, Operator::Min, &["2h"], &ctx));
+        assert!(holds(
+            Attribute::ReviewDecision,
+            Operator::Is,
+            &["approved"],
+            &ctx
+        ));
+        assert!(!holds(
+            Attribute::ReviewDecision,
+            Operator::Is,
+            &["none", "review_required"],
+            &ctx
+        ));
 
         ctx.sender = Some("bob".into());
         ctx.sender_permission = Some(Permission::Write);
 
-        assert!(holds("sender-permission >= write", &ctx));
-        assert!(!holds("sender-permission >= admin", &ctx));
+        assert!(holds(
+            Attribute::SenderPermission,
+            Operator::Min,
+            &["write"],
+            &ctx
+        ));
+        assert!(!holds(
+            Attribute::SenderPermission,
+            Operator::Min,
+            &["admin"],
+            &ctx
+        ));
+        assert!(holds(Attribute::Sender, Operator::Is, &["bob"], &ctx));
     }
 
     #[test]
     fn absent_values_do_not_compare() {
         let ctx = pr();
-        assert!(!holds("sender-permission >= none", &ctx));
-        assert!(!holds("sender-permission != admin", &ctx));
-        assert!(!holds("queue-age < 1000d", &ctx));
-        assert!(holds("queue-position = -1", &ctx));
+
+        assert!(!holds(
+            Attribute::SenderPermission,
+            Operator::Max,
+            &["admin"],
+            &ctx
+        ));
+        assert!(!holds(
+            Attribute::SenderPermission,
+            Operator::Is,
+            &["none"],
+            &ctx
+        ));
+        assert!(!holds(Attribute::QueueAge, Operator::Max, &["1000d"], &ctx));
+        assert!(!holds(
+            Attribute::QueuePosition,
+            Operator::Min,
+            &["0"],
+            &ctx
+        ));
+        assert!(holds(Attribute::Sender, Operator::Not, &["bob"], &ctx));
     }
 
     #[test]
-    fn booleans_and_negation() {
+    fn booleans() {
         let mut ctx = pr();
-        assert!(holds("-draft", &ctx));
+
+        assert!(holds(Attribute::Draft, Operator::Is, &["false"], &ctx));
         ctx.draft = true;
-        assert!(holds("draft", &ctx));
+        assert!(holds(Attribute::Draft, Operator::Is, &["true"], &ctx));
+        assert!(!holds(Attribute::Draft, Operator::Is, &["false"], &ctx));
     }
 
     #[test]
-    fn attributes_loaded_on_demand_fail_when_missing() {
-        let ctx = pr();
-        let condition: Condition = "#review-threads-unresolved = 0".parse().unwrap();
+    fn unmet_names_each_condition_that_does_not_hold() {
+        let mut list = conditions(Attribute::Labels, Operator::Is, &["ready", "blocked"]);
+        list.push(Expr::Any(vec![
+            condition(Attribute::Author, Operator::Is, &["bob"]),
+            condition(Attribute::Number, Operator::Max, &["10"]),
+        ]));
+        list.push(Expr::None(vec![condition(
+            Attribute::Author,
+            Operator::Is,
+            &["alice"],
+        )]));
+        list.push(Expr::All(vec![condition(
+            Attribute::Number,
+            Operator::Is,
+            &["42"],
+        )]));
+
         assert_eq!(
-            condition.eval(&ctx),
+            Conditions(list).unmet(&pr()),
+            Ok(vec![
+                "labels: blocked".to_owned(),
+                "any: [author: bob; number.max: 10]".to_owned(),
+                "none: [author: alice]".to_owned(),
+            ])
+        );
+        let threads = Conditions(conditions(
+            Attribute::ReviewThreadsUnresolved,
+            Operator::Count,
+            &["0"],
+        ));
+        assert_eq!(
+            threads.unmet(&pr()),
             Err(EvalError::NotLoaded(Attribute::ReviewThreadsUnresolved))
         );
     }
@@ -256,26 +363,26 @@ mod tests {
     fn evaluates_blocks() {
         let ctx = pr();
         let list = Conditions(vec![
-            condition("-draft"),
-            Expr::Or(vec![
-                condition("label = hotfix"),
-                condition("label = ready"),
+            condition(Attribute::Draft, Operator::Is, &["false"]),
+            Expr::Any(vec![
+                condition(Attribute::Labels, Operator::Any, &["hotfix"]),
+                condition(Attribute::Labels, Operator::Any, &["ready"]),
             ]),
-            Expr::Not(vec![
-                condition("author = dependabot[bot]"),
-                condition("label = ready"),
+            Expr::None(vec![
+                condition(Attribute::Author, Operator::Is, &["dependabot[bot]"]),
+                condition(Attribute::Labels, Operator::Any, &["blocked"]),
             ]),
         ]);
 
         assert_eq!(list.eval(&ctx), Ok(true));
         assert!(list.uses(Attribute::Author));
         assert!(!list.uses(Attribute::Files));
-        let and = Conditions(vec![Expr::And(vec![
-            condition("label = ready"),
-            condition("draft"),
+        let all = Conditions(vec![Expr::All(vec![
+            condition(Attribute::Labels, Operator::Any, &["ready"]),
+            condition(Attribute::Draft, Operator::Is, &["true"]),
         ])]);
 
-        assert_eq!(and.eval(&ctx), Ok(false));
+        assert_eq!(all.eval(&ctx), Ok(false));
         assert_eq!(Conditions::default().eval(&ctx), Ok(true));
     }
 }

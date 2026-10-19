@@ -10,7 +10,7 @@ each new head; the settings apply from the reconciliation that follows the
 read. A branch has at most one queue, and the branch names it: two queues on one branch would each merge
 without testing on top of the other, and each merge of one would restart the runs of the other
 (`specs/LESSONS.md`). The `branch` of an entry is a branch, or a glob of branches (`release/*`, with the
-syntax of `*=`: `*` stays in one `/` segment, `**` crosses them); each branch that a glob matches has its own
+syntax of `matches`: `*` stays in one `/` segment, `**` crosses them); each branch that a glob matches has its own
 queue. A branch takes the entry that names it, else the first glob, in file order, that matches it. No queue
 is created by hand: the first `/cihub merge` on a branch without a queue creates its queue when an entry of
 the file serves that branch, or when it is the default branch of the repository, with the default settings
@@ -29,6 +29,7 @@ queue whose `conditions` the PR satisfies gives its settings, unless the command
 below).
 
 ```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
 version: 1
 queues:
   - branch: main
@@ -36,44 +37,70 @@ queues:
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission: the PR itself
-      - review-decision = approved
-      - -draft
-      - -label = do-not-merge
-      - check-success = lint
+      review_decision: approved
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - lint
     merge_conditions:                     # on the speculative commit
-      - check-success = build
-      - check-success = integration-tests
-    window: { floor: 2, ceiling: 20 }
-    batching: { size: 8, max_wait_minutes: 5 }
-    failure_budget: { retries: 1 }
+      checks:
+        success:
+          - build
+          - integration-tests
+    window:
+      floor: 2
+      ceiling: 20
+    batching:
+      size: 8
+      max_wait_minutes: 5
+    failure_budget:
+      retries: 1
     pending_failure_depth: 1
     optimistic_merging: true
     profiles:                             # settings of a kind of PR, in the same train
       - name: dependencies
         conditions:                       # choose the profile, once, at the submission
-          - author = dependabot[bot]
+          author:
+            - dependabot[bot]
+            - cihub-renovate[bot]
         merge_method: merge_commit
-        batching: { size: 8, max_wait_minutes: 15 }
-        failure_budget: { retries: 2 }
-  - branch: "release/*"                   # a queue for each branch that the glob matches
+        batching:
+          size: 8
+          max_wait_minutes: 15
+        failure_budget:
+          retries: 2
+  - branch: release/*                     # a queue for each branch that the glob matches
     strategy: sequential
     merge_method: fast_forward
     queue_conditions:
-      - sender-permission >= write
+      sender_permission:
+        min: write
 priority_rules:
   - name: urgent
     conditions:
-      - label = urgent
+      any:
+        - labels:
+            any:
+              - urgent
+              - hotfix
+        - head:
+            matches: hotfix/**
     priority: urgent                      # urgent | high | medium | low | 0-255
   - name: dependabot
     conditions:
-      - author = dependabot[bot]          # an inline list breaks the YAML on the brackets
+      author: dependabot[bot]
     priority: low
 defaults:                                 # any queue setting; each queue can override it
-  label_commands: { enqueue_label: ready-to-merge }
+  label_commands:
+    enqueue_label: ready-to-merge
   merge_commit_title: pr_title            # pr_title | pr_title_and_number
   queue_conditions:                       # every queue adds its own after them
-    - -label = do-not-merge
+    labels:
+      none:
+        - do-not-merge
 ```
 
 ## Errors
@@ -82,8 +109,9 @@ The file must start with `version: 1`: another value, or its absence, gives
 `start_test_run_config_bad_version`. An unknown key, an out-of-range value or two settings that do not go
 together give `start_test_run_config_parsing_failure`, with the line and column of the faulty value. A
 `required_statuses` list with an empty or duplicate name gives `start_test_run_config_bad_required_statuses`.
-For now, `merge_conditions` accepts only `check-success = <name>` at the first level:
-another form gives `start_test_run_config_parsing_failure`, with its position. `defaults` accepts every
+A condition that the section Conditions does not allow gives `start_test_run_config_parsing_failure`, with
+its position. Only `true` and `false` are booleans, in every key of the file: `yes`, `no`, `on` and `off` are
+strings. `defaults` accepts every
 queue setting and the conditions, but not `branch` or `profiles`; two entries cannot have the same `branch`,
 and a `branch` that is not a valid glob is refused. In an entry, two profiles cannot have the same `name`, and a
 profile cannot set `merge_method: fast_forward`, which moves the target of the whole train.
@@ -172,3 +200,82 @@ A queue cannot be deleted while it contains live items; its deletion erases its 
 and its history from Postgres but not from ClickHouse. Changing `mode` with items in flight switches to
 `switching_modes`, refuses new submissions with `queue_switching_modes`, and ends automatically
 when the last item concludes.
+
+## Conditions
+
+The conditions of the file are typed YAML maps: `queue_conditions`, `merge_conditions`, the `conditions` of a
+profile and of a priority rule (`cihub-conditions` checks and evaluates them, `cihub-config` reads them). In a
+map, the key is an attribute and the value is typed; every key of a map must hold. The documentation writes
+the block style: one key per line, one list element per line; a value such as `dependabot[bot]` then needs no
+quotes, and a value that starts with `*` takes quotes (`"**/*.md"`), as YAML reads it as an alias.
+
+| Type                      | Keys under the attribute                                                                                  | Example                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Boolean                   | none: the value is `true` or `false`                                                                      | `draft: false`                             |
+| String                    | none (one of the values), `not` (none of the values), `matches` (globs), `regex`                          | `head:` then `matches: hotfix/**`          |
+| List                      | none (shortcut of `all`), `all`, `any`, `none`, `any_match`, `all_match`, `none_match` (globs), `count`   | `labels:` then `none:` then `- wip`        |
+| Integer                   | none (equal), `min`, `max` (inclusive)                                                                    | `additions:` then `max: 500`               |
+| Duration                  | `min`, `max` (inclusive); no value, as an exact duration never holds                                      | `pr_age:` then `min: 2h`                   |
+| Closed choice             | none (one of the values); an ordered choice also takes `min`, `max`                                       | `review_decision: approved`                |
+| Logic, at any level       | `all`, `any`, `none`, each followed by a list of maps: every map, at least one, no map holds             | `any:` then `- labels: …`                  |
+
+A key takes one value or a list of values; `regex`, `min`, `max`, `count` and the value of a boolean or an
+integer take one. In one map, a `max` below the `min` is refused. `count` takes an integer, or `min` and `max`.
+A key that appears in a list operator (`all`, `any`, `none`) has the same meaning at both levels: on a list
+attribute it counts the values that the PR has, at the level of the map it counts the maps that hold. `all_match` is true when every element
+matches one of the globs, and false on an empty list. A glob is the glob of `branch`. `regex` is accepted on a
+string only and looks for a match anywhere, with the `regex` crate, in linear time, without lookaround or
+backreferences. An absent string (`sender` without a sender) behaves like an empty list; a comparison on an
+absent value (`queue_age` and `queue_position` outside the queue, `sender_permission` without a sender) is
+false. No templates (`{{ author }}`); no alias for a name.
+
+| Attribute                                                                                | Type                                                       | Note                                                                         |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `draft`, `conflict`, `from_fork`, `behind_base`                                          | boolean                                                    | `behind_base` is read from `mergeStateStatus = BEHIND`                       |
+| `number`, `additions`, `deletions`, `queue_position`                                     | integer                                                    | `queue_position`: 0 at the head of the queue                                 |
+| `queue_age`, `pr_age`                                                                    | duration (`30m`, `2h`, `7d`)                               |                                                                              |
+| `title`, `body`, `author`, `sender`, `base`, `head`                                      | string                                                     | `sender`: author of the command or of the submission                         |
+| `review_decision`                                                                        | `approved`, `changes_requested`, `review_required`, `none` |                                                                              |
+| `sender_permission`                                                                      | `none` < `read` < `write` < `admin`                        | Ordered                                                                      |
+| `labels`, `files`                                                                        | list                                                       | `files` is read only if a condition uses it                                  |
+| `approved_reviews_by`, `changes_requested_reviews_by`, `review_requested`                | list                                                       |                                                                              |
+| `review_threads_unresolved`                                                              | list                                                       | Paths of the unresolved threads, read only if a condition uses it           |
+| `checks.success`, `checks.neutral`, `checks.skipped`, `checks.failure`, `checks.pending` | list of check names                                        | Under one `checks` map; `failure`: `failure`, `error`, `cancelled`, `timed_out`, `action_required` or `stale`; `pending`: no conclusion yet |
+| `schedule`                                                                               | time range                                                 | Deferred: requires a time zone database in the pure core                    |
+
+The checks are read on the head of the PR in `queue_conditions`, and on the test SHA in `merge_conditions`;
+names match exactly, without an `@app/` prefix. For now, `merge_conditions` accepts only `checks.success` with
+names, which are added to the required statuses of the run. The error of another condition points at the
+deepest key that is refused (`checks.pending`, or `any` under `checks.success`).
+
+A value is kept as the file writes it: a check `3.10` stays `3.10`, not the number `3.1`. An unknown
+attribute, an unknown key under an attribute, a key that does not fit the type, an invalid value, or an empty
+map or block list inside a condition (it would hold, or fail, without a word), or an empty or null
+`conditions` of a profile or of a priority rule (it would match every PR; a profile without the key is
+valid), gives `start_test_run_config_parsing_failure` with its line and column, and a message that starts
+with the path of the condition (`files.count.max: `x` is not an integer from 0 to 4294967295`). A PR that
+waits shows each condition that does not hold, in the order of the file, as its path and its values (`checks.success: lint`, `labels.none:
+wip`): a key whose values each hold on their own (a list attribute, `all`, `none`) gives one condition per
+value, so that only the values that fail are shown. A block shows as its key and its maps, separated by `;`
+(`any: [labels.any: urgent, hotfix; head.matches: hotfix/**]`).
+
+## JSON schema
+
+`schema/config/v1.json` describes the file in JSON Schema (draft-07, which the editors read), with a
+description for each key: an editor or an agent completes and checks the file with it. A file declares it on
+its first line, as the example above; `v1` is the `version: 1` of the file:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
+```
+
+The schema is written by hand, and `crates/config/tests/schema.rs` keeps it equal to the code: the keys of
+each level and the values of each closed setting are those that the parser accepts, the range of each integer
+setting is the one that it checks, the attributes, the operators of each attribute and the values of each
+closed choice are those of `cihub-conditions`, and every key has a description. A key, a value, a range, an
+attribute or an operator that the code adds or removes thus fails a test until the schema follows. The URL of
+`main` is the one of the documentation; a file that the dashboard writes will declare the URL of the tag of
+its instance (`…/cihub/<tag>/schema/config/v1.json`), whose keys are those that this instance accepts.
+
+**Not yet.** A `cihub config check` command that gives the errors of the server, for a person and for an
+agent, and an entry in SchemaStore, so that an editor finds the schema without the first line.

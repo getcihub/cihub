@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 use crate::jobs::Failure;
 use crate::target::QueueTarget;
 
-/// Who submitted the PR, for `sender` and `sender-permission`.
+/// Who submitted the PR, for `sender` and `sender_permission`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Sender {
     pub login: Option<String>,
@@ -84,7 +84,7 @@ pub(crate) struct Reading<'a> {
 
 /// The `queue_conditions` of the queue of `target` that `pr` does not meet, as `config`, the last valid file
 /// of the queue, writes them, then, with `branch_protection_injection: both`, each check that the rules
-/// require and that has not passed on the head of the PR, as `check-success = <name>`. The files and the
+/// require and that has not passed on the head of the PR, as `checks.success: <name>`. The files and the
 /// review threads are read only when a condition uses them.
 pub(crate) async fn unmet_conditions(
     scm: &dyn Scm,
@@ -100,7 +100,7 @@ pub(crate) async fn unmet_conditions(
 
 /// With `branch_protection_injection: both`, each check that the rules
 /// require and that has not passed on the head of the PR, as
-/// `check-success = <name>`.
+/// `checks.success: <name>`.
 fn injected(pr: &PrSnapshot, reading: &Reading<'_>) -> Vec<String> {
     if reading.injection != BranchProtectionInjection::Both {
         return Vec::new();
@@ -111,7 +111,7 @@ fn injected(pr: &PrSnapshot, reading: &Reading<'_>) -> Vec<String> {
         .names
         .iter()
         .filter(|name| *name != reading.own_status && !check_passed(pr, name))
-        .map(|name| format!("check-success = {name}"))
+        .map(|name| format!("checks.success: {name}"))
         .collect()
 }
 
@@ -242,7 +242,7 @@ mod tests {
         let mut target = test_target();
         target.config_text = Some(format!(
             "version: 1\nqueues:\n  - branch: main\n    \
-             branch_protection_injection: {injection}\n    queue_conditions:\n      - label = ready\n      - author = alice\n"
+             branch_protection_injection: {injection}\n    queue_conditions:\n      labels: ready\n      author: alice\n"
         ));
 
         let rules = RequiredChecks {
@@ -275,18 +275,22 @@ mod tests {
 queues:
   - branch: main
     queue_conditions:
-      - \"files ~= ^src/\"
+      files:
+        any_match: src/**
     profiles:
       - name: docs
         conditions:
-          - \"files ~= ^docs/\"
+          files:
+            any_match: docs/**
       - name: core
         conditions:
-          - \"files ~= ^src/\"
+          files:
+            any_match: src/**
 priority_rules:
   - name: core
     conditions:
-      - \"files ~= ^src/\"
+      files:
+        any_match: src/**
     priority: high
 "
             .to_owned(),
@@ -336,12 +340,12 @@ priority_rules:
     async fn the_injection_names_the_required_checks_that_did_not_pass() {
         assert_eq!(
             unmet("both", &[("ci", true), ("lint", false)]).await,
-            ["author = alice", "check-success = lint"]
+            ["author: alice", "checks.success: lint"]
         );
         assert_eq!(
             unmet("merge", &[("ci", true), ("lint", false)]).await,
-            ["author = alice"]
+            ["author: alice"]
         );
-        assert_eq!(unmet("none", &[]).await, ["author = alice"]);
+        assert_eq!(unmet("none", &[]).await, ["author: alice"]);
     }
 }

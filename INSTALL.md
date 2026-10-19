@@ -115,6 +115,8 @@ reviews must block a merge, and which pull requests must go first.
 Then write the file, with only the keys below, and explain each choice.
 
 Rules of the file (version 1):
+- Its first line declares the schema, for the editor:
+  `# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json`.
 - It starts with `version: 1`. Top-level keys: `queues` (a list),
   `priority_rules` (a list) and `defaults` (any queue setting and the
   conditions, without `branch` or `profiles`). An unknown key is an error.
@@ -126,7 +128,7 @@ Rules of the file (version 1):
 - If the file has no queue for the default branch, that branch still has
   one. Other branches have a queue only with an entry.
 - YAML anchors (`&name`, `*name`) and merge keys (`<<: *name`) work, to
-  write a list of conditions or a set of settings once.
+  write a map of conditions or a set of settings once.
 - `strategy`: `sequential` (one test at a time), `pipelined` (default: tests
   in parallel, each on top of the ones ahead) or `batched` (`pipelined` with
   several pull requests per test; a failed batch is split to find the
@@ -158,8 +160,8 @@ Rules of the file (version 1):
   the key, they come from the branch rules. With no required check at all,
   every test fails.
 - `queue_conditions`: what a pull request must meet to enter the queue.
-  `merge_conditions`: only `check-success = <name>` items, which add
-  required checks on the test commit. Those of `defaults` come first, and
+  `merge_conditions`: only `checks`, then `success`, then a list of check
+  names, which adds required checks on the test commit. Those of `defaults` come first, and
   each queue adds its own.
 - `profiles` (in a queue): a list of `{ name, conditions, merge_method,
   merge_commit_title, batching, failure_budget }` for a kind of pull request
@@ -171,21 +173,32 @@ Rules of the file (version 1):
   is `urgent` (0), `high` (10), `medium` (100, default), `low` (200) or 0-255;
   a lower number goes first; the first rule that matches wins.
 
-Conditions: `[-][#]attribute [operator value]`, where `-` negates and `#`
-counts the items of a list (`#approved-reviews-by >= 2`); nested `and:`,
-`or:` and `not:` blocks take a list. Operators: `=`, `!=`, `<`, `<=`, `>`,
-`>=` (numbers, durations, counts, sender-permission), `~=` (regular
-expression) and `*=` (glob) on text and lists. A list matches when one item
-matches; `!=` means no item is equal. Attributes: draft, conflict, from-fork,
-behind-base, number, title, body, review-decision (approved,
-changes_requested, review_required, none; `=` or `!=`), approved-reviews-by,
-changes-requested-reviews-by, review-requested, review-threads-unresolved,
-check-success, check-neutral, check-skipped, check-failure, check-pending,
-label, author, sender, sender-permission (none < read < write < admin), files,
-additions, deletions, base, head, pr-age. Durations are `<n>m`,
-`<n>h` or `<n>d`. A boolean attribute alone is true, without an operator
-(`-draft` means "not a draft"). In YAML, quote a condition that starts with
-`#` or holds `[` or `]`.
+Conditions are a YAML map, in the block style: the key is an attribute, the
+value is typed, and every key must hold. A boolean takes `true` or `false`
+(`draft: false`). A string takes a value or a list (one of them), or `not`
+(none of them), `matches` (globs) or `regex`. A list takes a list of values
+(all of them), or `all`, `any`, `none`, `any_match`, `all_match`,
+`none_match` (globs) or `count` (a number, or `min` and `max`). A number or
+a duration takes a value (equal), or `min` and `max` (inclusive). The checks
+are under one `checks` map: `success`, `neutral`, `skipped`, `failure`,
+`pending`. `all:`, `any:` and `none:` take a list of maps. Attributes:
+draft, conflict, from_fork, behind_base, number, title, body,
+review_decision (approved, changes_requested, review_required, none),
+approved_reviews_by, changes_requested_reviews_by, review_requested,
+review_threads_unresolved, checks, labels, author, sender, sender_permission
+(none < read < write < admin; takes `min`, `max`), files, additions,
+deletions, base, head, queue_position, queue_age, pr_age. Durations are
+`<n>m`, `<n>h` or `<n>d`. Only `true` and `false` are booleans. Quote a value
+that starts with `*`. For example:
+
+    queue_conditions:
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - build
 ```
 
 The reference of every key is [`specs/CONFIGURATION.md`](specs/CONFIGURATION.md).
