@@ -7,6 +7,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFi
 import { join } from "node:path";
 
 import { chromium } from "@playwright/test";
+import pixelmatch from "pixelmatch";
 
 import type { Box, ViewerData } from "./viewer/data";
 
@@ -31,43 +32,81 @@ const pngs = (dir: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith(".png")) : [];
 const dataUrl = (file: string): string => `data:image/png;base64,${readFileSync(file).toString("base64")}`;
 
-// The page compares the two images on canvases of the larger of their sizes, and draws the head dimmed with the
-// changed pixels in red: a pixel that only one image has is transparent in the other one, so it counts as changed.
+// The page draws the two images on canvases of the larger of their sizes: a pixel that only one image has is
+// transparent in the other one.
 const PAGE = `<body style="margin:0;background:#fff"><img id="base" hidden><img id="head" hidden>
 <canvas id="changes" style="display:block"></canvas></body>`;
 
-function compareInPage(): Omit<Difference, "name"> {
+interface Pixels {
+  width: number;
+  height: number;
+  before: Uint8ClampedArray;
+  after: Uint8ClampedArray;
+  /** The size that both images cover. */
+  shared: { width: number; height: number };
+  /** The size before and after, when it changed. */
+  resized: string | null;
+}
+
+function pixelsInPage(): Pixels {
   const base = document.getElementById("base") as HTMLImageElement;
   const head = document.getElementById("head") as HTMLImageElement;
-  const changes = document.getElementById("changes") as HTMLCanvasElement;
   const width = Math.max(base.naturalWidth, head.naturalWidth);
   const height = Math.max(base.naturalHeight, head.naturalHeight);
   const sizeOf = (image: HTMLImageElement): string =>
     `${String(image.naturalWidth)}×${String(image.naturalHeight)}`;
-  const resized = sizeOf(base) === sizeOf(head) ? null : `${sizeOf(base)} → ${sizeOf(head)}`;
-
   const pixelsOf = (image: HTMLImageElement): Uint8ClampedArray => {
     const canvas = new OffscreenCanvas(width, height);
     const context = canvas.getContext("2d");
     context?.drawImage(image, 0, 0);
     return context?.getImageData(0, 0, width, height).data ?? new Uint8ClampedArray();
   };
-  const [before, after] = [pixelsOf(base), pixelsOf(head)];
-  changes.width = width;
-  changes.height = height;
-  const context = changes.getContext("2d");
-  const out = new ImageData(width, height);
+
+  return {
+    width,
+    height,
+    before: pixelsOf(base),
+    after: pixelsOf(head),
+    shared: {
+      width: Math.min(base.naturalWidth, head.naturalWidth),
+      height: Math.min(base.naturalHeight, head.naturalHeight),
+    },
+    resized: sizeOf(base) === sizeOf(head) ? null : `${sizeOf(base)} → ${sizeOf(head)}`,
+  };
+}
+
+function drawInPage({
+  width,
+  height,
+  changes,
+}: {
+  width: number;
+  height: number;
+  changes: Uint8ClampedArray;
+}): void {
+  const canvas = document.getElementById("changes") as HTMLCanvasElement;
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d")?.putImageData(new ImageData(new Uint8ClampedArray(changes), width, height), 0, 0);
+}
+
+// The head dimmed, with the changed pixels in red. pixelmatch ignores the pixels of an anti-aliased edge and the
+// differences that the eye does not see: the runner of the CI draws the edges of the same build with a few
+// different pixels from one capture to the next.
+function compare({ width, height, before, after, shared, resized }: Pixels): {
+  difference: Omit<Difference, "name">;
+  changes: Uint8ClampedArray;
+} {
+  const changed = new Uint8ClampedArray(before.length);
+  pixelmatch(before, after, changed, width, height, { diffMask: true });
+  const changes = new Uint8ClampedArray(before.length);
   let count = 0;
   let [left, top, right, bottom] = [width, height, -1, -1];
 
   for (let index = 0; index < after.length; index += 4) {
-    const isChanged =
-      before[index] !== after[index] ||
-      before[index + 1] !== after[index + 1] ||
-      before[index + 2] !== after[index + 2] ||
-      before[index + 3] !== after[index + 3];
     const pixel = index / 4;
     const [x, y] = [pixel % width, Math.floor(pixel / width)];
+    const isChanged = changed[index + 3] !== 0 || x >= shared.width || y >= shared.height;
 
     if (isChanged) {
       count += 1;
@@ -77,20 +116,22 @@ function compareInPage(): Omit<Difference, "name"> {
         Math.max(right, x),
         Math.max(bottom, y),
       ];
-      out.data.set([229, 72, 77, 255], index);
+      changes.set([229, 72, 77, 255], index);
     } else {
       const gray = ((after[index] ?? 0) + (after[index + 1] ?? 0) + (after[index + 2] ?? 0)) / 3;
-      out.data.set([gray, gray, gray, 60], index);
+      changes.set([gray, gray, gray, 60], index);
     }
   }
-  context?.putImageData(out, 0, 0);
 
   const area = `x ${String(left)}–${String(right)}, y ${String(top)}–${String(bottom)}`;
   return {
-    pixels: count,
-    box: { left, top, right, bottom },
-    region: count === 0 ? "" : resized ? `${area}; size ${resized}` : area,
-    resized,
+    difference: {
+      pixels: count,
+      box: { left, top, right, bottom },
+      region: count === 0 ? "" : resized ? `${area}; size ${resized}` : area,
+      resized,
+    },
+    changes,
   };
 }
 
@@ -137,6 +178,10 @@ const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const differences: Difference[] = [];
 
 for (const name of shared) {
+  if (readFileSync(join(baseDir, name)).equals(readFileSync(join(headDir, name)))) {
+    continue;
+  }
+
   await page.setContent(PAGE);
   await page.evaluate(
     async ([base, head]) => {
@@ -150,10 +195,12 @@ for (const name of shared) {
     },
     [dataUrl(join(baseDir, name)), dataUrl(join(headDir, name))],
   );
-  const difference = await page.evaluate(compareInPage);
+  const pixels = await page.evaluate(pixelsInPage);
+  const { difference, changes } = compare(pixels);
 
   if (difference.pixels) {
     differences.push({ name, ...difference });
+    await page.evaluate(drawInPage, { width: pixels.width, height: pixels.height, changes });
     await page.locator("#changes").screenshot({ path: join(outDir, "changes", name) });
   }
 }
