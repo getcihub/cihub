@@ -58,7 +58,7 @@ function OrgFrame({ me, org }: { me: Me; org: string }) {
 /** Every installation of the App on the organization is suspended: the pages still open, and nothing merges. */
 function SuspendedBanner({ org }: { org: string }) {
   return (
-    <Alert variant="destructive" role="status" className="mx-6 mt-4">
+    <Alert isBanner variant="destructive" role="status" className="mx-6 mt-4">
       <ErrorIcon />
       <AlertContent>
         <AlertTitle>CIHub lost its access to {org}.</AlertTitle>

@@ -12,7 +12,7 @@ export function SetupRules({ repo, isChecking }: { repo: RepoDetail; isChecking:
 
   if (setup.target_branch_missing) {
     return (
-      <Alert variant="destructive" role="status">
+      <Alert isBanner variant="destructive" role="status">
         <ErrorIcon />
         <AlertContent>
           <AlertTitle>
