@@ -34,9 +34,7 @@ describe("the routes of the dashboard", () => {
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/orgs/acme-labs");
     });
-    expect(
-      await screen.findByText("The App reaches no repository of this organization yet."),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "No repository yet" })).toBeInTheDocument();
   });
 
   it("say that an organization without a role is out of reach", async () => {

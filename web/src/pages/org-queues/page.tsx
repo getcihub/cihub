@@ -10,8 +10,10 @@ import { MinePrs } from "@/components/mine/mine";
 import { COMMAND } from "@/components/queue/copy-command";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { Alert, AlertContent, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { QueueIllustration } from "@/components/ui/illustrations";
 import { Input } from "@/components/ui/input";
 import { Page } from "@/components/ui/page";
 import { SectionCount, SectionHead, SectionTitle } from "@/components/ui/section";
@@ -70,6 +72,7 @@ export function OrgQueuesPage() {
   const isWaiting = isListWaiting(list, isConnecting || isFirstRead || (hasAskedAgain && !wait.isOver));
   const hasGivenUp = isWaiting && wait.isOver;
   const isReading = !isConnecting && isWaiting && !hasGivenUp && list.repos.length === 0;
+  const hasNoRepository = list.repos.length === 0 && !isReading && !search;
   const sync = useMutation({
     ...syncUserMutation(),
     onSettled: () => readReposAgain(queryClient, org),
@@ -159,31 +162,47 @@ export function OrgQueuesPage() {
           />
         </>
       )}
-      {list.repos.length === 0 && !isReading && (
-        <Card className="flex items-center justify-between gap-3 px-4 py-6">
-          <p className="text-md text-muted-foreground">
-            {search
-              ? `No repository matches “${search}”.`
-              : "The App reaches no repository of this organization yet."}
-          </p>
-          {!search && (
-            <Button
-              isPending={sync.isPending}
-              pendingText="Checking"
-              onClick={() => {
-                sync.mutate({});
-              }}
-            >
-              Check again
-            </Button>
-          )}
+      {list.repos.length === 0 && !isReading && search && (
+        <Card>
+          <p className="px-4 py-6 text-md text-muted-foreground">No repository matches “{search}”.</p>
+        </Card>
+      )}
+      {hasNoRepository && (
+        <Card>
+          <EmptyState
+            illustration={<QueueIllustration />}
+            title="No repository yet"
+            actions={
+              <>
+                {me.app_install_url && (
+                  <a className={buttonVariants({ variant: "primary" })} href={me.app_install_url}>
+                    Add repositories
+                  </a>
+                )}
+                <Button
+                  isPending={sync.isPending}
+                  pendingText="Checking"
+                  onClick={() => {
+                    sync.mutate({});
+                  }}
+                >
+                  Check again
+                </Button>
+              </>
+            }
+          >
+            The App reaches no repository of {org} yet: it reaches only the repositories that an owner chose
+            for it.
+          </EmptyState>
         </Card>
       )}
       {sync.isError && <Failure className="mb-0">The check failed. Try again in a moment.</Failure>}
-      <p className="text-md text-muted-foreground">
-        Missing a repository? The App reaches only the repositories that an owner chose for it.{" "}
-        {me.app_install_url && <a href={me.app_install_url}>Add repositories</a>}
-      </p>
+      {!hasNoRepository && (
+        <p className="text-md text-muted-foreground">
+          Missing a repository? The App reaches only the repositories that an owner chose for it.{" "}
+          {me.app_install_url && <a href={me.app_install_url}>Add repositories</a>}
+        </p>
+      )}
     </Page>
   );
 }
