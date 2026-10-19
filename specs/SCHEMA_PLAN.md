@@ -173,7 +173,8 @@ Learned from the Codecov schema, so that lots 10 to 14 do not undo this plan:
 ## What stays as it is, and why
 
 - `pr_surfaces` (per queue and PR) and `pr_comments` (per PR, shared by the queues that it enters): different keys,
-  different lifetimes.
+  different lifetimes. `pr_conditions` (per queue and PR) stays apart from `pr_surfaces`: each has one writer, the
+  reconciliation for one, `observe_pr` for the other, and a PR not submitted has only the second.
 - `webhook_inbox` (raw deliveries, per connection) and `queue_inbox` (translated facts, per queue): two stages,
   and only the scheduler writes the log.
 - `test_groups` and `test_runs`: a group has several attempts.

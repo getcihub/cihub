@@ -1437,8 +1437,8 @@ page! {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Finding {
     /// `update_restriction_missing`, `app_not_exempt`,
-    /// `test_branches_not_excluded`, `up_to_date_required` or
-    /// `target_branch_missing`.
+    /// `test_branches_not_excluded`, `up_to_date_required`,
+    /// `conditions_status_required` or `target_branch_missing`.
     #[cfg_attr(feature = "openapi", schema(example = "app_not_exempt"))]
     pub code: String,
     /// What to change, in English, for a person.

@@ -11,7 +11,7 @@ use cihub_domain::{BranchProtectionInjection, JobClass, Mergeability, Permission
 use cihub_scm::{PrSnapshot, RequiredChecks, Scm, check_passed};
 use time::OffsetDateTime;
 
-use crate::jobs::Failure;
+use crate::jobs::{Failure, is_own_context};
 use crate::target::QueueTarget;
 
 /// Who submitted the PR, for `sender` and `sender_permission`.
@@ -30,7 +30,8 @@ fn queue_conditions(target: &QueueTarget, config: Option<&RepoConfig>) -> Condit
 }
 
 /// The context of the conditions for `pr`, before its admission: the PR is
-/// not in the queue yet.
+/// not in the queue yet. The statuses of CIHub are left out: a condition on
+/// failed checks would otherwise fail on the status that it writes.
 fn context(pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
     let list = |set: &std::collections::BTreeSet<String>| set.iter().cloned().collect();
     Context {
@@ -49,6 +50,7 @@ fn context(pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
         checks: pr
             .checks
             .iter()
+            .filter(|check| !is_own_context(&check.name))
             .map(|check| Check {
                 name: check.name.clone(),
                 conclusion: check.conclusion,
@@ -73,9 +75,8 @@ fn context(pr: &PrSnapshot, sender: &Sender, now: OffsetDateTime) -> Context {
 pub(crate) struct Reading<'a> {
     pub sender: &'a Sender,
     /// The checks that the rules of the target branch require, and the
-    /// status of the queue, which they may require.
+    /// statuses of CIHub, which they may require.
     pub rules: &'a RequiredChecks,
-    pub own_status: &'a str,
     /// The `branch_protection_injection` of the settings of the queue.
     pub injection: BranchProtectionInjection,
     pub class: JobClass,
@@ -110,7 +111,7 @@ fn injected(pr: &PrSnapshot, reading: &Reading<'_>) -> Vec<String> {
         .rules
         .names
         .iter()
-        .filter(|name| *name != reading.own_status && !check_passed(pr, name))
+        .filter(|name| !is_own_context(name) && !check_passed(pr, name))
         .map(|name| format!("checks.success: {name}"))
         .collect()
 }
@@ -246,7 +247,11 @@ mod tests {
         ));
 
         let rules = RequiredChecks {
-            names: BTreeSet::from(["ci".to_owned(), "lint".to_owned(), "own".to_owned()]),
+            names: BTreeSet::from([
+                "ci".to_owned(),
+                "lint".to_owned(),
+                crate::jobs::queue_status_context("main"),
+            ]),
             up_to_date: false,
         };
         let config = target.config().unwrap();
@@ -254,7 +259,6 @@ mod tests {
         let reading = Reading {
             sender: &Sender::default(),
             rules: &rules,
-            own_status: "own",
             injection: settings.branch_protection_injection.value,
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
@@ -314,7 +318,6 @@ priority_rules:
         let reading = Reading {
             sender: &Sender::default(),
             rules: &rules,
-            own_status: "own",
             injection: BranchProtectionInjection::Merge,
             class: JobClass::Repair,
             now: OffsetDateTime::UNIX_EPOCH,
@@ -347,5 +350,50 @@ priority_rules:
             ["author: alice"]
         );
         assert_eq!(unmet("none", &[]).await, ["author: alice"]);
+    }
+
+    #[tokio::test]
+    async fn the_conditions_do_not_see_the_statuses_of_cihub() {
+        let mut target = test_target();
+        target.config_text = Some(
+            "version: 1
+queues:
+  - branch: main
+    queue_conditions:
+      checks:
+        failure:
+          count:
+            max: 0
+"
+            .to_owned(),
+        );
+        let config = target.config().unwrap();
+        let reading = Reading {
+            sender: &Sender::default(),
+            rules: &RequiredChecks::default(),
+            injection: BranchProtectionInjection::Merge,
+            class: JobClass::Repair,
+            now: OffsetDateTime::UNIX_EPOCH,
+        };
+        let own = crate::jobs::conditions_status_context("main");
+        let own_failed = test_pr(
+            Mergeability::Mergeable,
+            ReviewDecision::Approved,
+            &[(&own, false)],
+        );
+        let ci_failed = test_pr(
+            Mergeability::Mergeable,
+            ReviewDecision::Approved,
+            &[("ci", false)],
+        );
+
+        let unmet_of = async |pr| {
+            unmet_conditions(&Sim::new(), &target, config.as_ref(), pr, &reading)
+                .await
+                .unwrap_or_else(|_| panic!("the conditions evaluate"))
+        };
+
+        assert_eq!(unmet_of(&own_failed).await, [] as [String; 0]);
+        assert_eq!(unmet_of(&ci_failed).await.len(), 1);
     }
 }

@@ -307,8 +307,8 @@ export type EventType = 'item.submitted' | 'item.cancel_requested' | 'item.resta
 export type Finding = {
     /**
      * `update_restriction_missing`, `app_not_exempt`,
-     * `test_branches_not_excluded`, `up_to_date_required` or
-     * `target_branch_missing`.
+     * `test_branches_not_excluded`, `up_to_date_required`,
+     * `conditions_status_required` or `target_branch_missing`.
      */
     code: string;
     /**

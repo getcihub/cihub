@@ -17,6 +17,7 @@ use tracing::info;
 
 use crate::MergeQueueError;
 use crate::QueueLog;
+use crate::conditions_status::observe_open_prs_job;
 use crate::config::read_setup_job;
 use crate::jobs::{
     Failure, give_back_facts, job, read_payload, refresh_reads, subject, target_of, window,
@@ -174,8 +175,10 @@ pub(crate) async fn read_target(
 }
 
 /// Asks, in the class `interactive`, for a read of each live PR of `queue`, of
-/// the checks of each run in progress and of the head of its target, and returns
-/// the number of new jobs. A second sync in the same minute asks for nothing.
+/// the checks of each run in progress and of the head of its target, and, in
+/// the class `repair`, for a read of each open PR of the target, for its
+/// conditions status;
+/// returns the number of new jobs. A second sync in the same minute asks for nothing.
 ///
 /// # Errors
 ///
@@ -221,6 +224,7 @@ pub async fn sync_queue(
 
     jobs.push(refresh_target_job(&target, &subject, JobClass::Interactive));
     jobs.push(read_setup_job(&target, &subject, JobClass::Interactive));
+    jobs.push(observe_open_prs_job(&target, &subject));
 
     let mut requested = 0;
     for job in &jobs {

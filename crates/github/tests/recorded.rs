@@ -271,6 +271,37 @@ fn answer(method: &str, path: &str, status: u16, body: serde_json::Value) -> Exc
 /// Written by hand from the documentation of GitHub, not recorded: the
 /// recording by the `github` example needs a test repository on GitHub.
 #[tokio::test]
+async fn the_open_prs_of_a_branch_come_from_every_page() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let page = |page: u32| {
+        format!(
+            "/repos/acme/app/pulls?state=open&base=release/1.0&sort=created&direction=asc&per_page=100&page={page}"
+        )
+    };
+    let first: Vec<_> = (1..=100)
+        .map(|number| json!({ "number": number }))
+        .collect();
+    let exchanges = vec![
+        token("7", now),
+        answer("GET", &page(1), 200, json!(first)),
+        answer("GET", &page(2), 200, json!([{ "number": 101 }])),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+
+    let numbers = app
+        .open_pull_requests(&repo, "release/1.0", JobClass::Repair)
+        .await
+        .unwrap();
+
+    assert_eq!(numbers, (1..=101).collect::<Vec<u64>>());
+    replay.finish();
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording by the `github` example needs a test repository on GitHub.
+#[tokio::test]
 async fn acknowledging_a_comment_twice_is_one_reaction() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
     let reaction = json!({ "id": 1, "content": "+1" });
