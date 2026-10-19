@@ -14,5 +14,8 @@ cihub-domain.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

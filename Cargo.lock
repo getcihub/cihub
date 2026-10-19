@@ -281,6 +281,7 @@ dependencies = [
  "cihub-domain",
  "serde",
  "serde-saphyr",
+ "serde_json",
 ]
 
 [[package]]

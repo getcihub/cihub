@@ -1,6 +1,6 @@
 [package]
 name = "cihub-conditions"
-description = "CIHub condition language: parsing and evaluation"
+description = "CIHub conditions: attributes, operators and evaluation"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

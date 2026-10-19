@@ -1122,7 +1122,7 @@ mod tests {
         let cases: Vec<(&str, Result<Statuses, Step>)> = vec![
             // The rules, then the checks of the merge conditions.
             (
-                "    merge_conditions:\n      - check-success = e2e\n      - check-success = ci\n",
+                "    merge_conditions:\n      checks:\n        success: [e2e, ci]\n",
                 Ok((
                     vec!["ci".into(), "e2e".into()],
                     RequiredStatusesSource::BranchProtection,
@@ -1130,7 +1130,7 @@ mod tests {
             ),
             // A list of the file replaces the rules.
             (
-                "    required_statuses: [lint]\n    merge_conditions:\n      - check-success = e2e\n",
+                "    required_statuses: [lint]\n    merge_conditions:\n      checks:\n        success: [e2e]\n",
                 Ok((
                     vec!["lint".into(), "e2e".into()],
                     RequiredStatusesSource::RepoConfig,
@@ -1143,7 +1143,7 @@ mod tests {
             ),
             // `none` leaves them out: only the merge conditions are left.
             (
-                "    branch_protection_injection: none\n    merge_conditions:\n      - check-success = e2e\n",
+                "    branch_protection_injection: none\n    merge_conditions:\n      checks:\n        success: [e2e]\n",
                 Ok((vec!["e2e".into()], RequiredStatusesSource::RepoConfig)),
             ),
             (

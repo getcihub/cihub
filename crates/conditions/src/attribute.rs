@@ -51,33 +51,33 @@ macro_rules! attributes {
 attributes! {
     Draft => "draft", Kind::Bool;
     Conflict => "conflict", Kind::Bool;
-    FromFork => "from-fork", Kind::Bool;
-    BehindBase => "behind-base", Kind::Bool;
+    FromFork => "from_fork", Kind::Bool;
+    BehindBase => "behind_base", Kind::Bool;
     Number => "number", Kind::Int;
     Title => "title", Kind::Text;
     Body => "body", Kind::Text;
-    ReviewDecision => "review-decision", Kind::Choice { values: REVIEW_DECISION_NAMES, ordered: false };
-    ApprovedReviewsBy => "approved-reviews-by", Kind::List;
-    ChangesRequestedReviewsBy => "changes-requested-reviews-by", Kind::List;
-    ReviewRequested => "review-requested", Kind::List;
-    ReviewThreadsUnresolved => "review-threads-unresolved", Kind::List;
-    CheckSuccess => "check-success", Kind::List;
-    CheckNeutral => "check-neutral", Kind::List;
-    CheckSkipped => "check-skipped", Kind::List;
-    CheckFailure => "check-failure", Kind::List;
-    CheckPending => "check-pending", Kind::List;
-    Label => "label", Kind::List;
+    ReviewDecision => "review_decision", Kind::Choice { values: REVIEW_DECISION_NAMES, ordered: false };
+    ApprovedReviewsBy => "approved_reviews_by", Kind::List;
+    ChangesRequestedReviewsBy => "changes_requested_reviews_by", Kind::List;
+    ReviewRequested => "review_requested", Kind::List;
+    ReviewThreadsUnresolved => "review_threads_unresolved", Kind::List;
+    CheckSuccess => "checks.success", Kind::List;
+    CheckNeutral => "checks.neutral", Kind::List;
+    CheckSkipped => "checks.skipped", Kind::List;
+    CheckFailure => "checks.failure", Kind::List;
+    CheckPending => "checks.pending", Kind::List;
+    Labels => "labels", Kind::List;
     Author => "author", Kind::Text;
     Sender => "sender", Kind::Text;
-    SenderPermission => "sender-permission", Kind::Choice { values: PERMISSION_NAMES, ordered: true };
+    SenderPermission => "sender_permission", Kind::Choice { values: PERMISSION_NAMES, ordered: true };
     Files => "files", Kind::List;
     Additions => "additions", Kind::Int;
     Deletions => "deletions", Kind::Int;
     Base => "base", Kind::Text;
     Head => "head", Kind::Text;
-    QueuePosition => "queue-position", Kind::Int;
-    QueueAge => "queue-age", Kind::Duration;
-    PrAge => "pr-age", Kind::Duration;
+    QueuePosition => "queue_position", Kind::Int;
+    QueueAge => "queue_age", Kind::Duration;
+    PrAge => "pr_age", Kind::Duration;
 }
 
 impl Attribute {
@@ -92,12 +92,12 @@ impl fmt::Display for Attribute {
     }
 }
 
-/// Names of the values of `review-decision`, in the declaration order of
+/// Names of the values of `review_decision`, in the declaration order of
 /// `ReviewDecision`, which is the rank the evaluation compares.
 const REVIEW_DECISION_NAMES: &[&str] =
     &["approved", "changes_requested", "review_required", "none"];
 
-/// Names of the values of `sender-permission`, in the declaration order of
+/// Names of the values of `sender_permission`, in the declaration order of
 /// `Permission`.
 const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
 

@@ -1,0 +1,1194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json",
+  "title": "CIHub configuration",
+  "description": "The `.cihub.yaml` file of a repository: its merge queues, their settings and their conditions. Reference: specs/CONFIGURATION.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "description": "The version of the format.",
+      "const": 1
+    },
+    "queues": {
+      "description": "One entry per branch or glob of branches.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/queue"
+      }
+    },
+    "priority_rules": {
+      "description": "The first rule that a PR meets gives its priority.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/priority_rule"
+      }
+    },
+    "defaults": {
+      "$ref": "#/definitions/defaults"
+    }
+  },
+  "definitions": {
+    "strategy": {
+      "description": "First setting of a queue: it sets the values of the others. `pipelined` by default; `parallel` is not ready yet.",
+      "type": "string",
+      "enum": [
+        "sequential",
+        "pipelined",
+        "batched",
+        "parallel"
+      ]
+    },
+    "mode": {
+      "description": "`single` (default) or `parallel` lanes of unrelated changes.",
+      "type": "string",
+      "enum": [
+        "single",
+        "parallel"
+      ]
+    },
+    "window": {
+      "description": "Number of tests in flight: the adaptive window between `floor` and `ceiling` (default 2 / 20). Exclusive with `testing_concurrency`.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "floor": {
+          "description": "Smallest window, at most `ceiling`.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "ceiling": {
+          "description": "Largest window, at least `floor`.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "testing_concurrency": {
+      "description": "Shortcut: sets the floor and the ceiling of the window to the same value. Exclusive with `window`.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "bisection_concurrency": {
+      "description": "Tests in flight while a failed batch is split. Default: the ceiling of the window.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "testing_timeout_minutes": {
+      "description": "A test that has not concluded after this time fails. Default 300.",
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 1440
+    },
+    "not_ready_timeout_hours": {
+      "description": "A PR that waits in `not_ready` longer than this leaves the queue. Default 168.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 720
+    },
+    "merge_method": {
+      "description": "How a PR lands on the target. `squash` by default; `fast_forward` needs strategy `sequential`.",
+      "type": "string",
+      "enum": [
+        "squash",
+        "merge_commit",
+        "rebase",
+        "fast_forward"
+      ]
+    },
+    "merge_commit_title": {
+      "description": "Title of the merge commit: `pr_title` (default) or `pr_title_and_number`.",
+      "type": "string",
+      "enum": [
+        "pr_title",
+        "pr_title_and_number"
+      ]
+    },
+    "trigger": {
+      "description": "What runs the CI of a test: `draft_pr` (default, a draft pull request) or `push` (the push of the test branch).",
+      "type": "string",
+      "enum": [
+        "draft_pr",
+        "push"
+      ]
+    },
+    "update_method": {
+      "description": "How a PR is updated in place: `merge`.",
+      "type": "string",
+      "enum": [
+        "merge"
+      ]
+    },
+    "batching": {
+      "description": "Several PRs per test; a failed batch is split to find the cause. On with `batched` and `parallel`.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Turns the batches on or off.",
+          "type": "boolean"
+        },
+        "size": {
+          "description": "Largest batch. Default 4.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20
+        },
+        "max_wait_minutes": {
+          "description": "Longest wait for a batch to fill. Default 5.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      }
+    },
+    "failure_budget": {
+      "description": "Retries before a PR fails.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retries": {
+          "description": "Retries of a failed test before the PR fails. Default 1.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "optimistic_merging": {
+      "description": "A passing test of a later PR merges the PRs ahead of it whose own test failed or is pending.",
+      "type": "boolean"
+    },
+    "pending_failure_depth": {
+      "description": "How many successors a culprit waits for before it fails.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "direct_merge_mode": {
+      "description": "`always` (default): with no test in flight, merge the first PR without a test branch when it contains the head of the target and its checks are green. `off`.",
+      "type": "string",
+      "enum": [
+        "off",
+        "always"
+      ]
+    },
+    "optimization_mode": {
+      "description": "`bisection_skip_redundant_tests` (default) or `off`.",
+      "type": "string",
+      "enum": [
+        "off",
+        "bisection_skip_redundant_tests"
+      ]
+    },
+    "comments_enabled": {
+      "description": "CIHub comments on the PRs. Default true.",
+      "type": "boolean"
+    },
+    "commands_enabled": {
+      "description": "CIHub reads the `/cihub` commands. Default true.",
+      "type": "boolean"
+    },
+    "status_check_enabled": {
+      "description": "CIHub reports its status check on the PRs. Default true.",
+      "type": "boolean"
+    },
+    "label_commands": {
+      "description": "A label that submits the PR.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Turns the label on or off. Default true.",
+          "type": "boolean"
+        },
+        "enqueue_label": {
+          "description": "The label that submits the PR. Default `cihub-merge-queue-submit`.",
+          "type": "string",
+          "pattern": "\\S"
+        }
+      }
+    },
+    "state_labels_enabled": {
+      "description": "CIHub sets a label with the state of the PR. Default false.",
+      "type": "boolean"
+    },
+    "resubmit_on_push": {
+      "description": "A push on a queued PR submits it again at the end of the queue. Default false.",
+      "type": "boolean"
+    },
+    "keep_test_branches_minutes": {
+      "description": "How long a test branch stays after its test. Default 0.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1440
+    },
+    "branch_prefix": {
+      "description": "Prefix of the test branches `<prefix>-merge/` and `<prefix>-temp/`. Default `cihub`.",
+      "type": "string",
+      "pattern": "^[^/\\s]+$"
+    },
+    "branch_protection_injection": {
+      "description": "Where the checks required by the branch rules count: `both` (default: before the admission and on the test commit), `merge` (on the test commit) or `none`.",
+      "type": "string",
+      "enum": [
+        "both",
+        "merge",
+        "none"
+      ]
+    },
+    "required_statuses": {
+      "description": "Check names required on the test commit. Without the key, they come from the branch rules; `null` inherits them; an empty list requires none.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "queue_conditions": {
+      "description": "What a PR must meet to enter the queue. Those of `defaults` come first.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/conditions"
+        }
+      ]
+    },
+    "merge_conditions": {
+      "description": "What the test commit must meet. For now only `checks` with `success`, whose names are required on the test commit.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "description": "The checks that must pass on the test commit.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "success"
+          ],
+          "properties": {
+            "success": {
+              "description": "Names of the checks that must succeed.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_values"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "queue": {
+      "description": "The queue of a branch.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch"
+      ],
+      "not": {
+        "required": [
+          "window",
+          "testing_concurrency"
+        ]
+      },
+      "properties": {
+        "branch": {
+          "description": "The branch of the queue, or a glob of branches (`release/*`): each branch that it matches has its own queue. An entry that names a branch wins over a glob.",
+          "type": "string",
+          "minLength": 1
+        },
+        "queue_conditions": {
+          "$ref": "#/definitions/queue_conditions"
+        },
+        "merge_conditions": {
+          "$ref": "#/definitions/merge_conditions"
+        },
+        "profiles": {
+          "description": "Settings of a kind of PR in the same train, chosen once at the submission: the profile that the command names, else the first whose `conditions` the PR meets.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/profile"
+          }
+        },
+        "strategy": {
+          "$ref": "#/definitions/strategy"
+        },
+        "mode": {
+          "$ref": "#/definitions/mode"
+        },
+        "window": {
+          "$ref": "#/definitions/window"
+        },
+        "testing_concurrency": {
+          "$ref": "#/definitions/testing_concurrency"
+        },
+        "bisection_concurrency": {
+          "$ref": "#/definitions/bisection_concurrency"
+        },
+        "testing_timeout_minutes": {
+          "$ref": "#/definitions/testing_timeout_minutes"
+        },
+        "not_ready_timeout_hours": {
+          "$ref": "#/definitions/not_ready_timeout_hours"
+        },
+        "merge_method": {
+          "$ref": "#/definitions/merge_method"
+        },
+        "merge_commit_title": {
+          "$ref": "#/definitions/merge_commit_title"
+        },
+        "trigger": {
+          "$ref": "#/definitions/trigger"
+        },
+        "update_method": {
+          "$ref": "#/definitions/update_method"
+        },
+        "batching": {
+          "$ref": "#/definitions/batching"
+        },
+        "failure_budget": {
+          "$ref": "#/definitions/failure_budget"
+        },
+        "optimistic_merging": {
+          "$ref": "#/definitions/optimistic_merging"
+        },
+        "pending_failure_depth": {
+          "$ref": "#/definitions/pending_failure_depth"
+        },
+        "direct_merge_mode": {
+          "$ref": "#/definitions/direct_merge_mode"
+        },
+        "optimization_mode": {
+          "$ref": "#/definitions/optimization_mode"
+        },
+        "comments_enabled": {
+          "$ref": "#/definitions/comments_enabled"
+        },
+        "commands_enabled": {
+          "$ref": "#/definitions/commands_enabled"
+        },
+        "status_check_enabled": {
+          "$ref": "#/definitions/status_check_enabled"
+        },
+        "label_commands": {
+          "$ref": "#/definitions/label_commands"
+        },
+        "state_labels_enabled": {
+          "$ref": "#/definitions/state_labels_enabled"
+        },
+        "resubmit_on_push": {
+          "$ref": "#/definitions/resubmit_on_push"
+        },
+        "keep_test_branches_minutes": {
+          "$ref": "#/definitions/keep_test_branches_minutes"
+        },
+        "branch_prefix": {
+          "$ref": "#/definitions/branch_prefix"
+        },
+        "branch_protection_injection": {
+          "$ref": "#/definitions/branch_protection_injection"
+        },
+        "required_statuses": {
+          "$ref": "#/definitions/required_statuses"
+        }
+      }
+    },
+    "defaults": {
+      "description": "Any queue setting and the conditions, for every queue; each queue can override a setting and adds its own conditions.",
+      "type": "object",
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "window",
+          "testing_concurrency"
+        ]
+      },
+      "properties": {
+        "queue_conditions": {
+          "$ref": "#/definitions/queue_conditions"
+        },
+        "merge_conditions": {
+          "$ref": "#/definitions/merge_conditions"
+        },
+        "strategy": {
+          "$ref": "#/definitions/strategy"
+        },
+        "mode": {
+          "$ref": "#/definitions/mode"
+        },
+        "window": {
+          "$ref": "#/definitions/window"
+        },
+        "testing_concurrency": {
+          "$ref": "#/definitions/testing_concurrency"
+        },
+        "bisection_concurrency": {
+          "$ref": "#/definitions/bisection_concurrency"
+        },
+        "testing_timeout_minutes": {
+          "$ref": "#/definitions/testing_timeout_minutes"
+        },
+        "not_ready_timeout_hours": {
+          "$ref": "#/definitions/not_ready_timeout_hours"
+        },
+        "merge_method": {
+          "$ref": "#/definitions/merge_method"
+        },
+        "merge_commit_title": {
+          "$ref": "#/definitions/merge_commit_title"
+        },
+        "trigger": {
+          "$ref": "#/definitions/trigger"
+        },
+        "update_method": {
+          "$ref": "#/definitions/update_method"
+        },
+        "batching": {
+          "$ref": "#/definitions/batching"
+        },
+        "failure_budget": {
+          "$ref": "#/definitions/failure_budget"
+        },
+        "optimistic_merging": {
+          "$ref": "#/definitions/optimistic_merging"
+        },
+        "pending_failure_depth": {
+          "$ref": "#/definitions/pending_failure_depth"
+        },
+        "direct_merge_mode": {
+          "$ref": "#/definitions/direct_merge_mode"
+        },
+        "optimization_mode": {
+          "$ref": "#/definitions/optimization_mode"
+        },
+        "comments_enabled": {
+          "$ref": "#/definitions/comments_enabled"
+        },
+        "commands_enabled": {
+          "$ref": "#/definitions/commands_enabled"
+        },
+        "status_check_enabled": {
+          "$ref": "#/definitions/status_check_enabled"
+        },
+        "label_commands": {
+          "$ref": "#/definitions/label_commands"
+        },
+        "state_labels_enabled": {
+          "$ref": "#/definitions/state_labels_enabled"
+        },
+        "resubmit_on_push": {
+          "$ref": "#/definitions/resubmit_on_push"
+        },
+        "keep_test_branches_minutes": {
+          "$ref": "#/definitions/keep_test_branches_minutes"
+        },
+        "branch_prefix": {
+          "$ref": "#/definitions/branch_prefix"
+        },
+        "branch_protection_injection": {
+          "$ref": "#/definitions/branch_protection_injection"
+        },
+        "required_statuses": {
+          "$ref": "#/definitions/required_statuses"
+        }
+      }
+    },
+    "profile": {
+      "description": "A profile sets only the settings of a PR, never those of the train.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name of the profile, unique in its queue; `/cihub merge --profile=<name>` names it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "conditions": {
+          "description": "What chooses the profile at the submission. Without conditions, only a command that names the profile chooses it.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/conditions"
+            }
+          ]
+        },
+        "merge_method": {
+          "description": "How the PRs of the profile land; not `fast_forward`.",
+          "type": "string",
+          "enum": [
+            "squash",
+            "merge_commit",
+            "rebase"
+          ]
+        },
+        "merge_commit_title": {
+          "$ref": "#/definitions/merge_commit_title"
+        },
+        "batching": {
+          "$ref": "#/definitions/batching"
+        },
+        "failure_budget": {
+          "$ref": "#/definitions/failure_budget"
+        }
+      }
+    },
+    "priority_rule": {
+      "description": "The first rule that a PR meets gives its priority, unless the command gives one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "conditions",
+        "priority"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name of the rule.",
+          "type": "string",
+          "minLength": 1
+        },
+        "conditions": {
+          "description": "What a PR must meet to take the priority.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/conditions"
+            }
+          ]
+        },
+        "priority": {
+          "description": "`urgent` (0), `high` (10), `medium` (100), `low` (200), or 0-255; a lower number goes first.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "urgent",
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          ]
+        }
+      }
+    },
+    "value": {
+      "description": "A value, as the file writes it.",
+      "type": [
+        "string",
+        "number"
+      ]
+    },
+    "values": {
+      "description": "A value or a list of values.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/value"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/value"
+          }
+        }
+      ]
+    },
+    "list_values": {
+      "description": "A value or a list of values; each value must hold on its own.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/values"
+        }
+      ]
+    },
+    "globs": {
+      "description": "A glob or a list of globs: `*` stays in one `/` segment, `**` crosses them. Quote a glob that starts with `*`.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "count": {
+      "description": "The number of elements: an integer, or `min` and `max` (inclusive).",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": {
+              "description": "At least this number.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "max": {
+              "description": "At most this number.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      ]
+    },
+    "boolean_attribute": {
+      "description": "`true` or `false`.",
+      "type": "boolean"
+    },
+    "integer_attribute": {
+      "description": "An integer (equal), or `min` and `max` (inclusive).",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "At least this value (inclusive)."
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "At most this value (inclusive)."
+            }
+          }
+        }
+      ]
+    },
+    "duration_attribute": {
+      "description": "A duration such as `30m`, `2h` or `7d` (equal), or `min` and `max` (inclusive).",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9]+[mhd]$"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": {
+              "type": "string",
+              "pattern": "^[0-9]+[mhd]$",
+              "description": "At least this value (inclusive)."
+            },
+            "max": {
+              "type": "string",
+              "pattern": "^[0-9]+[mhd]$",
+              "description": "At most this value (inclusive)."
+            }
+          }
+        }
+      ]
+    },
+    "string_attribute": {
+      "description": "One of the values, or `not`, `matches` or `regex`.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/values"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "not": {
+              "description": "None of the values.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/values"
+                }
+              ]
+            },
+            "matches": {
+              "description": "Matches one of the globs.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/globs"
+                }
+              ]
+            },
+            "regex": {
+              "description": "A regular expression found anywhere, without lookaround or backreferences.",
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "list_attribute": {
+      "description": "Values that must all be in the list, or `all`, `any`, `none`, `any_match`, `all_match`, `none_match` or `count`.",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/list_values"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "all": {
+              "description": "Every value is in the list.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_values"
+                }
+              ]
+            },
+            "any": {
+              "description": "At least one value is in the list.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/values"
+                }
+              ]
+            },
+            "none": {
+              "description": "No value is in the list.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_values"
+                }
+              ]
+            },
+            "all_match": {
+              "description": "Every element matches one of the globs, and the list is not empty.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/globs"
+                }
+              ]
+            },
+            "any_match": {
+              "description": "An element matches one of the globs.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/globs"
+                }
+              ]
+            },
+            "none_match": {
+              "description": "No element matches the globs.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/globs"
+                }
+              ]
+            },
+            "count": {
+              "$ref": "#/definitions/count"
+            }
+          }
+        }
+      ]
+    },
+    "review_decision_attribute": {
+      "description": "One of the values.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "approved",
+            "changes_requested",
+            "review_required",
+            "none"
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "changes_requested",
+              "review_required",
+              "none"
+            ]
+          }
+        }
+      ]
+    },
+    "sender_permission_attribute": {
+      "description": "One of the values, or `min` and `max` in the order none < read < write < admin.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "none",
+            "read",
+            "write",
+            "admin"
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "none",
+              "read",
+              "write",
+              "admin"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": {
+              "description": "At least this permission.",
+              "type": "string",
+              "enum": [
+                "none",
+                "read",
+                "write",
+                "admin"
+              ]
+            },
+            "max": {
+              "description": "At most this permission.",
+              "type": "string",
+              "enum": [
+                "none",
+                "read",
+                "write",
+                "admin"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "conditions": {
+      "description": "A map of conditions: every key must hold.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "draft": {
+          "description": "The PR is a draft.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/boolean_attribute"
+            }
+          ]
+        },
+        "conflict": {
+          "description": "The PR conflicts with its base.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/boolean_attribute"
+            }
+          ]
+        },
+        "from_fork": {
+          "description": "The PR comes from a fork.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/boolean_attribute"
+            }
+          ]
+        },
+        "behind_base": {
+          "description": "The branch of the PR is behind its base.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/boolean_attribute"
+            }
+          ]
+        },
+        "number": {
+          "description": "The number of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/integer_attribute"
+            }
+          ]
+        },
+        "title": {
+          "description": "The title of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "body": {
+          "description": "The description of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "review_decision": {
+          "description": "The review decision of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/review_decision_attribute"
+            }
+          ]
+        },
+        "approved_reviews_by": {
+          "description": "Logins whose last review approves.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "changes_requested_reviews_by": {
+          "description": "Logins whose last review requests changes.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "review_requested": {
+          "description": "Logins and teams asked to review.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "review_threads_unresolved": {
+          "description": "Paths of the unresolved review threads.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "labels": {
+          "description": "The labels of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "author": {
+          "description": "The login of the author of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "sender": {
+          "description": "The login of the author of the command or of the submission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "sender_permission": {
+          "description": "The permission of the sender on the repository.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/sender_permission_attribute"
+            }
+          ]
+        },
+        "files": {
+          "description": "Paths of the files that the PR changes.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/list_attribute"
+            }
+          ]
+        },
+        "additions": {
+          "description": "Lines added.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/integer_attribute"
+            }
+          ]
+        },
+        "deletions": {
+          "description": "Lines deleted.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/integer_attribute"
+            }
+          ]
+        },
+        "base": {
+          "description": "The base branch of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "head": {
+          "description": "The head branch of the PR.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/string_attribute"
+            }
+          ]
+        },
+        "queue_position": {
+          "description": "Position in the queue, 0 at its head; false outside the queue.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/integer_attribute"
+            }
+          ]
+        },
+        "queue_age": {
+          "description": "Time in the queue; false outside the queue.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/duration_attribute"
+            }
+          ]
+        },
+        "pr_age": {
+          "description": "Time since the PR was opened.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/duration_attribute"
+            }
+          ]
+        },
+        "checks": {
+          "description": "The checks of the head of the PR in `queue_conditions`, of the test commit in `merge_conditions`, by state.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "success": {
+              "description": "Checks that succeeded.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_attribute"
+                }
+              ]
+            },
+            "neutral": {
+              "description": "Checks that ended neutral.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_attribute"
+                }
+              ]
+            },
+            "skipped": {
+              "description": "Checks that were skipped.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_attribute"
+                }
+              ]
+            },
+            "failure": {
+              "description": "Checks that failed, errored, were cancelled, timed out, need an action or are stale.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_attribute"
+                }
+              ]
+            },
+            "pending": {
+              "description": "Checks without a conclusion yet.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/list_attribute"
+                }
+              ]
+            }
+          }
+        },
+        "all": {
+          "description": "Every map holds.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/conditions"
+              },
+              {
+                "minProperties": 1
+              }
+            ]
+          }
+        },
+        "any": {
+          "description": "At least one map holds.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/conditions"
+              },
+              {
+                "minProperties": 1
+              }
+            ]
+          }
+        },
+        "none": {
+          "description": "No map holds.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/conditions"
+              },
+              {
+                "minProperties": 1
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

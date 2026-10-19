@@ -106,7 +106,7 @@ impl Context {
             A::CheckSkipped => self.checks_where(|c| c == Some(C::Skipped)),
             A::CheckFailure => self.checks_where(|c| c.is_some_and(|c| !c.is_passing())),
             A::CheckPending => self.checks_where(|c| c.is_none()),
-            A::Label => texts(&self.labels),
+            A::Labels => texts(&self.labels),
             A::Author => Value::Texts(vec![&self.author]),
             A::Sender => Value::Texts(self.sender.as_deref().into_iter().collect()),
             A::SenderPermission => Value::Number(self.sender_permission.map(|p| p as i64)),

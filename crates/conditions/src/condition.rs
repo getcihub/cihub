@@ -1,7 +1,7 @@
-//! One condition: `[-] [#] attribute [operator value]`.
+//! One condition: an attribute, an operator and its values, as the keys of
+//! the file write them (`labels` → `none` → `wip`).
 
 use std::fmt;
-use std::str::FromStr;
 
 use globset::{GlobBuilder, GlobMatcher};
 use regex::Regex;
@@ -9,85 +9,132 @@ use regex::Regex;
 use crate::attribute::{Attribute, Kind};
 use crate::context::{Context, EvalError, Value};
 
+/// The key under an attribute; `Is` when the attribute takes its values
+/// directly (`draft: false`, `author: [a, b]`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Operator {
-    Eq,
-    Ne,
+    Is,
+    Not,
+    Matches,
     Regex,
-    Glob,
-    Lt,
-    Le,
-    Gt,
-    Ge,
+    All,
+    Any,
+    None,
+    AllMatch,
+    AnyMatch,
+    NoneMatch,
+    Min,
+    Max,
+    Count,
+    CountMin,
+    CountMax,
 }
 
-/// Two-character symbols first, so that `<=` is not read as `<`.
-const OPERATORS: [(&str, Operator); 8] = [
-    ("!=", Operator::Ne),
-    ("~=", Operator::Regex),
-    ("*=", Operator::Glob),
-    ("<=", Operator::Le),
-    (">=", Operator::Ge),
-    ("=", Operator::Eq),
-    ("<", Operator::Lt),
-    (">", Operator::Gt),
+const KEYS: [(&str, Operator); 14] = [
+    ("not", Operator::Not),
+    ("matches", Operator::Matches),
+    ("regex", Operator::Regex),
+    ("all", Operator::All),
+    ("any", Operator::Any),
+    ("none", Operator::None),
+    ("all_match", Operator::AllMatch),
+    ("any_match", Operator::AnyMatch),
+    ("none_match", Operator::NoneMatch),
+    ("min", Operator::Min),
+    ("max", Operator::Max),
+    ("count", Operator::Count),
+    ("count.min", Operator::CountMin),
+    ("count.max", Operator::CountMax),
 ];
 
 impl Operator {
-    pub fn symbol(self) -> &'static str {
-        OPERATORS
-            .iter()
-            .find_map(|&(symbol, op)| (op == self).then_some(symbol))
-            .unwrap_or_default()
+    /// The operator of a key directly under an attribute. `count.min` and
+    /// `count.max` are not keys: they are `min` and `max` under `count`.
+    pub fn from_key(key: &str) -> Option<Self> {
+        KEYS.iter()
+            .find_map(|&(name, op)| (name == key && !name.contains('.')).then_some(op))
     }
 
-    const fn is_comparison(self) -> bool {
-        matches!(
-            self,
-            Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge
-        )
+    /// The path of the operator under its attribute (`count.min`); `None`
+    /// for `Is`, which has no key.
+    pub fn key(self) -> Option<&'static str> {
+        KEYS.iter()
+            .find_map(|&(name, op)| (op == self).then_some(name))
+    }
+
+    /// The keys that `attribute` accepts directly under it, for an error
+    /// message.
+    pub fn keys(attribute: Attribute) -> impl Iterator<Item = &'static str> {
+        let kind = attribute.kind();
+        KEYS.iter()
+            .filter(move |(name, op)| !name.contains('.') && allows(kind, *op))
+            .map(|(name, _)| *name)
+    }
+
+    /// An operator whose values each hold on their own, so that an
+    /// explanation names only the values that fail.
+    const fn splits(self, kind: Kind) -> bool {
+        match self {
+            Self::All | Self::None => true,
+            Self::Is => matches!(kind, Kind::List),
+            _ => false,
+        }
+    }
+
+    /// An operator that takes one value, never a list.
+    const fn takes_one(self, kind: Kind) -> bool {
+        match self {
+            Self::Regex | Self::Min | Self::Max | Self::Count | Self::CountMin | Self::CountMax => {
+                true
+            }
+            Self::Is => matches!(kind, Kind::Bool | Kind::Int | Kind::Duration),
+            _ => false,
+        }
     }
 }
 
 impl fmt::Display for Operator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.symbol())
+        f.write_str(self.key().unwrap_or("a value"))
     }
 }
 
-/// A parsed condition. It keeps its source text, which explanations show
-/// as written.
+/// A built condition. It keeps its values as written, which explanations
+/// show.
 #[derive(Clone, Debug)]
 pub struct Condition {
-    source: String,
-    negated: bool,
+    attribute: Attribute,
+    operator: Operator,
+    values: Vec<String>,
     test: Test,
 }
 
 #[derive(Clone, Debug)]
 enum Test {
-    Flag(Attribute),
-    Text {
-        attribute: Attribute,
-        op: Operator,
-        pattern: Pattern,
-    },
-    /// Integers, durations in seconds, choices by rank, and `#` list lengths.
-    Compare {
-        attribute: Attribute,
-        op: Operator,
-        value: i64,
-    },
-}
-
-#[derive(Clone, Debug)]
-enum Pattern {
-    Exact(String),
+    Flag(bool),
+    /// An element is one of the values.
+    Has(Vec<String>),
+    /// No element is one of the values.
+    HasNone(Vec<String>),
+    Match(Matching, Vec<Glob>),
     Regex(Regex),
-    Glob(GlobMatcher),
+    /// Integers, durations in seconds and ordered choices by rank, inclusive.
+    Range(i64, i64),
+    /// The number of elements of a list, inclusive.
+    Count(i64, i64),
+    /// Choices by rank.
+    OneOf(Vec<i64>),
 }
 
-/// A glob as `*=` reads it: `*` and `?` stay in one `/` segment, `**`
+#[derive(Clone, Copy, Debug)]
+enum Matching {
+    Any,
+    /// Every element, and at least one.
+    All,
+    None,
+}
+
+/// A glob as `matches` reads it: `*` and `?` stay in one `/` segment, `**`
 /// crosses them.
 #[derive(Clone, Debug)]
 pub struct Glob(GlobMatcher);
@@ -96,8 +143,12 @@ impl Glob {
     /// # Errors
     ///
     /// `pattern` is not a valid glob.
-    pub fn new(pattern: &str) -> Result<Self, ParseErrorKind> {
-        glob(pattern).map(Self)
+    pub fn new(pattern: &str) -> Result<Self, ConditionErrorKind> {
+        GlobBuilder::new(pattern)
+            .literal_separator(true)
+            .build()
+            .map(|glob| Self(glob.compile_matcher()))
+            .map_err(|e| ConditionErrorKind::InvalidGlob(e.kind().to_string()))
     }
 
     pub fn is_match(&self, text: &str) -> bool {
@@ -106,27 +157,83 @@ impl Glob {
 }
 
 impl Condition {
-    pub fn attribute(&self) -> Attribute {
-        match self.test {
-            Test::Flag(attribute)
-            | Test::Text { attribute, .. }
-            | Test::Compare { attribute, .. } => attribute,
+    /// The conditions that `values` under `attribute` and `operator` write:
+    /// one per value when each value must hold on its own (`all`, `none`, and
+    /// the values of a list attribute), else one.
+    ///
+    /// # Errors
+    ///
+    /// The operator does not fit the type of the attribute, or a value is
+    /// invalid; `value` gives its index.
+    pub fn build(
+        attribute: Attribute,
+        operator: Operator,
+        values: &[String],
+    ) -> Result<Vec<Self>, ConditionError> {
+        let kind = attribute.kind();
+        let error = |value, kind| ConditionError { value, kind };
+        if !allows(kind, operator) {
+            return Err(error(
+                None,
+                ConditionErrorKind::OperatorNotAllowed {
+                    attribute,
+                    operator,
+                },
+            ));
+        }
+
+        if values.is_empty() {
+            return Err(error(None, ConditionErrorKind::MissingValue));
+        }
+
+        if values.len() > 1 && operator.takes_one(kind) {
+            return Err(error(
+                Some(1),
+                ConditionErrorKind::OneValue {
+                    attribute,
+                    operator,
+                },
+            ));
+        }
+
+        if !operator.splits(kind) {
+            let test =
+                test(attribute, operator, values).map_err(|(n, kind)| error(Some(n), kind))?;
+            return Ok(vec![Self::new(attribute, operator, values, test)]);
+        }
+
+        values
+            .iter()
+            .enumerate()
+            .map(|(n, value)| {
+                let one = std::slice::from_ref(value);
+                test(attribute, operator, one)
+                    .map(|test| Self::new(attribute, operator, one, test))
+                    .map_err(|(_, kind)| error(Some(n), kind))
+            })
+            .collect()
+    }
+
+    fn new(attribute: Attribute, operator: Operator, values: &[String], test: Test) -> Self {
+        Self {
+            attribute,
+            operator,
+            values: values.to_vec(),
+            test,
         }
     }
 
-    pub fn as_str(&self) -> &str {
-        &self.source
+    pub fn attribute(&self) -> Attribute {
+        self.attribute
     }
 
-    /// The name of the check when the condition is `check-success = <name>`,
-    /// the only form of `merge_conditions` for now.
+    /// The name of the check when the condition is one name of
+    /// `checks.success`, the only form of `merge_conditions` for now.
     pub fn required_check(&self) -> Option<&str> {
-        match &self.test {
-            Test::Text {
-                attribute: Attribute::CheckSuccess,
-                op: Operator::Eq,
-                pattern: Pattern::Exact(name),
-            } if !self.negated => Some(name),
+        match (&self.test, self.attribute, self.operator) {
+            (Test::Has(names), Attribute::CheckSuccess, Operator::Is | Operator::All) => {
+                names.first().map(String::as_str)
+            }
             _ => None,
         }
     }
@@ -136,76 +243,76 @@ impl Condition {
     /// `NotLoaded` if the attribute is loaded on demand and `ctx` does not
     /// have it.
     pub fn eval(&self, ctx: &Context) -> Result<bool, EvalError> {
-        let attribute = self.attribute();
-        let matched = match (&self.test, ctx.value(attribute)?) {
-            (Test::Flag(_), Value::Flag(flag)) => flag,
-            (Test::Text { op, pattern, .. }, Value::Texts(items)) => {
-                text_matches(*op, pattern, &items)
+        let attribute = self.attribute;
+        Ok(match (&self.test, ctx.value(attribute)?) {
+            (Test::Flag(expected), Value::Flag(flag)) => flag == *expected,
+            (Test::Has(values), Value::Texts(items)) => has(&items, values),
+            (Test::HasNone(values), Value::Texts(items)) => !has(&items, values),
+            (Test::Match(matching, globs), Value::Texts(items)) => {
+                matches(*matching, globs, &items)
             }
-            (Test::Compare { op, value, .. }, Value::Texts(items)) => {
-                compare(*op, i64::try_from(items.len()).unwrap_or(i64::MAX), *value)
+            (Test::Regex(regex), Value::Texts(items)) => items.iter().any(|i| regex.is_match(i)),
+            (Test::Count(min, max), Value::Texts(items)) => {
+                (*min..=*max).contains(&i64::try_from(items.len()).unwrap_or(i64::MAX))
             }
-            (Test::Compare { op, value, .. }, Value::Number(actual)) => {
-                actual.is_some_and(|actual| compare(*op, actual, *value))
+            (Test::Range(min, max), Value::Number(actual)) => {
+                actual.is_some_and(|actual| (*min..=*max).contains(&actual))
             }
-            _ => unreachable!("the parser checks the kind of `{attribute}`"),
-        };
-        Ok(matched != self.negated)
+            (Test::OneOf(ranks), Value::Number(actual)) => {
+                actual.is_some_and(|actual| ranks.contains(&actual))
+            }
+            _ => unreachable!("`build` checks the kind of `{attribute}`"),
+        })
     }
 }
 
-fn text_matches(op: Operator, pattern: &Pattern, items: &[&str]) -> bool {
-    match pattern {
-        Pattern::Exact(value) => {
-            let any = items.contains(&value.as_str());
-            if op == Operator::Ne { !any } else { any }
-        }
-        Pattern::Regex(regex) => items.iter().any(|item| regex.is_match(item)),
-        Pattern::Glob(glob) => items.iter().any(|item| glob.is_match(item)),
+fn has(items: &[&str], values: &[String]) -> bool {
+    items
+        .iter()
+        .any(|item| values.iter().any(|value| value == item))
+}
+
+fn matches(matching: Matching, globs: &[Glob], items: &[&str]) -> bool {
+    let hit = |item: &&str| globs.iter().any(|glob| glob.is_match(item));
+    match matching {
+        Matching::Any => items.iter().any(hit),
+        Matching::All => !items.is_empty() && items.iter().all(hit),
+        Matching::None => !items.iter().any(hit),
     }
 }
 
-fn compare(op: Operator, actual: i64, value: i64) -> bool {
-    match op {
-        Operator::Eq => actual == value,
-        Operator::Ne => actual != value,
-        Operator::Lt => actual < value,
-        Operator::Le => actual <= value,
-        Operator::Gt => actual > value,
-        Operator::Ge => actual >= value,
-        Operator::Regex | Operator::Glob => unreachable!("the parser rejects `{op}` here"),
-    }
-}
-
+/// The path of the condition and its values, as the file writes them:
+/// `labels.none: wip`, `author: alice, bob`.
 impl fmt::Display for Condition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.source)
+        write!(f, "{}", self.attribute)?;
+        if let Some(key) = self.operator.key() {
+            write!(f, ".{key}")?;
+        }
+        write!(f, ": {}", self.values.join(", "))
     }
 }
 
-/// A parse error, at a 1-based character column of the condition text.
+/// An error in a condition; `value` is the index of the faulty value, `None`
+/// when the operator itself is faulty.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ParseError {
-    pub column: usize,
-    pub kind: ParseErrorKind,
+pub struct ConditionError {
+    pub value: Option<usize>,
+    pub kind: ConditionErrorKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ParseErrorKind {
-    Empty,
-    UnknownAttribute(String),
-    CountNeedsList(Attribute),
-    ExpectedOperator,
-    MissingOperator(Attribute),
-    OperatorOnBoolean(Attribute),
+pub enum ConditionErrorKind {
     OperatorNotAllowed {
         attribute: Attribute,
         operator: Operator,
     },
     MissingValue,
-    UnterminatedQuote,
-    InvalidEscape(char),
-    TrailingCharacters,
+    OneValue {
+        attribute: Attribute,
+        operator: Operator,
+    },
+    InvalidBoolean(String),
     InvalidNumber(String),
     InvalidDuration(String),
     InvalidChoice {
@@ -216,37 +323,35 @@ pub enum ParseErrorKind {
     InvalidGlob(String),
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for ConditionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "column {}: {}", self.column, self.kind)
+        self.kind.fmt(f)
     }
 }
 
-impl fmt::Display for ParseErrorKind {
+impl fmt::Display for ConditionErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use ParseErrorKind as K;
+        use ConditionErrorKind as K;
         match self {
-            K::Empty => f.write_str("empty condition"),
-            K::UnknownAttribute(name) => write!(f, "unknown attribute `{name}`"),
-            K::CountNeedsList(a) => write!(f, "`#` needs a list, and `{a}` is a {}", a.kind()),
-            K::ExpectedOperator => f.write_str("expected an operator"),
-            K::MissingOperator(a) => write!(f, "`{a}` needs an operator and a value"),
-            K::OperatorOnBoolean(a) => {
-                write!(f, "`{a}` is a boolean: write `{a}` or `-{a}`")
-            }
             K::OperatorNotAllowed {
                 attribute,
                 operator,
             } => write!(
                 f,
-                "operator `{operator}` is not allowed on `{attribute}` ({})",
+                "`{operator}` is not allowed on `{attribute}` ({})",
                 attribute.kind()
             ),
             K::MissingValue => f.write_str("missing value"),
-            K::UnterminatedQuote => f.write_str("unterminated quoted value"),
-            K::InvalidEscape(c) => write!(f, "invalid escape `\\{c}`: use `\\\"` or `\\\\`"),
-            K::TrailingCharacters => f.write_str("unexpected text after the quoted value"),
-            K::InvalidNumber(v) => write!(f, "`{v}` is not an integer"),
+            K::OneValue {
+                attribute,
+                operator: Operator::Is,
+            } => write!(f, "`{attribute}` takes one value, not a list"),
+            K::OneValue {
+                attribute,
+                operator,
+            } => write!(f, "`{attribute}.{operator}` takes one value, not a list"),
+            K::InvalidBoolean(v) => write!(f, "`{v}` is not `true` or `false`"),
+            K::InvalidNumber(v) => write!(f, "`{v}` is not a positive integer"),
             K::InvalidDuration(v) => {
                 write!(f, "`{v}` is not a duration such as `30m`, `2h` or `7d`")
             }
@@ -263,221 +368,122 @@ impl fmt::Display for ParseErrorKind {
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for ConditionError {}
 
-impl FromStr for Condition {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (negated, test) = Cursor { s, pos: 0 }.condition()?;
-        Ok(Self {
-            source: s.trim().to_owned(),
-            negated,
-            test,
-        })
-    }
-}
-
-struct Cursor<'a> {
-    s: &'a str,
-    pos: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn rest(&self) -> &'a str {
-        &self.s[self.pos..]
-    }
-
-    fn at_end(&self) -> bool {
-        self.pos == self.s.len()
-    }
-
-    fn skip_whitespace(&mut self) {
-        self.pos = self.s.len() - self.rest().trim_start().len();
-    }
-
-    fn eat(&mut self, c: char) -> bool {
-        let found = self.rest().starts_with(c);
-        if found {
-            self.pos += c.len_utf8();
-        }
-        found
-    }
-
-    fn error(&self, at: usize, kind: ParseErrorKind) -> ParseError {
-        ParseError {
-            column: self.s[..at].chars().count() + 1,
-            kind,
-        }
-    }
-
-    fn condition(mut self) -> Result<(bool, Test), ParseError> {
-        self.skip_whitespace();
-        if self.at_end() {
-            return Err(self.error(self.pos, ParseErrorKind::Empty));
-        }
-
-        let negated = self.eat('-');
-        let count_at = self.pos;
-        let count = self.eat('#');
-
-        let name_at = self.pos;
-        let name_len = self
-            .rest()
-            .find(|c: char| c.is_whitespace() || "=!~*<>".contains(c))
-            .unwrap_or(self.rest().len());
-        let name = &self.rest()[..name_len];
-        let attribute = Attribute::from_name(name).ok_or_else(|| {
-            self.error(name_at, ParseErrorKind::UnknownAttribute(name.to_owned()))
-        })?;
-
-        self.pos += name_len;
-        let kind = attribute.kind();
-        if count && kind != Kind::List {
-            return Err(self.error(count_at, ParseErrorKind::CountNeedsList(attribute)));
-        }
-
-        self.skip_whitespace();
-        let op_at = self.pos;
-        let Some(op) = self.operator() else {
-            if !self.at_end() {
-                return Err(self.error(op_at, ParseErrorKind::ExpectedOperator));
-            }
-            if kind != Kind::Bool {
-                return Err(self.error(op_at, ParseErrorKind::MissingOperator(attribute)));
-            }
-            return Ok((negated, Test::Flag(attribute)));
-        };
-
-        if kind == Kind::Bool {
-            return Err(self.error(op_at, ParseErrorKind::OperatorOnBoolean(attribute)));
-        }
-
-        if !allows(kind, count, op) {
-            return Err(self.error(
-                op_at,
-                ParseErrorKind::OperatorNotAllowed {
-                    attribute,
-                    operator: op,
-                },
-            ));
-        }
-
-        self.skip_whitespace();
-        let value_at = self.pos;
-        let value = self.value()?;
-        let invalid = |kind| self.error(value_at, kind);
-        let test = if !count && matches!(kind, Kind::Text | Kind::List) {
-            Test::Text {
-                attribute,
-                op,
-                pattern: pattern(op, &value).map_err(invalid)?,
-            }
-        } else {
-            let (number, error) = match kind {
-                Kind::Duration => (
-                    parse_duration(&value),
-                    ParseErrorKind::InvalidDuration(value),
-                ),
-                Kind::Choice { values, .. } => (
-                    values
-                        .iter()
-                        .position(|v| *v == value)
-                        .and_then(|rank| i64::try_from(rank).ok()),
-                    ParseErrorKind::InvalidChoice { attribute, value },
-                ),
-                _ => (value.parse().ok(), ParseErrorKind::InvalidNumber(value)),
-            };
-            Test::Compare {
-                attribute,
-                op,
-                value: number.ok_or_else(|| invalid(error))?,
-            }
-        };
-
-        Ok((negated, test))
-    }
-
-    fn operator(&mut self) -> Option<Operator> {
-        let (symbol, op) = OPERATORS
-            .iter()
-            .find(|(symbol, _)| self.rest().starts_with(symbol))?;
-        self.pos += symbol.len();
-        Some(*op)
-    }
-
-    /// The rest of the text without its trailing whitespace, or a quoted
-    /// string with `\"` and `\\` escapes.
-    fn value(&mut self) -> Result<String, ParseError> {
-        let start = self.pos;
-        if !self.eat('"') {
-            let value = self.rest().trim_end();
-            if value.is_empty() {
-                return Err(self.error(start, ParseErrorKind::MissingValue));
-            }
-            self.pos = self.s.len();
-            return Ok(value.to_owned());
-        }
-
-        let mut value = String::new();
-        let mut chars = self.rest().char_indices();
-
-        loop {
-            match chars.next() {
-                None => return Err(self.error(start, ParseErrorKind::UnterminatedQuote)),
-                Some((i, '"')) => {
-                    self.pos += i + 1;
-                    break;
-                }
-                Some((i, '\\')) => match chars.next() {
-                    Some((_, c @ ('"' | '\\'))) => value.push(c),
-                    Some((_, c)) => {
-                        return Err(self.error(self.pos + i, ParseErrorKind::InvalidEscape(c)));
-                    }
-                    None => return Err(self.error(start, ParseErrorKind::UnterminatedQuote)),
-                },
-                Some((_, c)) => value.push(c),
-            }
-        }
-
-        self.skip_whitespace();
-        if !self.at_end() {
-            return Err(self.error(self.pos, ParseErrorKind::TrailingCharacters));
-        }
-
-        Ok(value)
-    }
-}
-
-fn allows(kind: Kind, count: bool, op: Operator) -> bool {
+fn allows(kind: Kind, operator: Operator) -> bool {
+    use Operator as O;
     match kind {
-        _ if count => op.is_comparison(),
-        Kind::Bool => false,
-        Kind::Int | Kind::Duration | Kind::Choice { ordered: true, .. } => op.is_comparison(),
-        Kind::Choice { ordered: false, .. } => matches!(op, Operator::Eq | Operator::Ne),
-        Kind::Text | Kind::List => matches!(
-            op,
-            Operator::Eq | Operator::Ne | Operator::Regex | Operator::Glob
+        Kind::Bool | Kind::Choice { ordered: false, .. } => operator == O::Is,
+        Kind::Int | Kind::Duration | Kind::Choice { ordered: true, .. } => {
+            matches!(operator, O::Is | O::Min | O::Max)
+        }
+        Kind::Text => matches!(operator, O::Is | O::Not | O::Matches | O::Regex),
+        Kind::List => matches!(
+            operator,
+            O::Is
+                | O::All
+                | O::Any
+                | O::None
+                | O::AllMatch
+                | O::AnyMatch
+                | O::NoneMatch
+                | O::Count
+                | O::CountMin
+                | O::CountMax
         ),
     }
 }
 
-fn pattern(op: Operator, value: &str) -> Result<Pattern, ParseErrorKind> {
-    match op {
-        Operator::Regex => Regex::new(value)
-            .map(Pattern::Regex)
-            .map_err(|e| ParseErrorKind::InvalidRegex(regex_cause(&e))),
-        Operator::Glob => glob(value).map(Pattern::Glob),
-        _ => Ok(Pattern::Exact(value.to_owned())),
+/// The test of `values`, which `build` has checked against the operator; an
+/// error gives the index of its value.
+fn test(
+    attribute: Attribute,
+    operator: Operator,
+    values: &[String],
+) -> Result<Test, (usize, ConditionErrorKind)> {
+    use Operator as O;
+    let first = values.first().map(String::as_str).unwrap_or_default();
+    let at_first = |kind| (0, kind);
+    let globs = |matching| {
+        values
+            .iter()
+            .enumerate()
+            .map(|(n, value)| Glob::new(value).map_err(|kind| (n, kind)))
+            .collect::<Result<_, _>>()
+            .map(|globs| Test::Match(matching, globs))
+    };
+
+    match (attribute.kind(), operator) {
+        (Kind::Bool, _) => match first {
+            "true" => Ok(Test::Flag(true)),
+            "false" => Ok(Test::Flag(false)),
+            _ => Err(at_first(ConditionErrorKind::InvalidBoolean(
+                first.to_owned(),
+            ))),
+        },
+        (Kind::Choice { .. }, O::Is) => values
+            .iter()
+            .enumerate()
+            .map(|(n, value)| rank(attribute, value).map_err(|kind| (n, kind)))
+            .collect::<Result<_, _>>()
+            .map(Test::OneOf),
+        (Kind::Int | Kind::Duration | Kind::Choice { .. }, _) => {
+            let number = number(attribute, first).map_err(at_first)?;
+            Ok(match operator {
+                O::Min => Test::Range(number, i64::MAX),
+                O::Max => Test::Range(i64::MIN, number),
+                _ => Test::Range(number, number),
+            })
+        }
+        (_, O::Count | O::CountMin | O::CountMax) => {
+            let count = count(first).map_err(at_first)?;
+            Ok(match operator {
+                O::CountMin => Test::Count(count, i64::MAX),
+                O::CountMax => Test::Count(0, count),
+                _ => Test::Count(count, count),
+            })
+        }
+        (_, O::Regex) => Regex::new(first)
+            .map(Test::Regex)
+            .map_err(|e| at_first(ConditionErrorKind::InvalidRegex(regex_cause(&e)))),
+        (_, O::Matches | O::AnyMatch) => globs(Matching::Any),
+        (_, O::AllMatch) => globs(Matching::All),
+        (_, O::NoneMatch) => globs(Matching::None),
+        (_, O::Not | O::None) => Ok(Test::HasNone(values.to_vec())),
+        _ => Ok(Test::Has(values.to_vec())),
     }
 }
 
-fn glob(value: &str) -> Result<GlobMatcher, ParseErrorKind> {
-    GlobBuilder::new(value)
-        .literal_separator(true)
-        .build()
-        .map(|glob| glob.compile_matcher())
-        .map_err(|e| ParseErrorKind::InvalidGlob(e.kind().to_string()))
+/// An integer, a duration in seconds, or the rank of an ordered choice.
+fn number(attribute: Attribute, value: &str) -> Result<i64, ConditionErrorKind> {
+    match attribute.kind() {
+        Kind::Duration => {
+            parse_duration(value).ok_or_else(|| ConditionErrorKind::InvalidDuration(value.into()))
+        }
+        Kind::Choice { .. } => rank(attribute, value),
+        _ => count(value),
+    }
+}
+
+fn count(value: &str) -> Result<i64, ConditionErrorKind> {
+    value
+        .parse::<u32>()
+        .map(i64::from)
+        .map_err(|_| ConditionErrorKind::InvalidNumber(value.into()))
+}
+
+fn rank(attribute: Attribute, value: &str) -> Result<i64, ConditionErrorKind> {
+    let Kind::Choice { values, .. } = attribute.kind() else {
+        unreachable!("`{attribute}` is not a choice");
+    };
+    values
+        .iter()
+        .position(|v| *v == value)
+        .and_then(|rank| i64::try_from(rank).ok())
+        .ok_or_else(|| ConditionErrorKind::InvalidChoice {
+            attribute,
+            value: value.into(),
+        })
 }
 
 /// The last line of a `regex` error. The lines before it repeat the pattern
@@ -507,28 +513,93 @@ fn parse_duration(value: &str) -> Option<i64> {
 mod tests {
     use super::*;
 
-    fn error(s: &str) -> ParseError {
-        s.parse::<Condition>().unwrap_err()
+    fn values(list: &[&str]) -> Vec<String> {
+        list.iter().map(|&v| v.to_owned()).collect()
+    }
+
+    fn build(attribute: Attribute, operator: Operator, list: &[&str]) -> Vec<Condition> {
+        Condition::build(attribute, operator, &values(list)).unwrap()
+    }
+
+    fn error(attribute: Attribute, operator: Operator, list: &[&str]) -> ConditionError {
+        Condition::build(attribute, operator, &values(list)).unwrap_err()
     }
 
     #[test]
-    fn parses_the_spec_examples() {
-        for s in [
-            "review-decision = approved",
-            "-draft",
-            "-label = do-not-merge",
-            "check-success = lint",
-            "label = hotfix",
-            "sender-permission >= write",
-            "author = dependabot[bot]",
-            "#approved-reviews-by >= 2",
-            "files *= src/**/*.rs",
-            "title ~= ^feat",
-            "queue-age > 2h",
-        ] {
-            let condition: Condition = s.parse().unwrap_or_else(|e| panic!("{s}: {e}"));
-            assert_eq!(condition.as_str(), s);
+    fn operator_keys_round_trip() {
+        for &attribute in Attribute::ALL {
+            for key in Operator::keys(attribute) {
+                assert_eq!(Operator::from_key(key).and_then(Operator::key), Some(key));
+            }
         }
+        assert_eq!(Operator::Is.key(), None);
+        assert_eq!(Operator::from_key("is"), None);
+        assert_eq!(Operator::from_key("count.min"), None);
+        assert_eq!(Operator::CountMin.key(), Some("count.min"));
+        assert_eq!(
+            Operator::keys(Attribute::Additions).collect::<Vec<_>>(),
+            ["min", "max"]
+        );
+        assert_eq!(Operator::keys(Attribute::Draft).count(), 0);
+    }
+
+    #[test]
+    fn shows_the_path_and_the_values() {
+        let shown = |attribute, operator, list: &[&str]| {
+            build(attribute, operator, list)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            shown(Attribute::Draft, Operator::Is, &["false"]),
+            ["draft: false"]
+        );
+        assert_eq!(
+            shown(Attribute::Author, Operator::Is, &["a", "b"]),
+            ["author: a, b"]
+        );
+        assert_eq!(
+            shown(Attribute::Labels, Operator::None, &["wip", "blocked"]),
+            ["labels.none: wip", "labels.none: blocked"]
+        );
+        assert_eq!(
+            shown(Attribute::CheckSuccess, Operator::Is, &["lint", "build"]),
+            ["checks.success: lint", "checks.success: build"]
+        );
+        assert_eq!(
+            shown(Attribute::Labels, Operator::Any, &["urgent", "hotfix"]),
+            ["labels.any: urgent, hotfix"]
+        );
+        assert_eq!(
+            shown(Attribute::Files, Operator::CountMax, &["3"]),
+            ["files.count.max: 3"]
+        );
+    }
+
+    #[test]
+    fn only_one_name_of_checks_success_is_a_required_check() {
+        let names = |attribute, operator, list: &[&str]| {
+            build(attribute, operator, list)
+                .iter()
+                .map(|c| c.required_check().map(str::to_owned))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::All, &["a", "b"]),
+            [Some("a".into()), Some("b".into())]
+        );
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::Any, &["a"]),
+            [None]
+        );
+        assert_eq!(names(Attribute::Labels, Operator::Is, &["a"]), [None]);
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::None, &["a"]),
+            [None]
+        );
     }
 
     #[test]
@@ -540,97 +611,156 @@ mod tests {
         assert!(Glob::new("team/**").unwrap().is_match("team/a/b"));
         assert!(matches!(
             Glob::new("release/[").unwrap_err(),
-            ParseErrorKind::InvalidGlob(_)
+            ConditionErrorKind::InvalidGlob(_)
         ));
     }
 
     #[test]
-    fn reads_the_value_to_the_end_or_between_quotes() {
-        let Test::Text { pattern, .. } = "title = fix: a  b ".parse::<Condition>().unwrap().test
-        else {
-            panic!("expected a text test");
-        };
-        assert!(matches!(pattern, Pattern::Exact(v) if v == "fix: a  b"));
+    fn refuses_an_operator_that_does_not_fit_the_type() {
+        use Attribute as A;
+        use Operator as O;
 
-        let Test::Text { pattern, .. } =
-            r#"title = "a \"b\" \\ c""#.parse::<Condition>().unwrap().test
-        else {
-            panic!("expected a text test");
-        };
-        assert!(matches!(pattern, Pattern::Exact(v) if v == r#"a "b" \ c"#));
+        for (attribute, operator) in [
+            (A::Draft, O::Not),
+            (A::Number, O::Regex),
+            (A::ReviewDecision, O::Min),
+            (A::Title, O::Count),
+            (A::Labels, O::Regex),
+        ] {
+            assert_eq!(
+                error(attribute, operator, &["x"]),
+                ConditionError {
+                    value: None,
+                    kind: ConditionErrorKind::OperatorNotAllowed {
+                        attribute,
+                        operator
+                    },
+                },
+                "{attribute}.{operator}"
+            );
+        }
     }
 
     #[test]
-    fn reports_errors_with_their_column() {
-        use ParseErrorKind as K;
+    fn reports_errors_with_the_index_of_their_value() {
+        use Attribute as A;
+        use ConditionErrorKind as K;
+        use Operator as O;
+        let choice = |attribute, value: &str| K::InvalidChoice {
+            attribute,
+            value: value.into(),
+        };
         let cases = [
-            ("   ", 4, K::Empty),
-            ("lable = x", 1, K::UnknownAttribute("lable".into())),
-            ("label_x = 1", 1, K::UnknownAttribute("label_x".into())),
-            ("#title = 2", 1, K::CountNeedsList(Attribute::Title)),
-            ("label", 6, K::MissingOperator(Attribute::Label)),
-            ("label : x", 7, K::ExpectedOperator),
-            ("-draft = true", 8, K::OperatorOnBoolean(Attribute::Draft)),
+            (A::Labels, O::None, vec![], None, K::MissingValue),
             (
-                "number ~= 3",
-                8,
-                K::OperatorNotAllowed {
-                    attribute: Attribute::Number,
-                    operator: Operator::Regex,
+                A::Additions,
+                O::Max,
+                vec!["1", "2"],
+                Some(1),
+                K::OneValue {
+                    attribute: A::Additions,
+                    operator: O::Max,
                 },
             ),
             (
-                "review-decision > approved",
-                17,
-                K::OperatorNotAllowed {
-                    attribute: Attribute::ReviewDecision,
-                    operator: Operator::Gt,
-                },
+                A::Draft,
+                O::Is,
+                vec!["yes"],
+                Some(0),
+                K::InvalidBoolean("yes".into()),
             ),
-            ("label =   ", 11, K::MissingValue),
-            (r#"label = "a"#, 9, K::UnterminatedQuote),
-            (r#"label = "a\n""#, 11, K::InvalidEscape('n')),
-            (r#"label = "a" b"#, 13, K::TrailingCharacters),
-            ("number = 3.5", 10, K::InvalidNumber("3.5".into())),
-            ("queue-age > 2x", 13, K::InvalidDuration("2x".into())),
-            ("pr-age > -2h", 10, K::InvalidDuration("-2h".into())),
             (
-                "sender-permission >= god",
-                22,
-                K::InvalidChoice {
-                    attribute: Attribute::SenderPermission,
-                    value: "god".into(),
-                },
+                A::Number,
+                O::Is,
+                vec!["3.5"],
+                Some(0),
+                K::InvalidNumber("3.5".into()),
+            ),
+            (
+                A::Files,
+                O::Count,
+                vec!["-1"],
+                Some(0),
+                K::InvalidNumber("-1".into()),
+            ),
+            (
+                A::QueueAge,
+                O::Min,
+                vec!["2x"],
+                Some(0),
+                K::InvalidDuration("2x".into()),
+            ),
+            (
+                A::ReviewDecision,
+                O::Is,
+                vec!["approved", "ok"],
+                Some(1),
+                choice(A::ReviewDecision, "ok"),
+            ),
+            (
+                A::SenderPermission,
+                O::Min,
+                vec!["god"],
+                Some(0),
+                choice(A::SenderPermission, "god"),
             ),
         ];
 
-        for (s, column, kind) in cases {
-            assert_eq!(error(s), ParseError { column, kind }, "{s}");
+        for (attribute, operator, list, value, kind) in cases {
+            assert_eq!(
+                error(attribute, operator, &list),
+                ConditionError { value, kind },
+                "{attribute}.{operator}"
+            );
         }
 
-        assert!(matches!(error("title ~= (").kind, K::InvalidRegex(_)));
-        assert!(matches!(error("files *= a[").kind, K::InvalidGlob(_)));
-    }
-
-    #[test]
-    fn counts_columns_in_characters() {
-        assert_eq!(error("title = \"é\\x\"").column, 11);
+        assert!(matches!(
+            error(A::Title, O::Regex, &["("]).kind,
+            K::InvalidRegex(_)
+        ));
+        let glob = error(A::Files, O::AnyMatch, &["src/**", "a["]);
+        assert_eq!(glob.value, Some(1));
+        assert!(matches!(glob.kind, K::InvalidGlob(_)));
     }
 
     #[test]
     fn error_messages_name_the_problem() {
+        let shown =
+            |attribute, operator, list: &[&str]| error(attribute, operator, list).to_string();
+
         assert_eq!(
-            error("-draft = true").to_string(),
-            "column 8: `draft` is a boolean: write `draft` or `-draft`"
+            shown(Attribute::Draft, Operator::Not, &["x"]),
+            "`not` is not allowed on `draft` (boolean)"
         );
         assert_eq!(
-            error("sender-permission >= god").to_string(),
-            "column 22: `god` is not valid for `sender-permission`: expected one of none, read, write, admin"
+            shown(Attribute::Draft, Operator::Is, &["true", "false"]),
+            "`draft` takes one value, not a list"
         );
         assert_eq!(
-            error("title ~= (").to_string(),
-            "column 10: invalid regular expression: unclosed group"
+            shown(Attribute::Title, Operator::Regex, &["a", "b"]),
+            "`title.regex` takes one value, not a list"
         );
+        assert_eq!(
+            shown(Attribute::SenderPermission, Operator::Min, &["god"]),
+            "`god` is not valid for `sender_permission`: expected one of none, read, write, admin"
+        );
+        assert_eq!(
+            shown(Attribute::Title, Operator::Regex, &["("]),
+            "invalid regular expression: unclosed group"
+        );
+        assert_eq!(
+            shown(Attribute::PrAge, Operator::Max, &["-2h"]),
+            "`-2h` is not a duration such as `30m`, `2h` or `7d`"
+        );
+        assert_eq!(
+            shown(Attribute::Number, Operator::Is, &["x"]),
+            "`x` is not a positive integer"
+        );
+        assert_eq!(
+            shown(Attribute::Labels, Operator::Any, &[]),
+            "missing value"
+        );
+        assert!(shown(Attribute::Files, Operator::AnyMatch, &["a["]).starts_with("invalid glob: "));
     }
 
     #[test]

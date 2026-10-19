@@ -1026,7 +1026,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
             check: REQUIRED.into(),
         },
         BlockReason::QueueConditionsUnmet {
-            conditions: vec![format!("check-success = {REQUIRED}")],
+            conditions: vec![format!("checks.success: {REQUIRED}")],
         },
     ];
     let cases: Vec<(Setup, ItemState, Vec<BlockReason>)> = vec![
@@ -2020,7 +2020,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n      - sender-permission >= write\n      - \"#files <= 1\"\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      labels: ready\n      sender_permission:\n        min: write\n      files:\n        count:\n          max: 1\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2054,13 +2054,13 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
             (
                 1,
                 "not_ready".into(),
-                unmet(&["label = ready"]),
+                unmet(&["labels: ready"]),
                 write.clone()
             ),
             (
                 2,
                 "not_ready".into(),
-                unmet(&["label = ready", "#files <= 1"]),
+                unmet(&["labels: ready", "files.count.max: 1"]),
                 write.clone()
             ),
         ]
@@ -2081,7 +2081,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     assert_eq!(states[0].2, serde_json::json!([]));
     assert_eq!(
         states[1],
-        (2, "not_ready".into(), unmet(&["#files <= 1"]), write)
+        (2, "not_ready".into(), unmet(&["files.count.max: 1"]), write)
     );
 
     let reads = sim
@@ -2135,12 +2135,15 @@ queues:
     strategy: batched
     batching: {{ size: 5, max_wait_minutes: 1 }}
     queue_conditions:
-      - check-success = {REQUIRED}
-      - \"#approved-reviews-by >= 1\"
+      checks:
+        success: {REQUIRED}
+      approved_reviews_by:
+        count:
+          min: 1
 priority_rules:
   - name: urgent
     conditions:
-      - label = urgent
+      labels: urgent
     priority: urgent
 "
     );
@@ -2349,7 +2352,7 @@ async fn a_resubmission_meets_the_queue_conditions_on_the_new_head(pool: PgPool)
     let mut q = SimQueue::new(pool.clone()).await;
     let sim = q.sim.clone();
     let config = format!(
-        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n    queue_conditions:\n      - check-success = lint\n"
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    resubmit_on_push: true\n    queue_conditions:\n      checks:\n        success: lint\n"
     );
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
 
@@ -2396,7 +2399,7 @@ async fn a_resubmission_meets_the_queue_conditions_on_the_new_head(pool: PgPool)
         (
             pushed,
             "not_ready".into(),
-            serde_json::json!([{ "kind": "queue_conditions_unmet", "conditions": ["check-success = lint"] }])
+            serde_json::json!([{ "kind": "queue_conditions_unmet", "conditions": ["checks.success: lint"] }])
         )
     );
     q.stop().await;
@@ -2610,7 +2613,7 @@ queues:
     profiles:
       - name: dependencies
         conditions:
-          - label = deps
+          labels: deps
         merge_method: merge_commit
 "
     );
@@ -4925,7 +4928,7 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     let sim = q.sim.clone();
     let file = |body: &str| format!("version: 1\nqueues:\n  - branch: main\n{body}");
     let strict = file(&format!(
-        "    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      - label = ready\n"
+        "    required_statuses: [{REQUIRED}]\n    direct_merge_mode: off\n    queue_conditions:\n      labels: ready\n"
     ));
     let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &strict)]);
 
@@ -4953,7 +4956,7 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     q.settle().await;
 
     let unmet = serde_json::json!([{
-        "kind": "queue_conditions_unmet", "conditions": ["label = ready"]
+        "kind": "queue_conditions_unmet", "conditions": ["labels: ready"]
     }]);
     let states = admissions(&pool).await;
 
