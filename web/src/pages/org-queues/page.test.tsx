@@ -2,7 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type Answers, renderApp } from "@/test/app";
+import { type Answers, mockSessionCookie, renderApp, sentChanges } from "@/test/app";
 import { ada, answersOfMe, answersOfMine, pageOf, queueOf, repoOf, repoRowOf } from "@/test/fixtures";
 
 const REPOS = "/api/v1/orgs/acme/repos";
@@ -225,6 +225,49 @@ describe("the page of an organization", () => {
     );
     expect(screen.queryByRole("heading", { name: "Connecting acme" })).not.toBeInTheDocument();
     expect(screen.getByText("Ready")).toBeInTheDocument();
+  });
+
+  it("waits for the first read of the repositories of the person, then lists them", async () => {
+    renderApp(
+      "/orgs/acme",
+      answersFor({
+        "/api/v1/user": [
+          [200, { login: ada.login, synced_at: null }],
+          [200, { login: ada.login, synced_at: ada.synced_at }],
+        ],
+        [REPOS]: [
+          [200, pageOf("repos", [])],
+          [200, pageOf("repos", [repoRowOf("site", "ready")])],
+        ],
+      }),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Reading your repositories" })).toBeInTheDocument();
+    expect(screen.queryByText(/reaches no repository/)).not.toBeInTheDocument();
+
+    expect(await screen.findByText("Ready", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Reading your repositories" })).not.toBeInTheDocument();
+  });
+
+  it("asks GitHub again for the repositories of the person when the list is empty", async () => {
+    mockSessionCookie();
+    renderApp(
+      "/orgs/acme",
+      answersFor({
+        "/api/v1/orgs/acme/queues": [200, pageOf("queues", [])],
+        [REPOS]: [
+          [200, pageOf("repos", [])],
+          [200, pageOf("repos", [])],
+          [200, pageOf("repos", [repoRowOf("site", "ready")])],
+        ],
+        "/api/v1/user/sync": [202, null],
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Check again" }));
+
+    expect(await screen.findByText("Ready", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await sentChanges()).toEqual([["POST", "/api/v1/user/sync", null, "token"]]);
   });
 
   it("opens with a banner when every installation of the App on the organization is suspended", async () => {

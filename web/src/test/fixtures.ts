@@ -14,6 +14,7 @@ import { type Answer, type Answers, problem } from "./app";
 
 export const ada: Me = {
   login: "ada",
+  synced_at: "2026-10-01T09:00:00Z",
   orgs: [
     { slug: "acme", role: "admin", is_suspended: false },
     { slug: "acme-labs", role: "member", is_suspended: false },
@@ -34,7 +35,7 @@ export function pageOf<K extends string, T>(name: K, entries: T[]) {
 /** The answers of `/user`, `/user/orgs` and `/instance` for the person `me`. */
 export function answersOfMe(me: Me): Answers {
   return {
-    "/api/v1/user": [200, { login: me.login }],
+    "/api/v1/user": [200, { login: me.login, synced_at: me.synced_at }],
     "/api/v1/user/orgs": [200, pageOf("orgs", me.orgs)],
     "/api/v1/instance": [200, { version: me.version, app_install_url: me.app_install_url }],
   };

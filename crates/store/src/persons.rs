@@ -123,31 +123,48 @@ pub async fn forget_person_token(
     Ok(())
 }
 
-/// Forgets the token of each person without a session, and what it read,
-/// and returns their number. Runs in the system context.
+/// Forgets the token of each person without a session and returns their
+/// number. What the token read stays: the next sign-in shows it at once,
+/// while its sync reads it again. Runs in the system context.
 ///
 /// # Errors
 ///
 /// Postgres fails.
 pub async fn forget_tokens_without_session(conn: &mut PgConnection) -> Result<u64, StoreError> {
-    let forgotten: Vec<String> = sqlx::query_scalar(
+    let forgotten = sqlx::query(
         "UPDATE users SET scm_token = NULL, scm_token_expires_at = NULL,
-                          scm_refresh_token = NULL, scm_refresh_token_expires_at = NULL,
-                          synced_at = NULL
+                          scm_refresh_token = NULL, scm_refresh_token_expires_at = NULL
          WHERE scm_token IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id)
-         RETURNING id",
+           AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id)",
     )
-    .fetch_all(&mut *conn)
+    .execute(conn)
     .await
     .map_err(StoreError::Query)?;
+    Ok(forgotten.rows_affected())
+}
 
-    sqlx::query("DELETE FROM repo_permissions WHERE user_id = ANY($1)")
-        .bind(&forgotten)
+/// Forgets the permissions that the SCM gave before `before`, and the sync
+/// of each person whose last one is older, and returns the number of
+/// permissions. Runs in the system context.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn forget_permissions_before(
+    conn: &mut PgConnection,
+    before: OffsetDateTime,
+) -> Result<u64, StoreError> {
+    let forgotten = sqlx::query("DELETE FROM repo_permissions WHERE checked_at < $1")
+        .bind(before)
+        .execute(&mut *conn)
+        .await
+        .map_err(StoreError::Query)?;
+    sqlx::query("UPDATE users SET synced_at = NULL WHERE synced_at < $1")
+        .bind(before)
         .execute(conn)
         .await
         .map_err(StoreError::Query)?;
-    Ok(u64::try_from(forgotten.len()).unwrap_or(u64::MAX))
+    Ok(forgotten.rows_affected())
 }
 
 /// When CIHub last read the installations and the repositories of

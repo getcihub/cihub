@@ -1,5 +1,6 @@
 use cihub_domain::UserId;
 use sqlx::{PgConnection, PgPool};
+use time::OffsetDateTime;
 
 use crate::StoreError;
 
@@ -38,6 +39,8 @@ pub struct UserProfile {
     pub login: String,
     pub name: Option<String>,
     pub avatar_url: Option<String>,
+    /// When CIHub last read the repositories that the user reaches.
+    pub synced_at: Option<OffsetDateTime>,
 }
 
 /// Records the name and the avatar that the SCM gives at the sign-in of
@@ -95,7 +98,7 @@ pub async fn record_avatar(
 ///
 /// Postgres fails.
 pub async fn profile_of(pool: &PgPool, user_id: UserId) -> Result<Option<UserProfile>, StoreError> {
-    sqlx::query_as("SELECT login, name, avatar_url FROM users WHERE id = $1")
+    sqlx::query_as("SELECT login, name, avatar_url, synced_at FROM users WHERE id = $1")
         .bind(user_id.to_string())
         .fetch_optional(pool)
         .await

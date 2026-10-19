@@ -1489,6 +1489,11 @@ export type User = {
      * The name that the person gives on the SCM, `null` when they give none.
      */
     name?: string | null;
+    /**
+     * When CIHub last read from the SCM the repositories that the person
+     * reaches; `null` until the first read ends, which their lists wait for.
+     */
+    synced_at?: string | null;
 };
 
 /**

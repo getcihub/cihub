@@ -31,8 +31,8 @@ pub use memberships::{
     Membership, ORG_IS_SUSPENDED, forget_memberships_before, memberships_of, record_membership,
 };
 pub use persons::{
-    PersonToken, forget_person_token, forget_tokens_without_session, keep_person_token,
-    lock_person_token, person_synced_at, readable_repos, record_person_sync,
+    PersonToken, forget_permissions_before, forget_person_token, forget_tokens_without_session,
+    keep_person_token, lock_person_token, person_synced_at, readable_repos, record_person_sync,
     record_repo_permission, repo_permission_of,
 };
 use secrecy::{ExposeSecret, SecretString};

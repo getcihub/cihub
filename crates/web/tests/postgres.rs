@@ -424,8 +424,8 @@ async fn the_stream_of_a_person_carries_their_repositories_only(pool: PgPool) {
     cancel.cancel();
 }
 
-/// The sign-out of the last session of a person forgets their token, and
-/// what it read; another session keeps it.
+/// The sign-out of the last session of a person forgets their token; another
+/// session keeps it.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn the_last_sign_out_forgets_the_token_of_the_person(pool: PgPool) {
     token(&pool, 9, &[]).await;
@@ -453,6 +453,15 @@ async fn the_last_sign_out_forgets_the_token_of_the_person(pool: PgPool) {
                 .unwrap();
         has
     };
+    let is_synced = || async {
+        let mut tx = begin_system(&pool).await.unwrap();
+        let is: bool =
+            sqlx::query_scalar("SELECT synced_at IS NOT NULL FROM users WHERE login = 'ada'")
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        is
+    };
     let sign_out = |callback: Answer| {
         let addr = addr.clone();
         async move {
@@ -469,11 +478,19 @@ async fn the_last_sign_out_forgets_the_token_of_the_person(pool: PgPool) {
     let first = sign_in(&addr, &sim, &ada, "/").await;
     let second = sign_in(&addr, &sim, &ada, "/").await;
 
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE users SET synced_at = now() WHERE login = 'ada'")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
     assert!(has_token().await, "a sign-in keeps the token");
     assert_eq!(sign_out(first).await, 204);
     assert!(has_token().await, "the other session keeps the token");
     assert_eq!(sign_out(second).await, 204);
     assert!(!has_token().await, "the last sign-out forgets the token");
+    assert!(is_synced().await, "what the token read stays");
 }
 
 /// The stream answers as the other routes: `404` on another organization,
@@ -597,7 +614,8 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
         serde_json::json!({
             "login": "ada",
             "name": "Ada Lovelace",
-            "avatar_url": "https://avatars.example.com/u/5"
+            "avatar_url": "https://avatars.example.com/u/5",
+            "synced_at": null
         })
     );
     assert_eq!(

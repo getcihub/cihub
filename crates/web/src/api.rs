@@ -709,6 +709,7 @@ async fn get_user(
         login: profile.login,
         name: profile.name,
         avatar_url: profile.avatar_url,
+        synced_at: profile.synced_at,
     }))
 }
 

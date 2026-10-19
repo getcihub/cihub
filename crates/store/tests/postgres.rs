@@ -16,9 +16,10 @@ use cihub_store::{
     NewSession, SessionClient, SessionGrant, answer_device_code, append_events, authenticate,
     authenticate_session, begin_org, begin_system, create_api_token, create_device_code,
     create_event_partitions, create_session, delete_session, delete_session_by_id,
-    forget_memberships_before, load_events, memberships_of, migrate, missing_migrations,
-    new_api_token_secret, new_cli_session_secret, new_device_code_secret, new_session_secret,
-    new_user_code, poll_device_code, record_membership,
+    forget_memberships_before, forget_permissions_before, forget_tokens_without_session,
+    load_events, memberships_of, migrate, missing_migrations, new_api_token_secret,
+    new_cli_session_secret, new_device_code_secret, new_session_secret, new_user_code,
+    poll_device_code, record_membership,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
@@ -861,4 +862,39 @@ async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
 
     assert_eq!(forgotten, 1, "the refresh of org 1 did not see user-1");
     assert_eq!(memberships_of(&pool, user_id).await.unwrap(), expected);
+}
+
+/// A person without a session loses their token but keeps what it read,
+/// until the permissions grow older than the retention.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_sign_out_keeps_the_permissions_until_they_grow_old(pool: PgPool) {
+    seed(&pool).await;
+    let read_at = OffsetDateTime::new_utc(september(), time::Time::MIDNIGHT);
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE users SET scm_token = '\\x00', synced_at = $1 WHERE id = 'user-1'")
+        .bind(read_at)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let person =
+        "SELECT scm_token IS NOT NULL, synced_at IS NOT NULL FROM users WHERE id = 'user-1'";
+
+    let tokens = forget_tokens_without_session(&mut tx).await.unwrap();
+    let after_sign_out: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
+    let kept = forget_permissions_before(&mut tx, read_at).await.unwrap();
+    let forgotten = forget_permissions_before(&mut tx, read_at + Duration::seconds(1))
+        .await
+        .unwrap();
+    let after_retention: (bool, bool) = sqlx::query_as(person).fetch_one(&mut *tx).await.unwrap();
+
+    assert_eq!(tokens, 1);
+    assert_eq!(after_sign_out, (false, true), "the sync stays");
+    assert_eq!(kept, 0);
+    assert_eq!(forgotten, 2);
+    assert_eq!(
+        after_retention,
+        (false, false),
+        "the sync goes with its permissions"
+    );
+    assert_eq!(count(&mut tx, "repo_permissions").await, 0);
 }

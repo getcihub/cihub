@@ -8935,6 +8935,15 @@
             ],
             "description": "The name that the person gives on the SCM, `null` when they give none.",
             "example": "Ada Lovelace"
+          },
+          "synced_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When CIHub last read from the SCM the repositories that the person\nreaches; `null` until the first read ends, which their lists wait for.",
+            "example": "2026-10-11T09:00:00Z"
           }
         }
       },
