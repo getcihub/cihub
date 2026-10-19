@@ -16,7 +16,8 @@ export function SetupRules({ repo, isChecking }: { repo: RepoDetail; isChecking:
         <ErrorIcon />
         <AlertContent>
           <AlertTitle>
-            The branch <code>{repo.default_branch}</code> does not exist: no queue can merge into it.
+            <code>{repo.default_branch}</code> has no commit yet. Push a first commit, then CIHub can read its
+            rules.
           </AlertTitle>
         </AlertContent>
       </Alert>
