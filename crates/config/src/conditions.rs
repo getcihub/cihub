@@ -21,6 +21,8 @@ pub(crate) enum RawNode {
     Map(Vec<(Spanned<String>, Spanned<RawNode>)>),
 }
 
+const CHECK_STATES: &str = "a map of check states: success, neutral, skipped, failure, pending";
+
 type Entries = [(Spanned<String>, Spanned<RawNode>)];
 
 /// Reads the condition maps of `text`, the file.
@@ -58,6 +60,21 @@ fn filled<'a>(node: &'a Spanned<RawNode>, expected: &str) -> Result<&'a Entries,
     Ok(entries)
 }
 
+/// `merge_conditions` accept only required checks: `exprs` come from `key`.
+fn only_required_checks(key: &Spanned<String>, exprs: Vec<Expr>) -> Result<Vec<Expr>, ConfigError> {
+    let refused = exprs
+        .iter()
+        .find(|expr| !matches!(expr, Expr::Condition(c) if c.required_check().is_some()));
+    if let Some(expr) = refused {
+        return Err(error(
+            key,
+            format!("merge_conditions accept only `checks.success`, not `{expr}`"),
+        ));
+    }
+
+    Ok(exprs)
+}
+
 impl<'a> Reader<'a> {
     /// The conditions of a map; none without a map.
     pub(crate) fn conditions(
@@ -72,6 +89,16 @@ impl<'a> Reader<'a> {
             .map(Conditions)
     }
 
+    /// The conditions of a profile or of a priority rule: a map that holds
+    /// something, as an empty one would match every PR without a word.
+    pub(crate) fn selecting_conditions(
+        self,
+        node: &Spanned<RawNode>,
+    ) -> Result<Conditions, ConfigError> {
+        self.entries(filled(node, "a map of conditions")?)
+            .map(Conditions)
+    }
+
     /// `merge_conditions` accept only `checks.success` for now.
     pub(crate) fn merge_conditions(
         self,
@@ -83,17 +110,41 @@ impl<'a> Reader<'a> {
 
         let mut conditions = Vec::new();
         for (key, value) in map(node, "a map of conditions")? {
-            for expr in self.entry(key, value)? {
-                if !matches!(&expr, Expr::Condition(c) if c.required_check().is_some()) {
-                    return Err(error(
-                        key,
-                        format!("merge_conditions accept only `checks.success`, not `{expr}`"),
-                    ));
-                }
-                conditions.push(expr);
-            }
+            let exprs = match key.value.as_str() {
+                "checks" => self.merge_checks(value)?,
+                _ => only_required_checks(key, self.entry(key, value)?)?,
+            };
+            conditions.extend(exprs);
         }
         Ok(Conditions(conditions))
+    }
+
+    /// The states of `checks`, each refused at its own key.
+    fn merge_checks(self, value: &Spanned<RawNode>) -> Result<Vec<Expr>, ConfigError> {
+        let mut exprs = Vec::new();
+        for (state, value) in filled(value, CHECK_STATES)? {
+            exprs.extend(self.merge_state(state, value)?);
+        }
+        Ok(exprs)
+    }
+
+    /// One state of `checks`; under `success`, each operator is refused at its own key.
+    fn merge_state(
+        self,
+        state: &Spanned<String>,
+        value: &Spanned<RawNode>,
+    ) -> Result<Vec<Expr>, ConfigError> {
+        let name = format!("checks.{}", state.value);
+        if state.value != "success" || !matches!(value.value, RawNode::Map(_)) {
+            return only_required_checks(state, self.attribute(&name, state, value)?);
+        }
+
+        let mut exprs = Vec::new();
+        for (key, value) in filled(value, &format!("the operators of `{name}`"))? {
+            let built = self.operator_entry(Attribute::CheckSuccess, key, value)?;
+            exprs.extend(only_required_checks(key, built)?);
+        }
+        Ok(exprs)
     }
 
     fn entries(self, entries: &Entries) -> Result<Vec<Expr>, ConfigError> {
@@ -150,12 +201,8 @@ impl<'a> Reader<'a> {
     }
 
     fn checks(self, value: &Spanned<RawNode>) -> Result<Vec<Expr>, ConfigError> {
-        let states = filled(
-            value,
-            "a map of check states: success, neutral, skipped, failure, pending",
-        )?;
         let mut exprs = Vec::new();
-        for (state, value) in states {
+        for (state, value) in filled(value, CHECK_STATES)? {
             let name = format!("checks.{}", state.value);
             exprs.extend(self.attribute(&name, state, value)?);
         }
@@ -174,17 +221,29 @@ impl<'a> Reader<'a> {
             return self.condition(attribute, Operator::Is, value);
         };
 
+        let entries = filled(value, &format!("the operators of `{name}`"))?;
         let mut exprs = Vec::new();
-        for (key, value) in filled(value, &format!("the operators of `{name}`"))? {
-            match (key.value.as_str(), &value.value) {
-                ("count", RawNode::Map(_)) => exprs.extend(self.count(attribute, value)?),
-                (name, _) => {
-                    let operator = operator(attribute, Operator::from_key(name), key)?;
-                    exprs.extend(self.condition(attribute, operator, value)?);
-                }
+        for (key, value) in entries {
+            exprs.extend(self.operator_entry(attribute, key, value)?);
+        }
+        refuse_empty_range(&format!("{attribute}.max"), entries, &exprs)?;
+        Ok(exprs)
+    }
+
+    /// One operator key of an attribute, with its values.
+    fn operator_entry(
+        self,
+        attribute: Attribute,
+        key: &Spanned<String>,
+        value: &Spanned<RawNode>,
+    ) -> Result<Vec<Expr>, ConfigError> {
+        match (key.value.as_str(), &value.value) {
+            ("count", RawNode::Map(_)) => self.count(attribute, value),
+            (name, _) => {
+                let operator = operator(attribute, Operator::from_key(name), key)?;
+                self.condition(attribute, operator, value)
             }
         }
-        Ok(exprs)
     }
 
     /// `count` with `min` and `max`.
@@ -193,24 +252,25 @@ impl<'a> Reader<'a> {
         attribute: Attribute,
         value: &Spanned<RawNode>,
     ) -> Result<Vec<Expr>, ConfigError> {
+        let entries = filled(value, "`min` or `max`")?;
         let mut exprs = Vec::new();
-        for (bound, value) in filled(value, "`min` or `max`")? {
+        for (bound, value) in entries {
             let operator = match bound.value.as_str() {
-                "min" => Some(Operator::CountMin),
-                "max" => Some(Operator::CountMax),
-                _ => None,
+                "min" => Operator::CountMin,
+                "max" => Operator::CountMax,
+                _ => {
+                    return Err(error(
+                        bound,
+                        format!(
+                            "unknown key `{}` under `count`: expected min or max",
+                            bound.value
+                        ),
+                    ));
+                }
             };
-            let operator = operator.ok_or_else(|| {
-                error(
-                    bound,
-                    format!(
-                        "unknown key `{}` under `count`: expected min or max",
-                        bound.value
-                    ),
-                )
-            })?;
             exprs.extend(self.condition(attribute, operator, value)?);
         }
+        refuse_empty_range(&format!("{attribute}.count.max"), entries, &exprs)?;
         Ok(exprs)
     }
 
@@ -276,6 +336,27 @@ impl<'a> Reader<'a> {
         let len = usize::try_from(span.byte_len()?).ok()?;
         self.text.get(start..start.checked_add(len)?)
     }
+}
+
+/// A `max` below the `min` of its own map: no value could hold.
+fn refuse_empty_range(path: &str, entries: &Entries, exprs: &[Expr]) -> Result<(), ConfigError> {
+    let Some((_, max)) = entries.iter().find(|(key, _)| key.value == "max") else {
+        return Ok(());
+    };
+    let (low, high) = exprs
+        .iter()
+        .filter_map(|expr| match expr {
+            Expr::Condition(condition) => condition.bounds(),
+            _ => None,
+        })
+        .fold((i64::MIN, i64::MAX), |(low, high), (min, max)| {
+            (low.max(min), high.min(max))
+        });
+    if low > high {
+        return Err(error(max, format!("{path}: below `min`")));
+    }
+
+    Ok(())
 }
 
 /// The operator of a key, or an error that lists the keys of the attribute.

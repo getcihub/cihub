@@ -285,9 +285,18 @@ fn the_conditions_are_those_of_cihub_conditions() {
             .flat_map(|variant| keys(variant))
             .collect();
         let code: BTreeSet<String> = Operator::keys(attribute).map(str::to_owned).collect();
-        let (sample, choice) = samples(&root, node);
-
         assert_eq!(operators, code, "operators of `{attribute}`");
+
+        let takes_a_value = variants(&root, node)
+            .iter()
+            .any(|variant| variant["type"] != "object");
+        if !takes_a_value {
+            let error = Condition::build(attribute, Operator::Is, &["2h".to_owned()]);
+            assert!(error.is_err(), "`{attribute}` takes only keys");
+            continue;
+        }
+
+        let (sample, choice) = samples(&root, node);
         assert!(
             Condition::build(attribute, Operator::Is, std::slice::from_ref(&sample)).is_ok(),
             "`{attribute}` takes `{sample}`"

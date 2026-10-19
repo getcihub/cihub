@@ -87,7 +87,7 @@ impl Operator {
             Self::Regex | Self::Min | Self::Max | Self::Count | Self::CountMin | Self::CountMax => {
                 true
             }
-            Self::Is => matches!(kind, Kind::Bool | Kind::Int | Kind::Duration),
+            Self::Is => matches!(kind, Kind::Bool | Kind::Int),
             _ => false,
         }
     }
@@ -118,10 +118,9 @@ enum Test {
     HasNone(Vec<String>),
     Match(Matching, Vec<Glob>),
     Regex(Regex),
-    /// Integers, durations in seconds and ordered choices by rank, inclusive.
+    /// Integers, durations in seconds, ordered choices by rank and the number
+    /// of elements of a list, inclusive.
     Range(i64, i64),
-    /// The number of elements of a list, inclusive.
-    Count(i64, i64),
     /// Choices by rank.
     OneOf(Vec<i64>),
 }
@@ -173,13 +172,11 @@ impl Condition {
         let kind = attribute.kind();
         let error = |value, kind| ConditionError { value, kind };
         if !allows(kind, operator) {
-            return Err(error(
-                None,
-                ConditionErrorKind::OperatorNotAllowed {
-                    attribute,
-                    operator,
-                },
-            ));
+            let kind = match operator {
+                Operator::Is => ConditionErrorKind::KeyExpected { attribute },
+                _ => ConditionErrorKind::OperatorNotAllowed { attribute },
+            };
+            return Err(error(None, kind));
         }
 
         if values.is_empty() {
@@ -187,13 +184,7 @@ impl Condition {
         }
 
         if values.len() > 1 && operator.takes_one(kind) {
-            return Err(error(
-                Some(1),
-                ConditionErrorKind::OneValue {
-                    attribute,
-                    operator,
-                },
-            ));
+            return Err(error(Some(1), ConditionErrorKind::OneValue));
         }
 
         if !operator.splits(kind) {
@@ -227,6 +218,14 @@ impl Condition {
         self.attribute
     }
 
+    /// The inclusive bounds that the condition accepts, when it is a range.
+    pub fn bounds(&self) -> Option<(i64, i64)> {
+        match self.test {
+            Test::Range(min, max) => Some((min, max)),
+            _ => None,
+        }
+    }
+
     /// The name of the check when the condition is one name of
     /// `checks.success`, the only form of `merge_conditions` for now.
     pub fn required_check(&self) -> Option<&str> {
@@ -252,7 +251,7 @@ impl Condition {
                 matches(*matching, globs, &items)
             }
             (Test::Regex(regex), Value::Texts(items)) => items.iter().any(|i| regex.is_match(i)),
-            (Test::Count(min, max), Value::Texts(items)) => {
+            (Test::Range(min, max), Value::Texts(items)) => {
                 (*min..=*max).contains(&i64::try_from(items.len()).unwrap_or(i64::MAX))
             }
             (Test::Range(min, max), Value::Number(actual)) => {
@@ -305,13 +304,13 @@ pub struct ConditionError {
 pub enum ConditionErrorKind {
     OperatorNotAllowed {
         attribute: Attribute,
-        operator: Operator,
+    },
+    /// A value where the attribute takes only keys (a duration).
+    KeyExpected {
+        attribute: Attribute,
     },
     MissingValue,
-    OneValue {
-        attribute: Attribute,
-        operator: Operator,
-    },
+    OneValue,
     InvalidBoolean(String),
     InvalidNumber(String),
     InvalidDuration(String),
@@ -333,34 +332,22 @@ impl fmt::Display for ConditionErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use ConditionErrorKind as K;
         match self {
-            K::OperatorNotAllowed {
-                attribute,
-                operator,
-            } => write!(
-                f,
-                "`{operator}` is not allowed on `{attribute}` ({})",
-                attribute.kind()
-            ),
+            K::OperatorNotAllowed { attribute } => {
+                write!(f, "not allowed on this attribute ({})", attribute.kind())
+            }
+            K::KeyExpected { attribute } => {
+                let keys = Operator::keys(*attribute).collect::<Vec<_>>().join(", ");
+                write!(f, "expected a key ({keys}), not a value")
+            }
             K::MissingValue => f.write_str("missing value"),
-            K::OneValue {
-                attribute,
-                operator: Operator::Is,
-            } => write!(f, "`{attribute}` takes one value, not a list"),
-            K::OneValue {
-                attribute,
-                operator,
-            } => write!(f, "`{attribute}.{operator}` takes one value, not a list"),
+            K::OneValue => f.write_str("takes one value, not a list"),
             K::InvalidBoolean(v) => write!(f, "`{v}` is not `true` or `false`"),
-            K::InvalidNumber(v) => write!(f, "`{v}` is not a positive integer"),
+            K::InvalidNumber(v) => write!(f, "`{v}` is not an integer from 0 to {}", u32::MAX),
             K::InvalidDuration(v) => {
                 write!(f, "`{v}` is not a duration such as `30m`, `2h` or `7d`")
             }
             K::InvalidChoice { attribute, value } => {
-                write!(
-                    f,
-                    "`{value}` is not valid for `{attribute}`: expected {}",
-                    attribute.kind()
-                )
+                write!(f, "`{value}` is not valid: expected {}", attribute.kind())
             }
             K::InvalidRegex(e) => write!(f, "invalid regular expression: {e}"),
             K::InvalidGlob(e) => write!(f, "invalid glob: {e}"),
@@ -374,7 +361,8 @@ fn allows(kind: Kind, operator: Operator) -> bool {
     use Operator as O;
     match kind {
         Kind::Bool | Kind::Choice { ordered: false, .. } => operator == O::Is,
-        Kind::Int | Kind::Duration | Kind::Choice { ordered: true, .. } => {
+        Kind::Duration => matches!(operator, O::Min | O::Max),
+        Kind::Int | Kind::Choice { ordered: true, .. } => {
             matches!(operator, O::Is | O::Min | O::Max)
         }
         Kind::Text => matches!(operator, O::Is | O::Not | O::Matches | O::Regex),
@@ -427,20 +415,17 @@ fn test(
             .map(|(n, value)| rank(attribute, value).map_err(|kind| (n, kind)))
             .collect::<Result<_, _>>()
             .map(Test::OneOf),
-        (Kind::Int | Kind::Duration | Kind::Choice { .. }, _) => {
-            let number = number(attribute, first).map_err(at_first)?;
+        (Kind::Int | Kind::Duration | Kind::Choice { .. }, _)
+        | (_, O::Count | O::CountMin | O::CountMax) => {
+            let bound = match operator {
+                O::Count | O::CountMin | O::CountMax => count(first),
+                _ => number(attribute, first),
+            }
+            .map_err(at_first)?;
             Ok(match operator {
-                O::Min => Test::Range(number, i64::MAX),
-                O::Max => Test::Range(i64::MIN, number),
-                _ => Test::Range(number, number),
-            })
-        }
-        (_, O::Count | O::CountMin | O::CountMax) => {
-            let count = count(first).map_err(at_first)?;
-            Ok(match operator {
-                O::CountMin => Test::Count(count, i64::MAX),
-                O::CountMax => Test::Count(0, count),
-                _ => Test::Count(count, count),
+                O::Min | O::CountMin => Test::Range(bound, i64::MAX),
+                O::Max | O::CountMax => Test::Range(i64::MIN, bound),
+                _ => Test::Range(bound, bound),
             })
         }
         (_, O::Regex) => Regex::new(first)
@@ -631,10 +616,7 @@ mod tests {
                 error(attribute, operator, &["x"]),
                 ConditionError {
                     value: None,
-                    kind: ConditionErrorKind::OperatorNotAllowed {
-                        attribute,
-                        operator
-                    },
+                    kind: ConditionErrorKind::OperatorNotAllowed { attribute },
                 },
                 "{attribute}.{operator}"
             );
@@ -652,16 +634,7 @@ mod tests {
         };
         let cases = [
             (A::Labels, O::None, vec![], None, K::MissingValue),
-            (
-                A::Additions,
-                O::Max,
-                vec!["1", "2"],
-                Some(1),
-                K::OneValue {
-                    attribute: A::Additions,
-                    operator: O::Max,
-                },
-            ),
+            (A::Additions, O::Max, vec!["1", "2"], Some(1), K::OneValue),
             (
                 A::Draft,
                 O::Is,
@@ -730,19 +703,19 @@ mod tests {
 
         assert_eq!(
             shown(Attribute::Draft, Operator::Not, &["x"]),
-            "`not` is not allowed on `draft` (boolean)"
+            "not allowed on this attribute (boolean)"
         );
         assert_eq!(
             shown(Attribute::Draft, Operator::Is, &["true", "false"]),
-            "`draft` takes one value, not a list"
+            "takes one value, not a list"
         );
         assert_eq!(
             shown(Attribute::Title, Operator::Regex, &["a", "b"]),
-            "`title.regex` takes one value, not a list"
+            "takes one value, not a list"
         );
         assert_eq!(
             shown(Attribute::SenderPermission, Operator::Min, &["god"]),
-            "`god` is not valid for `sender_permission`: expected one of none, read, write, admin"
+            "`god` is not valid: expected one of none, read, write, admin"
         );
         assert_eq!(
             shown(Attribute::Title, Operator::Regex, &["("]),
@@ -754,13 +727,42 @@ mod tests {
         );
         assert_eq!(
             shown(Attribute::Number, Operator::Is, &["x"]),
-            "`x` is not a positive integer"
+            "`x` is not an integer from 0 to 4294967295"
         );
         assert_eq!(
             shown(Attribute::Labels, Operator::Any, &[]),
             "missing value"
         );
         assert!(shown(Attribute::Files, Operator::AnyMatch, &["a["]).starts_with("invalid glob: "));
+    }
+
+    #[test]
+    fn a_duration_takes_keys_not_a_value() {
+        for attribute in [Attribute::QueueAge, Attribute::PrAge] {
+            let failure = error(attribute, Operator::Is, &["2h"]);
+
+            assert_eq!(failure.value, None);
+            assert_eq!(
+                failure.to_string(),
+                "expected a key (min, max), not a value"
+            );
+        }
+    }
+
+    #[test]
+    fn gives_the_bounds_of_a_range() {
+        let bounds =
+            |attribute, operator, list: &[&str]| build(attribute, operator, list)[0].bounds();
+
+        assert_eq!(
+            bounds(Attribute::Additions, Operator::Min, &["3"]),
+            Some((3, i64::MAX))
+        );
+        assert_eq!(
+            bounds(Attribute::Additions, Operator::Max, &["5"]),
+            Some((i64::MIN, 5))
+        );
+        assert_eq!(bounds(Attribute::Labels, Operator::Any, &["a"]), None);
     }
 
     #[test]

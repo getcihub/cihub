@@ -519,6 +519,7 @@
         },
         "conditions": {
           "description": "What chooses the profile at the submission. Without conditions, only a command that names the profile chooses it.",
+          "minProperties": 1,
           "allOf": [
             {
               "$ref": "#/definitions/conditions"
@@ -562,6 +563,7 @@
         },
         "conditions": {
           "description": "What a PR must meet to take the priority.",
+          "minProperties": 1,
           "allOf": [
             {
               "$ref": "#/definitions/conditions"
@@ -691,30 +693,22 @@
       ]
     },
     "duration_attribute": {
-      "description": "A duration such as `30m`, `2h` or `7d` (equal), or `min` and `max` (inclusive).",
-      "oneOf": [
-        {
+      "description": "`min` and `max` (inclusive), each a duration such as `30m`, `2h` or `7d`.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "min": {
           "type": "string",
-          "pattern": "^[0-9]+[mhd]$"
+          "pattern": "^[0-9]+[mhd]$",
+          "description": "At least this value (inclusive)."
         },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "minProperties": 1,
-          "properties": {
-            "min": {
-              "type": "string",
-              "pattern": "^[0-9]+[mhd]$",
-              "description": "At least this value (inclusive)."
-            },
-            "max": {
-              "type": "string",
-              "pattern": "^[0-9]+[mhd]$",
-              "description": "At most this value (inclusive)."
-            }
-          }
+        "max": {
+          "type": "string",
+          "pattern": "^[0-9]+[mhd]$",
+          "description": "At most this value (inclusive)."
         }
-      ]
+      }
     },
     "string_attribute": {
       "description": "One of the values, or `not`, `matches` or `regex`.",

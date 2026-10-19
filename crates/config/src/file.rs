@@ -353,7 +353,7 @@ struct RawLabelCommands {
 #[serde(deny_unknown_fields)]
 struct RawProfile {
     name: Spanned<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "present")]
     conditions: Value<RawNode>,
     #[serde(default)]
     merge_method: Value<MergeMethod>,
@@ -469,7 +469,10 @@ fn profile(
     };
     let profile = ProfileConfig {
         name: raw.name.value,
-        conditions: reader.conditions(raw.conditions.as_ref())?,
+        conditions: match raw.conditions.as_ref() {
+            Some(node) => reader.selecting_conditions(node)?,
+            None => Conditions::default(),
+        },
         settings,
     };
 
@@ -578,7 +581,7 @@ fn priority_rule(raw: RawPriorityRule, reader: Reader<'_>) -> Result<PriorityRul
     };
     Ok(PriorityRule {
         name: raw.name.value,
-        conditions: reader.conditions(Some(&raw.conditions))?,
+        conditions: reader.selecting_conditions(&raw.conditions)?,
         priority,
     })
 }
@@ -733,19 +736,21 @@ defaults:                                 # any queue setting; each queue can ov
         .unwrap();
         assert_eq!(config.merge_checks("main"), ["build", "e2e tests"]);
         assert_eq!(config.merge_checks("other"), [] as [String; 0]);
-        for (body, shown) in [
-            ("      labels: ready\n", "labels: ready"),
+        for (body, shown, position) in [
+            ("      labels: ready\n", "labels: ready", at(5, 7)),
             (
                 "      checks:\n        success:\n          any:\n            - a\n",
                 "checks.success.any: a",
+                at(7, 11),
             ),
             (
                 "      any:\n        - checks:\n            success: a\n",
                 "any: [checks.success: a]",
+                at(5, 7),
             ),
         ] {
             let error = error(&queue(&format!("    merge_conditions:\n{body}")));
-            assert_eq!(error.position, Some(at(5, 7)), "{body}");
+            assert_eq!(error.position, Some(position), "{body}");
             assert_eq!(
                 error.message,
                 format!("merge_conditions accept only `checks.success`, not `{shown}`")
@@ -856,10 +861,32 @@ queues:
 
         let e = conditions("      files:\n        count:\n          max: x\n");
         assert_eq!(e.position, Some(at(7, 16)));
-        assert_eq!(e.message, "files.count.max: `x` is not a positive integer");
+        assert_eq!(
+            e.message,
+            "files.count.max: `x` is not an integer from 0 to 4294967295"
+        );
 
         let e = conditions("      review_decision:\n        - approved\n        - ok\n");
         assert_eq!(e.position, Some(at(7, 11)));
+
+        let e = conditions("      additions:\n        max: [1, 2]\n");
+        assert_eq!(e.message, "additions.max: takes one value, not a list");
+
+        let e = conditions("      additions:\n        min: 10\n        max: 5\n");
+        assert_eq!(e.position, Some(at(7, 14)));
+        assert_eq!(e.message, "additions.max: below `min`");
+
+        let e = conditions("      labels:\n        count:\n          max: 1\n          min: 2\n");
+        assert_eq!(e.position, Some(at(7, 16)));
+        assert_eq!(e.message, "labels.count.max: below `min`");
+
+        let e = conditions("      sender_permission:\n        min: admin\n        max: read\n");
+        assert_eq!(e.position, Some(at(7, 14)));
+        assert_eq!(e.message, "sender_permission.max: below `min`");
+
+        let e = conditions("      pr_age: 2h\n");
+        assert_eq!(e.position, Some(at(5, 15)));
+        assert_eq!(e.message, "pr_age: expected a key (min, max), not a value");
 
         let e = conditions("      draft:\n");
         assert_eq!(e.message, "draft: missing value");
@@ -936,6 +963,13 @@ queues:
     }
 
     #[test]
+    fn accepts_a_min_equal_to_the_max() {
+        let body = "    queue_conditions:\n      additions:\n        min: 5\n        max: 5\n";
+
+        assert!(RepoConfig::parse(&queue(body)).is_ok());
+    }
+
+    #[test]
     fn keeps_a_number_as_the_file_writes_it() {
         let config = RepoConfig::parse(&queue(
             "    queue_conditions:\n      checks:\n        success:\n          - 3.10\n          - 1.0\n          - 0x10\n      additions:\n        max: 50\n",
@@ -964,8 +998,58 @@ queues:
         let e = error(&queue(
             "    merge_conditions:\n      checks:\n        success: [ci]\n      labels: [ready]\n",
         ));
-
         assert_eq!(e.position, Some(at(7, 7)));
+
+        let nested = "    merge_conditions:\n      checks:\n        success:\n          all: [a]\n          any: [b]\n        pending: [c]\n";
+        let e = error(&queue(nested));
+        assert_eq!(e.position, Some(at(8, 11)));
+        assert!(
+            e.message.ends_with("not `checks.success.any: b`"),
+            "{}",
+            e.message
+        );
+
+        let e = error(&queue(&nested.replace("          any: [b]\n", "")));
+        assert_eq!(e.position, Some(at(8, 9)));
+        assert!(
+            e.message.ends_with("not `checks.pending: c`"),
+            "{}",
+            e.message
+        );
+    }
+
+    #[test]
+    fn an_empty_conditions_map_of_a_profile_or_a_rule_is_refused() {
+        let profile = |conditions: &str| {
+            queue(&format!(
+                "    profiles:\n      - name: bots\n        conditions:{conditions}\n"
+            ))
+        };
+        let rule = |conditions: &str| {
+            format!(
+                "version: 1\npriority_rules:\n  - name: a\n    priority: high\n    conditions:{conditions}\n"
+            )
+        };
+
+        let empty = "expected a map of conditions, not an empty map";
+        for (yaml, position, message) in [
+            (profile(" {}"), at(6, 21), empty),
+            (profile(""), at(6, 19), "expected a map of conditions"),
+            (rule(" {}"), at(5, 17), empty),
+            (rule(""), at(5, 15), "expected a map of conditions"),
+        ] {
+            let e = error(&yaml);
+            assert_eq!(e.position, Some(position), "{yaml}");
+            assert_eq!(e.message, message, "{yaml}");
+        }
+
+        let named = queue("    profiles:\n      - name: bots\n");
+        assert!(
+            RepoConfig::parse(&named).unwrap().queues[0].profiles[0]
+                .conditions
+                .0
+                .is_empty()
+        );
     }
 
     #[test]

@@ -214,14 +214,15 @@ quotes, and a value that starts with `*` takes quotes (`"**/*.md"`), as YAML rea
 | Boolean                   | none: the value is `true` or `false`                                                                      | `draft: false`                             |
 | String                    | none (one of the values), `not` (none of the values), `matches` (globs), `regex`                          | `head:` then `matches: hotfix/**`          |
 | List                      | none (shortcut of `all`), `all`, `any`, `none`, `any_match`, `all_match`, `none_match` (globs), `count`   | `labels:` then `none:` then `- wip`        |
-| Integer, duration         | none (equal), `min`, `max` (inclusive)                                                                    | `additions:` then `max: 500`               |
+| Integer                   | none (equal), `min`, `max` (inclusive)                                                                    | `additions:` then `max: 500`               |
+| Duration                  | `min`, `max` (inclusive); no value, as an exact duration never holds                                      | `pr_age:` then `min: 2h`                   |
 | Closed choice             | none (one of the values); an ordered choice also takes `min`, `max`                                       | `review_decision: approved`                |
 | Logic, at any level       | `all`, `any`, `none`, each followed by a list of maps: every map, at least one, no map holds             | `any:` then `- labels: …`                  |
 
-A key takes one value or a list of values; `regex`, `min`, `max`, `count` and the value of a boolean, an
-integer or a duration take one. `count` takes an integer, or `min` and `max`. A key that appears in a list
-operator (`all`, `any`, `none`) has the same meaning at both levels: on a list attribute it counts the values
-that the PR has, at the level of the map it counts the maps that hold. `all_match` is true when every element
+A key takes one value or a list of values; `regex`, `min`, `max`, `count` and the value of a boolean or an
+integer take one. In one map, a `max` below the `min` is refused. `count` takes an integer, or `min` and `max`.
+A key that appears in a list operator (`all`, `any`, `none`) has the same meaning at both levels: on a list
+attribute it counts the values that the PR has, at the level of the map it counts the maps that hold. `all_match` is true when every element
 matches one of the globs, and false on an empty list. A glob is the glob of `branch`. `regex` is accepted on a
 string only and looks for a match anywhere, with the `regex` crate, in linear time, without lookaround or
 backreferences. An absent string (`sender` without a sender) behaves like an empty list; a comparison on an
@@ -244,14 +245,16 @@ false. No templates (`{{ author }}`); no alias for a name.
 
 The checks are read on the head of the PR in `queue_conditions`, and on the test SHA in `merge_conditions`;
 names match exactly, without an `@app/` prefix. For now, `merge_conditions` accepts only `checks.success` with
-names, which are added to the required statuses of the run.
+names, which are added to the required statuses of the run. The error of another condition points at the
+deepest key that is refused (`checks.pending`, or `any` under `checks.success`).
 
 A value is kept as the file writes it: a check `3.10` stays `3.10`, not the number `3.1`. An unknown
 attribute, an unknown key under an attribute, a key that does not fit the type, an invalid value, or an empty
-map or block list inside a condition (it would hold, or fail, without a word) gives
-`start_test_run_config_parsing_failure` with its line and column, and a message that starts with the
-path of the condition (`files.count.max: `x` is not a positive integer`). A PR that waits shows each condition
-that does not hold, in the order of the file, as its path and its values (`checks.success: lint`, `labels.none:
+map or block list inside a condition (it would hold, or fail, without a word), or an empty or null
+`conditions` of a profile or of a priority rule (it would match every PR; a profile without the key is
+valid), gives `start_test_run_config_parsing_failure` with its line and column, and a message that starts
+with the path of the condition (`files.count.max: `x` is not an integer from 0 to 4294967295`). A PR that
+waits shows each condition that does not hold, in the order of the file, as its path and its values (`checks.success: lint`, `labels.none:
 wip`): a key whose values each hold on their own (a list attribute, `all`, `none`) gives one condition per
 value, so that only the values that fail are shown. A block shows as its key and its maps, separated by `;`
 (`any: [labels.any: urgent, hotfix; head.matches: hotfix/**]`).
