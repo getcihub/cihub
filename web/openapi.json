@@ -6924,7 +6924,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "`update_restriction_missing`, `app_not_exempt`,\n`test_branches_not_excluded`, `up_to_date_required` or\n`target_branch_missing`.",
+            "description": "`update_restriction_missing`, `app_not_exempt`,\n`test_branches_not_excluded`, `up_to_date_required`,\n`conditions_status_required` or `target_branch_missing`.",
             "example": "app_not_exempt"
           },
           "message": {

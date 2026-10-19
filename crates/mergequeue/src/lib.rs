@@ -10,6 +10,7 @@ mod admission;
 mod api;
 mod assembly;
 mod command;
+mod conditions_status;
 mod config;
 mod jobs;
 mod log;
@@ -29,7 +30,7 @@ use cihub_store::PgPool;
 use time::OffsetDateTime;
 
 pub use config::request_queue_setups;
-pub use jobs::{REFRESH_PRS, queue_status_context};
+pub use jobs::{REFRESH_PRS, conditions_status_context, queue_status_context};
 pub use log::{QueueLog, SNAPSHOT_EVERY, rebuild};
 pub use repair::sync_queue;
 pub use repo_setup::{READ_REPO_SETUP, RepoSetupSweep, request_repo_setups};
@@ -40,6 +41,7 @@ pub use scheduler::{
 
 use crate::assembly::{ASSEMBLE_TEST_BRANCH, CLEANUP_TEST_BRANCH};
 use crate::command::PR_COMMAND;
+use crate::conditions_status::{OBSERVE_OPEN_PRS, OBSERVE_PR, PUBLISH_CONDITIONS};
 use crate::config::{LOAD_CONFIG, READ_SETUP};
 use crate::jobs::SUBMIT_PR;
 use crate::merge::MERGE_PR;
@@ -159,6 +161,19 @@ pub fn module(
             register!(executors, scm, PR_COMMAND, command::run_pr_command);
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);
+            register!(executors, scm, OBSERVE_PR, conditions_status::observe);
+            register!(
+                executors,
+                scm,
+                OBSERVE_OPEN_PRS,
+                conditions_status::observe_open_prs
+            );
+            register!(
+                executors,
+                scm,
+                PUBLISH_CONDITIONS,
+                conditions_status::publish
+            );
         }),
         subscriptions: vec![Subscription {
             name: cihub_analytics::SUBSCRIPTION,
