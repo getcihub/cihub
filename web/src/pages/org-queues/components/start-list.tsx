@@ -245,7 +245,7 @@ function RulesLine({ repo, isChecking, check }: { repo: RepoDetail; isChecking: 
     >
       {label} ·{" "}
       {setup.target_branch_missing
-        ? "the branch is missing"
+        ? "no commit yet"
         : blocking > 0
           ? `${plural(blocking, "point blocks", "points block")} every merge`
           : plural(failed.length, "warning", "warnings")}
