@@ -5,7 +5,8 @@ mise.local.toml
 *.pem
 .env
 .env.*
-deploy/
+helm/
+.docker/
 web/node_modules/
 web/dist/
 test-reports/

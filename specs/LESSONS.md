@@ -53,6 +53,23 @@ reason no longer holds.
   break an installation by the chart without touching these paths. On the free runners of a public repository,
   they run on every pull request.
 
+### The chart and the compose installation under `deploy/`
+
+- **Tried / considered**: `deploy/charts/cihub` and `deploy/compose/compose.yaml`, next to the development
+  `compose.yaml` at the root.
+- **Why not**: two compose files to keep in step, and a folder that groups two tools with different users. The
+  chart is in `helm/cihub`; one `compose.yaml`, with profiles and its configuration files in `.docker/`, serves
+  development; production installs with the chart.
+
+### `${VAR:?}` for the values of a compose profile
+
+- **Tried / considered**: the server values of `compose.yaml` required with `${VAR:?message}`, and the private key
+  as a bind mount `${PATH}:/run/secrets/…`.
+- **Why not**: Compose reads every variable of the file before it selects the profiles. A missing value, or an
+  empty source of a bind mount, stops `docker compose up postgres` too, without the values of the server. The values take a `:-`
+  default, the key is a top-level `secrets:` entry, and `cihub-server` stops at startup on a missing value.
+- **Would change if**: Compose skips the services of the inactive profiles when it reads the variables.
+
 ## Process and binaries
 
 ### One binary for the server and the command line

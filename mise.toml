@@ -26,7 +26,7 @@ DATABASE_URL = "postgres://cihub:cihub@127.0.0.1:5432/cihub"
 CIHUB_DATABASE_URL = "{{env.DATABASE_URL}}"
 
 [vars]
-helm_lint_values = "deploy/charts/cihub/ci/lint-values.yaml"
+helm_lint_values = "helm/cihub/ci/lint-values.yaml"
 
 [tasks.fmt]
 description = "Format the Rust code and the dashboard"
@@ -116,6 +116,10 @@ depends = ["db:migrate"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- start"
 
+[tasks."server:up"]
+description = "Build the image, then start Postgres, the migrations and cihub-server in compose.yaml (profile server)"
+run = "docker compose --profile server up --detach --wait --build"
+
 [tasks."web:install"]
 description = "Install the dependencies of the dashboard, as pnpm-lock.yaml gives them"
 dir = "web"
@@ -182,32 +186,32 @@ run = [
 
 [tasks."helm:lint"]
 description = "Lint the Helm chart"
-run = "helm lint deploy/charts/cihub --values {{vars.helm_lint_values}}"
+run = "helm lint helm/cihub --values {{vars.helm_lint_values}}"
 
 [tasks."helm:unittest"]
 description = "Run the template tests of the Helm chart with helm-unittest"
 env = { HELM_UNITTEST_VERSION = "1.2.1" }
 run = [
   "helm plugin list | grep -q '^unittest' || helm plugin install https://github.com/helm-unittest/helm-unittest --version \"v$HELM_UNITTEST_VERSION\" --verify=false",
-  "helm unittest deploy/charts/cihub",
+  "helm unittest helm/cihub",
 ]
 
 [tasks."helm:template"]
 description = "Render the Helm chart with the lint values"
-run = "helm template cihub deploy/charts/cihub --values {{vars.helm_lint_values}}"
+run = "helm template cihub helm/cihub --values {{vars.helm_lint_values}}"
 
 [tasks."helm:generate"]
 description = "Generate the README.md and the values.schema.json of the chart from Chart.yaml and values.yaml"
 run = [
-  "helm-docs --chart-search-root=deploy/charts --log-level=warn",
-  "helm-schema --chart-search-root deploy/charts/cihub --skip-auto-generation required,additionalProperties --append-newline",
+  "helm-docs --chart-search-root=helm --log-level=warn",
+  "helm-schema --chart-search-root helm/cihub --skip-auto-generation required,additionalProperties --append-newline",
 ]
 
 [tasks."helm:generate-check"]
 description = "Fail if the generated files of the chart are not up to date"
 run = [
   { task = "helm:generate" },
-  "! git status --porcelain deploy/charts/cihub/README.md deploy/charts/cihub/values.schema.json | grep .",
+  "! git status --porcelain helm/cihub/README.md helm/cihub/values.schema.json | grep .",
 ]
 
 [tasks."workflows:lint"]

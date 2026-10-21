@@ -24,7 +24,7 @@
         },
         {
           "type": "generic",
-          "path": "deploy/charts/cihub/Chart.yaml"
+          "path": "helm/cihub/Chart.yaml"
         }
       ]
     }

@@ -2,7 +2,8 @@
 
 From the first command to the first merged pull request in about 30 minutes.
 
-You need Docker with Compose, a host that GitHub can reach over HTTPS, and admin rights on a GitHub organization.
+You need a Kubernetes cluster with Helm, a Postgres 17, an HTTPS address that GitHub can reach, and admin rights
+on a GitHub organization.
 
 ## 1. Create the GitHub App
 
@@ -27,21 +28,26 @@ procedure is in [`specs/GITHUB.md`](specs/GITHUB.md); in short:
 
 ## 2. Configure and start
 
-From a clone of this repository:
+Create a Postgres role that owns the `cihub` database and is neither a superuser nor `BYPASSRLS`, then the two
+Secrets and the release:
 
 ```sh
-cp deploy/compose/.env.example deploy/compose/.env
-# Fill in deploy/compose/.env: two Postgres passwords, the App ID, the webhook secret,
-# the path of the private key and, for the dashboard, the address of this
-# instance, the Client ID, the client secret, and a database secret of at least
-# 32 bytes that seals the tokens of the people who sign in.
-docker compose -f deploy/compose/compose.yaml up -d
+kubectl create secret generic cihub-postgres \
+  --from-literal=uri='postgres://cihub:<password>@<host>:5432/cihub'
+kubectl create secret generic cihub-github \
+  --from-file=private-key.pem=<the private key of the App> \
+  --from-literal=webhook-secret=<the webhook secret of the App>
+helm install cihub oci://ghcr.io/getcihub/charts/cihub \
+  --set database.existingSecret=cihub-postgres \
+  --set github.appId=<the App ID> \
+  --set github.existingSecret=cihub-github
 ```
 
-Compose starts Postgres 17, creates the database role of CIHub, applies the migrations (`cihub-migrate`), then
-starts `cihub-server start` on port 8080. Put your HTTPS reverse proxy in front of this port.
+The migration Job applies the migrations, then the Deployment starts `cihub-server start`. Route your HTTPS
+address to the Service, or enable the Ingress or the HTTPRoute of the chart. The values of the chart, with those
+of the sign-in to the dashboard, are in [`helm/cihub/README.md`](helm/cihub/README.md).
 
-On Kubernetes, the Helm chart replaces Compose: see [`deploy/charts/cihub/README.md`](deploy/charts/cihub/README.md).
+To try CIHub on one machine, `compose.yaml` starts it with a development Postgres (`specs/DEPLOYMENT.md`).
 
 ## 3. Install the App and start your organization
 
@@ -50,7 +56,7 @@ organization of the account (its slug is the login of the account) and reads its
 a script that uses the API needs a token of the organization:
 
 ```sh
-docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create --org <login of the account>
+kubectl exec deploy/cihub -- cihub-server token create --config /etc/cihub/server.yaml --org <login of the account>
 ```
 
 The command prints an API token **once**: keep it in a secret store.

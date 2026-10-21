@@ -71,7 +71,7 @@ its own `AGENTS.md`.
 ## Commands
 
 `mise tasks` lists them all; every tool installs with `mise install`. A task is named `<domain>:<action>` (`rust:`,
-`web:`, `db:`, `helm:`, `workflows:`); only the tasks that span domains have no prefix. `mise run check` (lint, then
+`web:`, `db:`, `server:`, `helm:`, `workflows:`); only the tasks that span domains have no prefix. `mise run check` (lint, then
 unit tests), `mise run rust:integration` (the `tests/postgres.rs` files against the Postgres of `compose.yaml`),
 `mise run rust:cover` (90% for the pure crates), `mise run test:all` (every suite, with Docker). Each suite writes
 its JUnit report into `test-reports/<suite>/junit.xml`, which git ignores. The CI runs them in parallel jobs; the

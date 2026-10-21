@@ -155,7 +155,7 @@ jobs:
           install_args: --locked
 
       - name: Package the chart
-        run: helm package deploy/charts/cihub --version "${TAG#v}" --app-version "${TAG#v}"
+        run: helm package helm/cihub --version "${TAG#v}" --app-version "${TAG#v}"
 
       - name: Login
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

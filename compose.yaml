@@ -1,15 +1,43 @@
-# Development only: Postgres 17 for local work and the
-# integration tests. The credentials are fixed for local use: never use them
-# elsewhere.
+# Development only (specs/DEPLOYMENT.md): the credentials are fixed for local
+# use, never use them elsewhere. Production installs with the Helm chart
+# (helm/cihub). The configuration files of the services are in .docker/.
 #
 # Usage:
-#   mise run db          # start Postgres, then create or update the cihub role
-#   mise run db:reset    # delete the data, then mise run db
-#   docker compose down  # stop Postgres, keep the data
+#   mise run db:start                                 # Postgres, then create or update the cihub role
+#   mise run db:reset                                 # delete the data, then mise run db:start
+#   mise run server:up                                # cihub-server from the local Dockerfile
+#   docker compose --profile "*" down                 # stop everything, keep the data
 #
 # postgres/postgres is the superuser. cihub-server connects as cihub/cihub,
 # which is neither superuser nor BYPASSRLS and can create the databases
 # of #[sqlx::test].
+#
+# The server profile takes the variables of the test App from the
+# environment, which mise fills from mise.local.toml, as for mise run dev.
+# Compose reads every variable of this file, whatever the active profiles:
+# a variable of the server profile has a `:-` default, never `:?`, so that
+# Postgres starts without them. cihub-server stops at startup on a missing
+# value (specs/LESSONS.md).
+
+x-cihub: &cihub
+  image: ${CIHUB_IMAGE:-cihub-server:local}
+  build: .
+  environment:
+    CIHUB_DATABASE_URL: postgres://cihub:cihub@postgres:5432/cihub
+    CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
+    CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:-}
+    CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app
+    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:-}
+    # The sign-in to the dashboard: all four, or none.
+    CIHUB_HTTP_PUBLIC_URL: ${CIHUB_HTTP_PUBLIC_URL:-}
+    CIHUB_GITHUB_CLIENT_ID: ${CIHUB_GITHUB_CLIENT_ID:-}
+    CIHUB_GITHUB_CLIENT_SECRET: ${CIHUB_GITHUB_CLIENT_SECRET:-}
+    CIHUB_DATABASE_SECRET: ${CIHUB_DATABASE_SECRET:-}
+    CIHUB_LOG_FILTER: ${CIHUB_LOG_FILTER:-info}
+  secrets:
+    - github-app
+  profiles:
+    - server
 
 services:
   postgres:
@@ -39,9 +67,35 @@ services:
       PGUSER: postgres
       PGPASSWORD: postgres
     volumes:
-      - ./postgres-setup.sql:/postgres-setup.sql:ro
+      - ./.docker/postgres-setup.sql:/postgres-setup.sql:ro
     command: ["psql", "--quiet", "--set", "ON_ERROR_STOP=1", "--file", "/postgres-setup.sql"]
     restart: "no"
+
+  cihub-migrate:
+    <<: *cihub
+    command: ["migrate"]
+    depends_on:
+      postgres-setup:
+        condition: service_completed_successfully
+    restart: "no"
+
+  cihub-server:
+    <<: *cihub
+    depends_on:
+      cihub-migrate:
+        condition: service_completed_successfully
+    ports:
+      # The internal address (8081) stays inside the network of the compose
+      # (specs/SECURITY.md).
+      - "127.0.0.1:${CIHUB_HTTP_PORT:-8080}:8080"
+    # No healthcheck: the distroless image has no shell and no HTTP client.
+    restart: unless-stopped
+
+secrets:
+  github-app:
+    # The private key of the GitHub App (.pem), at the path that mise run dev
+    # reads. The user of the image (uid 65532) must be able to read it.
+    file: ${CIHUB_GITHUB_PRIVATE_KEY_FILE:-./github-app.private-key.pem}
 
 volumes:
   postgres:

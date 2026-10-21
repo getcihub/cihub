@@ -21,7 +21,7 @@ installs in under thirty minutes with one image and one Postgres, and explains e
 3. **CI agnostic.** CIHub never runs the CI: it pushes a test branch and waits for the required statuses and check
    runs. GitHub Actions, Buildkite, CircleCI, Jenkins work without modification.
 4. **Simple to install and operate.** One image, one Postgres 17, one GitHub App created according to
-   `specs/GITHUB.md`; `docker compose up` is enough for one organization. Under thirty minutes from the first
+   `specs/GITHUB.md`; one `helm install` is enough for one organization. Under thirty minutes from the first
    command to the first merged PR.
 5. **Every decision is explained.** Every transition carries a reason from a closed vocabulary; an event log per
    PR answers "why is my PR still waiting" and feeds the dashboards.

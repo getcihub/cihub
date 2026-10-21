@@ -4,22 +4,38 @@
 
 The reference installation is one image, one Postgres 17 and one GitHub App. The image contains the
 `cihub-server` binary; `cihub-server start` runs the four roles (`web`, `scheduler`, `worker`,
-`notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. On Kubernetes, the Helm chart `deploy/charts/cihub` installs it.
+`notifier`) in one process; a deployment scales by identical replicas (`specs/ARCHITECTURE.md`, "Scaling"). The GitHub App is created by hand, according to `specs/GITHUB.md`. The Helm chart `helm/cihub` installs it on Kubernetes.
 
 ## Development
 
-`compose.yaml`, at the root, starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`. The superuser is `postgres` (password `postgres`). The one-shot service
-`postgres-setup` runs `postgres-setup.sql`, which brings the `cihub` role (password `cihub`), which is not a
-superuser and can create databases for the tests, and the `cihub` database it owns, to the desired state.
-It runs at each start: a change to the file applies without erasing the data. These values are for development
-only.
+`compose.yaml`, at the root, is for development only: its credentials are fixed and public. Production installs
+with the Helm chart (below). The configuration files of its services are in `.docker/`. Without a profile, it
+starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`. The superuser is `postgres`
+(password `postgres`). The one-shot service `postgres-setup` runs `.docker/postgres-setup.sql`, which brings the
+`cihub` role (password `cihub`), which is not a superuser and can create databases for the tests, and the `cihub`
+database it owns, to the desired state. It runs at each start: a change to the file applies without erasing the
+data.
+
+| Profile         | Services                                                                                                                                                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (none)          | `postgres`, `postgres-setup`                                                                                                                                                                                                              |
+| `server`        | `cihub-migrate` (one-shot `cihub-server migrate`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                         |
+
+The `server` profile takes the variables of the test App from the environment, which mise fills from
+`mise.local.toml` (below), as for `mise run dev`: `mise run server:up` starts it. The private key is a Compose
+secret, read from the path of `CIHUB_GITHUB_PRIVATE_KEY_FILE`; the user of the image (uid 65532) must be able to
+read it. Compose passes to the container only the variables that `compose.yaml` names: `CIHUB_DATABASE_URL` points
+to the `postgres` service, and the logs stay in JSON. Compose reads every variable of the file, whatever the active
+profiles: the variables of `server` have a `:-` default, so that Postgres starts without them, and `cihub-server`
+stops at startup on a missing value.
 
 ```sh
-mise run db:start      # Postgres, then postgres-setup
-mise run db:reset      # erases the data, then mise run db:start (after a migration is rewritten)
-mise run db:migrate    # Postgres, then cihub-server migrate
-mise run dev           # db:migrate, then cihub-server start with the four roles and pretty logs
-docker compose down    # stops Postgres and keeps the volume
+mise run db:start                                  # Postgres, then postgres-setup
+mise run db:reset                                  # erases the data, then mise run db:start (after a migration is rewritten)
+mise run db:migrate                                # Postgres, then cihub-server migrate
+mise run dev                                       # db:migrate, then cihub-server start with the four roles and pretty logs
+mise run server:up                                 # cihub-server in a container, from the local Dockerfile
+docker compose --profile "*" down                  # stops every service and keeps the volumes
 ```
 
 `mise run dev` requires a test GitHub App, created according to `specs/GITHUB.md`. Its variables go in
@@ -43,7 +59,7 @@ The first time, `mise trust mise.local.toml` authorizes the file. To receive web
 of the App points to a tunnel that leads to port 8080.
 
 `mise tasks` lists the project tasks and their description. A task of one part carries its prefix (`rust:`, `web:`,
-`db:`, `helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
+`db:`, `server:`, `helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
 
 ## Server configuration
 
@@ -139,31 +155,9 @@ the runtime image provides: the binary does not embed a list of certificates. Th
 `ubuntu-26.04-arm`), then the two are joined in one manifest. The workflow takes the owner of the image from the
 repository.
 
-## Installation with Docker Compose
-
-`deploy/compose/compose.yaml` is the installation `docker compose`. It starts four services:
-
-| Service          | Role                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| `postgres`       | Postgres 17, with a data volume; no port published on the host                             |
-| `postgres-setup` | One-shot: brings the `cihub` role (neither superuser nor `BYPASSRLS`) and the `cihub` database to the desired state, at each start |
-| `cihub-migrate`  | One-shot: `cihub-server migrate`                                                     |
-| `cihub-server`   | The four roles; starts after `cihub-migrate` ends without error; publishes port 8080       |
-
-The values come from `deploy/compose/.env`, to be created from `deploy/compose/.env.example`: the Postgres passwords,
-`CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET` and the path of the private key of the App. The key is mounted
-read-only and given by `CIHUB_GITHUB_PRIVATE_KEY_FILE`; the user of the image (uid 65532) must be able to
-read it. `deploy/compose/.env` must never be committed (`.gitignore` excludes it). The internal port 8081 is not published on
-the host (`specs/SECURITY.md`). The complete procedure is in `INSTALL.md`.
-
-```sh
-docker compose -f deploy/compose/compose.yaml up -d
-docker compose -f deploy/compose/compose.yaml run --rm cihub-server token create --org <slug>
-```
-
 ## Installation on Kubernetes
 
-`deploy/charts/cihub` is the Helm chart. It installs:
+`helm/cihub` is the Helm chart. It installs:
 
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -181,12 +175,12 @@ gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a fi
 set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, and `database.poolSize`,
 `database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
-CIHub does not call the Kubernetes API. `deploy/charts/cihub/README.md`, generated, lists the values.
+CIHub does not call the Kubernetes API. `helm/cihub/README.md`, generated, lists the values.
 
 ```sh
-mise run helm:lint       # helm lint with deploy/charts/cihub/ci/lint-values.yaml
-mise run helm:unittest   # the tests of deploy/charts/cihub/tests (installs the helm-unittest plugin when it is missing)
-mise run helm:generate   # deploy/charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
+mise run helm:lint       # helm lint with helm/cihub/ci/lint-values.yaml
+mise run helm:unittest   # the tests of helm/cihub/tests (installs the helm-unittest plugin when it is missing)
+mise run helm:generate   # helm/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
 mise run helm:smoke      # the chart in a throwaway kind cluster (needs Docker)
 ```
 
@@ -248,7 +242,7 @@ Migrations are explicit:
 | Environment                     | What runs `cihub-server migrate`                       | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
 | Development                     | `mise run db:migrate`                                  | By hand                                  |
-| Installation `docker compose`   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |
+| Development, `server` profile   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |
 | Kubernetes                      | `Job` as a Helm `pre-install` and `pre-upgrade` hook   | Before the deployment of the new pods    |
 
 ## Tools
@@ -289,9 +283,9 @@ yet.
 release-please (`.github/workflows/release-please.yaml`) maintains a release PR from the
 commit titles in Conventional Commits format. When this PR is merged, it creates the tag `vX.Y.Z` and the release,
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
-in `Cargo.lock`, and the version and the `appVersion` of `deploy/charts/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
+in `Cargo.lock`, and the version and the `appVersion` of `helm/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
-triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `deploy/charts/cihub` with the
+triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `helm/cihub` with the
 version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.
 
 ## Dependency updates
