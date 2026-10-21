@@ -208,10 +208,10 @@ comment of a PR at `/sim/comment`.
 
 `mise run web:shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator
 cannot show, in both themes and in a narrow window) from a build of the dashboard, against the API of
-`e2e/visual/api.ts` and a fixed clock, into `e2e/__screenshots__/head`, which git ignores: two captures of the
+`e2e/visual/api.ts` and a fixed clock, into `test-reports/web-visual/head`, which git ignores: two captures of the
 same build show the same thing, but the runner of the CI can draw an anti-aliased edge with a few different pixels.
 `mise run web:shots-diff [REF]` (`origin/main` by default) builds REF in a worktree, captures
-both, and writes into `e2e/__screenshots__/diff` the captures of each view that differs, is new or is gone
+both, and writes into `test-reports/web-visual/diff` the captures of each view that differs, is new or is gone
 (`before/`, `after/`), its changed pixels (`changes/`, as `pixelmatch` finds them: it ignores the anti-aliased
 edges and the changes that the eye does not see), `report.md`, and `index.html`, which shows each of these
 views before and after: side by side, split, blend, or its changed pixels, zoomed on the change. A view that did not

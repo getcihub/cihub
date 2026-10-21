@@ -118,6 +118,14 @@ jobs:
       - name: Run unit tests
         run: mise run rust:test
 
+      - name: Upload the JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-rust-unit
+          path: test-reports/rust-unit/junit.xml
+          if-no-files-found: error
+
   # Apart from Rust Test: the build of the Rust code would slow these tests
   # past the waits of their queries.
   web-test:
@@ -141,6 +149,14 @@ jobs:
 
       - name: Run the unit tests of the dashboard
         run: mise run web:test
+
+      - name: Upload the JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-web-unit
+          path: test-reports/web-unit/junit.xml
+          if-no-files-found: error
 
   rust-integration:
     if: >-
@@ -175,6 +191,14 @@ jobs:
       # Starts the Postgres of compose.yaml, as in development.
       - name: Run tests against Postgres
         run: mise run rust:integration
+
+      - name: Upload the JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-rust-integration
+          path: test-reports/rust-integration/junit.xml
+          if-no-files-found: error
 
   rust-cover:
     if: >-
@@ -248,6 +272,14 @@ jobs:
       - name: Run the browser tests of the dashboard
         run: mise run web:e2e
 
+      - name: Upload the JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-web-e2e
+          path: test-reports/web-e2e/
+          if-no-files-found: error
+
   # Informs the review and gates nothing: Build Success does not need it.
   dashboard-visual:
     if: ${{ github.event_name == 'pull_request' }}
@@ -286,7 +318,7 @@ jobs:
         if: ${{ steps.dashboard.outputs.changed == 'true' }}
         run: |
           mise run web:shots-diff HEAD^1
-          cat web/e2e/__screenshots__/diff/report.md >> "$GITHUB_STEP_SUMMARY"
+          cat test-reports/web-visual/diff/report.md >> "$GITHUB_STEP_SUMMARY"
 
       # diff/ is the whole comparison: it holds the captures of the views that differ, and only them.
       - name: Upload the views before and after
@@ -294,7 +326,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dashboard-visual
-          path: web/e2e/__screenshots__/diff/
+          path: test-reports/web-visual/diff/
           if-no-files-found: error
 
   workflow-lint:

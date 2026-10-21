@@ -1,0 +1,11 @@
+# The tasks rust:test and rust:integration select a profile each. Each profile
+# writes its JUnit report to test-reports/<profile>/junit.xml, beside those of
+# the dashboard.
+[store]
+dir = "test-reports"
+
+[profile.rust-unit.junit]
+path = "junit.xml"
+
+[profile.rust-integration.junit]
+path = "junit.xml"

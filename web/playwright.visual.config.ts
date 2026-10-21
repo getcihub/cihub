@@ -8,6 +8,6 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? "github" : "line",
-  outputDir: "test-results/visual",
+  outputDir: "../test-reports/web-visual/results",
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The views of the dashboard, captured from a build with the API of api.ts (web/e2e/__screenshots__/, which git
+# The views of the dashboard, captured from a build with the API of api.ts (test-reports/web-visual/, which git
 # ignores):
 #   shots.sh             the working tree, into head/                  (mise run web:shots)
 #   shots.sh diff [REF]  REF into base/ (origin/main by default), then  (mise run web:shots-diff [REF])
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 web="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-shots="$web/e2e/__screenshots__"
+shots="$(cd "$web/.." && pwd)/test-reports/web-visual"
 
 # Builds the dashboard of the folder $1 into builds/$2, then captures its views into $2/.
 build_and_capture() {

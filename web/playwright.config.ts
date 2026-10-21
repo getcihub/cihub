@@ -7,7 +7,11 @@ export default defineConfig({
   testDir: "./e2e",
   workers: 1,
   forbidOnly: !!process.env.CI,
-  reporter: process.env.CI ? "github" : "list",
+  reporter: [
+    [process.env.CI ? "github" : "list"],
+    ["junit", { outputFile: "../test-reports/web-e2e/junit.xml" }],
+  ],
+  outputDir: "../test-reports/web-e2e/results",
   use: {
     baseURL: "http://127.0.0.1:18090",
     trace: "retain-on-failure",

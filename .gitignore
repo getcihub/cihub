@@ -4,3 +4,5 @@ mise.local.toml
 # The secrets of an installation (deploy/compose/.env.example).
 deploy/compose/.env
 *.pem
+# The JUnit reports of the tests (.config/nextest.toml, web/).
+/test-reports

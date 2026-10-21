@@ -36,7 +36,7 @@ const pageLayers = readdirSync(`${import.meta.dirname}/src/pages`, { withFileTyp
   );
 
 export default defineConfig(
-  { ignores: ["dist/", "src/client/", "src/routeTree.gen.ts", "e2e/__screenshots__/"] },
+  { ignores: ["dist/", "src/client/", "src/routeTree.gen.ts"] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

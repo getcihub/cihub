@@ -12,7 +12,7 @@ const BASE_VIEW_TIMEOUT_MS = 5_000;
 const BUILD = resolve(process.env.CIHUB_VISUAL_BUILD ?? "dist");
 const IS_BASE = process.env.CIHUB_VISUAL_LABEL === "base";
 const ORIGIN = "http://cihub.test";
-const OUT = resolve(process.env.CIHUB_VISUAL_OUT ?? "e2e/__screenshots__/head");
+const OUT = resolve(process.env.CIHUB_VISUAL_OUT ?? "../test-reports/web-visual/head");
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html",

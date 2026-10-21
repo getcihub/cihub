@@ -267,6 +267,8 @@ rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run rus
 run rust:cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
 helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run helm:smoke`). The last job, `Build
 Success`, is the required status of the `main` branch: it fails when one of these jobs failed or was cancelled.
+The test jobs upload their JUnit report (`test-reports/<suite>/junit.xml`) as the artifact `junit-<suite>`, even
+when the tests fail; `Dashboard E2E` adds the traces of the failed tests.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each
 job installs the tools with `mise install --locked`. Each action and each image is pinned by its SHA or its

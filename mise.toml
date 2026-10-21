@@ -40,6 +40,10 @@ depends = ["rust:lint", "web:lint"]
 description = "Run the unit tests of the Rust code and of the dashboard"
 depends = ["rust:test", "web:test"]
 
+[tasks."test:all"]
+description = "Run every test suite: unit, integration and browser"
+depends = ["rust:test", "rust:integration", "web:test", "web:e2e"]
+
 [tasks.check]
 description = "Run lint, then test"
 run = [{ task = "lint" }, { task = "test" }]
@@ -68,12 +72,12 @@ run = "cargo build --release --locked -p cihub-server"
 
 [tasks."rust:test"]
 description = "Run the unit tests"
-run = "cargo nextest run --workspace --no-tests=pass -E 'not binary(postgres)'"
+run = "cargo nextest run --workspace --no-tests=pass --profile rust-unit -E 'not binary(postgres)'"
 
 [tasks."rust:integration"]
 description = "Run the tests against Postgres (the tests/postgres.rs files)"
 depends = ["db:start"]
-run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
+run = "cargo nextest run --workspace --no-tests=pass --profile rust-integration -E 'binary(postgres)'"
 
 [tasks."rust:sim"]
 description = "Run the fault injection tests, default and batched, on 1 000 seeds"
@@ -154,12 +158,12 @@ dir = "web"
 run = ["pnpm exec playwright install chromium", "pnpm e2e"]
 
 [tasks."web:shots"]
-description = "Capture the views of the dashboard, with a mocked API, into web/e2e/__screenshots__/head"
+description = "Capture the views of the dashboard, with a mocked API, into test-reports/web-visual/head"
 depends = ["web:install"]
 run = "web/e2e/visual/shots.sh"
 
 [tasks."web:shots-diff"]
-description = "Compare the views of the dashboard with the ones of a git ref, into web/e2e/__screenshots__/diff"
+description = "Compare the views of the dashboard with the ones of a git ref, into test-reports/web-visual/diff"
 depends = ["web:install"]
 run = "web/e2e/visual/shots.sh diff"
 

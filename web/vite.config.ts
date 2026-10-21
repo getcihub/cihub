@@ -35,5 +35,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     // The browser tests of e2e/ run with Playwright.
     include: ["src/**/*.test.{ts,tsx}"],
+    reporters: ["default", "junit"],
+    outputFile: { junit: "../test-reports/web-unit/junit.xml" },
   },
 });
