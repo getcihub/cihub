@@ -56,10 +56,34 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-lint-
 
       - name: Run linters
-        run: mise run lint
+        run: mise run rust:lint
 
+      # Here and not in Web Lint: the OpenAPI document comes from a build of
+      # cihub-server, which uses the Cargo cache of this job.
       - name: Check that the API client of the dashboard is up to date
         run: mise run web:generate-check
+
+  web-lint:
+    if: >-
+      ${{ !(startsWith(github.head_ref, 'release-please--')
+      && github.event.pull_request.head.repo.full_name == github.repository) }}
+    name: Web Lint
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: --locked
+
+      - name: Run linters
+        run: mise run web:lint
 
   rust-test:
     if: >-
@@ -374,6 +398,7 @@ jobs:
     name: Build Success
     needs:
       - rust-lint
+      - web-lint
       - rust-test
       - web-test
       - rust-integration
