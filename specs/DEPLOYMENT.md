@@ -261,7 +261,8 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 ## Project CI
 
-`.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run lint`), `Rust Test` (`mise run
+`.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run rust:lint`, then `mise run
+web:generate-check`), `Web Lint` (`mise run web:lint`), `Rust Test` (`mise run
 rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise
 run cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
 helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build
