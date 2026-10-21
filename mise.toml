@@ -120,6 +120,10 @@ run = "cargo run --quiet -p cihub-server -- start"
 description = "Build the image, then start Postgres, the migrations and cihub-server in compose.yaml (profile server)"
 run = "docker compose --profile server up --detach --wait --build"
 
+[tasks.up]
+description = "Build the image, then start every service of compose.yaml: Postgres, cihub-server and the observability stack"
+run = "docker compose --profile server --profile observability up --detach --wait --build"
+
 [tasks."web:install"]
 description = "Install the dependencies of the dashboard, as pnpm-lock.yaml gives them"
 dir = "web"

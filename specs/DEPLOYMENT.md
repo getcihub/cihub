@@ -20,6 +20,7 @@ data.
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none)          | `postgres`, `postgres-setup`                                                                                                                                                                                                              |
 | `server`        | `cihub-migrate` (one-shot `cihub-server migrate`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                         |
+| `observability` | Prometheus (`127.0.0.1:9090`, scrapes `cihub-server:8081/metrics`, empty until lot 11b), Loki, Alloy (sends the logs of the containers of the compose project to Loki, with the label `service`), Grafana (`127.0.0.1:3000`, anonymous admin) |
 
 The `server` profile takes the variables of the test App from the environment, which mise fills from
 `mise.local.toml` (below), as for `mise run dev`: `mise run server:up` starts it. The private key is a Compose
@@ -35,8 +36,12 @@ mise run db:reset                                  # erases the data, then mise 
 mise run db:migrate                                # Postgres, then cihub-server migrate
 mise run dev                                       # db:migrate, then cihub-server start with the four roles and pretty logs
 mise run server:up                                 # cihub-server in a container, from the local Dockerfile
+mise run up                                        # the server and observability profiles together
+docker compose --profile observability up -d       # Prometheus, Loki, Alloy, Grafana
 docker compose --profile "*" down                  # stops every service and keeps the volumes
 ```
+
+Loki receives only the logs of the containers: `mise run dev` writes to the terminal.
 
 `mise run dev` requires a test GitHub App, created according to `specs/GITHUB.md`. Its variables go in
 `mise.local.toml`, at the root of the repository: `mise` loads it with `mise.toml`, and `.gitignore` excludes it.

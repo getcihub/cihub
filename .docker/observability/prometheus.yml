@@ -1,0 +1,22 @@
+# The Prometheus of compose.yaml (profile observability).
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # /metrics comes with lot 11b (specs/LOTS.md): until then, the target is down.
+  - job_name: cihub
+    static_configs:
+      - targets: ["cihub-server:8081"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
