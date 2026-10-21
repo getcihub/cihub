@@ -61,30 +61,35 @@ run = [
   "scripts/lint-rules.sh",
 ]
 
+[tasks."rust:build"]
+description = "Build the dashboard, then the cihub-server binary in release mode"
+depends = ["web:build"]
+run = "cargo build --release --locked -p cihub-server"
+
 [tasks."rust:test"]
 description = "Run the unit tests"
 run = "cargo nextest run --workspace --no-tests=pass -E 'not binary(postgres)'"
 
-[tasks.test-integration]
+[tasks."rust:integration"]
 description = "Run the tests against Postgres (the tests/postgres.rs files)"
-depends = ["db"]
+depends = ["db:start"]
 run = "cargo nextest run --workspace --no-tests=pass -E 'binary(postgres)'"
 
-[tasks.sim]
+[tasks."rust:sim"]
 description = "Run the fault injection tests, default and batched, on 1 000 seeds"
-depends = ["db"]
+depends = ["db:start"]
 env = { CIHUB_SIM_SEEDS = "1000" }
 run = "cargo nextest run -p cihub-mergequeue -E 'binary(postgres) and test(fault_injection)'"
 
-[tasks.load]
+[tasks."rust:load"]
 description = "Compare batched and pipelined on the simulated load, and count the useless assemblies"
 run = "cargo nextest run -p cihub-mq-core -E 'binary(load)' --run-ignored only"
 
-[tasks.cover]
+[tasks."rust:cover"]
 description = "Check the line coverage of the pure crates (90 % or more)"
 run = "cargo llvm-cov nextest -p cihub-domain -p cihub-conditions -p cihub-config -p cihub-mq-core --fail-under-lines 90"
 
-[tasks.db]
+[tasks."db:start"]
 description = "Start the development Postgres of compose.yaml, then create or update the cihub role"
 run = [
   "docker compose up --detach --wait postgres",
@@ -93,17 +98,17 @@ run = [
 
 [tasks."db:reset"]
 description = "Delete the data of the development Postgres, then start it again"
-run = ["docker compose down --volumes", { task = "db" }]
+run = ["docker compose down --volumes", { task = "db:start" }]
 
-[tasks.migrate]
+[tasks."db:migrate"]
 description = "Apply the migrations to the development Postgres"
-depends = ["db"]
+depends = ["db:start"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- migrate"
 
 [tasks.dev]
 description = "Start Postgres, apply the migrations, then run cihub-server start with the four roles"
-depends = ["migrate"]
+depends = ["db:migrate"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- start"
 
@@ -144,7 +149,7 @@ run = "pnpm dev"
 
 [tasks."web:e2e"]
 description = "Run the browser tests of the dashboard against a server on the simulator (needs Postgres)"
-depends = ["db", "web:build"]
+depends = ["db:start", "web:build"]
 dir = "web"
 run = ["pnpm exec playwright install chromium", "pnpm e2e"]
 
@@ -164,7 +169,6 @@ depends = ["web:install"]
 dir = "web"
 run = ["cargo run --quiet -p cihub-server --example openapi > openapi.json", "pnpm generate"]
 
-# git status, unlike git diff, also sees a new file.
 [tasks."web:generate-check"]
 description = "Fail if the OpenAPI document or the API client of the dashboard are not up to date"
 run = [
@@ -176,8 +180,6 @@ run = [
 description = "Lint the Helm chart"
 run = "helm lint deploy/charts/cihub --values {{vars.helm_lint_values}}"
 
-# helm-unittest is a Helm plugin, which mise cannot install: the task installs
-# the pinned version when it is missing.
 [tasks."helm:unittest"]
 description = "Run the template tests of the Helm chart with helm-unittest"
 env = { HELM_UNITTEST_VERSION = "1.2.1" }
@@ -208,6 +210,6 @@ run = [
 description = "Lint the GitHub workflows with actionlint and zizmor"
 run = ["actionlint", "zizmor .github/workflows"]
 
-[tasks.smoke]
+[tasks."helm:smoke"]
 description = "Install the chart with two replicas in a kind cluster against a CloudNativePG Postgres, then check it (needs docker)"
 run = "scripts/smoke.sh"

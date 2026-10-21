@@ -15,10 +15,10 @@ It runs at each start: a change to the file applies without erasing the data. Th
 only.
 
 ```sh
-mise run db            # Postgres, then postgres-setup
-mise run db:reset      # erases the data, then mise run db (after a migration is rewritten)
-mise run migrate       # Postgres, then cihub-server migrate
-mise run dev           # migrate, then cihub-server start with the four roles and pretty logs
+mise run db:start      # Postgres, then postgres-setup
+mise run db:reset      # erases the data, then mise run db:start (after a migration is rewritten)
+mise run db:migrate    # Postgres, then cihub-server migrate
+mise run dev           # db:migrate, then cihub-server start with the four roles and pretty logs
 docker compose down    # stops Postgres and keeps the volume
 ```
 
@@ -43,7 +43,7 @@ The first time, `mise trust mise.local.toml` authorizes the file. To receive web
 of the App points to a tunnel that leads to port 8080.
 
 `mise tasks` lists the project tasks and their description. A task of one part carries its prefix (`rust:`, `web:`,
-`helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
+`db:`, `helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.
 
 ## Server configuration
 
@@ -187,10 +187,10 @@ CIHub does not call the Kubernetes API. `deploy/charts/cihub/README.md`, generat
 mise run helm:lint       # helm lint with deploy/charts/cihub/ci/lint-values.yaml
 mise run helm:unittest   # the tests of deploy/charts/cihub/tests (installs the helm-unittest plugin when it is missing)
 mise run helm:generate   # deploy/charts/cihub/README.md and values.schema.json, from Chart.yaml and values.yaml
-mise run smoke           # the chart in a throwaway kind cluster (needs Docker)
+mise run helm:smoke      # the chart in a throwaway kind cluster (needs Docker)
 ```
 
-`mise run smoke` (`scripts/smoke.sh`) builds the image, creates a kind cluster, installs CloudNativePG and a
+`mise run helm:smoke` (`scripts/smoke.sh`) builds the image, creates a kind cluster, installs CloudNativePG and a
 Postgres 17 whose owner is the `cihub` role, then the chart with two replicas (`scripts/smoke/values.yaml`). It
 fails when the migration Job fails, when a pod is not ready or restarts, when `helm test` fails, or when a signed
 delivery does not get `202`. The App does not exist and `github.url` does not resolve: the test calls no GitHub.
@@ -211,7 +211,7 @@ App to the cluster: a port-forward to the Service, a tunnel to it, and the tunne
 the sign-in, the Callback URL and the Setup URL that the App must have.
 
 ```sh
-CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run smoke
+CIHUB_SMOKE_GITHUB=1 CIHUB_SMOKE_KEEP=1 mise run helm:smoke
 export KUBECONFIG="$TMPDIR/kind-cihub-smoke.kubeconfig"
 kubectl -n cihub get pods
 kind delete cluster --name cihub-smoke
@@ -247,7 +247,7 @@ Migrations are explicit:
 
 | Environment                     | What runs `cihub-server migrate`                       | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
-| Development                     | `mise run migrate`                                     | By hand                                  |
+| Development                     | `mise run db:migrate`                                  | By hand                                  |
 | Installation `docker compose`   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |
 | Kubernetes                      | `Job` as a Helm `pre-install` and `pre-upgrade` hook   | Before the deployment of the new pods    |
 
@@ -263,9 +263,9 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run rust:lint`, then `mise run
 web:generate-check`), `Web Lint` (`mise run web:lint`), `Rust Test` (`mise run
-rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run test-integration`), `Rust Coverage` (`mise
-run cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
-helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run smoke`). The last job, `Build
+rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run rust:integration`), `Rust Coverage` (`mise
+run rust:cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
+helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run helm:smoke`). The last job, `Build
 Success`, is the required status of the `main` branch: it fails when one of these jobs failed or was cancelled.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each

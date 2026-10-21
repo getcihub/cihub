@@ -6,7 +6,7 @@
 # never ready or restarts, on `helm test`, and on a signed delivery that the
 # web role does not accept.
 #
-# Needs docker, kind, kubectl, helm and openssl on PATH. `mise run smoke` runs it.
+# Needs docker, kind, kubectl, helm and openssl on PATH. `mise run helm:smoke` runs it.
 #   CIHUB_SMOKE_IMAGE    an image already built and loadable by docker, to skip
 #                        the build
 #   CIHUB_SMOKE_CLUSTER  the name of the kind cluster (cihub-smoke)

@@ -6,5 +6,5 @@
 - It depends on `cihub-domain` and `cihub-config` only, not on `cihub-conditions`. A strategy is a table of
   default values in `cihub-config`, not code here.
 - Tests: tables (one row per transition), `proptest` (random queues verified by `check`), `insta` for the plans.
-  Coverage 90% at least: `mise run cover`.
+  Coverage 90% at least: `mise run rust:cover`.
 - Spec: `specs/ALGORITHMS.md`.

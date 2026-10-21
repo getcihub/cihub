@@ -109,7 +109,7 @@ is still taken every 500 events (`SNAPSHOT_EVERY`).
 
 **Risk.** Medium: the `jsonb` goes to TOAST; an `UPDATE` of `dirty` on the same row
 copies the TOAST pointer, not the value, so the hot path does not grow. Measure with the fault-injection test
-before and after (`mise run sim`).
+before and after (`mise run rust:sim`).
 **Status.** Done (`008b299`); the fault-injection tests pass on 25 seeds.
 
 ## Step 3: columns and values that nothing uses
@@ -193,8 +193,8 @@ Verification for each change:
 
 1. Build one database from the migrations of `main` and one from the new files, and compare
    `pg_dump --schema-only`: only the intended differences.
-2. `mise run check`, `mise run test-integration` (includes `every_tenant_table_forces_row_level_security` and
-   `postgres_enums_match_the_domain`), `CIHUB_SIM_SEEDS=25 mise run sim`.
+2. `mise run check`, `mise run rust:integration` (includes `every_tenant_table_forces_row_level_security` and
+   `postgres_enums_match_the_domain`), `CIHUB_SIM_SEEDS=25 mise run rust:sim`.
 3. For step 2 (`queue_leases`): the two-owner lease test; for `queue_snapshots`: the replay test
    `a_replay_of_the_log_rebuilds_the_same_projections` and the partition pruning tests.
 

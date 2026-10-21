@@ -6205,7 +6205,7 @@ impl Chaos {
 /// errors and rate limits at random, webhooks lost, sent twice and reordered,
 /// and processes killed at random, each green PR is merged exactly once, in the
 /// order of the queue, and each red PR fails with a reason. `CIHUB_SIM_SEEDS`
-/// gives the number of seeds (10 by default; `mise run sim` plays 1 000, for
+/// gives the number of seeds (10 by default; `mise run rust:sim` plays 1 000, for
 /// this test and the `batched` one). Direct merge is `off`: a red PR is green
 /// on its own head and red only on its test commits, which a direct merge
 /// does not run.

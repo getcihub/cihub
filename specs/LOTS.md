@@ -842,7 +842,7 @@ Decisions (October 14, 2026, validated by the project lead):
 - **Exit criterion**: `fault_injection` passes with `batched`; a planted failure is
   isolated in ≤ log2(batch size) rounds of runs after the confirmed failure of the batch; on the fixed scenario
   of the simulator (`crates/mq-core/tests/load.rs`), `batched` uses at least 30 % fewer runs per merged PR than `pipelined`, with a p50 time in queue at
-  most 1.5 times as long (`mise run load`).
+  most 1.5 times as long (`mise run rust:load`).
 - **Tracking**:
   - Steps: 1. batch formation; 2. bisection (cache, `bisection_concurrency` pool); 3.
     `pending_failure_depth > 0`; 4. optimistic merge; 5. load model and cost criterion in `cihub-mq-core`; 6. useless assemblies; 7. `fault_injection` with `batched`, exit criteria.
@@ -887,12 +887,12 @@ Decisions (October 14, 2026, validated by the project lead):
     until a decision on the algorithm, the scenario or the bar. After three changes validated by the project lead (halves at once,
     groups behind given up, batches of 4): runs per merged PR 4.18 against 1.09 (−74 %); p50 465 minutes
     against 657 (+41 %). With 3 % of broken PRs instead of 10 %: 1.91 against 0.58 runs, p50 76 against 129
-    minutes (+70 %). The project lead sets the time bar at 1.5 times: the test passes (1.41), in `mise run load`.
+    minutes (+70 %). The project lead sets the time bar at 1.5 times: the test passes (1.41), in `mise run rust:load`.
   - Done (October 6, 2026): step 7. `fault_injection_batched` plays the fault injection test of lot 7 with
     `strategy: batched` and checks that the seeds formed batches and bisections; it passes on 200 seeds, and
     `fault_injection` too. In the CI of both tests, a red PR fails every run that tests its head, as a member
     or as a predecessor: before, only its own run failed, and a run on top of it could prove it by optimistic
-    merge. `mise run sim` plays both tests. `a_planted_failure_is_isolated_in_log2_rounds` checks the
+    merge. `mise run rust:sim` plays both tests. `a_planted_failure_is_isolated_in_log2_rounds` checks the
     bisection for each batch size from 2 to 8 and each place of the failure.
   - Done (October 6, 2026): step 6. `useless_assemblies_after_a_close_stay_under_5_percent` plays the load of
     the exit criterion where 5 % of the PRs close up to an hour after their submission. An assembly is useless when its run
@@ -902,10 +902,10 @@ Decisions (October 14, 2026, validated by the project lead):
     simulated world, so the measure is a floor.
   - Done (October 7, 2026), after a manual test on `getsyncr/contracts`: a batch that is not full starts
     at once when the item right behind it is `no_batch`. Test: `a_no_batch_pr_does_not_wait_for_the_batch_ahead_of_it`.
-  - Closed on October 6, 2026 by the project lead: the exit criteria pass (`mise run load`, `mise run sim`, the
+  - Closed on October 6, 2026 by the project lead: the exit criteria pass (`mise run rust:load`, `mise run rust:sim`, the
     bisection test).
   - Later, outside the lot (asked by the project lead on October 6, 2026, not done): a nightly CI job for
-    `mise run sim` and `mise run load`. No workflow runs them today, although `AGENTS.md` says that the CI runs
+    `mise run rust:sim` and `mise run rust:load`. No workflow runs them today, although `AGENTS.md` says that the CI runs
     `sim` at night.
 
 ---

@@ -19,8 +19,8 @@ same change: code, routes, clients, tests, specs. No alias, no fallback, no "leg
 - **One lot at a time.** Take the current lot in `specs/LOTS.md` (skill `/lot`), respect its frozen interfaces,
   do not anticipate the next lots. Its automated exit criterion defines "done". Update its status and its
   "Tracking" block in the same change as the code.
-- **Verify before saying "done".** `mise run check` (lint, then tests); `mise run test-integration` when the
-  change touches Postgres or a job; `mise run cover` for a pure crate. Show the output.
+- **Verify before saying "done".** `mise run check` (lint, then tests); `mise run rust:integration` when the
+  change touches Postgres or a job; `mise run rust:cover` for a pure crate. Show the output.
 - **Update the spec of the subject in the same change** (map below). When an approach fails or is rejected for a
   reason that the code cannot show, add it to `specs/LESSONS.md`; read it before you propose a change.
 - Everything in the repository is in English. Reply to a person in the language they write in.
@@ -70,9 +70,11 @@ its own `AGENTS.md`.
 
 ## Commands
 
-`mise tasks` lists them all; every tool installs with `mise install`. `mise run check` (lint, then unit tests),
-`mise run test-integration` (the `tests/postgres.rs` files against the Postgres of `compose.yaml`), `mise run
-cover` (90% for the pure crates). The CI runs them in parallel jobs; the last one, `Build Success`, is the required status.
+`mise tasks` lists them all; every tool installs with `mise install`. A task is named `<domain>:<action>` (`rust:`,
+`web:`, `db:`, `helm:`, `workflows:`); only the tasks that span domains have no prefix. `mise run check` (lint, then
+unit tests), `mise run rust:integration` (the `tests/postgres.rs` files against the Postgres of `compose.yaml`),
+`mise run rust:cover` (90% for the pure crates). The CI runs them in parallel jobs; the
+last one, `Build Success`, is the required status.
 
 ## Migrations
 

@@ -174,7 +174,7 @@ jobs:
 
       # Starts the Postgres of compose.yaml, as in development.
       - name: Run tests against Postgres
-        run: mise run test-integration
+        run: mise run rust:integration
 
   rust-cover:
     if: >-
@@ -207,7 +207,7 @@ jobs:
           restore-keys: ${{ runner.os }}-cargo-cover-
 
       - name: Check coverage of the pure crates
-        run: mise run cover
+        run: mise run rust:cover
 
   dashboard-e2e:
     if: >-
@@ -391,7 +391,7 @@ jobs:
       # CloudNativePG Postgres, then checks the migrations, the readiness,
       # helm test and a signed delivery.
       - name: Run smoke test
-        run: mise run smoke
+        run: mise run helm:smoke
 
   status:
     if: ${{ !cancelled() }}

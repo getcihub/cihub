@@ -5,5 +5,5 @@
 - The decisions come from `cihub-mq-core`; this crate loads, writes and shows them. No queue logic here that
   `plan` could hold.
 - Every queue scenario runs on the simulator (`cihub-scm`, feature `sim`); `tests/postgres.rs` runs with
-  `mise run test-integration`.
+  `mise run rust:integration`.
 - Specs: `specs/ALGORITHMS.md`, `specs/DOMAIN.md`, `specs/CI.md`, `specs/RELIABILITY.md`.

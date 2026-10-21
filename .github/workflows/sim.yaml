@@ -34,4 +34,4 @@ jobs:
           install_args: --locked
 
       - name: Run the fault injection test on 1 000 seeds
-        run: mise run sim
+        run: mise run rust:sim
