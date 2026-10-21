@@ -763,6 +763,18 @@ Decisions:
     comes from WP1, WP3 and WP5 (`the_setup_url_trusts_only_the_installations_of_the_person`,
     `a_person_reads_only_the_repositories_that_the_scm_shows_them`,
     `the_api_answers_not_found_outside_the_organization_of_the_token`).
+  - Done (October 21, 2026): WP4, the empty states of the mockups v25. Before the first queue, the page of an
+    organization opens on "Start your first merge queue", which replaces the banner "No queue yet": what a merge
+    queue does, how many of the repositories are ready, "Start with" the first ready one (it opens its row), and
+    three steps that follow the open row (none: step 1; one that needs a fix, or whose setup was never read:
+    step 2; one that is ready: step 3). Without a search, the list splits into "Ready to start" and "Needs a fix"
+    (`cannot_merge`, `invalid_config`); while CIHub checks a setup again, the API gives no verdict, so a row keeps
+    the last verdict that the page saw and stays in its part. A repository without a queue opens on how its queue
+    starts, above its setup: the command and "Waiting for the first command"; the same with the first failed rule
+    as the server titles it; or, blocked, what blocks it, the rules on GitHub and "Check again". "3 · Start the
+    queue" leaves the setup, which folds when every point passes. Left out: "Configure the queue" and "Fix it in
+    the configuration", which wait for the builder of the configuration. Tests: `pages/org-queues/page.test.tsx`,
+    `pages/repo-queues/page.test.tsx`, the views `org-first-queue*` and `repo-start-*` of `web:shots`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 

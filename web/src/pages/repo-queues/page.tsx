@@ -10,12 +10,14 @@ import { useNow } from "@/hooks/use-now";
 import { useOrgQueues } from "@/hooks/use-org-queues";
 import { useRepoSetup } from "@/hooks/use-repo-setup";
 import { RepoSetup } from "./components/repo-setup";
+import { RepoStart } from "./components/repo-start";
 
 const route = getRouteApi("/orgs/$org/repos/$repo/");
 
 /**
  * A repository: the setup of its default branch, which a read follows every 2 seconds while it waits, then its
- * queues, after the PRs of the person in it.
+ * queues, after the PRs of the person in it. Before its first queue, how the queue starts leads the page, and the
+ * setup supports it.
  */
 export function RepoQueuesPage() {
   const { org, repo: name } = route.useParams();
@@ -27,7 +29,8 @@ export function RepoQueuesPage() {
   return (
     <Page>
       <OverviewHead where={org} title={name} />
-      <RepoSetup {...setup} hasQueue={queues.length > 0} now={now} />
+      {queues.length === 0 && <RepoStart {...setup} />}
+      <RepoSetup {...setup} now={now} />
       {queues.length > 0 && (
         <>
           <MinePrs org={org} prs={mine} queues={queues} />

@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 
 import type { ConfigFile } from "@/client/types.gen";
-import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { COMMAND } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";
@@ -14,25 +14,23 @@ import { cn } from "@/lib/cn";
 import { timeAgo } from "@/lib/time";
 
 /**
- * The setup of a repository: the rules of its default branch, its configuration file, and, before its first
- * queue, how the queue starts. An admin of the repository asks for a read again with "Check again". Once a queue
- * runs, the setup folds into its head, and opens by itself while a point fails; a click flips it, until the
- * verdict changes.
+ * The setup of a repository: the rules of its default branch and its configuration file. An admin of the
+ * repository asks for a read again with "Check again". The setup folds into its head when every point passes, and
+ * opens by itself while a point fails or CIHub checks it; a click flips it, until the verdict changes.
  */
 export function RepoSetup({
   repo,
   isChecking,
   hasGivenUp,
   checkAgain,
-  hasQueue,
   now,
-}: RepoSetupRead & { hasQueue: boolean; now: number }) {
+}: RepoSetupRead & { now: number }) {
   const { setup, default_branch: branch } = repo;
   const hasFailure =
     setup.target_branch_missing ||
     setup.config?.state === "invalid" ||
     setup.rules.some((rule) => !rule.passed);
-  const isOpenByDefault = !hasQueue || isChecking || hasFailure;
+  const isOpenByDefault = isChecking || hasFailure;
   // The choice of the person, with the verdict it answered: a new verdict opens or folds the card by itself.
   const [choice, setChoice] = useState<{ isOpen: boolean; byDefault: boolean } | null>(null);
   const isOpen = choice?.byDefault === isOpenByDefault ? choice.isOpen : isOpenByDefault;
@@ -77,17 +75,6 @@ export function RepoSetup({
           <Section title="2 · The configuration" tag="optional">
             <Configuration branch={branch} config={setup.config ?? null} />
           </Section>
-          {!hasQueue && (
-            <Section title="3 · Start the queue">
-              <p className="mb-2 text-md text-secondary-foreground">
-                Comment on an approved pull request that targets <code>{branch}</code>:
-              </p>
-              <CopyCommand />
-              <p className="mt-2 text-md text-muted-foreground">
-                The queue appears in CIHub at this first <code>{COMMAND}</code>.
-              </p>
-            </Section>
-          )}
         </>
       )}
     </Card>

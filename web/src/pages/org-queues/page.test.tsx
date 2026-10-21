@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Answers, mockSessionCookie, renderApp, sentChanges } from "@/test/app";
+import type { RepoDetail } from "@/client/types.gen";
 import { ada, answersOfMe, answersOfMine, pageOf, queueOf, repoOf, repoRowOf } from "@/test/fixtures";
 
 const REPOS = "/api/v1/orgs/acme/repos";
@@ -19,8 +20,43 @@ function answersFor(changes: Answers): Answers {
   };
 }
 
+/** The organization before its first queue: no queue, and `repos`. */
+function firstQueueAnswers(repos: Answers[string], changes: Answers = {}): Answers {
+  return answersFor({ "/api/v1/orgs/acme/queues": [200, pageOf("queues", [])], [REPOS]: repos, ...changes });
+}
+
+/** `docs`, read: the App is not exempt from the rule that restricts the updates of `main`. */
+function blockedDocs(state: "cannot_merge" | "checking" = "cannot_merge"): RepoDetail {
+  const repo = repoOf("docs");
+  return {
+    ...repo,
+    setup: {
+      ...repo.setup,
+      state,
+      queue: null,
+      checked_at: new Date().toISOString(),
+      rules: [
+        {
+          code: "app_not_exempt",
+          passed: false,
+          blocks_merge: true,
+          title: "A rule restricts the updates of `main` without an exemption for the App",
+        },
+      ],
+      config: null,
+    },
+  };
+}
+
+const MIXED = pageOf("repos", [
+  repoRowOf("docs", "cannot_merge"),
+  repoRowOf("site", "ready"),
+  repoRowOf("web", "ready_with_warnings"),
+]);
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("the page of an organization", () => {
@@ -49,7 +85,7 @@ describe("the page of an organization", () => {
       "false",
     );
     expect(screen.getByRole("button", { name: /site.*Ready.*Start/ })).toBeInTheDocument();
-    expect(screen.queryByText(/No queue yet in acme/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Start your first merge queue" })).not.toBeInTheDocument();
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
   });
 
@@ -182,11 +218,90 @@ describe("the page of an organization", () => {
       }),
     );
 
-    expect(await screen.findByText("No queue yet in acme.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Start your first merge queue" })).toBeInTheDocument();
     expect(await screen.findByText("Waiting for the first command")).toBeInTheDocument();
     expect(screen.getByText(/CIHub can merge on/)).toBeInTheDocument();
     expect(screen.getByText(/the defaults: pipelined, squash merge/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
+
+  it("splits the repositories into the ready ones and the ones that need a fix, before the first queue", async () => {
+    renderApp("/orgs/acme", firstQueueAnswers([200, MIXED]));
+
+    expect(await screen.findByRole("heading", { name: /^Ready to start\s*2$/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Needs a fix\s*1$/ })).toBeInTheDocument();
+    expect(screen.getByText("A point blocks every merge until it is fixed")).toBeInTheDocument();
+    expect(screen.getByText(/of acme: 2 are ready to start\./)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Repositories\s*3$/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the list in one part for a search", async () => {
+    renderApp("/orgs/acme?q=s", firstQueueAnswers([200, MIXED]));
+
+    expect(await screen.findByRole("heading", { name: /^Not started\s*3$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Needs a fix/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["/orgs/acme", "Pick a repository"],
+    ["/orgs/acme?open=docs", "Check its setup"],
+    ["/orgs/acme?open=site", "Comment /cihub merge"],
+  ])("follows the open row in the steps to the first queue, at %s", async (path, step) => {
+    renderApp(path, firstQueueAnswers([200, MIXED], { [`${REPOS}/docs`]: [200, blockedDocs()] }));
+
+    const current = await screen.findByRole("listitem", { current: "step" });
+
+    expect(current).toHaveTextContent(step);
+  });
+
+  it("opens the first ready repository from the start of the page, and scrolls to it", async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const router = renderApp("/orgs/acme", firstQueueAnswers([200, MIXED]));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Start with acme/site" }));
+
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ open: "site" });
+    });
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /^Start with/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps a repository in its part while CIHub checks it again", async () => {
+    mockSessionCookie();
+    renderApp(
+      "/orgs/acme?open=docs",
+      firstQueueAnswers(
+        [
+          [200, MIXED],
+          [
+            200,
+            pageOf("repos", [
+              {
+                ...repoRowOf("docs", "checking"),
+                setup: { state: "checking", requested_at: new Date().toISOString() },
+              },
+              repoRowOf("site", "ready"),
+              repoRowOf("web", "ready_with_warnings"),
+            ]),
+          ],
+        ],
+        {
+          [`${REPOS}/docs`]: [
+            [200, blockedDocs()],
+            [200, blockedDocs("checking")],
+          ],
+          [`${REPOS}/docs/sync`]: [202, null],
+        },
+      ),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Check again" }));
+
+    expect(await screen.findByRole("button", { name: /docs.*Checking/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Needs a fix\s*1$/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^Ready to start\s*2$/ })).toBeInTheDocument();
   });
 
   it("cuts a long list of the repositories without a queue, until the person asks for all", async () => {

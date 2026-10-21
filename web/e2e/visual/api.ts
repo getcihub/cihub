@@ -11,7 +11,11 @@ import type {
   Problem,
   Queue,
   QueueHealth,
+  RepoDetail,
+  RuleCheck,
   Run,
+  SetupState,
+  ConfigFile,
 } from "@/client/types.gen";
 
 export const NOW = Date.parse("2026-10-12T10:00:00Z");
@@ -690,57 +694,105 @@ const WITHOUT_QUEUE: Record<string, "cannot_merge" | "ready"> = {
   landing: "ready",
 };
 
-/** The rules of a repository without a queue, as the server writes them. */
-function rulesOf(name: string) {
-  const isBlocked = WITHOUT_QUEUE[name] === "cannot_merge";
-  return [
-    {
-      code: "update_restriction_missing",
-      passed: true,
-      blocks_merge: false,
-      title: "A rule restricts the updates of `main`",
-    },
-    {
-      code: "app_not_exempt",
-      passed: !isBlocked,
-      blocks_merge: true,
-      title: isBlocked
-        ? "A rule restricts the updates of `main` without an exemption for the App"
-        : "The App of CIHub may update `main`",
-      message: isBlocked ? "add the App of CIHub to the bypass list of the ruleset, in exempt mode" : null,
-    },
-    {
-      code: "test_branches_not_excluded",
-      passed: true,
-      blocks_merge: true,
-      title: "No rule covers the test branches of CIHub",
-    },
-    {
-      code: "up_to_date_required",
-      passed: true,
-      blocks_merge: false,
-      title: "`main` asks for no branch up to date",
-    },
-  ];
+/** A repository without a queue: its verdict, its default branch, the rules that fail, and its file. */
+interface Start {
+  state: SetupState;
+  branch?: string;
+  failed?: string[];
+  config?: Partial<ConfigFile>;
 }
 
-/** A repository of `acme` and its setup: an admin of the organization administers it, a member writes to it. */
-function repoOf(name: string, person: Person) {
-  const orgs = person === "nobody" ? [] : PEOPLE[person].orgs;
-  const isAdmin = orgs.some((org) => org.slug === "acme" && org.role === "admin");
-  const state = WITHOUT_QUEUE[name] ?? "started";
+/** The repositories of `acme-labs`, which has no queue yet: two ready, one with a warning, two blocked. */
+const LABS: Record<string, Start> = {
+  app: { state: "ready" },
+  handbook: { state: "ready_with_warnings", failed: ["up_to_date_required"] },
+  playground: {
+    state: "cannot_merge",
+    branch: "trunk",
+    failed: ["app_not_exempt", "test_branches_not_excluded"],
+  },
+  site: {
+    state: "ready",
+    config: { state: "valid", path: ".cihub.yaml", sha: "a41c9e0", entries: ["main", "release"] },
+  },
+  terraform: {
+    state: "invalid_config",
+    config: {
+      state: "invalid",
+      path: ".cihub.yaml",
+      sha: "c03f7b1",
+      error: "line 4, column 15: `fast` is not a strategy; use sequential, pipelined, batched or parallel",
+      line: 4,
+      column: 15,
+      text: "version: 1\nqueues:\n  - branch: main\n    strategy: fast\n",
+    },
+  },
+};
+
+/** The four rules, as the server writes them: when they pass, when they fail, and what to change. */
+const RULES: { code: string; blocks_merge: boolean; passed: string; failed: string; change: string }[] = [
+  {
+    code: "update_restriction_missing",
+    blocks_merge: false,
+    passed: "A rule restricts the updates of `{branch}`",
+    failed: "No rule restricts the updates of `{branch}`",
+    change:
+      "add a ruleset that restricts the updates of `{branch}`, with the App of CIHub in its bypass list, in exempt mode: without it, a PR can merge without the queue",
+  },
+  {
+    code: "app_not_exempt",
+    blocks_merge: true,
+    passed: "The App of CIHub may update `{branch}`",
+    failed: "A rule restricts the updates of `{branch}` without an exemption for the App",
+    change: "add the App of CIHub to the bypass list of the ruleset, in exempt mode",
+  },
+  {
+    code: "test_branches_not_excluded",
+    blocks_merge: true,
+    passed: "No rule covers the test branches of CIHub",
+    failed: "A rule covers `cihub-temp/**` or `cihub-merge/**`",
+    change: "exclude `cihub-temp/**/*` and `cihub-merge/**/*` from every ruleset",
+  },
+  {
+    code: "up_to_date_required",
+    blocks_merge: false,
+    passed: "`{branch}` asks for no branch up to date",
+    failed: "`{branch}` asks for branches up to date",
+    change:
+      'turn off "Require branches to be up to date before merging" on `{branch}`, unless the queue merges directly',
+  },
+];
+
+/** The rules of the default branch `branch`, where `failed` fail. */
+function rulesOf(branch: string, failed: string[]): RuleCheck[] {
+  return RULES.map((rule) => {
+    const passed = !failed.includes(rule.code);
+    return {
+      code: rule.code,
+      passed,
+      blocks_merge: rule.blocks_merge,
+      title: (passed ? rule.passed : rule.failed).replaceAll("{branch}", branch),
+      message: passed ? null : rule.change.replaceAll("{branch}", branch),
+    };
+  });
+}
+
+/** The repository `name` of `org` and its setup: `start` without a queue, else its queue on `main`. */
+function repoOf(org: string, name: string, isAdmin: boolean, start: Start | undefined): RepoDetail {
+  const state = start?.state ?? "started";
+  const branch = start?.branch ?? "main";
   return {
     id: `repo_${name}`,
-    namespace: "acme",
+    namespace: org,
     name,
-    default_branch: "main",
+    default_branch: branch,
     permission: { read: true, write: true, admin: isAdmin },
     setup: {
       state,
       queue: state === "started" ? "main" : null,
-      rules: rulesOf(name),
+      rules: rulesOf(branch, start?.failed ?? []),
       target_branch_missing: false,
-      rules_url: `https://github.com/acme/${name}/settings/rules`,
+      rules_url: `https://github.com/${org}/${name}/settings/rules`,
       config: {
         state: "none",
         path: null,
@@ -758,6 +810,7 @@ function repoOf(name: string, person: Person) {
           failure_budget_retries: 1,
           merge_method: "squash",
         },
+        ...start?.config,
       },
       checked_at: ago(4),
       requested_at: null,
@@ -765,26 +818,53 @@ function repoOf(name: string, person: Person) {
   };
 }
 
+/** The repositories of `org` that `person` reads, by name, with their start; `undefined` for another organization. */
+function reposOf(
+  org: string,
+  person: Person,
+): Record<string, { start: Start | undefined; isAdmin: boolean }> | undefined {
+  const orgs = person === "nobody" ? [] : PEOPLE[person].orgs;
+  if (org === "acme-labs") {
+    // A member of acme-labs created its repositories, and administers them.
+    const isMember = orgs.some((membership) => membership.slug === "acme-labs");
+    return Object.fromEntries(
+      Object.entries(LABS).map(([name, start]) => [name, { start, isAdmin: isMember }]),
+    );
+  }
+  if (org !== "acme") {
+    return undefined;
+  }
+
+  // An admin of the organization administers its repositories, a member writes to them.
+  const isAdmin = orgs.some((membership) => membership.slug === "acme" && membership.role === "admin");
+  const names = [...new Set([...QUEUES.map((queue) => queue.repo), ...Object.keys(WITHOUT_QUEUE)])].sort();
+  return Object.fromEntries(
+    names.map((name) => {
+      const state = WITHOUT_QUEUE[name];
+      const start = state && { state, failed: state === "cannot_merge" ? ["app_not_exempt"] : [] };
+      return [name, { start, isAdmin }];
+    }),
+  );
+}
+
 function answerOfRepo(path: string, person: Person): Answer | null {
-  if (path === "/orgs/acme-labs/repos") {
-    return [200, listOf("repos", [])];
-  }
-  if (path === "/orgs/acme/repos") {
-    const names = [...new Set([...QUEUES.map((queue) => queue.repo), ...Object.keys(WITHOUT_QUEUE)])].sort();
-    const repos = names.map((name) => {
-      const { setup, ...repo } = repoOf(name, person);
-      return { ...repo, setup: { state: setup.state, checked_at: setup.checked_at, requested_at: null } };
-    });
-    return [200, listOf("repos", repos)];
-  }
-  const match = /^\/orgs\/acme\/repos\/([^/]+)$/.exec(path);
-  if (!match) {
+  const match = /^\/orgs\/([^/]+)\/repos(?:\/([^/]+))?$/.exec(path);
+  const org = match?.[1] ?? "";
+  const repos = reposOf(org, person);
+  if (!match || !repos) {
     return null;
   }
 
-  const name = match[1] ?? "";
-  const isKnown = name in WITHOUT_QUEUE || QUEUES.some((queue) => queue.repo === name);
-  return isKnown ? [200, repoOf(name, person)] : [404, problem(404, "repo_not_found")];
+  const name = match[2];
+  if (name === undefined) {
+    const list = Object.entries(repos).map(([each, { start, isAdmin }]) => {
+      const { setup, ...repo } = repoOf(org, each, isAdmin, start);
+      return { ...repo, setup: { state: setup.state, checked_at: setup.checked_at, requested_at: null } };
+    });
+    return [200, listOf("repos", list)];
+  }
+  const found = repos[name];
+  return found ? [200, repoOf(org, name, found.isAdmin, found.start)] : [404, problem(404, "repo_not_found")];
 }
 
 function answerOfRun(path: string): Answer | null {

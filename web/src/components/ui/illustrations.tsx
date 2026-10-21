@@ -1,7 +1,14 @@
+import { cn } from "@/lib/cn";
+
 /** The queue as a line toward its branch: two empty places, then what merged. */
-export function QueueIllustration() {
+export function QueueIllustration({ className }: { className?: string }) {
   return (
-    <svg className="mb-2.5 block h-auto w-60 max-md:w-50" viewBox="0 0 260 64" fill="none" aria-hidden="true">
+    <svg
+      className={cn("mb-2.5 block h-auto w-60 max-md:w-50", className)}
+      viewBox="0 0 260 64"
+      fill="none"
+      aria-hidden="true"
+    >
       <path d="M6 32 H160" style={{ stroke: "var(--waiting)" }} strokeWidth="1.5" strokeDasharray="4 5" />
       <rect
         x="22.5"

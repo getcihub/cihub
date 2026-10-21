@@ -4,12 +4,9 @@ import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { getUserOptions, syncUserMutation } from "@/client/@tanstack/react-query.gen";
 import type { Repo, RepoList as RepoListOfOrg, User } from "@/client/types.gen";
-import { QueuesIcon } from "@/components/icons/queues-icon";
 import { SearchIcon } from "@/components/icons/search-icon";
 import { MinePrs } from "@/components/mine/mine";
-import { COMMAND } from "@/components/queue/copy-command";
 import { OverviewHead } from "@/components/queue/overview-head";
-import { Alert, AlertContent, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -26,9 +23,10 @@ import { useMinePrs } from "@/hooks/use-mine-prs";
 import { useNow } from "@/hooks/use-now";
 import { useOrgQueues } from "@/hooks/use-org-queues";
 import { useReadAgain } from "@/hooks/use-read-again";
-import { plural } from "@/lib/text";
 import { QueueTable } from "./components/queue-table";
-import { StartList } from "./components/start-list";
+import { FirstQueue } from "./components/first-queue";
+import { StartList, startRowId } from "./components/start-list";
+import { isBlockedVerdict, useSetupVerdicts } from "./use-setup-verdicts";
 
 const route = getRouteApi("/orgs/$org/");
 
@@ -89,6 +87,8 @@ export function OrgQueuesPage() {
     .filter(hasQueue)
     .sort((a, b) => Number(needsSomeone(b)) - Number(needsSomeone(a)));
   const withoutQueue = list.repos.filter((repo) => !hasQueue(repo));
+  const isFirstQueue = queues.length === 0 && all.count > 0;
+  const verdictOf = useSetupVerdicts(all.repos);
 
   useEffect(() => {
     if (isConnecting && !isWaiting) {
@@ -133,7 +133,25 @@ export function OrgQueuesPage() {
           The reads take longer than a minute: the page stopped waiting. Reload it in a moment.
         </p>
       )}
-      {queues.length === 0 && all.count > 0 && <NoQueueYet org={org} count={all.count} />}
+      {isFirstQueue && (
+        <FirstQueue
+          org={org}
+          count={all.count}
+          repos={all.repos}
+          verdictOf={verdictOf}
+          open={open}
+          installUrl={me.app_install_url}
+          onStart={(repo) => {
+            void navigate({
+              search: (kept) => ({ ...kept, open: repo.name }),
+              replace: true,
+              resetScroll: false,
+            }).then(() => {
+              document.getElementById(startRowId(repo))?.scrollIntoView({ block: "nearest" });
+            });
+          }}
+        />
+      )}
       <MinePrs org={org} prs={mine} queues={queues} />
       {withQueue.length > 0 && (
         <>
@@ -146,21 +164,15 @@ export function OrgQueuesPage() {
         </>
       )}
       {withoutQueue.length > 0 && (
-        <>
-          <SectionHead>
-            <SectionTitle>
-              {withQueue.length > 0 || search ? "Not started" : "Repositories"}
-              <SectionCount>{withoutQueue.length}</SectionCount>
-            </SectionTitle>
-          </SectionHead>
-          <StartList
-            org={org}
-            repos={withoutQueue}
-            open={open}
-            isSearch={Boolean(search)}
-            onSync={wait.restart}
-          />
-        </>
+        <StartList
+          org={org}
+          title={withQueue.length > 0 || search ? "Not started" : "Repositories"}
+          repos={withoutQueue}
+          open={open}
+          isSearch={Boolean(search)}
+          isBlocked={isFirstQueue && !search ? (repo) => isBlockedVerdict(verdictOf(repo)) : null}
+          onSync={wait.restart}
+        />
       )}
       {list.repos.length === 0 && !isReading && search && (
         <Card>
@@ -204,22 +216,6 @@ export function OrgQueuesPage() {
         </p>
       )}
     </Page>
-  );
-}
-
-/** The organization has no queue yet: where to start. */
-function NoQueueYet({ org, count }: { org: string; count: number }) {
-  return (
-    <Alert isBanner variant="info" role="status">
-      <QueuesIcon />
-      <AlertContent>
-        <AlertTitle>No queue yet in {org}.</AlertTitle>
-        <AlertDescription>
-          The App reaches {plural(count, "repository", "repositories")}. Start with one where pull requests
-          merge often: open it below, then comment <code>{COMMAND}</code> on a pull request.
-        </AlertDescription>
-      </AlertContent>
-    </Alert>
   );
 }
 

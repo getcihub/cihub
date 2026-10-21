@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 interface Props {
   illustration: ReactNode;
-  title: string;
+  title: ReactNode;
   /** `h1` when the empty state is the whole page. */
   heading?: "h1" | "h3";
   children: ReactNode;
