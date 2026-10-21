@@ -299,7 +299,8 @@ function Calendar({
             />
             Choose the hours
           </label>
-          <span className="ml-auto text-right text-muted-foreground max-md:ml-0 max-md:text-left">
+          {/* No width of its own: the calendar sets the width of the dialog, and the summary wraps in it. */}
+          <span className="w-0 flex-1 text-right text-muted-foreground max-md:w-auto max-md:flex-initial max-md:text-left">
             <Summary draft={draft} chosen={chosen} now={now} />
           </span>
         </div>

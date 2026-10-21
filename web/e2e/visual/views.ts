@@ -167,6 +167,16 @@ export const VIEWS: View[] = [
     },
   },
   {
+    // The longest summary, which must wrap rather than widen the calendar.
+    name: "queue-health-calendar-hours",
+    url: `${QUEUE_PAGE}?pane=health`,
+    ready: "looks flaky",
+    act: async (page) => {
+      await page.getByRole("button", { name: "Custom" }).click();
+      await page.getByText("compared with").waitFor();
+    },
+  },
+  {
     name: "queue-health-quiet",
     url: "/orgs/acme/repos/sdk/queues/main?pane=health",
     ready: "Show the last 7 days",
