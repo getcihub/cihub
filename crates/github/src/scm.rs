@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
-    Permission, PrState, ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, CheckStatus, JobClass, MembershipRole, MergeMethod,
+    Mergeability, Permission, PrState, ReviewDecision,
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_OPEN_PRS, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
@@ -26,22 +26,22 @@ use time::format_description::well_known::Rfc3339;
 use crate::GithubApp;
 use crate::client::{Answer, JSON, Request};
 use crate::sign_in::Installation;
-use crate::translate::status_conclusion;
+use crate::translate::{check_run_status, status_report};
 
 const CHECKS_FRAGMENT: &str = "
 fragment checks on StatusCheckRollup {
   contexts(first: 100) {
     nodes {
       __typename
-      ... on CheckRun { name status conclusion detailsUrl }
-      ... on StatusContext { context state targetUrl }
+      ... on CheckRun { name status conclusion detailsUrl startedAt completedAt }
+      ... on StatusContext { context state targetUrl createdAt }
     }
   }
 }";
 
 const PR_FIELDS: &str = "
 fragment pr on PullRequest {
-  number state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt
+  number url state isDraft title body headRefOid baseRefName headRefName isCrossRepository createdAt
   mergeable mergeStateStatus reviewDecision
   latestOpinionatedReviews(first: 100) { nodes { state author { login } } }
   reviewRequests(first: 100) {
@@ -92,6 +92,7 @@ struct GraphqlError {
 #[serde(rename_all = "camelCase")]
 struct GraphqlPr {
     number: u64,
+    url: String,
     state: String,
     is_draft: bool,
     title: String,
@@ -177,12 +178,18 @@ enum Context {
         status: String,
         conclusion: Option<String>,
         details_url: Option<String>,
+        #[serde(with = "time::serde::rfc3339::option")]
+        started_at: Option<OffsetDateTime>,
+        #[serde(with = "time::serde::rfc3339::option")]
+        completed_at: Option<OffsetDateTime>,
     },
     #[serde(rename_all = "camelCase")]
     StatusContext {
         context: String,
         state: String,
         target_url: Option<String>,
+        #[serde(with = "time::serde::rfc3339::option")]
+        created_at: Option<OffsetDateTime>,
     },
 }
 
@@ -251,24 +258,28 @@ fn check_reports(rollup: Option<Rollup>) -> Vec<CheckReport> {
                 status,
                 conclusion,
                 details_url,
-            } => CheckReport {
-                name,
-                kind: CheckKind::Check,
-                conclusion: (status == "COMPLETED")
-                    .then(|| conclusion.as_deref().map(check_conclusion))
-                    .flatten(),
-                details_url,
-            },
+                started_at,
+                completed_at,
+            } => {
+                let status = check_run_status(&status);
+                CheckReport {
+                    name,
+                    kind: CheckKind::Check,
+                    status,
+                    conclusion: (status == CheckStatus::Completed)
+                        .then(|| conclusion.as_deref().map(check_conclusion))
+                        .flatten(),
+                    details_url,
+                    started_at,
+                    completed_at,
+                }
+            }
             Context::StatusContext {
                 context,
                 state,
                 target_url,
-            } => CheckReport {
-                name: context,
-                kind: CheckKind::Status,
-                conclusion: status_conclusion(&state),
-                details_url: target_url,
-            },
+                created_at,
+            } => status_report(context, &state, target_url, created_at),
         })
         .collect()
 }
@@ -309,6 +320,7 @@ impl GraphqlPr {
             .collect();
         Ok(PrSnapshot {
             number: self.number,
+            url: self.url,
             state: pr_state(&self.state)?,
             head_sha: self.head_ref_oid,
             base_branch: self.base_ref_name,
@@ -1592,6 +1604,8 @@ impl Scm for GithubApp {
 
 #[cfg(test)]
 mod tests {
+    use time::macros::datetime;
+
     use super::*;
 
     #[test]
@@ -1620,27 +1634,60 @@ mod tests {
     fn checks_and_statuses_become_check_reports() {
         let rollup: Rollup = serde_json::from_value(json!({ "contexts": { "nodes": [
             { "__typename": "CheckRun", "name": "build", "status": "COMPLETED",
-              "conclusion": "STARTUP_FAILURE", "detailsUrl": "https://ci/1" },
+              "conclusion": "STARTUP_FAILURE", "detailsUrl": "https://ci/1",
+              "startedAt": "2026-10-11T12:00:00Z", "completedAt": "2026-10-11T12:30:00Z" },
             { "__typename": "CheckRun", "name": "lint", "status": "IN_PROGRESS",
-              "conclusion": null, "detailsUrl": null },
+              "conclusion": null, "detailsUrl": null,
+              "startedAt": "2026-10-11T12:00:00Z", "completedAt": null },
+            { "__typename": "CheckRun", "name": "e2e", "status": "WAITING",
+              "conclusion": null, "detailsUrl": null, "startedAt": null, "completedAt": null },
             { "__typename": "StatusContext", "context": "deploy", "state": "EXPECTED",
-              "targetUrl": null },
+              "targetUrl": null, "createdAt": null },
             { "__typename": "StatusContext", "context": "cla", "state": "SUCCESS",
-              "targetUrl": null },
+              "targetUrl": null, "createdAt": "2026-10-11T12:10:00Z" },
         ]}}))
         .unwrap();
         let reports = check_reports(Some(rollup));
         let summary: Vec<_> = reports
             .iter()
-            .map(|r| (r.name.as_str(), r.kind, r.conclusion))
+            .map(|r| (r.name.as_str(), r.kind, r.status, r.conclusion))
             .collect();
+        let times: Vec<_> = reports
+            .iter()
+            .map(|r| (r.started_at, r.completed_at))
+            .collect();
+
         assert_eq!(
             summary,
             [
-                ("build", CheckKind::Check, Some(CheckConclusion::Failure)),
-                ("lint", CheckKind::Check, None),
-                ("deploy", CheckKind::Status, None),
-                ("cla", CheckKind::Status, Some(CheckConclusion::Success)),
+                (
+                    "build",
+                    CheckKind::Check,
+                    CheckStatus::Completed,
+                    Some(CheckConclusion::Failure)
+                ),
+                ("lint", CheckKind::Check, CheckStatus::InProgress, None),
+                ("e2e", CheckKind::Check, CheckStatus::Queued, None),
+                ("deploy", CheckKind::Status, CheckStatus::Queued, None),
+                (
+                    "cla",
+                    CheckKind::Status,
+                    CheckStatus::Completed,
+                    Some(CheckConclusion::Success)
+                ),
+            ]
+        );
+        assert_eq!(
+            times,
+            [
+                (
+                    Some(datetime!(2026-10-11 12:00 UTC)),
+                    Some(datetime!(2026-10-11 12:30 UTC))
+                ),
+                (Some(datetime!(2026-10-11 12:00 UTC)), None),
+                (None, None),
+                (None, None),
+                (None, Some(datetime!(2026-10-11 12:10 UTC))),
             ]
         );
     }

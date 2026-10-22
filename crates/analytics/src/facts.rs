@@ -666,6 +666,7 @@ fn read_event(id: &str, kind: &str, payload: &Value) -> Result<EventKind, Analyt
 
 #[cfg(test)]
 mod tests {
+    use cihub_domain::CheckStatus;
     use time::macros::datetime;
 
     use super::*;
@@ -750,11 +751,18 @@ mod tests {
 
     #[test]
     fn a_check_counts_its_last_report() {
-        let report = |name: &str, conclusion| CheckReport {
+        let report = |name: &str, conclusion: Option<CheckConclusion>| CheckReport {
             name: name.into(),
             kind: CheckKind::Check,
+            status: if conclusion.is_some() {
+                CheckStatus::Completed
+            } else {
+                CheckStatus::InProgress
+            },
             conclusion,
             details_url: None,
+            started_at: None,
+            completed_at: None,
         };
         let reports = vec![
             report("test", None),
@@ -803,8 +811,11 @@ mod tests {
             let check = CheckReport {
                 name: "test".into(),
                 kind: CheckKind::Check,
+                status: CheckStatus::Completed,
                 conclusion: Some(conclusion),
                 details_url: None,
+                started_at: None,
+                completed_at: None,
             };
             (test_sha.to_owned(), check)
         };

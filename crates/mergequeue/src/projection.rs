@@ -447,12 +447,15 @@ async fn upsert_check(
     check: &CheckObservation,
 ) -> Result<(), MergeQueueError> {
     sqlx::query(
-        "INSERT INTO check_observations (org_id, run_id, name, kind, required, conclusion,
-                                         details_url, observed_at)
-         VALUES ($1, $2, $3, $4::check_kind, $5, $6::check_conclusion, $7, $8)
+        "INSERT INTO check_observations (org_id, run_id, name, kind, required, status, conclusion,
+                                         details_url, started_at, completed_at, observed_at)
+         VALUES ($1, $2, $3, $4::check_kind, $5, $6::check_status, $7::check_conclusion, $8, $9,
+                 $10, $11)
          ON CONFLICT (run_id, name, kind) DO UPDATE
-             SET required = excluded.required, conclusion = excluded.conclusion,
-                 details_url = excluded.details_url, observed_at = excluded.observed_at
+             SET required = excluded.required, status = excluded.status,
+                 conclusion = excluded.conclusion, details_url = excluded.details_url,
+                 started_at = excluded.started_at, completed_at = excluded.completed_at,
+                 observed_at = excluded.observed_at
              WHERE excluded.observed_at >= check_observations.observed_at",
     )
     .bind(check.org_id.to_string())
@@ -460,8 +463,11 @@ async fn upsert_check(
     .bind(&check.name)
     .bind(check.kind.as_str())
     .bind(check.required)
+    .bind(check.status.as_str())
     .bind(check.conclusion.map(cihub_domain::CheckConclusion::as_str))
     .bind(&check.details_url)
+    .bind(check.started_at)
+    .bind(check.completed_at)
     .bind(check.observed_at)
     .execute(conn)
     .await?;
@@ -500,8 +506,11 @@ pub(crate) async fn record_late_check(
         name: check.name.clone(),
         kind: check.kind,
         required: required.contains(&check.name),
+        status: check.status,
         conclusion: check.conclusion,
         details_url: check.details_url.clone(),
+        started_at: check.started_at,
+        completed_at: check.completed_at,
         observed_at: at,
     };
 

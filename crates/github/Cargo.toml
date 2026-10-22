@@ -25,6 +25,7 @@ tokio = { workspace = true, features = ["sync"] }
 [dev-dependencies]
 axum = { workspace = true, features = ["http1", "tokio"] }
 cihub-scm = { workspace = true, features = ["sim"] }
+time = { workspace = true, features = ["macros"] }
 tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
 ulid.workspace = true
 

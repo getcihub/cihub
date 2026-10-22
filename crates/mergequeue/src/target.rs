@@ -261,11 +261,12 @@ pub(crate) fn test_pr(
 ) -> cihub_scm::PrSnapshot {
     use std::collections::BTreeSet;
 
-    use cihub_domain::{CheckConclusion, CheckKind, CheckReport, PrState};
+    use cihub_domain::{CheckConclusion, CheckKind, CheckReport, CheckStatus, PrState};
     use time::OffsetDateTime;
 
     cihub_scm::PrSnapshot {
         number: 1,
+        url: "https://scm.example/acme/api/prs/1".into(),
         state: PrState::Open,
         head_sha: "a".into(),
         base_branch: "main".into(),
@@ -286,12 +287,15 @@ pub(crate) fn test_pr(
             .map(|(name, passed)| CheckReport {
                 name: (*name).into(),
                 kind: CheckKind::Status,
+                status: CheckStatus::Completed,
                 conclusion: Some(if *passed {
                     CheckConclusion::Success
                 } else {
                     CheckConclusion::Failure
                 }),
                 details_url: None,
+                started_at: None,
+                completed_at: None,
             })
             .collect(),
         author: cihub_scm::ScmUser {

@@ -6,8 +6,9 @@ mod common;
 
 use cihub_config::Setting;
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState, JobError,
-    Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason, RunStatus,
+    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, EventKind, ItemState,
+    JobError, Mergeability, PrState, Priority, QueueControl, QueueMode, QueueState, Reason,
+    RunStatus,
 };
 use cihub_mq_core::{CheckRead, Head, Outcome, Read};
 use common::{World, head, settings, transitioned, window};
@@ -986,8 +987,11 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
             check: CheckReport {
                 name: "lint".into(),
                 kind: CheckKind::Check,
+                status: CheckStatus::InProgress,
                 conclusion: None,
                 details_url: None,
+                started_at: None,
+                completed_at: None,
             },
         },
     );

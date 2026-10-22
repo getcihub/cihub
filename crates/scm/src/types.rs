@@ -38,6 +38,8 @@ pub struct ScmUser {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrSnapshot {
     pub number: u64,
+    /// The page of the PR on the SCM.
+    pub url: String,
     pub state: PrState,
     pub head_sha: String,
     pub base_branch: String,

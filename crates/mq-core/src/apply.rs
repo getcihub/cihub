@@ -269,7 +269,12 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             let key = (check.name.clone(), check.kind);
 
             let same = checks.get(&key).is_some_and(|o| {
-                o.value.conclusion == check.conclusion && o.value.details_url == check.details_url
+                let seen = &o.value;
+                seen.status == check.status
+                    && seen.conclusion == check.conclusion
+                    && seen.details_url == check.details_url
+                    && seen.started_at == check.started_at
+                    && seen.completed_at == check.completed_at
             });
             if same {
                 return Outcome::Ignored;
@@ -281,8 +286,11 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 name: check.name.clone(),
                 kind: check.kind,
                 required,
+                status: check.status,
                 conclusion: check.conclusion,
                 details_url: check.details_url.clone(),
+                started_at: check.started_at,
+                completed_at: check.completed_at,
                 observed_at: event.occurred_at,
             };
 

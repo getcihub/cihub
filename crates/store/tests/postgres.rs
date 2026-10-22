@@ -5,9 +5,9 @@
 use std::path::Path;
 
 use cihub_domain::{
-    Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, ConnectionKind, ConnectionMode, Event,
-    EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass, JobState, OrgId,
-    Permission, Priority, QueueId, QueueMode, QueueState, Reason, RepoConfigState,
+    Actor, ActorKind, ApiScope, CheckConclusion, CheckKind, CheckStatus, ConnectionKind,
+    ConnectionMode, Event, EventId, EventKind, EventType, GroupState, ItemId, ItemState, JobClass,
+    JobState, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason, RepoConfigState,
     RequiredStatusesSource, RunStatus, SubmittedVia, UserId,
 };
 use cihub_domain::{ApiTokenId, DeviceCodeId, DeviceCodeState, MembershipRole, SessionId};
@@ -145,8 +145,9 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('run-{n}', '{org}', '{queue}', 'group-{n}', 1, 'cihub-merge/pr-1',
                      'assembling', 'test_run_started', '{{}}', '2026-09-15T00:00:00Z', '{{}}',
                      'abc', '{{abc}}', '{{1}}');
-         INSERT INTO check_observations (org_id, run_id, name, kind, required, observed_at)
-             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, '2026-09-15T00:00:00Z');
+         INSERT INTO check_observations (org_id, run_id, name, kind, required, status,
+                                         observed_at)
+             VALUES ('{org}', 'run-{n}', 'ci', 'check', true, 'queued', '2026-09-15T00:00:00Z');
          INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
              VALUES ('fact-{n}', '{org}', '{queue}', 'system', 'access.lost', 'null',
                      '2026-09-15T00:00:00Z');
@@ -360,6 +361,7 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("api_scope", values::<ApiScope>()),
         ("check_conclusion", values::<CheckConclusion>()),
         ("check_kind", values::<CheckKind>()),
+        ("check_status", values::<CheckStatus>()),
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("device_code_state", values::<DeviceCodeState>()),

@@ -7,9 +7,10 @@ use std::collections::BTreeSet;
 
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
-    Actor, CheckConclusion, CheckKind, CheckReport, DirectMergeMode, Event, EventId, EventKind,
-    Item, ItemState, JobError, Mergeability, OrgId, PrState, Priority, QueueId, QueueMode, Reason,
-    RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia, UserId,
+    Actor, CheckConclusion, CheckKind, CheckReport, CheckStatus, DirectMergeMode, Event, EventId,
+    EventKind, Item, ItemState, JobError, Mergeability, OrgId, PrState, Priority, QueueId,
+    QueueMode, Reason, RequiredStatusesSource, ReviewDecision, RunId, RunStatus, SubmittedVia,
+    UserId,
 };
 use cihub_mq_core::{Outcome, Plan, Snapshot, apply, check, plan};
 use time::{Duration, OffsetDateTime};
@@ -323,8 +324,11 @@ impl World {
                 check: CheckReport {
                     name: REQUIRED.into(),
                     kind: CheckKind::Check,
+                    status: CheckStatus::Completed,
                     conclusion: Some(conclusion),
                     details_url: None,
+                    started_at: None,
+                    completed_at: None,
                 },
             },
         )

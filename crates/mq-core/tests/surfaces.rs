@@ -6,7 +6,7 @@ mod common;
 
 use cihub_config::Setting;
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, EventKind, ItemState,
+    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, EventKind, ItemState,
     Mergeability, Priority, Reason, RequiredStatusesSource,
 };
 use cihub_mq_core::{BatchWait, Surface};
@@ -77,11 +77,18 @@ fn a_not_ready_item_shows_why() {
 fn a_blocked_pr_names_its_required_checks() {
     let mut w = World::new(settings(window(2)));
     w.submit_only(5, 0, Priority::MEDIUM);
-    let report = |name: &str, conclusion| CheckReport {
+    let report = |name: &str, conclusion: Option<CheckConclusion>| CheckReport {
         name: name.into(),
         kind: CheckKind::Check,
+        status: if conclusion.is_some() {
+            CheckStatus::Completed
+        } else {
+            CheckStatus::InProgress
+        },
         conclusion,
         details_url: None,
+        started_at: None,
+        completed_at: None,
     };
 
     w.observe(5, |pr| {

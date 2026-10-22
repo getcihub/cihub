@@ -12,7 +12,7 @@ use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::Response;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use cihub_domain::{JobClass, Mergeability, ReviewDecision};
+use cihub_domain::{CheckKind, JobClass, Mergeability, ReviewDecision};
 use cihub_github::{AppKey, GithubApp, GithubConfig};
 use cihub_scm::contract;
 use cihub_scm::{CommitStatus, RepoRef, Scm, StatusUpdate};
@@ -249,7 +249,7 @@ fn keep_only_repo(exchange: &mut Exchange, repo: &RepoRef) {
 }
 
 /// GitHub computes the mergeability of a PR later: reads the PRs until it is
-/// known and the approval is there.
+/// known, the approval is there and the checks of the mergeable PR concluded.
 async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Result<()> {
     let numbers = [prs.mergeable, prs.conflicting, prs.draft];
     let mut last = Vec::new();
@@ -262,6 +262,8 @@ async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Re
             pr.number == prs.mergeable
                 && pr.review_decision == ReviewDecision::Approved
                 && pr.mergeability == Mergeability::Mergeable
+                && pr.checks.iter().any(|check| check.kind == CheckKind::Check)
+                && pr.checks.iter().all(|check| check.conclusion.is_some())
         });
         if read.len() == numbers.len() && known && approved {
             return Ok(());
@@ -282,7 +284,8 @@ async fn wait_for_mergeability(app: &GithubApp, repo: &RepoRef, prs: &Prs) -> Re
         .collect();
     Err(format!(
         "the PRs are not ready: the mergeable PR must be open, approved and mergeable, \
-         with its status passed (arguments: <mergeable> <conflicting> <draft>)\n{}",
+         with its status passed and the check runs of the CI concluded \
+         (arguments: <mergeable> <conflicting> <draft>)\n{}",
         states.join("\n")
     )
     .into())

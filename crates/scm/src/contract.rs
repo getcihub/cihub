@@ -10,13 +10,13 @@
 )]
 
 use cihub_domain::{
-    CheckKind, JobClass, MembershipRole, MergeMethod, Mergeability, Permission, PrState,
-    ReviewDecision,
+    CheckKind, CheckStatus, JobClass, MembershipRole, MergeMethod, Mergeability, Permission,
+    PrState, ReviewDecision,
 };
 
 use crate::{
-    CommitStatus, MergeIntoRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmError, ScmUser,
-    SetupFinding, StatusUpdate,
+    CommitStatus, MergeIntoRef, PrMerge, PrSnapshot, RepoRef, RequiredChecks, Scm, ScmError,
+    ScmUser, SetupFinding, StatusUpdate,
 };
 
 /// What the repository of the contract holds before the suite runs.
@@ -27,7 +27,8 @@ pub struct Fixture {
     pub required: RequiredChecks,
     /// A file of the base branch, and its content.
     pub file: (String, String),
-    /// An open PR, approved, with its required checks passed.
+    /// An open PR, approved, with its required checks passed and a check
+    /// run of the CI concluded.
     pub mergeable_pr: u64,
     /// An open PR that conflicts with the base branch.
     pub conflicting_pr: u64,
@@ -180,6 +181,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         "an approved PR names who approved it"
     );
     assert!(mergeable.changes_requested_by.is_empty());
+    page_and_check_times(mergeable, fixture);
     assert_eq!(conflicting.mergeability, Mergeability::Conflict);
     assert!(draft.draft);
     assert_eq!(draft.mergeability, Mergeability::Blocked);
@@ -254,6 +256,28 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let admin = scm.permission(repo, &fixture.admin, CLASS).await.unwrap();
 
     assert_eq!(admin, Permission::Admin);
+}
+
+/// The page of a PR, and the times of a check run.
+fn page_and_check_times(mergeable: &PrSnapshot, fixture: &Fixture) {
+    assert!(
+        mergeable
+            .url
+            .ends_with(&format!("/{}", fixture.mergeable_pr)),
+        "the page of a PR ends with its number: {}",
+        mergeable.url
+    );
+    assert!(
+        mergeable
+            .checks
+            .iter()
+            .any(|check| check.kind == CheckKind::Check
+                && check.status == CheckStatus::Completed
+                && check.started_at.is_some()
+                && check.started_at <= check.completed_at),
+        "a concluded check run gives when it started and ended: {:?}",
+        mergeable.checks
+    );
 }
 
 async fn branches(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
@@ -338,6 +362,7 @@ async fn statuses_comments_and_labels(scm: &dyn Scm, repo: &RepoRef, fixture: &F
         .collect();
 
     assert_eq!(published.len(), 1, "{checks:?}");
+    assert_eq!(published[0].status, CheckStatus::InProgress);
     assert_eq!(published[0].conclusion, None);
     let success = StatusUpdate {
         status: CommitStatus::Success,

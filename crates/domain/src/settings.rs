@@ -89,6 +89,15 @@ closed_enum! {
 }
 
 closed_enum! {
+    /// Progress of a check or a commit status.
+    pub enum CheckStatus {
+        Queued,
+        InProgress,
+        Completed,
+    }
+}
+
+closed_enum! {
     /// Terminal outcome of a check or a commit status.
     pub enum CheckConclusion {
         Success,
