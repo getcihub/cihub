@@ -45,7 +45,7 @@ configuration checker, in phase 1).
 | 9b  | Conditions status of a PR                              | 2     | 9          | —         | in progress (budget not measured)        |
 | 10a | Dashboard: session, roles and frame                    | 2     | 9          | —         | done                                     |
 | 10b | Dashboard: queues and the page of a queue              | 2     | 10a        | —         | done                                     |
-| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | in progress (waits for a recording)      |
+| 10c | Dashboard: your pull requests, drawer and actions      | 2     | 10b        | —         | done                                     |
 | 10d | Dashboard: live updates                                | 2     | 10b        | —         | done                                     |
 | 11a | Analytics and the Health view                          | 2     | 9          | —         | in progress                              |
 | 11b | Prometheus                                             | 2     | 11a        | —         | to do                                    |
@@ -294,6 +294,13 @@ Decisions (October 14, 2026, validated by the project lead):
     `the_open_prs_of_a_branch_come_from_every_page` for the GitHub adapter. Tested by hand on
     `getcihub/testing` with the development App (PRs #40 and #41).
   - Remaining: the budget of 50 open PRs not submitted is not measured; each event of a PR reads that PR alone.
+  - To validate (principle VI): `BlockReason::AwaitingRequiredCheck` carries `status` as a free string, which
+    the code writes by hand as `pending` (the check reported and has not concluded) or `missing` (it has not
+    reported); the comment reads "the required check `ci` is pending". Option A, recommended: a closed
+    enumeration of its own (`missing`, `queued`, `running`), now that a check reports its `CheckStatus`, and a
+    sentence for each value; it changes the event log and the API. Option B: keep the string. Either way, the
+    fixtures of the dashboard (`web/e2e/visual/api.ts`, `web/src/pages/pr/page.test.tsx`) show `in_progress`,
+    a value that the server never sends.
 
 ### Lots 10a to 10d: dashboard
 
@@ -508,9 +515,13 @@ Decisions:
     which the GitHub adapter reads (GraphQL and webhooks), the simulator gives and the contract suite checks.
     The repository of the recording becomes `getcihub/testing`, whose CI runs the check run that the suite
     reads; the contract is recorded again there (PRs #52, #48 and #49).
-  - Remaining: `Pr.url`, `Run.draft_pr_url`, and
-    the state and times of a check (`RunCheck.status`, `started_at`, `completed_at`) in the API and the
-    dashboard, fields of the frozen interfaces of the lot; the lot is done once they are.
+  - Done (October 22, 2026): `Scm::pr_url` builds the page of a PR without a call; `pr.observed` carries `url`,
+    which the projection stores in `queue_items.pr_url`; `Pr.url`, `Run.draft_pr_url` and `RunCheck.status`,
+    `started_at`, `completed_at` are in the API.
+  - Done (October 22, 2026): the dashboard. The drawer of a PR links its number to the page of the PR on the
+    SCM, and the number of the draft PR of its run to its page. It shows the state of each check: queued,
+    running since its start, or its conclusion and its duration. `web/e2e/your-prs.spec.ts` checks the link of
+    the PR. Lot 10c is done.
 
 #### Lot 10d: live updates
 

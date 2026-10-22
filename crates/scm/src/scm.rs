@@ -284,6 +284,9 @@ pub trait Scm: Send + Sync {
     /// of `repo`, or `None` when the SCM has none. It makes no call.
     fn branch_rules_url(&self, repo: &RepoRef) -> Option<String>;
 
+    /// The page of PR `number` of `repo` on the SCM. It makes no call.
+    fn pr_url(&self, repo: &RepoRef, number: u64) -> String;
+
     /// The address of the SCM where a person signs in to CIHub, or `None`
     /// when the operator configured no sign-in.
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String>;

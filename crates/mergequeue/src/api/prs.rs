@@ -53,6 +53,7 @@ struct ItemRow {
     submitted_via: String,
     submitted_at: OffsetDateTime,
     title: Option<String>,
+    pr_url: Option<String>,
     author: String,
     author_avatar_url: Option<String>,
 }
@@ -69,6 +70,7 @@ const ITEM_COLUMNS: &str = "i.id, i.queue_id, r.name AS repo, q.target_branch AS
     i.submitted_via::text AS submitted_via, i.submitted_at,
     (SELECT t.title FROM pr_titles t WHERE t.repo_id = q.repo_id AND t.pr_number = i.pr_number)
         AS title,
+    i.pr_url,
     author.login AS author, author.avatar_url AS author_avatar_url";
 
 const ITEM_JOINS: &str = "JOIN queues q ON q.id = i.queue_id
@@ -188,6 +190,7 @@ impl Progress {
             submitted_by: row.submitted_by,
             submitted_at: row.submitted_at,
             title: row.title,
+            url: row.pr_url,
             author: Person {
                 login: row.author,
                 avatar_url: row.author_avatar_url,

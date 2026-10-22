@@ -101,6 +101,8 @@ export type CheckHealth = {
 
 export type CheckKind = 'check' | 'status';
 
+export type CheckStatus = 'queued' | 'in_progress' | 'completed';
+
 /**
  * The session of the command line, once its person approved the code.
  */
@@ -718,6 +720,11 @@ export type Pr = {
      * The title at the last read of the PR; `null` before the first.
      */
     title?: string | null;
+    /**
+     * The page of the PR on the SCM, at the last read of the PR; `null`
+     * before the first.
+     */
+    url?: string | null;
 };
 
 /**
@@ -1228,6 +1235,10 @@ export type Run = {
      */
     draft_pr_number?: number | null;
     /**
+     * The page of the draft PR on the SCM; `null` without a draft PR.
+     */
+    draft_pr_url?: string | null;
+    /**
      * When the run ended; `null` while it runs.
      */
     ended_at?: string | null;
@@ -1304,6 +1315,10 @@ export type Run = {
  * A check or a status observed on the test SHA of a run.
  */
 export type RunCheck = {
+    /**
+     * When the check concluded, as the CI reports it; `null` before.
+     */
+    completed_at?: string | null;
     conclusion?: CheckConclusion | null;
     /**
      * The page of the check on the CI.
@@ -1325,6 +1340,16 @@ export type RunCheck = {
      * The run needs it to pass.
      */
     required: boolean;
+    /**
+     * When the check started, as the CI reports it; `null` before. A commit
+     * status gives the time of its state only.
+     */
+    started_at?: string | null;
+    /**
+     * `queued` waits for a runner, `in_progress` runs, `completed` has an
+     * outcome.
+     */
+    status: CheckStatus;
 };
 
 export type RunStatus = 'assembling' | 'in_progress' | 'succeeded' | 'failed' | 'interrupted' | 'cancelled' | 'timed_out';

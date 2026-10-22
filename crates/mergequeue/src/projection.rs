@@ -46,7 +46,11 @@ pub(crate) async fn project(
                     .await?
                     .ok_or_else(mismatch)?,
             };
-            create_item(conn, event, &item, number(item.pr_number)?).await?;
+            let url = after
+                .prs
+                .get(&item.pr_number)
+                .map(|pr| pr.value.url.as_str());
+            create_item(conn, event, &item, number(item.pr_number)?, url).await?;
         }
         EventKind::ItemTransitioned {
             item_id,
@@ -307,11 +311,22 @@ pub(crate) async fn project(
                 .ok_or_else(mismatch)?;
             upsert_check(conn, &observed.value).await?;
         }
+        EventKind::PrObserved { pr_number, url, .. } => {
+            sqlx::query(
+                "UPDATE queue_items SET pr_url = $3
+                 WHERE queue_id = $1 AND pr_number = $2 AND is_current
+                   AND state NOT IN ('merged', 'failed', 'cancelled')",
+            )
+            .bind(event.queue_id.to_string())
+            .bind(number(*pr_number)?)
+            .bind(url)
+            .execute(&mut *conn)
+            .await?;
+        }
         // The other facts change only the observed state.
         EventKind::ItemSubmitted { .. }
         | EventKind::ItemCancelRequested { .. }
         | EventKind::ItemRestartRequested { .. }
-        | EventKind::PrObserved { .. }
         | EventKind::TargetsReceived { .. }
         | EventKind::MergeSucceeded { .. }
         | EventKind::MergeFailed { .. }
@@ -387,12 +402,14 @@ async fn refused_item(
 }
 
 /// A new item, from the submission that caused it: the submission gives its
-/// author and the account that submitted it.
+/// author and the account that submitted it. `url` is the page of its PR at
+/// the last observation of the PR, when there is one.
 async fn create_item(
     conn: &mut PgConnection,
     event: &Event,
     item: &Item,
     pr_number: i64,
+    url: Option<&str>,
 ) -> Result<(), MergeQueueError> {
     // A refused submission never becomes the live item of its PR.
     if item.is_current {
@@ -411,10 +428,10 @@ async fn create_item(
                                   state, state_reason, state_changed_at, priority_value,
                                   no_batch, force_enqueued, submitted_by, submitted_via,
                                   submitted_at, block_reasons, is_current, sender_permission,
-                                  profile)
+                                  profile, pr_url)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
                 $10, $11, s.actor_user_id, $12::submitted_via, s.occurred_at,
-                $13, $15, (s.payload->>'sender_permission')::permission, s.payload->>'profile'
+                $13, $15, (s.payload->>'sender_permission')::permission, s.payload->>'profile', $16
          FROM events s
          WHERE s.queue_id = $3 AND s.id = $14 AND s.type = 'item.submitted'",
     )
@@ -433,6 +450,7 @@ async fn create_item(
     .bind(blocks)
     .bind(event.cause_id.map(|id| id.to_string()))
     .bind(item.is_current)
+    .bind(url)
     .execute(conn)
     .await;
 

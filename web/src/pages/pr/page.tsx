@@ -41,7 +41,19 @@ export function PrDrawer() {
       title={item.title ?? `#${String(item.number)}`}
       meta={
         <>
-          #{item.number} · {item.author.login}
+          {item.url ? (
+            <a
+              className="hover:text-foreground hover:underline"
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              #{item.number}
+            </a>
+          ) : (
+            `#${String(item.number)}`
+          )}{" "}
+          · {item.author.login}
           {!hasEnded && item.position != null && ` · position ${String(ahead + 1)}`}
         </>
       }

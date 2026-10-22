@@ -822,6 +822,11 @@ pub enum PrChange {
     Close,
 }
 
+/// The page of PR `number`, for the read of the PR and for [`Scm::pr_url`].
+fn pr_page(namespace: &str, name: &str, number: u64) -> String {
+    format!("https://scm.example/{namespace}/{name}/prs/{number}")
+}
+
 /// `text` for the query of an address: every byte but the unreserved ones
 /// of RFC 3986 is percent-encoded.
 fn encode_query(text: &str) -> String {
@@ -1341,10 +1346,7 @@ impl Repo {
         };
         Ok(PrSnapshot {
             number,
-            url: format!(
-                "https://scm.example/{}/{}/prs/{number}",
-                self.namespace, self.name
-            ),
+            url: pr_page(&self.namespace, &self.name, number),
             state: pr.state,
             head_sha: head.clone(),
             base_branch: pr.base_branch.clone(),
@@ -1911,6 +1913,10 @@ impl Scm for Sim {
         None
     }
 
+    fn pr_url(&self, repo: &RepoRef, number: u64) -> String {
+        pr_page(&repo.namespace, &repo.name, number)
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         let page = self
             .with(|state| state.sign_in_page.clone())
@@ -2213,6 +2219,18 @@ mod tests {
         crate::contract::run(&sim, &repo, &fixture).await;
         crate::contract::members(&sim, &repo, &fixture).await;
         crate::contract::install_page(&sim).await;
+    }
+
+    #[test]
+    fn a_pr_page_is_built_without_a_call() {
+        let repo = repo();
+        let (sim, _) = contract_world(&repo).unwrap();
+
+        assert_eq!(
+            sim.pr_url(&repo, 7),
+            "https://scm.example/acme/widgets/prs/7"
+        );
+        assert_eq!(sim.calls().len(), 0);
     }
 
     #[tokio::test]

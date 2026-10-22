@@ -26,6 +26,7 @@ pub struct Observed<T> {
 /// The last state of a PR that the SCM gave.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PrObservation {
+    pub url: String,
     pub state: PrState,
     pub head_sha: String,
     pub base_branch: String,

@@ -6555,6 +6555,14 @@
           "status"
         ]
       },
+      "CheckStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "in_progress",
+          "completed"
+        ]
+      },
       "CliSession": {
         "type": "object",
         "description": "The session of the command line, once its person approved the code.",
@@ -7647,6 +7655,14 @@
             ],
             "description": "The title at the last read of the PR; `null` before the first.",
             "example": "Export invoices as CSV"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The page of the PR on the SCM, at the last read of the PR; `null`\nbefore the first.",
+            "example": "https://github.com/acme/web/pull/118"
           }
         }
       },
@@ -8477,6 +8493,14 @@
             "example": 412,
             "minimum": 0
           },
+          "draft_pr_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The page of the draft PR on the SCM; `null` without a draft PR.",
+            "example": "https://github.com/acme/web/pull/412"
+          },
           "ended_at": {
             "type": [
               "string",
@@ -8627,9 +8651,19 @@
           "name",
           "kind",
           "required",
+          "status",
           "observed_at"
         ],
         "properties": {
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the check concluded, as the CI reports it; `null` before.",
+            "example": "2026-10-11T09:39:00Z"
+          },
           "conclusion": {
             "oneOf": [
               {
@@ -8667,6 +8701,19 @@
           "required": {
             "type": "boolean",
             "description": "The run needs it to pass."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the check started, as the CI reports it; `null` before. A commit\nstatus gives the time of its state only.",
+            "example": "2026-10-11T09:31:00Z"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CheckStatus",
+            "description": "`queued` waits for a runner, `in_progress` runs, `completed` has an\noutcome."
           }
         }
       },

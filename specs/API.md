@@ -110,7 +110,8 @@ A PR (`Pr` in `cihub-api-types`) is its last submission (an item of `specs/DOMAI
 of the item, its `number`, `repo` and `queue`. It carries `state_reason`, the code of the closed vocabulary, and
 `state_description`, its sentence for a person (`Reason::describe`, `specs/DOMAIN.md`). A client shows the
 sentence and decides on the code: the sentence can change without notice. It also carries the `title` of the PR at
-its last read (`pr_titles`), its `author`, a `Person` (`login`, and `avatar_url`, `null` until a sign-in or the members of an account give
+its last read (`pr_titles`), its `url`, the page of the PR on the SCM at its last read (`queue_items.pr_url`, from
+`pr.observed`; `null` before the first), its `author`, a `Person` (`login`, and `avatar_url`, `null` until a sign-in or the members of an account give
 it), the `run_id` of the last run of its group, `no_batch`, `profile` (`null` for the settings of the queue), `submitted_via`,
 `submitted_by`, the login of the person who submitted it (`null` for CIHub or a token), `ahead`, the admitted PRs
 that merge before it (number and state), the head of the queue first, empty for a merged PR, and
@@ -122,12 +123,12 @@ person, where a check or a condition is a Markdown code span. `…pr/cancel` and
 
 **`GET /orgs/{org}/repos/{repo}/runs/{run_id}`** returns a JSON object whose fields are the columns of `test_runs` and of
 `check_observations` (`specs/DATA_MODEL.md`), with the names of the closed vocabulary: `id`, `queue_id`, `group_id`,
-`attempt`, `status`, `status_reason`, `test_branch`, `test_sha`, `base_sha`, `draft_pr_number`,
-`tested_pr_numbers`, `head_shas` (the merged heads in order: predecessors then members),
+`attempt`, `status`, `status_reason`, `test_branch`, `test_sha`, `base_sha`, `draft_pr_number`, `draft_pr_url`
+(the page of the draft PR on the SCM, built by `Scm::pr_url`; `null` without a draft PR; unlike `Pr.url`, which is the page at the last read of the PR, it is built when the run is read), `tested_pr_numbers`, `head_shas` (the merged heads in order: predecessors then members),
 `predecessor_pr_numbers`, `required_statuses`, `required_statuses_source`, `started_at`, `ended_at`,
 `last_report_at`, `failure_reason`, `failure_causing_statuses`, `conflict_culprit` (`{kind: queue_pr, pr_number}`
-or `{kind: base_branch}`), `checks` (one entry per observed check: `name`, `kind`, `required`, `conclusion`,
-`details_url`, `observed_at`), `impacted_targets` (`all` or the list, Lot 13) and `dependents` (the live runs
+or `{kind: base_branch}`), `checks` (one entry per observed check: `name`, `kind`, `required`, `status`, `conclusion`,
+`details_url`, `started_at`, `completed_at`, `observed_at`), `impacted_targets` (`all` or the list, Lot 13) and `dependents` (the live runs
 whose predecessors contain a tested PR: `run_id`, `pr_numbers`). An absent value is
 `null`.
 

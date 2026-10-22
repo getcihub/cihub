@@ -27,6 +27,7 @@ const run = {
   test_sha: "abc",
   base_sha: "9c1e2a4f00",
   draft_pr_number: 4521,
+  draft_pr_url: "https://scm.example/acme/web/pull/4521",
   tested_pr_numbers: [118],
   head_shas: ["abc"],
   predecessor_pr_numbers: [117],
@@ -44,6 +45,9 @@ const run = {
       kind: "check",
       required: true,
       conclusion: "success",
+      status: "completed",
+      started_at: "2026-10-11T12:04:00Z",
+      completed_at: "2026-10-11T12:26:00Z",
       details_url: null,
       observed_at: "2026-10-11T12:08:00Z",
     },
@@ -52,6 +56,20 @@ const run = {
       kind: "check",
       required: false,
       conclusion: null,
+      status: "in_progress",
+      started_at: "2026-10-11T12:05:00Z",
+      completed_at: null,
+      details_url: null,
+      observed_at: "2026-10-11T12:05:00Z",
+    },
+    {
+      name: "e2e",
+      kind: "check",
+      required: true,
+      conclusion: null,
+      status: "queued",
+      started_at: null,
+      completed_at: null,
       details_url: null,
       observed_at: "2026-10-11T12:05:00Z",
     },
@@ -104,7 +122,7 @@ describe("the drawer of a PR", () => {
     expect(
       await within(drawer).findByRole("heading", { name: "Run · attempt 2 · Testing" }),
     ).toBeInTheDocument();
-    expect(within(drawer).getByText("#4521 · runs your CI")).toBeInTheDocument();
+    expect(drawer).toHaveTextContent("Draft PR#4521 · runs your CI");
     expect(drawer).toHaveTextContent("On top of#117");
     expect(within(drawer).getByText("not required")).toBeInTheDocument();
     expect(within(drawer).getByText("ci", { selector: "code" })).toBeInTheDocument();
@@ -117,6 +135,62 @@ describe("the drawer of a PR", () => {
       "Testing",
       "Waiting",
     ]);
+  });
+
+  it("links the PR and its draft PR to their pages on the SCM", async () => {
+    renderApp(
+      "/orgs/acme/repos/web/queues/main/prs/118",
+      answersFor({
+        [`${PR}/118`]: [200, { ...testing, url: "https://scm.example/acme/web/pull/118" }],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [200, run],
+      }),
+    );
+
+    const drawer = await screen.findByRole("dialog", { name: "Export invoices as CSV" });
+    const pr = within(drawer).getByRole("link", { name: "#118" });
+    const draft = await within(drawer).findByRole("link", { name: "#4521" });
+
+    expect(pr).toHaveAttribute("href", "https://scm.example/acme/web/pull/118");
+    expect(pr).toHaveAttribute("target", "_blank");
+    expect(pr).toHaveAttribute("rel", "noreferrer");
+    expect(draft).toHaveAttribute("href", "https://scm.example/acme/web/pull/4521");
+    expect(draft).toHaveAttribute("rel", "noreferrer");
+  });
+
+  it("shows no link without the page of the PR or of its draft PR", async () => {
+    renderApp(
+      "/orgs/acme/repos/web/queues/main/prs/118",
+      answersFor({
+        [`${PR}/118`]: [200, { ...testing, url: null }],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [200, { ...run, draft_pr_url: null }],
+      }),
+    );
+
+    const drawer = await screen.findByRole("dialog", { name: "Export invoices as CSV" });
+
+    expect(await within(drawer).findByText("#4521 · runs your CI")).toBeInTheDocument();
+    expect(within(drawer).queryByRole("link", { name: /^#\d+$/ })).not.toBeInTheDocument();
+  });
+
+  it("tells a queued check, a running check and a finished check with its duration", async () => {
+    renderApp(
+      "/orgs/acme/repos/web/queues/main/prs/118",
+      answersFor({
+        [`${PR}/118`]: [200, testing],
+        [`${PR}/118/events?limit=100`]: [200, pageOf("events", timeline)],
+        "/api/v1/orgs/acme/repos/web/runs/run_1": [200, run],
+      }),
+    );
+
+    const drawer = await screen.findByRole("dialog", { name: "Export invoices as CSV" });
+    const checks = await within(drawer).findByRole("region", { name: "Checks" });
+    const line = (name: string) => within(checks).getByText(name).closest("li");
+
+    expect(line("build")).toHaveTextContent("passed in 22 min");
+    expect(line("lint")).toHaveTextContent(/running since/);
+    expect(line("e2e")).toHaveTextContent("queued");
   });
 
   it("says that a PR is not in the queue, over the page of the queue", async () => {
