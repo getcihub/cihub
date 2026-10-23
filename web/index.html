@@ -9,6 +9,11 @@
       document.documentElement.dataset.theme =
         localStorage.getItem("theme") ??
         (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => {
+        if (localStorage.getItem("theme") === null) {
+          document.documentElement.dataset.theme = event.matches ? "dark" : "light";
+        }
+      });
     </script>
   </head>
   <body>
