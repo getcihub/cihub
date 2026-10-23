@@ -7508,7 +7508,7 @@
             "items": {
               "type": "object"
             },
-            "description": "What keeps a `not_ready` item out of the queue. Each one has a `kind`:\n`review_required` (`have`, `need`), `changes_requested`,\n`failing_required_check` (`check`), `awaiting_required_check`\n(`check`, `status`), `behind_base`, `merge_conflict`,\n`stack_needs_rebase` (`onto_pr_number`), `undetermined`, or\n`queue_conditions_unmet` (`conditions`).",
+            "description": "What keeps a `not_ready` item out of the queue. Each one has a `kind`:\n`review_required` (`have`, `need`), `changes_requested`,\n`failing_required_check` (`check`), `awaiting_required_check`\n(`check`, `status`: `missing`, `queued` or `running`), `behind_base`,\n`merge_conflict`, `stack_needs_rebase` (`onto_pr_number`),\n`undetermined`, or\n`queue_conditions_unmet` (`conditions`).",
             "example": [
               {
                 "have": 0,

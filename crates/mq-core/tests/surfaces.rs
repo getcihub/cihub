@@ -6,8 +6,8 @@ mod common;
 
 use cihub_config::Setting;
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, EventKind, ItemState,
-    Mergeability, Priority, Reason, RequiredStatusesSource,
+    Actor, AwaitedCheckStatus, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus,
+    EventKind, ItemState, Mergeability, Priority, Reason, RequiredStatusesSource,
 };
 use cihub_mq_core::{BatchWait, Surface};
 use common::{REQUIRED, World, head, settings, window};
@@ -109,11 +109,11 @@ fn a_blocked_pr_names_its_required_checks() {
             },
             BlockReason::AwaitingRequiredCheck {
                 check: "lint".into(),
-                status: "pending".into()
+                status: AwaitedCheckStatus::Running
             },
             BlockReason::AwaitingRequiredCheck {
                 check: "e2e".into(),
-                status: "missing".into()
+                status: AwaitedCheckStatus::Missing
             },
         ]
     );

@@ -3,7 +3,7 @@
 //! they must show in `pr_conditions`, `publish_conditions` publishes it. The
 //! log of the queue does not change: a PR not submitted is not in the queue.
 
-use cihub_domain::{BlockReason, JobClass, PrState, run_of_test_branch};
+use cihub_domain::{AwaitedCheckStatus, BlockReason, JobClass, PrState, run_of_test_branch};
 use cihub_mq_core::conditions_of;
 use cihub_platform::{Job, enqueue_job};
 use cihub_scm::{MAX_PRS_PER_READ, PrSnapshot, Scm, ScmError, StatusUpdate};
@@ -264,7 +264,9 @@ pub(crate) async fn observe(
             .filter(|check| !is_awaited(&blocks, check))
             .map(|check| BlockReason::AwaitingRequiredCheck {
                 check: check.to_owned(),
-                status: "pending".to_owned(),
+                status: AwaitedCheckStatus::of(
+                    pr.checks.iter().find(|report| report.name == check),
+                ),
             })
             .collect();
 
@@ -456,7 +458,7 @@ mod tests {
     fn awaiting(check: &str) -> BlockReason {
         BlockReason::AwaitingRequiredCheck {
             check: check.into(),
-            status: "pending".into(),
+            status: AwaitedCheckStatus::Running,
         }
     }
 
@@ -468,7 +470,7 @@ mod tests {
             (
                 vec![awaiting("ci")],
                 StatusState::Pending,
-                "The required check `ci` is pending",
+                "The required check `ci` is running",
             ),
             (
                 vec![BlockReason::Undetermined, awaiting("lint")],
