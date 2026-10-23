@@ -712,6 +712,18 @@ impl SimQueue {
             .unwrap()
     }
 
+    /// Whether the delivery `n` is the first change of the PR `number`: its
+    /// opening.
+    fn is_first_change(&self, number: u64, n: usize) -> bool {
+        let deliveries = self.deliveries.lock().unwrap();
+        (1..n).all(|earlier| {
+            !matches!(
+                deliveries.get(&format!("delivery-{earlier}")).map(|d| &d.event),
+                Some(ScmEvent::PrChanged { number: other, .. }) if *other == number
+            )
+        })
+    }
+
     /// Delivers the deliveries of the simulator, then processes each one
     /// again, one at a time: the log of the queue and the jobs stay the same,
     /// except for a PR opened, which is in the queue now and asks one read of
@@ -733,7 +745,14 @@ impl SimQueue {
             self.settle().await;
             let (log_again, jobs_again) = self.log_and_jobs().await;
 
-            let is_opened_pr = matches!(event, ScmEvent::PrChanged { opened: true, .. });
+            let is_opened_pr = match &event {
+                ScmEvent::PrChanged {
+                    number,
+                    is_ready_for_review: true,
+                    ..
+                } => self.is_first_change(*number, n),
+                _ => false,
+            };
             if is_opened_pr {
                 jobs.push(format!("refresh_prs:{}-{id}:1", queue()));
                 jobs.sort();
@@ -1376,7 +1395,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let (events, jobs, deliveries_left, facts_left, dirty) = counts(pool.clone()).await;
     assert_eq!(
         (events, jobs, deliveries_left, facts_left, dirty),
-        (1, 3, 0, 0, false)
+        (1, 4, 0, 0, false)
     );
 
     let mut tx = begin_system(&pool).await.unwrap();
@@ -1390,7 +1409,8 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
         [
             format!("load_config:{}-{root}:1", queue()),
             format!("observe_pr:{}-delivery-0-0:1", queue()),
-            "submit_pr:delivery-0:1".to_owned()
+            "submit_pr:delivery-0:1".to_owned(),
+            "welcome_pr:delivery-0:1".to_owned()
         ]
     );
 }
@@ -2550,11 +2570,13 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
         .unwrap();
 
     let submitted = q.deliver_and_process_again().await;
-    assert!(
-        submitted
-            .iter()
-            .any(|event| matches!(event, ScmEvent::PrChanged { opened: true, .. }))
-    );
+    assert!(submitted.iter().any(|event| matches!(
+        event,
+        ScmEvent::PrChanged {
+            is_ready_for_review: true,
+            ..
+        }
+    )));
     assert!(
         submitted
             .iter()
@@ -4948,6 +4970,47 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone(), 3).await, None);
+    q.stop().await;
+}
+
+/// A PR opened before the queue of its branch gets the welcome comment at
+/// its first change after the queue exists, once.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_opened_before_its_queue_is_welcomed_at_its_next_change(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    without_queue(&pool).await;
+
+    let sim = q.sim.clone();
+    let main = target_repo(&sim, &[("a.txt", "a")]);
+    let (first, _) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    let (second, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
+    let welcomes = |number: u64| {
+        sim.comments(&repo(), number)
+            .into_iter()
+            .filter(|body| body.starts_with("CIHub manages merges into `main`."))
+            .count()
+    };
+
+    q.deliver().await;
+    q.settle().await;
+    sim.comment(&repo(), first, &alice(), "/cihub merge")
+        .unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+    assert_eq!(queues_and_items(&pool).await.0.len(), 1, "the queue exists");
+    assert_eq!(welcomes(second), 0);
+
+    for n in 1..=2 {
+        let commit = sim
+            .commit(&repo(), &head, &[(&format!("g{n}.txt"), Some("x"))])
+            .unwrap();
+        sim.push(&repo(), "pr-2", &commit, &bob()).unwrap();
+        q.deliver().await;
+        q.settle().await;
+        assert_eq!(welcomes(second), 1, "push {n}");
+    }
+
     q.stop().await;
 }
 

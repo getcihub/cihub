@@ -28,9 +28,8 @@ pub enum ScmEvent {
         /// The label that the change added, when it added one: it can submit
         /// the PR.
         label_added: Option<String>,
-        /// The change made the PR ready for review: opened out of draft,
-        /// reopened, or out of draft.
-        opened: bool,
+        /// The PR is open and out of draft after the change.
+        is_ready_for_review: bool,
     },
     /// A branch moved.
     Pushed {

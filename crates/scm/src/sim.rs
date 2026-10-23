@@ -355,7 +355,6 @@ impl Sim {
     pub fn change_pr(&self, repo: &RepoRef, number: u64, change: PrChange) -> Result<(), ScmError> {
         self.with_repo(&repo.external_id, |ctx| {
             let pr = ctx.repo.pr_mut(number)?;
-            let ready = matches!(change, PrChange::Draft(false)) && pr.draft;
 
             match change {
                 PrChange::Draft(draft) => pr.draft = draft,
@@ -365,11 +364,7 @@ impl Sim {
                 PrChange::Close => pr.state = PrState::Closed,
             }
 
-            if ready {
-                ctx.pr_opened(number);
-            } else {
-                ctx.pr_changed(number);
-            }
+            ctx.pr_changed(number);
 
             Ok(())
         })
@@ -1049,25 +1044,22 @@ impl Ctx<'_> {
     }
 
     fn pr_changed(&mut self, number: u64) {
-        self.pr_event(number, None, false);
+        self.pr_event(number, None);
     }
 
-    fn pr_opened(&mut self, number: u64) {
-        self.pr_event(number, None, true);
-    }
-
-    fn pr_event(&mut self, number: u64, label_added: Option<String>, opened: bool) {
+    fn pr_event(&mut self, number: u64, label_added: Option<String>) {
         let Some(pr) = self.repo.prs.get(&number) else {
             return;
         };
 
         let base_branch = pr.base_branch.clone();
+        let is_ready_for_review = pr.state == PrState::Open && !pr.draft;
         self.emit(ScmEvent::PrChanged {
             repo_external_id: self.repo_external_id.clone(),
             number,
             base_branch,
             label_added,
-            opened,
+            is_ready_for_review,
         });
     }
 
@@ -1102,11 +1094,7 @@ impl Ctx<'_> {
             },
         );
 
-        if draft {
-            self.pr_changed(number);
-        } else {
-            self.pr_opened(number);
-        }
+        self.pr_changed(number);
 
         Ok(number)
     }
@@ -1741,7 +1729,7 @@ impl Scm for Sim {
         let label = label.to_owned();
         self.call("add_label", repo, class, move |ctx| {
             if ctx.repo.pr_mut(number)?.labels.insert(label.clone()) {
-                ctx.pr_event(number, Some(label), false);
+                ctx.pr_event(number, Some(label));
             }
             Ok(())
         })
@@ -2434,7 +2422,7 @@ mod tests {
                     number,
                     base_branch: "main".into(),
                     label_added: None,
-                    opened: true,
+                    is_ready_for_review: true,
                 },
                 ScmEvent::CheckChanged {
                     repo_external_id: "200".into(),

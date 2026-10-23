@@ -375,6 +375,13 @@ reason no longer holds.
 - **Why not**: the comment is not rewritten every minute (SCM budget), so a relative delay goes stale. The
   comment shows an absolute UTC time.
 
+### Welcome every open PR when a queue starts
+
+- **Tried / considered**: post the welcome comment on every open PR of the branch at the creation of its queue.
+- **Why not**: a repository with hundreds of open PRs would get hundreds of comments at once, which notifies the
+  authors of old PRs and spends the budget of comments of the App. A PR opened before its queue gets the welcome
+  at its next change.
+
 ### Mention users in the history of the comment
 
 - **Tried / considered**: write `@login` in the `By` column.

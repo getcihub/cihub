@@ -1622,6 +1622,21 @@ fn welcome(target_branch: &str) -> String {
     )
 }
 
+/// Whether CIHub has a comment on the PR `pr_number` of `repo_id`.
+pub(crate) async fn has_comment(
+    conn: &mut PgConnection,
+    repo_id: RepoId,
+    pr_number: u64,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM pr_comments WHERE repo_id = $1 AND pr_number = $2)",
+    )
+    .bind(repo_id.to_string())
+    .bind(i64::try_from(pr_number).unwrap_or(i64::MAX))
+    .fetch_one(conn)
+    .await
+}
+
 /// Posts the welcome comment of the PR, once: a PR that has a comment of
 /// CIHub already keeps it. The queue of the branch decides whether the
 /// comment and the commands are on.
@@ -1647,15 +1662,7 @@ pub(crate) async fn post_welcome(
     let number = i64::try_from(request.pr_number).unwrap_or(i64::MAX);
     lock_pr(&mut lock, &comment_lock(target.repo_id), number).await?;
 
-    let known: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM pr_comments WHERE repo_id = $1 AND pr_number = $2)",
-    )
-    .bind(target.repo_id.to_string())
-    .bind(number)
-    .fetch_one(&mut *lock)
-    .await?;
-
-    if known {
+    if has_comment(&mut lock, target.repo_id, request.pr_number).await? {
         return Ok(());
     }
 

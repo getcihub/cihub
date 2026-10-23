@@ -41,7 +41,7 @@ use crate::merge::merge_job;
 use crate::projection::record_late_check;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
 use crate::repo_setup::{RepoSetupSweep, request_repo_setups};
-use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces};
+use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces, has_comment};
 use crate::target::QueueTarget;
 use crate::{MergeQueueError, QueueLog, parse_id};
 
@@ -354,13 +354,14 @@ impl Work<'_> {
             ScmEvent::PrChanged {
                 number,
                 label_added,
-                opened,
+                is_ready_for_review,
                 base_branch,
                 ..
             } => {
-                if opened
+                if is_ready_for_review
                     && self.settings.comments_enabled.value
                     && self.settings.commands_enabled.value
+                    && !has_comment(conn, self.target.repo_id, number).await?
                 {
                     jobs.push(welcome_job(
                         self.target.org_id,
@@ -515,7 +516,7 @@ impl Work<'_> {
     }
 }
 
-/// The welcome of the PR `pr_number` of `repo_id`, opened on `base_branch`,
+/// The welcome of the PR `pr_number` of `repo_id`, open on `base_branch`,
 /// after the delivery `delivery_id`.
 fn welcome_job(
     org_id: OrgId,
@@ -614,14 +615,14 @@ async fn pass_delivery(
             number,
             base_branch,
             label_added,
-            opened,
+            is_ready_for_review,
         } => {
             let change = PrChange {
                 repo_external_id: &repo_external_id,
                 number,
                 base_branch: &base_branch,
                 label_added,
-                opened,
+                is_ready_for_review,
             };
             route_pr_change(conn, delivery, change, now).await?;
         }
@@ -748,7 +749,7 @@ struct PrChange<'a> {
     number: u64,
     base_branch: &'a str,
     label_added: Option<String>,
-    opened: bool,
+    is_ready_for_review: bool,
 }
 
 /// Whether `comment` is the comment of CIHub on the PR `number` of `repo`.
@@ -828,8 +829,17 @@ async fn route_pr_change(
         request_observes(conn, queue, &delivery.delivery_id, &[change.number], now).await?;
     }
 
-    // The welcome job checks the settings of the queue of the branch.
-    if change.opened && branch_queue.is_some() {
+    let is_welcome_on = match &branch_queue {
+        Some(queue) => {
+            let settings = queue.settings()?;
+            settings.comments_enabled.value && settings.commands_enabled.value
+        }
+        None => false,
+    };
+    if change.is_ready_for_review
+        && is_welcome_on
+        && !has_comment(conn, repo, change.number).await?
+    {
         let job = welcome_job(
             delivery.org_id,
             delivery.connection,

@@ -165,12 +165,8 @@ fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateErro
         label_added: (on_pr && action == "labeled")
             .then(|| read.payload["label"]["name"].as_str().map(str::to_owned))
             .flatten(),
-        opened: on_pr
-            && match action {
-                "opened" | "reopened" => !read.flag("/pull_request/draft"),
-                "ready_for_review" => true,
-                _ => false,
-            },
+        is_ready_for_review: read.text("/pull_request/state")? == "open"
+            && !read.flag("/pull_request/draft"),
     })
 }
 
@@ -300,38 +296,42 @@ mod tests {
             "action": "labeled",
             "label": { "name": "ready" },
             "repository": { "id": 7 },
-            "pull_request": { "number": 12, "base": { "ref": "main" } },
+            "pull_request": { "number": 12, "base": { "ref": "main" }, "state": "open" },
         });
-        let changed = |label_added: Option<&str>, opened| ScmEvent::PrChanged {
+        let changed = |label_added: Option<&str>, is_ready_for_review| ScmEvent::PrChanged {
             repo_external_id: "7".into(),
             number: 12,
             base_branch: "main".into(),
             label_added: label_added.map(str::to_owned),
-            opened,
+            is_ready_for_review,
         };
 
         assert_eq!(
             event("pull_request", &payload),
-            changed(Some("ready"), false)
+            changed(Some("ready"), true)
         );
-        assert_eq!(event("pull_request_review", &payload), changed(None, false));
-        let action = |action: &str, draft: bool| {
+        assert_eq!(event("pull_request_review", &payload), changed(None, true));
+        let action = |action: &str, state: &str, draft: bool| {
             json!({
                 "action": action,
                 "repository": { "id": 7 },
-                "pull_request": { "number": 12, "base": { "ref": "main" }, "draft": draft },
+                "pull_request": {
+                    "number": 12, "base": { "ref": "main" }, "state": state, "draft": draft,
+                },
             })
         };
-        for (name, draft, opened) in [
-            ("opened", false, true),
-            ("opened", true, false),
-            ("reopened", false, true),
-            ("ready_for_review", false, true),
-            ("synchronize", false, false),
+        for (name, state, draft, is_ready_for_review) in [
+            ("opened", "open", false, true),
+            ("opened", "open", true, false),
+            ("reopened", "open", false, true),
+            ("ready_for_review", "open", false, true),
+            ("synchronize", "open", false, true),
+            ("synchronize", "open", true, false),
+            ("closed", "closed", false, false),
         ] {
             assert_eq!(
-                event("pull_request", &action(name, draft)),
-                changed(None, opened),
+                event("pull_request", &action(name, state, draft)),
+                changed(None, is_ready_for_review),
                 "{name} {draft}"
             );
         }

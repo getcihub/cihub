@@ -935,7 +935,7 @@ fn fake_translate(
             number: 1,
             base_branch: text("branch"),
             label_added: None,
-            opened: false,
+            is_ready_for_review: false,
         },
         "push" => ScmEvent::Pushed {
             repo_external_id: text("repo"),
