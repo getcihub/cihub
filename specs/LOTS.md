@@ -294,13 +294,10 @@ Decisions (October 14, 2026, validated by the project lead):
     `the_open_prs_of_a_branch_come_from_every_page` for the GitHub adapter. Tested by hand on
     `getcihub/testing` with the development App (PRs #40 and #41).
   - Remaining: the budget of 50 open PRs not submitted is not measured; each event of a PR reads that PR alone.
-  - To validate (principle VI): `BlockReason::AwaitingRequiredCheck` carries `status` as a free string, which
-    the code writes by hand as `pending` (the check reported and has not concluded) or `missing` (it has not
-    reported); the comment reads "the required check `ci` is pending". Option A, recommended: a closed
-    enumeration of its own (`missing`, `queued`, `running`), now that a check reports its `CheckStatus`, and a
-    sentence for each value; it changes the event log and the API. Option B: keep the string. Either way, the
-    fixtures of the dashboard (`web/e2e/visual/api.ts`, `web/src/pages/pr/page.test.tsx`) show `in_progress`,
-    a value that the server never sends.
+  - Done (October 23, 2026, validated by the project lead, principle VI): the `status` of
+    `BlockReason::AwaitingRequiredCheck` is a closed enumeration, `AwaitedCheckStatus` (`missing` while the
+    check has not reported, then `queued` or `running` after its `CheckStatus`), with a sentence for each value,
+    rather than a free string; it changes the event log and the API.
 
 ### Lots 10a to 10d: dashboard
 

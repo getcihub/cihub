@@ -86,8 +86,8 @@ const timeline = [
     actor_kind: "system",
     actor: "marie",
     occurred_at: "2026-10-11T12:00:00Z",
-    description: "the required check `ci` is in_progress",
-    payload: { block_reasons: [{ kind: "awaiting_required_check", check: "ci", status: "in_progress" }] },
+    description: "the required check `ci` is running",
+    payload: { block_reasons: [{ kind: "awaiting_required_check", check: "ci", status: "running" }] },
   },
   {
     id: "event_2",
@@ -196,7 +196,7 @@ describe("the drawer of a PR", () => {
 
   it("shows what blocks a PR that is not ready, in the drawer and in its history", async () => {
     const reasons = [
-      { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+      { kind: "awaiting_required_check", check: "ci", status: "running" },
       {
         kind: "queue_conditions_unmet",
         conditions: ["labels.none: wip", "any: [draft: false; author: bot]"],
@@ -211,7 +211,7 @@ describe("the drawer of a PR", () => {
         actor_kind: "system",
         actor: null,
         occurred_at: "2026-10-11T12:00:00Z",
-        description: "the required check `ci` is in_progress; the queue conditions … are not met",
+        description: "the required check `ci` is running; the queue conditions … are not met",
         payload: { block_reasons: reasons },
       },
     ];
@@ -228,7 +228,7 @@ describe("the drawer of a PR", () => {
     const event = within(drawer).getByRole("region", { name: "History" });
 
     expect(within(drawer).getByRole("listitem", { current: "step" })).toHaveTextContent("Not ready");
-    expect(blocks).toHaveTextContent("The required check ci is in_progress");
+    expect(blocks).toHaveTextContent("The required check ci is running");
     for (const place of [blocks, event]) {
       const conditions = within(place).getByRole("group", { name: "Unmet queue conditions" });
 

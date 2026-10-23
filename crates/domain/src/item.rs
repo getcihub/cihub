@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{
-    GroupId, ItemId, ItemState, Mergeability, OrgId, QueueId, Reason, RunId, SubmittedVia,
+    CheckReport, CheckStatus, GroupId, ItemId, ItemState, Mergeability, OrgId, QueueId, Reason,
+    RunId, SubmittedVia,
 };
 
 /// One submission of a PR to a queue.
@@ -95,7 +96,7 @@ pub enum BlockReason {
     },
     AwaitingRequiredCheck {
         check: String,
-        status: String,
+        status: AwaitedCheckStatus,
     },
     BehindBase,
     MergeConflict,
@@ -108,6 +109,28 @@ pub enum BlockReason {
     QueueConditionsUnmet {
         conditions: Vec<String>,
     },
+}
+
+closed_enum! {
+    /// Where a required check that has not concluded stands.
+    pub enum AwaitedCheckStatus {
+        /// The check has not reported on the head of the PR.
+        Missing,
+        Queued,
+        Running,
+    }
+}
+
+impl AwaitedCheckStatus {
+    /// The status of a required check without a conclusion, from its report
+    /// on the head of the PR, if any.
+    pub fn of(report: Option<&CheckReport>) -> Self {
+        match report.map(|report| report.status) {
+            None => Self::Missing,
+            Some(CheckStatus::Queued) => Self::Queued,
+            Some(CheckStatus::InProgress | CheckStatus::Completed) => Self::Running,
+        }
+    }
 }
 
 /// Targets that a PR changes, which place it in the merge graph. `All` in
@@ -137,6 +160,35 @@ mod tests {
         let json =
             serde_json::to_string(&BlockReason::ReviewRequired { have: 1, need: 2 }).unwrap();
         assert_eq!(json, r#"{"kind":"review_required","have":1,"need":2}"#);
+    }
+
+    #[test]
+    fn an_awaited_check_is_missing_queued_or_running() {
+        let report = |status| CheckReport {
+            name: "ci".into(),
+            kind: crate::CheckKind::Check,
+            status,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+        };
+
+        let cases = [
+            (None, AwaitedCheckStatus::Missing),
+            (
+                Some(report(CheckStatus::Queued)),
+                AwaitedCheckStatus::Queued,
+            ),
+            (
+                Some(report(CheckStatus::InProgress)),
+                AwaitedCheckStatus::Running,
+            ),
+        ];
+
+        for (report, want) in cases {
+            assert_eq!(AwaitedCheckStatus::of(report.as_ref()), want);
+        }
     }
 
     #[test]

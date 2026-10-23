@@ -90,7 +90,9 @@ export function blockSentence(reason: Record<string, unknown>): string | null {
     case "failing_required_check":
       return `The required check \`${field("check")}\` failed`;
     case "awaiting_required_check":
-      return `The required check \`${field("check")}\` is ${field("status")}`;
+      return reason.status === "missing"
+        ? `The required check \`${field("check")}\` has not reported`
+        : `The required check \`${field("check")}\` is ${field("status")}`;
     case "behind_base":
       return "The branch is behind its base";
     case "merge_conflict":
