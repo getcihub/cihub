@@ -97,6 +97,22 @@ async function openView(context: BrowserContext, view: View, theme: Theme): Prom
   return page;
 }
 
+/**
+ * The height that shows a dialog whole: a drawer is fixed to the viewport and scrolls inside it, which a capture
+ * of the full page cuts. `null` when no dialog scrolls, so that a modal stays where the person sees it.
+ */
+async function wholeDialogHeight(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    const scrolling = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].filter(
+      (dialog) => dialog.scrollHeight > dialog.clientHeight,
+    );
+    if (scrolling.length === 0) {
+      return null;
+    }
+    return Math.max(document.documentElement.scrollHeight, ...scrolling.map((dialog) => dialog.scrollHeight));
+  });
+}
+
 function captureName(view: View, theme: Theme, viewport: Viewport): string {
   return `${view.name}-${theme}-${String(viewport.width)}.png`;
 }
@@ -116,6 +132,11 @@ for (const view of VIEWS) {
           test.skip(IS_BASE, "The build of the base does not show this view.");
           throw error;
         });
+
+        const height = await wholeDialogHeight(page);
+        if (height !== null) {
+          await page.setViewportSize({ width: viewport.width, height });
+        }
 
         await page.screenshot({
           path: join(OUT, name),
