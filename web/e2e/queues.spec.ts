@@ -42,7 +42,7 @@ test("the page of a queue shows its PRs in their order and the runs that test th
   await expect(positions).toHaveText(["1", "2", "–"]);
   await expect(rows.nth(3)).toContainText("Update the install guide");
   await expect(rows.nth(3)).toContainText("#3 · alex");
-  await expect(rows.nth(3)).toContainText("Waiting");
+  await expect(rows.nth(3)).toContainText("Not ready");
   await expect(table).toContainText("Export invoices as CSV");
   await expect(table).toContainText("#1 · marie");
   await expect(table).toContainText("Fix the login redirect");
@@ -64,7 +64,7 @@ test("the page of a queue shows its PRs in their order and the runs that test th
   await expect(page.getByRole("group", { name: "Run 1" })).toContainText(number(first));
   await expect(page.getByRole("group", { name: "Run 1" })).toContainText("Testing · attempt 1");
   await expect(page.getByRole("group", { name: "Run 2" })).toContainText(number(second));
-  await expect(page.getByRole("group", { name: "Waiting" })).toContainText("#3");
+  await expect(page.getByRole("group", { name: "Not ready" })).toContainText("#3");
   await expect(page.getByRole("group", { name: "Branch main" })).toBeVisible();
   await expect(page.getByText("Pipelined")).toBeVisible();
 });

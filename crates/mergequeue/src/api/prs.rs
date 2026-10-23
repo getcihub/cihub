@@ -791,11 +791,9 @@ fn describe(kind: &EventKind) -> String {
         EventKind::ItemTransitioned {
             reason, merged_sha, ..
         } => transition_sentence(*reason, merged_sha.as_deref()),
-        EventKind::ItemReadinessChanged { block_reasons, .. } => blocks_sentence(block_reasons)
-            .map_or_else(
-                || "nothing blocks the PR".to_owned(),
-                |blocks| format!("waits: {blocks}"),
-            ),
+        EventKind::ItemReadinessChanged { block_reasons, .. } => {
+            blocks_sentence(block_reasons).unwrap_or_else(|| "nothing blocks the PR".to_owned())
+        }
         EventKind::ItemCancelRequested { .. } => "a cancellation was asked".to_owned(),
         EventKind::ItemRestartRequested { .. } => "a new test was asked".to_owned(),
         EventKind::MergeSucceeded { .. } => "the merge job merged the PR".to_owned(),

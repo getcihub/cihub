@@ -2,7 +2,7 @@ import type { ItemState, Pr, Queue } from "@/client/types.gen";
 
 // The words of specs/DOMAIN.md, as the mockups v5 show them.
 const ITEM_STATE_LABELS: Record<string, string> = {
-  not_ready: "Waiting",
+  not_ready: "Not ready",
   pending: "Queued",
   testing: "Testing",
   pending_failure: "Tests failed",
@@ -77,4 +77,31 @@ export function etaOf(pr: Pr): string | null {
     return null;
   }
   return seconds < 60 ? "a few seconds" : `about ${String(Math.ceil(seconds / 60))} min`;
+}
+
+/** What keeps a PR out of the queue, as a sentence where a check is a code span; `null` for unmet queue conditions, which the drawer shows one by one. */
+export function blockSentence(reason: Record<string, unknown>): string | null {
+  const field = (name: string) => String(reason[name]);
+  switch (reason.kind) {
+    case "review_required":
+      return `${field("have")} of ${field("need")} required approvals`;
+    case "changes_requested":
+      return "A review asks for changes";
+    case "failing_required_check":
+      return `The required check \`${field("check")}\` failed`;
+    case "awaiting_required_check":
+      return `The required check \`${field("check")}\` is ${field("status")}`;
+    case "behind_base":
+      return "The branch is behind its base";
+    case "merge_conflict":
+      return "The branch conflicts with its base";
+    case "stack_needs_rebase":
+      return `The branch must be rebased onto #${field("onto_pr_number")}`;
+    case "undetermined":
+      return "The SCM does not say yet why the PR is blocked";
+    case "queue_conditions_unmet":
+      return null;
+    default:
+      return field("kind");
+  }
 }

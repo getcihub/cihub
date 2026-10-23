@@ -229,7 +229,7 @@ export const VIEWS: View[] = [
     hold: ({ path }) => path.endsWith("/health"),
   },
   { name: "drawer-testing", url: DRAWER, ready: "History", themes: BOTH, viewports: [WIDE, NARROW] },
-  { name: "drawer-not-ready", url: `${QUEUE_PAGE}/prs/133`, ready: "Why it waits" },
+  { name: "drawer-not-ready", url: `${QUEUE_PAGE}/prs/133`, ready: "What blocks it", themes: BOTH },
   { name: "drawer-merged", url: `${QUEUE_PAGE}/prs/110`, ready: "Outcome" },
   { name: "drawer-not-found", url: `${QUEUE_PAGE}/prs/999`, ready: "is not in this queue" },
   {

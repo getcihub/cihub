@@ -86,8 +86,8 @@ const timeline = [
     actor_kind: "system",
     actor: "marie",
     occurred_at: "2026-10-11T12:00:00Z",
-    description: "waits: the required check `ci` is in_progress",
-    payload: { block_reasons: [{ kind: "check_pending", check: "ci" }] },
+    description: "the required check `ci` is in_progress",
+    payload: { block_reasons: [{ kind: "awaiting_required_check", check: "ci", status: "in_progress" }] },
   },
   {
     id: "event_2",
@@ -97,7 +97,7 @@ const timeline = [
     actor: null,
     occurred_at: "2026-10-11T12:04:00Z",
     description: "a test run started",
-    payload: { to: "testing" },
+    payload: { from: "pending", to: "testing" },
   },
 ];
 
@@ -126,14 +126,15 @@ describe("the drawer of a PR", () => {
     expect(drawer).toHaveTextContent("On top of#117");
     expect(within(drawer).getByText("not required")).toBeInTheDocument();
     expect(within(drawer).getByText("ci", { selector: "code" })).toBeInTheDocument();
-    expect(drawer).toHaveTextContent(", by @marie");
+    expect(drawer).toHaveTextContent("by @marie");
 
     const history = within(drawer).getByRole("region", { name: "History" });
-    const events = within(history).getAllByRole("listitem");
+    // A blocked event holds its reasons in a list of its own.
+    const events = [...(within(history).getAllByRole("list")[0]?.children ?? [])] as HTMLElement[];
 
-    expect(events.map((event) => within(event).getByText(/^(Testing|Waiting)$/).textContent)).toEqual([
+    expect(events.map((event) => within(event).getByText(/^(Testing|Blocked)$/).textContent)).toEqual([
       "Testing",
-      "Waiting",
+      "Blocked",
     ]);
   });
 
@@ -191,6 +192,51 @@ describe("the drawer of a PR", () => {
     expect(line("build")).toHaveTextContent("passed in 22 min");
     expect(line("lint")).toHaveTextContent(/running since/);
     expect(line("e2e")).toHaveTextContent("queued");
+  });
+
+  it("shows what blocks a PR that is not ready, in the drawer and in its history", async () => {
+    const reasons = [
+      { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+      {
+        kind: "queue_conditions_unmet",
+        conditions: ["labels.none: wip", "any: [draft: false; author: bot]"],
+      },
+    ];
+    const blocked = itemOf(133, "not_ready", { title: "Update the install guide", block_reasons: reasons });
+    const history = [
+      {
+        id: "event_1",
+        seq: 1,
+        type: "item.readiness_changed",
+        actor_kind: "system",
+        actor: null,
+        occurred_at: "2026-10-11T12:00:00Z",
+        description: "the required check `ci` is in_progress; the queue conditions … are not met",
+        payload: { block_reasons: reasons },
+      },
+    ];
+    renderApp(
+      "/orgs/acme/repos/web/queues/main/prs/133",
+      answersFor({
+        [`${PR}/133`]: [200, blocked],
+        [`${PR}/133/events?limit=100`]: [200, pageOf("events", history)],
+      }),
+    );
+
+    const drawer = await screen.findByRole("dialog", { name: "Update the install guide" });
+    const blocks = within(drawer).getByRole("region", { name: "What blocks it" });
+    const event = within(drawer).getByRole("region", { name: "History" });
+
+    expect(within(drawer).getByRole("listitem", { current: "step" })).toHaveTextContent("Not ready");
+    expect(blocks).toHaveTextContent("The required check ci is in_progress");
+    for (const place of [blocks, event]) {
+      const conditions = within(place).getByRole("group", { name: "Unmet queue conditions" });
+
+      expect(conditions).toHaveTextContent("whereLabelshas none ofwip");
+      expect(conditions).toHaveTextContent(
+        "andorAt least one of these holds.Draftis notdraft: falseorAuthorisbot",
+      );
+    }
   });
 
   it("says that a PR is not in the queue, over the page of the queue", async () => {

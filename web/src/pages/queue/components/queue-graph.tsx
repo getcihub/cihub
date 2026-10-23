@@ -161,7 +161,7 @@ export function QueueGraph({
     };
   });
   const waitingLanes: Lane[] = [
-    { key: "not-ready", label: "Waiting", items: notReady, textOf: (item: Pr) => item.state_description },
+    { key: "not-ready", label: "Not ready", items: notReady, textOf: (item: Pr) => item.state_description },
     {
       key: "queued",
       label: "Queued",
