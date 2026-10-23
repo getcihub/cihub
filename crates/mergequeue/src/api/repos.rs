@@ -6,7 +6,7 @@ use cihub_api_types::{
     RuleCheck, SetupState, SetupSummary,
 };
 use cihub_config::RepoConfig;
-use cihub_domain::{ApiScope, Permission as Level};
+use cihub_domain::{ApiScope, Permission as Level, RepoConfigState};
 use cihub_platform::{ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, Page, cursor_of};
 use cihub_scm::{ConnectionRef, RepoRef};
 use serde::de::Error as _;
@@ -20,8 +20,8 @@ use super::{ApiState, RepoErrors, RepoListErrors, RepoPath, audit, begin_repo, n
 use crate::repo_setup::sync_repo_setup;
 use crate::target::queue_settings;
 
-/// The text of a file that is not valid, which a setup shows up to this size.
-const MAX_SHOWN_TEXT_BYTES: usize = 64 * 1024;
+/// The text of a file that a page shows, at most.
+pub(super) const MAX_SHOWN_TEXT_BYTES: usize = 64 * 1024;
 
 #[derive(Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -53,12 +53,14 @@ fn setup_states<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<SetupS
         .collect()
 }
 
-/// A repository, its queue on its default branch, its last setup read, and
-/// the read of its setup that an admin asked for and that waits.
+/// A repository, its queue on its default branch, its last setup read and
+/// the file of that read, and the read of its setup that an admin asked for
+/// and that waits.
 const SETUP_SOURCE: &str = "repos r
      JOIN scm_connections c ON c.id = r.connection_id
      LEFT JOIN queues q ON q.repo_id = r.id AND q.target_branch = r.default_branch
      LEFT JOIN repo_setups s ON s.repo_id = r.id
+     LEFT JOIN config_files f ON f.repo_id = s.repo_id AND f.branch = s.branch
      LEFT JOIN LATERAL (
          SELECT min(j.created_at) AS requested_at FROM jobs j
          WHERE j.type = 'read_repo_setup' AND j.class = 'interactive'
@@ -71,7 +73,7 @@ const SETUP_SOURCE: &str = "repos r
 const SETUP_STATE: &str = "CASE
      WHEN q.id IS NOT NULL THEN 'started'
      WHEN s.repo_id IS NULL OR w.requested_at IS NOT NULL THEN 'checking'
-     WHEN s.config_state = 'invalid' THEN 'invalid_config'
+     WHEN f.state = 'invalid' THEN 'invalid_config'
      WHEN s.head_sha IS NULL
        OR s.findings @> '[{\"code\": \"app_not_exempt\"}]'
        OR s.findings @> '[{\"code\": \"test_branches_not_excluded\"}]' THEN 'cannot_merge'
@@ -245,8 +247,9 @@ pub(super) async fn get_repo(
         "SELECT r.id, r.namespace, r.name, r.default_branch, r.external_id,
                 c.id AS connection_id, c.external_id AS connection_external_id,
                 q.target_branch AS queue, {SETUP_STATE} AS state, s.repo_id IS NOT NULL AS is_read,
-                s.head_sha, s.findings, s.config_state::text, s.config_path, s.config_error,
-                s.config_line, s.config_column, s.config_text, s.entries, s.checked_at,
+                s.head_sha, s.findings, f.state::text AS config_state, f.path AS config_path,
+                f.error AS config_error, f.error_line AS config_line,
+                f.error_column AS config_column, f.text AS config_text, f.entries, s.checked_at,
                 w.requested_at
          FROM {SETUP_SOURCE}
          WHERE r.removed_at IS NULL AND lower(r.name) = lower($1) ORDER BY r.id LIMIT 1"
@@ -380,11 +383,7 @@ fn config_of(row: &DetailRow) -> Result<Option<ConfigFile>, ApiError> {
     let Some(state) = row.config_state.as_deref() else {
         return Ok(None);
     };
-    let state = match state {
-        "valid" => ConfigFileState::Valid,
-        "invalid" => ConfigFileState::Invalid,
-        _ => ConfigFileState::None,
-    };
+    let state = config_file_state(state.parse()?);
     let config = match (state, &row.config_text) {
         (ConfigFileState::Valid, Some(text)) => Some(RepoConfig::parse(text)?),
         _ => None,
@@ -407,6 +406,15 @@ fn config_of(row: &DetailRow) -> Result<Option<ConfigFile>, ApiError> {
         strategy: settings.strategy.value,
         settings: settings_summary(&settings),
     }))
+}
+
+/// The state of a configuration file, as the API gives it.
+pub(super) fn config_file_state(state: RepoConfigState) -> ConfigFileState {
+    match state {
+        RepoConfigState::None => ConfigFileState::None,
+        RepoConfigState::Valid => ConfigFileState::Valid,
+        RepoConfigState::Invalid => ConfigFileState::Invalid,
+    }
 }
 
 /// Sync the setup of a repository

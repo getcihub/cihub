@@ -26,7 +26,7 @@ use tracing::{info, warn};
 
 use crate::MergeQueueError;
 use crate::admission::{Reading, Sender, submission_choices, unmet_conditions};
-use crate::config::read_config_file;
+use crate::config::{ConfigBranch, ConfigRead, keep_config_file};
 use crate::target::{QueueTarget, RepoTarget};
 
 pub const REFRESH_PRS: &str = "refresh_prs";
@@ -765,25 +765,22 @@ async fn create_queue(
     repo: &RepoTarget,
     branch: &str,
     class: JobClass,
+    now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let Some(head) = scm.branch_head(&repo.repo, branch, class).await? else {
         return Ok(());
     };
 
-    let read = read_config_file(scm, &repo.repo, &head, class).await?;
-    let checked = read.and_then(|text| {
-        text.map(|text| RepoConfig::parse(&text).map(|config| (text, config)))
-            .transpose()
-    });
-    let is_named = matches!(&checked, Ok(Some((_, config))) if config.queue(branch).is_some());
+    let read = ConfigRead::read(scm, &repo.repo, &head, branch, class).await?;
+    let is_named = read
+        .config
+        .as_ref()
+        .is_some_and(|config| config.queue(branch).is_some());
     if !is_named && branch != repo.default_branch {
         return Ok(());
     }
 
-    let (text, error) = match checked {
-        Ok(found) => (found.map(|(text, _)| text), None),
-        Err(err) => (None, Some(err.to_string())),
-    };
+    let error = read.error.as_ref().map(ToString::to_string);
     let mut tx = begin_system(pool).await?;
     #[expect(
         clippy::disallowed_methods,
@@ -800,11 +797,19 @@ async fn create_queue(
     .bind(repo.org_id.to_string())
     .bind(repo.repo_id.to_string())
     .bind(branch)
-    .bind(&text)
+    .bind(read.valid_text())
     .bind(&head)
     .bind(&error)
     .execute(&mut *tx)
     .await?;
+
+    let file = ConfigBranch {
+        org_id: repo.org_id,
+        repo_id: repo.repo_id,
+        branch,
+        head_sha: Some(&head),
+    };
+    keep_config_file(&mut tx, &file, &read, now).await?;
 
     if inserted.rows_affected() == 1 {
         info!(target_branch = branch, "queue created");
@@ -877,6 +882,7 @@ async fn queue_of_pr(
     pr: &PrSnapshot,
     request: &SubmitPr,
     class: JobClass,
+    now: OffsetDateTime,
 ) -> Result<Option<QueueTarget>, Failure> {
     let queue = open_queue(pool, repo, &pr.base_branch).await?;
 
@@ -885,7 +891,7 @@ async fn queue_of_pr(
         return Ok(queue);
     }
 
-    create_queue(pool, scm, repo, &pr.base_branch, class).await?;
+    create_queue(pool, scm, repo, &pr.base_branch, class, now).await?;
 
     open_queue(pool, repo, &pr.base_branch).await
 }
@@ -988,7 +994,7 @@ pub(crate) async fn submit_pr(
         return refuse(format!("this PR is {state}.")).await;
     }
 
-    let Some(target) = queue_of_pr(pool, scm, &repo, &pr, &request, job.class).await? else {
+    let Some(target) = queue_of_pr(pool, scm, &repo, &pr, &request, job.class, now).await? else {
         info!(
             pr_number,
             base_branch = pr.base_branch,

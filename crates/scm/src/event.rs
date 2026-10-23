@@ -1,4 +1,4 @@
-use cihub_domain::CheckReport;
+use cihub_domain::{CheckReport, PrState};
 
 use crate::ScmUser;
 
@@ -30,6 +30,8 @@ pub enum ScmEvent {
         label_added: Option<String>,
         /// The PR is open and out of draft after the change.
         is_ready_for_review: bool,
+        /// Open, closed or merged, after the change.
+        state: PrState,
     },
     /// A branch moved.
     Pushed {

@@ -1,7 +1,7 @@
 //! A GitHub webhook delivery in the neutral terms of `cihub-scm`: what changed,
 //! not the new state.
 
-use cihub_domain::{CheckConclusion, CheckKind, CheckReport, CheckStatus};
+use cihub_domain::{CheckConclusion, CheckKind, CheckReport, CheckStatus, PrState};
 use cihub_scm::{SUBMIT_BOX, ScmDelivery, ScmEvent, ScmUser};
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -167,6 +167,11 @@ fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateErro
             .flatten(),
         is_ready_for_review: read.text("/pull_request/state")? == "open"
             && !read.flag("/pull_request/draft"),
+        state: match read.text("/pull_request/state")?.as_str() {
+            "open" => PrState::Open,
+            _ if read.flag("/pull_request/merged") => PrState::Merged,
+            _ => PrState::Closed,
+        },
     })
 }
 
@@ -304,6 +309,7 @@ mod tests {
             base_branch: "main".into(),
             label_added: label_added.map(str::to_owned),
             is_ready_for_review,
+            state: PrState::Open,
         };
 
         assert_eq!(
@@ -329,12 +335,37 @@ mod tests {
             ("synchronize", "open", true, false),
             ("closed", "closed", false, false),
         ] {
+            let read = event("pull_request", &action(name, state, draft));
+            let ScmEvent::PrChanged {
+                is_ready_for_review: read_ready,
+                state: read_state,
+                ..
+            } = read
+            else {
+                panic!("{name}: not a PR change");
+            };
+            let expected_state = if state == "open" {
+                PrState::Open
+            } else {
+                PrState::Closed
+            };
+
             assert_eq!(
-                event("pull_request", &action(name, state, draft)),
-                changed(None, is_ready_for_review),
+                (read_ready, read_state),
+                (is_ready_for_review, expected_state),
                 "{name} {draft}"
             );
         }
+
+        let mut merged = action("closed", "closed", false);
+        merged["pull_request"]["merged"] = true.into();
+        assert!(matches!(
+            event("pull_request", &merged),
+            ScmEvent::PrChanged {
+                state: PrState::Merged,
+                ..
+            }
+        ));
     }
 
     #[test]

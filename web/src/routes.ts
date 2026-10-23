@@ -15,6 +15,7 @@ export const routes = rootRoute("root/route.tsx", [
         index("redirects/repos.tsx"),
         route("/$repo", [
           index("repo-queues/route.tsx"),
+          route("/config", "repo-config/route.tsx"),
           route("/queues", [
             index("redirects/queues.tsx"),
             route("/$queue", "queue/route.tsx", [route("/prs/$number", "pr/route.tsx")]),

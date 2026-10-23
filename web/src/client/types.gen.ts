@@ -67,6 +67,63 @@ export type AuditList = {
     has_more: boolean;
 };
 
+/**
+ * The configuration file of a branch, as CIHub last read it: what it sets,
+ * the settings that follow with their sources, and the open proposal of a
+ * change.
+ */
+export type BranchConfig = {
+    /**
+     * The branch whose file was read.
+     */
+    branch: string;
+    /**
+     * The column of the error, from 1; `null` without one.
+     */
+    column?: number | null;
+    document?: ConfigDocument | null;
+    /**
+     * Why the file is not valid; `null` otherwise.
+     */
+    error?: string | null;
+    /**
+     * The line of the error, from 1; `null` without one.
+     */
+    line?: number | null;
+    /**
+     * The path of the file: `.cihub.yaml`, `.cihub.yml`,
+     * `.cihub/config.yaml` or `.cihub/config.yml`; `null` without a file.
+     */
+    path?: string | null;
+    proposal?: ConfigProposal | null;
+    /**
+     * When CIHub read the file.
+     */
+    read_at: string;
+    /**
+     * The checks that the branch rules require on the branch; `null` before
+     * CIHub reads the rules.
+     */
+    required_checks?: Array<string> | null;
+    settings?: ResolvedConfig | null;
+    /**
+     * The head of the branch that was read; `null` when the branch is
+     * missing. A proposal starts from it (`base_sha`).
+     */
+    sha?: string | null;
+    /**
+     * `none` without a file, `valid`, or `invalid`.
+     */
+    state: ConfigFileState;
+    /**
+     * The text of the file, at most 64 KiB; `null` without a file, or for a
+     * larger one.
+     */
+    text?: string | null;
+};
+
+export type BranchProtectionInjection = 'both' | 'merge' | 'none';
+
 export type CheckConclusion = 'success' | 'neutral' | 'skipped' | 'failure' | 'error' | 'cancelled' | 'timed_out' | 'action_required' | 'stale';
 
 /**
@@ -115,6 +172,64 @@ export type CliSession = {
      * The secret of the session, for `Authorization: Bearer`; given once.
      */
     token: string;
+};
+
+/**
+ * The kind of a block of conditions.
+ */
+export type ConditionBlock = 'all' | 'any' | 'none';
+
+/**
+ * A condition of a map, or a block `all`, `any` or `none` of other ones. A
+ * map of several conditions inside a block is an `all` block.
+ */
+export type ConditionDocument = {
+    /**
+     * The attribute: `labels`, `checks.success`, `pr_age`.
+     */
+    attribute: string;
+    kind: 'condition';
+    /**
+     * The key of the operator under the attribute: `none`,
+     * `count.min`; `null` when the attribute takes its values directly.
+     */
+    operator?: string | null;
+    /**
+     * The values, as the file writes them.
+     */
+    values: Array<string>;
+} | {
+    /**
+     * `all`: each one holds; `any`: one holds at least; `none`: none
+     * holds.
+     */
+    block: ConditionBlock;
+    /**
+     * The conditions of the block.
+     */
+    conditions: Array<ConditionDocument>;
+    kind: 'block';
+};
+
+/**
+ * What a configuration file sets, in the words of the file: the JSON of
+ * `.cihub.yaml` without its comments. The server writes the YAML of a
+ * document, and reads a file back as the same document.
+ */
+export type ConfigDocument = {
+    /**
+     * `defaults`: what every entry takes, unless it sets its own.
+     */
+    defaults: DefaultsDocument;
+    /**
+     * `priority_rules`, in the order of the file: the first one that a PR
+     * meets gives its priority.
+     */
+    priority_rules: Array<PriorityRuleDocument>;
+    /**
+     * `queues`: the entries, in the order of the file.
+     */
+    queues: Array<QueueDocument>;
 };
 
 /**
@@ -174,6 +289,238 @@ export type ConfigFile = {
 export type ConfigFileState = 'none' | 'valid' | 'invalid';
 
 /**
+ * The file that a document gives, and what it would change.
+ */
+export type ConfigPreview = {
+    /**
+     * The column of the error, from 1; `null` without one.
+     */
+    column?: number | null;
+    /**
+     * The lines of the file as CIHub read it last, then of `text`: the ones
+     * that stay, that go and that come, in order.
+     */
+    diff: Array<DiffLine>;
+    /**
+     * Why the text is not valid; `null` otherwise.
+     */
+    error?: string | null;
+    /**
+     * The line of the error in `text`, from 1; `null` without one.
+     */
+    line?: number | null;
+    settings?: ResolvedConfig | null;
+    /**
+     * `valid`, or `invalid` when the queue of the branch would refuse the
+     * text.
+     */
+    state: ConfigFileState;
+    /**
+     * The YAML that CIHub would write.
+     */
+    text: string;
+};
+
+/**
+ * A proposal of a change of the configuration file of a branch, as a PR
+ * that CIHub opens and a person merges.
+ */
+export type ConfigProposal = {
+    /**
+     * The branch whose file the PR changes.
+     */
+    branch: string;
+    /**
+     * The identifier of the proposal.
+     */
+    id: string;
+    /**
+     * The number of the PR, once CIHub opened it.
+     */
+    pr_number?: number | null;
+    /**
+     * The page of the PR on the SCM, once CIHub opened it.
+     */
+    pr_url?: string | null;
+    /**
+     * When the person proposed the change.
+     */
+    requested_at: string;
+    /**
+     * The login of the person who proposed the change; `null` for an API
+     * token.
+     */
+    requested_by?: string | null;
+    /**
+     * `requested`, `opened`, `merged`, `closed` or `failed`.
+     */
+    state: ConfigProposalState;
+    /**
+     * The reason in English, for a person; `null` without a reason.
+     */
+    state_description?: string | null;
+    state_reason?: ConfigProposalReason | null;
+};
+
+export type ConfigProposalReason = 'config_changed' | 'config_branch_refused' | 'pr_not_opened';
+
+export type ConfigProposalState = 'requested' | 'opened' | 'merged' | 'closed' | 'failed';
+
+/**
+ * Every setting of a queue, by its key in the file (`window.floor` is
+ * `window_floor`), and where each value comes from.
+ */
+export type ConfigSettings = {
+    /**
+     * `batching.enabled`: several PRs in one run.
+     */
+    batching_enabled: boolean;
+    /**
+     * `batching.max_wait_minutes`: how long a batch that is not full waits.
+     */
+    batching_max_wait_minutes: number;
+    /**
+     * `batching.size`: the most PRs in one batch.
+     */
+    batching_size: number;
+    /**
+     * `bisection_concurrency`: the runs at a time while a failed batch is
+     * split; the ceiling of the window when no source sets it.
+     */
+    bisection_concurrency: number;
+    /**
+     * `branch_prefix`: the prefix of the test branches.
+     */
+    branch_prefix: string;
+    /**
+     * `branch_protection_injection`: where the checks of the branch rules count.
+     */
+    branch_protection_injection: BranchProtectionInjection;
+    /**
+     * `commands_enabled`: CIHub reads the commands in the comments.
+     */
+    commands_enabled: boolean;
+    /**
+     * `comments_enabled`: the status comment on each PR.
+     */
+    comments_enabled: boolean;
+    /**
+     * `direct_merge_mode`: a PR merges without a test branch when nothing
+     * is in flight.
+     */
+    direct_merge_mode: DirectMergeMode;
+    /**
+     * `label_commands.enqueue_label`: the label that submits a PR.
+     */
+    enqueue_label: string;
+    /**
+     * `failure_budget.retries`: how many times a failed run runs again.
+     */
+    failure_budget_retries: number;
+    /**
+     * `keep_test_branches_minutes`: how long a test branch stays after its test.
+     */
+    keep_test_branches_minutes: number;
+    /**
+     * `label_commands.enabled`: a label submits a PR.
+     */
+    label_commands_enabled: boolean;
+    /**
+     * `merge_commit_title`: the title of the commit that lands.
+     */
+    merge_commit_title: MergeCommitTitle;
+    /**
+     * `merge_method`: how a PR lands on the branch.
+     */
+    merge_method: MergeMethod;
+    /**
+     * `mode`: one line, or parallel lines of unrelated changes.
+     */
+    mode: QueueMode;
+    /**
+     * `not_ready_timeout_hours`: a PR that waits longer for its conditions
+     * leaves the queue.
+     */
+    not_ready_timeout_hours: number;
+    /**
+     * `optimistic_merging`: a passing later run merges the PRs ahead of it.
+     */
+    optimistic_merging: boolean;
+    /**
+     * `optimization_mode`: what a split of a failed batch does not test again.
+     */
+    optimization_mode: OptimizationMode;
+    /**
+     * `pending_failure_depth`: the runs after it that a failed PR waits for.
+     */
+    pending_failure_depth: number;
+    /**
+     * `required_statuses`: the checks that a tested commit needs; `null`
+     * takes the checks of the branch rules, and an empty list requires
+     * none.
+     */
+    required_statuses?: Array<string> | null;
+    /**
+     * `resubmit_on_push`: a push on a queued PR submits it again.
+     */
+    resubmit_on_push: boolean;
+    /**
+     * Where each value comes from.
+     */
+    sources: SettingSources;
+    /**
+     * `state_labels_enabled`: the labels of the state of a PR.
+     */
+    state_labels_enabled: boolean;
+    /**
+     * `status_check_enabled`: the statuses of the queue and of the conditions.
+     */
+    status_check_enabled: boolean;
+    /**
+     * `strategy`: sets the values of the settings of the train.
+     */
+    strategy: Strategy;
+    /**
+     * `testing_timeout_minutes`: a test without a conclusion after it fails.
+     */
+    testing_timeout_minutes: number;
+    /**
+     * `trigger`: what runs the CI on a test commit.
+     */
+    trigger: Trigger;
+    /**
+     * `update_method`: how CIHub updates a PR in place.
+     */
+    update_method: UpdateMethod;
+    /**
+     * `window.ceiling`: the most runs at a time.
+     */
+    window_ceiling: number;
+    /**
+     * `window.floor`: the fewest runs at a time.
+     */
+    window_floor: number;
+};
+
+/**
+ * `defaults` of the file.
+ */
+export type DefaultsDocument = {
+    /**
+     * The checks of `merge_conditions`, which every tested commit needs.
+     */
+    merge_checks: Array<string>;
+    /**
+     * `queue_conditions`, which every queue checks before its own.
+     */
+    queue_conditions: Array<ConditionDocument>;
+    /**
+     * The settings that `defaults` sets.
+     */
+    settings: SettingsDocument;
+};
+
+/**
  * A live run whose predecessors hold a PR of this run.
  */
 export type Dependent = {
@@ -226,10 +573,26 @@ export type DeviceCodeToken = {
 };
 
 /**
+ * A line of a diff.
+ */
+export type DiffLine = {
+    /**
+     * `same`, `removed` or `added`.
+     */
+    change: LineChange;
+    /**
+     * The text of the line, without its end.
+     */
+    text: string;
+};
+
+export type DirectMergeMode = 'off' | 'always';
+
+/**
  * The machine code of an error: a client decides on it, never on
  * `detail`. Each code has one HTTP status.
  */
-export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable' | 'scm_unavailable';
+export type ErrorCode = 'invalid_request' | 'limit_out_of_range' | 'invalid_cursor' | 'unknown_priority' | 'device_code_pending' | 'device_code_expired' | 'unauthorized' | 'scope_missing' | 'csrf_refused' | 'device_code_denied' | 'route_not_found' | 'org_not_found' | 'repo_not_found' | 'queue_not_found' | 'pr_not_found' | 'run_not_found' | 'device_code_not_found' | 'pr_already_queued' | 'item_ended' | 'item_not_in_test' | 'rate_limited' | 'too_many_streams' | 'polling_too_fast' | 'internal' | 'sign_in_unavailable' | 'scm_unavailable' | 'config_not_found' | 'invalid_config' | 'config_proposal_open';
 
 /**
  * An event of the log of a queue about a PR.
@@ -515,9 +878,18 @@ export type ItemCounts = {
 
 export type ItemState = 'not_ready' | 'pending' | 'testing' | 'tests_passed' | 'pending_failure' | 'merged' | 'failed' | 'cancelled';
 
+/**
+ * What a diff does to a line.
+ */
+export type LineChange = 'same' | 'removed' | 'added';
+
 export type MembershipRole = 'admin' | 'member';
 
+export type MergeCommitTitle = 'pr_title' | 'pr_title_and_number';
+
 export type MergeMethod = 'squash' | 'merge_commit' | 'rebase' | 'fast_forward';
+
+export type OptimizationMode = 'off' | 'bisection_skip_redundant_tests';
 
 /**
  * An organization: the account of an installation of the App.
@@ -765,10 +1137,44 @@ export type PrList = {
 };
 
 /**
+ * `POST /orgs/{org}/repos/{repo}/config/preview`.
+ */
+export type PreviewConfig = {
+    /**
+     * The branch whose file the document would replace: the default branch,
+     * or the target of a queue; the default branch without it.
+     */
+    branch?: string | null;
+    /**
+     * The document to write.
+     */
+    document: ConfigDocument;
+};
+
+/**
  * The priority of a submission: a name (`urgent`, `high`, `medium`, `low`)
  * or a value from 0 to 255, lower first.
  */
 export type PriorityInput = number | string;
+
+/**
+ * A priority rule of the file.
+ */
+export type PriorityRuleDocument = {
+    /**
+     * The conditions that a PR meets to take the priority.
+     */
+    conditions: Array<ConditionDocument>;
+    /**
+     * The name of the rule.
+     */
+    name: string;
+    /**
+     * `priority`, as the file writes it: `urgent`, `high`, `medium`, `low`,
+     * or a value from 0, the first, to 255.
+     */
+    priority: string;
+};
 
 /**
  * An error, as `application/problem+json` (RFC 9457).
@@ -795,6 +1201,51 @@ export type Problem = {
      * Always `about:blank`: `code` tells the errors apart.
      */
     type: string;
+};
+
+/**
+ * A profile of an entry: settings for a kind of PR in the same train. A
+ * profile sets only `merge_method`, `merge_commit_title`, `batching` and
+ * `failure_budget`.
+ */
+export type ProfileDocument = {
+    /**
+     * The conditions that choose the profile at the submission; empty when
+     * only a command that names it chooses it.
+     */
+    conditions: Array<ConditionDocument>;
+    /**
+     * The name of the profile, which a command gives.
+     */
+    name: string;
+    /**
+     * The settings that the profile sets.
+     */
+    settings: SettingsDocument;
+};
+
+/**
+ * `POST /orgs/{org}/repos/{repo}/config/proposals`.
+ */
+export type ProposeConfig = {
+    /**
+     * The head that the person read (`BranchConfig.sha`): the proposal fails
+     * with `config_changed` if the file changed since.
+     */
+    base_sha: string;
+    /**
+     * The branch whose file the PR changes: the default branch, or the
+     * target of a queue; the default branch without it.
+     */
+    branch?: string | null;
+    /**
+     * The document to write.
+     */
+    document: ConfigDocument;
+    /**
+     * The message of the commit: its first line is the title of the PR.
+     */
+    message: string;
 };
 
 /**
@@ -933,6 +1384,33 @@ export type QueueChanged = {
      * before the first.
      */
     seq: number;
+};
+
+/**
+ * An entry of `queues`: the queue of a branch, or of each branch that a
+ * glob matches.
+ */
+export type QueueDocument = {
+    /**
+     * `branch`: a branch, or a glob (`release*`).
+     */
+    branch: string;
+    /**
+     * The checks of `merge_conditions` of the entry.
+     */
+    merge_checks: Array<string>;
+    /**
+     * `profiles`, in the order of the file.
+     */
+    profiles: Array<ProfileDocument>;
+    /**
+     * `queue_conditions` of the entry, after those of `defaults`.
+     */
+    queue_conditions: Array<ConditionDocument>;
+    /**
+     * The settings that the entry sets.
+     */
+    settings: SettingsDocument;
 };
 
 /**
@@ -1165,7 +1643,50 @@ export type RepoSetup = {
  */
 export type RequestedQueueState = 'running' | 'paused' | 'draining';
 
+/**
+ * `required_statuses`: `null` in the file takes the checks of the branch
+ * rules; a list requires these checks only, none when it is empty.
+ */
+export type RequiredStatusesDocument = {
+    kind: 'branch_rules';
+} | {
+    kind: 'checks';
+    /**
+     * The checks, none for an empty list.
+     */
+    names: Array<string>;
+};
+
 export type RequiredStatusesSource = 'repo_config' | 'branch_protection';
+
+/**
+ * The settings that a document gives, with their sources, in the order of
+ * the document.
+ */
+export type ResolvedConfig = {
+    /**
+     * The settings of `defaults`, which a branch without an entry takes.
+     */
+    defaults: ConfigSettings;
+    /**
+     * The settings of each entry of `queues`.
+     */
+    queues: Array<ResolvedQueue>;
+};
+
+/**
+ * The settings of an entry and of its profiles.
+ */
+export type ResolvedQueue = {
+    /**
+     * The settings of a PR of each profile, in the order of the document.
+     */
+    profiles: Array<ConfigSettings>;
+    /**
+     * The settings of the queue.
+     */
+    settings: ConfigSettings;
+};
 
 /**
  * A rule of the SCM that a queue needs, and whether the default branch has
@@ -1356,6 +1877,243 @@ export type RunCheck = {
 export type RunStatus = 'assembling' | 'in_progress' | 'succeeded' | 'failed' | 'interrupted' | 'cancelled' | 'timed_out';
 
 /**
+ * Where the value of a setting comes from, from the weakest to the
+ * strongest: `default`, the value of CIHub; `strategy`, the table of the
+ * strategy; `defaults` of the file; `queue`, its entry; `profile`, a profile
+ * of the entry.
+ */
+export type SettingSource = 'default' | 'strategy' | 'defaults' | 'queue' | 'profile';
+
+/**
+ * Where each value of a `ConfigSettings` comes from, by the name of its
+ * field.
+ */
+export type SettingSources = {
+    /**
+     * Where `batching_enabled` comes from.
+     */
+    batching_enabled: SettingSource;
+    /**
+     * Where `batching_max_wait_minutes` comes from.
+     */
+    batching_max_wait_minutes: SettingSource;
+    /**
+     * Where `batching_size` comes from.
+     */
+    batching_size: SettingSource;
+    /**
+     * Where `bisection_concurrency` comes from.
+     */
+    bisection_concurrency: SettingSource;
+    /**
+     * Where `branch_prefix` comes from.
+     */
+    branch_prefix: SettingSource;
+    /**
+     * Where `branch_protection_injection` comes from.
+     */
+    branch_protection_injection: SettingSource;
+    /**
+     * Where `commands_enabled` comes from.
+     */
+    commands_enabled: SettingSource;
+    /**
+     * Where `comments_enabled` comes from.
+     */
+    comments_enabled: SettingSource;
+    /**
+     * Where `direct_merge_mode` comes from.
+     */
+    direct_merge_mode: SettingSource;
+    /**
+     * Where `enqueue_label` comes from.
+     */
+    enqueue_label: SettingSource;
+    /**
+     * Where `failure_budget_retries` comes from.
+     */
+    failure_budget_retries: SettingSource;
+    /**
+     * Where `keep_test_branches_minutes` comes from.
+     */
+    keep_test_branches_minutes: SettingSource;
+    /**
+     * Where `label_commands_enabled` comes from.
+     */
+    label_commands_enabled: SettingSource;
+    /**
+     * Where `merge_commit_title` comes from.
+     */
+    merge_commit_title: SettingSource;
+    /**
+     * Where `merge_method` comes from.
+     */
+    merge_method: SettingSource;
+    /**
+     * Where `mode` comes from.
+     */
+    mode: SettingSource;
+    /**
+     * Where `not_ready_timeout_hours` comes from.
+     */
+    not_ready_timeout_hours: SettingSource;
+    /**
+     * Where `optimistic_merging` comes from.
+     */
+    optimistic_merging: SettingSource;
+    /**
+     * Where `optimization_mode` comes from.
+     */
+    optimization_mode: SettingSource;
+    /**
+     * Where `pending_failure_depth` comes from.
+     */
+    pending_failure_depth: SettingSource;
+    /**
+     * Where `required_statuses` comes from.
+     */
+    required_statuses: SettingSource;
+    /**
+     * Where `resubmit_on_push` comes from.
+     */
+    resubmit_on_push: SettingSource;
+    /**
+     * Where `state_labels_enabled` comes from.
+     */
+    state_labels_enabled: SettingSource;
+    /**
+     * Where `status_check_enabled` comes from.
+     */
+    status_check_enabled: SettingSource;
+    /**
+     * Where `strategy` comes from.
+     */
+    strategy: SettingSource;
+    /**
+     * Where `testing_timeout_minutes` comes from.
+     */
+    testing_timeout_minutes: SettingSource;
+    /**
+     * Where `trigger` comes from.
+     */
+    trigger: SettingSource;
+    /**
+     * Where `update_method` comes from.
+     */
+    update_method: SettingSource;
+    /**
+     * Where `window_ceiling` comes from.
+     */
+    window_ceiling: SettingSource;
+    /**
+     * Where `window_floor` comes from.
+     */
+    window_floor: SettingSource;
+};
+
+/**
+ * The settings that one part of the file sets, by their key in the file
+ * (`window.floor` is `window_floor`); `null` leaves the value to a weaker
+ * source.
+ */
+export type SettingsDocument = {
+    /**
+     * `batching.enabled`.
+     */
+    batching_enabled?: boolean | null;
+    /**
+     * `batching.max_wait_minutes`.
+     */
+    batching_max_wait_minutes?: number | null;
+    /**
+     * `batching.size`.
+     */
+    batching_size?: number | null;
+    /**
+     * `bisection_concurrency`.
+     */
+    bisection_concurrency?: number | null;
+    /**
+     * `branch_prefix`.
+     */
+    branch_prefix?: string | null;
+    branch_protection_injection?: BranchProtectionInjection | null;
+    /**
+     * `commands_enabled`.
+     */
+    commands_enabled?: boolean | null;
+    /**
+     * `comments_enabled`.
+     */
+    comments_enabled?: boolean | null;
+    direct_merge_mode?: DirectMergeMode | null;
+    /**
+     * `label_commands.enqueue_label`.
+     */
+    enqueue_label?: string | null;
+    /**
+     * `failure_budget.retries`.
+     */
+    failure_budget_retries?: number | null;
+    /**
+     * `keep_test_branches_minutes`.
+     */
+    keep_test_branches_minutes?: number | null;
+    /**
+     * `label_commands.enabled`.
+     */
+    label_commands_enabled?: boolean | null;
+    merge_commit_title?: MergeCommitTitle | null;
+    merge_method?: MergeMethod | null;
+    mode?: QueueMode | null;
+    /**
+     * `not_ready_timeout_hours`.
+     */
+    not_ready_timeout_hours?: number | null;
+    /**
+     * `optimistic_merging`.
+     */
+    optimistic_merging?: boolean | null;
+    optimization_mode?: OptimizationMode | null;
+    /**
+     * `pending_failure_depth`.
+     */
+    pending_failure_depth?: number | null;
+    required_statuses?: RequiredStatusesDocument | null;
+    /**
+     * `resubmit_on_push`.
+     */
+    resubmit_on_push?: boolean | null;
+    /**
+     * `state_labels_enabled`.
+     */
+    state_labels_enabled?: boolean | null;
+    /**
+     * `status_check_enabled`.
+     */
+    status_check_enabled?: boolean | null;
+    strategy?: Strategy | null;
+    /**
+     * `testing_concurrency`: a fixed window, instead of `window`.
+     */
+    testing_concurrency?: number | null;
+    /**
+     * `testing_timeout_minutes`.
+     */
+    testing_timeout_minutes?: number | null;
+    trigger?: Trigger | null;
+    update_method?: UpdateMethod | null;
+    /**
+     * `window.ceiling`.
+     */
+    window_ceiling?: number | null;
+    /**
+     * `window.floor`.
+     */
+    window_floor?: number | null;
+};
+
+/**
  * The settings of a queue that its page shows, from its last valid
  * configuration file.
  */
@@ -1485,6 +2243,10 @@ export type TimeToMerge = {
      */
     p90_seconds: number;
 };
+
+export type Trigger = 'draft_pr' | 'push' | 'inplace';
+
+export type UpdateMethod = 'merge';
 
 /**
  * `PATCH /orgs/{org}/repos/{repo}/queues/{queue}`.
@@ -2136,6 +2898,195 @@ export type GetRepoResponses = {
 };
 
 export type GetRepoResponse = GetRepoResponses[keyof GetRepoResponses];
+
+export type GetBranchConfigData = {
+    body?: never;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: {
+        /**
+         * The default branch of the repository, or the target branch of one of
+         * its queues; the default branch without it.
+         */
+        branch?: string;
+    };
+    url: '/orgs/{org}/repos/{repo}/config';
+};
+
+export type GetBranchConfigErrors = {
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `config_not_found`: The branch is neither the default branch nor the target of a queue, or CIHub has not read its configuration file yet.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
+};
+
+export type GetBranchConfigError = GetBranchConfigErrors[keyof GetBranchConfigErrors];
+
+export type GetBranchConfigResponses = {
+    /**
+     * The configuration of the branch.
+     */
+    200: BranchConfig;
+};
+
+export type GetBranchConfigResponse = GetBranchConfigResponses[keyof GetBranchConfigResponses];
+
+export type PreviewConfigData = {
+    body: PreviewConfig;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/repos/{repo}/config/preview';
+};
+
+export type PreviewConfigErrors = {
+    /**
+     * - `invalid_request`: The body, the path or the query of the request is not valid.
+     */
+    400: Problem;
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `config_not_found`: The branch is neither the default branch nor the target of a queue, or CIHub has not read its configuration file yet.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
+};
+
+export type PreviewConfigError = PreviewConfigErrors[keyof PreviewConfigErrors];
+
+export type PreviewConfigResponses = {
+    /**
+     * The file of the document.
+     */
+    200: ConfigPreview;
+};
+
+export type PreviewConfigResponse = PreviewConfigResponses[keyof PreviewConfigResponses];
+
+export type ProposeConfigData = {
+    body: ProposeConfig;
+    path: {
+        /**
+         * The slug of the organization.
+         */
+        org: string;
+        /**
+         * The name of the repository in the organization.
+         */
+        repo: string;
+    };
+    query?: never;
+    url: '/orgs/{org}/repos/{repo}/config/proposals';
+};
+
+export type ProposeConfigErrors = {
+    /**
+     * - `invalid_request`: The body, the path or the query of the request is not valid.
+     * - `invalid_config`: The document gives a configuration file that the queue of the branch would refuse: `POST …/config/preview` gives its error and its line.
+     */
+    400: Problem;
+    /**
+     * - `unauthorized`: No API token or session, or one that is unknown or expired.
+     */
+    401: Problem;
+    /**
+     * - `scope_missing`: The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.
+     * - `csrf_refused`: A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.
+     */
+    403: Problem;
+    /**
+     * - `repo_not_found`: The organization has no repository with this name.
+     * - `config_not_found`: The branch is neither the default branch nor the target of a queue, or CIHub has not read its configuration file yet.
+     * - `org_not_found`: No organization has this slug, or the token or the user does not belong to it.
+     */
+    404: Problem;
+    /**
+     * - `config_proposal_open`: A proposal of a change of the file of the branch has not ended: merge or close its PR first.
+     */
+    409: Problem;
+    /**
+     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
+     * - `internal`: The server failed; the logs of the instance say why.
+     */
+    500: Problem;
+    /**
+     * - `scm_unavailable`: The SCM did not answer the check of the access of the person of the session: try again in a moment.
+     */
+    503: Problem;
+};
+
+export type ProposeConfigError = ProposeConfigErrors[keyof ProposeConfigErrors];
+
+export type ProposeConfigResponses = {
+    /**
+     * CIHub opens the PR.
+     */
+    202: ConfigProposal;
+};
+
+export type ProposeConfigResponse = ProposeConfigResponses[keyof ProposeConfigResponses];
 
 export type ListRepoPrsData = {
     body?: never;

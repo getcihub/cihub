@@ -20,7 +20,7 @@ rewrites.
 | Phase                       | Lots            | Scope                                                                                                                                                                                                                                                                                                                                                             | Exit criterion                                                                                                                                                                |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1. Installable merge queue  | 0 to 9          | Foundation (tenancy, log, jobs, GitHub adapter), pure core, reconciler, complete test cycle, entry and merge conditions, adaptive window, failure budget, `sequential` and `pipelined` strategies, squash / merge / rebase / fast-forward methods, direct merge, PR surfaces, API and CLI, Helm chart and procedure to create the App                       | The CIHub repository merges through CIHub for 2 weeks without a red merge; an outside person installs and merges a first PR in less than 30 minutes by following `INSTALL.md`; measured in lot 15 |
-| 2. Throughput and visibility | 9b, 10 to 12, 16 | Conditions status of a PR, dashboard, onboarding (the Setup URL of the App, the setup of a repository before its first queue), Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
+| 2. Throughput and visibility | 9b, 10 to 12, 16, 17a, 17b | Conditions status of a PR, dashboard, onboarding (the Setup URL of the App, the setup of a repository before its first queue), Postgres analytics, Health view, Prometheus, outgoing webhooks, `batched` strategy (batches, bisection, failure depth, optimistic merge)                                                                                                                                                                                                                 | At 20 PRs per hour on the simulator, `batched` uses 30 % fewer runs per merged PR than `pipelined`; bisection isolates a planted failure in ≤ log2(batch) runs |
 | 3. Flaky tests              | 14 (advanced)   | OTLP receiver, JUnit converter and GitHub action, `ft_*` tables, detection, quarantine, `FlakeOracle` trait consumed by the queue, dedicated page                                                                                                                                                                                                                | The module is added without changing the merge queue outside the call to the trait; on a repository with a known flaky test, zero PR evicted wrongly                        |
 | 4. Scale and ecosystem      | 13, 15 and next | `parallel` strategy with impacted targets, Bazel and Nx actions, ClickHouse behind `AnalyticsStore`, hardening, then stacked PRs, direct-to-queue, Slack, Terraform, GitLab behind `Scm`                                                                                                                                                                            | A pilot monorepo merges disjoint PRs in parallel; an instance holds 1,000 PRs per day with ClickHouse enabled; first outside organization in production                     |
 
@@ -55,6 +55,8 @@ configuration checker, in phase 1).
 | 14  | `flakytests` module                                    | 3     | 9          | Q1, Q7, Q12 | to do                                  |
 | 15  | Scale: ClickHouse, hardening                           | 4     | 11b, 13    | Q8        | to do                                    |
 | 16  | Onboarding and the GitHub App                          | 2     | 10a, 10b   | —         | done                                     |
+| 17a | Configuration builder, read only                       | 2     | 16         | —         | in progress (deviations to validate)     |
+| 17b | Configuration builder: change and propose as a PR      | 2     | 17a        | —         | in progress                              |
 
 ```mermaid
 flowchart LR
@@ -83,6 +85,8 @@ flowchart LR
   L11b --> L15[15 Scale]
   L13 --> L15
   L10b --> L16[16 Onboarding]
+  L16 --> L17a[17a Builder]
+  L17a --> L17b[17b Propose]
 ```
 
 Lots 1 and 2 can advance in parallel after lot 0, as can lots 7 and 8 after lot 6, lots 9b, 10a, 11a, 12
@@ -802,6 +806,165 @@ Decisions:
     comments. Tests: `a_pr_opened_before_its_queue_is_welcomed_at_its_next_change`, and the translation of
     `synchronize` and `closed`.
 
+### Lot 17a: the configuration builder, read only
+
+- **Goal**: a person reads in the dashboard what `.cihub.yaml` sets for a branch, as the builder of the mockups
+  v26 shows it: each setting of each entry with its value and its source, the conditions, the profiles, the
+  priority rules and the checks that the branch rules require, and the file itself. The server gives every value;
+  the dashboard holds no strategy table and no default value (`GOAL.md`: every decision explained). The form that
+  changes the file comes in the next lots.
+- **Content**:
+  - `cihub-config`: the source of a setting tells the parts of the file apart, `default` < `strategy` <
+    `defaults` < `queue` < `profile`; `strategy: parallel` is refused with its line until lot 13, as
+    `trigger: inplace`.
+  - The table `config_files`: the last read of the configuration file on a branch (head, state, path, text, error
+    and its position, entries), written by `read_repo_setup` for the default branch and by `load_config` for the
+    target branch of a queue. It replaces the columns `config_*` and `entries` of `repo_setups`; `ConfigFile` of
+    `RepoDetail` reads it, unchanged.
+  - The checks that the branch rules require, kept by the setup reads: `repo_setups.required_checks` (one more
+    call in `read_repo_setup`, once a day) and `queue_setups.required_checks` (`read_setup` already reads them).
+  - `GET /orgs/{org}/repos/{repo}/config?branch=` (`queues:read`, `BranchConfig`): the default branch without
+    `branch`; the file as read, and from a valid file, or without a file, the settings of `defaults` and of each
+    entry and profile with their sources, the conditions as the API writes them, the priority rules, and the
+    required checks of the branch rules. `404 config_not_found` for a branch that is neither the default branch
+    nor the target of a queue, or whose file CIHub has not read yet. Reads Postgres only.
+  - The page `/orgs/$org/repos/$repo/config`, the tab "Configuration" beside "Overview": the entries of the file
+    (`defaults`, then each queue), the builder of the chosen entry (`entry`) in the sections of the mockups v26,
+    read only, and the YAML (`view=yaml`) with the line of its error.
+- **Frozen interfaces**: the route and the types `BranchConfig`, `ConfigDefaults`, `ConfigQueue`,
+  `ConfigProfile`, `ConfigPriorityRule`, `ConfigSettings`, `SettingSource`; the code `config_not_found`; the table
+  `config_files`; `Source` of `cihub-config`.
+- **Exit criterion**: on the simulator, `acme/web` with a file of two entries, a profile and a priority rule on its
+  default branch: after `read_repo_setup`, `GET …/config` gives each setting with its source (`default`,
+  `strategy`, `defaults`, `queue`, and `profile` in the profile), the entries, the rule and the checks of the
+  branch rules, and calls the SCM zero times; an invalid file gives its text, its error and its line, and no
+  setting; a branch without a queue answers `404 config_not_found`, and another organization `404 org_not_found`
+  (`the_api_gives_the_configuration_of_a_branch`). The page shows the builder of each entry, the YAML and the
+  error of an invalid file (`pages/repo-config/page.test.tsx`, the views `repo-config*` of `web:shots`).
+- **Decisions** (October 23, 2026, validated by the project lead): the builder leaves "Next" and splits into
+  lots 17a (read only), 17b (edit, validate, propose as a PR), 17c (suggestions) and 17d (live updates of a
+  repository); `parallel` is refused until lot 13; the server alone holds the default values and the strategy
+  table; the branches of the builder are the default branch and the targets of the queues.
+- **Tracking**:
+  - Done (October 23, 2026): the whole content. `cihub-config`: `Source` is `Default`, `Strategy`, `Defaults`,
+    `Queue`, `Profile`; `strategy: parallel` is refused, at its line, and leaves `schema/config/v1.json` (the test
+    of the mode switch uses `mode: parallel`); `merge_checks_of` gives the checks of one part of the file. The
+    table `config_files` (rewritten migration `onboarding`), written by `read_repo_setup`, the creation of a queue
+    and `load_config` through `ConfigRead` and `keep_config_file`; `repo_setups` loses its `config_*` columns and
+    `entries`; `required_checks` on `repo_setups` (one more call `required_checks` per read, once a day) and on
+    `queue_setups`. The route, the types and the code `config_not_found`. The page: the tab "Configuration", the
+    entries of the file, the builder of each entry read only, the YAML, the error of an invalid file, and "Not read
+    yet"; the condition builder of the drawer moves to `components/conditions/condition-list.tsx`, and
+    `components/ui/switch.tsx` comes. Tests: `the_api_gives_the_configuration_of_a_branch`,
+    `pages/repo-config/page.test.tsx`, the views `repo-config*`; the views of the pages of a repository move
+    down under their tabs.
+  - Deviations, to validate by the project lead:
+    - No JSON of the file (`document`) and no writer of YAML in the client: the builder read only does not need
+      them, and `serde_json` sorts the keys of a map and writes `3.10` as `3.1`, which a writer would change in the
+      file. The conditions come as the API already writes them (`Pr.block_reasons`), and the dashboard reads them
+      with `conditionTree`. The writer, the shared examples and the first line of the schema go to lot 17b.
+    - `ConfigSettings` gives the values, typed, and `sources` (`SettingSources`) the source of each one, instead of
+      a `{value, source}` per setting: the schema of a generic field loses its description, which
+      `each_field_has_a_description` refuses.
+    - The page has no list of the sections under the entry, no bar of two pickers on a narrow screen (the entries
+      go above the builder) and no drawing of the strategies. The card `Parallel` says "not ready yet" from the
+      dashboard, as the mockup does.
+    - No browser test (`web/e2e`): the Postgres test, the page test and the views cover the exit criterion.
+
+### Lot 17b: change the configuration and propose it as a PR
+
+- **Goal**: an admin of a repository changes its configuration in the builder of the mockups v26, sees the diff of
+  the YAML, and proposes the change as a PR. CIHub never pushes on the target branch: a person reviews and merges
+  the PR.
+- **Content**:
+  - The document of the file: `ConfigDocument`, what the file sets for `defaults`, each entry, each profile and
+    each priority rule, with the conditions as a tree. `GET …/config` gives it with the resolved settings and the
+    open proposal of the branch.
+  - `cihub-config` writes the YAML of a document (`write_document`) and gives the document of a file
+    (`RepoConfig::document`); reading the written text gives the same document. The comments and the anchors of
+    the file are lost when the file is written again.
+  - `POST …/config/preview` (`queues:read`): the text of a document, its diff with the file, its error and its
+    line, and its resolved settings; no call to the SCM.
+  - `POST …/config/proposals` (`queues:write`, so `admin` on the repository): `202` and the proposal; the job
+    `propose_config` (class `interactive`) checks that the file did not change since `base_sha` (else
+    `config_changed`), points `cihub-config/<branch>` at the head, commits the file (`Scm::commit_file`) and opens
+    a PR that is not a draft (`Scm::open_pr`, which replaces `open_draft_pr`); each step converges. A branch that
+    the rules refuse ends with `config_branch_refused`. One open proposal per branch: another one answers
+    `409 config_proposal_open`.
+  - The table `config_proposals` outside the log, with the enum `config_proposal_state` (`requested`, `opened`,
+    `merged`, `closed`, `failed`); the audit action `config.proposed`. A `PrChanged` of the PR of a proposal (it
+    gains `state`) ends it, with or without a queue on its base; `read_repo_setup` reads again the open proposals
+    of its repository, so a lost delivery delays the end by a day at most, or until "Check again".
+  - The token of the installation opens the PR; its body names the person who proposed it; the review that the
+    branch rules require protects the merge (`specs/SECURITY.md`).
+  - The dashboard: every control of the builder of the mockups v26 but the suggestions (lot 17c), the condition
+    editor, the templates of the priority rules and of the profiles, the queues that an admin adds, removes and
+    moves, "use the default", the bar of the pending changes, "Undo all", the diff, the modal "Propose as a pull
+    request", the banner of the open PR and the banner "Read only"; and what lot 17a left: the sections under the
+    entry, the bar of the narrow screen, the drawings of the strategies, the builder of a repository without a
+    file.
+- **Frozen interfaces**: `ConfigDocument` and its parts, `ConfigPreview`, `ConfigProposal`, the two routes, the codes
+  `config_proposal_open` and `invalid_config`, the reasons `config_changed` and `config_branch_refused`,
+  `Scm::commit_file`, `Scm::open_pr`, `PrChanged.state`, the table `config_proposals`.
+- **Exit criterion**: on the simulator, an admin changes `batching.size` and a profile, sees the diff and proposes:
+  the simulator has a PR whose file reads as the document, and `main` did not change; a second proposal of the same
+  text opens no second PR; a push on the file after the draft gives `config_changed`; a document that is not valid
+  gives its error and its line; a person with `write` only gets `403 scope_missing`; the merge of the PR ends the
+  proposal and its banner (`the_api_proposes_a_change_of_the_configuration_as_a_pr`, `web/e2e/config.spec.ts`);
+  each example of `schema/config/examples/` reads back as its document after it is written.
+- **Decisions** (October 23, 2026, validated by the project lead): the server writes the YAML from a typed document;
+  the preview route; the proposal route and its job, with the token of the installation and `admin` to propose; the
+  table of the proposals; the end of a proposal from the deliveries of its PR; `cihub-config/<branch>` and
+  `config_branch_refused`. The work comes in two steps: the server, then the dashboard.
+- **Tracking**:
+  - Done (October 23, 2026): step 1, the server. The types of the document, of the preview and of the proposal
+    (`BranchConfig` gives `document`, `settings` and `proposal` in place of the entries of lot 17a); `cihub-config`
+    writes the YAML of a document, with the line of the schema of the tag of the instance, and gives the document
+    of a file; the examples `schema/config/examples/` and their test; `Operator::from_path` and
+    `Operator::holds_per_value` in `cihub-conditions`; `ConfigProposalState`, `ConfigProposalReason`,
+    `ConfigProposalId` and `Priority::name` in `cihub-domain`; `Scm::open_pr` (the draft PRs of the runs pass
+    `true`) and `Scm::commit_file` on GitHub and the simulator; `PrChanged.state`; the table `config_proposals`;
+    the routes, the job `propose_config`, the end of a proposal from the deliveries of its PR, with or without a
+    queue, and from `read_repo_setup`. Tests: `the_api_proposes_a_change_of_the_configuration_as_a_pr`,
+    `a_file_is_written_in_one_commit_unless_it_holds_the_text` (answers of GitHub written by hand),
+    `a_file_is_committed_on_its_branch_once`, `crates/config/tests/document.rs`.
+  - Done (October 23, 2026): step 2, the dashboard. The draft of the document (`use-config-draft.ts`), which the
+    server writes and checks 300 ms after the last change; every setting of an entry with its value, its source,
+    "changed" and "use the default"; the condition editor (an attribute, an operator, values, groups); the priority
+    rules and the profiles, with their templates; a queue that an admin adds, removes or moves; the sections under
+    the entry and the bar of a narrow screen; the bar of the pending changes, "Undo all", the diff in the YAML view,
+    the modal "Propose as a pull request", the banners of a proposal and "Read only"; a file that is not valid
+    starts the draft of an admin from the defaults. The e2e world gains `umbrella/shop` and its admin `lin`, and
+    `/sim/merge-pr`. Tests: `web/e2e/config.spec.ts`, `pages/repo-config/page.test.tsx`, the views
+    `repo-config-*` of `web:shots`.
+  - Deviations, to validate by the project lead:
+    - No light on the section that the page shows while it scrolls; a repository without a file shows `defaults`
+      and "Add a queue", not an entry of its default branch.
+    - After the merge of a proposal on a branch without a queue, the page shows the file of the last read until
+      the daily read or "Check again": the read of the file at a push on the default branch is lot 17d.
+  - Done (October 23, 2026), after the review of the principles: a refusal of the SCM, or a job that gives up,
+    ends a proposal with `pr_not_opened`, so that no proposal holds its branch for good; a run of the job that
+    stopped after its commit does not commit again; the writer refuses an attribute or an operator that the format
+    does not have; the routes refuse a file over 64 KiB, an empty `base_sha`, a document that sets what the file
+    sets, and a proposal while several paths of the file exist; two proposals at once give `409`; the preview is a
+    query of the draft that stayed 300 ms. `specs/SECURITY.md` says that the App is the author of the PR, so its
+    person can approve it.
+  - Done (October 23, 2026): the dashboard as the mockups v26. The pickers with the description of each option
+    (`OptionPicker`), the buttons of the required checks (`Segmented`), the values as tokens with suggestions
+    (`TokenField`); the cards of the strategies with their drawings; the condition editor of the mockups: the
+    attribute as a chip that opens the modal of the attributes, the operator and its values per kind of
+    attribute, the conditions of `defaults` above those of a queue, the YAML of the conditions under them; read
+    only, a condition is text. The views `repo-config-picker` and `repo-config-attribute` of `web:shots`.
+  - Done (October 23, 2026): a control shows its new value at once. The builder puts what the draft sets over the
+    settings of the last preview (`withOwnSettings`); the preview gives what follows from it, 100 ms after the last
+    change in place of 300 ms. Before, a control kept its old value until the answer of the preview.
+  - To validate by the project lead: `cihub-config` depends on `cihub-api-types` for the document, which is the JSON
+    of the file (`specs/ARCHITECTURE.md`); two tests of `cihub-mq-core` then give the type of an empty list. The
+    contract suite does not call `commit_file`, and its answers of GitHub are written by hand, as other tests of
+    `recorded.rs` do: a recording needs a test repository on GitHub. `ConfigProposalReason` is an enumeration of
+    its own, outside `Reason` (`specs/DOMAIN.md`). The URL of the schema in the first line of the file names
+    `raw.githubusercontent.com`, where the project publishes it.
+
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
 Decisions (October 14, 2026, validated by the project lead):
@@ -991,6 +1154,6 @@ Decisions (October 14, 2026, validated by the project lead):
 ### Next
 
 Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab behind `Scm`; the `viewer` role
-and the change of a role by an admin (`specs/SECURITY.md`); from the mockups v3, the pages of the settings
-(configuration and its sources, branch protection with "Check again", audit log), the form that changes
-`.cihub.yaml` through a PR, and the search of a PR. These lots are split when phase 4 starts.
+and the change of a role by an admin (`specs/SECURITY.md`); from the mockups v3, the audit log; the lots 17c and 17d
+of the configuration builder (suggestions; live updates of a repository), and
+the search of a PR. These lots are split when phase 4 starts.

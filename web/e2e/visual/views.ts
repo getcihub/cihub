@@ -2,6 +2,8 @@
 // (a paused queue, a failed run, a refusal), its menus and its dialogs.
 import type { Page } from "@playwright/test";
 
+import { branchConfigOf } from "@/test/config";
+
 import { type Answer, type ApiRequest, type Person, answerOf, problem } from "./api";
 
 export type Theme = "light" | "dark";
@@ -44,6 +46,14 @@ async function submitPr(page: Page, number: string): Promise<void> {
   await page.getByRole("button", { name: "Submit a pull request" }).click();
   await page.getByRole("dialog").getByRole("textbox").fill(number);
   await page.getByRole("dialog").getByRole("button", { name: "Submit" }).click();
+}
+
+/** Changes the size of the batches of `main` to 7 in the builder, and waits for the bar of the changes. */
+async function changeBatchSize(page: Page): Promise<void> {
+  const size = page.getByRole("textbox", { name: "Batch size", exact: true });
+  await size.fill("7");
+  await size.press("Enter");
+  await page.getByText("pending changes").waitFor();
 }
 
 async function pauseQueue(page: Page): Promise<void> {
@@ -131,6 +141,149 @@ export const VIEWS: View[] = [
   { name: "org-start-open", url: "/orgs/acme?open=handbook", ready: "Fix the points above", themes: BOTH },
   { name: "repo-overview", url: "/orgs/acme/repos/web", ready: "release" },
   { name: "repo-setup", url: "/orgs/acme/repos/handbook", ready: "blocks every merge", themes: BOTH },
+  {
+    name: "repo-config",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    themes: BOTH,
+    viewports: [WIDE, NARROW],
+  },
+  { name: "repo-config-read-only", url: "/orgs/acme/repos/web/config", ready: "Read only.", person: "grace" },
+  {
+    name: "repo-config-changed",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    themes: BOTH,
+    viewports: [WIDE, NARROW],
+    act: changeBatchSize,
+  },
+  {
+    name: "repo-config-changed-yaml",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    act: async (page) => {
+      await changeBatchSize(page);
+      await page.getByRole("link", { name: "View YAML" }).click();
+      await page.getByText("with your pending changes").waitFor();
+    },
+  },
+  {
+    name: "repo-config-propose",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    themes: BOTH,
+    act: async (page) => {
+      await changeBatchSize(page);
+      await page.getByRole("button", { name: "Propose as a pull request" }).click();
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  {
+    name: "repo-config-add-queue",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    act: async (page) => {
+      await page
+        .getByRole("navigation", { name: "The file" })
+        .getByRole("button", { name: "Add a queue" })
+        .click();
+      await page.getByRole("dialog").getByRole("textbox").fill("release/2.0");
+    },
+  },
+  {
+    name: "repo-config-picker",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    act: async (page) => {
+      await page.getByRole("button", { name: /^CI trigger:/ }).click();
+      await page.getByRole("listbox", { name: "CI trigger" }).waitFor();
+    },
+  },
+  {
+    name: "repo-config-attribute",
+    url: "/orgs/acme/repos/web/config",
+    ready: "Queue of main",
+    act: async (page) => {
+      await page.getByRole("button", { name: "Add a condition" }).first().click();
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  {
+    name: "repo-config-proposal-opened",
+    url: "/orgs/acme/repos/web/config",
+    ready: "changes this file",
+    answer: ({ path }) =>
+      path === "/orgs/acme/repos/web/config"
+        ? [
+            200,
+            {
+              ...branchConfigOf(),
+              proposal: {
+                id: "proposal_1",
+                branch: "main",
+                state: "opened",
+                pr_number: 141,
+                pr_url: "https://github.com/acme/web/pull/141",
+                requested_by: "ada",
+                requested_at: "2026-10-12T09:00:00Z",
+              },
+            },
+          ]
+        : null,
+  },
+  {
+    name: "repo-config-proposal-failed",
+    url: "/orgs/acme/repos/web/config",
+    ready: "The proposal failed",
+    answer: ({ path }) =>
+      path === "/orgs/acme/repos/web/config"
+        ? [
+            200,
+            {
+              ...branchConfigOf(),
+              proposal: {
+                id: "proposal_1",
+                branch: "main",
+                state: "failed",
+                state_reason: "config_changed",
+                state_description:
+                  "the configuration file of `main` changed since it was read: start again from the new file",
+                requested_at: "2026-10-12T09:00:00Z",
+              },
+            },
+          ]
+        : null,
+  },
+  {
+    name: "repo-config-defaults",
+    url: "/orgs/acme/repos/web/config?entry=defaults",
+    ready: "every queue of this file",
+  },
+  {
+    name: "repo-config-glob",
+    url: "/orgs/acme/repos/web/config?entry=release%2F*",
+    ready: "Queue of release/*",
+  },
+  { name: "repo-config-yaml", url: "/orgs/acme/repos/web/config?view=yaml", ready: "the file on" },
+  { name: "repo-config-none", url: "/orgs/acme/repos/landing/config", ready: "the values of CIHub" },
+  {
+    name: "repo-config-invalid",
+    url: "/orgs/acme/repos/infra/config",
+    ready: "The file is not valid",
+    themes: BOTH,
+  },
+  {
+    name: "repo-config-invalid-yaml",
+    url: "/orgs/acme/repos/infra/config?view=yaml",
+    ready: "batching: { size: 50 }",
+  },
+  { name: "repo-config-not-read", url: "/orgs/acme/repos/handbook/config", ready: "Not read yet" },
+  {
+    name: "repo-config-loading",
+    url: "/orgs/acme/repos/web/config",
+    ready: "skeleton",
+    hold: ({ path }) => path === "/orgs/acme/repos/web/config",
+  },
   {
     name: "repo-start-ready",
     url: "/orgs/acme-labs/repos/app",

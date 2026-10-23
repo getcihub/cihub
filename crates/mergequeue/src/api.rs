@@ -5,6 +5,7 @@
 //! through its inbox (`queue_inbox`) or a job: the scheduler stays the only
 //! writer of the log.
 
+mod branch_config;
 mod health;
 mod prs;
 mod queues;
@@ -17,12 +18,15 @@ use std::sync::Arc;
 use axum::Router;
 use axum::routing::{get, post};
 use cihub_api_types::{
-    CheckHealth, ConfigFile, ConfigFileState, Dependent, ErrorCode, Event, EventList, Finding,
-    Graph, GraphEdge, GraphNode, GraphRun, HealthBucket, HealthTotals, HealthVerdict, ItemCounts,
-    Permission, Person, Pr, PrAhead, PrList, Queue, QueueHealth, QueueList, ReasonCount, Repo,
-    RepoDetail, RepoList, RepoSetup, RequestedQueueState, RuleCheck, Run, RunCheck,
-    SettingsSummary, Setup, SetupState, SetupSummary, StateTime, SubmitPr, TimeToMerge,
-    UpdateQueue, Window,
+    BranchConfig, CheckHealth, ConditionBlock, ConditionDocument, ConfigDocument, ConfigFile,
+    ConfigFileState, ConfigPreview, ConfigProposal, ConfigSettings, DefaultsDocument, Dependent,
+    DiffLine, ErrorCode, Event, EventList, Finding, Graph, GraphEdge, GraphNode, GraphRun,
+    HealthBucket, HealthTotals, HealthVerdict, ItemCounts, LineChange, Permission, Person, Pr,
+    PrAhead, PrList, PreviewConfig, PriorityRuleDocument, ProfileDocument, ProposeConfig, Queue,
+    QueueDocument, QueueHealth, QueueList, ReasonCount, Repo, RepoDetail, RepoList, RepoSetup,
+    RequestedQueueState, RequiredStatusesDocument, ResolvedConfig, ResolvedQueue, RuleCheck, Run,
+    RunCheck, SettingSource, SettingSources, SettingsDocument, SettingsSummary, Setup, SetupState,
+    SetupSummary, StateTime, SubmitPr, TimeToMerge, UpdateQueue, Window,
 };
 use cihub_domain::{Actor, RepoId};
 use cihub_platform::{ApiError, ApiGrant, GrantActor, ModuleApi, PAGE_ERRORS, error_responses};
@@ -88,12 +92,34 @@ struct ApiState {
         runs::get_run,
         repos::list_repos,
         repos::get_repo,
-        repos::sync_repo
+        repos::sync_repo,
+        branch_config::get_branch_config,
+        branch_config::preview_config,
+        branch_config::propose_config
     ),
     components(schemas(
+        BranchConfig,
         CheckHealth,
+        ConditionBlock,
+        ConditionDocument,
+        ConfigDocument,
+        ConfigPreview,
+        ConfigProposal,
+        DefaultsDocument,
+        DiffLine,
+        LineChange,
+        PreviewConfig,
+        PriorityRuleDocument,
+        ProfileDocument,
+        ProposeConfig,
+        QueueDocument,
+        RequiredStatusesDocument,
+        ResolvedConfig,
+        ResolvedQueue,
+        SettingsDocument,
         ConfigFile,
         ConfigFileState,
+        ConfigSettings,
         Dependent,
         Event,
         EventList,
@@ -123,6 +149,8 @@ struct ApiState {
         RuleCheck,
         Run,
         RunCheck,
+        SettingSource,
+        SettingSources,
         SettingsSummary,
         Setup,
         SetupState,
@@ -169,6 +197,18 @@ pub(crate) fn api(pool: PgPool, clock: Clock, scm: Arc<dyn Scm>) -> ModuleApi {
         .route("/orgs/{org}/repos", get(repos::list_repos))
         .route("/orgs/{org}/repos/{repo}", get(repos::get_repo))
         .route("/orgs/{org}/repos/{repo}/sync", post(repos::sync_repo))
+        .route(
+            "/orgs/{org}/repos/{repo}/config",
+            get(branch_config::get_branch_config),
+        )
+        .route(
+            "/orgs/{org}/repos/{repo}/config/preview",
+            post(branch_config::preview_config),
+        )
+        .route(
+            "/orgs/{org}/repos/{repo}/config/proposals",
+            post(branch_config::propose_config),
+        )
         .route("/orgs/{org}/repos/{repo}/prs", get(prs::list_repo_prs))
         .route("/orgs/{org}/repos/{repo}/prs/{number}", get(prs::get_pr))
         .route(
@@ -320,6 +360,23 @@ route_errors!(
 route_errors!(RunErrors: &[ErrorCode::RepoNotFound, ErrorCode::RunNotFound]);
 route_errors!(RepoListErrors: PAGE_ERRORS);
 route_errors!(RepoErrors: &[ErrorCode::RepoNotFound]);
+route_errors!(BranchConfigErrors: &[ErrorCode::RepoNotFound, ErrorCode::ConfigNotFound]);
+route_errors!(
+    PreviewErrors: &[
+        ErrorCode::InvalidRequest,
+        ErrorCode::RepoNotFound,
+        ErrorCode::ConfigNotFound,
+    ]
+);
+route_errors!(
+    ProposeErrors: &[
+        ErrorCode::InvalidRequest,
+        ErrorCode::InvalidConfig,
+        ErrorCode::RepoNotFound,
+        ErrorCode::ConfigNotFound,
+        ErrorCode::ConfigProposalOpen,
+    ]
+);
 
 /// The text that a `q` filter looks for in a name: from 1 to 100 characters.
 fn name_part(q: Option<String>) -> Result<Option<String>, ApiError> {
