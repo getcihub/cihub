@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{BlockReason, EventKind, EventType, ItemState, JobClass, Reason, RepoId};
+use cihub_domain::{
+    AwaitedCheckStatus, BlockReason, EventKind, EventType, ItemState, JobClass, Reason, RepoId,
+};
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_platform::Job;
 use cihub_scm::{CommitStatus, SUBMIT_BOX, Scm, ScmError, StatusUpdate};
@@ -188,9 +190,11 @@ pub(crate) fn block_text(reason: &BlockReason) -> String {
         BlockReason::FailingRequiredCheck { check } => {
             format!("the required check `{check}` failed")
         }
-        BlockReason::AwaitingRequiredCheck { check, status } => {
-            format!("the required check `{check}` is {status}")
-        }
+        BlockReason::AwaitingRequiredCheck { check, status } => match status {
+            AwaitedCheckStatus::Missing => format!("the required check `{check}` has not reported"),
+            AwaitedCheckStatus::Queued => format!("the required check `{check}` is queued"),
+            AwaitedCheckStatus::Running => format!("the required check `{check}` is running"),
+        },
         BlockReason::BehindBase => "the branch is behind its base".to_owned(),
         BlockReason::MergeConflict => "the branch conflicts with its base".to_owned(),
         BlockReason::StackNeedsRebase { onto_pr_number } => {
@@ -1034,7 +1038,7 @@ mod tests {
             BlockReason::ReviewRequired { have: 1, need: 2 },
             BlockReason::AwaitingRequiredCheck {
                 check: "build".into(),
-                status: "in progress".into(),
+                status: AwaitedCheckStatus::Running,
             },
         ];
 
@@ -1056,7 +1060,7 @@ mod tests {
                 blocked,
                 "⏳ **Waiting** · not in the queue for `main` yet\n\n\
                  - 1 of 2 required approvals\n\
-                 - The required check `build` is in progress\n\n\
+                 - The required check `build` is running\n\n\
                  <sub>The PR enters the queue when nothing above blocks it · `/cihub cancel` to withdraw</sub>\n",
             ),
             (

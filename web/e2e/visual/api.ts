@@ -217,7 +217,7 @@ const PRS: Pr[] = [
     author: { login: "grace" },
     state_description: "the PR was submitted to the queue",
     block_reasons: [
-      { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+      { kind: "awaiting_required_check", check: "ci", status: "running" },
       { kind: "queue_conditions_unmet", conditions: CONDITIONS_OF_133 },
     ],
   }),
@@ -476,10 +476,10 @@ const EVENTS: Record<string, Event[]> = {
     eventOf(7, "item_web_133", {
       type: "item.readiness_changed",
       occurred_at: ago(3),
-      description: "the required check `ci` is in_progress; the queue conditions … are not met",
+      description: "the required check `ci` is running; the queue conditions … are not met",
       payload: {
         block_reasons: [
-          { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+          { kind: "awaiting_required_check", check: "ci", status: "running" },
           { kind: "queue_conditions_unmet", conditions: CONDITIONS_OF_133 },
         ],
       },

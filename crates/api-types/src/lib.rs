@@ -741,8 +741,9 @@ pub struct Pr {
     /// What keeps a `not_ready` item out of the queue. Each one has a `kind`:
     /// `review_required` (`have`, `need`), `changes_requested`,
     /// `failing_required_check` (`check`), `awaiting_required_check`
-    /// (`check`, `status`), `behind_base`, `merge_conflict`,
-    /// `stack_needs_rebase` (`onto_pr_number`), `undetermined`, or
+    /// (`check`, `status`: `missing`, `queued` or `running`), `behind_base`,
+    /// `merge_conflict`, `stack_needs_rebase` (`onto_pr_number`),
+    /// `undetermined`, or
     /// `queue_conditions_unmet` (`conditions`).
     #[cfg_attr(
         feature = "openapi",

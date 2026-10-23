@@ -9,10 +9,10 @@ use std::collections::BTreeMap;
 
 use cihub_config::QueueSettings;
 use cihub_domain::{
-    Actor, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId, EventKind, GroupId,
-    GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle, Mergeability,
-    OptimizationMode, PrState, QueueMode, QueueState, Reason, ReviewDecision, RunId, RunStatus,
-    TestGroup, TestRun, test_branch,
+    Actor, AwaitedCheckStatus, BlockReason, CheckConclusion, DirectMergeMode, Event, EventId,
+    EventKind, GroupId, GroupKind, GroupState, Item, ItemId, ItemState, JobError, Lifecycle,
+    Mergeability, OptimizationMode, PrState, QueueMode, QueueState, Reason, ReviewDecision, RunId,
+    RunStatus, TestGroup, TestRun, test_branch,
 };
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -1225,18 +1225,14 @@ fn blocking_checks(pr: &PrObservation) -> Vec<BlockReason> {
         .iter()
         .filter_map(|name| {
             let report = pr.checks.iter().find(|c| c.name == *name);
-            match report.map(|c| c.conclusion) {
-                Some(Some(conclusion)) if conclusion.is_passing() => None,
-                Some(Some(_)) => Some(BlockReason::FailingRequiredCheck {
+            match report.and_then(|c| c.conclusion) {
+                Some(conclusion) if conclusion.is_passing() => None,
+                Some(_) => Some(BlockReason::FailingRequiredCheck {
                     check: name.clone(),
-                }),
-                Some(None) => Some(BlockReason::AwaitingRequiredCheck {
-                    check: name.clone(),
-                    status: "pending".into(),
                 }),
                 None => Some(BlockReason::AwaitingRequiredCheck {
                     check: name.clone(),
-                    status: "missing".into(),
+                    status: AwaitedCheckStatus::of(report),
                 }),
             }
         })
