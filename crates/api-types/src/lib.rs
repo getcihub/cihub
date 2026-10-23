@@ -4,9 +4,9 @@
 //! the `OpenAPI` schemas, for the server only.
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, ConflictCulprit, ItemState, MembershipRole,
-    MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource, RunStatus,
-    Strategy, SubmittedVia,
+    BlockReason, CheckConclusion, CheckKind, CheckStatus, ConflictCulprit, ItemState,
+    MembershipRole, MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource,
+    RunStatus, Strategy, SubmittedVia,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -91,6 +91,7 @@ mod closed {
         ActorKind,
         CheckConclusion,
         CheckKind,
+        CheckStatus,
         EventType,
         ItemState,
         MembershipRole,
@@ -691,6 +692,13 @@ pub struct Pr {
     /// The title at the last read of the PR; `null` before the first.
     #[cfg_attr(feature = "openapi", schema(example = "Export invoices as CSV"))]
     pub title: Option<String>,
+    /// The page of the PR on the SCM, at the last read of the PR; `null`
+    /// before the first.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://github.com/acme/web/pull/118")
+    )]
+    pub url: Option<String>,
     /// The author of the PR.
     pub author: Person,
     /// The head of the PR that the item tests.
@@ -1224,9 +1232,28 @@ pub struct RunCheck {
     pub kind: CheckKind,
     /// The run needs it to pass.
     pub required: bool,
+    /// `queued` waits for a runner, `in_progress` runs, `completed` has an
+    /// outcome.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::CheckStatus))]
+    pub status: CheckStatus,
     /// The outcome; `null` while the check runs.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::CheckConclusion>))]
     pub conclusion: Option<CheckConclusion>,
+    /// When the check started, as the CI reports it; `null` before. A commit
+    /// status gives the time of its state only.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-11T09:31:00Z")
+    )]
+    pub started_at: Option<OffsetDateTime>,
+    /// When the check concluded, as the CI reports it; `null` before.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = Option<String>, format = DateTime, example = "2026-10-11T09:39:00Z")
+    )]
+    pub completed_at: Option<OffsetDateTime>,
     /// The page of the check on the CI.
     #[cfg_attr(
         feature = "openapi",
@@ -1317,6 +1344,12 @@ pub struct Run {
     /// configuration asks for one.
     #[cfg_attr(feature = "openapi", schema(example = 412))]
     pub draft_pr_number: Option<u64>,
+    /// The page of the draft PR on the SCM; `null` without a draft PR.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://github.com/acme/web/pull/412")
+    )]
+    pub draft_pr_url: Option<String>,
     /// The PRs that the run tests.
     #[cfg_attr(feature = "openapi", schema(example = json!([118])))]
     pub tested_pr_numbers: Vec<u64>,

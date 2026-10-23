@@ -40,6 +40,7 @@ CREATE TABLE queue_items (
     queue_id           text          NOT NULL,
     pr_number          bigint        NOT NULL,
     pr_head_sha        text          NOT NULL,
+    pr_url             text,
     pr_author_id       text          NOT NULL REFERENCES users (id),
     state              item_state    NOT NULL,
     state_reason       reason        NOT NULL,

@@ -208,6 +208,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
         ),
         EventKind::PrObserved {
             pr_number,
+            url,
             state,
             head_sha,
             base_branch,
@@ -224,6 +225,7 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             }
 
             let value = PrObservation {
+                url: url.clone(),
                 state: *state,
                 head_sha: head_sha.clone(),
                 base_branch: base_branch.clone(),

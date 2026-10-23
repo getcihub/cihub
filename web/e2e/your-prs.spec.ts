@@ -40,6 +40,12 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   await expect(mine).toContainText("#2 Retry the webhook sweep", READ_AGAIN);
   await expect(mine).toContainText("merged into main", { timeout: 60_000 });
 
+  await page.goto("/orgs/acme/repos/api/queues/main/prs/2");
+
+  const drawer = page.getByRole("dialog", { name: "Retry the webhook sweep" });
+
+  await expect(drawer.getByRole("link", { name: "#2" })).toHaveAttribute("href", /\/acme\/api\/prs\/2$/);
+
   const comment = await (await page.request.get("/sim/comment?repo=api&number=2")).text();
   expect(comment).toContain("[Open in CIHub](http://127.0.0.1:18090/orgs/acme/repos/api/queues/main/prs/2)");
 });

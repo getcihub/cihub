@@ -232,6 +232,7 @@ impl World {
             Actor::System,
             EventKind::PrObserved {
                 pr_number,
+                url: format!("https://scm.example/acme/web/prs/{pr_number}"),
                 state: pr.state,
                 head_sha: pr.head_sha,
                 base_branch: pr.base_branch,

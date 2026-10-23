@@ -315,6 +315,7 @@ pub(crate) fn observation(
     unmet: Vec<String>,
 ) -> PrObservation {
     PrObservation {
+        url: pr.url.clone(),
         state: pr.state,
         head_sha: pr.head_sha.clone(),
         base_branch: pr.base_branch.clone(),
@@ -335,6 +336,7 @@ pub(crate) fn observation(
 
 fn observed(pr: &PrSnapshot, required: &RequiredChecks, unmet: Vec<String>) -> EventKind {
     let PrObservation {
+        url,
         state,
         head_sha,
         base_branch,
@@ -349,6 +351,7 @@ fn observed(pr: &PrSnapshot, required: &RequiredChecks, unmet: Vec<String>) -> E
 
     EventKind::PrObserved {
         pr_number: pr.number,
+        url,
         state,
         head_sha,
         base_branch,

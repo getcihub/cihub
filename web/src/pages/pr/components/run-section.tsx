@@ -2,11 +2,11 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import { getRunOptions } from "@/client/@tanstack/react-query.gen";
-import type { CheckConclusion } from "@/client/types.gen";
+import type { CheckConclusion, CheckStatus, RunCheck } from "@/client/types.gen";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { shortSha } from "@/lib/text";
-import { dateAndTime } from "@/lib/time";
+import { dateAndTime, durationBetween, timeOfDay } from "@/lib/time";
 import { DrawerNote, DrawerSection, DrawerSectionTitle } from "./drawer-frame";
 
 const RUN_STATUSES: Record<string, string> = {
@@ -32,10 +32,23 @@ const CONCLUSION_LABELS: Record<string, string> = {
 
 const FAILURES = new Set<CheckConclusion>(["failure", "error", "timed_out", "action_required"]);
 
-/** The mark of a check: passed, failed, running (it turns), or ended without a verdict. */
-function CheckMark({ conclusion }: { conclusion: CheckConclusion | null | undefined }) {
+/** The mark of a check: passed, failed, running (it turns), or waiting or ended without a verdict. */
+function CheckMark({
+  status,
+  conclusion,
+}: {
+  status: CheckStatus;
+  conclusion: CheckConclusion | null | undefined;
+}) {
   const mark = "size-4 flex-none";
 
+  if (!conclusion && status === "queued") {
+    return (
+      <svg className={mark} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" className="stroke-waiting" strokeWidth="2" strokeDasharray="3 3" />
+      </svg>
+    );
+  }
   if (!conclusion) {
     return (
       <svg
@@ -84,6 +97,19 @@ function CheckMark({ conclusion }: { conclusion: CheckConclusion | null | undefi
   );
 }
 
+/** What a check says on its line: queued, running since its start, or its conclusion and how long it took. */
+function checkState({ status, conclusion, started_at, completed_at }: RunCheck): string {
+  if (conclusion) {
+    const label = CONCLUSION_LABELS[conclusion] ?? conclusion;
+
+    return started_at && completed_at ? `${label} in ${durationBetween(started_at, completed_at)}` : label;
+  }
+  if (status === "queued") {
+    return "queued";
+  }
+  return started_at ? `running since ${timeOfDay(started_at)}` : "running";
+}
+
 /** The run of a PR in its drawer: what it tests, on top of what, and the checks of its test commit. */
 export function RunSection({ org, repo, runId }: { org: string; repo: string; runId: string }) {
   const { data: run } = useSuspenseQuery(getRunOptions({ path: { org, repo, run_id: runId } }));
@@ -99,7 +125,23 @@ export function RunSection({ org, repo, runId }: { org: string; repo: string; ru
           <Fact label="Test branch">
             <code>{run.test_branch}</code>
           </Fact>
-          {run.draft_pr_number != null && <Fact label="Draft PR">#{run.draft_pr_number} · runs your CI</Fact>}
+          {run.draft_pr_number != null && (
+            <Fact label="Draft PR">
+              {run.draft_pr_url ? (
+                <a
+                  className="hover:text-foreground hover:underline"
+                  href={run.draft_pr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  #{run.draft_pr_number}
+                </a>
+              ) : (
+                `#${String(run.draft_pr_number)}`
+              )}{" "}
+              · runs your CI
+            </Fact>
+          )}
           <Fact label="Base">
             <code>{shortSha(run.base_sha)}</code>
           </Fact>
@@ -118,12 +160,10 @@ export function RunSection({ org, repo, runId }: { org: string; repo: string; ru
           <ul className="grid gap-0.5">
             {run.checks.map((check) => (
               <li key={`${check.kind}-${check.name}`} className="flex items-center gap-2.5 py-1.25 text-md">
-                <CheckMark conclusion={check.conclusion} />
+                <CheckMark status={check.status} conclusion={check.conclusion} />
                 <span className="font-medium">{check.name}</span>
                 {!check.required && <span className="text-muted-foreground">not required</span>}
-                <span className="ml-auto text-muted-foreground">
-                  {check.conclusion ? (CONCLUSION_LABELS[check.conclusion] ?? check.conclusion) : "running"}
-                </span>
+                <span className="ml-auto text-muted-foreground">{checkState(check)}</span>
               </li>
             ))}
           </ul>

@@ -1546,6 +1546,13 @@ impl Scm for GithubApp {
         ))
     }
 
+    fn pr_url(&self, repo: &RepoRef, number: u64) -> String {
+        format!(
+            "{}/{}/{}/pull/{number}",
+            self.web_url, repo.namespace, repo.name
+        )
+    }
+
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
         self.sign_in_address(request)
     }

@@ -236,10 +236,16 @@ impl World {
     }
 
     async fn observe(&mut self, pr: u64, state: PrState) -> Vec<Event> {
+        self.observe_at(pr, state, format!("https://scm.example/acme/web/prs/{pr}"))
+            .await
+    }
+
+    async fn observe_at(&mut self, pr: u64, state: PrState, url: String) -> Vec<Event> {
         self.fact(
             Actor::System,
             EventKind::PrObserved {
                 pr_number: pr,
+                url,
                 state,
                 head_sha: head(pr),
                 base_branch: "main".into(),
@@ -439,6 +445,49 @@ async fn a_replay_of_the_log_rebuilds_the_same_projections(pool: PgPool) {
             .unwrap();
 
     assert_eq!(snapshot_seq_after_rebuild, Some(last_snapshot));
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_pr_takes_its_last_url_until_it_ends_and_a_replay_keeps_it(pool: PgPool) {
+    let mut w = World::new(pool.clone()).await;
+    w.submit(1).await;
+    w.assemble_all().await;
+    w.report_all(CheckConclusion::Success).await;
+    w.merge_all().await;
+    w.submit(2).await;
+
+    let moved = |pr: u64| format!("https://scm.example/acme/web/pulls/{pr}");
+    w.observe_at(2, PrState::Open, moved(2)).await;
+    w.observe_at(1, PrState::Open, moved(1)).await;
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let urls: Vec<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT pr_number, state::text, pr_url FROM queue_items WHERE queue_id = $1
+         ORDER BY pr_number",
+    )
+    .bind(queue().to_string())
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        urls,
+        [
+            (
+                1,
+                "merged".into(),
+                Some("https://scm.example/acme/web/prs/1".into())
+            ),
+            (2, "testing".into(), Some(moved(2))),
+        ],
+        "a live item takes the last URL, an ended one keeps its own"
+    );
+
+    let before = projections(&mut tx).await;
+    let rebuilt = rebuild(&mut tx, queue()).await.unwrap();
+
+    assert_eq!(rebuilt, w.log);
+    assert_eq!(projections(&mut tx).await, before);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -3595,6 +3644,11 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         (&1.into(), &false.into(), &Value::Null)
     );
     assert_eq!(pr["number"], number);
+    assert_eq!(
+        pr["url"],
+        format!("https://scm.example/acme/app/prs/{number}").as_str(),
+        "the page of the PR is the one that the SCM gave at its read"
+    );
     assert_eq!((&pr["repo"], &pr["queue"]), (&"app".into(), &"main".into()));
     assert_eq!(pr["state"], "testing");
     assert_eq!(pr["priority"], 10);
@@ -3649,12 +3703,77 @@ async fn the_api_reads_and_changes_a_queue(pool: PgPool) {
         (&1.into(), &"in_progress".into())
     );
 
-    let (run_id, _, _) = q.runs_in_progress().await.remove(0);
+    let (run_id, test_sha, _) = q.runs_in_progress().await.remove(0);
+    let started_at = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let lint = CheckReport {
+        kind: CheckKind::Check,
+        started_at: Some(started_at),
+        ..running("lint")
+    };
+    let built_at = OffsetDateTime::from_unix_timestamp(1_789_000_600).unwrap();
+    let build = CheckReport {
+        kind: CheckKind::Check,
+        started_at: Some(started_at),
+        completed_at: Some(built_at),
+        ..check("build", true)
+    };
+    let deploy = CheckReport {
+        kind: CheckKind::Check,
+        status: CheckStatus::Queued,
+        conclusion: None,
+        ..check("deploy", true)
+    };
+    sim.report_check(&repo(), &test_sha, lint).unwrap();
+    sim.report_check(&repo(), &test_sha, build).unwrap();
+    sim.report_check(&repo(), &test_sha, deploy).unwrap();
+
+    q.deliver().await;
+    q.settle().await;
+
     let (status, run) = call("GET", format!("/orgs/acme/repos/app/runs/{run_id}"), None).await;
+    let draft = run["draft_pr_number"].as_u64().unwrap();
+    let check_named = |name: &str| {
+        run["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["name"] == name)
+            .unwrap_or_else(|| panic!("the run shows the check `{name}` of the CI: {run}"))
+            .clone()
+    };
+    let (lint, build, deploy) = (
+        check_named("lint"),
+        check_named("build"),
+        check_named("deploy"),
+    );
 
     assert_eq!(status, 200, "{run}");
     assert_eq!(run["tested_pr_numbers"], serde_json::json!([number]));
     assert_eq!(run["status"], "in_progress");
+    assert_eq!(
+        run["draft_pr_url"],
+        format!("https://scm.example/acme/app/prs/{draft}").as_str()
+    );
+    assert_eq!(lint["status"], "in_progress");
+    assert_eq!(lint["started_at"], "2026-09-10T00:26:40Z");
+    assert_eq!(lint["completed_at"], Value::Null);
+    assert_eq!(build["status"], "completed");
+    assert_eq!(build["completed_at"], "2026-09-10T00:36:40Z");
+    assert_eq!(deploy["status"], "queued");
+    assert_eq!(deploy["started_at"], Value::Null);
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("UPDATE test_runs SET draft_pr_number = NULL WHERE id = $1")
+        .bind(run_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let (_, without_draft) = call("GET", format!("/orgs/acme/repos/app/runs/{run_id}"), None).await;
+
+    assert_eq!(without_draft["draft_pr_number"], Value::Null);
+    assert_eq!(without_draft["draft_pr_url"], Value::Null);
 
     let restart = call("POST", format!("{pr_path}/restart"), None).await;
     assert_eq!(restart.0, 202);

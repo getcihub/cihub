@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use axum::Json;
 use axum::extract::State;
 use cihub_api_types::{Dependent, ErrorCode, Run, RunCheck};
-use cihub_domain::{ApiScope, RunId};
+use cihub_domain::{ApiScope, RepoId, RunId};
 use cihub_platform::{ApiError, ApiGrant, ApiPath};
+use cihub_scm::{ConnectionRef, RepoRef};
 use serde_json::Value;
 use sqlx::PgConnection;
 use time::OffsetDateTime;
@@ -97,6 +98,10 @@ pub(super) async fn get_run(
             .iter()
             .filter_map(|id| numbers.get(id).copied()),
     )?;
+    let draft_pr_url = match run.draft_pr_number {
+        Some(number) => Some(draft_pr_url(&state, &mut tx, repo, u64::try_from(number)?).await?),
+        None => None,
+    };
     let checks = run_checks(&mut tx, &run_id).await?;
     let dependents = dependents(&mut tx, &run.queue_id, &run_id, &members).await?;
 
@@ -105,6 +110,7 @@ pub(super) async fn get_run(
         status: run.status.parse()?,
         status_reason: run.status_reason.parse()?,
         draft_pr_number: run.draft_pr_number.map(u64::try_from).transpose()?,
+        draft_pr_url,
         tested_pr_numbers: pr_numbers(run.tested_pr_numbers)?,
         required_statuses_source: run
             .required_statuses_source
@@ -135,17 +141,55 @@ pub(super) async fn get_run(
     }))
 }
 
+/// The page on the SCM of the draft PR `number` of `repo`.
+async fn draft_pr_url(
+    state: &ApiState,
+    conn: &mut PgConnection,
+    repo: RepoId,
+    number: u64,
+) -> Result<String, ApiError> {
+    let (connection_id, connection_external_id, external_id, namespace, name): (
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = sqlx::query_as(
+        "SELECT c.id, c.external_id, r.external_id, r.namespace, r.name
+         FROM repos r JOIN scm_connections c ON c.id = r.connection_id
+         WHERE r.id = $1",
+    )
+    .bind(repo.to_string())
+    .fetch_one(conn)
+    .await?;
+    let repo = RepoRef {
+        connection: ConnectionRef {
+            id: connection_id.parse()?,
+            external_id: connection_external_id,
+        },
+        external_id,
+        namespace,
+        name,
+    };
+
+    Ok(state.scm.pr_url(&repo, number))
+}
+
 async fn run_checks(conn: &mut PgConnection, run_id: &str) -> Result<Vec<RunCheck>, ApiError> {
     type Row = (
         String,
         String,
         bool,
+        String,
         Option<String>,
         Option<String>,
+        Option<OffsetDateTime>,
+        Option<OffsetDateTime>,
         OffsetDateTime,
     );
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT name, kind::text, required, conclusion::text, details_url, observed_at
+        "SELECT name, kind::text, required, status::text, conclusion::text, details_url,
+                started_at, completed_at, observed_at
          FROM check_observations WHERE run_id = $1 ORDER BY name, kind",
     )
     .bind(run_id)
@@ -153,13 +197,26 @@ async fn run_checks(conn: &mut PgConnection, run_id: &str) -> Result<Vec<RunChec
     .await?;
     rows.into_iter()
         .map(
-            |(name, kind, required, conclusion, details_url, observed_at)| {
+            |(
+                name,
+                kind,
+                required,
+                status,
+                conclusion,
+                details_url,
+                started_at,
+                completed_at,
+                observed_at,
+            )| {
                 Ok(RunCheck {
                     name,
                     kind: kind.parse()?,
                     required,
+                    status: status.parse()?,
                     conclusion: conclusion.as_deref().map(str::parse).transpose()?,
                     details_url,
+                    started_at,
+                    completed_at,
                     observed_at,
                 })
             },

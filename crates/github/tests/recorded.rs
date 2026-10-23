@@ -952,6 +952,18 @@ fn the_rules_of_a_repository_are_on_its_settings_page() {
     );
 }
 
+#[test]
+fn a_pr_is_on_its_pull_page_for_github_and_for_an_enterprise_server() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let repo = repo("7", "acme", "web");
+
+    let github = app("https://github.com", now).pr_url(&repo, 42);
+    let enterprise = app("https://ghe.example.com", now).pr_url(&repo, 42);
+
+    assert_eq!(github, "https://github.com/acme/web/pull/42");
+    assert_eq!(enterprise, "https://ghe.example.com/acme/web/pull/42");
+}
+
 /// Written by hand from the documentation of GitHub, not recorded: the
 /// recording by the `github` example does not read the members yet.
 #[tokio::test]

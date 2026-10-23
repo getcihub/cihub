@@ -181,7 +181,7 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         "an approved PR names who approved it"
     );
     assert!(mergeable.changes_requested_by.is_empty());
-    page_and_check_times(mergeable, fixture);
+    page_and_check_times(scm, repo, mergeable, fixture);
     assert_eq!(conflicting.mergeability, Mergeability::Conflict);
     assert!(draft.draft);
     assert_eq!(draft.mergeability, Mergeability::Blocked);
@@ -259,13 +259,25 @@ async fn reads(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 }
 
 /// The page of a PR, and the times of a check run.
-fn page_and_check_times(mergeable: &PrSnapshot, fixture: &Fixture) {
+fn page_and_check_times(scm: &dyn Scm, repo: &RepoRef, mergeable: &PrSnapshot, fixture: &Fixture) {
     assert!(
         mergeable
             .url
             .ends_with(&format!("/{}", fixture.mergeable_pr)),
         "the page of a PR ends with its number: {}",
         mergeable.url
+    );
+    // A replay serves the adapter from a local address, so the host differs
+    // from the recorded one: the path is what both must agree on.
+    let path = |url: &str| {
+        url.split_once("://")
+            .and_then(|(_, rest)| rest.split_once('/'))
+            .map(|(_, path)| path.to_owned())
+    };
+    assert_eq!(
+        path(&scm.pr_url(repo, fixture.mergeable_pr)),
+        path(&mergeable.url),
+        "the page that is built without a call is the page that the read gives"
     );
     assert!(
         mergeable

@@ -11,6 +11,7 @@ use cihub_mq_core::{PrObservation, conditions_of};
 
 fn pr(mergeability: Mergeability, unmet: &[&str]) -> PrObservation {
     PrObservation {
+        url: "https://scm.example/acme/web/prs/1".into(),
         state: PrState::Open,
         head_sha: "head".into(),
         base_branch: "main".into(),

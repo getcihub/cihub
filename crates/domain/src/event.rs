@@ -53,6 +53,8 @@ pub enum EventKind {
     #[serde(rename = "pr.observed")]
     PrObserved {
         pr_number: u64,
+        /// The page of the PR on the SCM.
+        url: String,
         state: PrState,
         head_sha: String,
         base_branch: String,
