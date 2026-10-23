@@ -20,6 +20,14 @@ import type {
 
 export const NOW = Date.parse("2026-10-12T10:00:00Z");
 
+// The queue conditions that #133 does not meet, as the API writes them: a condition, a check, a boolean, a group.
+const CONDITIONS_OF_133 = [
+  "labels.none: wip",
+  "checks.success: Build Success",
+  "draft: false",
+  "any: [sender_permission.min: write; author: dependabot[bot], renovate[bot]]",
+];
+
 const ago = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOString();
 
 const LIVE_STATES: ItemState[] = ["not_ready", "pending", "testing", "pending_failure", "tests_passed"];
@@ -207,7 +215,11 @@ const PRS: Pr[] = [
   prOf("web", 133, "not_ready", {
     title: "Update the install guide",
     author: { login: "grace" },
-    state_description: "waits: the required check `ci` is in_progress",
+    state_description: "the PR was submitted to the queue",
+    block_reasons: [
+      { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+      { kind: "queue_conditions_unmet", conditions: CONDITIONS_OF_133 },
+    ],
   }),
   prOf("web", 110, "merged", {
     title: "Add the audit log",
@@ -428,7 +440,7 @@ const EVENTS: Record<string, Event[]> = {
       actor: "marie",
       occurred_at: ago(42),
       description: "the PR was submitted to the queue",
-      payload: { to: "not_ready" },
+      payload: { from: null, to: "not_ready" },
     }),
     eventOf(2, "item_web_118", {
       type: "item.readiness_changed",
@@ -438,7 +450,7 @@ const EVENTS: Record<string, Event[]> = {
     eventOf(3, "item_web_118", {
       occurred_at: ago(29),
       description: "the PR entered the queue",
-      payload: { to: "pending" },
+      payload: { from: "not_ready", to: "pending" },
     }),
     eventOf(4, "item_web_118", {
       type: "item.restart_requested",
@@ -450,15 +462,27 @@ const EVENTS: Record<string, Event[]> = {
     eventOf(5, "item_web_118", {
       occurred_at: ago(8),
       description: "a test run started on `cihub-merge/main/run_1`",
-      payload: { to: "testing" },
+      payload: { from: "pending", to: "testing" },
     }),
   ],
   "web/133": [
     eventOf(6, "item_web_133", {
+      actor_kind: "user",
+      actor: "grace",
+      occurred_at: ago(30),
+      description: "the PR was submitted to the queue",
+      payload: { from: null, to: "not_ready" },
+    }),
+    eventOf(7, "item_web_133", {
       type: "item.readiness_changed",
       occurred_at: ago(3),
-      description: "waits: the required check `ci` is in_progress",
-      payload: { block_reasons: [{ kind: "check_pending", check: "ci" }] },
+      description: "the required check `ci` is in_progress; the queue conditions … are not met",
+      payload: {
+        block_reasons: [
+          { kind: "awaiting_required_check", check: "ci", status: "in_progress" },
+          { kind: "queue_conditions_unmet", conditions: CONDITIONS_OF_133 },
+        ],
+      },
     }),
   ],
 };

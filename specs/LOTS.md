@@ -522,6 +522,11 @@ Decisions:
     SCM, and the number of the draft PR of its run to its page. It shows the state of each check: queued,
     running since its start, or its conclusion and its duration. `web/e2e/your-prs.spec.ts` checks the link of
     the PR. Lot 10c is done.
+  - Done (October 23, 2026): the words of the drawer. `not_ready` reads "Not ready"; the drawer says what
+    blocks the PR from `Pr.block_reasons`, each unmet queue condition as the condition builder of the mockups
+    v26 shows it (attribute, operator, value, and its groups); the history names the submission and a
+    blocked PR, in amber, with the same conditions; the sentence of an `item.readiness_changed` loses its
+    `waits:` prefix. The journey fills its line up to the current step, as the mockups v26.
 
 #### Lot 10d: live updates
 

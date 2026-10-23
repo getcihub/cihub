@@ -32,6 +32,11 @@ export function Journey({ item }: { item: Pr }) {
 
   return (
     <div className="relative before:absolute before:top-1.25 before:right-[12.5%] before:left-[12.5%] before:h-0.5 before:bg-divider">
+      {/* The steps are a quarter of the width each: the line goes from the middle of the first to the current one. */}
+      <span
+        className="absolute top-1.25 left-[12.5%] h-0.5 bg-primary"
+        style={{ width: `${String(25 * step)}%` }}
+      />
       <ol className="relative grid grid-cols-4 text-sm text-muted-foreground">
         {STEPS.map((label, index) => (
           <li
