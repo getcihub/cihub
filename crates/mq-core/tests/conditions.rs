@@ -4,7 +4,8 @@
 use std::collections::BTreeSet;
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, CheckReport, Mergeability, PrState, ReviewDecision,
+    BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus, Mergeability, PrState,
+    ReviewDecision,
 };
 use cihub_mq_core::{PrObservation, conditions_of};
 
@@ -20,8 +21,11 @@ fn pr(mergeability: Mergeability, unmet: &[&str]) -> PrObservation {
         checks: vec![CheckReport {
             name: "ci".into(),
             kind: CheckKind::Check,
+            status: CheckStatus::Completed,
             conclusion: Some(CheckConclusion::Failure),
             details_url: None,
+            started_at: None,
+            completed_at: None,
         }],
         unmet_conditions: unmet.iter().map(|&c| c.to_owned()).collect(),
         required_checks: vec!["ci".into()],

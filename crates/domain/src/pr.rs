@@ -3,8 +3,9 @@
 //! its own values into these ones.
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
-use crate::{CheckConclusion, CheckKind};
+use crate::{CheckConclusion, CheckKind, CheckStatus};
 
 closed_enum! {
     pub enum PrState {
@@ -63,7 +64,14 @@ closed_enum! {
 pub struct CheckReport {
     pub name: String,
     pub kind: CheckKind,
+    pub status: CheckStatus,
     /// `None` while the check has not concluded.
     pub conclusion: Option<CheckConclusion>,
     pub details_url: Option<String>,
+    /// A commit status gives the time of its state only: `started_at` while
+    /// it is pending, `completed_at` once it concluded.
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub started_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub completed_at: Option<OffsetDateTime>,
 }

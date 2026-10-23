@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{
-    CheckConclusion, CheckKind, GroupId, GroupKind, GroupState, ItemId, OrgId, QueueId, Reason,
-    RunId, RunStatus,
+    CheckConclusion, CheckKind, CheckStatus, GroupId, GroupKind, GroupState, ItemId, OrgId,
+    QueueId, Reason, RunId, RunStatus,
 };
 
 /// The unit that is tested and held in `pending_failure`: one PR or a batch.
@@ -84,9 +84,14 @@ pub struct CheckObservation {
     pub kind: CheckKind,
     /// The name is in the required statuses of the run.
     pub required: bool,
+    pub status: CheckStatus,
     /// `None` while the check has not concluded.
     pub conclusion: Option<CheckConclusion>,
     pub details_url: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub started_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub completed_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
     pub observed_at: OffsetDateTime,
 }

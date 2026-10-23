@@ -35,7 +35,7 @@
 //! - `label <pr> <label>` (write): adds the label twice, then removes it twice.
 //!
 //! The recording of the contract suite, on a test repository whose default
-//! branch is `main`:
+//! branch is `main` and whose CI runs a check on each PR:
 //!
 //! 1. `prepare-base` (write), once: commits the file of the suite on `main`,
 //!    opens a PR in conflict with `main` and a draft PR. Then add a ruleset

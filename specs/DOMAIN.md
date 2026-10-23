@@ -143,8 +143,11 @@ Statuses (`RunStatus`): `assembling`, `in_progress`, `succeeded`, `failed`, `int
 abandoned, validated by optimization); `cancelled` means that a member of the group was cancelled.
 
 Nature of an observed check (`CheckKind`): `check` (a check with a run: GitHub check run, GitLab
-pipeline job) or `status` (a commit status). Conclusion (`CheckConclusion`): the values of
-GitHub; `success`, `neutral` and `skipped` pass, the others fail the run. Culprit of a conflict at
+pipeline job) or `status` (a commit status). Progress (`CheckStatus`): `queued` (it waits for a
+runner, or a required status has not reported), `in_progress`, `completed` (it has a conclusion);
+a check gives when it started and completed, a commit status only the time of its state.
+Conclusion (`CheckConclusion`): the values of GitHub; `success`, `neutral` and `skipped` pass, the
+others fail the run. Culprit of a conflict at
 assembly (`ConflictCulprit`): what the group member conflicts with, a PR ahead of it in the
 queue (`queue_pr`) or the target branch alone (`base_branch`). Source of the required statuses
 (`RequiredStatusesSource`): `repo_config`, `branch_protection`. A job that fails reports an

@@ -51,7 +51,7 @@ pub use queue::{Queue, QueueControl};
 pub use reason::Reason;
 pub use run::{CheckObservation, ConflictCulprit, RequiredStatusesSource, TestGroup, TestRun};
 pub use settings::{
-    BranchProtectionInjection, CheckConclusion, CheckKind, DirectMergeMode, GroupKind,
+    BranchProtectionInjection, CheckConclusion, CheckKind, CheckStatus, DirectMergeMode, GroupKind,
     MergeCommitTitle, MergeMethod, OptimizationMode, QueueMode, RunStatus, Strategy, SubmittedVia,
     Trigger, UpdateMethod,
 };

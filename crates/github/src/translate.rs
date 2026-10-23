@@ -1,9 +1,11 @@
 //! A GitHub webhook delivery in the neutral terms of `cihub-scm`: what changed,
 //! not the new state.
 
-use cihub_domain::{CheckConclusion, CheckKind, CheckReport};
+use cihub_domain::{CheckConclusion, CheckKind, CheckReport, CheckStatus};
 use cihub_scm::{SUBMIT_BOX, ScmDelivery, ScmEvent, ScmUser};
 use serde_json::Value;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TranslateError {
@@ -66,12 +68,15 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
             check: CheckReport {
                 name: read.text("/check_run/name")?,
                 kind: CheckKind::Check,
+                status: check_run_status(&read.text("/check_run/status")?),
                 conclusion: payload["check_run"]["conclusion"]
                     .as_str()
                     .and_then(|conclusion| conclusion.parse().ok()),
                 details_url: payload["check_run"]["details_url"]
                     .as_str()
                     .map(str::to_owned),
+                started_at: time_at(payload, "/check_run/started_at"),
+                completed_at: time_at(payload, "/check_run/completed_at"),
             },
         },
         "status" => ScmEvent::CheckChanged {
@@ -83,12 +88,12 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
                 .flatten()
                 .filter_map(|branch| branch["name"].as_str().map(str::to_owned))
                 .collect(),
-            check: CheckReport {
-                name: read.text("/context")?,
-                kind: CheckKind::Status,
-                conclusion: status_conclusion(&read.text("/state")?),
-                details_url: payload["target_url"].as_str().map(str::to_owned),
-            },
+            check: status_report(
+                read.text("/context")?,
+                &read.text("/state")?,
+                payload["target_url"].as_str().map(str::to_owned),
+                time_at(payload, "/created_at"),
+            ),
         },
         "branch_protection_rule" => ScmEvent::RulesChanged {
             repo_external_id: read.id("/repository/id")?,
@@ -109,15 +114,46 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
     })
 }
 
-/// The conclusion of a commit status; `pending` and `expected` have none. A
-/// webhook writes the state in lower case, GraphQL in upper case.
-pub(crate) fn status_conclusion(state: &str) -> Option<CheckConclusion> {
-    match state.to_ascii_lowercase().as_str() {
-        "success" => Some(CheckConclusion::Success),
-        "failure" => Some(CheckConclusion::Failure),
-        "error" => Some(CheckConclusion::Error),
-        _ => None,
+/// A commit status in the state `state`, set at `at`; `pending` and
+/// `expected` have no conclusion. A webhook writes the state in lower case,
+/// GraphQL in upper case.
+pub(crate) fn status_report(
+    name: String,
+    state: &str,
+    details_url: Option<String>,
+    at: Option<OffsetDateTime>,
+) -> CheckReport {
+    let (status, conclusion) = match state.to_ascii_lowercase().as_str() {
+        "success" => (CheckStatus::Completed, Some(CheckConclusion::Success)),
+        "failure" => (CheckStatus::Completed, Some(CheckConclusion::Failure)),
+        "error" => (CheckStatus::Completed, Some(CheckConclusion::Error)),
+        "pending" => (CheckStatus::InProgress, None),
+        _ => (CheckStatus::Queued, None),
+    };
+    CheckReport {
+        name,
+        kind: CheckKind::Status,
+        status,
+        conclusion,
+        details_url,
+        started_at: at.filter(|_| status == CheckStatus::InProgress),
+        completed_at: at.filter(|_| status == CheckStatus::Completed),
     }
+}
+
+/// The status of a check run, in either case. `waiting`, `requested` and
+/// `pending` wait for a runner, as `queued` does.
+pub(crate) fn check_run_status(status: &str) -> CheckStatus {
+    match status.to_ascii_lowercase().as_str() {
+        "completed" => CheckStatus::Completed,
+        "in_progress" => CheckStatus::InProgress,
+        _ => CheckStatus::Queued,
+    }
+}
+
+fn time_at(payload: &Value, pointer: &str) -> Option<OffsetDateTime> {
+    let text = payload.pointer(pointer)?.as_str()?;
+    OffsetDateTime::parse(text, &Rfc3339).ok()
 }
 
 fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateError> {
@@ -234,6 +270,7 @@ impl Reader<'_> {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use time::macros::datetime;
 
     use super::*;
 
@@ -420,8 +457,9 @@ mod tests {
         let check_run = json!({
             "repository": { "id": 7 },
             "check_run": {
-                "name": "ci", "head_sha": "abc", "conclusion": "timed_out",
-                "details_url": "https://ci.example.com/1",
+                "name": "ci", "head_sha": "abc", "status": "completed",
+                "conclusion": "timed_out", "details_url": "https://ci.example.com/1",
+                "started_at": "2026-10-11T12:00:00Z", "completed_at": "2026-10-11T12:30:00Z",
                 "check_suite": { "head_branch": "cihub-merge/pr-12/r1" },
             },
         });
@@ -434,14 +472,18 @@ mod tests {
                 check: CheckReport {
                     name: "ci".into(),
                     kind: CheckKind::Check,
+                    status: CheckStatus::Completed,
                     conclusion: Some(CheckConclusion::TimedOut),
                     details_url: Some("https://ci.example.com/1".into()),
+                    started_at: Some(datetime!(2026-10-11 12:00 UTC)),
+                    completed_at: Some(datetime!(2026-10-11 12:30 UTC)),
                 },
             }
         );
         let status = json!({
             "repository": { "id": 7 },
             "sha": "abc", "context": "deploy", "state": "pending", "target_url": null,
+            "created_at": "2026-10-11T12:00:00Z",
             "branches": [{ "name": "main" }, { "name": "next" }],
         });
         assert_eq!(
@@ -453,8 +495,11 @@ mod tests {
                 check: CheckReport {
                     name: "deploy".into(),
                     kind: CheckKind::Status,
+                    status: CheckStatus::InProgress,
                     conclusion: None,
                     details_url: None,
+                    started_at: Some(datetime!(2026-10-11 12:00 UTC)),
+                    completed_at: None,
                 },
             }
         );

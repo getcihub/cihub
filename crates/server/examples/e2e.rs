@@ -28,8 +28,8 @@ use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::get;
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, ConnectionId, ConnectionKind, MembershipRole, OrgId,
-    Permission, QueueId, RepoId,
+    CheckConclusion, CheckKind, CheckReport, CheckStatus, ConnectionId, ConnectionKind,
+    MembershipRole, OrgId, Permission, QueueId, RepoId,
 };
 use cihub_github::SETUP_PATH;
 use cihub_platform::{
@@ -411,13 +411,17 @@ fn passed() -> CheckReport {
     CheckReport {
         name: REQUIRED.into(),
         kind: CheckKind::Status,
+        status: CheckStatus::Completed,
         conclusion: Some(CheckConclusion::Success),
         details_url: None,
+        started_at: None,
+        completed_at: None,
     }
 }
 
 fn failed() -> CheckReport {
     CheckReport {
+        status: CheckStatus::Completed,
         conclusion: Some(CheckConclusion::Failure),
         ..passed()
     }

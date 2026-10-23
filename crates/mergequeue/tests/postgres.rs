@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use cihub_config::{Layer, QueueSettings, Setting};
 use cihub_domain::{
-    Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport,
+    Actor, ApiScope, ApiTokenId, BlockReason, CheckConclusion, CheckKind, CheckReport, CheckStatus,
     ConflictCulprit, ConnectionId, ConnectionKind, DirectMergeMode, Event, EventId, EventKind,
     ItemState, JobClass, MembershipRole, Mergeability, OrgId, Permission, PrState, Priority,
     QueueControl, QueueId, Reason, RepoId, RequiredStatusesSource, ReviewDecision, RunId,
@@ -285,8 +285,11 @@ impl World {
                     check: CheckReport {
                         name: REQUIRED.into(),
                         kind: CheckKind::Check,
+                        status: CheckStatus::Completed,
                         conclusion: Some(conclusion),
                         details_url: None,
+                        started_at: None,
+                        completed_at: None,
                     },
                 },
             )
@@ -992,12 +995,15 @@ fn check(name: &str, passed: bool) -> CheckReport {
     CheckReport {
         name: name.into(),
         kind: CheckKind::Status,
+        status: CheckStatus::Completed,
         conclusion: Some(if passed {
             CheckConclusion::Success
         } else {
             CheckConclusion::Failure
         }),
         details_url: None,
+        started_at: None,
+        completed_at: None,
     }
 }
 
@@ -2434,6 +2440,7 @@ async fn a_resubmission_meets_the_queue_conditions_on_the_new_head(pool: PgPool)
 /// A check of the CI that has not concluded yet.
 fn running(name: &str) -> CheckReport {
     CheckReport {
+        status: CheckStatus::InProgress,
         conclusion: None,
         ..check(name, true)
     }

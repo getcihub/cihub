@@ -9,8 +9,8 @@ use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, JobClass, MembershipRole, MergeMethod, Mergeability,
-    Permission, PrState, ReviewDecision,
+    CheckConclusion, CheckKind, CheckReport, CheckStatus, JobClass, MembershipRole, MergeMethod,
+    Mergeability, Permission, PrState, ReviewDecision,
 };
 use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
@@ -1353,6 +1353,10 @@ impl Repo {
         };
         Ok(PrSnapshot {
             number,
+            url: format!(
+                "https://scm.example/{}/{}/prs/{number}",
+                self.namespace, self.name
+            ),
             state: pr.state,
             head_sha: head.clone(),
             base_branch: pr.base_branch.clone(),
@@ -1655,8 +1659,15 @@ impl Scm for Sim {
             let check = CheckReport {
                 name: status.context,
                 kind: CheckKind::Status,
+                status: if conclusion.is_some() {
+                    CheckStatus::Completed
+                } else {
+                    CheckStatus::InProgress
+                },
                 conclusion,
                 details_url: status.details_url,
+                started_at: None,
+                completed_at: None,
             };
             let unchanged = ctx
                 .repo
@@ -2126,8 +2137,11 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
     let ci = CheckReport {
         name: "ci".into(),
         kind: CheckKind::Check,
+        status: CheckStatus::Completed,
         conclusion: Some(CheckConclusion::Success),
         details_url: None,
+        started_at: Some(OffsetDateTime::UNIX_EPOCH),
+        completed_at: Some(OffsetDateTime::UNIX_EPOCH + time::Duration::minutes(5)),
     };
     sim.report_check(repo, &feature, ci)?;
 
@@ -2196,8 +2210,11 @@ mod tests {
         CheckReport {
             name: name.into(),
             kind: CheckKind::Check,
+            status: CheckStatus::Completed,
             conclusion: Some(CheckConclusion::Success),
             details_url: None,
+            started_at: None,
+            completed_at: None,
         }
     }
 

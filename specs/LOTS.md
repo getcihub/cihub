@@ -502,9 +502,14 @@ Decisions:
     the hourly read of the members; `User` gains `name` and `avatar_url`, and the menu of the person shows the
     avatar; `Pr.author` becomes a `Person` (`login`, `avatar_url`), whose avatar the list of the PRs of a queue shows. The email and an admin
     of the instance wait for a feature that needs them.
-  - Remaining, with the new recording of the contract: `Pr.url`, `Run.draft_pr_url`, and the state and
-    times of a check (`RunCheck.status`, `started_at`, `completed_at`), fields of the frozen interfaces of the
-    lot; the lot is done once they are.
+  - Done (October 21, 2026): the reads of step 7. `PrSnapshot.url`; `CheckReport` and `check_observations`
+    gain `status` (`CheckStatus`: `queued`, `in_progress`, `completed`), `started_at` and `completed_at`,
+    which the GitHub adapter reads (GraphQL and webhooks), the simulator gives and the contract suite checks.
+    The repository of the recording becomes `getcihub/testing`, whose CI runs the check run that the suite
+    reads; the contract is recorded again there (PRs #52, #48 and #49).
+  - Remaining: `Pr.url`, `Run.draft_pr_url`, and
+    the state and times of a check (`RunCheck.status`, `started_at`, `completed_at`) in the API and the
+    dashboard, fields of the frozen interfaces of the lot; the lot is done once they are.
 
 #### Lot 10d: live updates
 
