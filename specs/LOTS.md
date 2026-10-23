@@ -257,7 +257,8 @@ Decisions (October 14, 2026, validated by the project lead):
 - A PR shows from its opening whether it can enter its queue, in a status of its own,
   `CIHub Conditions (<branch>)`, next to `CIHub Merge Queue (<branch>)`. The queue status cannot turn green
   before the submission: a team that requires it would then merge PRs outside the queue.
-- The welcome comment stays as it is: posted at the opening, whatever the conditions.
+- The welcome comment stays as it is: posted at the opening, whatever the conditions. Since lot 16, also at the
+  next change of a PR opened before its queue.
 
 - **Goal**: a person sees on GitHub, before the submission, whether their PR can enter the queue and what blocks
   it.
@@ -780,6 +781,13 @@ Decisions:
     queue" leaves the setup, which folds when every point passes. Left out: "Configure the queue" and "Fix it in
     the configuration", which wait for the builder of the configuration. Tests: `pages/org-queues/page.test.tsx`,
     `pages/repo-queues/page.test.tsx`, the views `org-first-queue*` and `repo-start-*` of `web:shots`.
+  - Done (October 23, 2026, validated by the project lead): the welcome of a PR opened before its queue. The PR
+    got no comment, because only the opening asked the welcome. `PrChanged` replaces `opened` with
+    `is_ready_for_review` (open and out of draft after the change), and every change of such a PR without a
+    comment of CIHub asks the `welcome_pr` job, which still posts once. Rejected: a welcome for every open PR at
+    the creation of the queue, which would notify the authors of old PRs at once and spend the budget of
+    comments. Tests: `a_pr_opened_before_its_queue_is_welcomed_at_its_next_change`, and the translation of
+    `synchronize` and `closed`.
 
 ### Lots 11a to 11c: analytics, metrics and outgoing webhooks
 
