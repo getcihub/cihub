@@ -23,7 +23,7 @@
 
 Two pull requests pass CI on their own. You merge both. `main` is red, and nobody knows why.
 
-CIHub makes that impossible. Approve a pull request, type `/cihub merge`, and go back to work. CIHub lines it up
+CIHub makes that impossible. Approve a pull request, type `@<your app> merge`, and go back to work. CIHub lines it up
 behind the others, tests it together with everything that lands before it, and merges it only if the result still
 passes. No rebase loop, no broken `main`, no "who merged that?".
 
@@ -38,7 +38,7 @@ passes. No rebase loop, no broken `main`, no "who merged that?".
 
 | 1. Approve | 2. Queue | 3. Merge |
 | --- | --- | --- |
-| A pull request is approved and its checks are green. | Comment `/cihub merge`. CIHub tests it on top of everything ahead of it, alone or in a batch. | If that exact combination passes, CIHub merges it. If not, the pull request leaves the queue, with the reason on it. |
+| A pull request is approved and its checks are green. | Comment `@<your app> merge`. CIHub tests it on top of everything ahead of it, alone or in a batch. | If that exact combination passes, CIHub merges it. If not, the pull request leaves the queue, with the reason on it. |
 
 ## Install
 

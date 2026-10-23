@@ -67,6 +67,9 @@ pub struct Reconciler {
     /// The address of the dashboard (`http.public_url`), for the links of the
     /// statuses and the comments of the PRs; `None` without it.
     pub dashboard_url: Option<String>,
+    /// The mention of the App, which starts a command
+    /// ([`Scm::app_mention`]).
+    pub mention: String,
 }
 
 impl Reconciler {
@@ -257,6 +260,7 @@ impl Reconciler {
                 converge.settings,
                 &converge.desired.surfaces,
                 self.dashboard_url.as_deref(),
+                &self.mention,
             )
             .await?,
         );
@@ -578,7 +582,9 @@ pub async fn pass_connection_deliveries(
             delivery_id: delivery_id.clone(),
         };
         let processed = match (reconciler.translate)(&event, &payload) {
-            Ok(read) => pass_delivery(&mut tx, &delivery, read.event, now).await?,
+            Ok(read) => {
+                pass_delivery(&mut tx, &delivery, read.event, &reconciler.mention, now).await?
+            }
             Err(err) => {
                 warn!(
                     delivery_id,
@@ -607,6 +613,7 @@ async fn pass_delivery(
     conn: &mut PgConnection,
     delivery: &ConnectionDelivery,
     event: ScmEvent,
+    mention: &str,
     now: OffsetDateTime,
 ) -> Result<bool, MergeQueueError> {
     match event {
@@ -668,7 +675,7 @@ async fn pass_delivery(
                 external_id: &comment_external_id,
                 author: &author,
             };
-            pass_comment(conn, delivery, &comment, &body, now).await?;
+            pass_comment(conn, delivery, &comment, &body, mention, now).await?;
         }
         // A check that has not concluded changes no condition.
         ScmEvent::CheckChanged {
@@ -702,10 +709,11 @@ async fn pass_comment(
     delivery: &ConnectionDelivery,
     comment: &Comment<'_>,
     body: &str,
+    mention: &str,
     now: OffsetDateTime,
 ) -> Result<(), MergeQueueError> {
     // The jobs check `commands_enabled` on the queue that they find.
-    let item_command = match parse_command(body) {
+    let item_command = match parse_command(body, mention) {
         Some(PrCommand::Merge(merge)) => {
             let command = Command {
                 repo_external_id: comment.repo_external_id,

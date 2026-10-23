@@ -207,7 +207,7 @@ describe("the page of a queue", () => {
     renderApp("/orgs/acme/repos/web/queues/main", answersFor({ [QUEUE]: [200, queue] }));
     const empty = await emptyQueue();
 
-    expect(empty).toHaveTextContent("/cihub merge");
+    expect(empty).toHaveTextContent("@cihub merge");
     expect(empty).not.toHaveTextContent("label");
   });
 
@@ -220,8 +220,8 @@ describe("the page of a queue", () => {
     await user.click(within(empty).getByRole("button", { name: "Copy" }));
 
     expect(await within(empty).findByRole("button", { name: "Copied" })).toBeInTheDocument();
-    expect(screen.getByText("Copied /cihub merge to the clipboard.")).toBeInTheDocument();
-    expect(await navigator.clipboard.readText()).toBe("/cihub merge");
+    expect(screen.getByText("Copied @cihub merge to the clipboard.")).toBeInTheDocument();
+    expect(await navigator.clipboard.readText()).toBe("@cihub merge");
   });
 
   it("says that it copied the command for a moment only", async () => {
@@ -236,7 +236,7 @@ describe("the page of a queue", () => {
 
     expect(await within(empty).findByRole("button", { name: "Copy" })).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.queryByText("Copied /cihub merge to the clipboard.")).not.toBeInTheDocument();
+      expect(screen.queryByText("Copied @cihub merge to the clipboard.")).not.toBeInTheDocument();
     });
   });
 

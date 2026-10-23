@@ -23,6 +23,9 @@ use crate::{
     ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate, code_challenge,
 };
 
+/// How a comment names the App on the simulator.
+pub const APP_MENTION: &str = "@cihub";
+
 /// The user that acts for CIHub on the simulator.
 pub fn bot() -> ScmUser {
     ScmUser {
@@ -1909,6 +1912,10 @@ impl Scm for Sim {
         })
     }
 
+    fn app_mention(&self, class: JobClass) -> ScmFuture<'_, String> {
+        self.record_call("app_mention", class, |_| Ok(APP_MENTION.to_owned()))
+    }
+
     fn branch_rules_url(&self, _repo: &RepoRef) -> Option<String> {
         None
     }
@@ -2218,7 +2225,7 @@ mod tests {
         let (sim, fixture) = contract_world(&repo).unwrap();
         crate::contract::run(&sim, &repo, &fixture).await;
         crate::contract::members(&sim, &repo, &fixture).await;
-        crate::contract::install_page(&sim).await;
+        crate::contract::app_page(&sim).await;
     }
 
     #[test]

@@ -1,5 +1,5 @@
 // The exit criterion of lot 10c (specs/LOTS.md): a person creates a queue by
-// the first `/cihub merge`, submits a PR from the dashboard and follows it in
+// the first `@cihub merge`, submits a PR from the dashboard and follows it in
 // "Your pull requests" until the merge; a member pauses nothing; the comment
 // of the PR links to its page.
 import { type Page, expect, test } from "@playwright/test";
@@ -18,7 +18,7 @@ test("a person submits a PR from the dashboard and follows it until the merge", 
   test.setTimeout(120_000);
   await signInAsAda(page);
 
-  // The first `/cihub merge` on a PR of acme/api creates the queue of its branch.
+  // The first `@cihub merge` on a PR of acme/api creates the queue of its branch.
   const commented = await page.request.get("/sim/merge?repo=api&number=1&login=ada");
   expect(await commented.text()).toBe("commented");
 

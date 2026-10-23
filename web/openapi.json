@@ -538,7 +538,7 @@
           "Session"
         ],
         "summary": "Get the instance",
-        "description": "The version of the instance, and the page of the SCM that installs the\nApp.\n\n**Access**: any API token or session.",
+        "description": "The version of the instance, the page of the SCM that installs the App,\nand the mention of the App that starts a command.\n\n**Access**: any API token or session.",
         "operationId": "get_instance",
         "responses": {
           "200": {
@@ -3809,7 +3809,7 @@
           "Queues"
         ],
         "summary": "List the queues of a repository",
-        "description": "The queues of the repository with their counters and their settings, by\ntarget branch. The first `/cihub merge` on a PR of a branch creates its queue.\n\n**Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
+        "description": "The queues of the repository with their counters and their settings, by\ntarget branch. The first `merge` command on a PR of a branch creates its queue.\n\n**Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
         "operationId": "list_repo_queues",
         "parameters": [
           {
@@ -7273,6 +7273,14 @@
             "description": "The page of the SCM that installs the App on an account, or chooses\nthe repositories of its installation; `null` when the SCM did not\nanswer.",
             "example": "https://scm.example.com/apps/cihub/installations/new"
           },
+          "app_mention": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How a comment names the App: a command starts with it, such as\n`@cihub merge`; `null` when the SCM did not answer.",
+            "example": "@cihub"
+          },
           "version": {
             "type": "string",
             "description": "The version of the instance.",
@@ -7646,7 +7654,7 @@
           },
           "submitted_via": {
             "$ref": "#/components/schemas/SubmittedVia",
-            "description": "How the PR came into the queue: a `/cihub merge` comment, a label,\nor the API."
+            "description": "How the PR came into the queue: a `merge` command in a comment, a label,\nor the API."
           },
           "title": {
             "type": [

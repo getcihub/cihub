@@ -255,7 +255,7 @@ fn pick_queue(mut queues: Vec<Queue>, wanted: Option<&str>, repo: &str) -> anyho
     }
     if queues.is_empty() {
         bail!(
-            "{repo} has no queue yet: comment `/cihub merge` on a PR of its default branch to create one"
+            "{repo} has no queue yet: the first `merge` command on a PR of its default branch creates one"
         );
     }
     match queues.iter().position(|q| q.is_default_branch) {

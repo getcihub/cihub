@@ -986,6 +986,7 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
         serde_json::json!([{ "slug": "acme", "role": "member", "is_suspended": false }])
     );
     assert_eq!(instance["app_install_url"], "sim:install");
+    assert_eq!(instance["app_mention"], "@cihub");
 }
 
 /// The Setup URL signs the person in again. An installation that the person

@@ -1072,13 +1072,17 @@ async fn an_account_neither_organization_nor_person_has_no_member() {
 /// Written by hand from the documentation of GitHub, not recorded: the
 /// recording by the `github` example does not read the App yet.
 #[tokio::test]
-async fn the_install_page_of_the_app_is_read_once() {
+async fn the_page_of_the_app_is_read_once() {
     let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
-    let app_page = json!({ "html_url": "https://github.example.com/apps/cihub-acme" });
+    let app_page = json!({
+        "slug": "cihub-acme",
+        "html_url": "https://github.example.com/apps/cihub-acme",
+    });
     let replay = Replay::start(vec![answer("GET", "/app", 200, app_page)]).await;
     let app = app(&replay.url, now);
 
     let first = app.app_install_url(JobClass::Interactive).await.unwrap();
+    let mention = app.app_mention(JobClass::Interactive).await.unwrap();
     let second = app.app_install_url(JobClass::Interactive).await.unwrap();
 
     replay.finish();
@@ -1087,4 +1091,5 @@ async fn the_install_page_of_the_app_is_read_once() {
         "https://github.example.com/apps/cihub-acme/installations/new"
     );
     assert_eq!(second, first);
+    assert_eq!(mention, "@cihub-acme");
 }

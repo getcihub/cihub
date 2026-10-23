@@ -21,6 +21,7 @@ export const ada: Me = {
   ],
   version: "0.2.0",
   app_install_url: "https://github.com/apps/cihub/installations/new",
+  app_mention: "@cihub",
 };
 
 /** A page of a list of the API that holds every entry. */
@@ -37,7 +38,10 @@ export function answersOfMe(me: Me): Answers {
   return {
     "/api/v1/user": [200, { login: me.login, synced_at: me.synced_at }],
     "/api/v1/user/orgs": [200, pageOf("orgs", me.orgs)],
-    "/api/v1/instance": [200, { version: me.version, app_install_url: me.app_install_url }],
+    "/api/v1/instance": [
+      200,
+      { version: me.version, app_install_url: me.app_install_url, app_mention: me.app_mention },
+    ],
   };
 }
 

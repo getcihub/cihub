@@ -245,7 +245,7 @@ describe("the page of an organization", () => {
   it.each([
     ["/orgs/acme", "Pick a repository"],
     ["/orgs/acme?open=docs", "Check its setup"],
-    ["/orgs/acme?open=site", "Comment /cihub merge"],
+    ["/orgs/acme?open=site", "Comment @cihub merge"],
   ])("follows the open row in the steps to the first queue, at %s", async (path, step) => {
     renderApp(path, firstQueueAnswers([200, MIXED], { [`${REPOS}/docs`]: [200, blockedDocs()] }));
 

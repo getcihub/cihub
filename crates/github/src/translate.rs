@@ -381,7 +381,7 @@ mod tests {
                 "action": action,
                 "repository": { "id": 7 },
                 "issue": { "number": 12, "pull_request": pull_request },
-                "comment": { "id": 40, "user": user(3, "alice"), "body": "/cihub merge" },
+                "comment": { "id": 40, "user": user(3, "alice"), "body": "@cihub merge" },
             })
         };
         let on_pr = json!({ "url": "https://api.github.com/repos/o/r/pulls/12" });
@@ -396,7 +396,7 @@ mod tests {
                     external_id: "3".into(),
                     login: "alice".into()
                 },
-                body: "/cihub merge".into(),
+                body: "@cihub merge".into(),
             }
         );
         assert_eq!(

@@ -838,8 +838,8 @@ async fn list_user_orgs(
 
 /// Get the instance
 ///
-/// The version of the instance, and the page of the SCM that installs the
-/// App.
+/// The version of the instance, the page of the SCM that installs the App,
+/// and the mention of the App that starts a command.
 #[utoipa::path(
     get,
     path = "/instance",
@@ -859,10 +859,19 @@ async fn get_instance(State(state): State<ApiState>) -> Json<Instance> {
             );
         })
         .ok();
+    let app_mention = state
+        .scm
+        .app_mention(JobClass::Interactive)
+        .await
+        .inspect_err(|err| {
+            warn!(error = err as &dyn Error, "mention of the app not read");
+        })
+        .ok();
 
     Json(Instance {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         app_install_url,
+        app_mention,
     })
 }
 

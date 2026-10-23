@@ -6,7 +6,7 @@ import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { CheckIcon } from "@/components/icons/check-icon";
 import { ErrorIcon } from "@/components/icons/error-icon";
 import { WarningIcon } from "@/components/icons/warning-icon";
-import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CopyCommand, MergeCommand } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { FirstCommandWait } from "@/components/setup/first-command-wait";
@@ -370,15 +370,15 @@ function FirstCommand({
   if (state === "started") {
     return (
       <p className="rounded-md border border-border bg-card px-3.5 py-3 text-base">
-        The first <code>{COMMAND}</code> started the queue of <code>{branch}</code>: it joins the repositories
-        with a queue in a moment.
+        The first <MergeCommand /> started the queue of <code>{branch}</code>: it joins the repositories with
+        a queue in a moment.
       </p>
     );
   }
   if (isBlocked) {
     return (
       <p className="rounded-md border border-dashed border-border px-3.5 py-3 text-base text-muted-foreground">
-        Fix the points above, then comment <code>{COMMAND}</code> on a pull request to <code>{branch}</code>.
+        Fix the points above, then comment <MergeCommand /> on a pull request to <code>{branch}</code>.
       </p>
     );
   }

@@ -193,7 +193,7 @@
       "type": "boolean"
     },
     "commands_enabled": {
-      "description": "CIHub reads the `/cihub` commands. Default true.",
+      "description": "CIHub reads the commands of the comments, such as `@<app> merge`. Default true.",
       "type": "boolean"
     },
     "status_check_enabled": {
@@ -513,7 +513,7 @@
       ],
       "properties": {
         "name": {
-          "description": "Name of the profile, unique in its queue; `/cihub merge --profile=<name>` names it.",
+          "description": "Name of the profile, unique in its queue; `@<app> merge --profile=<name>` names it.",
           "type": "string",
           "minLength": 1
         },

@@ -1,6 +1,6 @@
-//! The commands that a comment on a PR holds (`specs/GITHUB.md`):
-//! `/cihub merge`, which `submit_pr` runs, and `/cihub cancel` and
-//! `/cihub restart`, which the job `pr_command` runs.
+//! The commands that a comment on a PR holds, after the mention of the App
+//! (`specs/GITHUB.md`): `merge`, which `submit_pr` runs, and `cancel` and
+//! `restart`, which the job `pr_command` runs.
 
 use cihub_domain::{Actor, EventKind, ItemId, ItemState, Permission, Priority, QueueId, RepoId};
 use cihub_platform::Job;
@@ -15,7 +15,7 @@ use crate::jobs::{
     user_of,
 };
 
-/// The type of the job that runs `/cihub cancel` and `/cihub restart`.
+/// The type of the job that runs `cancel` and `restart`.
 pub(crate) const PR_COMMAND: &str = "pr_command";
 
 /// A command of a comment.
@@ -26,7 +26,7 @@ pub(crate) enum PrCommand {
     Restart,
 }
 
-/// `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
+/// `<mention> merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
 /// [--direct] [--profile=<name>]`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Merge {
@@ -38,12 +38,14 @@ pub(crate) struct Merge {
     pub profile: Option<String>,
 }
 
-/// The first line of `body` that is a command. A command with an option
-/// that CIHub does not know is not a command.
-pub(crate) fn parse_command(body: &str) -> Option<PrCommand> {
+/// The first line of `body` that is a command: it starts with `mention`,
+/// the mention of the App. A command with an option that CIHub does not
+/// know is not a command.
+pub(crate) fn parse_command(body: &str, mention: &str) -> Option<PrCommand> {
     body.lines().find_map(|line| {
         let mut words = line.split_whitespace();
-        if words.next() != Some("/cihub") {
+        // The SCM completes a mention whatever its case.
+        if !words.next()?.eq_ignore_ascii_case(mention) {
             return None;
         }
         match words.next()? {
@@ -90,8 +92,8 @@ pub(crate) enum ItemCommand {
 impl ItemCommand {
     fn name(self) -> &'static str {
         match self {
-            Self::Cancel => "/cihub cancel",
-            Self::Restart => "/cihub restart",
+            Self::Cancel => "cancel",
+            Self::Restart => "restart",
         }
     }
 }
@@ -244,39 +246,43 @@ mod tests {
     #[test]
     fn commands_and_their_options() {
         let cases = [
-            ("/cihub merge", merge(None, false, false)),
-            ("LGTM\n  /cihub merge --no-batch", merge(None, true, false)),
+            ("@cihub merge", merge(None, false, false)),
+            ("LGTM\n  @cihub merge --no-batch", merge(None, true, false)),
             (
-                "/cihub merge --priority=urgent --direct",
+                "@cihub merge --priority=urgent --direct",
                 merge(Some(Priority::URGENT), false, true),
             ),
             (
-                "/cihub merge --priority=42",
+                "@cihub merge --priority=42",
                 merge(Some(Priority(42)), false, false),
             ),
             (
-                "/cihub merge --profile=dependencies --no-batch",
+                "@cihub merge --profile=dependencies --no-batch",
                 Some(PrCommand::Merge(Merge {
                     profile: Some("dependencies".into()),
                     no_batch: true,
                     ..Merge::default()
                 })),
             ),
-            ("/cihub merge --profile=", None),
-            ("/cihub merge --queue=hotfix", None),
-            ("/cihub merge --priority=256", None),
-            ("/cihub merge --priority=soon", None),
-            ("/cihub merge --force", None),
-            ("/cihub cancel", Some(PrCommand::Cancel)),
-            ("thanks\n/cihub restart", Some(PrCommand::Restart)),
-            ("/cihub cancel now", None),
-            ("/cihub rebase", None),
-            ("please /cihub merge", None),
-            ("/cihubmerge", None),
+            ("@cihub merge --profile=", None),
+            ("@cihub merge --queue=hotfix", None),
+            ("@cihub merge --priority=256", None),
+            ("@cihub merge --priority=soon", None),
+            ("@cihub merge --force", None),
+            ("@cihub cancel", Some(PrCommand::Cancel)),
+            ("thanks\n@cihub restart", Some(PrCommand::Restart)),
+            ("@cihub cancel now", None),
+            ("@cihub rebase", None),
+            ("please @cihub merge", None),
+            ("@cihubmerge", None),
+            ("@CIHub merge", merge(None, false, false)),
+            ("@cihub-staging merge", None),
+            ("/cihub merge", None),
+            ("> @cihub merge", None),
             ("", None),
         ];
         for (body, want) in cases {
-            assert_eq!(parse_command(body), want, "{body:?}");
+            assert_eq!(parse_command(body, "@cihub"), want, "{body:?}");
         }
     }
 }

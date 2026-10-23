@@ -100,13 +100,15 @@ fn queue_status(
 }
 
 /// Renders `surface` with the settings of its queue, the logged `history` of
-/// its PR, and `page`, the page of the PR in the dashboard.
+/// its PR, `page`, the page of the PR in the dashboard, and `mention`, the
+/// mention of the App that starts a command.
 fn render(
     surface: &Surface,
     settings: &QueueSettings,
     target_branch: &str,
     history: &[HistoryEvent],
     page: Option<&str>,
+    mention: &str,
 ) -> Rendered {
     let status = settings.status_check_enabled.value.then(|| RenderedStatus {
         state: status_state(surface.state),
@@ -116,7 +118,7 @@ fn render(
     let comment = settings
         .comments_enabled
         .value
-        .then(|| comment(surface, settings, target_branch, history, page));
+        .then(|| comment(surface, settings, target_branch, history, page, mention));
     let (add_labels, remove_labels) = labels(surface, settings.state_labels_enabled.value);
 
     Rendered {
@@ -216,6 +218,7 @@ fn comment(
     target_branch: &str,
     history: &[HistoryEvent],
     page: Option<&str>,
+    mention: &str,
 ) -> String {
     let commands = settings.commands_enabled.value;
     let mut blocks = vec![state_line(surface, target_branch)];
@@ -286,20 +289,22 @@ fn comment(
     match surface.state {
         ItemState::Failed | ItemState::Cancelled if commands => {
             blocks.push(format!("- [ ] {SUBMIT_BOX} Submit again"));
-            notes.push("Or comment `/cihub merge`.");
+            notes.push(format!("Or comment `{mention} merge`."));
         }
         ItemState::NotReady => {
             if !surface.block_reasons.is_empty() {
-                notes.push("The PR enters the queue when nothing above blocks it");
+                notes.push("The PR enters the queue when nothing above blocks it".to_owned());
             }
             if commands {
-                notes.push("`/cihub cancel` to withdraw");
+                notes.push(format!("`{mention} cancel` to withdraw"));
             }
         }
-        ItemState::Pending if commands => notes.push("`/cihub cancel` to leave the queue"),
+        ItemState::Pending if commands => {
+            notes.push(format!("`{mention} cancel` to leave the queue"));
+        }
         ItemState::Testing | ItemState::PendingFailure if commands => {
-            notes.push("`/cihub restart` to test again");
-            notes.push("`/cihub cancel` to leave the queue");
+            notes.push(format!("`{mention} restart` to test again"));
+            notes.push(format!("`{mention} cancel` to leave the queue"));
         }
         _ => {}
     }
@@ -626,6 +631,7 @@ pub(crate) async fn converge_surfaces(
     settings: &QueueSettings,
     surfaces: &[Surface],
     dashboard_url: Option<&str>,
+    mention: &str,
 ) -> Result<Vec<Job>, MergeQueueError> {
     let numbers: Vec<i64> = surfaces
         .iter()
@@ -664,6 +670,7 @@ pub(crate) async fn converge_surfaces(
             &target.target_branch,
             history,
             page.as_deref(),
+            mention,
         );
         let desired_hash = hash(&rendered);
         if known
@@ -1025,7 +1032,7 @@ mod tests {
             (ItemState::Cancelled, StatusState::Error),
         ];
         for (state, want) in cases {
-            let rendered = render(&surface(state), &defaults, "main", &[], None);
+            let rendered = render(&surface(state), &defaults, "main", &[], None, "@cihub");
             assert_eq!(rendered.status.unwrap().state, want, "{state:?}");
             assert_eq!(rendered.sha, "abc");
         }
@@ -1061,26 +1068,26 @@ mod tests {
                 "⏳ **Waiting** · not in the queue for `main` yet\n\n\
                  - 1 of 2 required approvals\n\
                  - The required check `build` is running\n\n\
-                 <sub>The PR enters the queue when nothing above blocks it · `/cihub cancel` to withdraw</sub>\n",
+                 <sub>The PR enters the queue when nothing above blocks it · `@cihub cancel` to withdraw</sub>\n",
             ),
             (
                 surface(ItemState::Pending),
                 "🕓 **Queued** · position 2 in the queue for `main`\n\n\
                  Tested on top of #5 in def456.\n\n\
-                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+                 <sub>`@cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 testing,
                 "🧪 **Testing** · position 2 in the queue for `main`\n\n\
                  Tested on top of #5 in #42.\n\n\
-                 <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
+                 <sub>`@cihub restart` to test again · `@cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 retrying,
                 "⚠️ **Tests failed** · waiting for the PRs ahead before it fails\n\n\
                  Failing checks: `build`\n\
                  Tested on top of #5 in def456.\n\n\
-                 <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n",
+                 <sub>`@cihub restart` to test again · `@cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 surface(ItemState::TestsPassed),
@@ -1096,19 +1103,19 @@ mod tests {
                 "❌ **Failed** · a required check failed\n\n\
                  Failing checks: `build`, `lint`\n\n\
                  - [ ] <!-- cihub:submit --> Submit again\n\n\
-                 <sub>Or comment `/cihub merge`.</sub>\n",
+                 <sub>Or comment `@cihub merge`.</sub>\n",
             ),
             (
                 cancelled,
                 "⚪ **Cancelled** · the PR received a new commit after its submission\n\n\
                  - [ ] <!-- cihub:submit --> Submit again\n\n\
-                 <sub>Or comment `/cihub merge`.</sub>\n",
+                 <sub>Or comment `@cihub merge`.</sub>\n",
             ),
         ];
         let defaults = settings(|_| {});
 
         for (surface, want) in cases {
-            let comment = render(&surface, &defaults, "main", &[], None)
+            let comment = render(&surface, &defaults, "main", &[], None, "@cihub")
                 .comment
                 .unwrap();
             assert_eq!(comment, want, "{:?}", surface.state);
@@ -1121,7 +1128,7 @@ mod tests {
             let mut item = surface(state);
             item.profile = Some("dependencies".into());
 
-            let comment = render(&item, &settings(|_| {}), "main", &[], None)
+            let comment = render(&item, &settings(|_| {}), "main", &[], None, "@cihub")
                 .comment
                 .unwrap();
 
@@ -1137,6 +1144,7 @@ mod tests {
             "main",
             &[],
             None,
+            "@cihub",
         )
         .comment
         .unwrap();
@@ -1155,13 +1163,13 @@ mod tests {
                 2,
                 "🕓 **Queued** · position 1 in the queue for `main`\n\n\
                  Batch of 2 PRs: it waits for more PRs until 10:40 UTC, or until it has 3.\n\n\
-                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+                 <sub>`@cihub cancel` to leave the queue</sub>\n",
             ),
             (
                 1,
                 "🕓 **Queued** · position 1 in the queue for `main`\n\n\
                  Batch of 1 PR: it waits for more PRs until 10:40 UTC, or until it has 3.\n\n\
-                 <sub>`/cihub cancel` to leave the queue</sub>\n",
+                 <sub>`@cihub cancel` to leave the queue</sub>\n",
             ),
         ];
 
@@ -1175,7 +1183,7 @@ mod tests {
                 size: 3,
                 closes_at,
             });
-            let rendered = render(&queued, &settings(|_| {}), "main", &[], None);
+            let rendered = render(&queued, &settings(|_| {}), "main", &[], None, "@cihub");
             assert_eq!(rendered.comment.unwrap(), want, "{members}");
             let status = rendered.status.unwrap().description;
             assert_eq!(status, "Queued, position 1", "the status does not change");
@@ -1186,10 +1194,10 @@ mod tests {
     fn without_commands_the_comment_names_none() {
         let off = settings(|l| l.commands_enabled = Some(Setting::new(false)));
         for state in [ItemState::Testing, ItemState::Failed] {
-            let comment = render(&surface(state), &off, "main", &[], None)
+            let comment = render(&surface(state), &off, "main", &[], None, "@cihub")
                 .comment
                 .unwrap();
-            assert!(!comment.contains("/cihub"), "{comment}");
+            assert!(!comment.contains("@cihub"), "{comment}");
             assert!(!comment.contains(SUBMIT_BOX), "{comment}");
         }
     }
@@ -1199,7 +1207,7 @@ mod tests {
         let mut failed = surface(ItemState::Failed);
         failed.reason = Reason::PrPushedTo;
 
-        let rendered = render(&failed, &settings(|_| {}), "main", &[], None);
+        let rendered = render(&failed, &settings(|_| {}), "main", &[], None, "@cihub");
         let want = "Failed: the PR received a new commit after its submission";
 
         assert_eq!(rendered.status.unwrap().description, want);
@@ -1218,7 +1226,14 @@ mod tests {
             l.status_check_enabled = Some(Setting::new(false));
             l.comments_enabled = Some(Setting::new(false));
         });
-        let rendered = render(&surface(ItemState::Pending), &off, "main", &[], None);
+        let rendered = render(
+            &surface(ItemState::Pending),
+            &off,
+            "main",
+            &[],
+            None,
+            "@cihub",
+        );
         assert_eq!((rendered.status, rendered.comment), (None, None));
     }
 
@@ -1230,13 +1245,13 @@ mod tests {
         let labels = |rendered: Rendered| (rendered.add_labels, rendered.remove_labels);
 
         assert_eq!(
-            labels(render(&testing, &off, "main", &[], None)),
+            labels(render(&testing, &off, "main", &[], None, "@cihub")),
             (vec![], vec![])
         );
 
         let others = |labels: &[&str]| labels.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            labels(render(&testing, &on, "main", &[], None)),
+            labels(render(&testing, &on, "main", &[], None, "@cihub")),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -1246,7 +1261,7 @@ mod tests {
         testing.labels = BTreeSet::from(["cihub:queued".to_owned(), "bug".to_owned()]);
 
         assert_eq!(
-            labels(render(&testing, &off, "main", &[], None)),
+            labels(render(&testing, &off, "main", &[], None, "@cihub")),
             (
                 others(&["cihub:testing"]),
                 others(&["cihub:queued", "cihub:failed"])
@@ -1257,7 +1272,7 @@ mod tests {
         merged.labels = BTreeSet::from(["cihub:testing".to_owned()]);
 
         assert_eq!(
-            labels(render(&merged, &off, "main", &[], None)),
+            labels(render(&merged, &off, "main", &[], None, "@cihub")),
             (vec![], others(&STATE_LABELS))
         );
     }
@@ -1269,7 +1284,7 @@ mod tests {
             conditions: vec!["x".repeat(200)],
         }];
 
-        let rendered = render(&blocked, &settings(|_| {}), "main", &[], None);
+        let rendered = render(&blocked, &settings(|_| {}), "main", &[], None, "@cihub");
         let description = rendered.status.clone().unwrap().description;
 
         assert_eq!(description.chars().count(), DESCRIPTION_LIMIT);
@@ -1280,6 +1295,7 @@ mod tests {
             "main",
             &[],
             None,
+            "@cihub",
         );
         assert_ne!(hash(&rendered), hash(&other));
         assert_eq!(hash(&rendered), hash(&rendered.clone()));
@@ -1542,6 +1558,7 @@ mod tests {
             "main",
             &history,
             None,
+            "@cihub",
         );
         let want = "🧪 **Testing** · position 2 in the queue for `main`\n\n\
                     Tested on top of #5 in def456.\n\n\
@@ -1549,7 +1566,7 @@ mod tests {
                     | Time (UTC) | Event | By |\n| --- | --- | --- |\n\
                     | 2026-10-07 14:03 | ⏳ Waiting: the PR was submitted to the queue | `@nlecoy` |\n\n\
                     </details>\n\n\
-                    <sub>`/cihub restart` to test again · `/cihub cancel` to leave the queue</sub>\n";
+                    <sub>`@cihub restart` to test again · `@cihub cancel` to leave the queue</sub>\n";
         assert_eq!(rendered.comment.as_deref(), Some(want));
         let bare = render(
             &surface(ItemState::Testing),
@@ -1557,6 +1574,7 @@ mod tests {
             "main",
             &[],
             None,
+            "@cihub",
         );
 
         assert_ne!(hash(&rendered), hash(&bare));
@@ -1570,7 +1588,14 @@ mod tests {
             Some("nlecoy"),
             at(7, 14, 3),
         )];
-        let rendered = render(&surface(ItemState::Testing), &off, "main", &history, None);
+        let rendered = render(
+            &surface(ItemState::Testing),
+            &off,
+            "main",
+            &history,
+            None,
+            "@cihub",
+        );
 
         assert_eq!(rendered.comment, None);
 
@@ -1587,6 +1612,7 @@ mod tests {
             "main",
             &[],
             Some(page),
+            "@cihub",
         );
 
         assert_eq!(rendered.status.unwrap().details_url.as_deref(), Some(page));
@@ -1618,11 +1644,11 @@ pub(crate) struct WelcomePr {
 
 /// The comment that welcomes a PR on a branch of a queue, with its
 /// submission box.
-fn welcome(target_branch: &str) -> String {
+fn welcome(target_branch: &str, mention: &str) -> String {
     format!(
         "CIHub manages merges into `{target_branch}`.\n\n\
          - [ ] {SUBMIT_BOX} Add this PR to the merge queue\n\n\
-         <sub>Or comment `/cihub merge`.</sub>\n"
+         <sub>Or comment `{mention} merge`.</sub>\n"
     )
 }
 
@@ -1670,7 +1696,8 @@ pub(crate) async fn post_welcome(
         return Ok(());
     }
 
-    let body = welcome(&target.target_branch);
+    let mention = scm.app_mention(job.class).await?;
+    let body = welcome(&target.target_branch, &mention);
     let id = scm
         .create_comment(&target.repo, request.pr_number, &body, job.class)
         .await?;

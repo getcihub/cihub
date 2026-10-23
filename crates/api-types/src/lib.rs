@@ -360,6 +360,10 @@ pub struct Instance {
         schema(example = "https://scm.example.com/apps/cihub/installations/new")
     )]
     pub app_install_url: Option<String>,
+    /// How a comment names the App: a command starts with it, such as
+    /// `@cihub merge`; `null` when the SCM did not answer.
+    #[cfg_attr(feature = "openapi", schema(example = "@cihub"))]
+    pub app_mention: Option<String>,
 }
 
 /// An organization: the account of an installation of the App.
@@ -781,7 +785,7 @@ pub struct Pr {
     /// API token did.
     #[cfg_attr(feature = "openapi", schema(example = "ada"))]
     pub submitted_by: Option<String>,
-    /// How the PR came into the queue: a `/cihub merge` comment, a label,
+    /// How the PR came into the queue: a `merge` command in a comment, a label,
     /// or the API.
     #[cfg_attr(feature = "openapi", schema(value_type = closed::SubmittedVia))]
     pub submitted_via: SubmittedVia,

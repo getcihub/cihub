@@ -17,6 +17,7 @@ use tokio::sync::Notify;
 
 use crate::auth::AppKey;
 use crate::budget::{Budget, Observation, Rate, SECONDARY_WAIT};
+use crate::sign_in::AppPage;
 
 /// The REST API version of every call: GitHub Enterprise Server accepts it
 /// too.
@@ -97,9 +98,7 @@ pub struct GithubApp {
     /// The address of the pages of GitHub, where a person signs in.
     pub(crate) web_url: String,
     pub(crate) sign_in: Option<SignInClient>,
-    /// The page that installs the App, read once: its slug does not change
-    /// while the server runs.
-    pub(crate) install_url: OnceLock<String>,
+    pub(crate) app_page: OnceLock<AppPage>,
     app_id: String,
     key: AppKey,
     http: Client,
@@ -198,7 +197,7 @@ impl GithubApp {
             graphql_url,
             web_url: url.to_owned(),
             sign_in: config.sign_in.clone(),
-            install_url: OnceLock::new(),
+            app_page: OnceLock::new(),
             app_id: config.app_id.clone(),
             key: AppKey::from_pem(&config.private_key)?,
             http,

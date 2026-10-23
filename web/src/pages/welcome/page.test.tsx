@@ -11,6 +11,7 @@ const grace: Me = {
   orgs: [],
   version: "0.2.0",
   app_install_url: "https://github.com/apps/cihub/installations/new",
+  app_mention: "@cihub",
 };
 
 beforeEach(() => {

@@ -28,7 +28,7 @@ use cihub_platform::{
     run_maintenance, run_router, run_worker, store_delivery, sync_installation_executor,
     sync_installations_executor, sync_repos_executor, sync_repos_job,
 };
-use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
+use cihub_scm::sim::{APP_MENTION, Fault, PrChange, Reviews, Sim};
 use cihub_scm::{
     ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent,
     ScmUser,
@@ -1056,7 +1056,7 @@ fn open_pr(sim: &Sim, root: &str, n: u64) -> (u64, String) {
 /// Whether `body` is the comment that CIHub edits in place: neither a
 /// command of a user nor the answer to a refused command.
 fn is_status_comment(body: &str) -> bool {
-    !body.starts_with("/cihub") && !body.starts_with("> ")
+    !body.starts_with("@cihub") && !body.starts_with("> ")
 }
 
 fn check(name: &str, passed: bool) -> CheckReport {
@@ -1195,7 +1195,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
         sim.report_check(&repo(), &head, check(REQUIRED, true))
             .unwrap();
         setup(&sim, number, &head);
-        sim.comment(&repo(), number, &alice(), "LGTM\n/cihub merge")
+        sim.comment(&repo(), number, &alice(), "LGTM\n@cihub merge")
             .unwrap();
         want.insert(number, (*state, blocks.clone()));
     }
@@ -1216,7 +1216,7 @@ async fn twenty_prs_reach_pending_or_not_ready_with_their_reason(pool: PgPool) {
     }
 
     let (refused, _) = open_pr(&sim, &root, 21);
-    sim.comment(&repo(), refused, &bob(), "/cihub merge")
+    sim.comment(&repo(), refused, &bob(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -1411,6 +1411,7 @@ async fn a_reconciliation_stopped_before_its_commit_writes_nothing(pool: PgPool)
     let reconciler = Reconciler {
         translate: translate(&deliveries),
         dashboard_url: None,
+        mention: APP_MENTION.into(),
     };
     let counts = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -1498,6 +1499,7 @@ async fn a_backlog_beyond_the_limit_wakes_the_queue_again(pool: PgPool) {
     let reconciler = Reconciler {
         translate: translate(&Arc::new(Mutex::new(HashMap::new()))),
         dashboard_url: None,
+        mention: APP_MENTION.into(),
     };
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -1778,7 +1780,7 @@ async fn ten_prs_are_tested_on_top_of_their_predecessors(pool: PgPool) {
     }
 
     for n in 1..=10 {
-        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        sim.comment(&repo(), n, &alice(), "@cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
@@ -2025,7 +2027,7 @@ async fn a_protected_test_branch_fails_the_run(pool: PgPool) {
         let (number, head) = open_pr_with(&sim, &main, n, &[(&path, Some("x"))]);
         sim.report_check(&repo(), &head, check(REQUIRED, true))
             .unwrap();
-        sim.comment(&repo(), number, &alice(), "/cihub merge")
+        sim.comment(&repo(), number, &alice(), "@cihub merge")
             .unwrap();
     };
 
@@ -2139,7 +2141,7 @@ async fn a_pr_waits_for_its_queue_conditions(pool: PgPool) {
     for (number, head) in [(small, &small_head), (large, &large_head)] {
         sim.report_check(&repo(), head, check(REQUIRED, true))
             .unwrap();
-        sim.comment(&repo(), number, &alice(), "/cihub merge")
+        sim.comment(&repo(), number, &alice(), "@cihub merge")
             .unwrap();
     }
 
@@ -2254,10 +2256,10 @@ priority_rules:
     q.settle().await;
 
     let cases: [(bool, &[&str], &str); 4] = [
-        (false, &[], "/cihub merge"),
-        (true, &[], "/cihub merge"),
-        (true, &["urgent"], "/cihub merge"),
-        (true, &["urgent"], "/cihub merge --priority=low"),
+        (false, &[], "@cihub merge"),
+        (true, &[], "@cihub merge"),
+        (true, &["urgent"], "@cihub merge"),
+        (true, &["urgent"], "@cihub merge --priority=low"),
     ];
 
     for (n, (green, labels, command)) in (1..).zip(cases) {
@@ -2348,6 +2350,7 @@ async fn a_push_without_a_queue_waits_for_a_merge_in_flight(pool: PgPool) {
     let reconciler = Reconciler {
         translate: translate(&deliveries),
         dashboard_url: None,
+        mention: APP_MENTION.into(),
     };
     let state = |pool: PgPool| async move {
         let mut tx = begin_system(&pool).await.unwrap();
@@ -2429,7 +2432,7 @@ async fn a_push_submits_the_pr_again(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge --priority=high")
+    sim.comment(&repo(), number, &alice(), "@cihub merge --priority=high")
         .unwrap();
 
     q.deliver().await;
@@ -2492,7 +2495,7 @@ async fn a_resubmission_meets_the_queue_conditions_on_the_new_head(pool: PgPool)
         .unwrap();
     sim.report_check(&repo(), &head, check("lint", true))
         .unwrap();
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -2576,7 +2579,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     q.settle().await;
 
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -2614,6 +2617,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
     let reconciler = Reconciler {
         translate: translate(&q.deliveries),
         dashboard_url: None,
+        mention: APP_MENTION.into(),
     };
 
     cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, q.clock.now())
@@ -2626,7 +2630,7 @@ async fn a_concluded_check_reads_a_waiting_pr_at_once(pool: PgPool) {
 }
 
 /// A delivery stored and processed again once the inbox deleted it writes no
-/// wrong fact and asks no job twice: the change of a PR, a `/cihub merge`
+/// wrong fact and asks no job twice: the change of a PR, a `@cihub merge`
 /// command, a check on the head of a PR and on the test SHA of a live run,
 /// and the push and the change of the PR that merge it.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -2642,7 +2646,7 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     let submitted = q.deliver_and_process_again().await;
@@ -2706,7 +2710,7 @@ async fn a_concluded_check_elsewhere_reads_nothing(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     let (_, other) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
@@ -2764,7 +2768,7 @@ queues:
                 .await
                 .unwrap();
         }
-        sim.comment(&repo(), number, &alice(), "/cihub merge")
+        sim.comment(&repo(), number, &alice(), "@cihub merge")
             .unwrap();
 
         q.deliver().await;
@@ -2839,7 +2843,7 @@ async fn a_command_with_an_unknown_profile_is_refused(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge --profile=fast")
+    sim.comment(&repo(), number, &alice(), "@cihub merge --profile=fast")
         .unwrap();
 
     q.deliver().await;
@@ -2879,7 +2883,7 @@ async fn a_branch_without_a_required_check_merges_nothing(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -2938,7 +2942,7 @@ async fn a_draining_queue_refuses_a_submission(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -2997,7 +3001,7 @@ async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     q.settle().await;
 
     for n in 1..=3 {
-        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        sim.comment(&repo(), n, &alice(), "@cihub merge").unwrap();
     }
     q.deliver().await;
     q.settle().await;
@@ -3014,7 +3018,7 @@ async fn a_pr_that_is_not_open_is_not_submitted(pool: PgPool) {
     for (n, state) in [(1, "merged"), (2, "closed"), (3, "a draft")] {
         let comments = sim.comments(&repo(), n);
         let refusal = format!(
-            "> /cihub merge\n\n@alice, the queue refused this command: this PR is {state}.\n"
+            "> `@cihub merge`\n\n@alice, the queue refused this command: this PR is {state}.\n"
         );
         assert!(comments.contains(&refusal), "PR {n}: {comments:?}");
     }
@@ -3094,17 +3098,17 @@ async fn a_command_creates_the_queue_of_the_default_branch(pool: PgPool) {
     q.settle().await;
     assert_eq!(queues_and_items(&pool).await, (Vec::new(), Vec::new()));
 
-    sim.comment(&repo(), labelled, &alice(), "/cihub merge")
+    sim.comment(&repo(), labelled, &alice(), "@cihub merge")
         .unwrap();
 
     let (other, head) = open_pr_with(&sim, &main, 2, &[("f2.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), other, &alice(), "/cihub merge")
+    sim.comment(&repo(), other, &alice(), "@cihub merge")
         .unwrap();
 
-    sim.comment(&repo(), release_pr, &alice(), "/cihub merge")
+    sim.comment(&repo(), release_pr, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3158,7 +3162,7 @@ queues:
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3194,7 +3198,7 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), up_to_date, &alice(), "/cihub merge")
+    sim.comment(&repo(), up_to_date, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3204,7 +3208,7 @@ async fn an_up_to_date_pr_merges_directly(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), behind, &alice(), "/cihub merge")
+    sim.comment(&repo(), behind, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3254,7 +3258,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     sim.report_check(&repo(), &first_head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), first, &alice(), "/cihub merge")
+    sim.comment(&repo(), first, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3264,7 +3268,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     sim.report_check(&repo(), &second_head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), second, &alice(), "/cihub merge")
+    sim.comment(&repo(), second, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3340,7 +3344,7 @@ async fn each_pr_shows_its_item_in_one_comment_a_status_and_labels(pool: PgPool)
     q.stop().await;
 }
 
-/// `/cihub restart` and `/cihub cancel`: an account with `write` restarts the
+/// `@cihub restart` and `@cihub cancel`: an account with `write` restarts the
 /// tests of an item in test, then cancels it; an account without it gets a
 /// comment that mentions it and says why.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -3359,7 +3363,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -3377,14 +3381,14 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
 
     assert_eq!(item(pool.clone()).await.0, "testing");
 
-    sim.comment(&repo(), number, &bob(), "/cihub cancel")
+    sim.comment(&repo(), number, &bob(), "@cihub cancel")
         .unwrap();
 
     q.deliver().await;
     q.settle().await;
     assert_eq!(item(pool.clone()).await.0, "testing", "bob cannot write");
 
-    let refusal = "> /cihub cancel\n\n@bob, the queue refused this command: \
+    let refusal = "> `@cihub cancel`\n\n@bob, the queue refused this command: \
                    the command needs the write permission on the repository.\n";
     let refusals: Vec<String> = sim
         .comments(&repo(), number)
@@ -3394,7 +3398,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
 
     assert_eq!(refusals.len(), 1, "{refusals:?}");
 
-    sim.comment(&repo(), number, &alice(), "/cihub restart")
+    sim.comment(&repo(), number, &alice(), "@cihub restart")
         .unwrap();
 
     q.deliver().await;
@@ -3421,7 +3425,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     assert_eq!(runs, 2, "a new run");
     assert_eq!(item(pool.clone()).await.0, "testing");
 
-    sim.comment(&repo(), number, &alice(), "/cihub cancel")
+    sim.comment(&repo(), number, &alice(), "@cihub cancel")
         .unwrap();
 
     q.deliver().await;
@@ -3433,7 +3437,7 @@ async fn a_comment_restarts_or_cancels_the_item_of_its_pr(pool: PgPool) {
     );
     assert_eq!(
         sim.acknowledged_comments(&repo(), number),
-        ["/cihub merge", "/cihub restart", "/cihub cancel"]
+        ["@cihub merge", "@cihub restart", "@cihub cancel"]
     );
 
     q.stop().await;
@@ -3458,7 +3462,7 @@ async fn the_comment_shows_the_history_of_the_pr(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    for command in ["/cihub merge", "/cihub restart"] {
+    for command in ["@cihub merge", "@cihub restart"] {
         sim.comment(&repo(), number, &alice(), command).unwrap();
         q.deliver().await;
         q.settle().await;
@@ -3509,7 +3513,7 @@ async fn the_history_covers_every_item_of_the_pr(pool: PgPool) {
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
 
-    for command in ["/cihub merge", "/cihub cancel", "/cihub merge"] {
+    for command in ["@cihub merge", "@cihub cancel", "@cihub merge"] {
         sim.comment(&repo(), number, &alice(), command).unwrap();
         q.deliver().await;
         q.settle().await;
@@ -4018,7 +4022,7 @@ async fn the_page_of_a_queue_follows_its_prs_and_survives_a_replay(pool: PgPool)
 
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
     q.deliver().await;
     q.settle().await;
@@ -4174,7 +4178,7 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
     let mine_live = "/orgs/acme/prs?author=bob&sort=position\
                      &state=not_ready,pending,testing,pending_failure,tests_passed,merged";
     let (third, _) = open_pr_with(&sim, &main, 3, &[("f3.txt", Some("x"))]);
-    sim.comment(&repo(), third, &alice(), "/cihub merge")
+    sim.comment(&repo(), third, &alice(), "@cihub merge")
         .unwrap();
     q.deliver().await;
     q.settle().await;
@@ -4275,7 +4279,7 @@ async fn the_graph_gives_each_run_on_top_of_its_predecessors(pool: PgPool) {
         let (number, head) = open_pr_with(&sim, &main, n, &[(&format!("f{n}.txt"), Some("x"))]);
         sim.report_check(&repo(), &head, check(REQUIRED, true))
             .unwrap();
-        sim.comment(&repo(), number, &alice(), "/cihub merge")
+        sim.comment(&repo(), number, &alice(), "@cihub merge")
             .unwrap();
         q.deliver().await;
         q.settle().await;
@@ -5082,7 +5086,7 @@ async fn the_box_of_the_welcome_comment_submits_the_pr(pool: PgPool) {
         "no box while in the queue"
     );
 
-    sim.comment(&repo(), number, &alice(), "/cihub cancel")
+    sim.comment(&repo(), number, &alice(), "@cihub cancel")
         .unwrap();
 
     q.deliver().await;
@@ -5153,7 +5157,7 @@ async fn a_pr_opened_before_its_queue_is_welcomed_at_its_next_change(pool: PgPoo
 
     q.deliver().await;
     q.settle().await;
-    sim.comment(&repo(), first, &alice(), "/cihub merge")
+    sim.comment(&repo(), first, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -5205,7 +5209,7 @@ async fn a_pr_cannot_change_its_own_conditions(pool: PgPool) {
     sim.report_check(&repo(), &head, check("lint", true))
         .unwrap();
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
 
     q.deliver().await;
@@ -5552,6 +5556,7 @@ async fn an_old_partition_goes_once_a_snapshot_covers_it(pool: PgPool) {
     let reconciler = Reconciler {
         translate: translate(&Arc::default()),
         dashboard_url: None,
+        mention: APP_MENTION.into(),
     };
 
     reconciler
@@ -5650,7 +5655,7 @@ fn open_green_pr(sim: &Sim, main: &str, n: u64) -> u64 {
 
 fn submit_new_pr(sim: &Sim, main: &str, n: u64) -> u64 {
     let number = open_green_pr(sim, main, n);
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
     number
 }
@@ -5671,7 +5676,7 @@ async fn the_merge_job_retries_and_reports_its_errors(pool: PgPool) {
     }
 
     for n in 1..=2 {
-        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        sim.comment(&repo(), n, &alice(), "@cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
@@ -5750,7 +5755,7 @@ async fn a_pr_merged_outside_the_queue_is_not_claimed(pool: PgPool) {
     }
 
     for n in 1..=2 {
-        sim.comment(&repo(), n, &alice(), "/cihub merge").unwrap();
+        sim.comment(&repo(), n, &alice(), "@cihub merge").unwrap();
         q.deliver().await;
         q.settle().await;
     }
@@ -6226,6 +6231,7 @@ impl Chaos {
         let reconciler = Reconciler {
             translate: translate(&self.deliveries),
             dashboard_url: None,
+            mention: APP_MENTION.into(),
         };
         let direct = reconciler
             .reconcile(&self.pool, self.queue(), &|| self.clock.now())
@@ -6305,7 +6311,7 @@ impl Chaos {
                 red.insert(i64::try_from(number).unwrap());
                 red_heads.insert(head.clone());
             }
-            sim.comment(&repo, number, &alice(), "/cihub merge")
+            sim.comment(&repo, number, &alice(), "@cihub merge")
                 .unwrap();
         }
 
@@ -7110,7 +7116,7 @@ async fn a_pr_shows_whether_it_can_enter_its_queue(pool: PgPool) {
     );
     assert_eq!(event_count(&pool).await, events, "the log does not change");
 
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
     q.deliver().await;
     q.settle().await;
@@ -7151,7 +7157,7 @@ async fn the_conditions_status_follows_its_setting_and_is_never_required(pool: P
     let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
     sim.report_check(&repo(), &head, check(REQUIRED, true))
         .unwrap();
-    sim.comment(&repo(), number, &alice(), "/cihub merge")
+    sim.comment(&repo(), number, &alice(), "@cihub merge")
         .unwrap();
     q.deliver().await;
     q.settle().await;

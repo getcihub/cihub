@@ -6,11 +6,11 @@
 //!
 //! The world: `acme` and `globex`, a queue each; `ada` is a member of `acme`,
 //! `grace` of no organization. On `acme/web`, `ada` submits three PRs with
-//! `/cihub merge`: two whose check passed, which the queue tests, and one
+//! `@cihub merge`: two whose check passed, which the queue tests, and one
 //! whose check waits; #4 is open, not submitted. `acme/api` has no queue
 //! yet, a PR of `marie` and two of `ada`, all green, and a CI that passes
 //! each test commit but those that test #3; the page `/sim/merge` comments
-//! `/cihub merge` on a PR, `/sim/comment` gives the last comment of a PR.
+//! `@cihub merge` on a PR, `/sim/comment` gives the last comment of a PR.
 //!
 //! `noor` owns `initech` on the simulator, where the App is not installed
 //! yet: the page `/sim/install` installs it and comes back through the Setup
@@ -451,7 +451,7 @@ fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 
     for (pr, author, is_green) in prs {
         let number = open_pr(sim, &web, pr, &author, is_green)?;
-        sim.comment(&web, number, &ada, "/cihub merge")?;
+        sim.comment(&web, number, &ada, "@cihub merge")?;
     }
 
     // #4, which a browser test submits while the page of the queue is open.
@@ -555,7 +555,7 @@ async fn testing_shas(pool: &PgPool) -> Result<Vec<(String, bool)>, Box<dyn std:
 }
 
 /// `GET /sim/merge?repo=api&number=1&login=ada`: the person comments
-/// `/cihub merge` on the PR, as on the SCM.
+/// `@cihub merge` on the PR, as on the SCM.
 async fn comment_merge(
     State(sim): State<Arc<Sim>>,
     Query(query): Query<HashMap<String, String>>,
@@ -572,7 +572,7 @@ async fn comment_merge(
         return Html("no such repository").into_response();
     };
 
-    match sim.comment(&repo, number, &person, "/cihub merge") {
+    match sim.comment(&repo, number, &person, "@cihub merge") {
         Ok(()) => Html("commented").into_response(),
         Err(err) => Html(err.to_string()).into_response(),
     }

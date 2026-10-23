@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 
 import type { ConfigFile } from "@/client/types.gen";
-import { COMMAND } from "@/components/queue/copy-command";
+import { MergeCommand } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";
@@ -107,8 +107,8 @@ function Configuration({ branch, config }: { branch: string; config: ConfigFile 
         </p>
         {config.text && <ConfigText text={config.text} errorLine={config.line ?? null} />}
         <p className="mt-2 text-md text-muted-foreground">
-          A <code>{COMMAND}</code> still creates the queue of <code>{branch}</code>, but each new test run
-          fails until the file is fixed on <code>{branch}</code>.
+          A <MergeCommand /> still creates the queue of <code>{branch}</code>, but each new test run fails
+          until the file is fixed on <code>{branch}</code>.
         </p>
       </>
     );
@@ -132,8 +132,8 @@ function Configuration({ branch, config }: { branch: string; config: ConfigFile 
           </>
         ) : (
           <>
-            No <code>.cihub.yaml</code>. The first <code>{COMMAND}</code> creates the queue of{" "}
-            <code>{branch}</code>, with the default settings:
+            No <code>.cihub.yaml</code>. The first <MergeCommand /> creates the queue of <code>{branch}</code>
+            , with the default settings:
           </>
         )}
       </p>

@@ -5,7 +5,7 @@ import { type ReactNode, useEffect } from "react";
 import { syncUserMutation } from "@/client/@tanstack/react-query.gen";
 import type { OrgList } from "@/client/types.gen";
 import { ArrowIcon } from "@/components/icons/arrow-icon";
-import { COMMAND } from "@/components/queue/copy-command";
+import { MergeCommand } from "@/components/queue/copy-command";
 import { Brand, Failure, Note } from "@/components/session/parts";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -114,7 +114,7 @@ export function WelcomePage() {
           </Step>
           <Step n={3} title="Start the first queue">
             <p>
-              Comment <code>{COMMAND}</code> on an approved pull request. The queue starts there.
+              Comment <MergeCommand /> on an approved pull request. The queue starts there.
             </p>
           </Step>
         </ol>

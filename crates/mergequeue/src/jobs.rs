@@ -218,7 +218,8 @@ pub(crate) fn submit(
     connection_job(org_id, connection, delivery_id, SUBMIT_PR, json!(request))
 }
 
-/// Answers `command` on its PR, to tell its author why the queue refused it.
+/// Answers `command`, the words after the mention of the App, on its PR, to
+/// tell its author why the queue refused it.
 pub(crate) async fn reply(
     scm: &dyn Scm,
     repo: &RepoRef,
@@ -228,8 +229,9 @@ pub(crate) async fn reply(
     text: String,
     class: JobClass,
 ) -> Result<(), Failure> {
+    let mention = scm.app_mention(class).await?;
     let body = format!(
-        "> {command}\n\n@{}, the queue refused this command: {text}\n",
+        "> `{mention} {command}`\n\n@{}, the queue refused this command: {text}\n",
         author.login
     );
     scm.create_comment(repo, number, &body, class).await?;
@@ -943,16 +945,7 @@ async fn refuse_submission(
         return Ok(());
     };
 
-    reply(
-        scm,
-        repo,
-        request.pr_number,
-        author,
-        "/cihub merge",
-        text,
-        class,
-    )
-    .await
+    reply(scm, repo, request.pr_number, author, "merge", text, class).await
 }
 
 /// Checks the submission of the job, reads the PR, and gives back its

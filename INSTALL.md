@@ -73,15 +73,16 @@ to be up to date before merging".
 
 ## 5. Merge a pull request
 
-You do not create a queue. Comment on an approved, green pull request of the default branch:
+You do not create a queue. Comment on an approved, green pull request of the default branch, with the slug of
+your App after the `@` (the last part of its address, `https://github.com/apps/<app>`):
 
 ```
-/cihub merge
+@<app> merge
 ```
 
 The first command creates the queue of the branch, with the default settings, and submits the pull request.
 CIHub answers with a comment that it keeps up to date, and a commit status `CIHub Merge Queue (<branch>)`. Other
-commands: `/cihub cancel`, `/cihub restart`, and options `--priority=urgent|high|medium|low|0-255`,
+commands: `@<app> cancel`, `@<app> restart`, and options `--priority=urgent|high|medium|low|0-255`,
 `--no-batch`. A queue on another branch comes from `.cihub.yaml` (below); a branch has one queue.
 
 CIHub checks the protection of the branch for you, once the queue exists:
@@ -173,7 +174,7 @@ Rules of the file (version 1):
   merge_commit_title, batching, failure_budget }` for a kind of pull request
   in the same queue, such as dependency updates. The first profile whose
   `conditions` match, read once at the submission, gives these settings;
-  `/cihub merge --profile=<name>` names one. A batch holds one profile.
+  `@<app> merge --profile=<name>` names one. A batch holds one profile.
   A profile cannot set `fast_forward`, nor the settings of the whole queue.
 - `priority_rules`: a list of `{ name, conditions, priority }`, where priority
   is `urgent` (0), `high` (10), `medium` (100, default), `low` (200) or 0-255;

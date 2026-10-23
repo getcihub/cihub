@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import type { Repo } from "@/client/types.gen";
 import { CheckIcon } from "@/components/icons/check-icon";
-import { COMMAND } from "@/components/queue/copy-command";
+import { MergeCommand } from "@/components/queue/copy-command";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { QueueIllustration } from "@/components/ui/illustrations";
@@ -19,7 +19,7 @@ const STEPS: { title: ReactNode; text: string }[] = [
   {
     title: (
       <>
-        Comment <code>{COMMAND}</code>
+        Comment <MergeCommand />
       </>
     ),
     text: "On an approved pull request. The queue starts there.",

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { RepoDetail } from "@/client/types.gen";
 import { ArrowIcon } from "@/components/icons/arrow-icon";
 import { WarningIcon } from "@/components/icons/warning-icon";
-import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CopyCommand, MergeCommand } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { FirstCommandWait } from "@/components/setup/first-command-wait";
 import { buttonVariants } from "@/components/ui/button";
@@ -56,8 +56,8 @@ export function RepoStart({ repo, isChecking, hasGivenUp, checkAgain }: RepoSetu
           }
           foot="The setup below says what to change."
         >
-          {blockOf(repo)}: the queue could not merge. Fix it, check again, then comment <code>{COMMAND}</code>{" "}
-          on a pull request.
+          {blockOf(repo)}: the queue could not merge. Fix it, check again, then comment <MergeCommand /> on a
+          pull request.
         </EmptyState>
       </Card>
     );

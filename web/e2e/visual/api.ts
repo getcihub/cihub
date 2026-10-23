@@ -517,7 +517,14 @@ function answerOfSession(path: string, person: Person): Answer | null {
   if (path === "/user/orgs") {
     return [200, listOf("orgs", orgs)];
   }
-  return [200, { version: "0.2.0", app_install_url: "https://github.com/apps/cihub/installations/new" }];
+  return [
+    200,
+    {
+      version: "0.2.0",
+      app_install_url: "https://github.com/apps/cihub/installations/new",
+      app_mention: "@cihub",
+    },
+  ];
 }
 
 /** The hours of the last 24 hours, the oldest first: a busy day, quiet at night. */

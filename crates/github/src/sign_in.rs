@@ -122,25 +122,37 @@ struct Account {
     kind: String,
 }
 
-impl GithubApp {
+/// What `GET /app` gives, read once: it does not change while the server
+/// runs.
+pub(crate) struct AppPage {
     /// `<html_url of the App>/installations/new`: GitHub shows the accounts
     /// where the App is not installed yet, and the repositories of an
     /// installation that exists.
-    pub(crate) async fn install_address(&self) -> Result<String, ScmError> {
+    pub(crate) install_url: String,
+    /// `@<slug of the App>`, which starts a command in a comment.
+    pub(crate) mention: String,
+}
+
+impl GithubApp {
+    pub(crate) async fn read_app_page(&self) -> Result<&AppPage, ScmError> {
         #[derive(Deserialize)]
         struct App {
             html_url: String,
+            slug: String,
         }
 
-        if let Some(url) = self.install_url.get() {
-            return Ok(url.clone());
+        if let Some(page) = self.app_page.get() {
+            return Ok(page);
         }
 
         let (answer, _) = self.send_as_app(Method::GET, "/app").await?;
         let app: App = expect(answer, &[StatusCode::OK])?.json()?;
-        let url = format!("{}/installations/new", app.html_url.trim_end_matches('/'));
+        let page = AppPage {
+            install_url: format!("{}/installations/new", app.html_url.trim_end_matches('/')),
+            mention: format!("@{}", app.slug),
+        };
 
-        Ok(self.install_url.get_or_init(|| url).clone())
+        Ok(self.app_page.get_or_init(|| page))
     }
 
     pub(crate) fn sign_in_address(&self, request: &SignInRequest) -> Option<String> {

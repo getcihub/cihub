@@ -4,7 +4,8 @@
 //! jobs that read the SCM for it, build its test branches, merge its PRs, show
 //! their state on each PR and repair what a lost webhook leaves. The decisions
 //! come from `cihub-mq-core`; this crate writes them. The scheduler does not call
-//! the SCM: the jobs do, and give their facts back through `queue_inbox`.
+//! the SCM: the jobs do, and give their facts back through `queue_inbox`. The
+//! module reads the mention of the App once, before its scheduler starts.
 
 mod admission;
 mod api;
@@ -22,12 +23,16 @@ mod scheduler;
 mod surfaces;
 mod target;
 
+use std::error::Error;
 use std::sync::Arc;
 
+use cihub_domain::JobClass;
 use cihub_platform::{LoopError, Module, Subscription};
 use cihub_scm::Scm;
 use cihub_store::PgPool;
 use time::OffsetDateTime;
+use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 pub use config::request_queue_setups;
 pub use jobs::{REFRESH_PRS, conditions_status_context, queue_status_context};
@@ -141,10 +146,7 @@ pub fn module(
     clock: Clock,
     dashboard_url: Option<String>,
 ) -> Module {
-    let reconciler = Reconciler {
-        translate,
-        dashboard_url,
-    };
+    let scheduler_scm = Arc::clone(&scm);
     Module {
         api: api::api(pool.clone(), clock.clone(), Arc::clone(&scm)),
         executors: Box::new(move |executors| {
@@ -187,10 +189,67 @@ pub fn module(
         }],
         scheduler: Box::new(move |cancel| {
             Box::pin(async move {
+                let Some(mention) = read_app_mention(scheduler_scm.as_ref(), &cancel).await else {
+                    return Ok(());
+                };
+                let reconciler = Reconciler {
+                    translate,
+                    dashboard_url,
+                    mention,
+                };
+
                 run_scheduler(pool, owner, reconciler, move || clock(), cancel)
                     .await
                     .map_err(|err| Box::new(err) as LoopError)
             })
         }),
+    }
+}
+
+/// The module reads the mention of the App again after this long when the
+/// SCM does not give it.
+const READ_APP_MENTION_AGAIN_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The mention of the App, read until the SCM gives it, or `None` once
+/// `cancel` is cancelled. The scheduler routes the commands and writes the
+/// comments with it, so no queue is reconciled before: a delivery waits in
+/// its inbox.
+async fn read_app_mention(scm: &dyn Scm, cancel: &CancellationToken) -> Option<String> {
+    loop {
+        match scm.app_mention(JobClass::Interactive).await {
+            Ok(mention) => return Some(mention),
+            Err(err) => warn!(error = &err as &dyn Error, "mention of the app not read"),
+        }
+
+        tokio::select! {
+            () = cancel.cancelled() => return None,
+            () = tokio::time::sleep(READ_APP_MENTION_AGAIN_AFTER) => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cihub_scm::ScmError;
+    use cihub_scm::sim::{APP_MENTION, Fault, Sim};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn the_mention_is_read_until_the_scm_gives_it_or_the_module_stops() {
+        let sim = Sim::new();
+        let stopped = CancellationToken::new();
+        stopped.cancel();
+        sim.fail(Fault {
+            call: Some("app_mention"),
+            error: ScmError::Unavailable("down".into()),
+            times: 1,
+        });
+
+        let after_failure = read_app_mention(&sim, &stopped).await;
+        let after_recovery = read_app_mention(&sim, &CancellationToken::new()).await;
+
+        assert_eq!(after_failure, None);
+        assert_eq!(after_recovery.as_deref(), Some(APP_MENTION));
     }
 }

@@ -332,7 +332,7 @@ pub(super) async fn list_org_queues(
 /// List the queues of a repository
 ///
 /// The queues of the repository with their counters and their settings, by
-/// target branch. The first `/cihub merge` on a PR of a branch creates its queue.
+/// target branch. The first `merge` command on a PR of a branch creates its queue.
 #[utoipa::path(
     get,
     path = "/orgs/{org}/repos/{repo}/queues",

@@ -188,7 +188,7 @@ its run waits for the next reconciliation), run `plan`, write its decisions, req
 desired state (PR reads, submissions, assembly of the test branches) and the cleanup of the runs that the
 decisions terminate, and set `next_tick_at` to `wake_at`. A stop at any moment
 leaves nothing behind: the transaction is rolled back and the next reconciliation redoes the same work. A pass of
-each replica also reads the deliveries of a connection without a queue: a `/cihub merge` command
+each replica also reads the deliveries of a connection without a queue: a `merge` command
 requests a `submit_pr` job, which finds the queue by the base branch of the PR it reads, because a comment does not give it.
 A lost or restored access comes from the sync of the installation, a job of `cihub-platform`, which deposits
 `access.lost` or `access.restored` in the `queue_inbox` of each queue of the connection.

@@ -351,7 +351,7 @@ reason no longer holds.
 
 ### Read the queue or the actor from the delivery of a comment or a label
 
-- **Tried / considered**: route a `/cihub` command by its delivery, and attribute a label submission to a user.
+- **Tried / considered**: route a command by its delivery, and attribute a label submission to a user.
 - **Why not**: a comment delivery does not give the base branch, and a label delivery does not say who added the
   label. `submit_pr` reads the PR to find the queue, and a label submission has the `system` actor.
 
@@ -381,6 +381,13 @@ reason no longer holds.
 - **Why not**: a repository with hundreds of open PRs would get hundreds of comments at once, which notifies the
   authors of old PRs and spends the budget of comments of the App. A PR opened before its queue gets the welcome
   at its next change.
+
+### A fixed command prefix
+
+- **Tried / considered**: read the commands after a fixed word, `/cihub merge`.
+- **Why not**: each deployment of CIHub has its own GitHub App, and an organization can install the Apps of
+  several deployments, such as a staging and a production instance. A fixed word gives the command to all of
+  them. A command starts with the mention of the App, `@<app> merge`, which names one deployment.
 
 ### Mention users in the history of the comment
 

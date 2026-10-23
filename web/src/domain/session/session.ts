@@ -53,6 +53,7 @@ export interface Me {
   orgs: Org[];
   version: string;
   app_install_url?: string | null;
+  app_mention?: string | null;
 }
 
 /** The membership of the person in `org`, whatever the case of its slug; `undefined` without a role in it. */
@@ -84,7 +85,7 @@ export async function readMe(queryClient: QueryClient): Promise<Me | null> {
 export function meOf(
   user: User,
   orgs: { orgs: Org[] },
-  instance: { version: string; app_install_url?: string | null },
+  instance: { version: string; app_install_url?: string | null; app_mention?: string | null },
 ): Me {
   return {
     login: user.login,
@@ -94,7 +95,13 @@ export function meOf(
     orgs: orgs.orgs,
     version: instance.version,
     app_install_url: instance.app_install_url,
+    app_mention: instance.app_mention,
   };
+}
+
+/** The command that submits a PR in a comment: the mention of the App, `@<app>` when the SCM did not give it. */
+export function mergeCommandOf(me: Me): string {
+  return `${me.app_mention ?? "@<app>"} merge`;
 }
 
 /** Forgets the person of the session: a read still fresh in the cache would send them back from the sign-in. */

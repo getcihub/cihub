@@ -1,5 +1,5 @@
 import type { Queue } from "@/client/types.gen";
-import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
+import { CopyCommand, MergeCommand } from "@/components/queue/copy-command";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueueIllustration } from "@/components/ui/illustrations";
 import type { QueuePath } from "@/domain/queue/queries";
@@ -44,7 +44,7 @@ export function EmptyQueue({
       }
     >
       Nothing waits in the queue of <code>{queue.target_branch}</code>
-      {lastMerge}. A pull request enters when someone comments <code>{COMMAND}</code> on it.
+      {lastMerge}. A pull request enters when someone comments <MergeCommand /> on it.
     </EmptyState>
   );
 }

@@ -280,6 +280,12 @@ pub trait Scm: Send + Sync {
     /// call, so no budget of a connection applies.
     fn app_install_url(&self, class: JobClass) -> ScmFuture<'_, String>;
 
+    /// How a comment names the App, such as `@cihub`: a command starts with
+    /// it, so that each deployment reads only the commands that name its own
+    /// App. No connection makes the call, so no budget of a connection
+    /// applies.
+    fn app_mention(&self, class: JobClass) -> ScmFuture<'_, String>;
+
     /// The page of the SCM where an owner changes the rules of the branches
     /// of `repo`, or `None` when the SCM has none. It makes no call.
     fn branch_rules_url(&self, repo: &RepoRef) -> Option<String>;

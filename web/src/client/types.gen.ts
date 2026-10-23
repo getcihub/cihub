@@ -482,6 +482,11 @@ export type Instance = {
      */
     app_install_url?: string | null;
     /**
+     * How a comment names the App: a command starts with it, such as
+     * `@cihub merge`; `null` when the SCM did not answer.
+     */
+    app_mention?: string | null;
+    /**
      * The version of the instance.
      */
     version: string;
@@ -713,7 +718,7 @@ export type Pr = {
      */
     submitted_by?: string | null;
     /**
-     * How the PR came into the queue: a `/cihub merge` comment, a label,
+     * How the PR came into the queue: a `merge` command in a comment, a label,
      * or the API.
      */
     submitted_via: SubmittedVia;

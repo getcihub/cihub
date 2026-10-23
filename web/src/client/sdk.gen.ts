@@ -86,8 +86,8 @@ export const denyDeviceCode = <ThrowOnError extends boolean = false>(options: Op
 /**
  * Get the instance
  *
- * The version of the instance, and the page of the SCM that installs the
- * App.
+ * The version of the instance, the page of the SCM that installs the App,
+ * and the mention of the App that starts a command.
  *
  * **Access**: any API token or session.
  */
@@ -329,7 +329,7 @@ export const submit = <ThrowOnError extends boolean = false>(options: Options<Su
  * List the queues of a repository
  *
  * The queues of the repository with their counters and their settings, by
- * target branch. The first `/cihub merge` on a PR of a branch creates its queue.
+ * target branch. The first `merge` command on a PR of a branch creates its queue.
  *
  * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
  */

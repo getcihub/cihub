@@ -203,7 +203,7 @@ commit stages, as `cargo fmt` does for the Rust code.
 writes `openapi.json` from the code (`cargo run -p cihub-server --example openapi`) and the client in `src/client`;
 `mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-server --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
-passes each test commit of `acme/api` but those that test its #3, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
+passes each test commit of `acme/api` but those that test its #3, comments `@cihub merge` on a PR at `/sim/merge`, and gives the last
 comment of a PR at `/sim/comment`.
 
 `mise run web:shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator

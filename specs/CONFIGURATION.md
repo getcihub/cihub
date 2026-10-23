@@ -12,7 +12,7 @@ without testing on top of the other, and each merge of one would restart the run
 (`specs/LESSONS.md`). The `branch` of an entry is a branch, or a glob of branches (`release/*`, with the
 syntax of `matches`: `*` stays in one `/` segment, `**` crosses them); each branch that a glob matches has its own
 queue. A branch takes the entry that names it, else the first glob, in file order, that matches it. No queue
-is created by hand: the first `/cihub merge` on a branch without a queue creates its queue when an entry of
+is created by hand: the first `merge` command on a branch without a queue creates its queue when an entry of
 the file serves that branch, or when it is the default branch of the repository, with the default settings
 and `defaults`. Without a file, a team thus starts with one queue on its default branch; an entry
 `branch: main` then sets that same queue. A queue without an entry has `defaults`. A queue that the file no
@@ -126,7 +126,7 @@ on top of the others, in the same order (`specs/LESSONS.md`). A profile sets onl
 `mode`, `window`, `trigger`, the timeouts, the prefixes) stay on the queue.
 
 The submission chooses the profile once, as the routing did before: the profile that the command names
-(`/cihub merge --profile=<name>`, `--profile` of the CLI, `profile` of the API, refused when the queue does not
+(`@<app> merge --profile=<name>`, `--profile` of the CLI, `profile` of the API, refused when the queue does not
 have it), else the first profile, in file order, whose `conditions` the PR satisfies; a profile without
 `conditions` is chosen only by its name. The item keeps its profile until it ends; a resubmission on a push
 keeps it too. `conditions` choose and `queue_conditions` admit: write in `conditions` what says what the PR is

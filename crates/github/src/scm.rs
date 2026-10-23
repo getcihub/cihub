@@ -1536,7 +1536,11 @@ impl Scm for GithubApp {
     }
 
     fn app_install_url(&self, _class: JobClass) -> ScmFuture<'_, String> {
-        Box::pin(self.install_address())
+        Box::pin(async move { Ok(self.read_app_page().await?.install_url.clone()) })
+    }
+
+    fn app_mention(&self, _class: JobClass) -> ScmFuture<'_, String> {
+        Box::pin(async move { Ok(self.read_app_page().await?.mention.clone()) })
     }
 
     fn branch_rules_url(&self, repo: &RepoRef) -> Option<String> {
