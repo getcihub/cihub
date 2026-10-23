@@ -169,7 +169,7 @@ fn a_batch_holds_the_prs_of_one_lane() {
         vec![(GroupKind::Batch, vec![1, 2]), (GroupKind::Single, vec![3]),],
         "the PR of another lane right behind closes the batch of 2, and the last PR waits alone"
     );
-    assert_eq!(predecessors(&w, 3), vec![]);
+    assert_eq!(predecessors(&w, 3), Vec::<u64>::new());
     assert_replays(&w);
 }
 
@@ -438,7 +438,7 @@ fn a_flaky_failure_of_a_batch_evicts_no_pr() {
     w.drain_with(|run, _| run == 1);
 
     assert_eq!(ended(&w, ItemState::Merged), vec![1, 2, 3, 4]);
-    assert_eq!(ended(&w, ItemState::Failed), []);
+    assert_eq!(ended(&w, ItemState::Failed), [] as [u64; 0]);
     assert_replays(&w);
 }
 

@@ -409,12 +409,13 @@ impl Assembly<'_> {
         );
         let opened = self
             .scm
-            .open_draft_pr(
+            .open_pr(
                 &self.target.repo,
                 &request.test_branch,
                 target,
                 &title,
                 &body,
+                true,
                 self.class,
             )
             .await;
@@ -1020,7 +1021,7 @@ mod tests {
         );
 
         sim.fail(Fault {
-            call: Some("open_draft_pr"),
+            call: Some("open_pr"),
             error: ScmError::Validation(
                 "Draft pull requests are not supported in this repository.".into(),
             ),

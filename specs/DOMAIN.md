@@ -165,3 +165,14 @@ refuses a new submission, whose item is created `cancelled` with the reason `que
 `draining` (reason `queue_switching_modes`) until the queue is empty. Mode (`QueueMode`): `single` or `parallel`. Operator request (`QueueControl`): `pause`,
 `resume`, `drain`. The settings of the queue are in `cihub-config`
 (`specs/CONFIGURATION.md`).
+
+## Configuration proposal
+
+A proposal of a change of the configuration file of a branch, a PR that CIHub opens and a person merges. States
+(`ConfigProposalState`): `requested` (the job that opens the PR waits or runs), `opened`, `merged`, `closed`,
+`failed`. A failed proposal carries a reason (`ConfigProposalReason`), with its sentence (`describe`):
+`config_changed` (the file of the branch changed since the person read it), `config_branch_refused` (a rule
+refuses the branch `cihub-config/<branch>`), `pr_not_opened` (the SCM refused to write the file or to open the PR,
+or kept failing until its job gave up). A branch has one proposal at a time that has not ended. A proposal is not a
+state machine of the queue: its reasons are their own enumeration, outside `Reason`, and its transitions are the
+guards of its updates (`requested` to `opened` or `failed` by its job, `opened` to `merged` or `closed` by its PR).

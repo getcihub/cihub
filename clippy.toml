@@ -26,6 +26,7 @@ disallowed-methods = [
   { path = "cihub_domain::UserId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::ApiTokenId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::AuditEntryId::new", reason = "receive identifiers as parameters" },
+  { path = "cihub_domain::ConfigProposalId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::SessionId::new", reason = "receive identifiers as parameters" },
   { path = "cihub_domain::DeviceCodeId::new", reason = "receive identifiers as parameters" },
 ]

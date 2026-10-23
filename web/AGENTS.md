@@ -204,7 +204,8 @@ writes `openapi.json` from the code (`cargo run -p cihub-server --example openap
 `mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-server --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
 passes each test commit of `acme/api` but those that test its #3, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last
-comment of a PR at `/sim/comment`.
+comment of a PR at `/sim/comment`; `lin` is an admin of `umbrella`, whose `shop` has a `.cihub.yaml` and no queue, and `/sim/merge-pr`
+merges a PR of it as a person who reviews it.
 
 `mise run web:shots` captures the views of `e2e/visual/views.ts` (each page, in the states that the simulator
 cannot show, in both themes and in a narrow window) from a build of the dashboard, against the API of

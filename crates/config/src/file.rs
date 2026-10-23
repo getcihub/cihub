@@ -176,22 +176,12 @@ impl RepoConfig {
     /// of `branch` require on the test SHA.
     pub fn merge_checks(&self, branch: &str) -> Vec<String> {
         let own = self.queue(branch).map(|queue| &queue.merge_conditions.0);
-        let mut checks: Vec<String> = Vec::new();
-        for check in self
-            .merge_conditions
-            .0
-            .iter()
-            .chain(own.into_iter().flatten())
-            .filter_map(|expr| match expr {
-                Expr::Condition(condition) => condition.required_check(),
-                _ => None,
-            })
-        {
-            if !checks.iter().any(|known| known == check) {
-                checks.push(check.to_owned());
-            }
-        }
-        checks
+        checks_of(
+            self.merge_conditions
+                .0
+                .iter()
+                .chain(own.into_iter().flatten()),
+        )
     }
 
     /// The profile `name` of the queue of `branch`, if the file has it.
@@ -222,6 +212,25 @@ impl RepoConfig {
         }
         Ok(settings)
     }
+}
+
+/// The checks that the `merge_conditions` of one part of the file require,
+/// each once, in the order of the file.
+pub fn merge_checks_of(conditions: &Conditions) -> Vec<String> {
+    checks_of(conditions.0.iter())
+}
+
+fn checks_of<'a>(exprs: impl Iterator<Item = &'a Expr>) -> Vec<String> {
+    let mut checks: Vec<String> = Vec::new();
+    for check in exprs.filter_map(|expr| match expr {
+        Expr::Condition(condition) => condition.required_check(),
+        _ => None,
+    }) {
+        if !checks.iter().any(|known| known == check) {
+            checks.push(check.to_owned());
+        }
+    }
+    checks
 }
 
 fn check_version(text: &str) -> Result<(), ConfigError> {
@@ -597,7 +606,7 @@ mod tests {
     const SPEC_EXAMPLE: &str = r"version: 1
 queues:
   - branch: main
-    strategy: batched                     # sequential | pipelined | batched | parallel
+    strategy: batched                     # sequential | pipelined | batched
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission: the PR itself
@@ -709,11 +718,11 @@ defaults:                                 # any queue setting; each queue can ov
 
         let settings = QueueSettings::resolve(&main.settings, &config.defaults).unwrap();
         assert_eq!(settings.batching_size.value, 8);
-        assert_eq!(settings.batching_size.source, Source::File);
+        assert_eq!(settings.batching_size.source, Source::Queue);
         assert_eq!(settings.batching_size.at, Some(at(25, 13)));
         assert_eq!(settings.batching_enabled.source, Source::Strategy);
         assert_eq!(settings.enqueue_label.value, "ready-to-merge");
-        assert_eq!(settings.enqueue_label.source, Source::File);
+        assert_eq!(settings.enqueue_label.source, Source::Defaults);
 
         let ctx = Context {
             review_decision: cihub_domain::ReviewDecision::Approved,
@@ -775,7 +784,7 @@ queues:
         assert_eq!(main.testing_timeout_minutes.value, 60);
         let release = config.settings("release/2.0").unwrap();
         assert_eq!(release.strategy.value, Strategy::Pipelined);
-        assert_eq!(release.testing_timeout_minutes.source, Source::File);
+        assert_eq!(release.testing_timeout_minutes.source, Source::Defaults);
 
         assert!(config.queue("dev").is_none());
         let settings = config.settings("dev").unwrap();
@@ -1205,6 +1214,11 @@ queues:
         assert_eq!(shown("dev"), ["draft: false"]);
         assert_eq!(config.merge_checks("main"), ["build", "e2e"]);
         assert_eq!(config.merge_checks("dev"), ["build"]);
+        assert_eq!(merge_checks_of(&config.merge_conditions), ["build"]);
+        assert_eq!(
+            merge_checks_of(&config.queues[0].merge_conditions),
+            ["e2e", "build"]
+        );
     }
 
     #[test]

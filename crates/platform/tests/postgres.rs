@@ -937,6 +937,7 @@ fn fake_translate(
             base_branch: text("branch"),
             label_added: None,
             is_ready_for_review: false,
+            state: cihub_domain::PrState::Open,
         },
         "push" => ScmEvent::Pushed {
             repo_external_id: text("repo"),

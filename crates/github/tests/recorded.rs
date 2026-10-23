@@ -1134,3 +1134,55 @@ async fn the_install_page_of_the_app_is_read_once() {
     );
     assert_eq!(second, first);
 }
+
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording by the `github` example needs a test repository on GitHub. The
+/// write of a file reads it first: the same text makes no commit, a rule of
+/// the repository refuses one.
+#[tokio::test]
+async fn a_file_is_written_in_one_commit_unless_it_holds_the_text() {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let path = "/repos/acme/app/contents/.cihub.yaml";
+    let read = format!("{path}?ref=cihub-config/main");
+    // GitHub cuts the base64 of a content in lines.
+    let content = |text: &str| {
+        let encoded = STANDARD.encode(text);
+        let (start, end) = encoded.split_at(4);
+        json!({ "sha": "blob1", "content": format!("{start}\n{end}\n") })
+    };
+    let refused = json!({ "message": "Repository rule violations found" });
+    let exchanges = vec![
+        token("7", now),
+        answer("GET", &read, 404, json!({ "message": "Not Found" })),
+        answer("PUT", path, 201, json!({ "content": {} })),
+        answer("GET", &read, 200, content("version: 1\n")),
+        answer("GET", &read, 200, content("version: 1\n")),
+        answer("PUT", path, 200, json!({ "content": {} })),
+        answer("GET", &read, 200, content("version: 1\n")),
+        answer("PUT", path, 409, refused),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+    let repo = repo("7", "acme", "app");
+    let write = |text: &'static str| {
+        app.commit_file(
+            &repo,
+            "cihub-config/main",
+            ".cihub.yaml",
+            text,
+            "Configure the merge queue",
+            JobClass::Interactive,
+        )
+    };
+
+    write("version: 1\n").await.unwrap();
+    write("version: 1\n").await.unwrap();
+    write("version: 1\nqueues: []\n").await.unwrap();
+    let error = write("version: 1\nqueues: []\n").await.unwrap_err();
+
+    assert!(matches!(error, ScmError::Forbidden(_)), "{error}");
+    replay.finish();
+}

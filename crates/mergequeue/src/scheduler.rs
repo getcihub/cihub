@@ -39,6 +39,7 @@ use crate::jobs::{
 use crate::log::COVER_AFTER;
 use crate::merge::merge_job;
 use crate::projection::record_late_check;
+use crate::proposal::end_proposal;
 use crate::repair::{merge_in_flight, refresh_checks, refresh_target, refresh_target_after};
 use crate::repo_setup::{RepoSetupSweep, request_repo_setups};
 use crate::surfaces::{WELCOME_PR, WelcomePr, converge_surfaces, has_comment};
@@ -356,8 +357,12 @@ impl Work<'_> {
                 label_added,
                 is_ready_for_review,
                 base_branch,
+                state,
                 ..
             } => {
+                let received_at = self.delivery.received_at;
+                end_proposal(conn, self.target.repo_id, number, state, received_at).await?;
+
                 if is_ready_for_review
                     && self.settings.comments_enabled.value
                     && self.settings.commands_enabled.value
@@ -616,6 +621,7 @@ async fn pass_delivery(
             base_branch,
             label_added,
             is_ready_for_review,
+            state,
         } => {
             let change = PrChange {
                 repo_external_id: &repo_external_id,
@@ -625,6 +631,9 @@ async fn pass_delivery(
                 is_ready_for_review,
             };
             route_pr_change(conn, delivery, change, now).await?;
+            if let Some(repo) = repo_of(conn, delivery, &repo_external_id).await? {
+                end_proposal(conn, repo, number, state, now).await?;
+            }
         }
         ScmEvent::SubmitBoxChecked {
             repo_external_id,

@@ -41,8 +41,8 @@ mod transition;
 pub use branch::{run_of_test_branch, temp_branch, test_branch};
 pub use event::{Actor, ActorKind, Event, EventKind, EventType, Subjects};
 pub use id::{
-    ApiTokenId, AuditEntryId, ConnectionId, DeviceCodeId, EventId, GroupId, IdParseError, ItemId,
-    OrgId, QueueId, RepoId, RunId, SessionId, UserId,
+    ApiTokenId, AuditEntryId, ConfigProposalId, ConnectionId, DeviceCodeId, EventId, GroupId,
+    IdParseError, ItemId, OrgId, QueueId, RepoId, RunId, SessionId, UserId,
 };
 pub use item::{AwaitedCheckStatus, BlockReason, ImpactedTargets, Item, Priority};
 pub use job::{JobClass, JobError, JobState};
@@ -57,7 +57,8 @@ pub use settings::{
 };
 pub use state::{GroupState, ItemState, QueueState};
 pub use tenancy::{
-    ApiScope, ConnectionKind, ConnectionMode, DeviceCodeState, MembershipRole, RepoConfigState,
+    ApiScope, ConfigProposalReason, ConfigProposalState, ConnectionKind, ConnectionMode,
+    DeviceCodeState, MembershipRole, RepoConfigState,
 };
 pub use token::{
     API_TOKEN_PREFIX, CLI_SESSION_TOKEN_PREFIX, DEVICE_CODE_PREFIX, SESSION_TOKEN_PREFIX,

@@ -219,17 +219,37 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, ()>;
 
-    /// Opens a draft PR from `head` into `base` and returns its number. An
-    /// open PR from `head` into `base` returns its number.
-    fn open_draft_pr<'a>(
+    /// Opens a PR from `head` into `base`, a draft when `draft`, and
+    /// returns its number. An open PR from `head` into `base` returns its
+    /// number.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the fields of a PR, as the SCM takes them"
+    )]
+    fn open_pr<'a>(
         &'a self,
         repo: &'a RepoRef,
         head: &'a str,
         base: &'a str,
         title: &'a str,
         body: &'a str,
+        draft: bool,
         class: JobClass,
     ) -> ScmFuture<'a, u64>;
+
+    /// Writes `text` at `path` on the branch `branch`, in one commit of
+    /// `message` on its head; a file that already holds `text` makes no
+    /// commit. A rule of the repository that refuses the commit is
+    /// `Forbidden`.
+    fn commit_file<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        path: &'a str,
+        text: &'a str,
+        message: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()>;
 
     /// Closes the PR; a closed PR is a success.
     fn close_pr<'a>(&'a self, repo: &'a RepoRef, number: u64, class: JobClass)

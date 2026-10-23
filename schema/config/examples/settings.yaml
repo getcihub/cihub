@@ -1,0 +1,81 @@
+# Every setting of the format, in its two forms where it has two.
+version: 1
+queues:
+  - branch: main
+    strategy: sequential
+    mode: single
+    testing_concurrency: 1
+    bisection_concurrency: 4
+    testing_timeout_minutes: 60
+    not_ready_timeout_hours: 24
+    merge_method: fast_forward
+    merge_commit_title: pr_title_and_number
+    trigger: push
+    update_method: merge
+    batching:
+      enabled: false
+      size: 2
+      max_wait_minutes: 1
+    failure_budget:
+      retries: 0
+    optimistic_merging: false
+    pending_failure_depth: 0
+    direct_merge_mode: off
+    optimization_mode: off
+    comments_enabled: false
+    commands_enabled: false
+    status_check_enabled: false
+    label_commands:
+      enabled: false
+      enqueue_label: "1234"
+    state_labels_enabled: true
+    resubmit_on_push: true
+    keep_test_branches_minutes: 30
+    branch_prefix: ship
+    branch_protection_injection: merge
+    required_statuses: []
+  - branch: "release/[0-9]*"
+    window:
+      floor: 3
+      ceiling: 3
+    required_statuses: null
+    queue_conditions:
+      labels:
+        any:
+          - "no"
+          - "3.10"
+        none: [wip, "do not merge"]
+        count:
+          min: 1
+          max: 4
+      files:
+        all_match: ["docs/**", "**/*.md"]
+      pr_age:
+        max: 7d
+      title:
+        regex: "^(fix|feat): "
+      checks:
+        success: [build]
+        pending: [lint]
+      none:
+        - draft: true
+        - author: bob
+          labels: [wip]
+  - branch: dev
+    required_statuses: [ci, "e2e tests"]
+priority_rules:
+  - name: forty-two
+    conditions:
+      all:
+        - labels:
+            any: [a]
+        - labels:
+            any: [b]
+    priority: 42
+defaults:
+  testing_timeout_minutes: 120
+  queue_conditions:
+    draft: false
+  merge_conditions:
+    checks:
+      success: [build]

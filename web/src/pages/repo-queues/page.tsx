@@ -3,6 +3,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { MinePrs } from "@/components/mine/mine";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { QueueCards } from "@/components/queue/queue-cards";
+import { RepoTabs } from "@/components/repo/repo-tabs";
 import { Page } from "@/components/ui/page";
 import { SectionCount, SectionHead, SectionTitle } from "@/components/ui/section";
 import { useMinePrs } from "@/hooks/use-mine-prs";
@@ -29,6 +30,7 @@ export function RepoQueuesPage() {
   return (
     <Page>
       <OverviewHead where={org} title={name} />
+      <RepoTabs org={org} repo={name} current="overview" />
       {queues.length === 0 && <RepoStart {...setup} />}
       <RepoSetup {...setup} now={now} />
       {queues.length > 0 && (

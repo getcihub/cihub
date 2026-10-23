@@ -33,7 +33,7 @@ below).
 version: 1
 queues:
   - branch: main
-    strategy: batched                     # sequential | pipelined | batched | parallel
+    strategy: batched                     # sequential | pipelined | batched
     merge_method: squash                  # squash | merge_commit | rebase | fast_forward
     trigger: draft_pr                     # draft_pr | push
     queue_conditions:                     # admission: the PR itself
@@ -139,9 +139,9 @@ its `queue_conditions`, its priority and its profile together.
 
 ## Sources and strategies
 
-Each setting takes the value of the strongest source, in the order `default` < `strategy` < `file`
-(`defaults`, then the queue). `cihub-config` returns each value with its source, which the interface shows to
-flag a deviation from the strategy. The history of the settings is that of the file in the repository. An invalid
+Each setting takes the value of the strongest source, in the order `default` (the value of CIHub) < `strategy` <
+`defaults` (of the file) < `queue` (its entry) < `profile` (for the PRs of a profile). `cihub-config` returns each
+value with its source, which the builder of the dashboard shows to flag a deviation from the strategy. The history of the settings is that of the file in the repository. An invalid
 file fails the run that reads it at `base_sha` (errors above); for the other settings, the queue
 keeps the last valid file and shows the error. The state of the queue (`running`, `paused`, `draining`) is not
 a setting: only the dashboard, the API and the CLI change it.
@@ -157,7 +157,7 @@ follow. A strategy is a table of default values, with no code in the core:
 | `parallel`   | `parallel` | 2 / 20                       | yes, at most 4     | 1                       | yes                  |
 
 All strategies enable direct merge (`direct_merge_mode: always`) and give one
-failure budget retry.
+failure budget retry. `parallel` arrives with lot 13: until then the parser refuses it, at its line.
 
 ## Settings
 
@@ -275,9 +275,20 @@ setting is the one that it checks, the attributes, the operators of each attribu
 closed choice are those of `cihub-conditions`, and every key has a description. A key, a value, a range, an
 attribute or an operator that the code adds or removes thus fails a test until the schema follows. The site
 (`site/`) publishes the schema of `main` at `https://cihub.io/schema/config/v1.json`, the URL of the
-documentation, a copy that its build makes; a file that the dashboard writes will declare the URL of the tag
+documentation, a copy that its build makes; a file that the dashboard writes declares the URL of the tag
 of its instance on GitHub (`…/cihub/<tag>/schema/config/v1.json`), whose keys are those that this instance
 accepts.
+
+## The file that the dashboard writes
+
+The dashboard changes the file through a document, `ConfigDocument`: what the file sets, in the words of the file,
+with the conditions as a tree. `cihub-config` gives the document of a file (`RepoConfig::document`) and writes the
+YAML of a document (`write_document`), in the style of this page: blocks on their lines, the keys in the order of the
+schema, `version`, then `queues`, `priority_rules` and `defaults`. Reading the written YAML gives the same document,
+which `crates/config/tests/document.rs` checks on each file of `schema/config/examples/`. The comments, the anchors
+and the merge keys of a file are lost when the dashboard writes it again, and a few forms change: `testing_concurrency`
+stays itself, a priority that has a name takes it, two conditions of the same key whose values hold each on its own
+join in one list, and two that do not go in an `all` block.
 
 **Not yet.** A `cihub config check` command that gives the errors of the server, for a person and for an
 agent, and an entry in SchemaStore, so that an editor finds the schema without the first line.

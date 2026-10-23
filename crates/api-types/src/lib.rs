@@ -4,9 +4,11 @@
 //! the `OpenAPI` schemas, for the server only.
 
 use cihub_domain::{
-    BlockReason, CheckConclusion, CheckKind, CheckStatus, ConflictCulprit, ItemState,
-    MembershipRole, MergeMethod, Priority, QueueMode, QueueState, Reason, RequiredStatusesSource,
-    RunStatus, Strategy, SubmittedVia,
+    BlockReason, BranchProtectionInjection, CheckConclusion, CheckKind, CheckStatus,
+    ConfigProposalReason, ConfigProposalState, ConflictCulprit, DirectMergeMode, ItemState,
+    MembershipRole, MergeCommitTitle, MergeMethod, OptimizationMode, Priority, QueueMode,
+    QueueState, Reason, RequiredStatusesSource, RunStatus, Strategy, SubmittedVia, Trigger,
+    UpdateMethod,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -89,13 +91,19 @@ mod closed {
 
     closed_schemas!(
         ActorKind,
+        ConfigProposalReason,
+        ConfigProposalState,
+        BranchProtectionInjection,
         CheckConclusion,
         CheckKind,
         CheckStatus,
         EventType,
+        DirectMergeMode,
         ItemState,
         MembershipRole,
+        MergeCommitTitle,
         MergeMethod,
+        OptimizationMode,
         QueueMode,
         QueueState,
         Reason,
@@ -103,6 +111,8 @@ mod closed {
         RunStatus,
         Strategy,
         SubmittedVia,
+        Trigger,
+        UpdateMethod,
     );
 }
 
@@ -141,6 +151,9 @@ pub enum ErrorCode {
     Internal,
     SignInUnavailable,
     ScmUnavailable,
+    ConfigNotFound,
+    InvalidConfig,
+    ConfigProposalOpen,
 }
 
 impl ErrorCode {
@@ -156,7 +169,8 @@ impl ErrorCode {
             | Self::InvalidCursor
             | Self::UnknownPriority
             | Self::DeviceCodePending
-            | Self::DeviceCodeExpired => 400,
+            | Self::DeviceCodeExpired
+            | Self::InvalidConfig => 400,
             Self::Unauthorized => 401,
             Self::ScopeMissing | Self::CsrfRefused | Self::DeviceCodeDenied => 403,
             Self::RouteNotFound
@@ -165,8 +179,12 @@ impl ErrorCode {
             | Self::QueueNotFound
             | Self::PrNotFound
             | Self::RunNotFound
-            | Self::DeviceCodeNotFound => 404,
-            Self::PrAlreadyQueued | Self::ItemEnded | Self::ItemNotInTest => 409,
+            | Self::DeviceCodeNotFound
+            | Self::ConfigNotFound => 404,
+            Self::PrAlreadyQueued
+            | Self::ItemEnded
+            | Self::ItemNotInTest
+            | Self::ConfigProposalOpen => 409,
             Self::RateLimited | Self::TooManyStreams | Self::PollingTooFast => 429,
             Self::Internal => 500,
             Self::SignInUnavailable | Self::ScmUnavailable => 503,
@@ -235,6 +253,18 @@ impl ErrorCode {
             Self::ScmUnavailable => {
                 "The SCM did not answer the check of the access of the person of the session: \
                  try again in a moment."
+            }
+            Self::ConfigNotFound => {
+                "The branch is neither the default branch nor the target of a queue, or CIHub has \
+                 not read its configuration file yet."
+            }
+            Self::InvalidConfig => {
+                "The document gives a configuration file that the queue of the branch would \
+                 refuse: `POST …/config/preview` gives its error and its line."
+            }
+            Self::ConfigProposalOpen => {
+                "A proposal of a change of the file of the branch has not ended: merge or close \
+                 its PR first."
             }
         }
     }
@@ -1682,6 +1712,607 @@ pub enum ConfigFileState {
     None,
     Valid,
     Invalid,
+}
+
+/// The configuration file of a branch, as CIHub last read it: what it sets,
+/// the settings that follow with their sources, and the open proposal of a
+/// change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct BranchConfig {
+    /// The branch whose file was read.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub branch: String,
+    /// `none` without a file, `valid`, or `invalid`.
+    pub state: ConfigFileState,
+    /// The path of the file: `.cihub.yaml`, `.cihub.yml`,
+    /// `.cihub/config.yaml` or `.cihub/config.yml`; `null` without a file.
+    #[cfg_attr(feature = "openapi", schema(example = ".cihub.yaml"))]
+    pub path: Option<String>,
+    /// The head of the branch that was read; `null` when the branch is
+    /// missing. A proposal starts from it (`base_sha`).
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "9f2c4e1a7b3d5f60812a4c6e8b0d2f4a6c8e0b1d")
+    )]
+    pub sha: Option<String>,
+    /// Why the file is not valid; `null` otherwise.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "batching.size is 50, out of range 2–20")
+    )]
+    pub error: Option<String>,
+    /// The line of the error, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 6))]
+    pub line: Option<u32>,
+    /// The column of the error, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 13))]
+    pub column: Option<u32>,
+    /// The text of the file, at most 64 KiB; `null` without a file, or for a
+    /// larger one.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "version: 1\nqueues:\n  - branch: main\n")
+    )]
+    pub text: Option<String>,
+    /// What the file sets: an empty document without a file; `null` when
+    /// the file is not valid.
+    pub document: Option<ConfigDocument>,
+    /// The settings that follow from the document, with their sources;
+    /// `null` when the file is not valid.
+    pub settings: Option<ResolvedConfig>,
+    /// The checks that the branch rules require on the branch; `null` before
+    /// CIHub reads the rules.
+    #[cfg_attr(feature = "openapi", schema(example = json!(["build", "test"])))]
+    pub required_checks: Option<Vec<String>>,
+    /// The last proposal of a change of the file of the branch that has not
+    /// ended: `requested` or `opened`; `null` without one.
+    pub proposal: Option<ConfigProposal>,
+    /// When CIHub read the file.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub read_at: OffsetDateTime,
+}
+
+/// What a configuration file sets, in the words of the file: the JSON of
+/// `.cihub.yaml` without its comments. The server writes the YAML of a
+/// document, and reads a file back as the same document.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigDocument {
+    /// `defaults`: what every entry takes, unless it sets its own.
+    pub defaults: DefaultsDocument,
+    /// `queues`: the entries, in the order of the file.
+    pub queues: Vec<QueueDocument>,
+    /// `priority_rules`, in the order of the file: the first one that a PR
+    /// meets gives its priority.
+    pub priority_rules: Vec<PriorityRuleDocument>,
+}
+
+/// `defaults` of the file.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DefaultsDocument {
+    /// The settings that `defaults` sets.
+    pub settings: SettingsDocument,
+    /// `queue_conditions`, which every queue checks before its own.
+    pub queue_conditions: Vec<ConditionDocument>,
+    /// The checks of `merge_conditions`, which every tested commit needs.
+    #[cfg_attr(feature = "openapi", schema(example = json!(["build"])))]
+    pub merge_checks: Vec<String>,
+}
+
+/// An entry of `queues`: the queue of a branch, or of each branch that a
+/// glob matches.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct QueueDocument {
+    /// `branch`: a branch, or a glob (`release/*`).
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub branch: String,
+    /// The settings that the entry sets.
+    pub settings: SettingsDocument,
+    /// `queue_conditions` of the entry, after those of `defaults`.
+    pub queue_conditions: Vec<ConditionDocument>,
+    /// The checks of `merge_conditions` of the entry.
+    #[cfg_attr(feature = "openapi", schema(example = json!(["integration-tests"])))]
+    pub merge_checks: Vec<String>,
+    /// `profiles`, in the order of the file.
+    pub profiles: Vec<ProfileDocument>,
+}
+
+/// A profile of an entry: settings for a kind of PR in the same train. A
+/// profile sets only `merge_method`, `merge_commit_title`, `batching` and
+/// `failure_budget`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProfileDocument {
+    /// The name of the profile, which a command gives.
+    #[cfg_attr(feature = "openapi", schema(example = "dependencies"))]
+    pub name: String,
+    /// The conditions that choose the profile at the submission; empty when
+    /// only a command that names it chooses it.
+    pub conditions: Vec<ConditionDocument>,
+    /// The settings that the profile sets.
+    pub settings: SettingsDocument,
+}
+
+/// A priority rule of the file.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PriorityRuleDocument {
+    /// The name of the rule.
+    #[cfg_attr(feature = "openapi", schema(example = "urgent"))]
+    pub name: String,
+    /// The conditions that a PR meets to take the priority.
+    pub conditions: Vec<ConditionDocument>,
+    /// `priority`, as the file writes it: `urgent`, `high`, `medium`, `low`,
+    /// or a value from 0, the first, to 255.
+    #[cfg_attr(feature = "openapi", schema(example = "urgent"))]
+    pub priority: String,
+}
+
+/// A condition of a map, or a block `all`, `any` or `none` of other ones. A
+/// map of several conditions inside a block is an `all` block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ConditionDocument {
+    /// One attribute, its operator and its values.
+    Condition {
+        /// The attribute: `labels`, `checks.success`, `pr_age`.
+        #[cfg_attr(feature = "openapi", schema(example = "labels"))]
+        attribute: String,
+        /// The key of the operator under the attribute: `none`,
+        /// `count.min`; `null` when the attribute takes its values directly.
+        #[cfg_attr(feature = "openapi", schema(example = "none"))]
+        operator: Option<String>,
+        /// The values, as the file writes them.
+        #[cfg_attr(feature = "openapi", schema(example = json!(["do-not-merge"])))]
+        values: Vec<String>,
+    },
+    /// A block of conditions.
+    Block {
+        /// `all`: each one holds; `any`: one holds at least; `none`: none
+        /// holds.
+        block: ConditionBlock,
+        /// The conditions of the block.
+        #[cfg_attr(feature = "openapi", schema(no_recursion))]
+        conditions: Vec<ConditionDocument>,
+    },
+}
+
+/// The kind of a block of conditions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ConditionBlock {
+    All,
+    Any,
+    None,
+}
+
+/// The settings that one part of the file sets, by their key in the file
+/// (`window.floor` is `window_floor`); `null` leaves the value to a weaker
+/// source.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SettingsDocument {
+    /// `strategy`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::Strategy>))]
+    pub strategy: Option<Strategy>,
+    /// `mode`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::QueueMode>))]
+    pub mode: Option<QueueMode>,
+    /// `window.floor`.
+    pub window_floor: Option<u32>,
+    /// `window.ceiling`.
+    pub window_ceiling: Option<u32>,
+    /// `testing_concurrency`: a fixed window, instead of `window`.
+    pub testing_concurrency: Option<u32>,
+    /// `bisection_concurrency`.
+    pub bisection_concurrency: Option<u32>,
+    /// `testing_timeout_minutes`.
+    pub testing_timeout_minutes: Option<u32>,
+    /// `not_ready_timeout_hours`.
+    pub not_ready_timeout_hours: Option<u32>,
+    /// `merge_method`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::MergeMethod>))]
+    pub merge_method: Option<MergeMethod>,
+    /// `merge_commit_title`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::MergeCommitTitle>))]
+    pub merge_commit_title: Option<MergeCommitTitle>,
+    /// `trigger`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::Trigger>))]
+    pub trigger: Option<Trigger>,
+    /// `update_method`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::UpdateMethod>))]
+    pub update_method: Option<UpdateMethod>,
+    /// `batching.enabled`.
+    pub batching_enabled: Option<bool>,
+    /// `batching.size`.
+    pub batching_size: Option<u32>,
+    /// `batching.max_wait_minutes`.
+    pub batching_max_wait_minutes: Option<u32>,
+    /// `failure_budget.retries`.
+    pub failure_budget_retries: Option<u32>,
+    /// `optimistic_merging`.
+    pub optimistic_merging: Option<bool>,
+    /// `pending_failure_depth`.
+    pub pending_failure_depth: Option<u32>,
+    /// `direct_merge_mode`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::DirectMergeMode>))]
+    pub direct_merge_mode: Option<DirectMergeMode>,
+    /// `optimization_mode`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::OptimizationMode>))]
+    pub optimization_mode: Option<OptimizationMode>,
+    /// `comments_enabled`.
+    pub comments_enabled: Option<bool>,
+    /// `commands_enabled`.
+    pub commands_enabled: Option<bool>,
+    /// `status_check_enabled`.
+    pub status_check_enabled: Option<bool>,
+    /// `label_commands.enabled`.
+    pub label_commands_enabled: Option<bool>,
+    /// `label_commands.enqueue_label`.
+    pub enqueue_label: Option<String>,
+    /// `state_labels_enabled`.
+    pub state_labels_enabled: Option<bool>,
+    /// `resubmit_on_push`.
+    pub resubmit_on_push: Option<bool>,
+    /// `keep_test_branches_minutes`.
+    pub keep_test_branches_minutes: Option<u32>,
+    /// `branch_prefix`.
+    pub branch_prefix: Option<String>,
+    /// `branch_protection_injection`.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::BranchProtectionInjection>))]
+    pub branch_protection_injection: Option<BranchProtectionInjection>,
+    /// `required_statuses`.
+    pub required_statuses: Option<RequiredStatusesDocument>,
+}
+
+/// `required_statuses`: `null` in the file takes the checks of the branch
+/// rules; a list requires these checks only, none when it is empty.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RequiredStatusesDocument {
+    /// `required_statuses: null`.
+    BranchRules,
+    /// `required_statuses: [...]`.
+    Checks {
+        /// The checks, none for an empty list.
+        #[cfg_attr(feature = "openapi", schema(example = json!(["build"])))]
+        names: Vec<String>,
+    },
+}
+
+/// The settings that a document gives, with their sources, in the order of
+/// the document.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ResolvedConfig {
+    /// The settings of `defaults`, which a branch without an entry takes.
+    pub defaults: ConfigSettings,
+    /// The settings of each entry of `queues`.
+    pub queues: Vec<ResolvedQueue>,
+}
+
+/// The settings of an entry and of its profiles.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ResolvedQueue {
+    /// The settings of the queue.
+    pub settings: ConfigSettings,
+    /// The settings of a PR of each profile, in the order of the document.
+    pub profiles: Vec<ConfigSettings>,
+}
+
+/// `POST /orgs/{org}/repos/{repo}/config/preview`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct PreviewConfig {
+    /// The branch whose file the document would replace: the default branch,
+    /// or the target of a queue; the default branch without it.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub branch: Option<String>,
+    /// The document to write.
+    pub document: ConfigDocument,
+}
+
+/// The file that a document gives, and what it would change.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigPreview {
+    /// The YAML that CIHub would write.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "version: 1\nqueues:\n  - branch: main\n")
+    )]
+    pub text: String,
+    /// `valid`, or `invalid` when the queue of the branch would refuse the
+    /// text.
+    pub state: ConfigFileState,
+    /// Why the text is not valid; `null` otherwise.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "batching.size is 50, out of range 2–20")
+    )]
+    pub error: Option<String>,
+    /// The line of the error in `text`, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 6))]
+    pub line: Option<u32>,
+    /// The column of the error, from 1; `null` without one.
+    #[cfg_attr(feature = "openapi", schema(example = 13))]
+    pub column: Option<u32>,
+    /// The settings that the document gives, with their sources; `null`
+    /// when the text is not valid.
+    pub settings: Option<ResolvedConfig>,
+    /// The lines of the file as CIHub read it last, then of `text`: the ones
+    /// that stay, that go and that come, in order.
+    pub diff: Vec<DiffLine>,
+}
+
+/// A line of a diff.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct DiffLine {
+    /// `same`, `removed` or `added`.
+    pub change: LineChange,
+    /// The text of the line, without its end.
+    #[cfg_attr(feature = "openapi", schema(example = "    strategy: batched"))]
+    pub text: String,
+}
+
+/// What a diff does to a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum LineChange {
+    Same,
+    Removed,
+    Added,
+}
+
+/// `POST /orgs/{org}/repos/{repo}/config/proposals`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ProposeConfig {
+    /// The branch whose file the PR changes: the default branch, or the
+    /// target of a queue; the default branch without it.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub branch: Option<String>,
+    /// The head that the person read (`BranchConfig.sha`): the proposal fails
+    /// with `config_changed` if the file changed since.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "9f2c4e1a7b3d5f60812a4c6e8b0d2f4a6c8e0b1d")
+    )]
+    pub base_sha: String,
+    /// The document to write.
+    pub document: ConfigDocument,
+    /// The message of the commit: its first line is the title of the PR.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "Update the merge queue configuration")
+    )]
+    pub message: String,
+}
+
+/// A proposal of a change of the configuration file of a branch, as a PR
+/// that CIHub opens and a person merges.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ConfigProposal {
+    /// The identifier of the proposal.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "proposal_06cx8fn2wegkyc9x5csgnm5r1ngcahzx")
+    )]
+    pub id: String,
+    /// The branch whose file the PR changes.
+    #[cfg_attr(feature = "openapi", schema(example = "main"))]
+    pub branch: String,
+    /// `requested`, `opened`, `merged`, `closed` or `failed`.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::ConfigProposalState))]
+    pub state: ConfigProposalState,
+    /// Why the proposal failed: `config_changed` or
+    /// `config_branch_refused`; `null` otherwise.
+    #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::ConfigProposalReason>))]
+    pub state_reason: Option<ConfigProposalReason>,
+    /// The reason in English, for a person; `null` without a reason.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "the configuration file of `main` changed since it was read")
+    )]
+    pub state_description: Option<String>,
+    /// The number of the PR, once CIHub opened it.
+    #[cfg_attr(feature = "openapi", schema(example = 141))]
+    pub pr_number: Option<u64>,
+    /// The page of the PR on the SCM, once CIHub opened it.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://github.com/acme/web/pull/141")
+    )]
+    pub pr_url: Option<String>,
+    /// The login of the person who proposed the change; `null` for an API
+    /// token.
+    #[cfg_attr(feature = "openapi", schema(example = "octocat"))]
+    pub requested_by: Option<String>,
+    /// When the person proposed the change.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(feature = "openapi", schema(value_type = String, format = DateTime))]
+    pub requested_at: OffsetDateTime,
+}
+
+/// Where the value of a setting comes from, from the weakest to the
+/// strongest: `default`, the value of CIHub; `strategy`, the table of the
+/// strategy; `defaults` of the file; `queue`, its entry; `profile`, a profile
+/// of the entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingSource {
+    Default,
+    Strategy,
+    Defaults,
+    Queue,
+    Profile,
+}
+
+/// Every setting of a queue, by its key in the file (`window.floor` is
+/// `window_floor`), and where each value comes from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each boolean is a key of `.cihub.yaml`"
+)]
+pub struct ConfigSettings {
+    /// `strategy`: sets the values of the settings of the train.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::Strategy))]
+    pub strategy: Strategy,
+    /// `mode`: one line, or parallel lines of unrelated changes.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::QueueMode))]
+    pub mode: QueueMode,
+    /// `window.floor`: the fewest runs at a time.
+    pub window_floor: u32,
+    /// `window.ceiling`: the most runs at a time.
+    pub window_ceiling: u32,
+    /// `bisection_concurrency`: the runs at a time while a failed batch is
+    /// split; the ceiling of the window when no source sets it.
+    pub bisection_concurrency: u32,
+    /// `testing_timeout_minutes`: a test without a conclusion after it fails.
+    pub testing_timeout_minutes: u32,
+    /// `not_ready_timeout_hours`: a PR that waits longer for its conditions
+    /// leaves the queue.
+    pub not_ready_timeout_hours: u32,
+    /// `merge_method`: how a PR lands on the branch.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::MergeMethod))]
+    pub merge_method: MergeMethod,
+    /// `merge_commit_title`: the title of the commit that lands.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::MergeCommitTitle))]
+    pub merge_commit_title: MergeCommitTitle,
+    /// `trigger`: what runs the CI on a test commit.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::Trigger))]
+    pub trigger: Trigger,
+    /// `update_method`: how CIHub updates a PR in place.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::UpdateMethod))]
+    pub update_method: UpdateMethod,
+    /// `batching.enabled`: several PRs in one run.
+    pub batching_enabled: bool,
+    /// `batching.size`: the most PRs in one batch.
+    pub batching_size: u32,
+    /// `batching.max_wait_minutes`: how long a batch that is not full waits.
+    pub batching_max_wait_minutes: u32,
+    /// `failure_budget.retries`: how many times a failed run runs again.
+    pub failure_budget_retries: u32,
+    /// `optimistic_merging`: a passing later run merges the PRs ahead of it.
+    pub optimistic_merging: bool,
+    /// `pending_failure_depth`: the runs after it that a failed PR waits for.
+    pub pending_failure_depth: u32,
+    /// `direct_merge_mode`: a PR merges without a test branch when nothing
+    /// is in flight.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::DirectMergeMode))]
+    pub direct_merge_mode: DirectMergeMode,
+    /// `optimization_mode`: what a split of a failed batch does not test again.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::OptimizationMode))]
+    pub optimization_mode: OptimizationMode,
+    /// `comments_enabled`: the status comment on each PR.
+    pub comments_enabled: bool,
+    /// `commands_enabled`: CIHub reads the commands in the comments.
+    pub commands_enabled: bool,
+    /// `status_check_enabled`: the statuses of the queue and of the conditions.
+    pub status_check_enabled: bool,
+    /// `label_commands.enabled`: a label submits a PR.
+    pub label_commands_enabled: bool,
+    /// `label_commands.enqueue_label`: the label that submits a PR.
+    pub enqueue_label: String,
+    /// `state_labels_enabled`: the labels of the state of a PR.
+    pub state_labels_enabled: bool,
+    /// `resubmit_on_push`: a push on a queued PR submits it again.
+    pub resubmit_on_push: bool,
+    /// `keep_test_branches_minutes`: how long a test branch stays after its test.
+    pub keep_test_branches_minutes: u32,
+    /// `branch_prefix`: the prefix of the test branches.
+    pub branch_prefix: String,
+    /// `branch_protection_injection`: where the checks of the branch rules count.
+    #[cfg_attr(feature = "openapi", schema(value_type = closed::BranchProtectionInjection))]
+    pub branch_protection_injection: BranchProtectionInjection,
+    /// `required_statuses`: the checks that a tested commit needs; `null`
+    /// takes the checks of the branch rules, and an empty list requires
+    /// none.
+    #[cfg_attr(feature = "openapi", schema(example = json!(["build", "test"])))]
+    pub required_statuses: Option<Vec<String>>,
+    /// Where each value comes from.
+    pub sources: SettingSources,
+}
+
+/// Where each value of a `ConfigSettings` comes from, by the name of its
+/// field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct SettingSources {
+    /// Where `strategy` comes from.
+    pub strategy: SettingSource,
+    /// Where `mode` comes from.
+    pub mode: SettingSource,
+    /// Where `window_floor` comes from.
+    pub window_floor: SettingSource,
+    /// Where `window_ceiling` comes from.
+    pub window_ceiling: SettingSource,
+    /// Where `bisection_concurrency` comes from.
+    pub bisection_concurrency: SettingSource,
+    /// Where `testing_timeout_minutes` comes from.
+    pub testing_timeout_minutes: SettingSource,
+    /// Where `not_ready_timeout_hours` comes from.
+    pub not_ready_timeout_hours: SettingSource,
+    /// Where `merge_method` comes from.
+    pub merge_method: SettingSource,
+    /// Where `merge_commit_title` comes from.
+    pub merge_commit_title: SettingSource,
+    /// Where `trigger` comes from.
+    pub trigger: SettingSource,
+    /// Where `update_method` comes from.
+    pub update_method: SettingSource,
+    /// Where `batching_enabled` comes from.
+    pub batching_enabled: SettingSource,
+    /// Where `batching_size` comes from.
+    pub batching_size: SettingSource,
+    /// Where `batching_max_wait_minutes` comes from.
+    pub batching_max_wait_minutes: SettingSource,
+    /// Where `failure_budget_retries` comes from.
+    pub failure_budget_retries: SettingSource,
+    /// Where `optimistic_merging` comes from.
+    pub optimistic_merging: SettingSource,
+    /// Where `pending_failure_depth` comes from.
+    pub pending_failure_depth: SettingSource,
+    /// Where `direct_merge_mode` comes from.
+    pub direct_merge_mode: SettingSource,
+    /// Where `optimization_mode` comes from.
+    pub optimization_mode: SettingSource,
+    /// Where `comments_enabled` comes from.
+    pub comments_enabled: SettingSource,
+    /// Where `commands_enabled` comes from.
+    pub commands_enabled: SettingSource,
+    /// Where `status_check_enabled` comes from.
+    pub status_check_enabled: SettingSource,
+    /// Where `label_commands_enabled` comes from.
+    pub label_commands_enabled: SettingSource,
+    /// Where `enqueue_label` comes from.
+    pub enqueue_label: SettingSource,
+    /// Where `state_labels_enabled` comes from.
+    pub state_labels_enabled: SettingSource,
+    /// Where `resubmit_on_push` comes from.
+    pub resubmit_on_push: SettingSource,
+    /// Where `keep_test_branches_minutes` comes from.
+    pub keep_test_branches_minutes: SettingSource,
+    /// Where `branch_prefix` comes from.
+    pub branch_prefix: SettingSource,
+    /// Where `branch_protection_injection` comes from.
+    pub branch_protection_injection: SettingSource,
+    /// Where `required_statuses` comes from.
+    pub required_statuses: SettingSource,
 }
 
 #[cfg(test)]

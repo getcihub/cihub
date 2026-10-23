@@ -3,8 +3,8 @@
 import { queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgPrs, listOrgQueues, listRepoPrs, listRepoQueues, listRepos, listUserOrgs, type Options, restart, startDeviceSignIn, submit, syncQueue, syncRepo, syncUser, updateQueue } from '../sdk.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgPrsData, ListOrgPrsError, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListRepoPrsData, ListRepoPrsError, ListRepoPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, RestartData, RestartError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, SyncQueueData, SyncQueueError, SyncRepoData, SyncRepoError, SyncUserData, SyncUserError, UpdateQueueData, UpdateQueueError } from '../types.gen';
+import { approveDeviceCode, cancel, deleteUserSession, denyDeviceCode, getBranchConfig, getDeviceSession, getHealth, getInstance, getOrg, getPr, getQueue, getRepo, getRun, getUser, graph, listAudit, listEvents, listOrgPrs, listOrgQueues, listRepoPrs, listRepoQueues, listRepos, listUserOrgs, type Options, previewConfig, proposeConfig, restart, startDeviceSignIn, submit, syncQueue, syncRepo, syncUser, updateQueue } from '../sdk.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeError, ApproveDeviceCodeResponse, CancelData, CancelError, DeleteUserSessionData, DeleteUserSessionError, DeleteUserSessionResponse, DenyDeviceCodeData, DenyDeviceCodeError, DenyDeviceCodeResponse, GetBranchConfigData, GetBranchConfigError, GetBranchConfigResponse, GetDeviceSessionData, GetDeviceSessionError, GetDeviceSessionResponse, GetHealthData, GetHealthError, GetHealthResponse, GetInstanceData, GetInstanceError, GetInstanceResponse, GetOrgData, GetOrgError, GetOrgResponse, GetPrData, GetPrError, GetPrResponse, GetQueueData, GetQueueError, GetQueueResponse, GetRepoData, GetRepoError, GetRepoResponse, GetRunData, GetRunError, GetRunResponse, GetUserData, GetUserError, GetUserResponse, GraphData, GraphError, GraphResponse, ListAuditData, ListAuditError, ListAuditResponse, ListEventsData, ListEventsError, ListEventsResponse, ListOrgPrsData, ListOrgPrsError, ListOrgPrsResponse, ListOrgQueuesData, ListOrgQueuesError, ListOrgQueuesResponse, ListRepoPrsData, ListRepoPrsError, ListRepoPrsResponse, ListRepoQueuesData, ListRepoQueuesError, ListRepoQueuesResponse, ListReposData, ListReposError, ListReposResponse, ListUserOrgsData, ListUserOrgsError, ListUserOrgsResponse, PreviewConfigData, PreviewConfigError, PreviewConfigResponse, ProposeConfigData, ProposeConfigError, ProposeConfigResponse, RestartData, RestartError, StartDeviceSignInData, StartDeviceSignInError, StartDeviceSignInResponse, SubmitData, SubmitError, SyncQueueData, SyncQueueError, SyncRepoData, SyncRepoError, SyncUserData, SyncUserError, UpdateQueueData, UpdateQueueError } from '../types.gen';
 
 /**
  * Start a sign-in of the command line
@@ -290,6 +290,80 @@ export const getRepoOptions = (options: Options<GetRepoData>) => queryOptions<Ge
     },
     queryKey: getRepoQueryKey(options)
 });
+
+export const getBranchConfigQueryKey = (options: Options<GetBranchConfigData>) => createQueryKey('getBranchConfig', options);
+
+/**
+ * Get the configuration of a branch
+ *
+ * The configuration file of the branch, as CIHub last read it: what it sets,
+ * the settings that follow with their sources, the checks that the branch
+ * rules require, and the last proposal of a change that has not merged or
+ * closed. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const getBranchConfigOptions = (options: Options<GetBranchConfigData>) => queryOptions<GetBranchConfigResponse, GetBranchConfigError, GetBranchConfigResponse, ReturnType<typeof getBranchConfigQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getBranchConfig({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getBranchConfigQueryKey(options)
+});
+
+/**
+ * Preview a configuration
+ *
+ * The YAML that CIHub would write for a document, whether the queue of the
+ * branch would take it, its settings with their sources, and its diff with
+ * the file as CIHub read it last. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const previewConfigMutation = (options?: Partial<Options<PreviewConfigData>>): UseMutationOptions<PreviewConfigResponse, PreviewConfigError, Options<PreviewConfigData>> => {
+    const mutationOptions: UseMutationOptions<PreviewConfigResponse, PreviewConfigError, Options<PreviewConfigData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await previewConfig({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Propose a change of the configuration
+ *
+ * Writes the YAML of the document and asks CIHub to open it as a PR from the
+ * branch `cihub-config/<branch>`, on the head of the branch: CIHub never
+ * pushes on the branch itself. The same text again answers its proposal;
+ * another text while a proposal has not ended answers `409
+ * config_proposal_open`. The proposal fails with `config_changed` when the
+ * file changed since `base_sha`.
+ *
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const proposeConfigMutation = (options?: Partial<Options<ProposeConfigData>>): UseMutationOptions<ProposeConfigResponse, ProposeConfigError, Options<ProposeConfigData>> => {
+    const mutationOptions: UseMutationOptions<ProposeConfigResponse, ProposeConfigError, Options<ProposeConfigData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await proposeConfig({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 
 export const listRepoPrsQueryKey = (options: Options<ListRepoPrsData>) => createQueryKey('listRepoPrs', options);
 

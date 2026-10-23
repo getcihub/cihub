@@ -55,6 +55,19 @@ impl Operator {
             .find_map(|&(name, op)| (name == key && !name.contains('.')).then_some(op))
     }
 
+    /// The operator of a path under an attribute, `count.min` included;
+    /// `None` for an unknown path.
+    pub fn from_path(path: &str) -> Option<Self> {
+        KEYS.iter()
+            .find_map(|&(name, op)| (name == path).then_some(op))
+    }
+
+    /// Each value of the operator holds on its own on `attribute`: two
+    /// conditions of it are one condition with both values.
+    pub fn holds_per_value(self, attribute: Attribute) -> bool {
+        self.splits(attribute.kind())
+    }
+
     /// The path of the operator under its attribute (`count.min`); `None`
     /// for `Is`, which has no key.
     pub fn key(self) -> Option<&'static str> {
@@ -216,6 +229,15 @@ impl Condition {
 
     pub fn attribute(&self) -> Attribute {
         self.attribute
+    }
+
+    pub fn operator(&self) -> Operator {
+        self.operator
+    }
+
+    /// The values as the file writes them.
+    pub fn values(&self) -> &[String] {
+        &self.values
     }
 
     /// The inclusive bounds that the condition accepts, when it is a range.
@@ -497,6 +519,23 @@ fn parse_duration(value: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_operator_knows_whether_each_value_holds_on_its_own() {
+        assert_eq!(Operator::from_path("count.min"), Some(Operator::CountMin));
+        assert_eq!(Operator::from_path("some"), None);
+        assert!(Operator::None.holds_per_value(Attribute::Labels));
+        assert!(Operator::Is.holds_per_value(Attribute::Labels));
+        assert!(!Operator::Any.holds_per_value(Attribute::Labels));
+        assert!(!Operator::Is.holds_per_value(Attribute::Author));
+
+        let built = build(Attribute::Labels, Operator::None, &["a"]);
+        let [condition] = built.as_slice() else {
+            panic!("one condition");
+        };
+        assert_eq!(condition.operator(), Operator::None);
+        assert_eq!(condition.values(), ["a"]);
+    }
 
     fn values(list: &[&str]) -> Vec<String> {
         list.iter().map(|&v| v.to_owned()).collect()

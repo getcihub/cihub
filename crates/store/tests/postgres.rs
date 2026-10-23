@@ -10,7 +10,10 @@ use cihub_domain::{
     JobState, OrgId, Permission, Priority, QueueId, QueueMode, QueueState, Reason, RepoConfigState,
     RequiredStatusesSource, RunStatus, SubmittedVia, UserId,
 };
-use cihub_domain::{ApiTokenId, DeviceCodeId, DeviceCodeState, MembershipRole, SessionId};
+use cihub_domain::{
+    ApiTokenId, ConfigProposalReason, ConfigProposalState, DeviceCodeId, DeviceCodeState,
+    MembershipRole, SessionId,
+};
 use cihub_store::{
     ApiTokenGrant, CLI_SESSION_IDLE_LIFETIME, DevicePoll, Membership, NewApiToken, NewDeviceCode,
     NewSession, SessionClient, SessionGrant, answer_device_code, append_events, authenticate,
@@ -68,7 +71,7 @@ fn org(n: u128) -> OrgId {
     OrgId::from_ulid(Ulid(n))
 }
 
-const TENANT_TABLES: [&str; 30] = [
+const TENANT_TABLES: [&str; 32] = [
     "orgs",
     "scm_connections",
     "repos",
@@ -88,6 +91,8 @@ const TENANT_TABLES: [&str; 30] = [
     "pr_titles",
     "queue_setups",
     "repo_setups",
+    "config_files",
+    "config_proposals",
     "repo_permissions",
     "pr_comments",
     "memberships",
@@ -162,8 +167,15 @@ fn rows(org: OrgId, n: u8) -> String {
              VALUES ('{org}', 'repo-{n}', 1, 'Fix the build', '2026-09-15T00:00:00Z');
          INSERT INTO queue_setups (org_id, queue_id, findings, checked_at)
              VALUES ('{org}', '{queue}', '[]', '2026-09-15T00:00:00Z');
-         INSERT INTO repo_setups (org_id, repo_id, branch, findings, config_state, checked_at)
-             VALUES ('{org}', 'repo-{n}', 'main', '[]', 'none', '2026-09-15T00:00:00Z');
+         INSERT INTO repo_setups (org_id, repo_id, branch, findings, checked_at)
+             VALUES ('{org}', 'repo-{n}', 'main', '[]', '2026-09-15T00:00:00Z');
+         INSERT INTO config_files (org_id, repo_id, branch, state, read_at)
+             VALUES ('{org}', 'repo-{n}', 'main', 'none', '2026-09-15T00:00:00Z');
+         INSERT INTO config_proposals (id, org_id, repo_id, branch, base_sha, path, text, message,
+                                       state, requested_at, updated_at)
+             VALUES ('proposal-{n}', '{org}', 'repo-{n}', 'main', 'abc', '.cihub.yaml',
+                     'version: 1', 'm', 'requested', '2026-09-15T00:00:00Z',
+                     '2026-09-15T00:00:00Z');
          INSERT INTO memberships (org_id, user_id, role, refreshed_at)
              VALUES ('{org}', 'user-1', 'member', '2026-09-15T00:00:00Z');
          INSERT INTO repo_permissions (org_id, repo_id, user_id, permission, checked_at)
@@ -362,6 +374,8 @@ async fn postgres_enums_match_the_domain(pool: PgPool) {
         ("check_conclusion", values::<CheckConclusion>()),
         ("check_kind", values::<CheckKind>()),
         ("check_status", values::<CheckStatus>()),
+        ("config_proposal_reason", values::<ConfigProposalReason>()),
+        ("config_proposal_state", values::<ConfigProposalState>()),
         ("connection_kind", values::<ConnectionKind>()),
         ("connection_mode", values::<ConnectionMode>()),
         ("device_code_state", values::<DeviceCodeState>()),

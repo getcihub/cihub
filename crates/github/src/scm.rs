@@ -5,6 +5,8 @@
 use std::collections::BTreeSet;
 use std::fmt::Write;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use cihub_domain::{
     CheckConclusion, CheckKind, CheckReport, CheckStatus, JobClass, MembershipRole, MergeMethod,
     Mergeability, Permission, PrState, ReviewDecision,
@@ -1281,13 +1283,14 @@ impl Scm for GithubApp {
         })
     }
 
-    fn open_draft_pr<'a>(
+    fn open_pr<'a>(
         &'a self,
         repo: &'a RepoRef,
         head: &'a str,
         base: &'a str,
         title: &'a str,
         body: &'a str,
+        draft: bool,
         class: JobClass,
     ) -> ScmFuture<'a, u64> {
         Box::pin(async move {
@@ -1310,7 +1313,7 @@ impl Scm for GithubApp {
             }
 
             let body =
-                json!({ "title": title, "head": head, "base": base, "body": body, "draft": true });
+                json!({ "title": title, "head": head, "base": base, "body": body, "draft": draft });
             let opened: Pull = self
                 .rest_json(
                     repo,
@@ -1322,6 +1325,62 @@ impl Scm for GithubApp {
                 )
                 .await?;
             Ok(opened.number)
+        })
+    }
+
+    fn commit_file<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        path: &'a str,
+        text: &'a str,
+        message: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()> {
+        Box::pin(async move {
+            #[derive(Deserialize)]
+            struct Content {
+                sha: String,
+                content: String,
+            }
+
+            let rest = format!("/contents/{}", encode(path));
+            let read = format!("{rest}?ref={}", encode(branch));
+            let answer = self.rest(repo, class, Method::GET, &read, None).await?;
+            let blob = if answer.status == StatusCode::NOT_FOUND {
+                None
+            } else {
+                let found: Content = expect(answer, &[StatusCode::OK])?.json()?;
+                let content: String = found.content.split_whitespace().collect();
+                let current = STANDARD
+                    .decode(content)
+                    .map_err(|err| ScmError::Protocol(err.to_string()))?;
+                if current == text.as_bytes() {
+                    return Ok(());
+                }
+                Some(found.sha)
+            };
+
+            let body = json!({
+                "message": message,
+                "content": STANDARD.encode(text),
+                "branch": branch,
+                "sha": blob,
+            });
+            let answer = self
+                .rest(repo, class, Method::PUT, &rest, Some(body))
+                .await?;
+            match answer.status {
+                StatusCode::OK | StatusCode::CREATED => Ok(()),
+                // GitHub answers a rule of the repository that refuses the
+                // commit with 409 or 422, and these words.
+                StatusCode::CONFLICT | StatusCode::UNPROCESSABLE_ENTITY
+                    if answer.message().contains("rule") =>
+                {
+                    Err(ScmError::Forbidden(answer.message()))
+                }
+                _ => Err(unexpected(&answer)),
+            }
         })
     }
 

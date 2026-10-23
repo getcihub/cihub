@@ -1,8 +1,8 @@
 // The attributes and operators of crates/conditions, in the words of the condition builder of the mockups v26.
 
-type Kind = "bool" | "int" | "duration" | "text" | "list" | "choice";
+export type Kind = "bool" | "int" | "duration" | "text" | "list" | "choice";
 
-const ATTRIBUTES: Record<string, { label: string; kind: Kind }> = {
+export const ATTRIBUTES: Record<string, { label: string; kind: Kind }> = {
   draft: { label: "Draft", kind: "bool" },
   conflict: { label: "In conflict", kind: "bool" },
   from_fork: { label: "From a fork", kind: "bool" },
@@ -30,7 +30,7 @@ const ATTRIBUTES: Record<string, { label: string; kind: Kind }> = {
 };
 
 // The key of an operator under its attribute; "" when the attribute takes its values directly.
-const OPERATORS: Record<Kind, Record<string, string>> = {
+export const OPERATORS: Record<Kind, Record<string, string>> = {
   bool: {},
   int: { "": "is", min: "is at least", max: "is at most" },
   duration: { min: "is longer than", max: "is shorter than" },
@@ -51,7 +51,7 @@ const OPERATORS: Record<Kind, Record<string, string>> = {
 };
 
 // The builder shows the checks as one attribute, with their state as the operator.
-const CHECK_STATES: Record<string, string> = {
+export const CHECK_STATES: Record<string, string> = {
   "checks.success": "succeeded",
   "checks.failure": "failed",
   "checks.pending": "are pending",

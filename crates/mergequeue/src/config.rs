@@ -1,16 +1,17 @@
 //! The job `load_config`: it reads the configuration file on the head of the
 //! target branch, and keeps it on the queue when it is valid. The file is the
-//! only source of the settings. The job `read_setup` reads what the rules of
-//! the SCM miss for the queue, its setup, and keeps it for the pages.
+//! only source of the settings. Every read of a file is also kept, valid or
+//! not, in `config_files`, for the pages. The job `read_setup` reads what the
+//! rules of the SCM miss for the queue, its setup, and keeps it for the pages.
 
 use std::error::Error;
 
 use cihub_api_types::Finding;
 use cihub_config::{ConfigError, FILE_NAMES, RepoConfig, find_config_file};
-use cihub_domain::{JobClass, QueueId};
+use cihub_domain::{JobClass, OrgId, QueueId, RepoConfigState, RepoId};
 use cihub_platform::{Job, enqueue_job, mark_dirty, notify_queue_changed};
 use cihub_scm::{RepoRef, Scm, ScmError, SetupFinding};
-use cihub_store::{PgPool, begin_system};
+use cihub_store::{PgPool, Postgres, Transaction, begin_system};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::types::Json;
@@ -55,6 +56,23 @@ pub(crate) async fn read_config_file(
     sha: &str,
     class: JobClass,
 ) -> Result<Result<Option<String>, ConfigError>, ScmError> {
+    let found = read_config_path(scm, repo, sha, class).await?;
+
+    Ok(found.map(|file| file.map(|(_, text)| text)))
+}
+
+/// The path and the text of the configuration file of `repo` at `sha`, or
+/// `None` without a file.
+///
+/// # Errors
+///
+/// The SCM fails (outer), or several paths of the file exist (inner).
+pub(crate) async fn read_config_path(
+    scm: &dyn Scm,
+    repo: &RepoRef,
+    sha: &str,
+    class: JobClass,
+) -> Result<Result<Option<(&'static str, String)>, ConfigError>, ScmError> {
     let mut found = Vec::new();
     let mut text = None;
 
@@ -65,7 +83,139 @@ pub(crate) async fn read_config_file(
         }
     }
 
-    Ok(find_config_file(found).map(|_| text))
+    Ok(find_config_file(found).map(|path| path.zip(text)))
+}
+
+/// The configuration file of a branch at one of its heads, checked as the
+/// queue of the branch would load it.
+pub(crate) struct ConfigRead {
+    pub(crate) path: Option<&'static str>,
+    /// The text of the file, valid or not; `None` without a file, or when
+    /// several paths exist.
+    pub(crate) text: Option<String>,
+    /// The file, when it is valid.
+    pub(crate) config: Option<RepoConfig>,
+    pub(crate) error: Option<ConfigError>,
+}
+
+impl ConfigRead {
+    /// No file, or no branch to read it on.
+    pub(crate) const NONE: Self = Self {
+        path: None,
+        text: None,
+        config: None,
+        error: None,
+    };
+
+    /// Reads the file of `repo` at `sha` and checks it for the queue of
+    /// `branch`.
+    ///
+    /// # Errors
+    ///
+    /// The SCM fails.
+    pub(crate) async fn read(
+        scm: &dyn Scm,
+        repo: &RepoRef,
+        sha: &str,
+        branch: &str,
+        class: JobClass,
+    ) -> Result<Self, ScmError> {
+        let (path, text) = match read_config_path(scm, repo, sha, class).await? {
+            Ok(Some(file)) => file,
+            Ok(None) => return Ok(Self::NONE),
+            Err(error) => {
+                return Ok(Self {
+                    error: Some(error),
+                    ..Self::NONE
+                });
+            }
+        };
+
+        let checked =
+            RepoConfig::parse(&text).and_then(|config| config.settings(branch).map(|_| config));
+        let (config, error) = match checked {
+            Ok(config) => (Some(config), None),
+            Err(error) => (None, Some(error)),
+        };
+
+        Ok(Self {
+            path: Some(path),
+            text: Some(text),
+            config,
+            error,
+        })
+    }
+
+    pub(crate) fn state(&self) -> RepoConfigState {
+        match (&self.error, &self.text) {
+            (Some(_), _) => RepoConfigState::Invalid,
+            (None, Some(_)) => RepoConfigState::Valid,
+            (None, None) => RepoConfigState::None,
+        }
+    }
+
+    /// The text of a valid file.
+    pub(crate) fn valid_text(&self) -> Option<&str> {
+        self.config.as_ref().and(self.text.as_deref())
+    }
+}
+
+/// The branch whose configuration file a read kept, at its head.
+pub(crate) struct ConfigBranch<'a> {
+    pub(crate) org_id: OrgId,
+    pub(crate) repo_id: RepoId,
+    pub(crate) branch: &'a str,
+    /// `None` when the branch is missing.
+    pub(crate) head_sha: Option<&'a str>,
+}
+
+/// Keeps `read`, the file of a branch, unless a later read of the branch
+/// already did.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub(crate) async fn keep_config_file(
+    tx: &mut Transaction<'static, Postgres>,
+    at: &ConfigBranch<'_>,
+    read: &ConfigRead,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let position = read.error.as_ref().and_then(|error| error.position);
+    let line = position.map(|position| i32::try_from(position.line).unwrap_or(i32::MAX));
+    let column = position.map(|position| i32::try_from(position.column).unwrap_or(i32::MAX));
+    let entries: Vec<&str> = read
+        .config
+        .iter()
+        .flat_map(|config| &config.queues)
+        .map(|queue| queue.branch.as_str())
+        .collect();
+
+    sqlx::query(
+        "INSERT INTO config_files (org_id, repo_id, branch, head_sha, state, path, text, error,
+                                   error_line, error_column, entries, read_at)
+         VALUES ($1, $2, $3, $4, $5::repo_config_state, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (repo_id, branch) DO UPDATE
+         SET head_sha = $4, state = $5::repo_config_state, path = $6, text = $7, error = $8,
+             error_line = $9, error_column = $10, entries = $11, read_at = $12
+         WHERE config_files.read_at <= $12",
+    )
+    .bind(at.org_id.to_string())
+    .bind(at.repo_id.to_string())
+    .bind(at.branch)
+    .bind(at.head_sha)
+    .bind(read.state().as_str())
+    .bind(read.path)
+    .bind(&read.text)
+    .bind(read.error.as_ref().map(|error| error.message.clone()))
+    .bind(line)
+    .bind(column)
+    .bind(&entries)
+    .bind(now)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }
 
 /// Reads the file at the SHA of the job, while it is still the head of the
@@ -76,7 +226,7 @@ pub(crate) async fn load(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
-    _now: OffsetDateTime,
+    now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: LoadConfig = read_payload(job)?;
     let target = target_of(pool, job).await?;
@@ -89,22 +239,23 @@ pub(crate) async fn load(
         return Ok(());
     }
 
-    let read = read_config_file(scm, &target.repo, &request.sha, job.class).await?;
-    let checked = read.and_then(|text| match text {
-        Some(text) => RepoConfig::parse(&text)
-            .and_then(|config| config.settings(&target.target_branch))
-            .map(|_| Some(text)),
-        None => Ok(None),
-    });
+    let read = ConfigRead::read(
+        scm,
+        &target.repo,
+        &request.sha,
+        &target.target_branch,
+        job.class,
+    )
+    .await?;
     let mut tx = begin_system(pool).await?;
-    let query = match &checked {
-        Ok(text) => sqlx::query(
+    let query = match &read.error {
+        None => sqlx::query(
             "UPDATE queues SET config_text = $2, config_sha = $3, config_error = NULL
              WHERE id = $1",
         )
         .bind(target.queue_id.to_string())
-        .bind(text),
-        Err(err) => {
+        .bind(read.valid_text()),
+        Some(err) => {
             warn!(
                 sha = request.sha,
                 error = err as &dyn Error,
@@ -117,6 +268,14 @@ pub(crate) async fn load(
     };
 
     query.bind(&request.sha).execute(&mut *tx).await?;
+
+    let branch = ConfigBranch {
+        org_id: target.org_id,
+        repo_id: target.repo_id,
+        branch: &target.target_branch,
+        head_sha: Some(&request.sha),
+    };
+    keep_config_file(&mut tx, &branch, &read, now).await?;
     mark_dirty(&mut tx, target.queue_id).await?;
     // The page shows the settings and the error of the file.
     notify_queue_changed(&mut tx, target.org_id, target.queue_id, None).await?;
@@ -195,7 +354,7 @@ pub(crate) async fn read_setup(
     // The rules of a branch that no longer exists still answer: its head
     // says whether it does.
     let head = scm.branch_head(&target.repo, branch, job.class).await?;
-    let found: Vec<CheckFinding> = if head.is_some() {
+    let (found, required_checks): (Vec<CheckFinding>, Option<Vec<String>>) = if head.is_some() {
         let mut found: Vec<CheckFinding> = scm
             .check_setup(&target.repo, branch, job.class)
             .await?
@@ -206,10 +365,10 @@ pub(crate) async fn read_setup(
         if required.names.contains(&conditions_status_context(branch)) {
             found.push(CheckFinding::ConditionsStatusRequired);
         }
-        found
+        (found, Some(required.names.into_iter().collect()))
     } else {
         info!("target branch gone");
-        vec![CheckFinding::TargetBranchMissing]
+        (vec![CheckFinding::TargetBranchMissing], None)
     };
 
     let findings: Vec<Finding> = found
@@ -222,14 +381,15 @@ pub(crate) async fn read_setup(
     let mut tx = begin_system(pool).await?;
 
     sqlx::query(
-        "INSERT INTO queue_setups (org_id, queue_id, findings, checked_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (queue_id) DO UPDATE SET findings = $3, checked_at = $4
-         WHERE queue_setups.checked_at <= $4",
+        "INSERT INTO queue_setups (org_id, queue_id, findings, required_checks, checked_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (queue_id) DO UPDATE SET findings = $3, required_checks = $4, checked_at = $5
+         WHERE queue_setups.checked_at <= $5",
     )
     .bind(target.org_id.to_string())
     .bind(target.queue_id.to_string())
     .bind(Json(findings))
+    .bind(required_checks)
     .bind(now)
     .execute(&mut *tx)
     .await?;
