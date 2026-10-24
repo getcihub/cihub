@@ -24,8 +24,20 @@ const API_VERSION: &str = "2022-11-28";
 const TOKEN_MARGIN: Duration = Duration::minutes(5);
 const PERMISSION_TTL: Duration = Duration::minutes(5);
 const PERMISSIONS_KEPT: usize = 10_000;
-const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const JSON: &str = "application/vnd.github+json";
+
+const GITHUB_COM: &str = "https://github.com";
+
+/// The address of the REST API of `url`, github.com or a GitHub Enterprise
+/// Server, without a final `/`.
+pub(crate) fn api_url(url: &str) -> String {
+    if url == GITHUB_COM {
+        "https://api.github.com".to_owned()
+    } else {
+        format!("{url}/api/v3")
+    }
+}
 
 /// The time, read by the caller.
 pub type Clock = Arc<dyn Fn() -> OffsetDateTime + Send + Sync>;
@@ -180,13 +192,11 @@ impl GithubApp {
         // process. A second install changes nothing.
         let _ = rustls::crypto::ring::default_provider().install_default();
         let url = config.url.trim_end_matches('/');
-        let (api_url, graphql_url) = if url == "https://github.com" {
-            (
-                "https://api.github.com".to_owned(),
-                "https://api.github.com/graphql".to_owned(),
-            )
+        let api_url = api_url(url);
+        let graphql_url = if url == GITHUB_COM {
+            format!("{api_url}/graphql")
         } else {
-            (format!("{url}/api/v3"), format!("{url}/api/graphql"))
+            format!("{url}/api/graphql")
         };
         let http = Client::builder()
             .user_agent("cihub")
