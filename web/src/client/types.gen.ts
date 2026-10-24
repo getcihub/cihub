@@ -1454,11 +1454,6 @@ export type Strategy = 'sequential' | 'pipelined' | 'batched' | 'parallel';
  */
 export type SubmitPr = {
     /**
-     * Merge the PR without a test of the queue; the person needs the
-     * permission `admin` on the repository.
-     */
-    direct?: boolean;
-    /**
      * Test the PR alone, never in a batch.
      */
     no_batch?: boolean;

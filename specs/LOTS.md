@@ -994,3 +994,8 @@ Stacked PRs, direct-to-queue with the `cihub-sudo` App, Slack, Terraform, GitLab
 and the change of a role by an admin (`specs/SECURITY.md`); from the mockups v3, the pages of the settings
 (configuration and its sources, branch protection with "Check again", audit log), the form that changes
 `.cihub.yaml` through a PR, and the search of a PR. These lots are split when phase 4 starts.
+
+Direct-to-queue (`/cihub merge --direct`, `direct` in `…/pr/submit`, merge by `cihub-sudo`, `admin` required) was
+removed in 0.3.1 because nothing implemented it. Its lot adds the option back with its behavior, and defines the
+permission rule for an API token first: a token has no person, so the check of the `admin` permission of the
+submission job does not apply to it.

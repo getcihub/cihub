@@ -131,10 +131,9 @@ fn rows(org: OrgId, n: u8) -> String {
                      '2026-09-15T00:00:00Z');
          INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id, state,
                                   state_reason, state_changed_at, priority_value, no_batch,
-                                  force_enqueued, submitted_via, submitted_at, block_reasons,
-                                  is_current)
+                                  submitted_via, submitted_at, block_reasons, is_current)
              VALUES ('item-{n}', '{org}', '{queue}', 1, 'abc', 'user-1', 'not_ready', 'submitted',
-                     '2026-09-15T00:00:00Z', 100, false, false, 'comment',
+                     '2026-09-15T00:00:00Z', 100, false, 'comment',
                      '2026-09-15T00:00:00Z', '[]', true);
          INSERT INTO test_groups (id, org_id, queue_id, item_ids, predecessor_ids, state)
              VALUES ('group-{n}', '{org}', '{queue}', '{{item-{n}}}', '{{}}', 'testing');
@@ -449,7 +448,6 @@ async fn the_log_reads_back_in_order(pool: PgPool) {
             head_sha: "a1".into(),
             priority: Priority::MEDIUM,
             no_batch: false,
-            direct: false,
             submitted_via: SubmittedVia::Comment,
             author_id: user_id,
             additions: 3,

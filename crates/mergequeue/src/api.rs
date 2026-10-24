@@ -379,8 +379,8 @@ fn actor(grant: &ApiGrant) -> Actor {
 }
 
 /// The account of the user of a session on the SCM: the submission job
-/// checks its permission on the repository, `write`, or `admin` for a direct
-/// merge, as for a command in a comment. A token has the scope `prs:write`
+/// checks its permission on the repository, `write`, as for a command in a
+/// comment. A token has the scope `prs:write`
 /// and no account.
 async fn requester(conn: &mut PgConnection, grant: &ApiGrant) -> Result<Option<Account>, ApiError> {
     let GrantActor::User(user_id) = grant.actor else {
