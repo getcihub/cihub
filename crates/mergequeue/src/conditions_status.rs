@@ -19,8 +19,9 @@ use crate::admission::{Reading, Sender, unmet_conditions};
 use crate::jobs::{
     Failure, conditions_status_context, job, observation, read_payload, target_of, window,
 };
-use crate::surfaces::{StatusState, block_text, capitalized, hash, lock_pr, truncate};
+use crate::surfaces::lock_pr;
 use crate::target::QueueTarget;
+use crate::wording::{StatusState, block_text, capitalized, hash, truncate};
 
 pub(crate) const OBSERVE_PR: &str = "observe_pr";
 pub(crate) const OBSERVE_OPEN_PRS: &str = "observe_open_prs";
