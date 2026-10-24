@@ -8,7 +8,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use axum::extract::{DefaultBodyLimit, Request, State};
+use axum::extract::rejection::RawPathParamsRejection;
+use axum::extract::{DefaultBodyLimit, RawPathParams, Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::middleware::{self, Next};
@@ -19,9 +20,7 @@ use cihub_api_types::{
     AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
     OrgList, Problem, QueueChanged, User,
 };
-use cihub_domain::{
-    ApiScope, ApiTokenId, JobClass, MembershipRole, OrgId, Permission, RepoId, SessionId, UserId,
-};
+use cihub_domain::{ApiScope, ApiTokenId, JobClass, OrgId, Permission, RepoId, SessionId, UserId};
 use cihub_platform::{
     Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, PAGE_ERRORS, Page,
     PlatformError, QueueNewsFeed, cursor_of, document_error, error_responses, repo_permission_now,
@@ -368,6 +367,7 @@ pub(crate) fn router(
 
 async fn authenticated(
     State(state): State<ApiState>,
+    params: Result<RawPathParams, RawPathParamsRejection>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -378,13 +378,13 @@ async fn authenticated(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(|token| SecretString::from(token.trim().to_owned()));
-    let path = request.uri().path();
+    let names = PathNames::of(params.as_ref().ok());
     let authenticated = match bearer {
         Some(secret) if SessionClient::of(&secret) == Some(SessionClient::CommandLine) => {
-            by_session(&state, &secret, path, now).await
+            by_session(&state, &secret, names, now).await
         }
         Some(secret) => by_token(&state, &secret, now).await,
-        None => by_cookie(&state, request.headers(), request.method(), path, now).await,
+        None => by_cookie(&state, request.headers(), request.method(), names, now).await,
     };
     let authenticated = match authenticated {
         Ok(authenticated) => authenticated,
@@ -459,7 +459,7 @@ async fn by_cookie(
     state: &ApiState,
     headers: &HeaderMap,
     method: &Method,
-    path: &str,
+    names: PathNames<'_>,
     now: OffsetDateTime,
 ) -> Result<Authenticated, ApiError> {
     let secret = cookie(headers, SESSION_COOKIE)
@@ -471,7 +471,7 @@ async fn by_cookie(
         return Err(csrf_refused());
     }
 
-    by_session(state, &secret, path, now).await
+    by_session(state, &secret, names, now).await
 }
 
 /// A session, and on a route of an organization the grant of its user there
@@ -484,14 +484,14 @@ async fn by_cookie(
 async fn by_session(
     state: &ApiState,
     secret: &SecretString,
-    path: &str,
+    names: PathNames<'_>,
     now: OffsetDateTime,
 ) -> Result<Authenticated, ApiError> {
     let session = authenticate_session(&state.pool, secret, now)
         .await?
         .ok_or_else(ApiError::unauthorized)?;
 
-    let Some(slug) = org_of_path(path) else {
+    let Some(slug) = names.org else {
         return Ok(Authenticated::Session(session, None));
     };
 
@@ -527,7 +527,7 @@ async fn by_session(
         );
     }
 
-    let Some(name) = repo_of_path(path) else {
+    let Some(name) = names.repo else {
         let mut tx = begin_org(&state.pool, membership.org_id).await?;
         let repos = readable_repos(&mut tx, user_id).await?;
         tx.commit().await?;
@@ -551,7 +551,7 @@ async fn by_session(
     )
     .await;
     let grant = repo_grant(
-        (membership.org_id, user_id, role),
+        (membership.org_id, user_id),
         name,
         granted(state, user_id, permission).await?,
     )?;
@@ -594,15 +594,15 @@ fn sign_in_again() -> ApiError {
 }
 
 /// The grant of a route of the repository `name`, from the permission of
-/// the person on it. A repository that the organization does not have is
-/// left to the route, which answers `404` with the scopes of `role`.
+/// the person on it. A repository that the organization does not have, or
+/// that the person does not read, answers `404`.
 fn repo_grant(
-    (org_id, user_id, role): (OrgId, UserId, MembershipRole),
+    (org_id, user_id): (OrgId, UserId),
     name: &str,
     permission: Option<(RepoId, Permission)>,
 ) -> Result<ApiGrant, ApiError> {
     let scopes = match permission {
-        Some((_, Permission::None)) => {
+        None | Some((_, Permission::None)) => {
             return Err(ApiError::new(
                 ErrorCode::RepoNotFound,
                 format!("repository `{name}` not found"),
@@ -615,7 +615,6 @@ fn repo_grant(
             ApiScope::QueuesWrite,
             ApiScope::PrsWrite,
         ],
-        None => role.scopes().to_vec(),
     };
 
     Ok(ApiGrant {
@@ -626,23 +625,28 @@ fn repo_grant(
     })
 }
 
-/// The slug of the organization that the path names, as `/orgs/{org}/…`.
-fn org_of_path(path: &str) -> Option<&str> {
-    path.strip_prefix("/orgs/")?
-        .split('/')
-        .next()
-        .filter(|slug| !slug.is_empty())
+/// The organization and the repository that a route names, as axum matched
+/// and decoded them: the grant of a session must follow what the handler
+/// reads, never the raw path.
+#[derive(Clone, Copy)]
+struct PathNames<'a> {
+    org: Option<&'a str>,
+    repo: Option<&'a str>,
 }
 
-/// The name of the repository that the path names, as
-/// `/orgs/{org}/repos/{repo}/…`.
-fn repo_of_path(path: &str) -> Option<&str> {
-    let mut segments = path.strip_prefix("/orgs/")?.split('/').skip(1);
+impl<'a> PathNames<'a> {
+    fn of(params: Option<&'a RawPathParams>) -> Self {
+        let find = |key| {
+            params?
+                .iter()
+                .find_map(|(name, value)| (name == key).then_some(value))
+        };
 
-    (segments.next() == Some("repos"))
-        .then(|| segments.next())
-        .flatten()
-        .filter(|name| !name.is_empty())
+        Self {
+            org: find("org"),
+            repo: find("repo"),
+        }
+    }
 }
 
 fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u64> {
