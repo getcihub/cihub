@@ -174,8 +174,10 @@ repository.
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 
-The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
-`github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), and `github.existingSecret`
+The secrets come from existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
+`github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), from
+`database.secretExistingSecret` when it is set, so that the URL can stay in a Secret that an operator writes
+(`<cluster>-app` of CloudNativePG), and `github.existingSecret`
 gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and, when `github.clientId` is
 set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, and `database.poolSize`,
 `database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
@@ -291,7 +293,11 @@ and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and th
 in `Cargo.lock`, and the version and the `appVersion` of `helm/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
 triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `helm/cihub` with the
-version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`.
+version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`. It also triggers `cli.yaml`, which
+builds the command line `cihub` on a native runner per platform (`x86_64-unknown-linux-musl` and
+`aarch64-unknown-linux-musl`, linked statically so that they run on any distribution, and `aarch64-apple-darwin`) and
+attaches `cihub-<target>.tar.gz` and its `.sha256` to the release; `workflow_dispatch` with a tag attaches them
+again.
 
 ## Dependency updates
 

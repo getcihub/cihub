@@ -76,7 +76,7 @@ spec:
             - name: CIHUB_DATABASE_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.database.existingSecret | quote }}
+                  name: {{ .Values.database.secretExistingSecret | default .Values.database.existingSecret | quote }}
                   key: {{ .Values.database.secretKey | quote }}
             {{- end }}
           ports:

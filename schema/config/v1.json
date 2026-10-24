@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json",
+  "$id": "https://cihub.io/schema/config/v1.json",
   "title": "CIHub configuration",
   "description": "The `.cihub.yaml` file of a repository: its merge queues, their settings and their conditions. Reference: specs/CONFIGURATION.md.",
   "type": "object",

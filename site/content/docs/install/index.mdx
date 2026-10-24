@@ -1,0 +1,68 @@
+---
+title: Install CIHub
+description: What a CIHub instance is made of, the two ways to run it (Docker on one machine, or Kubernetes with the Helm chart), and the steps to a first merged pull request in about 30 minutes.
+---
+
+CIHub is one container and a Postgres. It runs on any machine that runs containers: Kubernetes is one way, not a
+requirement.
+
+<ArchitectureDiagram />
+
+## What you need
+
+- A machine or a cluster that runs containers, `linux/amd64` or `linux/arm64`.
+- A Postgres 17. The installation with Docker brings one.
+- An HTTPS address that GitHub can reach, for example `https://cihub.example.com`: GitHub sends the events of your
+  repositories there.
+- The owner rights on a GitHub organization, to create the App of your CIHub.
+
+## Choose how to run CIHub
+
+<Cards>
+  <Card title="Docker" href="/docs/install/docker">
+    One machine, a VM or a server with Docker Compose: CIHub, Postgres and an HTTPS proxy in one file. The
+    simplest way.
+  </Card>
+  <Card title="Kubernetes" href="/docs/install/kubernetes">
+    The Helm chart: the migrations in a Job, as many replicas as you need, your Ingress or your Gateway.
+  </Card>
+</Cards>
+
+Both run the same image, `ghcr.io/getcihub/server`, and take the same settings. You can start with Docker and move
+to Kubernetes later: the data is in Postgres.
+
+## The steps
+
+<Steps>
+<Step>
+
+### Create the GitHub App
+
+Register the App that receives the events of your repositories and acts on them: [Create the GitHub
+App](/docs/install/github-app).
+
+</Step>
+<Step>
+
+### Run CIHub
+
+Start the server with its keys: with [Docker](/docs/install/docker) or on [Kubernetes](/docs/install/kubernetes).
+
+</Step>
+<Step>
+
+### Install the App on your repositories
+
+CIHub creates your organization by itself: [Install the App on your
+repositories](/docs/install/github-app#install-the-app-on-your-repositories).
+
+</Step>
+<Step>
+
+### Merge your first pull request
+
+Protect the target branch, check your CI, then comment `/cihub merge`: [Merge your first pull
+request](/docs/install/first-pull-request).
+
+</Step>
+</Steps>

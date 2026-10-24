@@ -244,10 +244,12 @@ dependencies = [
  "cihub-api-types",
  "cihub-client",
  "cihub-domain",
+ "cihub-github",
  "clap",
  "secrecy",
  "serde",
  "serde_json",
+ "time",
  "tokio",
 ]
 

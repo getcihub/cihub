@@ -90,8 +90,10 @@ deny = [
     # A library crate keeps the cause in its own `thiserror` enumeration.
     { crate = "anyhow", wrappers = ["cihub-cli", "cihub-server"] },
     # Only the server binary and the web server wire the adapter; the other
-    # crates see the neutral `Scm` trait.
+    # crates see the neutral `Scm` trait. The command line creates the GitHub
+    # App of an instance before it runs (`cihub app create`).
     { crate = "cihub-github", wrappers = [
+        "cihub-cli",
         "cihub-server",
         "cihub-web",
         # A dev-dependency only: the rate limit test, end to end.

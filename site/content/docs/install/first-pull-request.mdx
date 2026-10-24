@@ -1,0 +1,78 @@
+---
+title: Merge your first pull request
+description: The last steps of the installation, protect the target branch, check that your CI runs on the tests of the queue, then submit a first pull request and follow it to the merge.
+---
+
+CIHub runs and the App is installed on your repositories. You do not create a queue: the first `/cihub merge` on a
+pull request of the default branch creates it, with the default settings.
+
+<Steps>
+<Step>
+
+### Protect the target branch
+
+Two rulesets on the target branch make every merge go through the queue: one that restricts the updates, with the
+App in its bypass list in the mode **Exempt**, and one that holds the rules of a pull request. Turn off "Require
+branches to be up to date before merging". [Protect the target branch](/docs/branch-protection) gives each click.
+
+<RulesetsDiagram />
+
+</Step>
+<Step>
+
+### Check that your CI runs on the tests
+
+By default, each test of the queue opens a draft pull request: a workflow on `pull_request` runs on it without a
+change, if it does not skip draft pull requests. The test waits for the required checks of the rules of the branch.
+[Run your CI on the tests of the queue](/docs/ci) covers GitHub Actions and the other CIs.
+
+</Step>
+<Step>
+
+### Submit a pull request
+
+Choose a pull request of the default branch that is approved and whose checks pass, and comment:
+
+```text
+/cihub merge
+```
+
+CIHub adds a 👍 reaction, then a comment that it keeps up to date, and the status `CIHub Merge Queue (main)`:
+
+<PrCommentPreview />
+
+The pull request merges when its test passes. If it waits, the comment says why: [The life of a pull request in the
+queue](/docs/pull-requests).
+
+</Step>
+<Step>
+
+### Follow the queue
+
+The link _Open in CIHub_ of the comment opens the pull request in the dashboard, with its queue. From a terminal, the
+command line shows the same:
+
+```sh
+cihub auth login --hostname cihub.example.com   # approve the code in the dashboard
+cihub queue status
+```
+
+[Install the command line](/docs/install/cli) first, if you did not install it to create the App.
+
+In a CI, set `CIHUB_HOST` and `CIHUB_TOKEN`, with an [API token](/docs/install/docker#create-an-api-token) of the
+organization.
+
+</Step>
+</Steps>
+
+## Next
+
+<Cards>
+  <Card title="Write your .cihub.yaml" href="/docs/configuration">
+    Queue conditions, priorities, several branches: a queue works without a file, and the file changes its
+    behavior.
+  </Card>
+  <Card title="Choose a strategy" href="/docs/strategies">
+    Test several pull requests at the same time, or in batches, when the queue gets busy.
+  </Card>
+</Cards>

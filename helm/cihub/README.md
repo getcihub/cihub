@@ -51,7 +51,8 @@ Kubernetes: `>=1.25.0-0`
 | database.idleTimeout | int | `600` | Seconds after which an unused connection is closed. |
 | database.key | string | `"uri"` | Key of the URL in that Secret. |
 | database.poolSize | int | `10` | Largest number of connections of each replica to Postgres; the sum over the replicas stays under the `max_connections` of Postgres. |
-| database.secretKey | string | `"secret"` | Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set. |
+| database.secretExistingSecret | string | `""` | Secret that holds `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; the Secret of the URL when empty, so that the URL can stay in a Secret that an operator writes, such as `<cluster>-app` of CloudNativePG. Read when `github.clientId` is set. |
+| database.secretKey | string | `"secret"` | Key of `database.secret` in its Secret. |
 | deploymentAnnotations | object | `{}` | Annotations of the Deployment. |
 | fullnameOverride | string | `""` | Replaces the full name of the resources. |
 | github.appId | required | `""` | Identifier of the GitHub App (specs/GITHUB.md). |

@@ -15,6 +15,12 @@ glob = ["*.{ts,tsx,js,mjs,json,jsonc,css,md,yaml,yml}"]
 run = "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
 stage_fixed = true
 
+[pre-commit.commands.format-site]
+root = "site/"
+glob = ["*.{ts,tsx,js,mjs,json,css,md,mdx}"]
+run = "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
+stage_fixed = true
+
 [pre-commit.commands.mise-lock]
 glob = ["mise.toml"]
 run = "mise lock -p linux-x64,linux-arm64,macos-x64,macos-arm64 && git add mise.lock"

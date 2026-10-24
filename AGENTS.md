@@ -49,7 +49,7 @@ A violation means that the principle or the PR is wrong; never "we will fix it l
 
 `mise run lint` already refuses: `unwrap`, standard output, the clock or randomness outside their exception, I/O
 crates or `tracing` in the pure crates, `anyhow` outside the two binaries (`cihub-cli`, `cihub-server`),
-`cihub-github` outside `cihub-server` and `cihub-web`, a block nested deeper than `clippy.toml` allows, a crate without its `//!` comment, a cited spec that
+`cihub-github` outside `cihub-server`, `cihub-web` and `cihub-cli` (for `cihub app create`), a block nested deeper than `clippy.toml` allows, a crate without its `//!` comment, a cited spec that
 does not exist. When a tool refuses, fix the cause, never the rule. A crate or a directory with its own rules has
 its own `AGENTS.md`.
 
@@ -71,7 +71,7 @@ its own `AGENTS.md`.
 ## Commands
 
 `mise tasks` lists them all; every tool installs with `mise install`. A task is named `<domain>:<action>` (`rust:`,
-`web:`, `db:`, `server:`, `helm:`, `workflows:`); only the tasks that span domains have no prefix. `mise run check` (lint, then
+`web:`, `site:`, `db:`, `server:`, `helm:`, `workflows:`); only the tasks that span domains have no prefix. `mise run check` (lint, then
 unit tests), `mise run rust:integration` (the `tests/postgres.rs` files against the Postgres of `compose.yaml`),
 `mise run rust:cover` (90% for the pure crates), `mise run test:all` (every suite, with Docker). Each suite writes
 its JUnit report into `test-reports/<suite>/junit.xml`, which git ignores. The CI runs them in parallel jobs; the

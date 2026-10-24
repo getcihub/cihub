@@ -58,6 +58,26 @@ tests:
             valueFrom:
               secretKeyRef: { name: cihub-postgres, key: secret }
 
+  - it: takes the database secret from its own Secret when one is named
+    template: deployment.tpl
+    set:
+      github.clientId: Iv23li.client
+      database.existingSecret: cihub-postgres-app
+      database.secretExistingSecret: cihub-sealing
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_URL
+            valueFrom:
+              secretKeyRef: { name: cihub-postgres-app, key: uri }
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CIHUB_DATABASE_SECRET
+            valueFrom:
+              secretKeyRef: { name: cihub-sealing, key: secret }
+
   - it: has no client secret and no database secret without a client ID
     template: deployment.tpl
     asserts:

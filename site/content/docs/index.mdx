@@ -1,0 +1,45 @@
+---
+title: What is CIHub
+description: CIHub is a self-hosted merge queue for GitHub. It tests each pull request on top of the ones ahead of it and merges it only if the result passes.
+---
+
+CIHub is an open-source, self-hosted merge queue for GitHub. It keeps the target branch green with the CI you
+already have, installs with one image and one Postgres, and explains each of its decisions.
+
+## The problem a merge queue solves
+
+Two pull requests pass CI on their own. You merge both. `main` is red, and nobody knows why: each one was
+tested without the other.
+
+CIHub makes that impossible. Approve a pull request, type `/cihub merge`, and go back to work. CIHub lines it up
+behind the others, tests it together with everything that lands before it, and merges it only if the result
+still passes.
+
+## How the merge queue works
+
+1. **Approve.** A pull request is approved and its checks are green.
+2. **Queue.** Comment `/cihub merge`. CIHub tests it on top of everything ahead of it, alone or in a batch.
+3. **Merge.** If that exact combination passes, CIHub merges it. If not, the pull request leaves the queue,
+   with the reason on it.
+
+## What CIHub does and does not do
+
+- CIHub never runs your CI. It pushes a test branch and waits for the required statuses and check runs:
+  GitHub Actions, Buildkite, CircleCI and Jenkins work without changes.
+- The required checks are read on the target branch, never from the pull request, so that a pull request
+  cannot weaken its own gate.
+- One instance serves several GitHub organizations. Postgres is its only dependency.
+- GitLab and Bitbucket are not supported.
+
+## Status
+
+CIHub is in active development (v0.x). The queue, its batches and its dashboard work; metrics, parallel queues
+for monorepos and flaky test detection come next. Do not use it in production yet: its behavior, its
+configuration and its data can change without notice from one version to the next.
+
+## Next steps
+
+<Cards>
+  <Card title="Install CIHub" href="/docs/install" />
+  <Card title="Use CIHub with a coding agent" href="/docs/agents" />
+</Cards>

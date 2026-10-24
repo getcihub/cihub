@@ -1,0 +1,171 @@
+---
+title: Run CIHub with Docker
+description: Run CIHub, its Postgres and an HTTPS proxy on one machine with Docker Compose, then update it.
+---
+
+One machine with Docker runs the whole instance: Postgres, a one-shot service that applies the migrations, CIHub,
+and Caddy, which gets a TLS certificate for your address.
+
+You need:
+
+- A machine with Docker and Docker Compose, which GitHub can reach on the ports 80 and 443.
+- A DNS name that points to it, for example `cihub.example.com`.
+- The App of your CIHub and its keys: [Create the GitHub App](/docs/install/github-app).
+
+## Write the files
+
+In a new directory, write four files. If you create the App with [`cihub app create`](/docs/install/github-app#create-the-app-with-one-command), run it in this directory first.
+
+`compose.yaml`:
+
+```yaml title="compose.yaml"
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      CIHUB_DATABASE_PASSWORD: ${CIHUB_DATABASE_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./create-cihub-database.sh:/docker-entrypoint-initdb.d/create-cihub-database.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+
+  migrate:
+    image: ghcr.io/getcihub/server:0.2
+    command: migrate
+    environment:
+      CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DATABASE_PASSWORD}@postgres:5432/cihub
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cihub:
+    image: ghcr.io/getcihub/server:0.2
+    restart: unless-stopped
+    environment:
+      CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DATABASE_PASSWORD}@postgres:5432/cihub
+      CIHUB_DATABASE_SECRET: ${CIHUB_DATABASE_SECRET}
+      CIHUB_HTTP_PUBLIC_URL: https://${CIHUB_HOST}
+      CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID}
+      CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app
+      CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET}
+      CIHUB_GITHUB_CLIENT_ID: ${CIHUB_GITHUB_CLIENT_ID}
+      CIHUB_GITHUB_CLIENT_SECRET: ${CIHUB_GITHUB_CLIENT_SECRET}
+    secrets:
+      - github-app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: caddy reverse-proxy --from ${CIHUB_HOST} --to cihub:8080
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy:/data
+    depends_on:
+      - cihub
+
+secrets:
+  github-app:
+    file: ./github-app.private-key.pem
+
+volumes:
+  postgres:
+  caddy:
+```
+
+`create-cihub-database.sh`, which Postgres runs once, at its first start. CIHub refuses to connect as a
+superuser: it gets its own role, which owns its database.
+
+```sh title="create-cihub-database.sh"
+#!/bin/sh
+set -e
+psql -v ON_ERROR_STOP=1 --username postgres <<SQL
+CREATE ROLE cihub LOGIN PASSWORD '${CIHUB_DATABASE_PASSWORD}';
+CREATE DATABASE cihub OWNER cihub;
+SQL
+```
+
+`.env`, with your address, the passwords and the sealing key, generated once, then the keys of the App. With
+[`cihub app create`](/docs/install/github-app#create-the-app-with-one-command), run in this directory, they are in
+`github-app.env`:
+
+```sh
+cat > .env <<EOF
+CIHUB_HOST=cihub.example.com
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+CIHUB_DATABASE_PASSWORD=$(openssl rand -hex 16)
+CIHUB_DATABASE_SECRET=$(openssl rand -hex 32)
+EOF
+cat github-app.env >> .env
+chmod 600 .env
+```
+
+With an App created by hand, add its four lines yourself: `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET`,
+`CIHUB_GITHUB_CLIENT_ID` and `CIHUB_GITHUB_CLIENT_SECRET`.
+
+`github-app.private-key.pem`: the private key of the App, which the command wrote, or which GitHub downloaded. The
+container reads it as the user 65532:
+
+```sh
+chmod +x create-cihub-database.sh
+chmod 644 github-app.private-key.pem
+```
+
+## Start CIHub
+
+```sh
+docker compose up -d
+docker compose ps
+```
+
+`migrate` ends with the exit code 0, then `cihub` starts. Open `https://cihub.example.com`: the dashboard asks you to
+sign in with GitHub.
+
+The `.env` file and the private key are secrets: keep them out of a repository, and back them up with the volume
+`postgres`. A lost `CIHUB_DATABASE_SECRET` signs every person out; the queues keep their data.
+
+## Create an API token
+
+Once the App is installed on your organization, a script or a CI that calls the API needs a token of the
+organization. The command prints it once:
+
+```sh
+docker compose run --rm cihub token create --org <login of the organization>
+```
+
+## Update CIHub
+
+Change the tag of the two `image:` lines (`0.2` follows the fixes of the version 0.2), then:
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+`migrate` applies the migrations of the new version before `cihub` starts again.
+
+## Without Caddy
+
+If the machine already has a proxy or a load balancer that terminates TLS, remove the service `caddy`, publish the
+port of CIHub to that proxy, and route your address to it:
+
+```yaml
+cihub:
+  ports:
+    - "127.0.0.1:8080:8080"
+```
+
+The proxy sends every path to CIHub: the dashboard, `/api`, `/auth` and `/webhooks/github`.
+
+## Next
+
+[Install the App on your repositories](/docs/install/github-app#install-the-app-on-your-repositories), then [merge
+your first pull request](/docs/install/first-pull-request).

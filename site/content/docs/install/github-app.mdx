@@ -1,0 +1,192 @@
+---
+title: Create the GitHub App
+description: Create the GitHub App of your CIHub instance with one command or by hand, give its keys to CIHub, install it on your repositories, and check that GitHub reaches the instance.
+---
+
+Your CIHub instance talks to GitHub through a GitHub App that you own. The App receives the webhooks of your
+repositories, gives CIHub the rights to test and merge pull requests, and signs people in to the dashboard. You
+create it once: with one command, which fills in the form of GitHub for you, or by hand.
+
+## Before you start
+
+- The HTTPS address of your instance, reachable from GitHub, for example `https://cihub.example.com`. The examples
+  below write it `https://<your CIHub host>`.
+- Owner rights on the GitHub organization that will own the App.
+
+## Create the App with one command
+
+`cihub app create`, a command of [the command line](/docs/install/cli), sends GitHub a manifest that holds the
+addresses, the permissions and the events of the App. You check the App on GitHub and click **Create GitHub App**;
+GitHub sends you back, the command gives the App a webhook secret of its own, and it writes the keys of the App in
+two files. Run it on your computer, in the directory of your installation:
+
+```sh
+cihub app create --public-url https://cihub.example.com --name "Acme CIHub" --org acme
+```
+
+<Callout title="From the release after 0.2.1">
+  The command comes with the next release of CIHub. With an older version, create the App by hand, below.
+</Callout>
+
+1. Open `http://localhost:3999`: the page sends you to GitHub, with the form already filled in.
+2. Check the name, then click **Create GitHub App**. The name must be free on GitHub: change it there if it is taken.
+3. GitHub sends you back to `http://localhost:3999`, and the command writes two files, which only you can read:
+
+| File                         | Content                                                                                                         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `github-app.env`             | `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_CLIENT_ID`, `CIHUB_GITHUB_CLIENT_SECRET` and `CIHUB_GITHUB_WEBHOOK_SECRET` |
+| `github-app.private-key.pem` | The private key of the App                                                                                      |
+
+Without `--org`, the App belongs to your account. For a GitHub Enterprise Server, add
+`--github-url https://<your GitHub server>`. GitHub gives the keys only within one hour after the creation: past it,
+delete the App on GitHub and run the command again. The command never overwrites the two files.
+
+Then [give the keys to CIHub](#give-the-keys-to-cihub).
+
+## Create the App by hand
+
+The App has three addresses on your instance. Most mistakes come from mixing them up:
+
+<GithubAppUrlsDiagram />
+
+Generate the webhook secret first:
+
+```sh
+openssl rand -hex 32
+```
+
+### Open the form
+
+- For an organization: your profile picture → _Your organizations_ → _Settings_ next to the organization →
+  _Developer settings_ → _GitHub Apps_ → **New GitHub App**.
+- For a personal account: your profile picture → _Settings_ → _Developer settings_ → _GitHub Apps_ → **New GitHub
+  App**.
+
+On a GitHub Enterprise Server, the path is the same on your server.
+
+### Fill in the identity and the sign-in
+
+| Field                                                      | Value                                             | Why                                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **GitHub App name**                                        | Any free name, for example `Acme CIHub`           | Its bot writes the comments and the statuses: `acme-cihub[bot]`                            |
+| **Homepage URL**                                           | `https://<your CIHub host>`                       | Shown on the page of the App                                                               |
+| **Callback URL**                                           | `https://<your CIHub host>/auth/github/callback`  | Where GitHub sends a person back after the sign-in to the dashboard                        |
+| **Expire user authorization tokens**                       | Checked (the default)                             | CIHub refreshes the token of each person                                                   |
+| **Request user authorization (OAuth) during installation** | **Unchecked**                                     | Checked, GitHub would skip the Setup URL after an installation                             |
+| **Enable Device Flow**                                     | Unchecked                                         | The command line `cihub` signs in through the dashboard, not through GitHub                |
+| **Setup URL**                                              | `https://<your CIHub host>/auth/github/installed` | After an installation, GitHub sends the person to the repositories of the new organization |
+| **Redirect on update**                                     | Checked                                           | The same after a change of the repositories of the installation                            |
+
+### Fill in the webhook
+
+| Field                | Value                                       |
+| -------------------- | ------------------------------------------- |
+| **Active**           | Checked                                     |
+| **Webhook URL**      | `https://<your CIHub host>/webhooks/github` |
+| **Webhook secret**   | The secret that you generated               |
+| **SSL verification** | Enabled                                     |
+
+### Set the permissions
+
+Under _Repository permissions_:
+
+| Permission          | Access         | What CIHub does with it                                                                                                      |
+| ------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Administration**  | Read-only      | Read the rules of the branches, for their required checks and to [check your setup](/docs/branch-protection#check-the-setup) |
+| **Checks**          | Read-only      | Read the checks of your CI on the test commits                                                                               |
+| **Commit statuses** | Read and write | Write the statuses `CIHub Merge Queue (<branch>)` and `CIHub Conditions (<branch>)`                                          |
+| **Contents**        | Read and write | Write the test branches, merge, read `.cihub.yaml`                                                                           |
+| **Issues**          | Read and write | Labels and reactions on the pull requests                                                                                    |
+| **Metadata**        | Read-only      | List the repositories (GitHub sets it)                                                                                       |
+| **Pull requests**   | Read and write | Read the pull requests, open and close the draft pull requests of the tests, merge, comment                                  |
+
+Under _Organization permissions_: **Members**, Read-only, to give each person the role that they have on GitHub.
+
+Leave every other permission at _No access_.
+
+### Subscribe to the events
+
+Under _Subscribe to events_, check:
+
+- **Branch protection rule**
+- **Check run**
+- **Check suite**
+- **Issue comment**
+- **Pull request**
+- **Pull request review**
+- **Push**
+- **Repository**
+- **Status**
+
+GitHub sends the events of the installation itself without a subscription.
+
+### Keep the App private
+
+Under _Where can this GitHub App be installed?_, choose **Only on this account**, then **Create GitHub App**.
+
+Any account that installs your App gets an organization in your CIHub: a public App would let anyone use your
+instance.
+
+### Collect the keys of the App
+
+On the page of the new App (_General_):
+
+1. Note the **App ID** and the **Client ID**.
+2. Under _Client secrets_, **Generate a new client secret**, and copy it: GitHub shows it once.
+3. Under _Private keys_, **Generate a private key**: your browser downloads a `.pem` file.
+
+Keep the private key, the client secret and the webhook secret in your secret store. The private key and the client
+secret act as the App: whoever has them can act on every repository where the App is installed.
+
+## Give the keys to CIHub
+
+You now have five values: the App ID, the private key, the webhook secret, the Client ID and the client secret. Give
+them to CIHub as [Run CIHub with Docker](/docs/install/docker) or [Run CIHub on
+Kubernetes](/docs/install/kubernetes) shows, then come back here to install the App.
+
+<GithubAppKeysDiagram />
+
+| Value                    | Variable of the server                                                            |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| App ID                   | `CIHUB_GITHUB_APP_ID`                                                             |
+| Private key              | `CIHUB_GITHUB_PRIVATE_KEY_FILE` (a path), or `CIHUB_GITHUB_PRIVATE_KEY` (the PEM) |
+| Webhook secret           | `CIHUB_GITHUB_WEBHOOK_SECRET`                                                     |
+| Client ID                | `CIHUB_GITHUB_CLIENT_ID`                                                          |
+| Client secret            | `CIHUB_GITHUB_CLIENT_SECRET`                                                      |
+| GitHub Enterprise Server | `CIHUB_GITHUB_URL`                                                                |
+
+The Client ID and the client secret turn on the sign-in to the dashboard, with the public address
+(`CIHUB_HTTP_PUBLIC_URL`) and a sealing key (`CIHUB_DATABASE_SECRET`, at least 32 bytes, which seals the GitHub tokens
+of the people who sign in). Without them, only the API tokens work. `cihub-server start` stops at startup and names
+the value that is missing.
+
+## Install the App on your repositories
+
+On the page of the App: **Install App** → your organization → **Only select repositories** (or _All repositories_) →
+**Install**.
+
+GitHub then sends you to the Setup URL: sign in to the dashboard, and it opens the repositories of the new
+organization. You create nothing else: CIHub creates the organization, named after the login of the account, and the
+first `/cihub merge` on a branch creates its queue. To add or remove repositories later, change the installation on
+GitHub (_Settings → GitHub Apps → Configure_ in the organization); CIHub reads the change.
+
+## Check that GitHub reaches CIHub
+
+1. On the page of the App: _Advanced_ → _Recent Deliveries_. The `installation` delivery has a green mark: CIHub
+   answered it.
+2. The dashboard lists the repositories that you selected.
+3. A comment `/cihub merge` on an approved, green pull request gets a 👍 reaction, then the comment of CIHub.
+
+| Symptom                                                    | Cause                                                    | Fix                                                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| The deliveries fail with a timeout or a connection error   | GitHub cannot reach the instance                         | Check the DNS, the TLS certificate and the route to `/webhooks/github` from outside your network        |
+| The deliveries fail with an error status from CIHub        | The webhook secret differs between the App and CIHub     | Set the same secret in both, then **Redeliver** the failed deliveries                                   |
+| The sign-in comes back to the sign-in page with an error   | Callback URL, client ID, client secret or public address | Compare the Callback URL with `<public address>/auth/github/callback`, and the client keys with the App |
+| After the installation, GitHub does not open the dashboard | The Setup URL is empty, or the OAuth box is checked      | Set the Setup URL, uncheck _Request user authorization (OAuth) during installation_                     |
+| Nothing happens on the pull requests of a repository       | The repository is not in the installation                | Add it to the installation of the App                                                                   |
+
+## Change the permissions later
+
+When a new version of CIHub needs a new permission or event, change it on the page of the App. GitHub then asks an
+owner of each organization to accept the new permissions (_Settings → GitHub Apps_ in the organization): until they
+do, the installation keeps the old ones.

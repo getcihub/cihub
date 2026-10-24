@@ -10,3 +10,4 @@ helm/
 web/node_modules/
 web/dist/
 test-reports/
+site/

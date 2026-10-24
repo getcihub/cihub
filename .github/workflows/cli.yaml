@@ -1,0 +1,75 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CLI
+
+# Builds the command line `cihub` for each release, on a native runner per
+# platform, and attaches it to the release. The Linux binaries link musl
+# statically, so that they run on any distribution.
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag of the release, such as v0.3.0
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-26.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-26.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: --locked rust
+          # A release publishes what it builds: no cache that another run wrote.
+          cache: false
+
+      - name: Install musl
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+
+      - name: Build
+        run: |
+          rustup target add "$TARGET"
+          cargo build --release --locked -p cihub-cli --target "$TARGET"
+          tar -czf "cihub-$TARGET.tar.gz" -C "target/$TARGET/release" cihub
+          shasum -a 256 "cihub-$TARGET.tar.gz" > "cihub-$TARGET.tar.gz.sha256"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$TAG" "cihub-$TARGET.tar.gz" "cihub-$TARGET.tar.gz.sha256" --clobber

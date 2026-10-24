@@ -8,7 +8,7 @@ on a GitHub organization.
 ## 1. Create the GitHub App
 
 In the settings of your organization: *Settings → Developer settings → GitHub Apps → New GitHub App*. The full
-procedure is in [`specs/GITHUB.md`](specs/GITHUB.md); in short:
+procedure is in [`specs/GITHUB.md`](https://github.com/getcihub/cihub/blob/main/specs/GITHUB.md); in short:
 
 - **Webhook**: active, URL `https://<your CIHub host>/webhooks/github`, and a random secret
   (`openssl rand -hex 32`).
@@ -45,7 +45,7 @@ helm install cihub oci://ghcr.io/getcihub/charts/cihub \
 
 The migration Job applies the migrations, then the Deployment starts `cihub-server start`. Route your HTTPS
 address to the Service, or enable the Ingress or the HTTPRoute of the chart. The values of the chart, with those
-of the sign-in to the dashboard, are in [`helm/cihub/README.md`](helm/cihub/README.md).
+of the sign-in to the dashboard, are in [`helm/cihub/README.md`](https://github.com/getcihub/cihub/blob/main/helm/cihub/README.md).
 
 To try CIHub on one machine, `compose.yaml` starts it with a development Postgres (`specs/DEPLOYMENT.md`).
 
@@ -63,7 +63,7 @@ The command prints an API token **once**: keep it in a secret store.
 
 ## 4. Protect the target branch
 
-Two rulesets on the target branch ([`specs/GITHUB.md`](specs/GITHUB.md)):
+Two rulesets on the target branch ([`specs/GITHUB.md`](https://github.com/getcihub/cihub/blob/main/specs/GITHUB.md)):
 
 - one that restricts updates, with the App in its bypass list in mode **exempt**;
 - one that holds the rules a PR must meet (reviews, required checks), without any bypass.
@@ -122,7 +122,7 @@ Then write the file, with only the keys below, and explain each choice.
 
 Rules of the file (version 1):
 - Its first line declares the schema, for the editor:
-  `# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json`.
+  `# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json`.
 - It starts with `version: 1`. Top-level keys: `queues` (a list),
   `priority_rules` (a list) and `defaults` (any queue setting and the
   conditions, without `branch` or `profiles`). An unknown key is an error.
@@ -207,5 +207,5 @@ that starts with `*`. For example:
           - build
 ```
 
-The reference of every key is [`specs/CONFIGURATION.md`](specs/CONFIGURATION.md).
+The reference of every key is [`specs/CONFIGURATION.md`](https://github.com/getcihub/cihub/blob/main/specs/CONFIGURATION.md).
 

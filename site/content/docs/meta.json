@@ -1,0 +1,20 @@
+{
+  "title": "CIHub",
+  "pages": [
+    "---Get started---",
+    "index",
+    "install",
+    "---Use the queue---",
+    "pull-requests",
+    "commands",
+    "configuration",
+    "strategies",
+    "---GitHub and your CI---",
+    "branch-protection",
+    "ci",
+    "---Integrations---",
+    "agents",
+    "---Help---",
+    "troubleshooting"
+  ]
+}

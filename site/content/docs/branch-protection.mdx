@@ -1,0 +1,80 @@
+---
+title: Protect the target branch
+description: The two GitHub rulesets that make every merge to the target branch go through the queue, the settings that slow a queue down, and how CIHub checks them for you.
+---
+
+Without protection, anyone can merge a pull request around the queue, and nothing tested the result. With these
+rules, only CIHub can update the target branch, and it does so only after a test of exactly what lands.
+
+You need the `admin` permission on the repository, or rulesets of the organization, and the App of your CIHub
+installed on the repository ([Install CIHub](/docs/install)).
+
+<RulesetsDiagram />
+
+## Restrict the updates of the target branch
+
+In the repository: _Settings → Rules → Rulesets → New ruleset → New branch ruleset_.
+
+1. **Target branches**: the branch of the queue, for example `main` (or _Include default branch_).
+2. **Rules**: turn on _Restrict updates_.
+3. **Bypass list**: add the GitHub App of your CIHub, in the mode **Exempt**.
+
+The mode _Always allow_ does not let a GitHub App update a branch: the queue could not merge. Only _Exempt_ does.
+
+## Require what a pull request must meet
+
+A second ruleset on the same branch, **without any bypass**, holds the rules of a pull request: _Require a pull
+request before merging_, its approvals, and _Require status checks to pass_ with the checks of your CI.
+
+CIHub reads these rules: a submitted pull request waits until it meets them, and their required checks are the ones
+that the test of the queue must pass, unless `required_statuses` in `.cihub.yaml` names others ([Run your CI on the
+tests of the queue](/docs/ci)). Keep the rules of the pull requests in this ruleset, apart from the restriction:
+the App bypasses the first one only.
+
+## Exclude the test branches from your other rules
+
+The queue writes its tests on branches named `cihub-temp/…` and `cihub-merge/…`. Every other ruleset whose target
+could match them, such as a ruleset on `**` or on all branches, must exclude:
+
+```text
+cihub-temp/**/*
+cihub-merge/**/*
+```
+
+Otherwise, GitHub refuses the test branch, and the test fails with "branch protection refused the test branch".
+With `branch_prefix: ci` in `.cihub.yaml`, the branches are `ci-temp/…` and `ci-merge/…`.
+
+## Turn off "Require branches to be up to date before merging"
+
+This rule, in a ruleset or in the classic branch protection, asks that each pull request contain the last commit of
+its base. Each merge of the queue then puts every other pull request behind its base, and they wait with "the branch
+is behind its base". The queue makes the rule useless: it tests each pull request on top of the target branch and of
+every pull request ahead of it.
+
+## The statuses of CIHub in your rules
+
+- `CIHub Merge Queue (<branch>)` can be a required check, so that nothing merges without a test of the queue. The
+  restriction of the updates above is what prevents a merge around the queue.
+- `CIHub Conditions (<branch>)` must **not** be a required check: a pull request whose conditions pass would then
+  merge outside the queue as soon as its other checks pass.
+
+## Check the setup
+
+CIHub reads the rules of the target branch and of the test branches every hour. The page of the queue in the
+dashboard shows what is wrong, and so does the API, in `setup.findings`:
+
+```sh
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/queues/<queue> -H "Authorization: Bearer <token>"
+```
+
+| Finding                      | What is wrong                                                                        | Fix                                                                             |
+| ---------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `update_restriction_missing` | No rule restricts the updates of the target branch: a merge can skip the queue       | [Restrict the updates](#restrict-the-updates-of-the-target-branch)              |
+| `app_not_exempt`             | A rule restricts the updates, but does not let CIHub through: the queue cannot merge | Add the App to its bypass list, in the mode _Exempt_                            |
+| `test_branches_not_excluded` | A rule covers the test branches too: the queue cannot write them                     | [Exclude the test branches](#exclude-the-test-branches-from-your-other-rules)   |
+| `up_to_date_required`        | The rules ask that a pull request be up to date: each merge makes the next ones wait | [Turn the rule off](#turn-off-require-branches-to-be-up-to-date-before-merging) |
+| `conditions_status_required` | A rule requires `CIHub Conditions (<branch>)`                                        | Remove it from the required checks                                              |
+| `target_branch_missing`      | The target branch no longer exists                                                   | Create the branch again, or stop using its queue                                |
+
+An empty list means sound rules. After a change of the rules, **Check again** on the page of the repository in the
+dashboard reads them at once.

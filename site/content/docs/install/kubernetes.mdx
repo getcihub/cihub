@@ -1,0 +1,173 @@
+---
+title: Run CIHub on Kubernetes
+description: Install CIHub on a Kubernetes cluster with its Helm chart, get a Postgres for it (CloudNativePG, a managed service or your own server), expose it, and update it.
+---
+
+The Helm chart installs a Job that applies the migrations at each install and upgrade, a Deployment of identical
+replicas, a Service, and, if you want, an Ingress or a Gateway API HTTPRoute.
+
+You need:
+
+- A Kubernetes cluster (1.25 or later) and Helm.
+- A Postgres 17: [the next section](#get-a-postgres) gives three ways.
+- The App of your CIHub and its keys: [Create the GitHub App](/docs/install/github-app).
+
+## Get a Postgres
+
+CIHub needs a database that it owns, through a role that is neither a superuser nor `BYPASSRLS`. CIHub isolates the
+organizations with the row level security of Postgres, which such a role ignores: CIHub refuses to start with one.
+You give CIHub the URL of the database in a Secret, under the key `uri`.
+
+<Tabs items={["CloudNativePG", "A managed Postgres", "Your own server"]}>
+<Tab value="CloudNativePG">
+
+With the [CloudNativePG](https://cloudnative-pg.io) operator in the cluster, one resource creates the database, its
+owner, which is not a superuser, and the Secret `cihub-db-app`, whose key `uri` holds the URL:
+
+```yaml title="cihub-db.yaml"
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cihub-db
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  bootstrap:
+    initdb:
+      database: cihub
+      owner: cihub
+  storage:
+    size: 10Gi
+```
+
+```sh
+kubectl apply -f cihub-db.yaml
+```
+
+The Secret of the database is `cihub-db-app`: you create none.
+
+</Tab>
+<Tab value="A managed Postgres">
+
+On Amazon RDS, Cloud SQL, Azure Database for PostgreSQL or another service, create a Postgres 17 with a database
+`cihub` and a user `cihub` that owns it, from the console of the service or your infrastructure code. Do not give
+CIHub the administrator of the instance.
+
+```sh
+kubectl create secret generic cihub-db-app \
+  --from-literal=uri='postgres://cihub:<password>@<host>:5432/cihub'
+```
+
+</Tab>
+<Tab value="Your own server">
+
+On a Postgres 17 that the cluster reaches, as a superuser:
+
+```sql
+CREATE ROLE cihub LOGIN PASSWORD '<password>';
+CREATE DATABASE cihub OWNER cihub;
+```
+
+```sh
+kubectl create secret generic cihub-db-app \
+  --from-literal=uri='postgres://cihub:<password>@<host>:5432/cihub'
+```
+
+</Tab>
+</Tabs>
+
+## Create the Secrets
+
+One Secret holds the keys of the App, and one the sealing key, at least 32 bytes, which seals the GitHub tokens of
+the people who sign in. With the two files of [`cihub app create`](/docs/install/github-app#create-the-app-with-one-command),
+in their directory:
+
+```sh
+set -a; . ./github-app.env; set +a
+kubectl create secret generic cihub-github \
+  --from-file=private-key.pem=github-app.private-key.pem \
+  --from-literal=webhook-secret="$CIHUB_GITHUB_WEBHOOK_SECRET" \
+  --from-literal=client-secret="$CIHUB_GITHUB_CLIENT_SECRET"
+kubectl create secret generic cihub-sealing \
+  --from-literal=secret="$(openssl rand -hex 32)"
+```
+
+With an App created by hand, set the four variables of `github-app.env` yourself, or write the values in the
+command. Keep the sealing key: a new one signs every person out.
+
+## Install the chart
+
+```sh
+helm install cihub oci://ghcr.io/getcihub/charts/cihub \
+  --set database.existingSecret=cihub-db-app \
+  --set database.secretExistingSecret=cihub-sealing \
+  --set github.existingSecret=cihub-github \
+  --set github.appId="$CIHUB_GITHUB_APP_ID" \
+  --set github.clientId="$CIHUB_GITHUB_CLIENT_ID" \
+  --set publicUrl=https://cihub.example.com \
+  --set replicas=2
+```
+
+- `publicUrl`, `github.clientId` and the client secret turn on the sign-in to the dashboard. Without them, only the
+  API tokens work.
+- Two replicas keep one that receives the webhooks while a pod or a node is lost. The replicas share the work through
+  Postgres; each one opens up to `database.poolSize` connections (10).
+- For a GitHub Enterprise Server, add `--set github.url=https://<your GitHub server>`.
+
+The migration Job runs first, then the pods start. Check them:
+
+```sh
+kubectl get pods -l app.kubernetes.io/instance=cihub
+helm test cihub
+```
+
+`helm test` posts an unsigned delivery to the Service: CIHub must refuse it.
+
+## Expose CIHub
+
+GitHub and the people reach CIHub on one address, with every path: the dashboard, `/api`, `/auth` and
+`/webhooks/github`. With an Ingress:
+
+```yaml title="values.yaml"
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: cihub.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - cihub.example.com
+      secretName: cihub-tls
+```
+
+Or with a Gateway: `httpRoute.enabled: true`, with `httpRoute.hostnames` and `httpRoute.parentRefs`.
+
+The dashboard keeps a stream open on `/api/v1/orgs/<org>/stream`: the proxy must not buffer it, and must keep it open
+past 15 seconds without data. Serve HTTP/2 to the browsers.
+
+Every value of the chart is in [`helm/cihub/README.md`](https://github.com/getcihub/cihub/blob/main/helm/cihub/README.md).
+
+## Create an API token
+
+Once the App is installed on your organization, a script or a CI that calls the API needs a token of the
+organization. The command prints it once:
+
+```sh
+kubectl exec deploy/cihub -- cihub-server token create --config /etc/cihub/server.yaml --org <login of the organization>
+```
+
+## Update CIHub
+
+```sh
+helm upgrade cihub oci://ghcr.io/getcihub/charts/cihub --reuse-values
+```
+
+The migration Job applies the migrations of the new version before the pods roll.
+
+## Next
+
+[Install the App on your repositories](/docs/install/github-app#install-the-app-on-your-repositories), then [merge
+your first pull request](/docs/install/first-pull-request).
