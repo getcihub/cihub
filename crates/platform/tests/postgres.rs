@@ -17,13 +17,14 @@ use cihub_platform::{
     delete_delivery, deliver_all, enqueue_job, fail_job, find_route, lock_queue, maintenance_job,
     pending_deliveries, record_budgets, record_sign_in, release_leases, repo_permission_now,
     request_installations_sync, request_installations_sync_at_start, request_maintenance,
-    request_member_syncs, request_repo_syncs, run_budget_writer, run_maintenance, run_router,
-    run_sync_installation, run_sync_installations, run_sync_members, run_sync_repos, run_sync_user,
-    run_worker, schedule_tick, store_delivery, sync_installation_executor, sync_installation_job,
-    sync_members_job, sync_repos_job, sync_user_job, token_of_person, until_next_tick,
+    request_member_syncs, request_repo_syncs, role_now, run_budget_writer, run_maintenance,
+    run_router, run_sync_installation, run_sync_installations, run_sync_members, run_sync_repos,
+    run_sync_user, run_worker, schedule_tick, store_delivery, sync_installation_executor,
+    sync_installation_job, sync_members_job, sync_repos_job, sync_user_job, token_of_person,
+    until_next_tick,
 };
 use cihub_scm::Scm;
-use cihub_scm::sim::Sim;
+use cihub_scm::sim::{Fault, Sim};
 use cihub_scm::{
     ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmInstallation,
     ScmMembership, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest, SignedIn,
@@ -2132,6 +2133,71 @@ async fn a_sign_in_gives_the_profile_and_the_members_give_the_avatar_only(pool: 
         profile_of(&pool, user_id).await.unwrap(),
         Some(profile("https://avatars.example.com/u/5?v=2"))
     );
+}
+
+/// SEC-7: the account is renamed on the SCM while `orgs.slug` keeps the old
+/// login, so the read of the role asks for a membership of a name that no
+/// longer exists.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_renamed_account_keeps_the_membership_of_its_members(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Admin);
+    let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
+    sim.add_installation("1", account("1", "org-renamed"), &[]);
+    let membership = memberships_of(&pool, user_id).await.unwrap().remove(0);
+
+    let role = role_now(
+        &pool,
+        &sim,
+        &cipher(),
+        user_id,
+        &membership,
+        at(0) + Duration::hours(2),
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(role, Access::Granted(Some(MembershipRole::Admin))));
+    assert_eq!(memberships_of(&pool, user_id).await.unwrap().len(), 1);
+}
+
+/// SEC-7: a refused read of the membership (single sign-on not authorized)
+/// does not tell that the person left.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_refused_read_of_the_role_keeps_the_membership(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let ada = person("5", "ada");
+
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_member("1", &ada, MembershipRole::Admin);
+    let user_id = signed_in_on(&pool, &sim, &ada, at(0)).await;
+    let membership = memberships_of(&pool, user_id).await.unwrap().remove(0);
+    sim.fail(Fault {
+        call: Some("person_role"),
+        error: ScmError::Forbidden("single sign-on not authorized".into()),
+        times: 1,
+    });
+
+    let role = role_now(
+        &pool,
+        &sim,
+        &cipher(),
+        user_id,
+        &membership,
+        at(0) + Duration::hours(2),
+    )
+    .await;
+
+    assert!(matches!(
+        role,
+        Err(PlatformError::Scm(ScmError::Forbidden(_)))
+    ));
+    assert_eq!(memberships_of(&pool, user_id).await.unwrap().len(), 1);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

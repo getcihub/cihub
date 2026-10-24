@@ -2046,7 +2046,10 @@ impl Scm for Sim {
             let role = state
                 .installations
                 .iter()
-                .filter(|(_, installation)| installation.account.external_id == account.external_id)
+                .filter(|(_, installation)| {
+                    installation.account.external_id == account.external_id
+                        && installation.account.path == account.path
+                })
                 .find_map(|(external_id, _)| {
                     state
                         .members
