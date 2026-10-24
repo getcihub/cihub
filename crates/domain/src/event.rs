@@ -36,7 +36,6 @@ pub enum EventKind {
         head_sha: String,
         priority: Priority,
         no_batch: bool,
-        direct: bool,
         submitted_via: SubmittedVia,
         author_id: UserId,
         additions: u64,
@@ -425,6 +424,27 @@ mod tests {
             serde_json::to_value(EventKind::AccessLost).unwrap()["type"],
             "access.lost"
         );
+    }
+
+    #[test]
+    fn a_stored_submission_with_the_removed_direct_field_still_reads() {
+        let kind = EventKind::ItemSubmitted {
+            pr_number: 7,
+            head_sha: "abc".into(),
+            priority: Priority::MEDIUM,
+            no_batch: false,
+            submitted_via: SubmittedVia::Comment,
+            author_id: UserId::from_ulid(ulid::Ulid(1)),
+            additions: 1,
+            deletions: 0,
+            changed_files: 1,
+            sender_permission: None,
+            profile: None,
+        };
+        let mut json = serde_json::to_value(&kind).unwrap();
+        json["payload"]["direct"] = true.into();
+
+        assert_eq!(serde_json::from_value::<EventKind>(json).unwrap(), kind);
     }
 
     #[test]

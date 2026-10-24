@@ -1046,7 +1046,6 @@ async fn request_submission(
         requested_by: Some(command.author.into()),
         priority: command.merge.priority,
         no_batch: command.merge.no_batch,
-        direct: command.merge.direct,
         profile: command.merge.profile.clone(),
         label: None,
         comment_id: command.comment_external_id.map(str::to_owned),

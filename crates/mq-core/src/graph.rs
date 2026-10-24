@@ -126,7 +126,6 @@ mod tests {
             priority,
             no_batch: false,
             profile: None,
-            force_enqueued: false,
             submitted_via: SubmittedVia::Api,
             position,
             is_current: true,

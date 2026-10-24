@@ -190,9 +190,8 @@ failure budget retry.
 
 ## Per-PR options and several branches
 
-Per-PR options are set at submission and stored on the item: priority, `no_batch`, `profile`, `direct`
-(admins, requires the sudo App). Named priorities are shortcuts for values (`urgent` 0, `high` 10,
-`medium` 100, `low` 200). A repository has one queue per target branch (`main`, `release/2.0`),
+Per-PR options are set at submission and stored on the item: priority, `no_batch`, `profile`. Named priorities are shortcuts for values
+(`urgent` 0, `high` 10, `medium` 100, `low` 200). A repository has one queue per target branch (`main`, `release/2.0`),
 each with its own settings; a PR enters the queue of its base branch, and a base branch change cancels
 the item with `pr_base_branch_changed`.
 

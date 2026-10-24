@@ -884,7 +884,6 @@ pub(super) async fn submit(
         requested_by: requester(&mut tx, &grant).await?,
         priority,
         no_batch: request.no_batch,
-        direct: request.direct,
         profile: request.profile,
         label: None,
         comment_id: None,
