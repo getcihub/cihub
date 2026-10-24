@@ -2296,8 +2296,8 @@ priority_rules:
 }
 
 /// A push that the routing gave to no queue, as the branch had none yet,
-/// waits while a merge of the queue of the branch is in flight, then asks it
-/// to read its head.
+/// waits while a merge of the queue of the branch is in flight, or while its
+/// success waits in the inbox, then asks it to read its head.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_push_without_a_queue_waits_for_a_merge_in_flight(pool: PgPool) {
     seed(&pool).await;
@@ -2374,6 +2374,33 @@ async fn a_push_without_a_queue_waits_for_a_merge_in_flight(pool: PgPool) {
     .execute(&mut *tx)
     .await
     .unwrap();
+    sqlx::query(
+        "INSERT INTO queue_inbox (id, org_id, queue_id, actor_kind, type, payload, received_at)
+         VALUES ('merged', $1, $2, 'bot', 'merge.succeeded', '{}', now())",
+    )
+    .bind(org().to_string())
+    .bind(queue().to_string())
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    tx.commit().await.unwrap();
+
+    cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        state(pool.clone()).await,
+        (1, 0),
+        "the push waits for the fact of the merge, which the job gave back before it ended"
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query("DELETE FROM queue_inbox")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
     tx.commit().await.unwrap();
 

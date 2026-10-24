@@ -4,7 +4,7 @@
 //! facts back through `queue_inbox`, so that a lost webhook is only a delay
 //! (principle V). `sync_queue` asks for every read at once.
 
-use cihub_domain::{Actor, EventKind, JobClass, QueueId, RunId, RunStatus};
+use cihub_domain::{Actor, EventKind, EventType, JobClass, QueueId, RunId, RunStatus};
 use cihub_mq_core::CheckRead;
 use cihub_platform::{Job, enqueue_job};
 use cihub_scm::Scm;
@@ -72,18 +72,23 @@ fn refresh_target_job(target: &QueueTarget, subject: &str, class: JobClass) -> J
     job(target, key, REFRESH_TARGET, class, json!({}))
 }
 
-/// A merge job of `queue` waits or runs: the push of its merge may come
-/// before its fact.
+/// A merge job of `queue` waits or runs, or its success waits in the inbox:
+/// the push of its merge may come before its fact. The job gives back its
+/// fact before it ends, so a reconciliation that read the inbox before that
+/// fact sees it here.
 pub(crate) async fn merge_in_flight(
     conn: &mut PgConnection,
     queue: QueueId,
 ) -> Result<bool, MergeQueueError> {
     sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM jobs
-                        WHERE queue_id = $1 AND type = $2 AND state IN ('queued', 'running'))",
+                        WHERE queue_id = $1 AND type = $2 AND state IN ('queued', 'running'))
+             OR EXISTS (SELECT 1 FROM queue_inbox
+                        WHERE queue_id = $1 AND type = $3::event_type)",
     )
     .bind(queue.to_string())
     .bind(MERGE_PR)
+    .bind(EventType::MergeSucceeded.as_str())
     .fetch_one(&mut *conn)
     .await
     .map_err(MergeQueueError::Query)
