@@ -202,7 +202,6 @@ impl World {
                 head_sha: head(pr_number, version),
                 priority,
                 no_batch,
-                direct: false,
                 submitted_via: SubmittedVia::Api,
                 author_id: UserId::from_ulid(Ulid(1)),
                 additions: 0,

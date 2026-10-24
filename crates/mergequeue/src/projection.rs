@@ -365,7 +365,6 @@ async fn refused_item(
         head_sha,
         priority,
         no_batch,
-        direct,
         submitted_via,
         profile,
         ..
@@ -386,7 +385,6 @@ async fn refused_item(
         priority,
         no_batch,
         profile,
-        force_enqueued: direct,
         submitted_via,
         position: None,
         is_current: false,
@@ -426,14 +424,14 @@ async fn create_item(
     let done = sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value,
-                                  no_batch, force_enqueued, submitted_by, submitted_via,
+                                  no_batch, submitted_by, submitted_via,
                                   submitted_at, block_reasons, is_current, sender_permission,
                                   profile, pr_url)
          SELECT $1, $2, $3, $4, $5, s.payload->>'author_id', $6::item_state, $7::reason, $8, $9,
-                $10, $11, s.actor_user_id, $12::submitted_via, s.occurred_at,
-                $13, $15, (s.payload->>'sender_permission')::permission, s.payload->>'profile', $16
+                $10, s.actor_user_id, $11::submitted_via, s.occurred_at,
+                $12, $14, (s.payload->>'sender_permission')::permission, s.payload->>'profile', $15
          FROM events s
-         WHERE s.queue_id = $3 AND s.id = $14 AND s.type = 'item.submitted'",
+         WHERE s.queue_id = $3 AND s.id = $13 AND s.type = 'item.submitted'",
     )
     .bind(item.id.to_string())
     .bind(event.org_id.to_string())
@@ -445,7 +443,6 @@ async fn create_item(
     .bind(event.occurred_at)
     .bind(i16::from(item.priority.0))
     .bind(item.no_batch)
-    .bind(item.force_enqueued)
     .bind(item.submitted_via.as_str())
     .bind(blocks)
     .bind(event.cause_id.map(|id| id.to_string()))

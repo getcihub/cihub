@@ -102,7 +102,6 @@ pub(crate) async fn run(out: &mut impl Write, args: QueueArgs) -> anyhow::Result
                 priority,
                 no_batch,
                 profile,
-                direct: false,
             };
             client.submit(repo, pr, &request).await?;
             writeln!(out, "#{pr} submitted")?;

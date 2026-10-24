@@ -27,13 +27,12 @@ pub(crate) enum PrCommand {
 }
 
 /// `/cihub merge [--priority=urgent|high|medium|low|0-255] [--no-batch]
-/// [--direct] [--profile=<name>]`.
+/// [--profile=<name>]`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Merge {
     /// `None` leaves the priority to the `priority_rules`.
     pub priority: Option<Priority>,
     pub no_batch: bool,
-    pub direct: bool,
     /// `None` leaves the profile to the `conditions` of the profiles.
     pub profile: Option<String>,
 }
@@ -61,8 +60,6 @@ fn parse_merge<'a>(words: impl Iterator<Item = &'a str>) -> Option<Merge> {
     for word in words {
         if word == "--no-batch" {
             merge.no_batch = true;
-        } else if word == "--direct" {
-            merge.direct = true;
         } else if let Some(name) = word.strip_prefix("--profile=") {
             if name.is_empty() {
                 return None;
@@ -232,11 +229,10 @@ mod tests {
         clippy::unnecessary_wraps,
         reason = "each case of the table compares an `Option`"
     )]
-    fn merge(priority: Option<Priority>, no_batch: bool, direct: bool) -> Option<PrCommand> {
+    fn merge(priority: Option<Priority>, no_batch: bool) -> Option<PrCommand> {
         Some(PrCommand::Merge(Merge {
             priority,
             no_batch,
-            direct,
             profile: None,
         }))
     }
@@ -244,15 +240,15 @@ mod tests {
     #[test]
     fn commands_and_their_options() {
         let cases = [
-            ("/cihub merge", merge(None, false, false)),
-            ("LGTM\n  /cihub merge --no-batch", merge(None, true, false)),
+            ("/cihub merge", merge(None, false)),
+            ("LGTM\n  /cihub merge --no-batch", merge(None, true)),
             (
-                "/cihub merge --priority=urgent --direct",
-                merge(Some(Priority::URGENT), false, true),
+                "/cihub merge --priority=urgent --no-batch",
+                merge(Some(Priority::URGENT), true),
             ),
             (
                 "/cihub merge --priority=42",
-                merge(Some(Priority(42)), false, false),
+                merge(Some(Priority(42)), false),
             ),
             (
                 "/cihub merge --profile=dependencies --no-batch",
@@ -267,6 +263,7 @@ mod tests {
             ("/cihub merge --priority=256", None),
             ("/cihub merge --priority=soon", None),
             ("/cihub merge --force", None),
+            ("/cihub merge --direct", None),
             ("/cihub cancel", Some(PrCommand::Cancel)),
             ("thanks\n/cihub restart", Some(PrCommand::Restart)),
             ("/cihub cancel now", None),

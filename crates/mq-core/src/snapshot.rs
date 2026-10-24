@@ -72,7 +72,6 @@ pub enum Request {
         head_sha: String,
         priority: Priority,
         no_batch: bool,
-        direct: bool,
         submitted_via: SubmittedVia,
         profile: Option<String>,
     },

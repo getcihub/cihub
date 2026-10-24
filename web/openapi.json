@@ -8881,10 +8881,6 @@
         "type": "object",
         "description": "`POST /orgs/{org}/repos/{repo}/prs/{number}/submit`.",
         "properties": {
-          "direct": {
-            "type": "boolean",
-            "description": "Merge the PR without a test of the queue; the person needs the\npermission `admin` on the repository."
-          },
           "no_batch": {
             "type": "boolean",
             "description": "Test the PR alone, never in a batch."

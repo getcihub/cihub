@@ -221,7 +221,6 @@ impl World {
                 head_sha: head(pr),
                 priority: Priority::MEDIUM,
                 no_batch: false,
-                direct: false,
                 submitted_via: SubmittedVia::Comment,
                 author_id: user(),
                 additions: 1,
@@ -4602,9 +4601,8 @@ async fn insert_item(conn: &mut PgConnection, item: &ItemFixture<'_>) {
     sqlx::query(
         "INSERT INTO queue_items (id, org_id, queue_id, pr_number, pr_head_sha, pr_author_id,
                                   state, state_reason, state_changed_at, priority_value, no_batch,
-                                  force_enqueued, submitted_via, submitted_at, block_reasons,
-                                  is_current)
-         VALUES ($1, $2, $3, $4, 'abc', $5, $6::item_state, 'submitted', $7, 100, false, false,
+                                  submitted_via, submitted_at, block_reasons, is_current)
+         VALUES ($1, $2, $3, $4, 'abc', $5, $6::item_state, 'submitted', $7, 100, false,
                  'api', $7, '[]', $8)",
     )
     .bind(id)
@@ -6578,7 +6576,8 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
     let config = "version: 1\nqueues:\n  - branch: main\n";
     let queue = "/orgs/acme/repos/app/queues/main";
     let pause = r#"{"state":"paused"}"#;
-    let direct = r#"{"direct":true}"#;
+    // A client of 0.3.0 still sends the removed `direct`: the field is ignored.
+    let submission = r#"{"direct":true}"#;
 
     target_repo(&q.sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
     q.deliver().await;
@@ -6596,7 +6595,7 @@ async fn a_session_acts_on_a_queue_in_the_name_of_its_user(pool: PgPool) {
         true,
         "POST",
         "/orgs/acme/repos/app/prs/1/submit",
-        direct,
+        submission,
     )
     .await;
 
