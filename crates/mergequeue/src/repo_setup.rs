@@ -170,7 +170,7 @@ pub(crate) async fn read_repo_setup(
 ) -> Result<(), Failure> {
     let ReadRepoSetup { repo_id } = read_payload(job)?;
     let org = job.org_id.ok_or_else(|| {
-        Failure::Never(format!("job {} has no organization", job.idempotency_key))
+        Failure::never(format!("job {} has no organization", job.idempotency_key))
     })?;
     let mut tx = begin_org(pool, org).await?;
     let target = RepoTarget::load(&mut tx, repo_id).await?;

@@ -213,7 +213,7 @@ async fn live_item(
         return Ok(None);
     };
 
-    let never = |text: String| Failure::Never(text);
+    let never = |text: String| Failure::never(text);
     Ok(Some((
         queue.parse().map_err(|_| never(format!("queue {queue}")))?,
         item.parse().map_err(|_| never(format!("item {item}")))?,
