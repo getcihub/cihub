@@ -1,0 +1,107 @@
+---
+title: Run your CI on the tests of the queue
+description: How CIHub starts your CI on each test of the queue, which checks the test waits for, and how to set up GitHub Actions or another CI.
+---
+
+CIHub never runs your CI. For each test, it pushes a commit, your CI tests it as it tests any commit, and the queue
+reads the checks that your CI reports on it. GitHub Actions, Buildkite, CircleCI, Jenkins: any CI that reports a check
+run or a commit status works.
+
+## What your CI receives
+
+<TestCommitDiagram />
+
+The test commit holds the head of the target branch, every pull request ahead in the line, and the pull requests of
+the test. It is on a branch named `cihub-merge/pr-<number>/<run id>`, which the queue deletes when the test ends.
+How your CI hears of it depends on `trigger` in `.cihub.yaml`:
+
+| `trigger`            | What CIHub does                                                                                                                 | What your CI must do                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `draft_pr` (default) | Opens a draft pull request from the test branch to the target branch, named `CIHub: test #12 on main`, and closes it at the end | Run on pull requests, drafts included          |
+| `push`               | Pushes the test branch, without a pull request                                                                                  | Run on pushes of the branches `cihub-merge/**` |
+
+Use `push` when a pull request starts things that a test does not need: preview deployments, bots that comment.
+To keep the test branches after the test, to look at them, set `keep_test_branches_minutes` (0 by default).
+
+## Which checks the test waits for
+
+The required checks of a test come, in this order:
+
+1. `required_statuses` in `.cihub.yaml`, read on the target branch, never on the pull request;
+2. else the required status checks of the rules of the target branch ([Protect the target
+   branch](/docs/branch-protection));
+3. plus the names of `merge_conditions.checks.success`, if any.
+
+```yaml
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
+version: 1
+defaults:
+  required_statuses:
+    - build
+    - test (ubuntu-latest)
+```
+
+- A name matches **exactly** the name that your CI reports: for GitHub Actions, the `name` of the job, or its id,
+  followed by the values of its matrix (`test (ubuntu-latest)`).
+- The test passes when every required check concludes `success`, `neutral` or `skipped`, and fails at the first other
+  conclusion.
+- A required check that never reports does not fail the test: the test times out after `testing_timeout_minutes`
+  (300 by default). A renamed job is the most common cause: the page of the pull request in the dashboard lists the
+  checks of its test, required or not, to compare their names.
+- With no required check at all, every test fails with "no required check is configured".
+
+## Set up GitHub Actions
+
+With `trigger: draft_pr`, a workflow that runs on `pull_request` runs on the tests of the queue without a change:
+
+```yaml
+on:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+```
+
+Check that no condition skips draft pull requests, such as `if: github.event.pull_request.draft == false` or
+`types: [ready_for_review]` alone. To skip a step on the tests of the queue, test the head branch:
+
+```yaml
+- name: Deploy a preview
+  if: ${{ !startsWith(github.head_ref, 'cihub-merge/') }}
+  run: make preview
+```
+
+With `trigger: push` in `.cihub.yaml`, add the test branches to the `push` event:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches:
+      - "cihub-merge/**"
+```
+
+## Set up another CI
+
+Buildkite, CircleCI, Jenkins and the others need only two things:
+
+- they build the test commit: with `trigger: draft_pr`, they build pull requests, drafts included; with
+  `trigger: push`, they build the pushed branches, and a filter of branches lets `cihub-merge/**` through;
+- they report their result on GitHub, as a check run or a commit status, under the names that the test requires.
+
+## Know which pull requests a job tests
+
+The name of the test branch ends with the identifier of its run: in GitHub Actions, `${GITHUB_HEAD_REF##*/}` with
+`trigger: draft_pr`, `${GITHUB_REF##*/}` with `trigger: push`. A job that needs the list of the tested pull
+requests reads the run from the API, with a token of the organization:
+
+```sh
+curl https://<your CIHub host>/api/v1/orgs/<owner>/repos/<repo>/runs/<run id> -H "Authorization: Bearer <token>"
+```
+
+The body of the draft pull request gives them too: the target and its commit, the pull requests tested, and the ones
+that they are tested on top of.

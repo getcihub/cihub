@@ -1,0 +1,77 @@
+---
+title: Troubleshooting
+description: What to check when a command gets no answer, when a pull request does not enter the queue, when its test does not start or never ends, or when the queue cannot merge it.
+---
+
+Start with the comment of CIHub on the pull request: its state line gives the reason, and its _History_ block lists
+every decision of the queue on the pull request. `cihub queue status <number>` and the page of the pull request in the
+dashboard give the same information.
+
+## A command gets no answer
+
+A command that the queue reads gets a 👍 reaction, or a comment that gives the cause of a refusal.
+
+| Symptom                          | Cause                                                                             | Fix                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| No reaction, no comment          | GitHub does not send the events of the repository to CIHub                        | Check that the App is installed on the repository, and the _Recent Deliveries_ of the App (_Advanced_ tab of its settings) |
+| No reaction, no comment          | `commands_enabled: false` in `.cihub.yaml`                                        | Turn the commands on, or submit through the command line or the dashboard                                                  |
+| "the queue refused this command" | The author lacks the `write` permission, or the pull request is closed or a draft | Read the cause in the comment                                                                                              |
+| `/cihub restart` is refused      | Only a pull request whose test runs or failed and waits can restart               | Submit the pull request again with `/cihub merge`                                                                          |
+
+## A pull request stays "Waiting"
+
+The comment gives the first thing that blocks it; [The life of a pull request in the
+queue](/docs/pull-requests#why-a-pull-request-waits-to-enter-the-line) lists them all.
+
+| The comment says                               | Cause                                                                                 | Fix                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| the required check `build` has not reported    | The CI does not run this check on the pull request, or under another name             | Compare the name of the required check with the name of the job                                        |
+| the branch is behind its base                  | The rules require that a pull request be up to date                                   | [Turn the rule off](/docs/branch-protection#turn-off-require-branches-to-be-up-to-date-before-merging) |
+| the queue conditions `…` are not met           | The `queue_conditions` of `.cihub.yaml`                                               | Meet them; the status `CIHub Conditions (<branch>)` says the same on every pull request                |
+| the SCM does not say yet why the PR is blocked | GitHub has not computed the mergeability yet, or a rule blocks that CIHub cannot name | Wait for the next read; if it stays, open the merge box of the pull request on GitHub                  |
+
+A pull request that waits 7 days is cancelled with "the PR waited too long to become ready"
+(`not_ready_timeout_hours`).
+
+## A test does not start
+
+| Symptom                                                                  | Cause                                                             | Fix                                                                                                                           |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| The pull request stays "Queued"                                          | The tests at the same time fill the window                        | Nothing: it starts when a test ends. See [Choose a strategy](/docs/strategies)                                                |
+| Nothing moves in the queue                                               | The queue is paused, or CIHub lost its access to the repository   | The page of the queue says why; `cihub queue resume`, or install the App again                                                |
+| Failed: branch protection refused the test branch                        | A ruleset covers `cihub-temp/…` or `cihub-merge/…`                | [Exclude the test branches](/docs/branch-protection#exclude-the-test-branches-from-your-other-rules)                          |
+| Failed: the repository does not allow draft PRs                          | The repository cannot have draft pull requests                    | `trigger: push`, and a CI that builds `cihub-merge/**` ([Run your CI](/docs/ci))                                              |
+| Failed: no required check is configured                                  | Neither the rules of the branch nor `.cihub.yaml` require a check | Add required checks to the rules of the branch, or `required_statuses` to `.cihub.yaml`                                       |
+| Failed: the configuration file is not valid                              | `.cihub.yaml` on the target branch has an error                   | The page of the queue shows the error; declare the [schema](/schema/config/v1.json) in the file so that your editor checks it |
+| Failed: the PR conflicts with the target branch or with a PR ahead of it | The pull request does not merge with what is ahead of it          | Merge the target branch into the pull request once the other one merged, then submit it again                                 |
+
+## A test never ends
+
+| Symptom                                               | Cause                                                              | Fix                                                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| No CI runs on the draft pull request `CIHub: test #…` | A workflow skips draft pull requests                               | Remove the condition on `draft`; see [Set up GitHub Actions](/docs/ci#set-up-github-actions)                       |
+| No CI runs on the test branch with `trigger: push`    | The CI does not build `cihub-merge/**`                             | Add the branches to its triggers or to its filter of branches                                                      |
+| The CI passes, but the test waits                     | A required check reports under another name, or never reports      | Compare the names; the test fails with "the tests took longer than the time limit" after `testing_timeout_minutes` |
+| Failed: the tests took longer than the time limit     | A required check did not conclude in time (300 minutes by default) | Fix the name of the check, or raise `testing_timeout_minutes`                                                      |
+
+## Tests that fail only in the queue
+
+| Symptom                                                                       | Cause                                                                                       | Fix                                                                                                     |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| The test fails, the CI of the pull request passed                             | The pull request breaks with a pull request ahead of it, or with a new commit of the target | This is what the queue is for: update the pull request on top of the target branch and fix it           |
+| A test fails, then passes when it runs again                                  | A flaky test                                                                                | The failure budget runs a failed test again once; raise `failure_budget.retries` while you fix the test |
+| Every test starts again: "a push outside the queue changed the target branch" | Someone pushed to the target branch                                                         | [Restrict the updates](/docs/branch-protection#restrict-the-updates-of-the-target-branch) of the branch |
+
+## The queue cannot merge
+
+| The comment says                                               | Cause                                                                                              | Fix                                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Failed: branch protection refused the merge                    | The rules of the branch require something that the pull request lacks, or do not let CIHub through | Check the rules; `app_not_exempt` in the [setup](/docs/branch-protection#check-the-setup)   |
+| Failed: the merge of the PR was refused                        | GitHub refused the merge, for example a merge method that the repository does not allow            | Allow the `merge_method` of the queue in _Settings → General → Pull Requests_, or change it |
+| Failed: the PR changed between its tests and its merge         | A push on the pull request after its test                                                          | Submit it again                                                                             |
+| Failed: the API rate limit did not reset in time for the merge | The installation of the App used its GitHub API budget                                             | Submit it again; check what else uses the App                                               |
+
+## Ask for help
+
+Open an issue on [GitHub](https://github.com/getcihub/cihub/issues) with the state line and the _History_ block of
+the comment of CIHub, and `cihub queue status <number>`.

@@ -1,0 +1,106 @@
+---
+title: Submit, cancel and restart a pull request
+description: Submit a pull request to the queue from a comment, a label, the checkbox of CIHub, the command line or the dashboard; give it a priority; cancel it or restart its tests; pause a queue.
+---
+
+A pull request enters the queue of its base branch. You do not create a queue: the first submission on the default
+branch of the repository, or on a branch that `.cihub.yaml` serves, creates it.
+
+## Who can run a command
+
+A command needs the `write` permission on the repository. The queue answers each command on the pull request:
+
+- a 👍 reaction on the comment when it accepts the command;
+- a comment that quotes the command and gives the cause when it refuses it:
+  `@octocat, the queue refused this command: <cause>`.
+
+The queue accepts a submission only for an open pull request that is not a draft.
+
+## Submit a pull request
+
+Any of these submits the pull request, with the same effect:
+
+| From                          | How                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| A comment on the pull request | `/cihub merge`                                                                                                                 |
+| The comment of CIHub          | Check the box of the welcome comment                                                                                           |
+| A label                       | Add the label `cihub-merge-queue-submit` (`label_commands.enqueue_label` in `.cihub.yaml`). Removing it cancels the submission |
+| The command line              | `cihub queue merge 123`, in a clone of the repository                                                                          |
+| The dashboard                 | **Submit a pull request** on the page of the queue                                                                             |
+| The API                       | `POST /api/v1/orgs/{org}/repos/{repo}/prs/{number}/submit`, with a token of the organization                                   |
+
+A submitted pull request first waits until it meets the rules of its branch and the `queue_conditions` of the queue
+([The life of a pull request in the queue](/docs/pull-requests)): you can submit it before its review or its checks
+end.
+
+## Give a pull request a priority
+
+```text
+/cihub merge --priority=urgent
+/cihub merge --priority=high --no-batch
+/cihub merge --profile=dependencies
+```
+
+| Option              | Effect                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `--priority=urgent` | Goes to the front of the queue, ahead of the tests that run, which start again behind it. For a fix that cannot wait                  |
+| `--priority=high`   | Goes behind the tests that run, ahead of every `medium` and `low` pull request                                                        |
+| `--priority=medium` | The default                                                                                                                           |
+| `--priority=low`    | Behind every other pull request                                                                                                       |
+| `--priority=0-255`  | A number: the smallest goes first. `urgent` is 0, `high` 10, `medium` 100, `low` 200. Only 0 interrupts the tests that run            |
+| `--no-batch`        | The pull request is tested alone, never in a batch                                                                                    |
+| `--profile=<name>`  | Takes the settings of a profile of the queue in `.cihub.yaml`, instead of the first profile whose `conditions` the pull request meets |
+
+Without `--priority`, the first rule of `priority_rules` in `.cihub.yaml` that the pull request meets gives its
+priority. The command line takes the same options: `cihub queue merge 123 -p urgent --no-batch`.
+
+## Cancel a submission
+
+```text
+/cihub cancel
+```
+
+Or `cihub queue cancel 123`, the dashboard, or the removal of the submission label. The pull request leaves the queue;
+the pull requests behind it are tested again without it.
+
+## Restart the tests of a pull request
+
+```text
+/cihub restart
+```
+
+Or `cihub queue restart 123`. It applies to a pull request whose test runs or failed and waits
+(`testing`, `pending_failure`): the queue runs its test again, for example after a fix of the CI. A pull request that
+left the queue needs a new submission instead.
+
+## Pause, drain and resume a queue
+
+| Command              | Effect                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `cihub queue pause`  | No new test and no merge. The queue keeps its order, and a submission waits for the resume. For an incident of the CI   |
+| `cihub queue drain`  | The pull requests in the queue finish; a new submission is cancelled with "the queue is draining and accepts no new PR" |
+| `cihub queue resume` | The queue tests and merges again                                                                                        |
+
+The dashboard has the same actions on the page of the queue, and shows who paused it. These commands act on the
+queue of the default branch; add `--branch release/2.0` for another one.
+
+## Follow the queue from the command line
+
+```sh
+cihub queue status        # the queue of the default branch
+cihub queue status 123    # one pull request: its state, its reason, its position
+cihub queue graph         # the pull requests in the queue, and what each one is tested on top of
+```
+
+Every `cihub queue` command finds the repository from the `origin` remote of git; `--repo acme/web` names another
+one. [Install the command line](/docs/install/cli), then sign in with `cihub auth login`.
+
+## Turn off a way to submit
+
+In `.cihub.yaml`, on a queue or in `defaults`:
+
+```yaml
+commands_enabled: false # the comment commands and the checkbox
+label_commands:
+  enabled: false # the submission label
+```

@@ -1,0 +1,62 @@
+---
+title: Install the command line
+description: Install cihub, the command line of CIHub, on Linux or macOS, to create the GitHub App of an instance and to drive its queues from a terminal or a CI.
+---
+
+`cihub` is one binary. It creates the GitHub App of an instance (`cihub app create`), signs in to an instance
+(`cihub auth login`) and drives its queues (`cihub queue …`).
+
+<Callout title="From the release after 0.2.1">
+  Each release attaches the binaries below from the next release of CIHub. Until then, build `cihub` with
+  Cargo, as in the last tab.
+</Callout>
+
+<Tabs items={["Linux x86_64", "Linux arm64", "macOS (Apple silicon)", "From the sources"]}>
+<Tab value="Linux x86_64">
+
+```sh
+curl -fsSL https://github.com/getcihub/cihub/releases/latest/download/cihub-x86_64-unknown-linux-musl.tar.gz | tar -xz
+sudo install cihub /usr/local/bin/
+```
+
+</Tab>
+<Tab value="Linux arm64">
+
+```sh
+curl -fsSL https://github.com/getcihub/cihub/releases/latest/download/cihub-aarch64-unknown-linux-musl.tar.gz | tar -xz
+sudo install cihub /usr/local/bin/
+```
+
+</Tab>
+<Tab value="macOS (Apple silicon)">
+
+```sh
+curl -fsSL https://github.com/getcihub/cihub/releases/latest/download/cihub-aarch64-apple-darwin.tar.gz | tar -xz
+sudo install cihub /usr/local/bin/
+```
+
+</Tab>
+<Tab value="From the sources">
+
+With Rust installed, on any platform:
+
+```sh
+cargo install --locked --git https://github.com/getcihub/cihub cihub-cli
+```
+
+</Tab>
+</Tabs>
+
+Check it:
+
+```sh
+cihub --version
+```
+
+The Linux binaries are static: they run on any distribution. Each archive has its SHA-256 checksum next to it on the
+page of the release, `cihub-<target>.tar.gz.sha256`.
+
+## Next
+
+- [Create the GitHub App](/docs/install/github-app#create-the-app-with-one-command) with `cihub app create`.
+- [Sign in to an instance](/docs/install/first-pull-request#follow-the-queue) with `cihub auth login`.

@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
 version: 1
 queues:
   - branch: main

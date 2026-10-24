@@ -1,0 +1,115 @@
+---
+title: The life of a pull request in the queue
+description: The states of a pull request in a CIHub queue, what moves it from one state to the next, and what CIHub shows on GitHub at each step.
+---
+
+A pull request enters the queue of its base branch when someone submits it ([Submit, cancel and restart a pull
+request](/docs/commands)). From there, CIHub tells it where it stands on the pull request itself: you never need to
+open the dashboard to know why a pull request waits.
+
+## What CIHub writes on a pull request
+
+<PrCommentPreview />
+
+| Where                                            | What it says                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One comment, edited in place                     | The state and its reason, what blocks the pull request, the failing checks, the pull requests it is tested with, a link to its test (the draft pull request of the run, or the test commit), a link to its page in the dashboard, its history in the queue, and the commands that apply now |
+| The commit status `CIHub Merge Queue (<branch>)` | `pending` while the pull request waits or is tested, `success` once its tests passed, `failure` when it failed, `error` when it was cancelled. Its link opens the page of the pull request in the dashboard                                                                                 |
+| The commit status `CIHub Conditions (<branch>)`  | On every open pull request of a branch with a queue, submitted or not: whether it would enter the queue now. `success` reads "Ready for the queue"; `pending` means that a required check still runs; `failure` gives the first reason                                                      |
+| Labels, if you turn them on                      | `cihub:queued`, `cihub:testing` and `cihub:failed`, with `state_labels_enabled: true` in `.cihub.yaml`                                                                                                                                                                                      |
+
+When a pull request is opened out of draft on a branch with a queue, the comment welcomes it with a checkbox that
+submits it. Do not make `CIHub Conditions (<branch>)` a required check: a pull request whose conditions pass would
+then merge outside the queue.
+
+## The states of a pull request
+
+The comment shows a state line; the API, the command line and the webhooks use the code of the state.
+
+<StatesDiagram />
+
+| State             | The comment shows                                               | What happens                                                                                            |
+| ----------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `not_ready`       | ⏳ **Waiting** · not in the queue for `main` yet                | Submitted, but it cannot enter the line yet: a review, a check or a condition is missing                |
+| `pending`         | 🕓 **Queued** · position 3 in the queue for `main`              | In the line, it waits for room among the tests that run                                                 |
+| `testing`         | 🧪 **Testing** · position 2 in the queue for `main`             | Its test runs, alone or in a batch, on top of the target branch and of every pull request ahead of it   |
+| `pending_failure` | ⚠️ **Tests failed** · waiting for the PRs ahead before it fails | Its test failed; the queue waits for the pull requests ahead of it to know whether the cause is its own |
+| `tests_passed`    | 🚀 **Tests passed** · merging into `main`                       | Its test passed; it merges as soon as the pull requests ahead of it merged                              |
+| `merged`          | ✅ **Merged** into `main` by the queue                          | The queue merged it, as its own commit, with the `merge_method` of the queue                            |
+| `failed`          | ❌ **Failed** · _the reason_                                    | It left the queue; submit it again after a fix                                                          |
+| `cancelled`       | ⚪ **Cancelled** · _the reason_                                 | It left the queue without a fault of its tests                                                          |
+
+The status `CIHub Merge Queue (<branch>)` says the same in short: "Testing, position 2", "Failed: a required check
+failed".
+
+`merged`, `failed` and `cancelled` are final: a pull request that left the queue enters it again only with a new
+submission.
+
+## Why a pull request waits to enter the line
+
+A submitted pull request stays `not_ready` while GitHub would refuse to merge it, or while it does not meet the
+`queue_conditions` of the queue. The comment says what is missing:
+
+| The comment says                                    | What to do                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 1 of 2 required approvals                           | Get the reviews that the rules of the branch require                                                         |
+| a review asks for changes                           | Address the review, then ask for a new one                                                                   |
+| the required check `build` failed                   | Fix the pull request; the check runs again on its new commit                                                 |
+| the required check `build` has not reported         | The check never ran on this commit: see [Run your CI on the tests of the queue](/docs/ci)                    |
+| the required check `build` is queued, or is running | Nothing: the pull request enters the line when the check passes                                              |
+| the branch is behind its base                       | The rules of the branch ask that a pull request be up to date: [turn that rule off](/docs/branch-protection) |
+| the branch conflicts with its base                  | Merge or rebase the base branch into the pull request                                                        |
+| the queue conditions `labels: ready` are not met    | Meet the `queue_conditions` of `.cihub.yaml`                                                                 |
+| the SCM does not say yet why the PR is blocked      | Nothing: GitHub computes the mergeability later, and CIHub reads it again                                    |
+
+The conditions count only before the pull request enters the line: a condition that becomes false later does not
+take it out. A pull request that stays `not_ready` for 7 days (`not_ready_timeout_hours: 168`) is cancelled.
+
+## How the test of a pull request decides
+
+CIHub never merges what it did not test. For each test, it builds a commit that holds the head of the target branch,
+every pull request ahead in the line, and the pull requests of the test, on a branch named
+`cihub-merge/pr-<number>/<run id>`. Your CI tests that commit ([Run your CI on the tests of the
+queue](/docs/ci)).
+
+<TestCommitDiagram />
+
+- The test **passes** when every required check concludes with `success`, `neutral` or `skipped`.
+- The test **fails** at the first required check that concludes otherwise.
+- The test **times out** after `testing_timeout_minutes` (300 by default), for example when a required check never
+  reports.
+
+When a test fails, the pull request moves to `pending_failure` and the queue waits for the pull requests ahead of
+it. If one of them fails, the cause was there: the pull request is tested again without it. If they all merge, the
+fault is the pull request's own: the queue first runs its test again, once by default (`failure_budget.retries`),
+because one failure can be a flaky test. A failed batch is split in two to find the pull request that broke it
+([Choose a strategy](/docs/strategies)).
+
+## What tests a pull request again
+
+A test is valid only while the commit that it tested is still the one that would land. The queue starts the test
+of a pull request again, and the comment gives the reason, when:
+
+- a push outside the queue changed the target branch;
+- a PR ahead in the queue failed, was cancelled, or was merged outside the queue;
+- a PR of the same batch left the queue;
+- an urgent PR went to the front of the queue;
+- a user restarted the tests (`/cihub restart`).
+
+## What takes a pull request out of the queue
+
+| The status says                                                          | Cause                                                                                                        |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| Cancelled: the PR received a new commit after its submission             | A push on the pull request. With `resubmit_on_push: true`, the queue submits it again at the end of the line |
+| Cancelled: the base branch of the PR changed                             | The pull request now targets another branch, which has its own queue                                         |
+| Cancelled: the PR became a draft                                         | Mark it ready for review, then submit it again                                                               |
+| Cancelled: the PR was closed                                             | Reopen it, then submit it again                                                                              |
+| Cancelled: the label that submitted the PR was removed                   | The submission label was removed                                                                             |
+| Cancelled: a user asked for it                                           | `/cihub cancel`, the command line or the dashboard                                                           |
+| Failed: a required check failed                                          | The test failed after its retries, and the pull requests ahead of it merged                                  |
+| Failed: the PR conflicts with the target branch or with a PR ahead of it | Update the pull request once the other one merged                                                            |
+| Failed: the tests took longer than the time limit                        | See [Troubleshooting](/docs/troubleshooting)                                                                 |
+| Failed: branch protection refused the merge                              | See [Troubleshooting](/docs/troubleshooting)                                                                 |
+| Failed: the PR changed between its tests and its merge                   | A push between the test and the merge; submit it again                                                       |
+
+The full list of reasons, with their codes, is the `Reason` schema of the [API](/openapi/v1.json).

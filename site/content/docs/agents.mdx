@@ -1,0 +1,40 @@
+---
+title: Use CIHub with a coding agent
+description: The files and URLs that let a coding agent read the CIHub documentation, write a valid .cihub.yaml and call the API of an instance.
+---
+
+Every page of this site is written for people and for agents. An agent finds here the same information as a
+person, in Markdown.
+
+## Read the documentation as Markdown
+
+| URL                                         | Content                                          |
+| ------------------------------------------- | ------------------------------------------------ |
+| `https://cihub.io/llms.txt`                 | The index of the site, with a link to every page |
+| `https://cihub.io/llms-full.txt`            | Every page of the documentation in one file      |
+| `https://cihub.io/docs/install.md`          | One page as Markdown: its URL with `.md`         |
+| `https://cihub.io/docs/install` with header | The same Markdown, with `Accept: text/markdown`  |
+
+```sh
+curl https://cihub.io/docs/install.md
+curl -H 'Accept: text/markdown' https://cihub.io/docs/install
+```
+
+## Write a valid `.cihub.yaml`
+
+The JSON Schema of the file is at `https://cihub.io/schema/config/v1.json`. Declare it on the first line of the
+file, so that an editor completes and checks each key:
+
+```yaml
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
+version: 1
+```
+
+An agent that writes the file validates it against the schema before it proposes the change. [Write your .cihub.yaml](/docs/configuration#write-it-with-an-assistant) has a prompt that asks the right
+questions first.
+
+## Call the API of an instance
+
+The OpenAPI document of the API v1 is at `https://cihub.io/openapi/v1.json`. Each instance serves the same
+document at `https://<your CIHub host>/api/v1/openapi.json`: cihub.io hosts no API. A request sends a token of
+the organization in `Authorization: Bearer <token>`.

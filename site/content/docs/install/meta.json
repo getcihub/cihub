@@ -1,0 +1,4 @@
+{
+  "title": "Install CIHub",
+  "pages": ["github-app", "docker", "kubernetes", "first-pull-request", "cli"]
+}

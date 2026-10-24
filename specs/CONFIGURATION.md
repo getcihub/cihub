@@ -29,7 +29,7 @@ queue whose `conditions` the PR satisfies gives its settings, unless the command
 below).
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
 version: 1
 queues:
   - branch: main
@@ -266,16 +266,18 @@ description for each key: an editor or an agent completes and checks the file wi
 its first line, as the example above; `v1` is the `version: 1` of the file:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
 ```
 
 The schema is written by hand, and `crates/config/tests/schema.rs` keeps it equal to the code: the keys of
 each level and the values of each closed setting are those that the parser accepts, the range of each integer
 setting is the one that it checks, the attributes, the operators of each attribute and the values of each
 closed choice are those of `cihub-conditions`, and every key has a description. A key, a value, a range, an
-attribute or an operator that the code adds or removes thus fails a test until the schema follows. The URL of
-`main` is the one of the documentation; a file that the dashboard writes will declare the URL of the tag of
-its instance (`…/cihub/<tag>/schema/config/v1.json`), whose keys are those that this instance accepts.
+attribute or an operator that the code adds or removes thus fails a test until the schema follows. The site
+(`site/`) publishes the schema of `main` at `https://cihub.io/schema/config/v1.json`, the URL of the
+documentation, a copy that its build makes; a file that the dashboard writes will declare the URL of the tag
+of its instance on GitHub (`…/cihub/<tag>/schema/config/v1.json`), whose keys are those that this instance
+accepts.
 
 **Not yet.** A `cihub config check` command that gives the errors of the server, for a person and for an
 agent, and an entry in SchemaStore, so that an editor finds the schema without the first line.

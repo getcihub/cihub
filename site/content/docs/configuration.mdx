@@ -1,0 +1,230 @@
+---
+title: Write your .cihub.yaml
+description: Change the behavior of a queue or add queues with the .cihub.yaml file of the repository; write it by hand with the JSON Schema, or with an assistant.
+---
+
+A queue works without a file: the first `/cihub merge` on the default branch creates its queue with the default
+settings. `.cihub.yaml`, at the root of the repository, changes the behavior of a queue, adds queues on other
+branches, and sets who goes first.
+
+CIHub reads the file on the head of the target branch, never on a pull request: a pull request cannot loosen its own
+gate. A change of the file applies once it merges. The file can also be `.cihub.yml`, `.cihub/config.yaml` or
+`.cihub/config.yml`, but only one of them: with two, the configuration is in error.
+
+## Start the file
+
+The first line declares the [JSON Schema](/schema/config/v1.json): your editor then completes each key and shows an
+error before you commit.
+
+```yaml title=".cihub.yaml"
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
+version: 1
+```
+
+Editors with a YAML language server, such as VS Code with its YAML extension, read this line.
+
+## A complete example
+
+```yaml title=".cihub.yaml"
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
+version: 1
+
+# Settings and conditions of every queue, unless a queue sets its own.
+defaults:
+  queue_conditions:
+    draft: false
+    labels:
+      none:
+        - do-not-merge
+
+queues:
+  - branch: main
+    strategy: batched
+    batching:
+      size: 3
+      max_wait_minutes: 1
+    # The checks that the test of the queue must pass, in addition to those of the rules of the branch.
+    merge_conditions:
+      checks:
+        success:
+          - Build Success
+    # A kind of pull request with its own settings, in the same queue.
+    profiles:
+      - name: dependencies
+        conditions:
+          author: renovate[bot]
+        batching:
+          size: 10
+
+  # Each release branch gets its own queue.
+  - branch: release/*
+    strategy: sequential
+
+# The first rule that a pull request meets gives its priority; /cihub merge --priority wins.
+priority_rules:
+  - name: hotfixes
+    conditions:
+      labels:
+        - hotfix
+    priority: urgent
+  - name: dependencies
+    conditions:
+      author: renovate[bot]
+    priority: low
+```
+
+| Key                | What it does                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `queues`           | One entry per branch, or per glob of branches (`release/*`): each branch that it matches has its own queue |
+| `strategy`         | How the queue tests the pull requests: [Choose a strategy](/docs/strategies)                               |
+| `queue_conditions` | What a pull request must meet to enter the line, in addition to the rules of the branch                    |
+| `merge_conditions` | The checks that the test commit must pass, in addition to the required checks                              |
+| `profiles`         | The settings of a kind of pull request in the same queue, such as the updates of dependencies              |
+| `priority_rules`   | Who goes first: `urgent`, `high`, `medium`, `low`, or 0 to 255                                             |
+| `defaults`         | The settings and the conditions of every queue that does not set its own                                   |
+
+## Write conditions
+
+A condition is a YAML map: the key is an attribute of the pull request, and every key must hold.
+
+```yaml
+queue_conditions:
+  draft: false # a boolean
+  base: main # a value, or a list of values (one of them)
+  labels:
+    none: # a list: all, any, none, or count
+      - do-not-merge
+  files:
+    none_match: # globs
+      - "migrations/**"
+  approved_reviews_by:
+    count:
+      min: 2
+  checks:
+    success:
+      - build
+```
+
+`any:`, `all:` and `none:` take a list of maps. The attributes cover the state of the pull request (`draft`,
+`conflict`, `from_fork`, `behind_base`), its reviews, its checks, its labels, its author, its files and its size, its
+base and its head, and its position and age in the queue. The reference of every attribute is in
+[`specs/CONFIGURATION.md`](https://github.com/getcihub/cihub/blob/main/specs/CONFIGURATION.md#conditions).
+
+When a submitted pull request does not meet a condition, its comment names it: "the queue conditions `labels: ready`
+are not met".
+
+## Check the file
+
+- The schema line makes your editor check each key and each value.
+- An unknown key, a value out of range or two queues on one branch is an error, with its line.
+- The page of the queue in the dashboard shows the error of the file on the target branch. Until you fix it, the
+  queue keeps the last valid file; a test that needs the file fails with "the configuration file is not valid".
+
+## Write it with an assistant
+
+An assistant writes a valid file if it knows the rules of the file. Copy this prompt into it: it asks you the right
+questions first, then writes the file and explains each choice.
+
+<Accordions>
+<Accordion title="The prompt for an assistant">
+
+```text title="Prompt"
+Help me write the .cihub.yaml file of CIHub, a merge queue for GitHub. Ask me
+questions first, one at a time: which branches need a queue, how long my CI
+takes and how often it fails, which checks are required, which labels or
+reviews must block a merge, and which pull requests must go first.
+
+Then write the file, with only the keys below, and explain each choice.
+
+Rules of the file (version 1):
+- Its first line declares the schema, for the editor:
+  `# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json`.
+- It starts with `version: 1`. Top-level keys: `queues` (a list),
+  `priority_rules` (a list) and `defaults` (any queue setting and the
+  conditions, without `branch` or `profiles`). An unknown key is an error.
+- Each queue has a `branch`, unique in the file: a branch has one queue, and
+  a pull request goes to the queue of its base branch. A `branch` can be a
+  glob (`release/*`): each branch that it matches gets its own queue, and an
+  entry that names a branch wins over a glob. For an urgent pull request,
+  use `priority_rules`, not a second queue.
+- If the file has no queue for the default branch, that branch still has
+  one. Other branches have a queue only with an entry.
+- YAML anchors (`&name`, `*name`) and merge keys (`<<: *name`) work, to
+  write a map of conditions or a set of settings once.
+- `strategy`: `sequential` (one test at a time), `pipelined` (default: tests
+  in parallel, each on top of the ones ahead) or `batched` (`pipelined` with
+  several pull requests per test; a failed batch is split to find the
+  cause). Do not use `parallel`: it is not ready yet.
+- `batching: { enabled, size: 2-20, max_wait_minutes: 1-60 }`: on with
+  `batched` (size 4, wait 5 by default), off otherwise.
+- `merge_method`: `squash` (default), `merge_commit`, `rebase`, or
+  `fast_forward` (only with `strategy: sequential`).
+- `trigger`: `draft_pr` (default: a draft pull request runs the CI of each
+  test) or `push` (the push of the test branch runs it).
+- `window: { floor: 1-100, ceiling: 1-100 }`, floor <= ceiling (default 2 /
+  20, 1 / 1 with `sequential`), or `testing_concurrency: 1-100` instead.
+- `failure_budget: { retries: 0-10 }` (default 1): retries before a pull
+  request fails.
+- `testing_timeout_minutes` (10-1440, default 300), `not_ready_timeout_hours`
+  (1-720, default 168), `keep_test_branches_minutes` (0-1440, default 0).
+- `merge_commit_title`: `pr_title` (default) or `pr_title_and_number`.
+- Booleans: `comments_enabled`, `commands_enabled`, `status_check_enabled`
+  (default true), `state_labels_enabled`, `resubmit_on_push` (default false).
+- `label_commands: { enabled: true, enqueue_label: <label> }`: a label that
+  submits the pull request (default `cihub-merge-queue-submit`).
+- `direct_merge_mode`: `always` (default: when no test runs, merge the first
+  pull request without a test branch if it contains the head of the target
+  branch and its checks are green) or `off`.
+- `branch_protection_injection`: `both` (default), `merge` or `none`: whether
+  the checks required by the branch rules also count before admission and on
+  the test commit.
+- `required_statuses`: a list of check names for the test commit; without
+  the key, they come from the branch rules. With no required check at all,
+  every test fails.
+- `queue_conditions`: what a pull request must meet to enter the queue.
+  `merge_conditions`: only `checks`, then `success`, then a list of check
+  names, which adds required checks on the test commit. Those of `defaults` come first, and
+  each queue adds its own.
+- `profiles` (in a queue): a list of `{ name, conditions, merge_method,
+  merge_commit_title, batching, failure_budget }` for a kind of pull request
+  in the same queue, such as dependency updates. The first profile whose
+  `conditions` match, read once at the submission, gives these settings;
+  `/cihub merge --profile=<name>` names one. A batch holds one profile.
+  A profile cannot set `fast_forward`, nor the settings of the whole queue.
+- `priority_rules`: a list of `{ name, conditions, priority }`, where priority
+  is `urgent` (0), `high` (10), `medium` (100, default), `low` (200) or 0-255;
+  a lower number goes first; the first rule that matches wins.
+
+Conditions are a YAML map, in the block style: the key is an attribute, the
+value is typed, and every key must hold. A boolean takes `true` or `false`
+(`draft: false`). A string takes a value or a list (one of them), or `not`
+(none of them), `matches` (globs) or `regex`. A list takes a list of values
+(all of them), or `all`, `any`, `none`, `any_match`, `all_match`,
+`none_match` (globs) or `count` (a number, or `min` and `max`). A number or
+a duration takes a value (equal), or `min` and `max` (inclusive). The checks
+are under one `checks` map: `success`, `neutral`, `skipped`, `failure`,
+`pending`. `all:`, `any:` and `none:` take a list of maps. Attributes:
+draft, conflict, from_fork, behind_base, number, title, body,
+review_decision (approved, changes_requested, review_required, none),
+approved_reviews_by, changes_requested_reviews_by, review_requested,
+review_threads_unresolved, checks, labels, author, sender, sender_permission
+(none < read < write < admin; takes `min`, `max`), files, additions,
+deletions, base, head, queue_position, queue_age, pr_age. Durations are
+`<n>m`, `<n>h` or `<n>d`. Only `true` and `false` are booleans. Quote a value
+that starts with `*`. For example:
+
+    queue_conditions:
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - build
+```
+
+</Accordion>
+</Accordions>
+
+A coding agent reads the same rules from the schema and from this site in Markdown: [Use CIHub with a coding
+agent](/docs/agents).

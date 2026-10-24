@@ -1,0 +1,118 @@
+---
+title: Choose a strategy
+description: Sequential, pipelined or batched, how the queue tests the pull requests, and which strategy fits the length of your CI and the number of pull requests a day.
+---
+
+The strategy is the first setting of a queue: it sets the others to values that go together. Without
+`.cihub.yaml`, a queue is `pipelined`.
+
+```yaml
+# yaml-language-server: $schema=https://cihub.io/schema/config/v1.json
+version: 1
+queues:
+  - branch: main
+    strategy: batched
+```
+
+## What every strategy shares
+
+- A pull request is tested on top of the target branch and of every pull request ahead of it, and merges only if
+  that test passes.
+- A failed test runs once more before the pull request fails (`failure_budget.retries: 1`).
+- The first pull request merges without a test branch when no test runs, it already contains the head of the target
+  branch, and its required checks passed on its own head (`direct_merge_mode: always`). Its CI already tested what
+  lands. `direct_merge_mode: off` tests every pull request in the queue.
+
+## Compare the strategies
+
+<StrategiesDiagram />
+
+| `strategy`            | Tests at the same time       | Pull requests per test | For                                             |
+| --------------------- | ---------------------------- | ---------------------- | ----------------------------------------------- |
+| `sequential`          | 1                            | 1                      | Few pull requests, a short CI                   |
+| `pipelined` (default) | 2, up to 20 while tests pass | 1                      | Most repositories                               |
+| `batched`             | 2, up to 20 while tests pass | up to 4                | A long or costly CI, many pull requests an hour |
+
+The `parallel` strategy, independent lines for the parts of a monorepo, is not ready yet.
+
+## sequential: one test at a time
+
+The queue tests one pull request, merges it, then tests the next one. It is the easiest to follow, and the slowest:
+with a CI of 20 minutes, the queue merges about 3 pull requests an hour.
+
+Only this strategy allows `merge_method: fast_forward`: the target branch moves to the commit that the CI tested,
+without a new merge commit, so that what lands is exactly what passed.
+
+## pipelined: test ahead of the merges
+
+The queue tests several pull requests at the same time, each one on top of the ones ahead of it:
+
+| Test | Holds                 |
+| ---- | --------------------- |
+| #1   | `main` + #1           |
+| #2   | `main` + #1 + #2      |
+| #3   | `main` + #1 + #2 + #3 |
+
+When the three tests pass, the three pull requests merge one after the other, with no new test. If #1 fails, the
+tests of #2 and #3 start again without it.
+
+The number of tests at the same time, the window, adapts to the health of the queue. It starts at 2
+(`window.floor`), grows by one at each test that passes, up to 20 (`window.ceiling`), and halves at each failure
+that the failure budget confirms: a queue hit by flaky tests stops spending CI on tests that will run again.
+`testing_concurrency: 4` sets a fixed window.
+
+## batched: several pull requests per test
+
+The queue tests up to 4 pull requests in one test, on top of the batches ahead of it. A batch starts when it is full,
+or when its oldest pull request waited 5 minutes. Each pull request of a batch still merges as its own commit.
+
+<BisectionDiagram />
+
+When a batch fails, the queue splits it in two halves and tests them at the same time, then splits the half that
+fails, until it finds the cause: 8 pull requests with one culprit take 3 rounds of tests. A pull request is never
+removed from the queue by a failure that the queue inferred: it is removed only after a test of its own.
+
+This strategy also merges a pull request whose test failed when a test behind it, which includes it, passes: one
+flaky failure does not remove a pull request.
+
+| Setting                     | Default with `batched` | Range |
+| --------------------------- | ---------------------- | ----- |
+| `batching.size`             | 4                      | 2–20  |
+| `batching.max_wait_minutes` | 5                      | 1–60  |
+
+A pull request submitted with `--no-batch` is tested alone ([Submit, cancel and restart a pull
+request](/docs/commands)).
+
+## Adjust a strategy
+
+A setting of `.cihub.yaml` wins over the value of the strategy.
+
+```yaml
+queues:
+  - branch: main
+    strategy: pipelined
+    window:
+      floor: 2
+      ceiling: 8 # no more than 8 tests at the same time, to spare the runners
+    failure_budget:
+      retries: 2 # a CI with flaky tests
+    testing_timeout_minutes: 60
+```
+
+A kind of pull request can have its own settings in the same queue, with a profile: for example, larger batches for
+the updates of dependencies.
+
+```yaml
+queues:
+  - branch: main
+    strategy: batched
+    profiles:
+      - name: dependencies
+        conditions:
+          author: renovate[bot]
+        batching:
+          size: 10
+```
+
+The reference of every setting is
+[`specs/CONFIGURATION.md`](https://github.com/getcihub/cihub/blob/main/specs/CONFIGURATION.md).
