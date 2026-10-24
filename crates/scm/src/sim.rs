@@ -1059,12 +1059,14 @@ impl Ctx<'_> {
 
         let base_branch = pr.base_branch.clone();
         let is_ready_for_review = pr.state == PrState::Open && !pr.draft;
+        let state = pr.state;
         self.emit(ScmEvent::PrChanged {
             repo_external_id: self.repo_external_id.clone(),
             number,
             base_branch,
             label_added,
             is_ready_for_review,
+            state,
         });
     }
 
@@ -1753,25 +1755,50 @@ impl Scm for Sim {
         })
     }
 
-    fn open_draft_pr<'a>(
+    fn open_pr<'a>(
         &'a self,
         repo: &'a RepoRef,
         head: &'a str,
         base: &'a str,
         title: &'a str,
         body: &'a str,
+        draft: bool,
         class: JobClass,
     ) -> ScmFuture<'a, u64> {
         let (head, base) = (head.to_owned(), base.to_owned());
         let (title, body) = (title.to_owned(), body.to_owned());
-        self.call("open_draft_pr", repo, class, move |ctx| {
+        self.call("open_pr", repo, class, move |ctx| {
             let open = ctx.repo.prs.iter().find(|(_, pr)| {
                 pr.state == PrState::Open && pr.head_branch == head && pr.base_branch == base
             });
             match open {
                 Some((number, _)) => Ok(*number),
-                None => ctx.new_pr(&head, &base, &bot(), (&title, &body), true),
+                None => ctx.new_pr(&head, &base, &bot(), (&title, &body), draft),
             }
+        })
+    }
+
+    fn commit_file<'a>(
+        &'a self,
+        repo: &'a RepoRef,
+        branch: &'a str,
+        path: &'a str,
+        text: &'a str,
+        _message: &'a str,
+        class: JobClass,
+    ) -> ScmFuture<'a, ()> {
+        let (branch, path, text) = (branch.to_owned(), path.to_owned(), text.to_owned());
+        self.call("commit_file", repo, class, move |ctx| {
+            let head = ctx.repo.branch_head(&branch)?.clone();
+            let mut tree = ctx.repo.tree(&head)?.clone();
+            if tree.get(&path) == Some(&text) {
+                return Ok(());
+            }
+
+            tree.insert(path, text);
+            let sha = ctx.new_commit(vec![head], tree);
+            ctx.move_branch(&branch, Some(&sha), &bot());
+            Ok(())
         })
     }
 
@@ -2221,6 +2248,64 @@ mod tests {
         crate::contract::install_page(&sim).await;
     }
 
+    #[tokio::test]
+    async fn a_file_is_committed_on_its_branch_once() {
+        let repo = repo();
+        let (sim, fixture) = contract_world(&repo).unwrap();
+        let class = JobClass::Interactive;
+        let base = sim
+            .branch_head(&repo, &fixture.base_branch, class)
+            .await
+            .unwrap()
+            .unwrap();
+        sim.set_branch(&repo, "cihub-config/main", &base, true, class)
+            .await
+            .unwrap();
+        sim.take_deliveries();
+
+        for _ in 0..2 {
+            sim.commit_file(
+                &repo,
+                "cihub-config/main",
+                ".cihub.yaml",
+                "version: 1\nqueues: []\n",
+                "m",
+                class,
+            )
+            .await
+            .unwrap();
+        }
+        let head = sim
+            .branch_head(&repo, "cihub-config/main", class)
+            .await
+            .unwrap()
+            .unwrap();
+        // The simulator has its own `open_pr`, for a PR of a person.
+        let number = Scm::open_pr(
+            &sim,
+            &repo,
+            "cihub-config/main",
+            &fixture.base_branch,
+            "t",
+            "b",
+            false,
+            class,
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(head, base);
+        assert_eq!(
+            sim.file(&repo, &head, ".cihub.yaml", class)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("version: 1\nqueues: []\n")
+        );
+        assert_eq!(sim.take_deliveries().len(), 2, "one push, one PR");
+        assert!(!sim.pull_request(&repo, number, class).await.unwrap().draft);
+    }
+
     #[test]
     fn a_pr_page_is_built_without_a_call() {
         let repo = repo();
@@ -2441,6 +2526,7 @@ mod tests {
                     base_branch: "main".into(),
                     label_added: None,
                     is_ready_for_review: true,
+                    state: PrState::Open,
                 },
                 ScmEvent::CheckChanged {
                     repo_external_id: "200".into(),

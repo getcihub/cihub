@@ -12,6 +12,10 @@
 //! each test commit but those that test #3; the page `/sim/merge` comments
 //! `/cihub merge` on a PR, `/sim/comment` gives the last comment of a PR.
 //!
+//! `lin` is an admin of `umbrella`, whose repository `shop` has a
+//! `.cihub.yaml` and no queue: the page `/sim/merge-pr` merges a PR of it, as
+//! a person who reviews it.
+//!
 //! `noor` owns `initech` on the simulator, where the App is not installed
 //! yet: the page `/sim/install` installs it and comes back through the Setup
 //! URL. The branch rules of `initech/app` let CIHub merge, and it has a green
@@ -28,17 +32,18 @@ use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::get;
 use cihub_domain::{
-    CheckConclusion, CheckKind, CheckReport, CheckStatus, ConnectionId, ConnectionKind,
-    MembershipRole, OrgId, Permission, QueueId, RepoId,
+    CheckConclusion, CheckKind, CheckReport, CheckStatus, ConnectionId, ConnectionKind, JobClass,
+    MembershipRole, MergeMethod, OrgId, Permission, QueueId, RepoId,
 };
 use cihub_github::SETUP_PATH;
 use cihub_platform::{
     Delivery, Executors, QueueNewsFeed, SYNC_REPOS, SYNC_USER, find_route, run_router,
     run_subscriptions, run_worker, store_delivery, sync_repos_executor, sync_user_executor,
 };
-use cihub_scm::sim::{PrChange, Sim, UpdateRestriction};
+use cihub_scm::sim::{PrChange, Reviews, Sim, UpdateRestriction};
 use cihub_scm::{
-    ConnectionRef, RepoRef, RequiredChecks, ScmAccount, ScmDelivery, ScmUser, SignInRequest,
+    ConnectionRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmUser,
+    SignInRequest,
 };
 use cihub_store::{
     DatabaseCipher, MIGRATOR, PgPool, begin_system, create_event_partitions, migrate,
@@ -64,6 +69,8 @@ const REQUIRED: &str = "ci";
 const WEB_CONFIG: &str = "version: 1\nqueues:\n  - branch: main\n    direct_merge_mode: off\n";
 /// The file of `initech/docs`: its fourth line is out of range.
 const DOCS_CONFIG: &str = "version: 1\nqueues:\n  - branch: main\n    batching: { size: 50 }\n";
+/// The file of `umbrella/shop`, which `lin` changes in the dashboard.
+const SHOP_CONFIG: &str = "version: 1\nqueues:\n  - branch: main\n    strategy: batched\n";
 /// The installation of the App on `initech`, once `/sim/install` adds it.
 const INITECH_INSTALLATION: &str = "300";
 
@@ -86,12 +93,13 @@ fn person(id: &str, login: &str) -> ScmUser {
     }
 }
 
-fn people() -> [(ScmUser, &'static str); 3] {
+fn people() -> [(ScmUser, &'static str); 4] {
     [
         // Not `1`: the bot of the simulator is the account `1`.
         (person("101", "ada"), "member of acme"),
         (person("102", "grace"), "no organization"),
         (person("103", "noor"), "owner of initech"),
+        (person("104", "lin"), "admin of umbrella"),
     ]
 }
 
@@ -215,6 +223,7 @@ fn simulator_pages(sim: Arc<Sim>) -> Router {
         .route("/sim/install", get(install_page))
         .route("/sim/installed", get(install_on_initech))
         .route("/sim/exempt", get(exempt_the_app))
+        .route("/sim/merge-pr", get(merge_pr))
         .with_state(sim)
 }
 
@@ -243,7 +252,11 @@ async fn fresh_database() -> Result<PgPool, Box<dyn std::error::Error>> {
 /// `acme` and `globex`, with a connection, a repository and a queue each.
 async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
     let mut tx = begin_system(pool).await?;
-    for (n, slug, repo) in [(1u128, "acme", "web"), (2, "globex", "api")] {
+    for (n, slug, repo) in [
+        (1u128, "acme", "web"),
+        (2, "globex", "api"),
+        (4, "umbrella", "shop"),
+    ] {
         let org = OrgId::from_ulid(Ulid(n));
         let connection = ConnectionId::from_ulid(Ulid(n));
         let repo_id = RepoId::from_ulid(Ulid(n));
@@ -256,13 +269,19 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
              INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{n}000', '{slug}', '{repo}', 'main');
-             INSERT INTO queues (id, org_id, repo_id, target_branch, config_text)
-                 VALUES ('{queue}', '{org}', '{repo_id}', 'main', {config_text});",
-            // The queue has read its file, as after its first push.
-            config_text = if repo == "web" {
-                format!("'{WEB_CONFIG}'")
-            } else {
-                "NULL".to_owned()
+             {queue_row}",
+            // The queue has read its file, as after its first push; `shop` has no queue.
+            queue_row = match repo {
+                "shop" => String::new(),
+                _ => format!(
+                    "INSERT INTO queues (id, org_id, repo_id, target_branch, config_text)
+                         VALUES ('{queue}', '{org}', '{repo_id}', 'main', {});",
+                    if repo == "web" {
+                        format!("'{WEB_CONFIG}'")
+                    } else {
+                        "NULL".to_owned()
+                    }
+                ),
             },
         )))
         .execute(&mut *tx)
@@ -292,6 +311,7 @@ fn world_repo(name: &str) -> Option<RepoRef> {
         "app" => ("3000", "initech", 3, INITECH_INSTALLATION),
         "site" => ("3001", "initech", 3, INITECH_INSTALLATION),
         "docs" => ("3002", "initech", 3, INITECH_INSTALLATION),
+        "shop" => ("4000", "umbrella", 4, "400"),
         _ => return None,
     };
     Some(RepoRef {
@@ -309,7 +329,7 @@ fn world_repo(name: &str) -> Option<RepoRef> {
 /// member of which, `acme/web`, whose branch `main` requires `ci`, and the
 /// repositories of `initech`.
 fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _, _] = people();
+    let [(ada, _), _, _, _] = people();
     for (installation, account, slug) in [("100", "10", "acme"), ("200", "20", "globex")] {
         let account = ScmAccount {
             external_id: account.into(),
@@ -318,6 +338,7 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
         sim.add_installation(installation, account, &[("contents", "write")]);
     }
     sim.set_member("100", &ada, MembershipRole::Member);
+    umbrella(sim)?;
 
     for name in ["web", "api"] {
         let repo = world_repo(name).ok_or("unknown repository")?;
@@ -337,10 +358,35 @@ fn world(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
     initech(sim)
 }
 
+/// `umbrella`, whose admin `lin` changes the configuration of `shop`.
+fn umbrella(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
+    let [_, _, _, (lin, _)] = people();
+    let account = ScmAccount {
+        external_id: "40".into(),
+        path: "umbrella".into(),
+    };
+    sim.add_installation("400", account, &[("contents", "write")]);
+    sim.set_member("400", &lin, MembershipRole::Admin);
+
+    let shop = world_repo("shop").ok_or("unknown repository")?;
+    sim.add_repo(
+        &shop,
+        "main",
+        &[("README.md", "shop"), (".cihub.yaml", SHOP_CONFIG)],
+    );
+    let rules = RequiredChecks {
+        names: [REQUIRED.to_owned()].into(),
+        up_to_date: false,
+    };
+    sim.set_rules(&shop, "main", rules)?;
+    sim.set_permission(&shop, &lin, Permission::Admin)?;
+    Ok(())
+}
+
 /// The repositories of `initech`, which `noor` owns, before the installation
 /// of the App.
 fn initech(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [_, _, (noor, _)] = people();
+    let [_, _, (noor, _), _] = people();
     let exempt = UpdateRestriction {
         is_app_exempt: true,
         covers_test_branches: false,
@@ -429,7 +475,7 @@ fn failed() -> CheckReport {
 
 /// Opens the PRs of `acme/web`, and `ada` submits each one with a comment.
 fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _, _] = people();
+    let [(ada, _), _, _, _] = people();
     let web = world_repo("web").ok_or("unknown repository")?;
     let prs = [
         (
@@ -464,7 +510,7 @@ fn submit_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
 /// Opens the PRs of `acme/api`, which has no queue yet: #1 of `marie`, #2 of
 /// `ada`.
 fn open_api_prs(sim: &Sim) -> Result<(), Box<dyn std::error::Error>> {
-    let [(ada, _), _, _] = people();
+    let [(ada, _), _, _, _] = people();
     let api = world_repo("api").ok_or("unknown repository")?;
 
     open_pr(
@@ -630,6 +676,46 @@ async fn exempt_the_app(
 
     match sim.set_update_restriction(&repo, "main", Some(exempt)) {
         Ok(()) => "exempt".into(),
+        Err(err) => err.to_string(),
+    }
+}
+
+/// `GET /sim/merge-pr?repo=shop&number=1`: a person reviews the PR, its CI
+/// passes, and they merge it on the SCM.
+async fn merge_pr(
+    State(sim): State<Arc<Sim>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> String {
+    let (Some(repo), Some(number)) = (
+        query.get("repo").and_then(|name| world_repo(name)),
+        query
+            .get("number")
+            .and_then(|number| number.parse::<u64>().ok()),
+    ) else {
+        return "no such PR".into();
+    };
+    let [_, _, _, (lin, _)] = people();
+
+    let merged = async {
+        let pr = Scm::pull_request(&*sim, &repo, number, JobClass::Interactive).await?;
+        sim.report_check(&repo, &pr.head_sha, passed())?;
+        let reviews = Reviews {
+            approved_by: [lin.login].into(),
+            ..Reviews::default()
+        };
+        sim.set_reviews(&repo, number, reviews)?;
+        let merge = PrMerge {
+            number,
+            head_sha: pr.head_sha.clone(),
+            tested_sha: pr.head_sha,
+            method: MergeMethod::MergeCommit,
+            title: pr.title,
+            message: String::new(),
+        };
+        Scm::merge_pr(&*sim, &repo, &merge, JobClass::Interactive).await
+    };
+    match merged.await {
+        Ok(_) => "merged".into(),
         Err(err) => err.to_string(),
     }
 }

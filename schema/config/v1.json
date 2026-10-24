@@ -33,13 +33,12 @@
   },
   "definitions": {
     "strategy": {
-      "description": "First setting of a queue: it sets the values of the others. `pipelined` by default; `parallel` is not ready yet.",
+      "description": "First setting of a queue: it sets the values of the others. `pipelined` by default; `parallel` arrives with a later version and is refused until then.",
       "type": "string",
       "enum": [
         "sequential",
         "pipelined",
-        "batched",
-        "parallel"
+        "batched"
       ]
     },
     "mode": {

@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/getcihub/cihub/main/schema/config/v1.json
+version: 1
+queues:
+  - branch: main
+    strategy: batched                     # sequential | pipelined | batched
+    merge_method: squash                  # squash | merge_commit | rebase | fast_forward
+    trigger: draft_pr                     # draft_pr | push
+    queue_conditions:                     # admission: the PR itself
+      review_decision: approved
+      draft: false
+      labels:
+        none:
+          - do-not-merge
+      checks:
+        success:
+          - lint
+    merge_conditions:                     # on the speculative commit
+      checks:
+        success:
+          - build
+          - integration-tests
+    window:
+      floor: 2
+      ceiling: 20
+    batching:
+      size: 8
+      max_wait_minutes: 5
+    failure_budget:
+      retries: 1
+    pending_failure_depth: 1
+    optimistic_merging: true
+    profiles:                             # settings of a kind of PR, in the same train
+      - name: dependencies
+        conditions:                       # choose the profile, once, at the submission
+          author:
+            - dependabot[bot]
+            - cihub-renovate[bot]
+        merge_method: merge_commit
+        batching:
+          size: 8
+          max_wait_minutes: 15
+        failure_budget:
+          retries: 2
+  - branch: release/*                     # a queue for each branch that the glob matches
+    strategy: sequential
+    merge_method: fast_forward
+    queue_conditions:
+      sender_permission:
+        min: write
+priority_rules:
+  - name: urgent
+    conditions:
+      any:
+        - labels:
+            any:
+              - urgent
+              - hotfix
+        - head:
+            matches: hotfix/**
+    priority: urgent                      # urgent | high | medium | low | 0-255
+  - name: dependabot
+    conditions:
+      author: dependabot[bot]
+    priority: low
+defaults:                                 # any queue setting; each queue can override it
+  label_commands:
+    enqueue_label: ready-to-merge
+  merge_commit_title: pr_title            # pr_title | pr_title_and_number
+  queue_conditions:                       # every queue adds its own after them
+    labels:
+      none:
+        - do-not-merge

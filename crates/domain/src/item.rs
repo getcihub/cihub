@@ -80,6 +80,14 @@ impl Priority {
             .find(|(n, _)| *n == name)
             .map(|&(_, p)| p)
     }
+
+    /// The name of the priority, when it has one.
+    pub fn name(self) -> Option<&'static str> {
+        Self::NAMES
+            .iter()
+            .find(|&&(_, p)| p == self)
+            .map(|&(n, _)| n)
+    }
 }
 
 /// Why a `not_ready` item cannot enter the queue yet.
@@ -153,6 +161,8 @@ mod tests {
         assert_eq!(Priority::from_name("medium"), Some(Priority::MEDIUM));
         assert_eq!(Priority::from_name("low"), Some(Priority::LOW));
         assert_eq!(Priority::from_name("later"), None);
+        assert_eq!(Priority::HIGH.name(), Some("high"));
+        assert_eq!(Priority(42).name(), None);
     }
 
     #[test]

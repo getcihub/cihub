@@ -90,6 +90,8 @@
   --radius-xs: 3px;
   --radius-sm: 4px;
   --radius-md: 6px;
+  /* A bar that floats over the page: the pending changes of a draft. */
+  --radius-lg: 10px;
 
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -179,6 +181,11 @@
 
   --shadow-lg: var(--overlay-shadow);
   --shadow-live: 0 0 0 2px var(--success-muted);
+  /* A field that has the focus, or an open picker; the chosen option of a segmented control. */
+  --shadow-focus: 0 0 0 3px var(--primary-muted);
+  --shadow-chosen: 0 0 0 1px var(--primary-border);
+  /* The current entry of a list, marked on its left. */
+  --shadow-current: inset 2px 0 0 var(--primary);
 }
 
 /* The padding that aligns the top bar and its alerts with the content of a page (`Page`). */

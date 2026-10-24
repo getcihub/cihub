@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgPrsData, ListOrgPrsErrors, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListRepoPrsData, ListRepoPrsErrors, ListRepoPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, RestartData, RestartErrors, RestartResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, SyncQueueData, SyncQueueErrors, SyncQueueResponses, SyncRepoData, SyncRepoErrors, SyncRepoResponses, SyncUserData, SyncUserErrors, SyncUserResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
+import type { ApproveDeviceCodeData, ApproveDeviceCodeErrors, ApproveDeviceCodeResponses, CancelData, CancelErrors, CancelResponses, DeleteUserSessionData, DeleteUserSessionErrors, DeleteUserSessionResponses, DenyDeviceCodeData, DenyDeviceCodeErrors, DenyDeviceCodeResponses, GetBranchConfigData, GetBranchConfigErrors, GetBranchConfigResponses, GetDeviceSessionData, GetDeviceSessionErrors, GetDeviceSessionResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetInstanceData, GetInstanceErrors, GetInstanceResponses, GetOrgData, GetOrgErrors, GetOrgResponses, GetPrData, GetPrErrors, GetPrResponses, GetQueueData, GetQueueErrors, GetQueueResponses, GetRepoData, GetRepoErrors, GetRepoResponses, GetRunData, GetRunErrors, GetRunResponses, GetUserData, GetUserErrors, GetUserResponses, GraphData, GraphErrors, GraphResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListEventsData, ListEventsErrors, ListEventsResponses, ListOrgPrsData, ListOrgPrsErrors, ListOrgPrsResponses, ListOrgQueuesData, ListOrgQueuesErrors, ListOrgQueuesResponses, ListRepoPrsData, ListRepoPrsErrors, ListRepoPrsResponses, ListRepoQueuesData, ListRepoQueuesErrors, ListRepoQueuesResponses, ListReposData, ListReposErrors, ListReposResponses, ListUserOrgsData, ListUserOrgsErrors, ListUserOrgsResponses, PreviewConfigData, PreviewConfigErrors, PreviewConfigResponses, ProposeConfigData, ProposeConfigErrors, ProposeConfigResponses, RestartData, RestartErrors, RestartResponses, StartDeviceSignInData, StartDeviceSignInErrors, StartDeviceSignInResponses, StreamData, StreamErrors, StreamResponse, StreamResponses, SubmitData, SubmitErrors, SubmitResponses, SyncQueueData, SyncQueueErrors, SyncQueueResponses, SyncRepoData, SyncRepoErrors, SyncRepoResponses, SyncUserData, SyncUserErrors, SyncUserResponses, UpdateQueueData, UpdateQueueErrors, UpdateQueueResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -208,6 +208,75 @@ export const getRepo = <ThrowOnError extends boolean = false>(options: Options<G
         }],
     url: '/orgs/{org}/repos/{repo}',
     ...options
+});
+
+/**
+ * Get the configuration of a branch
+ *
+ * The configuration file of the branch, as CIHub last read it: what it sets,
+ * the settings that follow with their sources, the checks that the branch
+ * rules require, and the last proposal of a change that has not merged or
+ * closed. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const getBranchConfig = <ThrowOnError extends boolean = false>(options: Options<GetBranchConfigData, ThrowOnError>): RequestResult<GetBranchConfigResponses, GetBranchConfigErrors, ThrowOnError> => (options.client ?? client).get<GetBranchConfigResponses, GetBranchConfigErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/config',
+    ...options
+});
+
+/**
+ * Preview a configuration
+ *
+ * The YAML that CIHub would write for a document, whether the queue of the
+ * branch would take it, its settings with their sources, and its diff with
+ * the file as CIHub read it last. Reads Postgres only.
+ *
+ * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const previewConfig = <ThrowOnError extends boolean = false>(options: Options<PreviewConfigData, ThrowOnError>): RequestResult<PreviewConfigResponses, PreviewConfigErrors, ThrowOnError> => (options.client ?? client).post<PreviewConfigResponses, PreviewConfigErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/config/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Propose a change of the configuration
+ *
+ * Writes the YAML of the document and asks CIHub to open it as a PR from the
+ * branch `cihub-config/<branch>`, on the head of the branch: CIHub never
+ * pushes on the branch itself. The same text again answers its proposal;
+ * another text while a proposal has not ended answers `409
+ * config_proposal_open`. The proposal fails with `config_changed` when the
+ * file changed since `base_sha`.
+ *
+ * **Scope**: `queues:write`, for an API token, or for the role of the user of a session or their permission on the repository of the route.
+ */
+export const proposeConfig = <ThrowOnError extends boolean = false>(options: Options<ProposeConfigData, ThrowOnError>): RequestResult<ProposeConfigResponses, ProposeConfigErrors, ThrowOnError> => (options.client ?? client).post<ProposeConfigResponses, ProposeConfigErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }, {
+            in: 'cookie',
+            name: '__Host-cihub_session',
+            type: 'apiKey'
+        }],
+    url: '/orgs/{org}/repos/{repo}/config/proposals',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

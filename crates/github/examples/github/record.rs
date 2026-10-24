@@ -127,7 +127,15 @@ pub async fn prepare_base(app: &GithubApp, config: &GithubConfig, repo: &RepoRef
         .await?;
 
     let draft = app
-        .open_draft_pr(repo, DRAFT_BRANCH, BASE, "cihub contract: draft", "", CLASS)
+        .open_pr(
+            repo,
+            DRAFT_BRANCH,
+            BASE,
+            "cihub contract: draft",
+            "",
+            true,
+            CLASS,
+        )
         .await?;
     println!("conflicting PR: {conflicting}\ndraft PR: {draft}");
     println!(

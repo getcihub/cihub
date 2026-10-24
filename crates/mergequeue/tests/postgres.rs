@@ -30,8 +30,8 @@ use cihub_platform::{
 };
 use cihub_scm::sim::{Fault, PrChange, Reviews, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent,
-    ScmUser,
+    ConnectionRef, PrMerge, RepoRef, RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError,
+    ScmEvent, ScmUser,
 };
 use cihub_store::{begin_org, begin_system, create_event_partitions};
 use secrecy::{ExposeSecret, SecretString};
@@ -4460,6 +4460,11 @@ async fn the_api_answers_not_found_outside_the_organization_of_the_token(pool: P
         ),
         (
             "GET",
+            "/orgs/other/repos/app/config".to_owned(),
+            "org_not_found",
+        ),
+        (
+            "GET",
             "/orgs/acme/repos/unknown/queues".to_owned(),
             "repo_not_found",
         ),
@@ -4820,10 +4825,11 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     let id = |n: u128| RepoId::from_ulid(Ulid(n)).to_string();
     let setup = |repo: String, head: &str, findings: &str, state: &str, file: &str| {
         format!(
-            "INSERT INTO repo_setups (org_id, repo_id, branch, head_sha, findings, config_state,
-                                      config_path, config_error, config_line, config_column,
-                                      config_text, entries, checked_at)
-             VALUES ('{org}', '{repo}', 'main', {head}, '{findings}', '{state}', {file},
+            "INSERT INTO repo_setups (org_id, repo_id, branch, head_sha, findings, checked_at)
+             VALUES ('{org}', '{repo}', 'main', {head}, '{findings}', '2026-10-01T09:00:00Z');
+             INSERT INTO config_files (org_id, repo_id, branch, head_sha, state, path, error,
+                                       error_line, error_column, text, entries, read_at)
+             VALUES ('{org}', '{repo}', 'main', {head}, '{state}', {file},
                      '2026-10-01T09:00:00Z');",
             org = org(),
         )
@@ -5007,6 +5013,507 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
     .unwrap();
     assert_eq!((jobs, audits), (1, 2), "one read per minute");
     cancel.cancel();
+}
+
+/// `GET …/config` gives the file of a branch as its last read keeps it, and
+/// what it sets: each setting with its source, the conditions, the profiles,
+/// the priority rules and the checks of the branch rules; from Postgres
+/// only. A file that is not valid gives its text and its error, and no
+/// setting.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_gives_the_configuration_of_a_branch(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = "version: 1
+defaults:
+  testing_timeout_minutes: 60
+  queue_conditions:
+    draft: false
+queues:
+  - branch: main
+    strategy: batched
+    batching:
+      size: 6
+    merge_conditions:
+      checks:
+        success: [build]
+    profiles:
+      - name: dependencies
+        conditions:
+          author: dependabot[bot]
+        failure_budget:
+          retries: 2
+  - branch: release/*
+    strategy: sequential
+priority_rules:
+  - name: urgent
+    conditions:
+      labels:
+        any: [urgent, hotfix]
+    priority: urgent
+";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+
+    request_repo_setups(&pool, RepoSetupSweep::All, q.clock.now())
+        .await
+        .unwrap();
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let get = |path: &'static str| {
+        let (addr, token) = (addr.clone(), token.clone());
+        async move { call(&addr, &token, "GET", path, None).await }
+    };
+    let calls = sim.calls().len();
+    let (status, read) = get("/orgs/acme/repos/app/config").await;
+    let (_, named) = get("/orgs/acme/repos/app/config?branch=main").await;
+    let other = get("/orgs/acme/repos/app/config?branch=release%2F2.0").await;
+
+    assert_eq!(status, 200, "{read}");
+    assert_eq!(sim.calls().len(), calls, "a read calls the SCM zero times");
+    assert_eq!(named, read, "the default branch without `branch`");
+    assert_eq!(
+        (other.0, &other.1["code"]),
+        (404, &serde_json::json!("config_not_found")),
+        "a branch without a queue"
+    );
+    assert_eq!(
+        (&read["branch"], &read["state"], &read["path"], &read["sha"]),
+        (
+            &"main".into(),
+            &"valid".into(),
+            &".cihub.yaml".into(),
+            &main.clone().into()
+        )
+    );
+    assert_eq!(read["text"], config);
+    assert_eq!(read["required_checks"], serde_json::json!([REQUIRED]));
+    // A setting of `settings`: its value, and where it comes from.
+    let sourced = |settings: &Value, key: &str| {
+        (
+            settings[key].clone(),
+            settings["sources"][key]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+        )
+    };
+    let expect = |value: Value, source: &str| (value, source.to_owned());
+    let defaults = &read["settings"]["defaults"];
+    assert_eq!(
+        sourced(defaults, "testing_timeout_minutes"),
+        expect(60.into(), "defaults")
+    );
+    assert_eq!(
+        sourced(defaults, "strategy"),
+        expect("pipelined".into(), "default")
+    );
+    let document = &read["document"];
+    assert_eq!(
+        document["defaults"]["queue_conditions"],
+        serde_json::json!([{
+            "kind": "condition", "attribute": "draft", "operator": null, "values": ["false"]
+        }])
+    );
+    assert_eq!(
+        document["defaults"]["settings"]["testing_timeout_minutes"],
+        60
+    );
+    assert_eq!(document["defaults"]["settings"]["strategy"], Value::Null);
+    let entry = &read["settings"]["queues"][0];
+    assert_eq!(document["queues"][0]["branch"], "main");
+    assert_eq!(
+        [
+            "strategy",
+            "batching_size",
+            "batching_enabled",
+            "testing_timeout_minutes",
+            "comments_enabled",
+        ]
+        .map(|key| sourced(&entry["settings"], key)),
+        [
+            expect("batched".into(), "queue"),
+            expect(6.into(), "queue"),
+            expect(true.into(), "strategy"),
+            expect(60.into(), "defaults"),
+            expect(true.into(), "default"),
+        ]
+    );
+    assert_eq!(
+        document["queues"][0]["queue_conditions"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        document["queues"][0]["merge_checks"],
+        serde_json::json!(["build"])
+    );
+    let profile = &document["queues"][0]["profiles"][0];
+    assert_eq!(
+        (&profile["name"], &profile["conditions"][0]["values"]),
+        (
+            &"dependencies".into(),
+            &serde_json::json!(["dependabot[bot]"])
+        )
+    );
+    assert_eq!(
+        ["failure_budget_retries", "batching_size"].map(|key| sourced(&entry["profiles"][0], key)),
+        [expect(2.into(), "profile"), expect(6.into(), "queue")]
+    );
+    assert_eq!(document["queues"][1]["branch"], "release/*");
+    assert_eq!(
+        sourced(&read["settings"]["queues"][1]["settings"], "strategy"),
+        expect("sequential".into(), "queue")
+    );
+    assert_eq!(
+        document["priority_rules"],
+        serde_json::json!([{
+            "name": "urgent",
+            "conditions": [{
+                "kind": "condition",
+                "attribute": "labels",
+                "operator": "any",
+                "values": ["urgent", "hotfix"]
+            }],
+            "priority": "urgent"
+        }])
+    );
+    assert_eq!(read["proposal"], Value::Null);
+
+    let broken_file = "version: 1\nqueues:\n  - branch: main\n    strategy: parallel\n";
+    let broken = sim
+        .commit(&repo(), &main, &[(".cihub.yaml", Some(broken_file))])
+        .unwrap();
+
+    sim.push(&repo(), "main", &broken, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (_, invalid) = get("/orgs/acme/repos/app/config").await;
+
+    assert_eq!(
+        (
+            &invalid["state"],
+            &invalid["sha"],
+            &invalid["line"],
+            &invalid["error"]
+        ),
+        (
+            &"invalid".into(),
+            &broken.into(),
+            &4.into(),
+            &"strategy `parallel` is not available yet".into()
+        ),
+        "the queue of the branch reads its new file: {invalid}"
+    );
+    assert_eq!(invalid["text"], broken_file);
+    assert_eq!(
+        (&invalid["document"], &invalid["settings"]),
+        (&Value::Null, &Value::Null)
+    );
+    q.stop().await;
+}
+
+/// An admin changes the configuration through a PR that CIHub opens. The
+/// preview gives the YAML, its diff and its error; the proposal opens one PR
+/// from `cihub-config/main` and leaves `main` as it is, until a person merges
+/// the PR, which ends the proposal; a file that changed since its read fails
+/// a proposal; a token without `queues:write` cannot propose.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_api_proposes_a_change_of_the_configuration_as_a_pr(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = "version: 1
+queues:
+  - branch: main
+    strategy: batched
+    profiles:
+      - name: bots
+        conditions:
+          author: dependabot[bot]
+";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", config)]);
+
+    request_repo_setups(&pool, RepoSetupSweep::All, q.clock.now())
+        .await
+        .unwrap();
+    q.settle().await;
+
+    let (addr, token) = q.serve_api().await;
+    let send = |method: &'static str, path: &'static str, body: Option<Value>| {
+        let (addr, token) = (addr.clone(), token.clone());
+        async move { call(&addr, &token, method, path, body).await }
+    };
+    let preview = |document: &Value| {
+        send(
+            "POST",
+            "/orgs/acme/repos/app/config/preview",
+            Some(serde_json::json!({ "document": document })),
+        )
+    };
+    let (_, read) = send("GET", "/orgs/acme/repos/app/config", None).await;
+    let mut document = read["document"].clone();
+    document["queues"][0]["settings"]["batching_size"] = 6.into();
+    document["queues"][0]["profiles"][0]["settings"]["failure_budget_retries"] = 2.into();
+    let (status, previewed) = preview(&document).await;
+    let mut broken = document.clone();
+    broken["queues"][0]["settings"]["batching_size"] = 50.into();
+    let (_, refused) = preview(&broken).await;
+
+    assert_eq!(status, 200, "{previewed}");
+    assert_eq!(previewed["state"], "valid");
+    assert_eq!(
+        previewed["settings"]["queues"][0]["profiles"][0]["failure_budget_retries"],
+        2
+    );
+    let added: Vec<&str> = previewed["diff"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|line| line["change"] == "added")
+        .filter_map(|line| line["text"].as_str())
+        .collect();
+    assert!(added.contains(&"      size: 6"), "{added:?}");
+    assert_eq!(
+        (&refused["state"], &refused["error"]),
+        (
+            &"invalid".into(),
+            &"batching.size is 50, out of range 2–20".into()
+        )
+    );
+    assert!(refused["line"].is_u64(), "{refused}");
+
+    let proposal = serde_json::json!({
+        "base_sha": read["sha"],
+        "document": document,
+        "message": "Batches of 6\n\nFor a slow CI.",
+    });
+    let mut other = proposal.clone();
+    other["document"]["queues"][0]["settings"]["batching_size"] = 8.into();
+    let (status, proposed) = send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(proposal.clone()),
+    )
+    .await;
+    let (again, same) = send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(proposal.clone()),
+    )
+    .await;
+    let (open, open_problem) = send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(other.clone()),
+    )
+    .await;
+
+    assert_eq!((status, again, open), (202, 202, 409), "{proposed}");
+    assert_eq!(proposed["state"], "requested");
+    assert_eq!(
+        same["id"], proposed["id"],
+        "the same text answers its proposal"
+    );
+    assert_eq!(open_problem["code"], "config_proposal_open");
+
+    let secret = cihub_store::new_api_token_secret().unwrap();
+    let reader = cihub_store::NewApiToken {
+        id: ApiTokenId::from_ulid(Ulid(41)),
+        org_id: org(),
+        name: "reader",
+        scopes: &[ApiScope::QueuesRead, ApiScope::PrsWrite],
+        expires_at: None,
+    };
+    let mut tx = begin_system(&pool).await.unwrap();
+    cihub_store::create_api_token(&mut tx, &reader, &secret)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let (forbidden, problem) = call(
+        &addr,
+        secret.expose_secret(),
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(other.clone()),
+    )
+    .await;
+
+    assert_eq!(
+        (forbidden, &problem["code"]),
+        (403, &"scope_missing".into())
+    );
+
+    let mut unchanged = proposal.clone();
+    unchanged["document"] = read["document"].clone();
+    let (refused_unchanged, _) = send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(unchanged),
+    )
+    .await;
+    let mut unread = proposal.clone();
+    unread["base_sha"] = "".into();
+    let (refused_unread, _) = send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(unread),
+    )
+    .await;
+
+    assert_eq!(
+        (refused_unchanged, refused_unread),
+        (400, 400),
+        "the file as it is, and no head read"
+    );
+
+    q.settle().await;
+    let (_, read) = send("GET", "/orgs/acme/repos/app/config", None).await;
+    let opened = &read["proposal"];
+    let number = opened["pr_number"].as_u64().unwrap();
+    let pr = Scm::pull_request(&*sim, &repo(), number, JobClass::Interactive)
+        .await
+        .unwrap();
+    let file = Scm::file(
+        &*sim,
+        &repo(),
+        &pr.head_sha,
+        ".cihub.yaml",
+        JobClass::Interactive,
+    )
+    .await
+    .unwrap();
+    let head = Scm::branch_head(&*sim, &repo(), "main", JobClass::Interactive)
+        .await
+        .unwrap();
+
+    assert_eq!(opened["state"], "opened", "{read}");
+    assert!(opened["pr_url"].is_string());
+    assert_eq!(
+        (pr.head_branch.as_str(), pr.base_branch.as_str(), pr.draft),
+        ("cihub-config/main", "main", false)
+    );
+    assert_eq!(pr.title, "Batches of 6");
+    assert!(pr.body.contains("For a slow CI."), "{}", pr.body);
+    assert_eq!(file.as_deref(), previewed["text"].as_str());
+    assert_eq!(head.as_deref(), Some(main.as_str()), "main did not change");
+
+    // A person reviews the PR, its CI passes, and they merge it.
+    sim.report_check(&repo(), &pr.head_sha, check(REQUIRED, true))
+        .unwrap();
+    let reviews = Reviews {
+        approved_by: BTreeSet::from([alice().login]),
+        ..Reviews::default()
+    };
+    sim.set_reviews(&repo(), number, reviews).unwrap();
+    let merge = PrMerge {
+        number,
+        head_sha: pr.head_sha.clone(),
+        tested_sha: pr.head_sha.clone(),
+        method: cihub_domain::MergeMethod::MergeCommit,
+        title: pr.title.clone(),
+        message: String::new(),
+    };
+    Scm::merge_pr(&*sim, &repo(), &merge, JobClass::Interactive)
+        .await
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+    let (_, merged) = send("GET", "/orgs/acme/repos/app/config", None).await;
+
+    assert_eq!(merged["proposal"], Value::Null, "{merged}");
+    assert_eq!(
+        merged["document"]["queues"][0]["settings"]["batching_size"], 6,
+        "the queue reads the merged file"
+    );
+
+    let mut stale = other.clone();
+    stale["base_sha"] = main.clone().into();
+    let (status, _) = send("POST", "/orgs/acme/repos/app/config/proposals", Some(stale)).await;
+    q.settle().await;
+    let (_, failed) = send("GET", "/orgs/acme/repos/app/config", None).await;
+
+    assert_eq!(status, 202);
+    assert_eq!(
+        (
+            &failed["proposal"]["state"],
+            &failed["proposal"]["state_reason"]
+        ),
+        (&"failed".into(), &"config_changed".into()),
+        "{failed}"
+    );
+    assert!(
+        failed["proposal"]["state_description"]
+            .as_str()
+            .unwrap()
+            .contains("changed since it was read")
+    );
+
+    let mut refused = other.clone();
+    refused["base_sha"] = merged["sha"].clone();
+    sim.fail(Fault {
+        call: Some("set_branch"),
+        error: ScmError::Forbidden("Repository rule violations found".into()),
+        times: 1,
+    });
+    send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(refused),
+    )
+    .await;
+    q.settle().await;
+    let (_, refused) = send("GET", "/orgs/acme/repos/app/config", None).await;
+
+    assert_eq!(
+        refused["proposal"]["state_reason"], "config_branch_refused",
+        "{refused}"
+    );
+
+    let mut lost = other.clone();
+    lost["base_sha"] = merged["sha"].clone();
+    send("POST", "/orgs/acme/repos/app/config/proposals", Some(lost)).await;
+    q.settle().await;
+    let (_, opened) = send("GET", "/orgs/acme/repos/app/config", None).await;
+    let number = opened["proposal"]["pr_number"].as_u64().unwrap();
+    sim.change_pr(&repo(), number, PrChange::Close).unwrap();
+    sim.take_deliveries();
+    q.clock.advance(25 * 60);
+    request_repo_setups(&pool, RepoSetupSweep::All, q.clock.now())
+        .await
+        .unwrap();
+    // The read runs at a moment of the day that the repository keeps.
+    q.clock.advance(24 * 60);
+    q.settle().await;
+    let (_, closed) = send("GET", "/orgs/acme/repos/app/config", None).await;
+
+    assert_eq!(
+        closed["proposal"],
+        Value::Null,
+        "the daily read catches up a lost delivery: {closed}"
+    );
+
+    let mut refused_pr = other.clone();
+    refused_pr["base_sha"] = merged["sha"].clone();
+    refused_pr["document"]["queues"][0]["settings"]["batching_size"] = 9.into();
+    sim.fail(Fault {
+        call: Some("open_pr"),
+        error: ScmError::Validation("No commits between main and cihub-config/main".into()),
+        times: 1,
+    });
+    send(
+        "POST",
+        "/orgs/acme/repos/app/config/proposals",
+        Some(refused_pr),
+    )
+    .await;
+    q.settle().await;
+    let (_, not_opened) = send("GET", "/orgs/acme/repos/app/config", None).await;
+
+    assert_eq!(
+        not_opened["proposal"]["state_reason"], "pr_not_opened",
+        "a refusal of the SCM ends the proposal: {not_opened}"
+    );
+    q.stop().await;
 }
 
 /// A new PR gets the welcome comment of the queue, whose box submits it: an
@@ -5291,7 +5798,7 @@ async fn the_queue_follows_the_file_of_its_target(pool: PgPool) {
         "{error}"
     );
 
-    let parallel_file = file("    strategy: parallel\n");
+    let parallel_file = file("    mode: parallel\n");
     let parallel = sim
         .commit(&repo(), &broken, &[(".cihub.yaml", Some(&parallel_file))])
         .unwrap();
@@ -5373,8 +5880,9 @@ async fn the_setup_of_a_repository_is_read_at_its_discovery_then_every_day(pool:
             Vec<String>,
             OffsetDateTime,
         ) = sqlx::query_as(
-            "SELECT head_sha, findings, config_state::text, config_line, entries, checked_at
-                 FROM repo_setups",
+            "SELECT s.head_sha, s.findings, f.state::text, f.error_line, f.entries, s.checked_at
+                 FROM repo_setups s
+                 JOIN config_files f ON f.repo_id = s.repo_id AND f.branch = s.branch",
         )
         .fetch_one(&mut *tx)
         .await

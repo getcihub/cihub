@@ -34,6 +34,57 @@ closed_enum! {
 }
 
 closed_enum! {
+    /// Where a proposal of a change of the configuration file stands: CIHub
+    /// opens its PR, then a person merges or closes it (`specs/API.md`).
+    pub enum ConfigProposalState {
+        /// The job that opens the PR waits or runs.
+        Requested,
+        /// The PR is open.
+        Opened,
+        /// The PR merged: the file of the branch holds the change.
+        Merged,
+        /// The PR closed without a merge.
+        Closed,
+        /// CIHub could not open the PR; the reason says why.
+        Failed,
+    }
+}
+
+closed_enum! {
+    /// Why CIHub could not open the PR of a proposal.
+    pub enum ConfigProposalReason {
+        /// The file of the branch changed since the person read it.
+        ConfigChanged,
+        /// A rule of the SCM refuses the branch of the proposal.
+        ConfigBranchRefused,
+        /// The SCM refused to write the file or to open the PR, or kept
+        /// failing until CIHub gave up.
+        PrNotOpened,
+    }
+}
+
+impl ConfigProposalReason {
+    /// The reason in English, for a person; `branch` is the target of the
+    /// proposal.
+    pub fn describe(self, branch: &str) -> String {
+        match self {
+            Self::ConfigChanged => format!(
+                "the configuration file of `{branch}` changed since it was read: start again from \
+                 the new file"
+            ),
+            Self::ConfigBranchRefused => format!(
+                "a rule refuses the branch `cihub-config/{branch}`: exclude `cihub-config/**` from \
+                 the rulesets, or change the file by hand"
+            ),
+            Self::PrNotOpened => format!(
+                "the SCM did not open the pull request from `cihub-config/{branch}`: propose the \
+                 change again"
+            ),
+        }
+    }
+}
+
+closed_enum! {
     /// Where a sign-in of the command line stands (`specs/API.md`).
     pub enum DeviceCodeState {
         /// The command line waits for the person.
@@ -92,6 +143,25 @@ impl MembershipRole {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_proposal_says_why_it_failed() {
+        assert!(
+            ConfigProposalReason::ConfigChanged
+                .describe("main")
+                .starts_with("the configuration file of `main` changed")
+        );
+        assert!(
+            ConfigProposalReason::ConfigBranchRefused
+                .describe("main")
+                .contains("`cihub-config/main`")
+        );
+        assert!(
+            ConfigProposalReason::PrNotOpened
+                .describe("main")
+                .ends_with("propose the change again")
+        );
+    }
 
     #[test]
     fn only_an_admin_changes_a_queue() {

@@ -18,6 +18,9 @@ import type {
   ConfigFile,
 } from "@/client/types.gen";
 
+import type { ConfigPreview } from "@/client/types.gen";
+import { branchConfigOf, settingsOf } from "@/test/config";
+
 export const NOW = Date.parse("2026-10-12T10:00:00Z");
 
 // The queue conditions that #133 does not meet, as the API writes them: a condition, a check, a boolean, a group.
@@ -710,6 +713,9 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
   if (/^\/orgs\/[^/]+\/queues$/.test(path)) {
     return [404, problem(404, "org_not_found")];
   }
+  if (path === "/orgs/acme/repos/web/config/preview") {
+    return [200, previewOfWeb()];
+  }
   if (method !== "GET") {
     return [202, null];
   }
@@ -719,6 +725,7 @@ export function answerOf(request: ApiRequest, person: Person): Answer {
     return answerOfPrList(query, prList[1] ?? "", prList[2]);
   }
   return (
+    answerOfConfig(path) ??
     answerOfRepo(path, person) ??
     answerOfQueue(path, query) ??
     answerOfPr(path) ??
@@ -913,4 +920,84 @@ function answerOfRun(path: string): Answer | null {
 
   const run = RUNS[match[1] ?? ""];
   return run ? [200, run] : [404, problem(404, "run_not_found")];
+}
+
+/**
+ * The configuration of the default branch of a repository of `acme`: the file of `web`, the invalid one of `infra`,
+ * none on `landing`; CIHub has not read the others yet.
+ */
+function answerOfConfig(path: string): Answer | null {
+  const match = /^\/orgs\/acme\/repos\/([^/]+)\/config$/.exec(path);
+  if (!match) {
+    return null;
+  }
+
+  const file = branchConfigOf();
+  switch (match[1]) {
+    case "web":
+      return [200, file];
+    case "infra":
+      return [
+        200,
+        {
+          ...file,
+          state: "invalid",
+          error: "batching.size is 50, out of range 2–20",
+          line: 4,
+          column: 23,
+          text: "version: 1\nqueues:\n  - branch: main\n    batching: { size: 50 }\n",
+          document: null,
+          settings: null,
+        },
+      ];
+    case "landing":
+      return [
+        200,
+        {
+          ...file,
+          state: "none",
+          path: null,
+          text: null,
+          document: {
+            defaults: { settings: {}, queue_conditions: [], merge_checks: [] },
+            queues: [],
+            priority_rules: [],
+          },
+          settings: { defaults: settingsOf(), queues: [] },
+          required_checks: [],
+        },
+      ];
+    default:
+      return [404, problem(404, "config_not_found")];
+  }
+}
+
+/** The file of `acme/web` once the person changed the size of the batches of `main` to 7. */
+function previewOfWeb(): ConfigPreview {
+  const file = branchConfigOf();
+  const settings = structuredClone(file.settings);
+  const main = settings?.queues[0]?.settings;
+  if (main) {
+    main.batching_size = 7;
+  }
+  const lines: [ConfigPreview["diff"][number]["change"], string][] = [
+    ["same", "version: 1"],
+    ["same", "queues:"],
+    ["same", "  - branch: main"],
+    ["same", "    strategy: batched"],
+    ["same", "    batching:"],
+    ["removed", "      size: 6"],
+    ["added", "      size: 7"],
+    ["same", "    queue_conditions:"],
+    ["same", "      review_decision: approved"],
+  ];
+  return {
+    text: lines
+      .filter(([change]) => change !== "removed")
+      .map(([, text]) => text)
+      .join("\n"),
+    state: "valid",
+    settings,
+    diff: lines.map(([change, text]) => ({ change, text })),
+  };
 }

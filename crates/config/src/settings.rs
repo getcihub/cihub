@@ -10,12 +10,18 @@ use cihub_domain::{
 
 use crate::{ConfigError, ConfigErrorKind, Position};
 
-/// Where the value of a setting comes from, from the weakest to the strongest.
+/// Where the value of a setting comes from, from the weakest to the strongest:
+/// the value of CIHub, the strategy table, then the parts of the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
     Default,
     Strategy,
-    File,
+    /// `defaults` of the file.
+    Defaults,
+    /// The entry of the queue in the file.
+    Queue,
+    /// A profile of the entry.
+    Profile,
 }
 
 /// A value set by one source. `at` is its position when it comes from the
@@ -160,7 +166,7 @@ impl QueueSettings {
     /// A value out of range in any source, or effective values that do not
     /// go together.
     pub fn resolve(queue: &Layer, defaults: &Layer) -> Result<Self, ConfigError> {
-        Self::resolve_layers(&[queue, defaults])
+        Self::resolve_layers(&[(Source::Queue, queue), (Source::Defaults, defaults)])
     }
 
     /// The settings of a profile: those that it sets, then those of its
@@ -174,7 +180,11 @@ impl QueueSettings {
         queue: &Layer,
         defaults: &Layer,
     ) -> Result<Self, ConfigError> {
-        Self::resolve_layers(&[profile, queue, defaults])
+        Self::resolve_layers(&[
+            (Source::Profile, profile),
+            (Source::Queue, queue),
+            (Source::Defaults, defaults),
+        ])
     }
 
     /// The settings of the profile `name`; the settings of the queue without
@@ -186,13 +196,12 @@ impl QueueSettings {
 
     /// Merges `layers`, from the strongest, over the strategy and the
     /// defaults.
-    fn resolve_layers(layers: &[&Layer]) -> Result<Self, ConfigError> {
-        for layer in layers {
+    fn resolve_layers(layers: &[(Source, &Layer)]) -> Result<Self, ConfigError> {
+        for (_, layer) in layers {
             layer.validate()?;
         }
 
-        let mut sources: Vec<(Source, &Layer)> =
-            layers.iter().map(|&layer| (Source::File, layer)).collect();
+        let mut sources = layers.to_vec();
         let strategy_layer = strategy_layer(Self::merge(&sources).strategy.value);
 
         sources.push((Source::Strategy, &strategy_layer));
@@ -214,6 +223,13 @@ impl QueueSettings {
                     "window.floor ({}) is greater than window.ceiling ({})",
                     floor.value, ceiling.value
                 ),
+            ));
+        }
+
+        if self.strategy.value == Strategy::Parallel {
+            return Err(ConfigError::parsing(
+                self.strategy.at,
+                "strategy `parallel` is not available yet".to_owned(),
             ));
         }
 
@@ -367,7 +383,7 @@ mod tests {
         };
         let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
 
-        assert_eq!(settings.strategy.source, Source::File);
+        assert_eq!(settings.strategy.source, Source::Queue);
         assert_eq!(
             (
                 settings.batching_enabled.value,
@@ -395,9 +411,33 @@ mod tests {
         let settings = QueueSettings::resolve(&queue, &defaults).unwrap();
 
         assert_eq!(settings.testing_timeout_minutes.value, 90);
-        assert_eq!(settings.testing_timeout_minutes.source, Source::File);
-        assert_eq!(settings.window_ceiling.source, Source::File);
+        assert_eq!(settings.testing_timeout_minutes.source, Source::Queue);
+        assert_eq!(settings.window_ceiling.source, Source::Defaults);
         assert_eq!(settings.bisection_concurrency.value, 10);
+    }
+
+    #[test]
+    fn a_profile_names_the_part_of_the_file_that_sets_each_value() {
+        let defaults = Layer {
+            testing_timeout_minutes: Some(Setting::new(60)),
+            ..Layer::default()
+        };
+        let queue = Layer {
+            strategy: Some(Setting::new(Strategy::Batched)),
+            batching_size: Some(Setting::new(6)),
+            ..Layer::default()
+        };
+        let profile = Layer {
+            failure_budget_retries: Some(Setting::new(2)),
+            ..Layer::default()
+        };
+        let settings = QueueSettings::resolve_profile(&profile, &queue, &defaults).unwrap();
+
+        assert_eq!(settings.failure_budget_retries.source, Source::Profile);
+        assert_eq!(settings.batching_size.source, Source::Queue);
+        assert_eq!(settings.testing_timeout_minutes.source, Source::Defaults);
+        assert_eq!(settings.optimistic_merging.source, Source::Strategy);
+        assert_eq!(settings.comments_enabled.source, Source::Default);
     }
 
     #[test]
@@ -428,6 +468,18 @@ mod tests {
 
         assert_eq!(error.position, Some(at(7)));
         assert_eq!(error.message, "trigger `inplace` is not available yet");
+
+        let queue = Layer {
+            strategy: Some(Setting {
+                value: Strategy::Parallel,
+                at: Some(at(3)),
+            }),
+            ..Layer::default()
+        };
+        let error = QueueSettings::resolve(&queue, &Layer::default()).unwrap_err();
+
+        assert_eq!(error.position, Some(at(3)));
+        assert_eq!(error.message, "strategy `parallel` is not available yet");
 
         let fast_forward = |strategy| Layer {
             strategy: Some(Setting::new(strategy)),

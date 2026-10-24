@@ -420,11 +420,11 @@ async fn draft_prs(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
 
     let base = fixture.base_branch.as_str();
     let number = scm
-        .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
+        .open_pr(repo, work, base, "contract draft", "contract", true, CLASS)
         .await
         .unwrap();
     let again = scm
-        .open_draft_pr(repo, work, base, "contract draft", "contract", CLASS)
+        .open_pr(repo, work, base, "contract draft", "contract", true, CLASS)
         .await
         .unwrap();
 

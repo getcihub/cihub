@@ -1,11 +1,10 @@
 //! The setup of a repository: the rules of its default branch and its
 //! configuration file at the head of that branch, read by `read_repo_setup`
-//! and kept in `repo_setups`, outside the log. The job reads at the discovery
-//! of a repository, then once a day, spread over the day, and at the sync that
-//! an admin asks for, at most once a minute.
+//! and kept in `repo_setups` and `config_files`, outside the log. The job
+//! reads at the discovery of a repository, then once a day, spread over the
+//! day, and at the sync that an admin asks for, at most once a minute.
 
-use cihub_config::{FILE_NAMES, RepoConfig, find_config_file};
-use cihub_domain::{JobClass, RepoConfigState, RepoId};
+use cihub_domain::{JobClass, RepoId};
 use cihub_platform::{Job, enqueue_job};
 use cihub_scm::{RepoRef, Scm, SetupFinding};
 use cihub_store::{PgPool, Postgres, Transaction, begin_org, begin_system};
@@ -16,8 +15,9 @@ use time::{Duration, OffsetDateTime};
 use tracing::info;
 
 use crate::MergeQueueError;
-use crate::config::CheckFinding;
+use crate::config::{CheckFinding, ConfigBranch, ConfigRead, keep_config_file};
 use crate::jobs::{Failure, read_payload};
+use crate::proposal::{end_proposal, open_proposals, read_proposal_prs};
 use crate::target::RepoTarget;
 
 pub const READ_REPO_SETUP: &str = "read_repo_setup";
@@ -132,31 +132,14 @@ pub(crate) async fn sync_repo_setup(
 }
 
 /// What a read of the setup found: the head of the default branch, the
-/// findings of its rules, and its configuration file.
+/// findings of its rules, the checks that they require, and its
+/// configuration file.
 struct SetupRead {
     branch: String,
     head_sha: Option<String>,
     findings: Vec<SetupFinding>,
-    file: FileRead,
-}
-
-/// The configuration file at the head of the default branch.
-struct FileRead {
-    state: RepoConfigState,
-    path: Option<&'static str>,
-    text: Option<String>,
-    error: Option<cihub_config::ConfigError>,
-    entries: Vec<String>,
-}
-
-impl FileRead {
-    const NONE: Self = Self {
-        state: RepoConfigState::None,
-        path: None,
-        text: None,
-        error: None,
-        entries: Vec::new(),
-    };
+    required_checks: Option<Vec<String>>,
+    file: ConfigRead,
 }
 
 /// Reads the setup of the repository of the job and keeps it, unless a later
@@ -174,17 +157,23 @@ pub(crate) async fn read_repo_setup(
     })?;
     let mut tx = begin_org(pool, org).await?;
     let target = RepoTarget::load(&mut tx, repo_id).await?;
+    let proposals = open_proposals(&mut tx, repo_id).await?;
     drop(tx);
 
     let read = read(scm, &target.repo, target.default_branch.clone(), job.class).await?;
+    // A delivery of the PR of a proposal can be lost: the read catches it up.
+    let proposal_prs = read_proposal_prs(scm, &target.repo, &proposals, job.class).await?;
 
     let mut tx = begin_org(pool, org).await?;
     keep(&mut tx, &target, &read, now).await?;
+    for (number, state) in proposal_prs {
+        end_proposal(&mut tx, repo_id, number, state, now).await?;
+    }
     tx.commit().await?;
     info!(
         repo_id = %repo_id,
         findings = read.findings.len(),
-        config = read.file.state.as_str(),
+        config = read.file.state().as_str(),
         "repository setup read"
     );
     Ok(())
@@ -201,73 +190,20 @@ async fn read(
             branch,
             head_sha: None,
             findings: Vec::new(),
-            file: FileRead::NONE,
+            required_checks: None,
+            file: ConfigRead::NONE,
         });
     };
 
     let findings = scm.check_setup(repo, &branch, class).await?;
-    let file = read_file(scm, repo, &head_sha, &branch, class).await?;
+    let required = scm.required_checks(repo, &branch, class).await?;
+    let file = ConfigRead::read(scm, repo, &head_sha, &branch, class).await?;
     Ok(SetupRead {
         branch,
         head_sha: Some(head_sha),
         findings,
+        required_checks: Some(required.names.into_iter().collect()),
         file,
-    })
-}
-
-/// The configuration file of `repo` at `sha`, checked as the queue of
-/// `branch` would load it.
-async fn read_file(
-    scm: &dyn Scm,
-    repo: &RepoRef,
-    sha: &str,
-    branch: &str,
-    class: JobClass,
-) -> Result<FileRead, Failure> {
-    let mut found = Vec::new();
-    for name in FILE_NAMES {
-        if let Some(text) = scm.file(repo, sha, name, class).await? {
-            found.push((name, text));
-        }
-    }
-
-    let path = find_config_file(found.iter().map(|(name, _)| *name));
-    let (path, text) = match (path, found.pop()) {
-        (Err(error), _) => {
-            return Ok(FileRead {
-                state: RepoConfigState::Invalid,
-                path: None,
-                text: None,
-                error: Some(error),
-                entries: Vec::new(),
-            });
-        }
-        (Ok(Some(path)), Some((_, text))) => (path, text),
-        (Ok(_), _) => return Ok(FileRead::NONE),
-    };
-    let parsed = RepoConfig::parse(&text);
-    let entries = parsed
-        .as_ref()
-        .map(|config| {
-            config
-                .queues
-                .iter()
-                .map(|queue| queue.branch.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-    let error = parsed.and_then(|config| config.settings(branch)).err();
-
-    Ok(FileRead {
-        state: if error.is_some() {
-            RepoConfigState::Invalid
-        } else {
-            RepoConfigState::Valid
-        },
-        path: Some(path),
-        text: Some(text),
-        error,
-        entries,
     })
 }
 
@@ -291,36 +227,30 @@ async fn keep(
             message: CheckFinding::Setup(*finding).text(&read.branch),
         })
         .collect();
-    let error = read.file.error.as_ref();
-    let position = error.and_then(|error| error.position);
-    let line = position.map(|position| i32::try_from(position.line).unwrap_or(i32::MAX));
-    let column = position.map(|position| i32::try_from(position.column).unwrap_or(i32::MAX));
 
     sqlx::query(
-        "INSERT INTO repo_setups (org_id, repo_id, branch, head_sha, findings, config_state,
-                                  config_path, config_error, config_line, config_column,
-                                  config_text, entries, checked_at)
-         VALUES ($1, $2, $3, $4, $5, $6::repo_config_state, $7, $8, $9, $10, $11, $12, $13)
+        "INSERT INTO repo_setups (org_id, repo_id, branch, head_sha, findings, required_checks,
+                                  checked_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (repo_id) DO UPDATE
-         SET branch = $3, head_sha = $4, findings = $5, config_state = $6::repo_config_state,
-             config_path = $7, config_error = $8, config_line = $9, config_column = $10,
-             config_text = $11, entries = $12, checked_at = $13
-         WHERE repo_setups.checked_at <= $13",
+         SET branch = $3, head_sha = $4, findings = $5, required_checks = $6, checked_at = $7
+         WHERE repo_setups.checked_at <= $7",
     )
     .bind(target.org_id.to_string())
     .bind(target.repo_id.to_string())
     .bind(&read.branch)
     .bind(&read.head_sha)
     .bind(Json(findings))
-    .bind(read.file.state.as_str())
-    .bind(read.file.path)
-    .bind(error.map(|error| error.message.clone()))
-    .bind(line)
-    .bind(column)
-    .bind(&read.file.text)
-    .bind(&read.file.entries)
+    .bind(&read.required_checks)
     .bind(now)
     .execute(&mut **tx)
     .await?;
-    Ok(())
+
+    let branch = ConfigBranch {
+        org_id: target.org_id,
+        repo_id: target.repo_id,
+        branch: &read.branch,
+        head_sha: read.head_sha.as_deref(),
+    };
+    keep_config_file(tx, &branch, &read.file, now).await
 }

@@ -16,6 +16,7 @@ mod jobs;
 mod log;
 mod merge;
 mod projection;
+mod proposal;
 mod repair;
 mod repo_setup;
 mod scheduler;
@@ -45,6 +46,7 @@ use crate::conditions_status::{OBSERVE_OPEN_PRS, OBSERVE_PR, PUBLISH_CONDITIONS}
 use crate::config::{LOAD_CONFIG, READ_SETUP};
 use crate::jobs::SUBMIT_PR;
 use crate::merge::MERGE_PR;
+use crate::proposal::PROPOSE_CONFIG;
 use crate::repair::{REFRESH_CHECKS, REFRESH_TARGET};
 use crate::scheduler::run_scheduler;
 use crate::surfaces::{PUBLISH_SURFACES, WELCOME_PR};
@@ -61,6 +63,8 @@ pub enum MergeQueueError {
     Settings(#[from] cihub_config::ConfigError),
     #[error("queue {0} does not exist")]
     UnknownQueue(cihub_domain::QueueId),
+    #[error("a PR number is out of range")]
+    PrNumber(#[from] std::num::TryFromIntError),
     #[error("repository {0} does not exist")]
     UnknownRepo(cihub_domain::RepoId),
     #[error("row {id} does not match the identifiers of cihub-domain")]
@@ -158,6 +162,7 @@ pub fn module(
             register!(executors, scm, LOAD_CONFIG, config::load);
             register!(executors, scm, READ_SETUP, config::read_setup);
             register!(executors, scm, READ_REPO_SETUP, repo_setup::read_repo_setup);
+            register!(executors, scm, PROPOSE_CONFIG, proposal::propose);
             register!(executors, scm, PR_COMMAND, command::run_pr_command);
             register!(executors, scm, WELCOME_PR, surfaces::post_welcome);
             register!(executors, scm, PUBLISH_SURFACES, surfaces::publish);
