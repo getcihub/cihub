@@ -104,6 +104,7 @@ Kubernetes: `>=1.25.0-0`
 | tests.image.tag | string | `"8.22.0"` | Tag of that image. |
 | tolerations | list | `[]` | Tolerations of the pods. |
 | topologySpreadConstraints | list | `[]` | Topology spread constraints of the server pods. |
+| trustedProxyHops | int | `0` | Number of proxies in front of the server (an Ingress, a load balancer) that append to `X-Forwarded-For`; the sign-in routes that need no token are limited per client address, which the server reads in this header from the right. 0 takes the address of the connection, which is the address of the proxy behind a proxy, so that every client shares one limit (specs/SECURITY.md). |
 
 ---
 
