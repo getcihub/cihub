@@ -75,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         internal_addr,
         http_addr,
         public_url,
+        trusted_proxy_hops,
         database,
         logs,
         github,
@@ -88,7 +89,15 @@ async fn main() -> anyhow::Result<()> {
         Command::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
         Command::Start => {
             let github = start_github(&pool, github, database.secret.as_ref()).await?;
-            start::run(internal_addr, http_addr, public_url, pool, github).await
+            start::run(
+                internal_addr,
+                http_addr,
+                public_url,
+                trusted_proxy_hops,
+                pool,
+                github,
+            )
+            .await
         }
     }
 }

@@ -1026,6 +1026,7 @@ async fn serve_api_with(
             cihub_store::DatabaseCipher::new(&SecretString::from(DATABASE_SECRET)).unwrap(),
         )),
         public_url: None,
+        trusted_proxy_hops: 0,
         news: cihub_platform::QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
             .unwrap(),

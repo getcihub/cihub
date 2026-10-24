@@ -21,6 +21,9 @@ fullnameOverride: ""
 # -- The root address where people reach the instance, such as `https://ci.example.com`. The sign-in to the dashboard sends them back there; without it, nobody signs in (specs/DEPLOYMENT.md).
 publicUrl: ""
 
+# -- Number of proxies in front of the server (an Ingress, a load balancer) that append to `X-Forwarded-For`; the sign-in routes that need no token are limited per client address, which the server reads in this header from the right. 0 takes the address of the connection, which is the address of the proxy behind a proxy, so that every client shares one limit (specs/SECURITY.md).
+trustedProxyHops: 0
+
 # -- Replicas of `cihub-server start`. Each replica runs the four roles (`web`, `scheduler`, `worker`, `notifier`), and the replicas share the work through Postgres; 2 keeps a replica that serves the webhooks while a pod or a node is lost.
 replicas: 1
 

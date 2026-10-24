@@ -69,6 +69,7 @@ async fn serve_with(
         scm: sim,
         cipher,
         public_url: Some(PUBLIC_URL.to_owned()),
+        trusted_proxy_hops: 0,
         news: QueueNewsFeed::start(pool.clone(), cancel.clone())
             .await
             .unwrap(),
@@ -1110,4 +1111,36 @@ async fn a_callback_that_is_not_the_one_of_the_sign_in_fails(pool: PgPool) {
         );
         assert!(cookie_set(&failed.raw_head, "__Host-cihub_session").is_none());
     }
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_device_code_routes_refuse_a_client_past_its_requests_of_the_minute(pool: PgPool) {
+    let addr = start(&pool).await;
+    let mut statuses = Vec::new();
+
+    for _ in 0..130 {
+        statuses.push(
+            call_with(&addr, "POST", "/api/v1/device-codes", &[])
+                .await
+                .status,
+        );
+    }
+
+    assert!(statuses.contains(&429), "no request was limited");
+    assert!(statuses[..60].iter().all(|status| *status != 429));
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_device_code_routes_refuse_a_large_body(pool: PgPool) {
+    let addr = start(&pool).await;
+    let body = serde_json::json!({ "device_code": "x".repeat(8 * 1024) }).to_string();
+
+    let answer = call_with_body(&addr, "POST", "/api/v1/device-codes/token", &[], &body).await;
+
+    assert_eq!(answer.status, 400, "{}", answer.body);
+    assert!(
+        answer.body.contains("length limit exceeded"),
+        "{}",
+        answer.body
+    );
 }
