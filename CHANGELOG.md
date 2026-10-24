@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1](https://github.com/getcihub/cihub/compare/v0.3.0...v0.3.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **platform:** keep a membership when GitHub refuses the role read or the account was renamed ([d8722ee](https://github.com/getcihub/cihub/commit/d8722ee49015b33cd0ad244c926ce704e845a14d))
+* **platform:** read the repositories at once after a reinstall on the same account ([b33e6e4](https://github.com/getcihub/cihub/commit/b33e6e460ed26ae1ccaa7c21f6bdd0a57123ba4d))
+* **platform:** reconnect the organization when the App is installed again on the same account ([e868021](https://github.com/getcihub/cihub/commit/e86802145cc104a29da09451054a17b8eda71500))
+* **web:** authorize a session from the decoded path parameters ([56afe88](https://github.com/getcihub/cihub/commit/56afe88554e83810b5f8e104d272bf0fb610dc32))
+
 ## [0.3.0](https://github.com/getcihub/cihub/compare/v0.2.1...v0.3.0) (2026-10-24)
 
 
