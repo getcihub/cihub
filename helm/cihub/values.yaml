@@ -42,7 +42,9 @@ database:
   existingSecret: ""
   # -- Key of the URL in that Secret.
   key: uri
-  # -- Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set.
+  # -- Secret that holds `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; the Secret of the URL when empty, so that the URL can stay in a Secret that an operator writes, such as `<cluster>-app` of CloudNativePG. Read when `github.clientId` is set.
+  secretExistingSecret: ""
+  # -- Key of `database.secret` in its Secret.
   secretKey: secret
   # -- Largest number of connections of each replica to Postgres; the sum over the replicas stays under the `max_connections` of Postgres.
   poolSize: 10

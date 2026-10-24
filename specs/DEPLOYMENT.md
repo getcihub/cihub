@@ -174,8 +174,10 @@ repository.
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
 | Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
 
-The secrets come from two existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
-`github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), and `github.existingSecret`
+The secrets come from existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
+`github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), from
+`database.secretExistingSecret` when it is set, so that the URL can stay in a Secret that an operator writes
+(`<cluster>-app` of CloudNativePG), and `github.existingSecret`
 gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and, when `github.clientId` is
 set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, and `database.poolSize`,
 `database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The

@@ -39,9 +39,15 @@
           "title": "poolSize",
           "type": "integer"
         },
+        "secretExistingSecret": {
+          "default": "",
+          "description": "Secret that holds `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; the Secret of the URL when empty, so that the URL can stay in a Secret that an operator writes, such as `\u003ccluster\u003e-app` of CloudNativePG. Read when `github.clientId` is set.",
+          "title": "secretExistingSecret",
+          "type": "string"
+        },
         "secretKey": {
           "default": "secret",
-          "description": "Key in that Secret of `database.secret`, at least 32 bytes, which seals the tokens of the people who sign in; read when `github.clientId` is set.",
+          "description": "Key of `database.secret` in its Secret.",
           "title": "secretKey",
           "type": "string"
         }
