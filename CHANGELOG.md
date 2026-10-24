@@ -1,5 +1,118 @@
 # Changelog
 
+## [0.3.0](https://github.com/getcihub/cihub/compare/v0.2.1...v0.3.0) (2026-10-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** sign the command line in with a device code ([#116](https://github.com/getcihub/cihub/issues/116))
+* split the cihub command line and the cihub-server binary ([#114](https://github.com/getcihub/cihub/issues/114))
+
+### Features
+
+* a viewer for the visual diff of the dashboard ([3ab3f8f](https://github.com/getcihub/cihub/commit/3ab3f8f7984eb1b00165a081ccab9f0bf1a1b437))
+* an observability profile in compose.yaml ([95b2b0d](https://github.com/getcihub/cihub/commit/95b2b0dc78dd9b305dfcd239ea1cd6021a27ca33))
+* **analytics:** the Health of a period that the person chooses ([7d7046c](https://github.com/getcihub/cihub/commit/7d7046c748fadde75714ddf9cf0f769e8610c12a))
+* **analytics:** the Health of a queue, from facts derived from its log ([92b8ff2](https://github.com/getcihub/cihub/commit/92b8ff2984f5891175c759ab2f2d025b5f876118))
+* **api:** repository setup interfaces and repository routes ([#144](https://github.com/getcihub/cihub/issues/144)) ([e68f0ba](https://github.com/getcihub/cihub/commit/e68f0ba16efecd86df1b3eb85304550017dd798c))
+* **cli:** sign the command line in with a device code ([#116](https://github.com/getcihub/cihub/issues/116)) ([5355ce8](https://github.com/getcihub/cihub/commit/5355ce8f5cc66c742756ac4ee0d5e48a81019f67))
+* **config:** conditions as typed YAML maps, with a JSON schema ([#157](https://github.com/getcihub/cihub/issues/157)) ([c3055aa](https://github.com/getcihub/cihub/commit/c3055aa55e584d7f5fa37f9512324428bffd62d2))
+* icons on the buttons of the queue ([#100](https://github.com/getcihub/cihub/issues/100)) ([b64f130](https://github.com/getcihub/cihub/commit/b64f1302041d3ae75715f09aebb0870dd72e1b73))
+* **mergequeue:** a PR shows whether it can enter its queue ([3526c8d](https://github.com/getcihub/cihub/commit/3526c8d913cd3e5b3f9b1f390eea9df413ee0fa3))
+* **mergequeue:** direct merge is on by default ([3a2ac8f](https://github.com/getcihub/cihub/commit/3a2ac8f8eae7453227665056b4561c0f9f22ec77))
+* **mergequeue:** one queue per target branch ([#143](https://github.com/getcihub/cihub/issues/143)) ([9ee3c11](https://github.com/getcihub/cihub/commit/9ee3c1151e70efef3bb950529e5bb913892b4209))
+* **mergequeue:** read and show the setup of a repository ([#149](https://github.com/getcihub/cihub/issues/149)) ([c77bf29](https://github.com/getcihub/cihub/commit/c77bf2968b40bedb8823e05e5917ca6d187ef945))
+* **mergequeue:** the page of a PR, its draft PR and its checks in the drawer ([289358d](https://github.com/getcihub/cihub/commit/289358d24779f80020cdb8308c01d4e2819bfd9c))
+* **mergequeue:** the status of an awaited required check is a closed vocabulary ([60b1584](https://github.com/getcihub/cihub/commit/60b1584169de36594b707bc857871f1107a33217))
+* **platform:** access per repository with the token of the person ([#147](https://github.com/getcihub/cihub/issues/147)) ([43302a2](https://github.com/getcihub/cihub/commit/43302a290f1cb3a868fbecac7c4b4c649066a5e6))
+* **platform:** Setup URL and a sign-in that connects installations ([#146](https://github.com/getcihub/cihub/issues/146)) ([ae4025e](https://github.com/getcihub/cihub/commit/ae4025e9bd21181f24b469925508cb5883fc161d))
+* **scm:** read the page of a PR, and the state and times of a check ([ca3fb10](https://github.com/getcihub/cihub/commit/ca3fb1002a9bd77fa1b61da5181036d05d59acfb))
+* **server:** database pool settings and encryption key ([#145](https://github.com/getcihub/cihub/issues/145)) ([92cc576](https://github.com/getcihub/cihub/commit/92cc5762ec295cde515ef710b78fffc6e9851a5c))
+* **site:** cihub.io, its documentation, and the GitHub App from the command line ([9e57c21](https://github.com/getcihub/cihub/commit/9e57c219f51d5ba8d910e8fdd58fe248930baab3))
+* split the cihub command line and the cihub-server binary ([#114](https://github.com/getcihub/cihub/issues/114)) ([96d44cc](https://github.com/getcihub/cihub/commit/96d44cc952e59f960e3e1049abe3a52a35161495))
+* the dashboard and its API ([0758ac0](https://github.com/getcihub/cihub/commit/0758ac0be0e25c3ef97dea15c6fca2c10bc736eb))
+* the empty state of a queue ([#103](https://github.com/getcihub/cihub/issues/103)) ([735ff14](https://github.com/getcihub/cihub/commit/735ff14e9f06cc4e006e70adf8120565bbb527f5))
+* **web:** an avatar-only account menu, with a choice of appearance ([cba2239](https://github.com/getcihub/cihub/commit/cba2239e244fcce81f809c483cba89e2029d3b17))
+* **web:** banners with a neutral surface and a rule of their tone ([#153](https://github.com/getcihub/cihub/issues/153)) ([2e952ca](https://github.com/getcihub/cihub/commit/2e952ca644cc3f24ac3d1b525b8b753ade40ffca))
+* **web:** onboarding and repository setup pages ([#150](https://github.com/getcihub/cihub/issues/150)) ([4002cd2](https://github.com/getcihub/cihub/commit/4002cd2f9f2443e105feb1461f270263c59c266b))
+* **web:** the copy of the command says so for a moment, in a toast ([2da2a4c](https://github.com/getcihub/cihub/commit/2da2a4cc743f002d1074c91842fab62fe48a4098))
+* **web:** the empty graph, the tab counters and the history of a PR ([#108](https://github.com/getcihub/cihub/issues/108)) ([eb1eb8a](https://github.com/getcihub/cihub/commit/eb1eb8a333fe5d9b083373d25c40649f3116e860))
+* **web:** the empty states before the first queue ([471cd99](https://github.com/getcihub/cihub/commit/471cd995ba501b1a1b58edf53e0d958477b17f05))
+* **web:** the live graph says whether it follows the queue ([c9f1548](https://github.com/getcihub/cihub/commit/c9f15488296698b266838a99c57a07d2d400cef2))
+* **web:** the menu of the person and the PRs of a queue show the avatar, from the SCM profile ([#120](https://github.com/getcihub/cihub/issues/120)) ([707b0b6](https://github.com/getcihub/cihub/commit/707b0b638172babad695317a060d858f315c9931))
+* **web:** the queue actions and the live mark follow the state of the queue ([410e9cc](https://github.com/getcihub/cihub/commit/410e9cc15d8b22d5d7a0dfbe8ab3fb8f7db1a0b0))
+* **web:** the repository picker opens the only queue of a repository ([a09e476](https://github.com/getcihub/cihub/commit/a09e476b6e8663e4334613779731caaeec67b351))
+* **web:** what blocks a PR in its drawer, its queue conditions as the condition builder ([a10241f](https://github.com/getcihub/cihub/commit/a10241f9a24328ebe180b762355db8d40fb2a9e2))
+
+
+### Bug Fixes
+
+* bugs and simplifications from a code review ([#152](https://github.com/getcihub/cihub/issues/152)) ([2413a5e](https://github.com/getcihub/cihub/commit/2413a5ea4cf5ac6fc45bebc0d84d288abaab300c))
+* **cihub:** update configuration ([2d4beca](https://github.com/getcihub/cihub/commit/2d4becab7fabe4da60602dc9578d19f6efb98ba3))
+* **deps:** update dependency zod to v4.6.6 ([ad43291](https://github.com/getcihub/cihub/commit/ad432913390acb4851de32e82df4de9672c42e23))
+* **deps:** update rustls to 0.23.46 ([f633791](https://github.com/getcihub/cihub/commit/f63379136c4f6b88f0c7871dae57fd0a830b5c6f))
+* **deps:** update rustls-webpki and webpki-root-certs for the emSign advisories ([6b7cc06](https://github.com/getcihub/cihub/commit/6b7cc06dff002de2e8a8dfcf9bf0e88203132f16))
+* **deps:** update tanstack-query monorepo to v5.104.2 ([601357e](https://github.com/getcihub/cihub/commit/601357ece7091d5eac7d3a15d9e5ee82e5e825a6))
+* **deps:** update tanstack-router monorepo ([#104](https://github.com/getcihub/cihub/issues/104)) ([6d9271d](https://github.com/getcihub/cihub/commit/6d9271d81989313752a024d9f03533b7dc6fb80e))
+* **deps:** update tokio to 1.53.3 for RUSTSEC-2026-0386 ([fc747f1](https://github.com/getcihub/cihub/commit/fc747f1c1cc08a63ad1db2e8a5cb30acf96bd29c))
+* **mergequeue:** a push of a merge waits while the success of the merge waits in the inbox ([f05d5e4](https://github.com/getcihub/cihub/commit/f05d5e48e8130fc81e34cbbefadd57230cbdbdd2))
+* **mergequeue:** welcome a PR opened before its queue at its next change ([9b6973a](https://github.com/getcihub/cihub/commit/9b6973a56405fa6bece98f5d2b31b889ae34318c))
+* **platform:** keep the permissions of a person after their sign-out ([06c3a2a](https://github.com/getcihub/cihub/commit/06c3a2a876d62d52fe602862360d2ded64099fa8))
+* the visual diff of views whose size changed, and the zoomed split ([#106](https://github.com/getcihub/cihub/issues/106)) ([ad83000](https://github.com/getcihub/cihub/commit/ad830003ba626f192ea468e9d26792c25412baf7))
+* **web:** align the sizes and weights of the text with the design ([#107](https://github.com/getcihub/cihub/issues/107)) ([d159efc](https://github.com/getcihub/cihub/commit/d159efc9c1c8354aef22968ad37e8c5b2885a545))
+* **web:** follow a change of the system theme while the page is open ([674c39b](https://github.com/getcihub/cihub/commit/674c39b91c6a03478b2fb1bef0af7558fb99d504))
+* **web:** ignore anti-aliased edges in the visual comparison ([#156](https://github.com/getcihub/cihub/issues/156)) ([c5c3f5c](https://github.com/getcihub/cihub/commit/c5c3f5c6c3d5c4c39ef627049ba4cb3479bd871c))
+* **web:** say that an empty repository has no commit yet ([#155](https://github.com/getcihub/cihub/issues/155)) ([5d859d2](https://github.com/getcihub/cihub/commit/5d859d2130fd1d7d2c957ad8bf356a17b2114b8d))
+* **web:** the summary of the period picker wraps instead of widening it ([47beb88](https://github.com/getcihub/cihub/commit/47beb88af9febf5328dd3adc7e46ac4c4d90dae9))
+* **web:** the tabs and the panes of a queue keep the scroll position ([40330e9](https://github.com/getcihub/cihub/commit/40330e9e02c8872066fc656da86ba863331dbdec))
+* **web:** the visual diff skips a view that the base cannot show ([736ee2c](https://github.com/getcihub/cihub/commit/736ee2c0d11fabc4799dec8fb48f59782af125a0))
+
+
+### Performance Improvements
+
+* **mergequeue:** read the queues and the PRs through indexes, not their history ([#109](https://github.com/getcihub/cihub/issues/109)) ([43b478f](https://github.com/getcihub/cihub/commit/43b478f3348a52114faa07cdda96076fad4c6632))
+
+
+### Code Refactoring
+
+* **deploy:** group the chart and the compose installation under deploy/ ([fd834bf](https://github.com/getcihub/cihub/commit/fd834bf5fb5012453f359673d4b10a1d23e38c99))
+* simplify the server code and the dashboard layout ([#92](https://github.com/getcihub/cihub/issues/92)) ([53097b6](https://github.com/getcihub/cihub/commit/53097b6a0508391b3aa422b1108156827b48084e))
+* the hooks of the design system in components/ui/hooks ([#101](https://github.com/getcihub/cihub/issues/101)) ([1695e60](https://github.com/getcihub/cihub/commit/1695e60b52c55ae393e4805981eabfa150d3a5ac))
+
+
+### Tests
+
+* **mergequeue:** compare the pages of the PRs without their estimate ([e5855e3](https://github.com/getcihub/cihub/commit/e5855e37ec7422b71387a5e94b9ee54433f93a87))
+* **web:** show a scrolling drawer whole in the visual captures ([82c07a3](https://github.com/getcihub/cihub/commit/82c07a38f671fe4b51da4f75f862e340a58def13))
+* write the JUnit report of each suite into test-reports/ ([78c4a86](https://github.com/getcihub/cihub/commit/78c4a86b0182d1777a1a92e19a134d7f471cf639))
+
+
+### Build System
+
+* move the chart to helm/ and make compose.yaml the development stack ([b896336](https://github.com/getcihub/cihub/commit/b8963361be1225eea1e32e52879a8607a54fb8be))
+* name every mise task &lt;domain&gt;:&lt;action&gt; ([df707ab](https://github.com/getcihub/cihub/commit/df707ab7ee2efe1f681cd85db30a1ebec7423b23))
+* rename the mise tasks, update the smoke test and the docs ([#91](https://github.com/getcihub/cihub/issues/91)) ([79fd7a8](https://github.com/getcihub/cihub/commit/79fd7a8f9879ce7ae08e5cc80cbe653de695e074))
+
+
+### Continuous Integration
+
+* **renovate:** run only for the pull requests and the dashboard of Renovate ([49d54df](https://github.com/getcihub/cihub/commit/49d54df57a21bdb282240e6ac8ff869376c7da0a))
+* run the lint of the dashboard in its own job ([cd6c9ad](https://github.com/getcihub/cihub/commit/cd6c9ad966015bc42b5df609e6c4979b61df9a1e))
+* run the unit tests of the dashboard in their own job ([561a57c](https://github.com/getcihub/cihub/commit/561a57c54b7e612f45aacd19bf33ec99620072af))
+* **web:** compare the views of the dashboard with the base on each pull request ([#128](https://github.com/getcihub/cihub/issues/128)) ([fc6ef36](https://github.com/getcihub/cihub/commit/fc6ef36605b19d49d9d8b7490241da5d04f053ac))
+* **web:** the visual artifact keeps only the views that differ ([#130](https://github.com/getcihub/cihub/issues/130)) ([300d4a1](https://github.com/getcihub/cihub/commit/300d4a1a56f9c89f032afd4d1a89d7ca85ba90a3))
+
+
+### Miscellaneous Chores
+
+* **deps:** update dependency lefthook to v2.2.1 ([491219d](https://github.com/getcihub/cihub/commit/491219dcd6a66fc8d169cb4fc26410f00992d4b3))
+* **deps:** update dependency vitest to v5.0.4 ([df402cd](https://github.com/getcihub/cihub/commit/df402cd474476f57e779f18538356a7f07f368c7))
+* **deps:** update github-actions ([559d8be](https://github.com/getcihub/cihub/commit/559d8be4653dcb65ff4a8722be67d633c7537398))
+* **deps:** update rust crate proptest to v1.12.0 ([63b67fe](https://github.com/getcihub/cihub/commit/63b67fee36caf9178c269ff575f481bba9702acd))
+* **deps:** update rust crate serde_json to v1.0.152 ([ff735df](https://github.com/getcihub/cihub/commit/ff735df415177d7eeb4d67c7d24104aeb67e4d38))
+* **deps:** update rust crate serde_json to v1.0.154 ([73c0218](https://github.com/getcihub/cihub/commit/73c0218c92d315c90231911cd01b42e1f25e3786))
+* **deps:** update rust crate tokio-util to v0.7.20 ([0cdf5dd](https://github.com/getcihub/cihub/commit/0cdf5dd5300c0a3d62980dc9eef5d9a433966013))
+
 ## [0.2.1](https://github.com/getcihub/cihub/compare/v0.2.0...v0.2.1) (2026-10-10)
 
 
