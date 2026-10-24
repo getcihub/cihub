@@ -6784,6 +6784,130 @@ async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPo
     cancel.cancel();
 }
 
+/// A person without access to a repository gets `repo_not_found` on its
+/// routes, whether the path names it plainly or percent-encoded.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_percent_encoded_repository_name_does_not_bypass_the_permission(pool: PgPool) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    seed(&pool).await;
+    let sim = Arc::new(Sim::new());
+    let ada = ScmUser {
+        external_id: "70".into(),
+        login: "ada".into(),
+    };
+    let account = ScmAccount {
+        external_id: "1".into(),
+        path: "acme".into(),
+    };
+    let secret_repo = RepoRef {
+        connection: ConnectionRef {
+            id: connection(),
+            external_id: "1".into(),
+        },
+        external_id: "201".into(),
+        namespace: "acme".into(),
+        name: "secret".into(),
+    };
+    sim.add_installation("1", account, &[]);
+    sim.set_member("1", &ada, MembershipRole::Member);
+    sim.add_repo(&secret_repo, "main", &[]);
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+                            default_branch)
+             VALUES ('{secret}', '{org}', '{connection}', '201', 'acme', 'secret', 'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{queue}', '{org}', '{secret}', 'main');",
+        secret = RepoId::from_ulid(Ulid(80)),
+        queue = QueueId::from_ulid(Ulid(81)),
+        org = org(),
+        connection = connection(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let session = signed_in(&pool, &sim, &ada).await;
+    let cancel = CancellationToken::new();
+    let deliveries = Arc::new(Mutex::new(HashMap::new()));
+    let module = cihub_mergequeue::module(
+        pool.clone(),
+        sim.clone(),
+        translate(&deliveries),
+        "scheduler".into(),
+        Arc::new(clock),
+        None,
+    );
+    let (addr, _) = serve_api_with(&pool, module.api, sim.clone(), cancel.clone()).await;
+    let post = |path: &'static str| {
+        let (addr, session) = (addr.clone(), session.clone());
+        async move {
+            let request = format!(
+                "POST /api/v1{path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\
+                 Cookie: __Host-cihub_session={}\r\nX-CSRF-Token: {}\r\n\
+                 Content-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}",
+                session.expose_secret(),
+                cihub_store::csrf_token(&session),
+            );
+            let mut stream = tokio::net::TcpStream::connect(&addr).await.unwrap();
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut answer = String::new();
+            stream.read_to_string(&mut answer).await.unwrap();
+            let body = answer
+                .split_once("\r\n\r\n")
+                .map(|(_, body)| body)
+                .unwrap_or_default();
+            (
+                answer[9..12].parse::<u16>().unwrap(),
+                serde_json::from_str::<Value>(body).unwrap_or(Value::Null),
+            )
+        }
+    };
+    let get = |path: &'static str| {
+        let (addr, session) = (addr.clone(), session.clone());
+        async move { read_as(&addr, &session, path).await }
+    };
+    let repo_not_found = (404, serde_json::json!("repo_not_found"));
+
+    let answers = [
+        ("plain GET repo", get("/orgs/acme/repos/secret").await),
+        ("encoded GET repo", get("/orgs/acme/repos/s%65cret").await),
+        (
+            "plain GET queue",
+            get("/orgs/acme/repos/secret/queues/main").await,
+        ),
+        (
+            "encoded GET queue",
+            get("/orgs/acme/repos/s%65cret/queues/main").await,
+        ),
+        (
+            "plain POST cancel",
+            post("/orgs/acme/repos/secret/prs/1/cancel").await,
+        ),
+        (
+            "encoded POST cancel",
+            post("/orgs/acme/repos/s%65cret/prs/1/cancel").await,
+        ),
+        (
+            "encoded org GET repo",
+            get("/orgs/%61cme/repos/secret").await,
+        ),
+        (
+            "encoded org GET queue",
+            get("/orgs/%61cme/repos/s%65cret/queues/main").await,
+        ),
+    ];
+    for (label, answer) in answers {
+        assert_eq!(
+            (answer.0, answer.1["code"].clone()),
+            repo_not_found,
+            "{label}"
+        );
+    }
+    cancel.cancel();
+}
+
 /// Signs `person` in on `sim` as the dashboard would: a session, their role
 /// in `acme` read now, and their token, sealed.
 async fn signed_in(pool: &PgPool, sim: &Sim, person: &ScmUser) -> SecretString {
