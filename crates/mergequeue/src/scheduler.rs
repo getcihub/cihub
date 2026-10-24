@@ -18,15 +18,15 @@ use cihub_mq_core::plan;
 use cihub_platform::{
     Delivery, Job, MIN_WAIT, QueueWakeup, TICK, acquire_leases, begin_reconciliation,
     delete_delivery, enqueue_job, mark_dirty, notify_queue_changed, pending_deliveries,
-    release_leases, schedule_tick, until_next_tick,
+    record_delivery_failure, release_leases, schedule_tick, until_next_tick,
 };
 use cihub_scm::{ScmDelivery, ScmEvent, ScmUser};
 use cihub_store::{PgPool, begin_system, delete_facts, pending_facts};
 use serde_json::{Value, json};
-use sqlx::{PgConnection, Postgres, Transaction};
+use sqlx::{Acquire, PgConnection, Postgres, Transaction};
 use time::{Duration, OffsetDateTime};
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, info, info_span, warn};
+use tracing::{Instrument, error, info, info_span, warn};
 
 use crate::assembly::{assemble, cleanup};
 use crate::command::{ItemCommand, Merge, PR_COMMAND, PrCommand, PrCommandRequest, parse_command};
@@ -541,11 +541,14 @@ struct ConnectionDelivery {
     connection: ConnectionId,
 }
 
+type ConnectionDeliveryRow = (String, String, String, String, Value);
+
 /// Reads the deliveries of a connection without a queue, and returns their number. A
 /// `merge` command requests its submission, whose job finds the queue by the base
 /// branch of the PR; a concluded check on the head of a `not_ready` item asks its queue
-/// to read the PR. A delivery read is deleted in the same transaction, except one that
-/// waits for the next pass.
+/// to read the PR. A delivery read is deleted in the same savepoint, except one that
+/// waits for the next pass. A delivery that fails loses its writes alone and the others
+/// go on: it is counted, and set aside at `MAX_DELIVERY_ATTEMPTS` failures.
 ///
 /// # Errors
 ///
@@ -555,13 +558,11 @@ pub async fn pass_connection_deliveries(
     reconciler: &Reconciler,
     now: OffsetDateTime,
 ) -> Result<usize, MergeQueueError> {
-    type Row = (String, String, String, String, Value);
-
     let mut tx = begin_system(pool).await?;
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<ConnectionDeliveryRow> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, event, payload
          FROM webhook_inbox
-         WHERE queue_id IS NULL AND connection_id IS NOT NULL
+         WHERE queue_id IS NULL AND connection_id IS NOT NULL AND set_aside_at IS NULL
          ORDER BY received_at, delivery_id
          LIMIT $1
          FOR UPDATE SKIP LOCKED",
@@ -571,34 +572,68 @@ pub async fn pass_connection_deliveries(
     .await?;
     let count = rows.len();
 
-    for (delivery_id, org_id, connection, event, payload) in rows {
-        let delivery = ConnectionDelivery {
-            org_id: parse_id(&org_id, &delivery_id)?,
-            connection: parse_id(&connection, &delivery_id)?,
-            delivery_id: delivery_id.clone(),
-        };
-        let processed = match (reconciler.translate)(&event, &payload) {
-            Ok(read) => pass_delivery(&mut tx, &delivery, read.event, now).await?,
-            Err(err) => {
-                warn!(
-                    delivery_id,
-                    event,
-                    error = &*err as &dyn Error,
-                    "delivery not translated"
-                );
-                true
-            }
-        };
-        if !processed {
+    for row in rows {
+        let (delivery_id, org_id) = (row.0.clone(), row.1.clone());
+        let Err(err) = read_connection_delivery(&mut tx, reconciler, row, now).await else {
             continue;
-        }
+        };
 
-        delete_delivery(&mut tx, &delivery_id).await?;
+        let (attempts, is_set_aside) = record_delivery_failure(&mut tx, &delivery_id, now).await?;
+        if is_set_aside {
+            error!(
+                delivery_id,
+                org_id,
+                attempts,
+                error = &err as &dyn Error,
+                "delivery of a connection set aside"
+            );
+        } else {
+            warn!(
+                delivery_id,
+                org_id,
+                attempts,
+                error = &err as &dyn Error,
+                "delivery of a connection failed"
+            );
+        }
     }
 
     tx.commit().await?;
 
     Ok(count)
+}
+
+/// Reads one delivery in a savepoint: an error leaves nothing of the delivery.
+async fn read_connection_delivery(
+    tx: &mut Transaction<'_, Postgres>,
+    reconciler: &Reconciler,
+    (delivery_id, org_id, connection, event, payload): ConnectionDeliveryRow,
+    now: OffsetDateTime,
+) -> Result<(), MergeQueueError> {
+    let mut savepoint = tx.begin().await?;
+    let delivery = ConnectionDelivery {
+        org_id: parse_id(&org_id, &delivery_id)?,
+        connection: parse_id(&connection, &delivery_id)?,
+        delivery_id,
+    };
+    let processed = match (reconciler.translate)(&event, &payload) {
+        Ok(read) => pass_delivery(&mut savepoint, &delivery, read.event, now).await?,
+        Err(err) => {
+            warn!(
+                delivery_id = delivery.delivery_id,
+                event,
+                error = &*err as &dyn Error,
+                "delivery not translated"
+            );
+            true
+        }
+    };
+    if processed {
+        delete_delivery(&mut savepoint, &delivery.delivery_id).await?;
+    }
+    savepoint.commit().await?;
+
+    Ok(())
 }
 
 /// What a delivery of a connection without a queue asks. Returns
