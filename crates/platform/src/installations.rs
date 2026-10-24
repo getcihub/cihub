@@ -279,7 +279,10 @@ async fn converge_installation(
             update_connection(&mut tx, &connection, installation, now).await?;
         }
         (None, Some(installation)) if is_active => {
-            onboard(&mut tx, kind, installation, now).await?;
+            match account_connection(&mut tx, kind, &installation.account.external_id).await? {
+                Some(connection) => reconnect(&mut tx, &connection, installation, now).await?,
+                None => onboard(&mut tx, kind, installation, now).await?,
+            }
         }
         (None, _) => {}
     }
@@ -287,20 +290,48 @@ async fn converge_installation(
     tx.commit().await.map_err(PlatformError::Query)
 }
 
+/// `FOR UPDATE` makes a sync of the old installation id wait for the
+/// reconnection to the new one, then find nothing instead of suspending the
+/// connection again.
 async fn known_connection(
     conn: &mut PgConnection,
     kind: ConnectionKind,
     external_id: &str,
 ) -> Result<Option<KnownConnection>, PlatformError> {
-    let row: Option<(String, String, bool)> = sqlx::query_as(
+    let row = sqlx::query_as(
         "SELECT org_id, id, suspended_at IS NOT NULL FROM scm_connections
-         WHERE kind = $1::connection_kind AND external_id = $2",
+         WHERE kind = $1::connection_kind AND external_id = $2 FOR UPDATE",
     )
     .bind(kind.as_str())
     .bind(external_id)
     .fetch_optional(&mut *conn)
     .await
     .map_err(PlatformError::Query)?;
+
+    read_connection(row)
+}
+
+async fn account_connection(
+    conn: &mut PgConnection,
+    kind: ConnectionKind,
+    account_external_id: &str,
+) -> Result<Option<KnownConnection>, PlatformError> {
+    let row = sqlx::query_as(
+        "SELECT org_id, id, suspended_at IS NOT NULL FROM scm_connections
+         WHERE kind = $1::connection_kind AND account_external_id = $2 FOR UPDATE",
+    )
+    .bind(kind.as_str())
+    .bind(account_external_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(PlatformError::Query)?;
+
+    read_connection(row)
+}
+
+fn read_connection(
+    row: Option<(String, String, bool)>,
+) -> Result<Option<KnownConnection>, PlatformError> {
     let Some((org_id, id, is_suspended)) = row else {
         return Ok(None);
     };
@@ -312,6 +343,30 @@ async fn known_connection(
         id: id.parse().map_err(PlatformError::read("connection", &id))?,
         is_suspended,
     }))
+}
+
+/// The App was installed again on the account of `connection`: the
+/// organization keeps its history and its connection follows the new
+/// installation.
+async fn reconnect(
+    conn: &mut PgConnection,
+    connection: &KnownConnection,
+    installation: &ScmInstallation,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    update_connection(conn, connection, Some(installation), now).await?;
+
+    let job = sync_repos_job(connection.org_id, connection.id, &hour_window(now));
+    enqueue_job(conn, &job, now, now).await?;
+
+    info!(
+        org_id = %connection.org_id,
+        connection_id = %connection.id,
+        installation = installation.external_id,
+        "connection moved to a new installation"
+    );
+
+    Ok(())
 }
 
 async fn onboard(
@@ -397,13 +452,14 @@ async fn update_connection(
     sqlx::query(
         "UPDATE scm_connections
          SET synced_at = $2, account_external_id = coalesce($3, account_external_id),
-             permissions = coalesce($4, permissions)
+             permissions = coalesce($4, permissions), external_id = coalesce($5, external_id)
          WHERE id = $1",
     )
     .bind(connection.id.to_string())
     .bind(now)
     .bind(installation.map(|installation| &installation.account.external_id))
     .bind(installation.map(|installation| json!(installation.permissions)))
+    .bind(installation.map(|installation| &installation.external_id))
     .execute(&mut *conn)
     .await
     .map_err(PlatformError::Query)?;

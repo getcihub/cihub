@@ -1432,6 +1432,35 @@ async fn a_deleted_installation_suspends_its_connection(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_reinstall_on_the_same_account_reconnects_its_organization(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    sim.add_installation("1", account("1", "org"), &[]);
+    sync_installation(&pool, &sim, "1", at(10)).await;
+
+    sim.remove_installation("1");
+    sync_installation(&pool, &sim, "1", at(20)).await;
+
+    assert_eq!(connection_of(&pool, "1").await.2, Some(at(20)));
+
+    sim.add_installation("2", account("1", "org"), &[("contents", "read")]);
+    sync_installation(&pool, &sim, "2", at(30)).await;
+
+    assert_eq!(
+        orgs(&pool).await,
+        [("org".to_owned(), "1".to_owned(), "2".to_owned())]
+    );
+    assert_eq!(connection_of(&pool, "2").await.2, None);
+
+    let restored = given_facts(&pool)
+        .await
+        .into_iter()
+        .filter(|fact| fact.1 == "access.restored")
+        .count();
+    assert_eq!(restored, 3);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn new_permissions_accepted_are_written_on_the_connection(pool: PgPool) {
     seed(&pool).await;
     let sim = Sim::new();
