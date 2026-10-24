@@ -1437,6 +1437,9 @@ async fn a_reinstall_on_the_same_account_reconnects_its_organization(pool: PgPoo
     let sim = Sim::new();
     sim.add_installation("1", account("1", "org"), &[]);
     sync_installation(&pool, &sim, "1", at(10)).await;
+    let mut tx = begin_system(&pool).await.unwrap();
+    request_repo_syncs(&mut tx, at(10)).await.unwrap();
+    tx.commit().await.unwrap();
 
     sim.remove_installation("1");
     sync_installation(&pool, &sim, "1", at(20)).await;
@@ -1445,19 +1448,28 @@ async fn a_reinstall_on_the_same_account_reconnects_its_organization(pool: PgPoo
 
     sim.add_installation("2", account("1", "org"), &[("contents", "read")]);
     sync_installation(&pool, &sim, "2", at(30)).await;
+    sync_installation(&pool, &sim, "1", at(40)).await;
 
     assert_eq!(
         orgs(&pool).await,
         [("org".to_owned(), "1".to_owned(), "2".to_owned())]
     );
-    assert_eq!(connection_of(&pool, "2").await.2, None);
+    assert_eq!(
+        connection_of(&pool, "2").await,
+        (r#"{"contents": "read"}"#.to_owned(), at(30), None)
+    );
+    assert_eq!(
+        sync_jobs(&pool).await,
+        [
+            format!("sync_repos:{}-20260910T00:1", connection()),
+            format!("sync_repos:{}-installation-2:1", connection()),
+        ]
+    );
 
-    let restored = given_facts(&pool)
-        .await
-        .into_iter()
-        .filter(|fact| fact.1 == "access.restored")
-        .count();
-    assert_eq!(restored, 3);
+    let facts = given_facts(&pool).await;
+    let count = |kind| facts.iter().filter(|fact| fact.1 == kind).count();
+    assert_eq!(count("access.lost"), 3);
+    assert_eq!(count("access.restored"), 3);
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
