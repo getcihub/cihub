@@ -307,11 +307,16 @@ impl GithubApp {
             _ => return Ok(None),
         }
 
-        self.role_in_organization(token, &account.login).await
+        match self.role_in_organization(token, &account.login).await {
+            Err(ScmError::Forbidden(_)) => Ok(None),
+            role => role,
+        }
     }
 
     /// The role of the person of `token` in the organization `login`: an
-    /// active membership gives it; `None` when GitHub refuses the read.
+    /// active membership gives it; `None` for no membership, and when the
+    /// membership is not active. A `403` (single sign-on not authorized,
+    /// allow list of addresses) does not tell: it is `Forbidden`.
     async fn role_in_organization(
         &self,
         token: &SecretString,
@@ -325,7 +330,7 @@ impl GithubApp {
 
         let path = format!("/user/memberships/orgs/{}", encode(login));
         let (answer, _) = self.get_as_person(token, &path).await?;
-        if matches!(answer.status, StatusCode::NOT_FOUND | StatusCode::FORBIDDEN) {
+        if answer.status == StatusCode::NOT_FOUND {
             return Ok(None);
         }
 

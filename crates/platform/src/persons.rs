@@ -325,10 +325,14 @@ pub(crate) async fn request_member_user_syncs(
 /// The role of `user_id` in the organization of `membership`, checked again
 /// with their token on the SCM when it is older than [`ACCESS_LIFETIME`];
 /// `None` when they no longer have one, whose membership is then deleted.
+/// The role is read by the login that the installation has now, not by the
+/// slug, which an account renamed on the SCM leaves behind. An SCM that
+/// refuses the read is an error, never a `None`: the membership stays, and
+/// the hourly read of the members decides.
 ///
 /// # Errors
 ///
-/// Postgres fails, or the SCM does not answer.
+/// Postgres fails, or the SCM does not answer or refuses the read.
 pub async fn role_now(
     pool: &PgPool,
     scm: &dyn Scm,
@@ -353,18 +357,26 @@ pub async fn role_now(
             .fetch_one(&mut *tx)
             .await
             .map_err(PlatformError::Query)?;
-    let account: String = sqlx::query_scalar(
-        "SELECT account_external_id FROM scm_connections ORDER BY created_at, id LIMIT 1",
+    let (account, installation): (String, String) = sqlx::query_as(
+        "SELECT account_external_id, external_id FROM scm_connections ORDER BY created_at, id LIMIT 1",
     )
     .fetch_one(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
     drop(tx);
 
+    let path = match scm
+        .installation(&installation, JobClass::Interactive)
+        .await
+        .map_err(PlatformError::Scm)?
+    {
+        Some(installation) => installation.account.path,
+        None => membership.org_slug.clone(),
+    };
     let person = ScmUser { external_id, login };
     let account = ScmAccount {
         external_id: account,
-        path: membership.org_slug.clone(),
+        path,
     };
     let role = match scm
         .person_role(&token, &person, &account, JobClass::Interactive)

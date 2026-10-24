@@ -75,7 +75,7 @@ know yet: `GET /user/installations` gives its account, its permissions and `susp
 anyone can write it, and only chooses the page to open once signed in, `/orgs/{org}?connecting=install` (or
 `update`) when the installation is an organization where the person has a role, `/welcome` otherwise. The sign-in deletes no membership: `/user/installations`
 lists only the installations that the person reaches through a repository, and GitHub can refuse the read of a
-membership (single sign-on not authorized, allow list of addresses); the hourly read decides who left. Every hour, the `sync_members` job
+membership (single sign-on not authorized, allow list of addresses); the hourly read decides who left. The check of a role older than an hour (`role_now`) reads `GET /app/installations/{id}` for the login of the account now, which a rename changes while `orgs.slug` stays, then `GET /user/memberships/orgs/{login}` with the token of the person: a `404` or a membership that is not `active` deletes the membership; a `403` is an error, so the request answers `503` and the membership stays. Every hour, the `sync_members` job
 of each connection reads `GET /app/installations/{id}` (the kind and the login of the account now) and every page
 of `GET /orgs/{org}/members?role=admin`, then `role=member`, with the token of the installation, and deletes the
 memberships that it no longer reads; the account of a person has its owner as its only member, and another kind
