@@ -27,8 +27,8 @@ use super::{
 };
 use crate::MergeQueueError;
 use crate::jobs::{self, give_back, new_event_id};
-use crate::surfaces::{blocks_sentence, transition_sentence};
 use crate::target::RepoTarget;
+use crate::wording::{blocks_sentence, transition_sentence};
 
 #[derive(sqlx::FromRow)]
 struct ItemRow {
