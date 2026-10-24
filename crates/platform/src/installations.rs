@@ -164,8 +164,8 @@ pub async fn run_sync_installations(
 }
 
 /// Connects, as a sync would, each installation of `installations` that
-/// CIHub does not know yet, and returns how many organizations it created. A
-/// slug already taken does not stop the others: the full sync tries again.
+/// CIHub does not know yet, and returns how many it connected. A slug already
+/// taken does not stop the others: the full sync tries again.
 ///
 /// # Errors
 ///
@@ -356,7 +356,10 @@ async fn reconnect(
 ) -> Result<(), PlatformError> {
     update_connection(conn, connection, Some(installation), now).await?;
 
-    let job = sync_repos_job(connection.org_id, connection.id, &hour_window(now));
+    // Not the hour: the hourly read, done before the uninstall, can already
+    // hold the key of the hour and make this request a no-op.
+    let cause = format!("installation-{}", installation.external_id);
+    let job = sync_repos_job(connection.org_id, connection.id, &cause);
     enqueue_job(conn, &job, now, now).await?;
 
     info!(
