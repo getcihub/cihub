@@ -6,10 +6,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use axum::extract::{DefaultBodyLimit, Request, State};
-use axum::http::header::AUTHORIZATION;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Request, State};
+use axum::http::header::{AUTHORIZATION, HeaderName};
 use axum::http::{HeaderMap, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -24,7 +25,7 @@ use cihub_domain::{
 };
 use cihub_platform::{
     Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, PAGE_ERRORS, Page,
-    PlatformError, QueueNewsFeed, cursor_of, document_error, error_responses, repo_permission_now,
+    PlatformError, cursor_of, document_error, error_responses, repo_permission_now,
     request_user_sync, request_user_sync_when_old, role_now,
 };
 use cihub_scm::Scm;
@@ -46,6 +47,7 @@ use utoipa::openapi::security::{
 use utoipa::openapi::{RefOr, Response as DocumentResponse};
 use utoipa::{Modify, OpenApi};
 
+use crate::Dashboard;
 use crate::device::{
     __path_approve_device_code, __path_deny_device_code, __path_get_device_session,
     __path_start_device_sign_in, approve_device_code, deny_device_code, get_device_session,
@@ -56,7 +58,18 @@ use crate::stream::{__path_stream, Streams, stream};
 
 pub const REQUESTS_PER_MINUTE: u32 = 600;
 
+/// Per client address, on the two routes that need no token. A command line
+/// asks every 5 seconds (12 requests a minute), so this lets about ten
+/// people behind one address wait for their approval at once, and keeps an
+/// anonymous client far below the 600 of a token.
+const SIGN_IN_REQUESTS_PER_MINUTE: u32 = 120;
+
+const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+
 const MAX_BODY_BYTES: usize = 25 * 1024 * 1024;
+
+/// The body of `POST /device-codes/token` is one device code.
+const SIGN_IN_MAX_BODY_BYTES: usize = 4 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct ApiState {
@@ -68,6 +81,8 @@ pub(crate) struct ApiState {
     /// The root address of the instance, where the dashboard is.
     pub public_url: Option<String>,
     windows: Arc<Mutex<Windows>>,
+    /// Proxies in front of the server that append to `X-Forwarded-For`.
+    trusted_proxy_hops: usize,
 }
 
 /// Who calls, for the rate limit.
@@ -75,6 +90,7 @@ pub(crate) struct ApiState {
 enum Caller {
     Token(ApiTokenId),
     Session(SessionId),
+    Address(IpAddr),
 }
 
 /// The requests of the current minute, per caller.
@@ -296,11 +312,15 @@ pub(crate) fn router(
     pool: PgPool,
     now: fn() -> OffsetDateTime,
     modules: Vec<ModuleApi>,
-    scm: Arc<dyn Scm>,
-    cipher: Option<Arc<DatabaseCipher>>,
-    news: QueueNewsFeed,
-    public_url: Option<String>,
+    dashboard: Dashboard,
 ) -> Router {
+    let Dashboard {
+        scm,
+        cipher,
+        public_url,
+        trusted_proxy_hops,
+        news,
+    } = dashboard;
     let parts: Vec<_> = modules
         .iter()
         .map(|module| module.openapi.clone())
@@ -318,6 +338,7 @@ pub(crate) fn router(
         cipher,
         public_url,
         windows: Arc::default(),
+        trusted_proxy_hops,
     };
     let mut routes = Router::new()
         .route("/user", get(get_user))
@@ -351,6 +372,11 @@ pub(crate) fn router(
     let sign_in = Router::new()
         .route("/device-codes", post(start_device_sign_in))
         .route("/device-codes/token", post(get_device_session))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            limited_by_address,
+        ))
+        .layer(DefaultBodyLimit::max(SIGN_IN_MAX_BODY_BYTES))
         .with_state(state);
 
     Router::new()
@@ -391,13 +417,8 @@ async fn authenticated(
         Err(err) => return err.into_response(),
     };
 
-    if let Some(wait) = over_limit(&state, authenticated.caller(), now) {
-        let mut limited = ApiError::new(
-            ErrorCode::RateLimited,
-            format!("at most {REQUESTS_PER_MINUTE} requests per minute and per token or session"),
-        );
-        limited.retry_after = Some(wait);
-        return limited.into_response();
+    if let Some(wait) = over_limit(&state, authenticated.caller(), REQUESTS_PER_MINUTE, now) {
+        return rate_limited(REQUESTS_PER_MINUTE, "token or session", wait);
     }
 
     let extensions = request.extensions_mut();
@@ -414,6 +435,56 @@ async fn authenticated(
     }
 
     next.run(request).await
+}
+
+/// The routes that need no token, limited per client address.
+async fn limited_by_address(
+    State(state): State<ApiState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let address = client_address(peer.ip(), request.headers(), state.trusted_proxy_hops);
+    let caller = Caller::Address(address);
+
+    if let Some(wait) = over_limit(&state, caller, SIGN_IN_REQUESTS_PER_MINUTE, (state.now)()) {
+        return rate_limited(SIGN_IN_REQUESTS_PER_MINUTE, "client address", wait);
+    }
+
+    next.run(request).await
+}
+
+fn rate_limited(limit: u32, per: &str, wait: u64) -> Response {
+    let mut limited = ApiError::new(
+        ErrorCode::RateLimited,
+        format!("at most {limit} requests per minute and per {per}"),
+    );
+    limited.retry_after = Some(wait);
+    limited.into_response()
+}
+
+/// The address of the client: the peer without trusted proxies, else the
+/// `hops`-th address from the right of `X-Forwarded-For`, which the proxy
+/// nearest to the client appended. The addresses to its left come from the
+/// client, who can write anything: a header with fewer addresses than
+/// `hops`, or whose address does not parse, gives the peer.
+fn client_address(peer: IpAddr, headers: &HeaderMap, hops: usize) -> IpAddr {
+    if hops == 0 {
+        return peer;
+    }
+
+    let forwarded: Vec<&str> = headers
+        .get_all(X_FORWARDED_FOR)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .collect();
+
+    forwarded
+        .len()
+        .checked_sub(hops)
+        .and_then(|index| forwarded[index].trim().parse().ok())
+        .unwrap_or(peer)
 }
 
 /// A token always has a grant in its organization. A session has one only
@@ -645,7 +716,7 @@ fn repo_of_path(path: &str) -> Option<&str> {
         .filter(|name| !name.is_empty())
 }
 
-fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u64> {
+fn over_limit(state: &ApiState, caller: Caller, limit: u32, now: OffsetDateTime) -> Option<u64> {
     let minute = now.unix_timestamp().div_euclid(60);
     let mut windows = state.windows.lock().unwrap_or_else(PoisonError::into_inner);
 
@@ -654,7 +725,7 @@ fn over_limit(state: &ApiState, caller: Caller, now: OffsetDateTime) -> Option<u
         windows.counts.clear();
     }
     let count = windows.counts.entry(caller).or_insert(0);
-    if *count >= REQUESTS_PER_MINUTE {
+    if *count >= limit {
         let elapsed = now.unix_timestamp().rem_euclid(60);
         return Some(u64::try_from(60 - elapsed).unwrap_or(60));
     }
@@ -994,3 +1065,51 @@ type AuditRow = (
     Option<Value>,
     OffsetDateTime,
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PEER: IpAddr = IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1));
+
+    fn address_after(forwarded: &[&str], hops: usize) -> IpAddr {
+        let mut headers = HeaderMap::new();
+
+        for value in forwarded {
+            headers.append(X_FORWARDED_FOR, value.parse().unwrap());
+        }
+
+        client_address(PEER, &headers, hops)
+    }
+
+    #[test]
+    fn without_trusted_proxies_the_client_is_the_peer() {
+        assert_eq!(address_after(&["1.2.3.4"], 0), PEER);
+    }
+
+    #[test]
+    fn the_client_is_the_address_that_the_nearest_trusted_proxy_appended() {
+        let forged = "9.9.9.9, 1.2.3.4, 5.6.7.8";
+
+        assert_eq!(
+            address_after(&[forged], 1),
+            "5.6.7.8".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            address_after(&[forged], 2),
+            "1.2.3.4".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            address_after(&["9.9.9.9", "1.2.3.4, 5.6.7.8"], 2),
+            "1.2.3.4".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_header_that_does_not_fit_the_proxies_gives_the_peer() {
+        assert_eq!(address_after(&[], 1), PEER);
+        assert_eq!(address_after(&["1.2.3.4"], 2), PEER);
+        assert_eq!(address_after(&["1.2.3.4, garbage"], 1), PEER);
+        assert_eq!(address_after(&["1.2.3.4, "], 1), PEER);
+    }
+}

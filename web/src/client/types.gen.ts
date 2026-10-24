@@ -1549,6 +1549,10 @@ export type StartDeviceSignInData = {
 
 export type StartDeviceSignInErrors = {
     /**
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
+     */
+    429: Problem;
+    /**
      * - `internal`: The server failed; the logs of the instance say why.
      */
     500: Problem;
@@ -1588,6 +1592,7 @@ export type GetDeviceSessionErrors = {
      */
     403: Problem;
     /**
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      * - `polling_too_fast`: The command line asked again sooner than `interval`: wait 5 seconds more each time.
      */
     429: Problem;
@@ -1634,7 +1639,7 @@ export type ApproveDeviceCodeErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1680,7 +1685,7 @@ export type DenyDeviceCodeErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1713,7 +1718,7 @@ export type GetInstanceErrors = {
      */
     401: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1755,7 +1760,7 @@ export type GetOrgErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1820,7 +1825,7 @@ export type ListAuditErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1911,7 +1916,7 @@ export type ListOrgPrsErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -1982,7 +1987,7 @@ export type ListOrgQueuesErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2058,7 +2063,7 @@ export type ListReposErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2113,7 +2118,7 @@ export type GetRepoErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2214,7 +2219,7 @@ export type ListRepoPrsErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2278,7 +2283,7 @@ export type GetPrErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2347,7 +2352,7 @@ export type CancelErrors = {
      */
     409: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2420,7 +2425,7 @@ export type ListEventsErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2489,7 +2494,7 @@ export type RestartErrors = {
      */
     409: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2556,7 +2561,7 @@ export type SubmitErrors = {
      */
     409: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2624,7 +2629,7 @@ export type ListRepoQueuesErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2684,7 +2689,7 @@ export type GetQueueErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2749,7 +2754,7 @@ export type UpdateQueueErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2807,7 +2812,7 @@ export type GraphErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2883,7 +2888,7 @@ export type GetHealthErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -2944,7 +2949,7 @@ export type SyncQueueErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3002,7 +3007,7 @@ export type GetRunErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3058,7 +3063,7 @@ export type SyncRepoErrors = {
      */
     404: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3107,7 +3112,7 @@ export type StreamErrors = {
     404: Problem;
     /**
      * - `too_many_streams`: The token or the person already keeps 8 streams open.
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3144,7 +3149,7 @@ export type GetUserErrors = {
      */
     401: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3192,7 +3197,7 @@ export type ListUserOrgsErrors = {
      */
     401: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3229,7 +3234,7 @@ export type DeleteUserSessionErrors = {
      */
     403: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**
@@ -3266,7 +3271,7 @@ export type SyncUserErrors = {
      */
     403: Problem;
     /**
-     * - `rate_limited`: The token or the session made 600 requests in the minute: retry after `Retry-After` seconds.
+     * - `rate_limited`: The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.
      */
     429: Problem;
     /**

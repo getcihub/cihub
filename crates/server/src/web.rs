@@ -20,6 +20,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         pool,
         http_addr,
         public_url,
+        trusted_proxy_hops,
         github,
         cancel,
         ..
@@ -40,6 +41,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         scm,
         cipher: github.cipher,
         public_url,
+        trusted_proxy_hops,
         news,
     };
     let router = cihub_web::router(pool.clone(), now, webhooks, modules, dashboard);

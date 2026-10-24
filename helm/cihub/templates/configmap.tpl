@@ -15,6 +15,9 @@ data:
     {{- with .Values.publicUrl }}
     {{- $_ := set $http "public_url" . }}
     {{- end }}
+    {{- with .Values.trustedProxyHops }}
+    {{- $_ := set $http "trusted_proxy_hops" (int .) }}
+    {{- end }}
     {{- $github := dict
       "url" .Values.github.url
       "app_id" (toString .Values.github.appId)

@@ -36,7 +36,7 @@ A cursor of another list, or one that does not read, answers `400 invalid_cursor
 
 ## Rate limits
 
-A token or a session makes at most 600 requests per minute on each replica of the server; past it, the answer is `429 rate_limited` with the header `Retry-After`. A token or a person keeps at most 8 streams open.
+A token or a session makes at most 600 requests per minute on each replica of the server; past it, the answer is `429 rate_limited` with the header `Retry-After`. The two routes of the sign-in of the command line that need no token allow 120 requests per minute for each client address. A token or a person keeps at most 8 streams open.
 
 ## Errors
 

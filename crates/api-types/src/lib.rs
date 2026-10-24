@@ -221,8 +221,9 @@ impl ErrorCode {
                 "Only an item in `testing` or `pending_failure` can restart its tests."
             }
             Self::RateLimited => {
-                "The token or the session made 600 requests in the minute: retry after \
-                 `Retry-After` seconds."
+                "The token, the session or the client address made too many requests in the minute \
+                 (600 for a token or a session, 120 for the sign-in of the command line): retry \
+                 after `Retry-After` seconds."
             }
             Self::TooManyStreams => "The token or the person already keeps 8 streams open.",
             Self::PollingTooFast => {

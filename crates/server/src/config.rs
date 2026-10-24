@@ -15,7 +15,7 @@ use cihub_telemetry::{LogFormat, Logs};
 use secrecy::SecretString;
 use serde_saphyr::{DefaultMessageFormatter, MessageFormatter};
 
-const KEYS: [&str; 17] = [
+const KEYS: [&str; 18] = [
     "database.url",
     "database.pool_size",
     "database.idle_timeout",
@@ -23,6 +23,7 @@ const KEYS: [&str; 17] = [
     "database.secret",
     "http.addr",
     "http.public_url",
+    "http.trusted_proxy_hops",
     "internal.addr",
     "log.filter",
     "log.format",
@@ -42,6 +43,8 @@ pub struct Config {
     /// The address where people reach the instance, such as
     /// `https://ci.example.com`; without it, nobody signs in to the dashboard.
     pub public_url: Option<String>,
+    /// Proxies in front of the server that append to `X-Forwarded-For`.
+    pub trusted_proxy_hops: usize,
     pub database: Database,
     pub logs: Logs,
     pub github: Option<GithubApp>,
@@ -99,6 +102,7 @@ impl Config {
             .non_empty("http.public_url")
             .map(|found| public_url(&found))
             .transpose()?;
+        let trusted_proxy_hops = trusted_proxy_hops(&sources)?;
         let database = database(&sources)?;
 
         let log_format = match sources.get("log.format") {
@@ -131,6 +135,7 @@ impl Config {
             internal_addr,
             http_addr,
             public_url,
+            trusted_proxy_hops,
             database,
             logs,
             github,
@@ -186,6 +191,20 @@ fn public_url(found: &Found) -> anyhow::Result<String> {
             found.value
         ),
     }
+}
+
+fn trusted_proxy_hops(sources: &Sources<impl Fn(&str) -> Option<String>>) -> anyhow::Result<usize> {
+    let Some(found) = sources.non_empty("http.trusted_proxy_hops") else {
+        return Ok(0);
+    };
+
+    found.value.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "{} `{}` must be a non-negative integer",
+            found.origin,
+            found.value
+        )
+    })
 }
 
 type FileValues = BTreeMap<String, String>;
@@ -375,6 +394,7 @@ mod tests {
                 "CIHUB_DATABASE_SECRET",
                 "CIHUB_HTTP_ADDR",
                 "CIHUB_HTTP_PUBLIC_URL",
+                "CIHUB_HTTP_TRUSTED_PROXY_HOPS",
                 "CIHUB_INTERNAL_ADDR",
                 "CIHUB_LOG_FILTER",
                 "CIHUB_LOG_FORMAT",
@@ -599,6 +619,21 @@ github:
 
         assert_eq!(app.config.url, DEFAULT_GITHUB_URL);
         assert_eq!(app.config.private_key.expose_secret(), "key");
+    }
+
+    #[test]
+    fn the_trusted_proxy_hops_are_a_count_that_is_zero_by_default() {
+        let hops = |value| load(None, &[DATABASE, ("CIHUB_HTTP_TRUSTED_PROXY_HOPS", value)]);
+
+        assert_eq!(load(None, &[DATABASE]).unwrap().trusted_proxy_hops, 0);
+        assert_eq!(hops("2").unwrap().trusted_proxy_hops, 2);
+        for wrong in ["-1", "one", "1.5"] {
+            let err = hops(wrong).unwrap_err().to_string();
+            assert!(
+                err.starts_with("CIHUB_HTTP_TRUSTED_PROXY_HOPS"),
+                "{wrong}: {err}"
+            );
+        }
     }
 
     #[test]
