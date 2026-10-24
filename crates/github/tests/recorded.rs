@@ -851,6 +851,52 @@ async fn the_token_of_a_person_reads_what_they_reach() {
     assert_eq!(in_own, Some(MembershipRole::Admin), "no call for the owner");
 }
 
+/// SEC-7: a 403 on the membership read (single sign-on not authorized) means
+/// "cannot tell", not "not a member"; `None` deletes the membership.
+#[tokio::test]
+async fn a_refused_read_of_a_membership_is_not_a_missing_membership() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let exchanges = vec![
+        answer(
+            "GET",
+            "/user/memberships/orgs/acme",
+            403,
+            json!({ "message": "Resource protected by organization SAML enforcement" }),
+        ),
+        answer(
+            "GET",
+            "/user/memberships/orgs/gone",
+            404,
+            json!({ "message": "Not Found" }),
+        ),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app_with_sign_in(&replay.url, now);
+    let token = SecretString::from("token");
+    let person = ScmUser {
+        external_id: "5".into(),
+        login: "octocat".into(),
+    };
+    let account = |path: &str| ScmAccount {
+        external_id: "70".into(),
+        path: path.into(),
+    };
+
+    let refused = app
+        .person_role(&token, &person, &account("acme"), JobClass::Interactive)
+        .await;
+    let absent = app
+        .person_role(&token, &person, &account("gone"), JobClass::Interactive)
+        .await;
+
+    replay.finish();
+    assert!(
+        !matches!(refused, Ok(None)),
+        "a 403 must not be reported as no membership: {refused:?}"
+    );
+    assert!(matches!(absent, Ok(None)), "a 404 is no membership");
+}
+
 /// Written by hand from the documentation of GitHub, not recorded: GitHub
 /// refuses a refresh token used once, and a revoked token.
 #[tokio::test]

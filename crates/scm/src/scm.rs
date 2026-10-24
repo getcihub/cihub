@@ -329,9 +329,12 @@ pub trait Scm: Send + Sync {
         class: JobClass,
     ) -> ScmFuture<'a, Permission>;
 
-    /// The role of `person`, whose token is `token`, in `account`; `None`
-    /// without one. The owner of the account of a person is its `admin`.
-    /// `AccessLost` when the SCM refuses the token.
+    /// The role of `person`, whose token is `token`, in `account`, looked up
+    /// by `account.path`, the login of the account now; `None` without one.
+    /// The owner of the account of a person is its `admin`. `AccessLost` when
+    /// the SCM refuses the token; `Forbidden` when it refuses the read of the
+    /// membership (single sign-on not authorized): that is not `None`, so
+    /// the caller keeps what it knows.
     fn person_role<'a>(
         &'a self,
         token: &'a SecretString,
