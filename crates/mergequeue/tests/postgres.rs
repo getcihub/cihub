@@ -3596,6 +3596,16 @@ async fn every_page(addr: &str, token: &str, path: &str, entries: &str) -> Vec<V
     }
 }
 
+/// `prs` without their estimate, which follows the clock of the test and so
+/// can change between two reads of the same PRs.
+fn without_estimates(prs: &[Value]) -> Vec<Value> {
+    let mut prs = prs.to_vec();
+    for pr in &mut prs {
+        pr.as_object_mut().unwrap().remove("merges_in_seconds");
+    }
+    prs
+}
+
 /// The API v1 reads and changes a queue, named by the organization, the
 /// repository and the queue: a submission, its item, its timeline and its run,
 /// the graph, a restart and a cancel by PR number on the current item, a
@@ -4190,7 +4200,11 @@ async fn a_person_follows_their_prs_until_the_merge(pool: PgPool) {
             let whole = get(path.clone()).await;
             let paged = every_page(&addr, &token, &path, "prs").await;
 
-            assert_eq!(&paged, whole["prs"].as_array().unwrap(), "{path}");
+            assert_eq!(
+                without_estimates(&paged),
+                without_estimates(whole["prs"].as_array().unwrap()),
+                "{path}"
+            );
             assert_eq!(whole["count"], count, "{path}");
         }
     }
