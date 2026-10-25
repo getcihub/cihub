@@ -21,6 +21,7 @@ mod repo_setup;
 mod scheduler;
 mod surfaces;
 mod target;
+mod wording;
 
 use std::sync::Arc;
 
