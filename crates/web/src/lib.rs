@@ -15,6 +15,7 @@ mod sign_in;
 mod stream;
 
 use std::error::Error;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -54,6 +55,9 @@ pub struct Dashboard {
     /// `None` when nobody signs in: the sign-in keeps a token, sealed.
     pub cipher: Option<Arc<DatabaseCipher>>,
     pub public_url: Option<String>,
+    /// Proxies in front of the server that append to `X-Forwarded-For`; 0
+    /// takes the address of the connection as the address of the client.
+    pub trusted_proxy_hops: usize,
     pub news: QueueNewsFeed,
 }
 
@@ -88,18 +92,7 @@ pub fn router(
             post(session::sign_out).with_state(pool.clone()),
         )
         .merge(sign_in_routes(&pool, now, &dashboard))
-        .nest(
-            API_PREFIX,
-            api::router(
-                pool,
-                now,
-                modules,
-                dashboard.scm,
-                dashboard.cipher,
-                dashboard.news,
-                dashboard.public_url,
-            ),
-        )
+        .nest(API_PREFIX, api::router(pool, now, modules, dashboard))
         .fallback(get(dashboard::serve))
 }
 
@@ -127,9 +120,12 @@ pub async fn serve(
     router: Router,
     cancel: CancellationToken,
 ) -> std::io::Result<()> {
-    axum::serve(listener, router)
-        .with_graceful_shutdown(cancel.cancelled_owned())
-        .await
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(cancel.cancelled_owned())
+    .await
 }
 
 async fn github_webhook(

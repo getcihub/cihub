@@ -47,10 +47,11 @@ macro_rules! route_errors {
     };
 }
 
-route_errors!(CreateErrors: &[ErrorCode::SignInUnavailable]);
+route_errors!(CreateErrors: &[ErrorCode::RateLimited, ErrorCode::SignInUnavailable]);
 route_errors!(
     TokenErrors: &[
         ErrorCode::InvalidRequest,
+        ErrorCode::RateLimited,
         ErrorCode::DeviceCodePending,
         ErrorCode::DeviceCodeExpired,
         ErrorCode::DeviceCodeDenied,

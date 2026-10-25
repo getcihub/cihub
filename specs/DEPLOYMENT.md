@@ -87,6 +87,7 @@ startup, with a message that names the key and the file, or the variable.
 | `internal.addr`           | `CIHUB_INTERNAL_ADDR`           | `127.0.0.1:8081`     | Address of `/healthz` and `/readyz`, not to be exposed (`specs/SECURITY.md`) |
 | `http.addr`               | `CIHUB_HTTP_ADDR`               | `0.0.0.0:8080`       | Public address of the `web` role: webhooks on `POST /webhooks/github`, then the API |
 | `http.public_url`         | `CIHUB_HTTP_PUBLIC_URL`         | none                 | Root address where people reach the instance, such as `https://ci.example.com`; the sign-in to the dashboard sends them back there, and without it nobody signs in; the status and the comment of a PR link to its page there |
+| `http.trusted_proxy_hops` | `CIHUB_HTTP_TRUSTED_PROXY_HOPS` | `0`                  | Number of proxies in front of the server that append to `X-Forwarded-For`; with `N` above 0, the client address of a route without a token is the `N`-th address from the right of the header, and the address of the connection when the header has fewer than `N` addresses or the address does not parse; 0 uses the address of the connection (`specs/SECURITY.md`) |
 | `log.filter`              | `CIHUB_LOG_FILTER`              | `info`               | Log filter (`specs/OBSERVABILITY.md`)                                        |
 | `log.format`              | `CIHUB_LOG_FORMAT`              | `json`               | `json` or `pretty` (`specs/OBSERVABILITY.md`)                                |
 | `github.url`              | `CIHUB_GITHUB_URL`              | `https://github.com` | github.com or the address of a GitHub Enterprise Server |
@@ -179,7 +180,7 @@ The secrets come from existing Secrets: `database.existingSecret` gives `CIHUB_D
 `database.secretExistingSecret` when it is set, so that the URL can stay in a Secret that an operator writes
 (`<cluster>-app` of CloudNativePG), and `github.existingSecret`
 gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a file, and, when `github.clientId` is
-set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, and `database.poolSize`,
+set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, `trustedProxyHops` gives `http.trusted_proxy_hops` (set it to the number of proxies of the Ingress path, else every client behind them shares one limit), and `database.poolSize`,
 `database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
 CIHub does not call the Kubernetes API. `helm/cihub/README.md`, generated, lists the values.
