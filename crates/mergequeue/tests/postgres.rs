@@ -2812,6 +2812,123 @@ async fn a_delivery_processed_again_writes_no_wrong_fact(pool: PgPool) {
     q.stop().await;
 }
 
+/// A required check of the test goes `queued`, `in_progress`, `completed`.
+/// Its `in_progress` delivered again after the end, while the run is live or
+/// once it passed, leaves it `completed`, so the run passes; a rerun after the
+/// end takes it back, and a replay gives the same rows.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_late_running_check_leaves_it_concluded(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let config = format!(
+        "version: 1\nqueues:\n  - branch: main\n    required_statuses: [{REQUIRED}, lint]\n    direct_merge_mode: off\n"
+    );
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", &config)]);
+
+    q.deliver().await;
+    q.settle().await;
+
+    let (number, head) = open_pr_with(&sim, &main, 1, &[("f1.txt", Some("x"))]);
+    sim.report_check(&repo(), &head, check(REQUIRED, true))
+        .unwrap();
+    sim.comment(&repo(), number, &alice(), "/cihub merge")
+        .unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    let (run_id, test_sha, _) = q.runs_in_progress().await.remove(0);
+    let started_at = q.clock.now();
+    let job = |name: &str, status| CheckReport {
+        kind: CheckKind::Check,
+        status,
+        conclusion: (status == CheckStatus::Completed).then_some(CheckConclusion::Success),
+        started_at: Some(started_at),
+        completed_at: (status == CheckStatus::Completed)
+            .then(|| started_at + time::Duration::minutes(5)),
+        ..check(name, true)
+    };
+    let report = async |q: &mut SimQueue, name: &str, status| {
+        sim.report_check(&repo(), &test_sha, job(name, status))
+            .unwrap();
+        q.deliver().await;
+        q.settle().await;
+        format!("delivery-{}", q.sent)
+    };
+    let observed = async |pool: &PgPool| -> Vec<(String, String)> {
+        let mut tx = begin_system(pool).await.unwrap();
+        sqlx::query_as(
+            "SELECT name, status::text FROM check_observations WHERE run_id = $1 ORDER BY name",
+        )
+        .bind(run_id.to_string())
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap()
+    };
+
+    report(&mut q, "lint", CheckStatus::Queued).await;
+    let lint_running = report(&mut q, "lint", CheckStatus::InProgress).await;
+
+    assert_eq!(
+        observed(&pool).await,
+        [("lint".into(), "in_progress".into())]
+    );
+
+    report(&mut q, "lint", CheckStatus::Completed).await;
+    let ci_running = report(&mut q, REQUIRED, CheckStatus::InProgress).await;
+
+    assert!(q.deliver_again(&lint_running).await);
+    q.settle().await;
+
+    assert_eq!(
+        observed(&pool).await,
+        [
+            (REQUIRED.into(), "in_progress".into()),
+            ("lint".into(), "completed".into())
+        ]
+    );
+
+    report(&mut q, REQUIRED, CheckStatus::Completed).await;
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(item_state(&pool, number).await, "merged");
+
+    assert!(q.deliver_again(&ci_running).await);
+    q.settle().await;
+
+    assert_eq!(
+        observed(&pool).await,
+        [
+            (REQUIRED.into(), "completed".into()),
+            ("lint".into(), "completed".into())
+        ]
+    );
+
+    q.clock.advance(1);
+    let rerun = CheckReport {
+        started_at: Some(started_at + time::Duration::minutes(6)),
+        ..job(REQUIRED, CheckStatus::Queued)
+    };
+    sim.report_check(&repo(), &test_sha, rerun).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(
+        observed(&pool).await,
+        [
+            (REQUIRED.into(), "queued".into()),
+            ("lint".into(), "completed".into())
+        ]
+    );
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let before = projections(&mut tx).await;
+    rebuild(&mut tx, queue()).await.unwrap();
+    assert_eq!(projections(&mut tx).await, before);
+    drop(tx);
+    q.stop().await;
+}
+
 /// A check that concludes on the head of an admitted item, or on a commit
 /// that is the head of no item, asks for no read.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

@@ -280,6 +280,15 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 return Outcome::Ignored;
             }
 
+            // The SCM does not order its deliveries: a late report would leave
+            // a required check that passed waiting until the run times out.
+            if checks
+                .get(&key)
+                .is_some_and(|observed| observed.value.is_regressed_by(check))
+            {
+                return Outcome::Ignored;
+            }
+
             let observation = CheckObservation {
                 org_id: snapshot.org_id,
                 run_id,

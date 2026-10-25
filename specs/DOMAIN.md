@@ -146,6 +146,9 @@ Nature of an observed check (`CheckKind`): `check` (a check with a run: GitHub c
 pipeline job) or `status` (a commit status). Progress (`CheckStatus`): `queued` (it waits for a
 runner, or a required status has not reported), `in_progress`, `completed` (it has a conclusion);
 a check gives when it started and completed, a commit status only the time of its state.
+A report that has not concluded does not take a `completed` check back, unless it started after the
+end of that check, as a rerun does: GitHub does not order its deliveries, and an `in_progress` that
+arrives after the `completed` of the same execution is ignored (`CheckObservation::is_regressed_by`).
 Conclusion (`CheckConclusion`): the values of GitHub; `success`, `neutral` and `skipped` pass, the
 others fail the run. Culprit of a conflict at
 assembly (`ConflictCulprit`): what the group member conflicts with, a PR ahead of it in the

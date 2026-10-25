@@ -17,9 +17,10 @@ use crate::client::{CALL_TIMEOUT, JSON, api_url};
 use crate::scm::encode;
 use crate::{SETUP_PATH, SIGN_IN_CALLBACK_PATH, WEBHOOK_PATH};
 
-/// The permissions of the App in `specs/GITHUB.md`, without the optional
-/// `actions`.
-const PERMISSIONS: [(&str, &str); 8] = [
+/// The permissions of the App in `specs/GITHUB.md`: `actions` is read only,
+/// its optional write stays a choice of the operator.
+const PERMISSIONS: [(&str, &str); 9] = [
+    ("actions", "read"),
     ("administration", "read"),
     ("checks", "read"),
     ("contents", "write"),
@@ -32,7 +33,7 @@ const PERMISSIONS: [(&str, &str); 8] = [
 
 /// The events of `specs/GITHUB.md`; GitHub sends those of the installation
 /// without a subscription.
-const EVENTS: [&str; 9] = [
+const EVENTS: [&str; 10] = [
     "branch_protection_rule",
     "check_run",
     "check_suite",
@@ -42,6 +43,7 @@ const EVENTS: [&str; 9] = [
     "push",
     "repository",
     "status",
+    "workflow_job",
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -265,8 +267,11 @@ mod tests {
 
         assert_eq!(manifest["default_permissions"]["contents"], "write");
         assert_eq!(manifest["default_permissions"]["members"], "read");
-        assert!(manifest["default_permissions"].get("actions").is_none());
-        assert_eq!(manifest["default_events"].as_array().map(Vec::len), Some(9));
+        assert_eq!(manifest["default_permissions"]["actions"], "read");
+        assert_eq!(
+            manifest["default_events"].as_array().map(Vec::len),
+            Some(10)
+        );
     }
 
     #[test]

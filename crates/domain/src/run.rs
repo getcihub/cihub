@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::{
-    CheckConclusion, CheckKind, CheckStatus, GroupId, GroupKind, GroupState, ItemId, OrgId,
-    QueueId, Reason, RunId, RunStatus,
+    CheckConclusion, CheckKind, CheckReport, CheckStatus, GroupId, GroupKind, GroupState, ItemId,
+    OrgId, QueueId, Reason, RunId, RunStatus,
 };
 
 /// The unit that is tested and held in `pending_failure`: one PR or a batch.
@@ -96,9 +96,69 @@ pub struct CheckObservation {
     pub observed_at: OffsetDateTime,
 }
 
+impl CheckObservation {
+    /// Whether `report` would take this concluded check back to a state
+    /// before its end: a late delivery of the same execution, as an
+    /// `in_progress` after the `completed`. A check that starts again after
+    /// its end, as a rerun, does not; without both times, or within the same
+    /// second as the end, nothing tells it, and the check waits for its next
+    /// conclusion.
+    pub fn is_regressed_by(&self, report: &CheckReport) -> bool {
+        let is_rerun = report
+            .started_at
+            .zip(self.completed_at)
+            .is_some_and(|(started, ended)| started > ended);
+
+        self.status == CheckStatus::Completed
+            && report.status != CheckStatus::Completed
+            && !is_rerun
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_late_report_takes_a_concluded_check_back() {
+        let start = OffsetDateTime::UNIX_EPOCH;
+        let at = |minutes| Some(start + time::Duration::minutes(minutes));
+        let completed = CheckObservation {
+            org_id: OrgId::from_ulid(ulid::Ulid(1)),
+            run_id: RunId::from_ulid(ulid::Ulid(2)),
+            name: "Smoke".into(),
+            kind: CheckKind::Check,
+            required: true,
+            status: CheckStatus::Completed,
+            conclusion: Some(CheckConclusion::Success),
+            details_url: None,
+            started_at: at(10),
+            completed_at: at(20),
+            observed_at: start,
+        };
+        let report = |status, started_at| CheckReport {
+            name: "Smoke".into(),
+            kind: CheckKind::Check,
+            status,
+            conclusion: None,
+            details_url: None,
+            started_at,
+            completed_at: None,
+        };
+
+        assert!(completed.is_regressed_by(&report(CheckStatus::InProgress, at(10))));
+        assert!(completed.is_regressed_by(&report(CheckStatus::Queued, None)));
+        assert!(!completed.is_regressed_by(&report(CheckStatus::Queued, at(25))));
+        assert!(!completed.is_regressed_by(&report(CheckStatus::Completed, at(10))));
+
+        let running = CheckObservation {
+            status: CheckStatus::InProgress,
+            conclusion: None,
+            ..completed
+        };
+
+        assert!(!running.is_regressed_by(&report(CheckStatus::Queued, at(10))));
+    }
 
     #[test]
     fn conflict_culprit_is_tagged_by_kind() {
