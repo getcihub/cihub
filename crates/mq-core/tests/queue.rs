@@ -1013,6 +1013,51 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
     assert_replays(&w);
 }
 
+/// A check goes `queued`, `in_progress`, `completed`; a `queued` or an
+/// `in_progress` delivered late does not take it back, and a rerun after its
+/// end does.
+#[test]
+fn a_check_goes_back_only_for_a_rerun() {
+    let mut w = world();
+    w.submit(1, Priority::MEDIUM);
+    let run_id = w.run(1).unwrap();
+    w.assemble_all();
+    let start = w.now;
+    let lint = |status, started: i64| CheckReport {
+        name: "lint".into(),
+        kind: CheckKind::Check,
+        status,
+        conclusion: (status == CheckStatus::Completed).then_some(CheckConclusion::Failure),
+        details_url: None,
+        started_at: Some(start + time::Duration::minutes(started)),
+        completed_at: (status == CheckStatus::Completed)
+            .then(|| start + time::Duration::minutes(5)),
+    };
+    let mut report = |check| {
+        w.fact(
+            Actor::System,
+            EventKind::CheckObserved {
+                test_sha: format!("test-{run_id}"),
+                check,
+            },
+        )
+    };
+
+    assert_eq!(report(lint(CheckStatus::Queued, 0)), Outcome::Applied);
+    assert_eq!(report(lint(CheckStatus::InProgress, 1)), Outcome::Applied);
+    assert_eq!(report(lint(CheckStatus::Queued, 0)), Outcome::Ignored);
+    assert_eq!(report(lint(CheckStatus::Completed, 1)), Outcome::Applied);
+    assert_eq!(report(lint(CheckStatus::InProgress, 1)), Outcome::Ignored);
+    assert_eq!(report(lint(CheckStatus::Queued, 6)), Outcome::Applied);
+
+    let key = ("lint".to_owned(), CheckKind::Check);
+    assert_eq!(
+        w.snapshot.checks[&run_id][&key].value.status,
+        CheckStatus::Queued
+    );
+    assert_replays(&w);
+}
+
 #[test]
 fn a_busy_queue_reads_its_target_head_every_5_minutes() {
     let mut w = world();

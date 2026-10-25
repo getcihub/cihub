@@ -89,7 +89,9 @@ closed_enum! {
 }
 
 closed_enum! {
-    /// Progress of a check or a commit status.
+    /// Progress of a check or a commit status. The order of the variants is
+    /// the order of the life of a check, as in the Postgres enum
+    /// `check_status`: `CheckObservation::is_regressed_by` compares them.
     pub enum CheckStatus {
         Queued,
         InProgress,

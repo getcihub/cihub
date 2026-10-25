@@ -92,6 +92,7 @@ Under _Repository permissions_:
 
 | Permission          | Access         | What CIHub does with it                                                                                                      |
 | ------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Actions**         | Read-only      | Show a check of GitHub Actions as running when a runner takes its job                                                        |
 | **Administration**  | Read-only      | Read the rules of the branches, for their required checks and to [check your setup](/docs/branch-protection#check-the-setup) |
 | **Checks**          | Read-only      | Read the checks of your CI on the test commits                                                                               |
 | **Commit statuses** | Read and write | Write the statuses `CIHub Merge Queue (<branch>)` and `CIHub Conditions (<branch>)`                                          |
@@ -117,6 +118,7 @@ Under _Subscribe to events_, check:
 - **Push**
 - **Repository**
 - **Status**
+- **Workflow job**
 
 GitHub sends the events of the installation itself without a subscription.
 
@@ -190,3 +192,7 @@ GitHub (_Settings → GitHub Apps → Configure_ in the organization); CIHub rea
 When a new version of CIHub needs a new permission or event, change it on the page of the App. GitHub then asks an
 owner of each organization to accept the new permissions (_Settings → GitHub Apps_ in the organization): until they
 do, the installation keeps the old ones.
+
+From the release after 0.3.0, the App needs **Actions**, Read-only, and the **Workflow job** event: without them, a
+check of GitHub Actions shows _queued_ until it ends, never _running_. An App that `cihub app create` makes has
+them; on an older App, add them on the page of the App, then accept them in each organization.

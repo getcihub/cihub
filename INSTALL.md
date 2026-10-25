@@ -13,10 +13,10 @@ procedure is in [`specs/GITHUB.md`](https://github.com/getcihub/cihub/blob/main/
 - **Webhook**: active, URL `https://<your CIHub host>/webhooks/github`, and a random secret
   (`openssl rand -hex 32`).
 - **Repository permissions**: Contents *write*, Pull requests *write*, Commit statuses *write*, Checks *read*,
-  Metadata *read*, Administration *read*, Issues *write*; Organization: Members *read*. Actions *write* is
-  optional.
-- **Events**: Pull request, Pull request review, Issue comment, Push, Check run, Check suite, Status, Branch
-  protection rule, Repository.
+  Metadata *read*, Administration *read*, Issues *write*, Actions *read*; Organization: Members *read*. Actions
+  *write* is optional.
+- **Events**: Pull request, Pull request review, Issue comment, Push, Check run, Check suite, Status, Workflow
+  job, Branch protection rule, Repository.
 - **Where can this GitHub App be installed?**: *Only on this account*. Keep the App private: any account that
   installs a public App gets an organization in your CIHub.
 - **Callback URL**, for the sign-in to the dashboard: `https://<your CIHub host>/auth/github/callback`.

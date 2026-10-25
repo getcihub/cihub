@@ -268,15 +268,12 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             let checks = snapshot.checks.entry(run_id).or_default();
             let key = (check.name.clone(), check.kind);
 
-            let same = checks.get(&key).is_some_and(|o| {
-                let seen = &o.value;
-                seen.status == check.status
-                    && seen.conclusion == check.conclusion
-                    && seen.details_url == check.details_url
-                    && seen.started_at == check.started_at
-                    && seen.completed_at == check.completed_at
+            // The SCM does not order its deliveries: a late report would leave
+            // a required check that passed waiting until the run times out.
+            let is_ignored = checks.get(&key).is_some_and(|observed| {
+                observed.value.reports_the_same(check) || observed.value.is_regressed_by(check)
             });
-            if same {
+            if is_ignored {
                 return Outcome::Ignored;
             }
 
