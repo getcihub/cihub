@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.1](https://github.com/getcihub/cihub/compare/v0.3.0...v0.3.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **mergequeue:** isolate each delivery of a connection and set aside one that keeps failing ([c0f9be5](https://github.com/getcihub/cihub/commit/c0f9be56f5df3a7a2f72b239265b9297a50e767b))
+* **mergequeue:** remove the `direct` submission option that nothing implemented ([10e4682](https://github.com/getcihub/cihub/commit/10e468271b029c74bd3de8add18557e74b8e0567))
+* **platform:** keep a membership when GitHub refuses the role read or the account was renamed ([d8722ee](https://github.com/getcihub/cihub/commit/d8722ee49015b33cd0ad244c926ce704e845a14d))
+* **platform:** read the repositories at once after a reinstall on the same account ([b33e6e4](https://github.com/getcihub/cihub/commit/b33e6e460ed26ae1ccaa7c21f6bdd0a57123ba4d))
+* **platform:** reconnect the organization when the App is installed again on the same account ([e868021](https://github.com/getcihub/cihub/commit/e86802145cc104a29da09451054a17b8eda71500))
+* **site:** build on any error of the ignore command ([fba73e3](https://github.com/getcihub/cihub/commit/fba73e32b79041a7ed5b7d040831206a81b10003))
+* **site:** build when the previous deployed commit is gone from the clone ([f346b7b](https://github.com/getcihub/cihub/commit/f346b7b3e76bbf6776465e02065eaeaa8866f222))
+* **web:** authorize a session from the decoded path parameters ([56afe88](https://github.com/getcihub/cihub/commit/56afe88554e83810b5f8e104d272bf0fb610dc32))
+* **web:** limit the sign-in routes of the command line per client address ([ecf2e32](https://github.com/getcihub/cihub/commit/ecf2e32536e3556241fe8e5c9abc0aff5dc667ad))
+
+
+### Code Refactoring
+
+* **mergequeue:** split jobs into one file per job and keep the cause in Failure ([ad16337](https://github.com/getcihub/cihub/commit/ad1633717b3c89fe613ad22eaf64f728e3ae8764))
+* **mergequeue:** split the pure wording of the PR surfaces from their jobs ([d903f86](https://github.com/getcihub/cihub/commit/d903f867b7ac5ac0608cc15ed1f08e86c2fb5f74))
+* **mq-core:** split plan.rs into a plan module directory ([0dd62e1](https://github.com/getcihub/cihub/commit/0dd62e1e0ee8d68b73ec82f4bcbdf6b48ad6caed))
+
 ## [0.3.0](https://github.com/getcihub/cihub/compare/v0.2.1...v0.3.0) (2026-10-24)
 
 
