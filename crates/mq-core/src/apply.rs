@@ -173,7 +173,6 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
             head_sha,
             priority,
             no_batch,
-            direct,
             submitted_via,
             profile,
             ..
@@ -185,7 +184,6 @@ fn apply_fact(snapshot: &mut Snapshot, event: &Event) -> Outcome {
                 head_sha: head_sha.clone(),
                 priority: *priority,
                 no_batch: *no_batch,
-                direct: *direct,
                 submitted_via: *submitted_via,
                 profile: profile.clone(),
             },
@@ -514,7 +512,6 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                 head_sha,
                 priority,
                 no_batch,
-                direct,
                 submitted_via,
                 profile,
             }) = submission.cloned()
@@ -544,7 +541,6 @@ fn apply_decision(snapshot: &mut Snapshot, event: &Event) -> Result<(), ApplyErr
                     priority,
                     no_batch,
                     profile,
-                    force_enqueued: direct,
                     submitted_via,
                     position: None,
                     is_current,

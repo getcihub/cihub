@@ -892,10 +892,6 @@ pub struct SubmitPr {
     #[cfg_attr(feature = "openapi", schema(example = "dependencies"))]
     #[serde(default)]
     pub profile: Option<String>,
-    /// Merge the PR without a test of the queue; the person needs the
-    /// permission `admin` on the repository.
-    #[serde(default)]
-    pub direct: bool,
 }
 
 /// An event of the log of a queue about a PR.

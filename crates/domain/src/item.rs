@@ -29,8 +29,6 @@ pub struct Item {
     /// The profile of the queue that gives the settings of the item; `None`
     /// takes those of the queue.
     pub profile: Option<String>,
-    /// Submitted with `--direct`: merged by `cihub-sudo`.
-    pub force_enqueued: bool,
     pub submitted_via: SubmittedVia,
     /// Place in the queue; `None` until admission.
     pub position: Option<i64>,

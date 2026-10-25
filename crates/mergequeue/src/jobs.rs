@@ -79,7 +79,6 @@ pub(crate) struct SubmitPr {
     /// `None` leaves the priority to the `priority_rules`.
     pub priority: Option<Priority>,
     pub no_batch: bool,
-    pub direct: bool,
     /// The profile that the command names; `None` leaves it to the
     /// `conditions` of the profiles.
     pub profile: Option<String>,
@@ -101,7 +100,6 @@ impl SubmitPr {
             requested_by: None,
             priority: None,
             no_batch: false,
-            direct: false,
             profile: None,
             label: Some(label),
             comment_id: None,
@@ -601,7 +599,6 @@ struct Submission {
     head_sha: String,
     priority: Priority,
     no_batch: bool,
-    direct: bool,
     profile: Option<String>,
     via: SubmittedVia,
     submitted_by: Option<UserId>,
@@ -617,7 +614,6 @@ struct SubmissionRow {
     head_sha: String,
     priority: i16,
     no_batch: bool,
-    direct: bool,
     profile: Option<String>,
     via: String,
     submitted_by: Option<String>,
@@ -635,7 +631,6 @@ impl SubmissionRow {
             head_sha: self.head_sha,
             priority: Priority(u8::try_from(self.priority).ok()?),
             no_batch: self.no_batch,
-            direct: self.direct,
             profile: self.profile,
             via: self.via.parse().ok()?,
             submitted_by: self.submitted_by.and_then(|id| id.parse().ok()),
@@ -655,7 +650,7 @@ async fn submissions(
     let rows: Vec<SubmissionRow> = sqlx::query_as(
         "SELECT i.pr_number, i.state::text AS state, u.login,
                 i.sender_permission::text AS permission, i.pr_head_sha AS head_sha,
-                i.priority_value AS priority, i.no_batch, i.force_enqueued AS direct, i.profile,
+                i.priority_value AS priority, i.no_batch, i.profile,
                 i.submitted_via::text AS via, i.submitted_by, i.pr_author_id AS author_id
          FROM queue_items i LEFT JOIN users u ON u.id = i.submitted_by
          WHERE i.queue_id = $1 AND i.is_current
@@ -698,7 +693,6 @@ fn resubmission(
         head_sha: pr.head_sha.clone(),
         priority: submission.priority,
         no_batch: submission.no_batch,
-        direct: submission.direct,
         submitted_via: submission.via,
         author_id: submission.author_id,
         additions: pr.additions,
@@ -712,7 +706,7 @@ fn resubmission(
 }
 
 /// The author of the command of `request` with their permission, or `None`
-/// when the permission is too low (`write`, `admin` for `--direct`). A label
+/// when the permission is too low (`write`). A label
 /// gives no sender.
 async fn sender_of(
     scm: &dyn Scm,
@@ -724,16 +718,11 @@ async fn sender_of(
         return Ok(Some(Sender::default()));
     };
 
-    let need = if request.direct {
-        Permission::Admin
-    } else {
-        Permission::Write
-    };
     let has = scm
         .permission(&repo.repo, &ScmUser::from(author), class)
         .await?;
 
-    Ok((has >= need).then(|| Sender {
+    Ok((has >= Permission::Write).then(|| Sender {
         login: Some(author.login.clone()),
         permission: Some(has),
     }))
@@ -972,11 +961,8 @@ pub(crate) async fn submit_pr(
 
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
         info!(pr_number, "submission refused: permission");
-        return refuse(
-            "the command needs the write permission on the repository (admin with `--direct`)."
-                .to_owned(),
-        )
-        .await;
+        return refuse("the command needs the write permission on the repository.".to_owned())
+            .await;
     };
 
     let Some(pr) = find_pull_request(scm, &repo, pr_number, job.class).await? else {
@@ -1037,7 +1023,6 @@ pub(crate) async fn submit_pr(
         head_sha: pr.head_sha.clone(),
         priority,
         no_batch: request.no_batch,
-        direct: request.direct,
         submitted_via: request.via,
         author_id,
         additions: pr.additions,
@@ -1175,7 +1160,6 @@ mod tests {
             requested_by: None,
             priority: None,
             no_batch: false,
-            direct: false,
             profile: None,
             label: None,
             comment_id: None,
