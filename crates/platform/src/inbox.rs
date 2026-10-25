@@ -69,7 +69,7 @@ pub(crate) type DeliveryRow = (
     OffsetDateTime,
 );
 
-/// The deliveries of `queue`, at most `limit`, in the order of reception.
+/// The deliveries of `queue` that are not set aside, at most `limit`, in the order of reception.
 /// The caller holds the lock of the queue.
 ///
 /// # Errors
@@ -83,7 +83,7 @@ pub async fn pending_deliveries(
     let rows: Vec<DeliveryRow> = sqlx::query_as(
         "SELECT delivery_id, org_id, connection_id, queue_id, event, payload, received_at
          FROM webhook_inbox
-         WHERE queue_id = $1
+         WHERE queue_id = $1 AND set_aside_at IS NULL
          ORDER BY received_at, delivery_id
          LIMIT $2",
     )
@@ -130,4 +130,36 @@ pub async fn delete_delivery(
         .await
         .map_err(PlatformError::Query)?;
     Ok(())
+}
+
+/// The failures of a delivery after which it is set aside. A failure that lasts
+/// through five passes does not come from a moment: it needs a person.
+pub const MAX_DELIVERY_ATTEMPTS: i32 = 5;
+
+/// Counts one failure of the delivery `delivery_id`, and sets it aside at
+/// [`MAX_DELIVERY_ATTEMPTS`]. Returns the number of failures, and whether the
+/// delivery is set aside. The caller does it outside the transaction that
+/// the failure rolled back.
+///
+/// # Errors
+///
+/// Postgres fails.
+pub async fn record_delivery_failure(
+    conn: &mut PgConnection,
+    delivery_id: &str,
+    now: OffsetDateTime,
+) -> Result<(i32, bool), PlatformError> {
+    sqlx::query_as(
+        "UPDATE webhook_inbox
+         SET attempts = attempts + 1,
+             set_aside_at = CASE WHEN attempts + 1 >= $2 THEN $3 END
+         WHERE delivery_id = $1
+         RETURNING attempts, set_aside_at IS NOT NULL",
+    )
+    .bind(delivery_id)
+    .bind(MAX_DELIVERY_ATTEMPTS)
+    .bind(now)
+    .fetch_one(conn)
+    .await
+    .map_err(PlatformError::Query)
 }

@@ -80,8 +80,8 @@ carry the mention _lint_; review checks the others.
    | ------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
    | `DEBUG` | Detail for a developer; off in production         | Each GitHub call and its cost, each retried request, the gap between the plan and the observed state                                                        |
    | `INFO`  | One line per decision or state change             | Reconciliation decision (`decision=start_run group=... predecessors=...`), job step, webhook stored, migration applied, degraded mode change                |
-   | `WARN`  | A problem that CIHub handles alone                | Retry after a GitHub error, budget in `throttled` mode, GitHub unavailable, queue lease lost                                                                 |
-   | `ERROR` | An operator must act                              | Job sent to the dead-letter queue, invariant violated, migration failed                                                                                     |
+   | `WARN`  | A problem that CIHub handles alone                | Retry after a GitHub error, failed delivery of a connection (counted, retried at the next pass), budget in `throttled` mode, GitHub unavailable, queue lease lost                                                                 |
+   | `ERROR` | An operator must act                              | Job sent to the dead-letter queue, delivery of a connection set aside after 5 failures, invariant violated, migration failed                                                                                     |
 
    A red CI, a PR evicted from the queue or a duplicate webhook are normal results: `INFO`, never
    `ERROR`.
