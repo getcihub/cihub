@@ -299,8 +299,8 @@ pub(crate) async fn publish(
         return Ok(());
     }
 
-    let rendered: Rendered =
-        serde_json::from_value(desired).map_err(|err| Failure::Never(err.to_string()))?;
+    let rendered: Rendered = serde_json::from_value(desired)
+        .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
     let number = u64::try_from(request.pr_number).unwrap_or_default();
     let repo = &target.repo;
     let class = job.class;
@@ -367,7 +367,7 @@ pub(crate) async fn lock_pr(
     if locked {
         Ok(())
     } else {
-        Err(Failure::Retry(format!(
+        Err(Failure::retry(format!(
             "another job holds the lock `{scope}` of this PR"
         )))
     }

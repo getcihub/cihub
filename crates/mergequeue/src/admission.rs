@@ -131,7 +131,7 @@ async fn file_conditions(
     let ctx = loaded_context(scm, target, pr, reading, |a| conditions.uses(a)).await?;
     conditions
         .unmet(&ctx)
-        .map_err(|err| Failure::Never(err.to_string()))
+        .map_err(|err| Failure::Never(err.into()))
 }
 
 /// The context of `pr`, with the attributes loaded on demand that `uses`
@@ -199,7 +199,7 @@ pub(crate) async fn submission_choices(
 
     let mut unmet = conditions
         .unmet(&ctx)
-        .map_err(|err| Failure::Never(err.to_string()))?;
+        .map_err(|err| Failure::Never(err.into()))?;
     unmet.extend(injected(pr, reading));
     let priority = first_met(rules, &ctx, |rule| &rule.conditions)?.map(|rule| rule.priority);
     let profile = first_met(profiles, &ctx, |profile| &profile.conditions)?
@@ -221,7 +221,7 @@ fn first_met<'a, T: 'a>(
     for item in items {
         if conditions(item)
             .eval(ctx)
-            .map_err(|err| Failure::Never(err.to_string()))?
+            .map_err(|err| Failure::Never(err.into()))?
         {
             return Ok(Some(item));
         }

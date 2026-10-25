@@ -93,7 +93,6 @@ fn after_error(
             error,
         })
     };
-    let text = error_chain(err);
     match err {
         ScmError::HeadChanged => failed(JobError::HeadChanged),
         ScmError::Forbidden(_) => failed(JobError::BranchProtectionUnmet),
@@ -101,12 +100,12 @@ fn after_error(
         ScmError::RateLimited { until } | ScmError::Throttled { until }
             if *until - now <= MERGE_RATE_LIMIT_WAIT && attempts < MAX_ATTEMPTS =>
         {
-            Err(Failure::Retry(text))
+            Err(Failure::Retry(err.clone().into()))
         }
         ScmError::RateLimited { .. } | ScmError::Throttled { .. } => {
             failed(JobError::RateLimitExceeded)
         }
-        _ if attempts < MERGE_ATTEMPTS => Err(Failure::Retry(text)),
+        _ if attempts < MERGE_ATTEMPTS => Err(Failure::Retry(err.clone().into())),
         ScmError::Unavailable(_) => failed(JobError::RepeatedServerErrors),
         ScmError::MergeInProgress => failed(JobError::MergeAlreadyInProgress),
         _ => failed(JobError::MergeRejected),

@@ -60,6 +60,16 @@ pub enum MergeQueueError {
     Platform(#[from] cihub_platform::PlatformError),
     #[error("the settings of the queue are not valid")]
     Settings(#[from] cihub_config::ConfigError),
+    #[error(transparent)]
+    Scm(#[from] cihub_scm::ScmError),
+    #[error(transparent)]
+    Payload(serde_json::Error),
+    #[error(transparent)]
+    Conditions(#[from] cihub_conditions::EvalError),
+    #[error(transparent)]
+    Parse(Box<dyn std::error::Error + Send + Sync>),
+    #[error("{0}")]
+    Job(String),
     #[error("queue {0} does not exist")]
     UnknownQueue(cihub_domain::QueueId),
     #[error("repository {0} does not exist")]
