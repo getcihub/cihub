@@ -21,6 +21,7 @@ use serde_json::json;
 use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 
+use crate::MergeQueueError;
 use crate::config::read_config_file;
 use crate::jobs::{Failure, give_back_facts, is_own_context, job, read_payload, target_of};
 use crate::target::QueueTarget;
@@ -477,7 +478,7 @@ pub(crate) async fn run_state(
         status
             .parse::<RunStatus>()
             .map(|status| (status, started_at))
-            .map_err(|err| Failure::Never(error_chain(&err)))
+            .map_err(|err| Failure::Never(MergeQueueError::Parse(Box::new(err))))
     })
     .transpose()
 }
@@ -491,7 +492,7 @@ fn assembly_failed(
     elapsed: Duration,
 ) -> Result<EventKind, Failure> {
     let (error, conflict_culprit) = match give_up(step, attempts, elapsed) {
-        Ok(text) => return Err(Failure::Retry(text)),
+        Ok(text) => return Err(Failure::retry(text)),
         Err(ended) => ended,
     };
 
@@ -577,7 +578,7 @@ pub(crate) async fn cleanup_run(
 
     let status = status
         .parse::<RunStatus>()
-        .map_err(|err| Failure::Never(error_chain(&err)))?;
+        .map_err(|err| Failure::Never(MergeQueueError::Parse(Box::new(err))))?;
 
     if !status.is_terminal() {
         info!(run_id = %request.run_id, "run still live: nothing to clean");

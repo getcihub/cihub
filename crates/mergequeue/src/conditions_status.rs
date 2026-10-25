@@ -325,7 +325,8 @@ async fn keep_status(
     status: &ConditionsStatus,
     now: OffsetDateTime,
 ) -> Result<Option<String>, Failure> {
-    let desired = serde_json::to_value(status).map_err(|err| Failure::Never(err.to_string()))?;
+    let desired = serde_json::to_value(status)
+        .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
     let desired_hash = hash(status);
     let is_unpublished: Option<bool> = sqlx::query_scalar(
         "INSERT INTO pr_conditions (org_id, queue_id, pr_number, head_sha, desired, desired_hash,
@@ -394,8 +395,8 @@ pub(crate) async fn publish(
         return Ok(());
     }
 
-    let status: ConditionsStatus =
-        serde_json::from_value(desired).map_err(|err| Failure::Never(err.to_string()))?;
+    let status: ConditionsStatus = serde_json::from_value(desired)
+        .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
     let update = StatusUpdate {
         sha: status.sha.clone(),
         context: conditions_status_context(&target.target_branch),
