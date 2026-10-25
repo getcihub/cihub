@@ -2410,6 +2410,128 @@ async fn a_push_without_a_queue_waits_for_a_merge_in_flight(pool: PgPool) {
     assert_eq!(state(pool.clone()).await, (0, 1));
 }
 
+/// A delivery that always fails must not stop the deliveries of the other
+/// organizations: the good one is read at the first pass, and the bad one is
+/// retried, then set aside.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_failing_delivery_does_not_block_the_deliveries_of_another_organization(pool: PgPool) {
+    seed(&pool).await;
+
+    let other_org = OrgId::from_ulid(Ulid(101));
+    let other_connection = ConnectionId::from_ulid(Ulid(111));
+    let other_repo = RepoId::from_ulid(Ulid(121));
+    let other_queue = QueueId::from_ulid(Ulid(131));
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    // A file that this version of CIHub refuses, as after an upgrade.
+    sqlx::query("UPDATE queues SET config_text = 'not: [valid' WHERE id = $1")
+        .bind(queue().to_string())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "INSERT INTO orgs (id, slug) VALUES ('{other_org}', 'other');
+         INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
+                                      synced_at, permissions)
+             VALUES ('{other_connection}', '{other_org}', '2', 'github_app', '2',
+                     '{synced_at}', '{{}}');
+         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+             VALUES ('{other_repo}', '{other_org}', '{other_connection}', '300', 'other', 'app',
+                     'main');
+         INSERT INTO queues (id, org_id, repo_id, target_branch)
+             VALUES ('{other_queue}', '{other_org}', '{other_repo}', 'main');",
+        synced_at = clock(),
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+
+    let failing = ScmDelivery {
+        connection_external_id: Some("1".into()),
+        event: ScmEvent::PrChanged {
+            repo_external_id: "200".into(),
+            number: 1,
+            base_branch: "main".into(),
+            label_added: None,
+            is_ready_for_review: true,
+        },
+    };
+    let good = ScmDelivery {
+        connection_external_id: Some("2".into()),
+        event: ScmEvent::Pushed {
+            repo_external_id: "300".into(),
+            branch: "main".into(),
+            before: None,
+            after: Some("abc".into()),
+            sender: alice(),
+        },
+    };
+    let deliveries = Arc::new(Mutex::new(HashMap::new()));
+    for (id, org_id, connection_id, delivery, received_at) in [
+        ("a-failing", org(), connection(), failing, clock()),
+        (
+            "b-good",
+            other_org,
+            other_connection,
+            good,
+            clock() + Duration::seconds(1),
+        ),
+    ] {
+        deliveries.lock().unwrap().insert(id.to_owned(), delivery);
+        let stored = Delivery {
+            delivery_id: id.into(),
+            org_id: Some(org_id),
+            connection_id: Some(connection_id),
+            queue_id: None,
+            event: "sim".into(),
+            payload: serde_json::json!({ "id": id }),
+            received_at,
+        };
+        store_delivery(&mut tx, &stored).await.unwrap();
+    }
+
+    tx.commit().await.unwrap();
+
+    let reconciler = Reconciler {
+        translate: translate(&deliveries),
+        dashboard_url: None,
+    };
+
+    let passes = cihub_platform::MAX_DELIVERY_ATTEMPTS + 2;
+    for _ in 0..passes {
+        cihub_mergequeue::pass_connection_deliveries(&pool, &reconciler, clock())
+            .await
+            .unwrap();
+    }
+
+    let mut tx = begin_system(&pool).await.unwrap();
+    let refreshes: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM jobs WHERE type = 'refresh_target' AND queue_id = $1",
+    )
+    .bind(other_queue.to_string())
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        refreshes, 1,
+        "the good delivery of the other organization is read"
+    );
+
+    let (attempts, is_set_aside): (i32, bool) = sqlx::query_as(
+        "SELECT attempts, set_aside_at IS NOT NULL FROM webhook_inbox WHERE delivery_id = 'a-failing'",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        (attempts, is_set_aside),
+        (cihub_platform::MAX_DELIVERY_ATTEMPTS, true),
+        "the bad delivery is set aside after its attempts and not tried again"
+    );
+}
+
 /// With `resubmit_on_push`, a push on a PR in the queue cancels its item and
 /// submits the new head, with the same priority.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
