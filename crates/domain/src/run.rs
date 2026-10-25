@@ -97,21 +97,28 @@ pub struct CheckObservation {
 }
 
 impl CheckObservation {
-    /// Whether `report` would take this concluded check back to a state
-    /// before its end: a late delivery of the same execution, as an
-    /// `in_progress` after the `completed`. A check that starts again after
-    /// its end, as a rerun, does not; without both times, or within the same
-    /// second as the end, nothing tells it, and the check waits for its next
-    /// conclusion.
+    /// Whether `report` says the same as this observation.
+    pub fn reports_the_same(&self, report: &CheckReport) -> bool {
+        self.status == report.status
+            && self.conclusion == report.conclusion
+            && self.details_url == report.details_url
+            && self.started_at == report.started_at
+            && self.completed_at == report.completed_at
+    }
+
+    /// Whether `report` would take this check back to an earlier status: a
+    /// late delivery of the same execution, as a `queued` after the
+    /// `in_progress`, or an `in_progress` after the `completed`. A check that
+    /// starts again after its end, as a rerun, does not; without both times,
+    /// or within the same second as the end, nothing tells it, and the check
+    /// waits for its next conclusion.
     pub fn is_regressed_by(&self, report: &CheckReport) -> bool {
         let is_rerun = report
             .started_at
             .zip(self.completed_at)
             .is_some_and(|(started, ended)| started > ended);
 
-        self.status == CheckStatus::Completed
-            && report.status != CheckStatus::Completed
-            && !is_rerun
+        report.status < self.status && !is_rerun
     }
 }
 
@@ -120,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_a_late_report_takes_a_concluded_check_back() {
+    fn a_check_goes_back_only_for_a_rerun() {
         let start = OffsetDateTime::UNIX_EPOCH;
         let at = |minutes| Some(start + time::Duration::minutes(minutes));
         let completed = CheckObservation {
@@ -154,10 +161,13 @@ mod tests {
         let running = CheckObservation {
             status: CheckStatus::InProgress,
             conclusion: None,
+            completed_at: None,
             ..completed
         };
 
-        assert!(!running.is_regressed_by(&report(CheckStatus::Queued, at(10))));
+        assert!(running.is_regressed_by(&report(CheckStatus::Queued, at(5))));
+        assert!(!running.is_regressed_by(&report(CheckStatus::InProgress, at(10))));
+        assert!(!running.is_regressed_by(&report(CheckStatus::Completed, at(10))));
     }
 
     #[test]

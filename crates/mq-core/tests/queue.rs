@@ -1013,10 +1013,11 @@ fn a_silent_run_has_its_checks_read_every_10_minutes() {
     assert_replays(&w);
 }
 
-/// A check goes `queued`, `in_progress`, `completed`; the `in_progress`
-/// delivered late does not take it back, and a rerun after its end does.
+/// A check goes `queued`, `in_progress`, `completed`; a `queued` or an
+/// `in_progress` delivered late does not take it back, and a rerun after its
+/// end does.
 #[test]
-fn a_concluded_check_goes_back_only_for_a_rerun() {
+fn a_check_goes_back_only_for_a_rerun() {
     let mut w = world();
     w.submit(1, Priority::MEDIUM);
     let run_id = w.run(1).unwrap();
@@ -1044,6 +1045,7 @@ fn a_concluded_check_goes_back_only_for_a_rerun() {
 
     assert_eq!(report(lint(CheckStatus::Queued, 0)), Outcome::Applied);
     assert_eq!(report(lint(CheckStatus::InProgress, 1)), Outcome::Applied);
+    assert_eq!(report(lint(CheckStatus::Queued, 0)), Outcome::Ignored);
     assert_eq!(report(lint(CheckStatus::Completed, 1)), Outcome::Applied);
     assert_eq!(report(lint(CheckStatus::InProgress, 1)), Outcome::Ignored);
     assert_eq!(report(lint(CheckStatus::Queued, 6)), Outcome::Applied);

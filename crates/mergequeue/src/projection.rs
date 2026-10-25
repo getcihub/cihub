@@ -455,10 +455,10 @@ async fn create_item(
 }
 
 /// Writes the last report of a check on the test SHA of its run, when it is
-/// newer than the one stored and does not take a concluded check back
-/// (`CheckObservation::is_regressed_by`). The same rows come from a fact of
-/// the log and from a late report, so a replay of the log keeps the late
-/// reports.
+/// newer than the one stored and does not take the check back to an earlier
+/// status (`CheckObservation::is_regressed_by`). The same rows come from a
+/// fact of the log and from a late report, so a replay of the log keeps the
+/// late reports.
 async fn upsert_check(
     conn: &mut PgConnection,
     check: &CheckObservation,
@@ -474,7 +474,7 @@ async fn upsert_check(
                  started_at = excluded.started_at, completed_at = excluded.completed_at,
                  observed_at = excluded.observed_at
              WHERE excluded.observed_at >= check_observations.observed_at
-               AND (check_observations.status <> 'completed' OR excluded.status = 'completed'
+               AND (excluded.status >= check_observations.status
                     OR excluded.started_at > check_observations.completed_at)",
     )
     .bind(check.org_id.to_string())
