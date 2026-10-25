@@ -361,6 +361,13 @@ reason no longer holds.
 - **Why not**: not measured yet. A CI with N checks gives up to N reads per push of a waiting PR.
 - **Would change if**: a measurement shows that these reads cost too much of the budget.
 
+### Read the checks of the live runs again to show a running check
+
+- **Tried / considered**: GitHub sends no `check_run` when a check starts, so read the checks of each live run
+  from the tick; or show `queued` as "queued or running".
+- **Why not**: the reads spend the SCM budget for a display only, on every live run; the label would hide what
+  CIHub knows. The `in_progress` action of `workflow_job` gives the start of a GitHub Actions job instead.
+
 ## PR surfaces
 
 ### Checkboxes for `restart` and `cancel` in the PR comment

@@ -79,6 +79,10 @@ pub fn translate(event: &str, payload: &Value) -> Result<ScmDelivery, TranslateE
                 completed_at: time_at(payload, "/check_run/completed_at"),
             },
         },
+        // GitHub sends no `check_run` when a runner takes a job; `check_run`
+        // already reports its creation and its end, which other actions would
+        // report twice.
+        "workflow_job" if action == "in_progress" => job_started(&read)?,
         "status" => ScmEvent::CheckChanged {
             repo_external_id: read.id("/repository/id")?,
             sha: read.text("/sha")?,
@@ -167,6 +171,30 @@ fn pr_changed(read: &Reader<'_>, action: &str) -> Result<ScmEvent, TranslateErro
             .flatten(),
         is_ready_for_review: read.text("/pull_request/state")? == "open"
             && !read.flag("/pull_request/draft"),
+    })
+}
+
+/// The job of GitHub Actions that a runner took: its check run is in
+/// progress.
+fn job_started(read: &Reader<'_>) -> Result<ScmEvent, TranslateError> {
+    let job = &read.payload["workflow_job"];
+    Ok(ScmEvent::CheckChanged {
+        repo_external_id: read.id("/repository/id")?,
+        sha: read.text("/workflow_job/head_sha")?,
+        branches: job["head_branch"]
+            .as_str()
+            .map(str::to_owned)
+            .into_iter()
+            .collect(),
+        check: CheckReport {
+            name: read.text("/workflow_job/name")?,
+            kind: CheckKind::Check,
+            status: CheckStatus::InProgress,
+            conclusion: None,
+            details_url: job["html_url"].as_str().map(str::to_owned),
+            started_at: time_at(read.payload, "/workflow_job/started_at"),
+            completed_at: None,
+        },
     })
 }
 
@@ -503,6 +531,47 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn only_a_job_that_a_runner_takes_is_a_check_change() {
+        let job = |action: &str| {
+            json!({
+                "action": action,
+                "repository": { "id": 7 },
+                "workflow_job": {
+                    "name": "Smoke", "head_sha": "abc", "head_branch": "cihub-merge/pr-12/r1",
+                    "status": action, "conclusion": null,
+                    "html_url": "https://github.com/o/r/actions/runs/1/job/2",
+                    "started_at": "2026-10-11T12:00:00Z", "completed_at": null,
+                },
+            })
+        };
+
+        assert_eq!(
+            event("workflow_job", &job("in_progress")),
+            ScmEvent::CheckChanged {
+                repo_external_id: "7".into(),
+                sha: "abc".into(),
+                branches: vec!["cihub-merge/pr-12/r1".into()],
+                check: CheckReport {
+                    name: "Smoke".into(),
+                    kind: CheckKind::Check,
+                    status: CheckStatus::InProgress,
+                    conclusion: None,
+                    details_url: Some("https://github.com/o/r/actions/runs/1/job/2".into()),
+                    started_at: Some(datetime!(2026-10-11 12:00 UTC)),
+                    completed_at: None,
+                },
+            }
+        );
+        for action in ["queued", "waiting", "completed"] {
+            assert_eq!(
+                event("workflow_job", &job(action)),
+                ScmEvent::Ignored,
+                "{action}"
+            );
+        }
     }
 
     #[test]
