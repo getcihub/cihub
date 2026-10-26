@@ -54,13 +54,15 @@ fn with_github(pool: &PgPool) -> Command {
     command
 }
 
-fn start(pool: &PgPool, addr: &str) -> Child {
-    with_github(pool)
-        .arg("start")
-        .env("CIHUB_INTERNAL_ADDR", addr)
-        .env("CIHUB_HTTP_ADDR", free_addr())
-        .spawn()
-        .unwrap()
+fn start(pool: &PgPool, addr: &str) -> Server {
+    Server(
+        with_github(pool)
+            .arg("start")
+            .env("CIHUB_INTERNAL_ADDR", addr)
+            .env("CIHUB_HTTP_ADDR", free_addr())
+            .spawn()
+            .unwrap(),
+    )
 }
 
 fn get(addr: &str, path: &str) -> Option<(String, String)> {
@@ -105,13 +107,27 @@ fn wait_for(addr: &str, path: &str) -> (String, String) {
     panic!("{addr}{path} never answered");
 }
 
-fn stop(mut child: Child) {
+/// A started `cihub-server`, killed when a test panics before [`stop`]: left
+/// running, it would hold the database of the test, whose name is the same at
+/// each run, and the next run could not drop it.
+struct Server(Child);
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        if let Ok(None) = self.0.try_wait() {
+            self.0.kill().ok();
+            self.0.wait().ok();
+        }
+    }
+}
+
+fn stop(mut server: Server) {
     let status = Command::new("kill")
-        .args(["-TERM", &child.id().to_string()])
+        .args(["-TERM", &server.0.id().to_string()])
         .status()
         .unwrap();
     assert!(status.success());
-    let status = child.wait().unwrap();
+    let status = server.0.wait().unwrap();
     assert!(status.success(), "{status}");
 }
 
@@ -213,12 +229,14 @@ async fn all_in_one_runs_the_maintenance_of_the_day(pool: PgPool) {
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
     let (internal, public) = (free_addr(), free_addr());
-    let child = with_github(&pool)
-        .arg("start")
-        .env("CIHUB_INTERNAL_ADDR", &internal)
-        .env("CIHUB_HTTP_ADDR", &public)
-        .spawn()
-        .unwrap();
+    let child = Server(
+        with_github(&pool)
+            .arg("start")
+            .env("CIHUB_INTERNAL_ADDR", &internal)
+            .env("CIHUB_HTTP_ADDR", &public)
+            .spawn()
+            .unwrap(),
+    );
 
     wait_for(&internal, "/readyz");
     let body = r#"{"zen":"Keep it logically awesome."}"#;
@@ -350,12 +368,14 @@ async fn two_queues(pool: &PgPool) -> String {
 async fn the_queue_commands_drive_the_api(pool: PgPool) {
     let token = two_queues(&pool).await;
     let (internal, public) = (free_addr(), free_addr());
-    let child = with_github(&pool)
-        .arg("start")
-        .env("CIHUB_INTERNAL_ADDR", &internal)
-        .env("CIHUB_HTTP_ADDR", &public)
-        .spawn()
-        .unwrap();
+    let child = Server(
+        with_github(&pool)
+            .arg("start")
+            .env("CIHUB_INTERNAL_ADDR", &internal)
+            .env("CIHUB_HTTP_ADDR", &public)
+            .spawn()
+            .unwrap(),
+    );
 
     wait_for(&public, "/api/v1/openapi.json");
     let cihub = |args: &[&str]| {
@@ -413,14 +433,16 @@ async fn dashboard_session(pool: &PgPool) -> (String, String) {
 async fn the_command_line_signs_in_with_a_code_that_its_person_approves(pool: PgPool) {
     let (cookie, csrf) = dashboard_session(&pool).await;
     let (internal, public) = (free_addr(), free_addr());
-    let child = with_github(&pool)
-        .arg("start")
-        .env("CIHUB_INTERNAL_ADDR", &internal)
-        .env("CIHUB_HTTP_ADDR", &public)
-        .env("CIHUB_HTTP_PUBLIC_URL", format!("http://{public}"))
-        .env("CIHUB_DATABASE_SECRET", "a database secret of 32 bytes ab")
-        .spawn()
-        .unwrap();
+    let child = Server(
+        with_github(&pool)
+            .arg("start")
+            .env("CIHUB_INTERNAL_ADDR", &internal)
+            .env("CIHUB_HTTP_ADDR", &public)
+            .env("CIHUB_HTTP_PUBLIC_URL", format!("http://{public}"))
+            .env("CIHUB_DATABASE_SECRET", "a database secret of 32 bytes ab")
+            .spawn()
+            .unwrap(),
+    );
     let config = std::env::temp_dir().join(format!("cihub-{}", public.replace(':', "-")));
     let cihub = |args: &[&str]| {
         let mut command = Command::new(cli());
