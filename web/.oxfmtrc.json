@@ -6,12 +6,5 @@
     "stylesheet": "./src/styles/globals.css",
     "functions": ["cn", "cva"]
   },
-  "ignorePatterns": [
-    "dist/",
-    "playwright-report/",
-    "pnpm-lock.yaml",
-    "openapi.json",
-    "src/client/",
-    "src/routeTree.gen.ts"
-  ]
+  "ignorePatterns": ["dist/", "playwright-report/", "pnpm-lock.yaml", "src/client/", "src/routeTree.gen.ts"]
 }

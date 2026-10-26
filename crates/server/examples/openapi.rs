@@ -4,7 +4,7 @@
 
 fn main() -> Result<(), serde_json::Error> {
     // The modules that `server::merge_queue` mounts: a new module adds its
-    // document here too, or `web/openapi.json` misses its routes.
+    // document here too, or `schema/openapi/v1.json` misses its routes.
     let document = cihub_web::openapi(&[cihub_mergequeue::openapi()]);
     let json = serde_json::to_string_pretty(&document)?;
 

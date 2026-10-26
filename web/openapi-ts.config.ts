@@ -3,7 +3,7 @@
 import { defineConfig } from "@hey-api/openapi-ts";
 
 export default defineConfig({
-  input: "./openapi.json",
+  input: "../schema/openapi/v1.json",
   output: "src/client",
   plugins: ["@hey-api/client-fetch", "@tanstack/react-query"],
 });

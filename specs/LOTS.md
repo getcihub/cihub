@@ -375,7 +375,7 @@ Decisions:
   - Changed by the mockups v5 (October 10, 2026, validated by the project lead): a person without an organization
     gets a session, and the dashboard asks them to install the App, instead of an error of the sign-in.
   - Done (October 10, 2026): step 4. `web/`: TypeScript 6 (`typescript-eslint` does not take 7 yet), React 19,
-    Vite 8, TanStack Router and Query, Zod 4, the client of `@hey-api/openapi-ts` from `web/openapi.json`, which
+    Vite 8, TanStack Router and Query, Zod 4, the client of `@hey-api/openapi-ts` from `schema/openapi/v1.json`, which
     the example `openapi` of `cihub-cli` writes without a database; ESLint, Prettier and Vitest in `mise run lint`
     and `mise run test`; Node 24 and pnpm 12 in `mise.toml`.
   - Done (October 10, 2026), part of step 5: the sign-in page of the mockups v5 (sign-in, failure, no

@@ -8,14 +8,14 @@ on Vercel with `site/` as the Root Directory. It holds no queue logic and calls 
 An agent that discovers CIHub, or helps a person set up a queue, finds on this site everything a person finds, in
 Markdown. A change keeps these URLs working; `mise run site:test` checks them.
 
-| URL                                                  | Served by                                                 |
-| ---------------------------------------------------- | --------------------------------------------------------- |
-| `/llms.txt`                                          | `src/app/llms.txt/route.ts`: the index                    |
-| `/llms-full.txt`                                     | `src/app/llms-full.txt/route.ts`: every page              |
-| `/docs/<page>.md`                                    | `src/proxy.ts`, then `src/app/llms.mdx/`                  |
-| `/docs/<page>` with `Accept: text/markdown`, and `/` | `src/proxy.ts`: the same Markdown, and `/llms.txt`        |
-| `/schema/config/v1.json`                             | a copy of `schema/config/v1.json`                         |
-| `/openapi/v1.json`                                   | a copy of `web/openapi.json`, without the relative server |
+| URL                                                  | Served by                                                       |
+| ---------------------------------------------------- | --------------------------------------------------------------- |
+| `/llms.txt`                                          | `src/app/llms.txt/route.ts`: the index                          |
+| `/llms-full.txt`                                     | `src/app/llms-full.txt/route.ts`: every page                    |
+| `/docs/<page>.md`                                    | `src/proxy.ts`, then `src/app/llms.mdx/`                        |
+| `/docs/<page>` with `Accept: text/markdown`, and `/` | `src/proxy.ts`: the same Markdown, and `/llms.txt`              |
+| `/schema/config/v1.json`                             | a copy of `schema/config/v1.json`                               |
+| `/openapi/v1.json`                                   | a copy of `schema/openapi/v1.json`, without the relative server |
 
 - The build copies the two files of the repository into `public/` (`scripts/publish-machine-files.ts`, which
   git ignores): the repository keeps a single source for each.

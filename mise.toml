@@ -180,13 +180,13 @@ run = "web/e2e/visual/shots.sh diff"
 description = "Write the OpenAPI document of the API from the code, then the API client of the dashboard"
 depends = ["web:install"]
 dir = "web"
-run = ["cargo run --quiet -p cihub-server --example openapi > openapi.json", "pnpm generate"]
+run = ["cargo run --quiet -p cihub-server --example openapi > ../schema/openapi/v1.json", "pnpm generate"]
 
 [tasks."web:generate-check"]
 description = "Fail if the OpenAPI document or the API client of the dashboard are not up to date"
 run = [
   { task = "web:generate" },
-  "! git status --porcelain web/openapi.json web/src/client | grep .",
+  "! git status --porcelain schema/openapi web/src/client | grep .",
 ]
 
 [tasks."site:install"]

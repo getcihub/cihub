@@ -10,7 +10,7 @@ does not also check.
   `@ts-ignore`. Not `exactOptionalPropertyTypes`: the generated client does not compile with it.
 - React, Vite, and the TanStack libraries: Router for the routes, Query for the data of the server, Form for the
   forms. Table only for a table that the client sorts or filters; the server already orders the items.
-- The client of the API is generated from `web/openapi.json`, the document that `/api/v1/openapi.json` serves,
+- The client of the API is generated from `schema/openapi/v1.json`, the document that `/api/v1/openapi.json` serves,
   by `@hey-api/openapi-ts`, with its plugin `@tanstack/react-query` (`queryOptions`, `mutationOptions`, query
   keys). The generated files are never edited by hand; a change of the API regenerates them in the same change
   (`mise run web:generate`), and `mise run web:generate-check` fails otherwise. The routes outside the API
@@ -26,7 +26,7 @@ does not also check.
 - oxfmt formats every file of the dashboard (`.oxfmtrc.json`) and sorts the Tailwind classes, in `className`,
   `cn()` and `cva()` (decided October 12, 2026, by the project lead). Its version is exact: a new one can change
   the format, so its update shows the files that it changes. It skips the generated files (`src/client/`,
-  `src/routeTree.gen.ts`, `openapi.json`), which the generator writes.
+  `src/routeTree.gen.ts`), which the generator writes.
 - A new dependency of `package.json` is proposed to the project lead, as a crate is.
 
 ## Layout
@@ -200,7 +200,7 @@ before and after with `mise run web:shots-diff`, and explain each view that diff
 commit stages, as `cargo fmt` does for the Rust code.
 `mise run web:dev` serves it with Vite in front of a `cihub-server start` (`CIHUB_URL`, `http://localhost:8080`);
 `mise run web:build` builds `web/dist`, which the next build of `cihub-web` embeds; `mise run web:generate`
-writes `openapi.json` from the code (`cargo run -p cihub-server --example openapi`) and the client in `src/client`;
+writes `schema/openapi/v1.json` from the code (`cargo run -p cihub-server --example openapi`) and the client in `src/client`;
 `mise run web:e2e` runs the browser tests of `e2e/` (Playwright) against `cargo run -p cihub-server --example e2e`, a
 server on the simulator with a fresh database, which runs the queues, submits PRs of `acme/web` at its start,
 passes each test commit of `acme/api` but those that test its #3, comments `/cihub merge` on a PR at `/sim/merge`, and gives the last

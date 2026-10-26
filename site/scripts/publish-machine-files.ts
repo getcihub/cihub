@@ -20,7 +20,7 @@ await copyFile(
 // The relative server `/api/v1` is right when an instance serves the document,
 // wrong on cihub.io, which hosts no API.
 const openapi = JSON.parse(
-  await readFile(join(repository, "web", "openapi.json"), "utf8"),
+  await readFile(join(repository, "schema", "openapi", "v1.json"), "utf8"),
 ) as OpenApiDocument;
 openapi.servers = openapi.servers?.filter((server) => !server.url.startsWith("/"));
 await mkdir(join(publicDirectory, "openapi"), { recursive: true });
