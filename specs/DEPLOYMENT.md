@@ -258,7 +258,7 @@ Migrations are explicit:
 
 `mise install` installs the whole suite: Rust (version pinned in `mise.toml`, with `clippy`,
 `rustfmt` and `llvm-tools`, through `rustup`), `cargo-deny`, `cargo-nextest`, `cargo-llvm-cov`, `actionlint`, `zizmor`,
-`lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`) and `shellcheck`, then installs the git hooks of `.lefthook.toml`: `cargo fmt`, `actionlint` and `zizmor` at
+`lefthook`, the chart tools (`helm`, `helm-docs`, `helm-schema`, `kind`, `kubectl`), `cosign`, which signs the image and the chart at release, and `shellcheck`, then installs the git hooks of `.lefthook.toml`: `cargo fmt`, `actionlint` and `zizmor` at
 commit, `mise run lint` at push; `LEFTHOOK=0 git push` skips them. `mise.lock` pins the versions and the
 checksums for Linux and macOS, on x64 and arm64; after a version change, `mise lock` updates it.
 
@@ -294,8 +294,9 @@ commit titles in Conventional Commits format. When this PR is merged, it creates
 and updates `CHANGELOG.md`, `[workspace.package].version` in `Cargo.toml` and the versions of the `cihub-*` crates
 in `Cargo.lock`, and the version and the `appVersion` of `helm/cihub/Chart.yaml`. The jobs of the CI are skipped on the release-please PRs, which change only these files, and `Build Success` passes. The workflow
 takes a token of the bot GitHub App of the project (secrets `BOT_CLIENT_ID` and `BOT_APP_PRIVATE_KEY`). The release
-triggers the publication of the image ("Image"), then of the chart: `image.yaml` packages `helm/cihub` with the
-version of the release and pushes it to `oci://ghcr.io/getcihub/charts/cihub`. It also triggers `cli.yaml`, which
+triggers the publication of the image ("Image"), then of the chart: `image.yaml` signs the image with cosign (keyless, with the
+OIDC identity of the workflow), writes its digest into `image.digest`, packages `helm/cihub` with the version of the
+release, pushes it to `oci://ghcr.io/getcihub/charts/cihub` and signs it the same way. It also triggers `cli.yaml`, which
 builds the command line `cihub` on a native runner per platform (`x86_64-unknown-linux-musl` and
 `aarch64-unknown-linux-musl`, linked statically so that they run on any distribution, and `aarch64-apple-darwin`) and
 attaches `cihub-<target>.tar.gz` and its `.sha256` to the release; `workflow_dispatch` with a tag attaches them

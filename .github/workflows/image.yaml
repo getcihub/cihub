@@ -93,7 +93,10 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+      id-token: write
       packages: write
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
     steps:
       - name: Tags
         id: meta
@@ -106,6 +109,18 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
             type=sha,enable=${{ github.event_name == 'workflow_dispatch' }}
 
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No cache in a publication: a poisoned cache would reach the image.
+      - name: Setup Mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          cache: false
+          install_args: --locked cosign
+
       - name: Setup Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -117,6 +132,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create the manifest
+        id: manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           AMD64: ${{ needs.build-amd64.outputs.digest }}
@@ -127,9 +143,17 @@ jobs:
             [ -n "$tag" ] && args+=(--tag "$tag")
           done <<< "$TAGS"
           docker buildx imagetools create "${args[@]}" "$IMAGE@$AMD64" "$IMAGE@$ARM64"
+          digest="$(docker buildx imagetools inspect "${args[1]}" --format '{{json .Manifest}}' | jq -r .digest)"
+          [[ "$digest" == sha256:* ]] || { echo "::error::the manifest has no digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-  # The chart takes the version of the release, so that it deploys the image
-  # of the same release.
+      - name: Sign the image
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
+
+  # The chart takes the version of the release and the digest of its image, so
+  # that it deploys exactly the image of the same release.
   chart:
     name: Chart
     needs:
@@ -138,9 +162,11 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+      id-token: write
       packages: write
     env:
       TAG: ${{ github.event.release.tag_name }}
+      DIGEST: ${{ needs.manifest.outputs.digest }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,6 +180,11 @@ jobs:
           cache: false
           install_args: --locked
 
+      - name: Pin the digest of the image
+        run: |
+          sed -i "s/^  digest: \"\"$/  digest: \"$DIGEST\"/" helm/cihub/values.yaml
+          grep -q "^  digest: \"$DIGEST\"$" helm/cihub/values.yaml || { echo "::error::image.digest is not set"; exit 1; }
+
       - name: Package the chart
         run: helm package helm/cihub --version "${TAG#v}" --app-version "${TAG#v}"
 
@@ -166,3 +197,6 @@ jobs:
 
       - name: Push the chart
         run: helm push "cihub-${TAG#v}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+
+      - name: Sign the chart
+        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/charts/cihub:${TAG#v}"
