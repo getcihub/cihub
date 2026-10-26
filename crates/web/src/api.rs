@@ -898,6 +898,9 @@ async fn list_user_orgs(
         })
         .map(|membership| Org {
             slug: membership.org_slug,
+            name: membership.org_name,
+            description: membership.org_description,
+            avatar_url: membership.org_avatar_url,
             role: Some(membership.role),
             is_suspended: membership.is_org_suspended,
         })
@@ -946,6 +949,10 @@ async fn get_instance(State(state): State<ApiState>) -> Json<Instance> {
     })
 }
 
+/// The slug, the name, the description, the avatar and the suspension of an
+/// organization.
+type OrgRow = (String, Option<String>, Option<String>, Option<String>, bool);
+
 /// Get an organization
 ///
 /// The organization, and the role of the person of the session in it.
@@ -963,12 +970,14 @@ async fn get_org(
     ApiPath(org): ApiPath<String>,
 ) -> Result<Json<Org>, ApiError> {
     let mut tx = grant.begin_in_org(&state.pool, &org).await?;
-    let (slug, is_suspended): (String, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT o.slug, {ORG_IS_SUSPENDED} FROM orgs o WHERE o.id = $1"
-    )))
-    .bind(grant.org_id.to_string())
-    .fetch_one(&mut *tx)
-    .await?;
+    let (slug, name, description, avatar_url, is_suspended): OrgRow =
+        sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT o.slug, o.name, o.description, o.avatar_url, {ORG_IS_SUSPENDED}
+             FROM orgs o WHERE o.id = $1"
+        )))
+        .bind(grant.org_id.to_string())
+        .fetch_one(&mut *tx)
+        .await?;
     tx.commit().await?;
 
     let role = match grant.actor {
@@ -982,6 +991,9 @@ async fn get_org(
 
     Ok(Json(Org {
         slug,
+        name,
+        description,
+        avatar_url,
         role,
         is_suspended,
     }))

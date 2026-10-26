@@ -11,9 +11,9 @@ use cihub_domain::{
 };
 use cihub_scm::{
     CommitStatus, ConnectionRef, MAX_OPEN_PRS, MAX_PRS_PER_READ, MergeIntoRef, PrMerge, PrSnapshot,
-    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmError, ScmFuture, ScmInstallation,
-    ScmMember, ScmPersonReach, ScmPersonToken, ScmRepo, ScmUser, SetupFinding, SignInCode,
-    SignInRequest, SignedIn, StatusUpdate,
+    RecentDelivery, RepoRef, RequiredChecks, Scm, ScmAccount, ScmAccountProfile, ScmError,
+    ScmFuture, ScmInstallation, ScmMember, ScmPersonReach, ScmPersonToken, ScmRepo, ScmUser,
+    SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
 };
 use reqwest::{Method, StatusCode};
 use secrecy::SecretString;
@@ -1606,6 +1606,14 @@ impl Scm for GithubApp {
         class: JobClass,
     ) -> ScmFuture<'a, Vec<ScmMember>> {
         Box::pin(self.account_members(connection, class))
+    }
+
+    fn account_profile<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmAccountProfile> {
+        Box::pin(self.read_account_profile(connection, class))
     }
 }
 

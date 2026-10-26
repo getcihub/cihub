@@ -5810,9 +5810,33 @@
           "is_suspended"
         ],
         "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The address of the image of the account on the SCM, `null` when the\nSCM gives none or until CIHub reads it.",
+            "example": "https://avatars.example.com/u/70"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The description that the account gives on the SCM, `null` when it\ngives none or until CIHub reads it.",
+            "example": "Rockets and anvils"
+          },
           "is_suspended": {
             "type": "boolean",
             "description": "Every connection of the organization to the SCM is suspended: CIHub\nreaches none of its accounts, and its queues are paused."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name that the account gives on the SCM, `null` when it gives none\nor until CIHub reads it.",
+            "example": "Acme"
           },
           "role": {
             "oneOf": [

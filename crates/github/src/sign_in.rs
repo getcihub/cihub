@@ -1,15 +1,15 @@
 //! A person on GitHub: the page that installs the App, the sign-in through the
 //! App, which gives the installations that the person reaches and their role
-//! in each one, and the members of the account of an installation
-//! (`specs/GITHUB.md`).
+//! in each one, and the members and the profile of the account of an
+//! installation (`specs/GITHUB.md`).
 
 use std::collections::BTreeMap;
 
 use cihub_domain::{JobClass, MembershipRole, Permission};
 use cihub_scm::{
-    ConnectionRef, RepoRef, ScmAccount, ScmError, ScmInstallation, ScmMember, ScmMembership,
-    ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest,
-    SignedIn,
+    ConnectionRef, RepoRef, ScmAccount, ScmAccountProfile, ScmError, ScmInstallation, ScmMember,
+    ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmProfile, ScmUser, SignInCode,
+    SignInRequest, SignedIn,
 };
 use reqwest::{Method, StatusCode, Url};
 use secrecy::SecretString;
@@ -370,6 +370,56 @@ impl GithubApp {
 
         members.extend(others);
         Ok(members)
+    }
+
+    /// The profile of the account of `connection`: an organization gives its
+    /// description, a person their bio. The account comes from a read of the
+    /// installation, as for [`Self::account_members`].
+    pub(crate) async fn read_account_profile(
+        &self,
+        connection: &ConnectionRef,
+        class: JobClass,
+    ) -> Result<ScmAccountProfile, ScmError> {
+        #[derive(Deserialize)]
+        struct Profile {
+            name: Option<String>,
+            #[serde(alias = "bio")]
+            description: Option<String>,
+            avatar_url: Option<String>,
+        }
+
+        let path = format!("/app/installations/{}", encode(&connection.external_id));
+        let (answer, _) = self.send_as_app(Method::GET, &path).await?;
+        let installation: Installation = expect(answer, &[StatusCode::OK])?.json()?;
+        let account = installation.account;
+
+        let path = match account.kind.as_str() {
+            "Organization" => format!("/orgs/{}", encode(&account.login)),
+            "User" => format!("/users/{}", encode(&account.login)),
+            _ => {
+                return Ok(ScmAccountProfile {
+                    avatar_url: account.avatar_url,
+                    ..ScmAccountProfile::default()
+                });
+            }
+        };
+        let answer = self
+            .send(Request {
+                connection,
+                class,
+                method: Method::GET,
+                path,
+                body: None,
+                accept: JSON,
+            })
+            .await?;
+        let profile: Profile = expect(answer, &[StatusCode::OK])?.json()?;
+
+        Ok(ScmAccountProfile {
+            name: profile.name,
+            description: profile.description,
+            avatar_url: profile.avatar_url,
+        })
     }
 
     /// The members of the organization `account` with `role`, every page.

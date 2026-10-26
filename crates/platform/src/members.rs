@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use cihub_domain::{ConnectionId, ConnectionKind, JobClass, OrgId, UserId};
-use cihub_scm::{Scm, ScmPersonToken, ScmUser, SignedIn};
+use cihub_scm::{Scm, ScmAccountProfile, ScmPersonToken, ScmUser, SignedIn};
 use cihub_store::{
     DatabaseCipher, PgPool, begin_org, begin_system, ensure_user, forget_memberships_before,
     record_avatar, record_membership, record_profile,
@@ -78,9 +78,15 @@ pub async fn run_sync_members(
 
     sync_installation_after(pool, &connection, &listed, now).await?;
     let members = listed.map_err(PlatformError::Scm)?;
+    let profile = scm
+        .account_profile(&connection, job.class)
+        .await
+        .map_err(PlatformError::Scm)?;
     let mut tx = begin_org(pool, org_id)
         .await
         .map_err(PlatformError::Store)?;
+
+    record_org_profile(&mut tx, org_id, &profile, now).await?;
 
     for member in &members {
         let user_id = user_of(&mut tx, &member.user).await?;
@@ -108,6 +114,27 @@ pub async fn run_sync_members(
         "members read"
     );
     Ok(members.len())
+}
+
+async fn record_org_profile(
+    conn: &mut PgConnection,
+    org_id: OrgId,
+    profile: &ScmAccountProfile,
+    now: OffsetDateTime,
+) -> Result<(), PlatformError> {
+    sqlx::query(
+        "UPDATE orgs SET name = $2, description = $3, avatar_url = $4, updated_at = $5
+         WHERE id = $1 AND (name, description, avatar_url) IS DISTINCT FROM ($2, $3, $4)",
+    )
+    .bind(org_id.to_string())
+    .bind(&profile.name)
+    .bind(&profile.description)
+    .bind(&profile.avatar_url)
+    .bind(now)
+    .execute(conn)
+    .await
+    .map_err(PlatformError::Query)?;
+    Ok(())
 }
 
 pub fn sync_members_executor(

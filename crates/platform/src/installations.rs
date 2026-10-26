@@ -14,6 +14,7 @@ use tracing::{info, warn};
 
 use crate::connections::sync_repos_job;
 use crate::jobs::hour_window;
+use crate::members::sync_members_job;
 use crate::{Job, Outcome, PlatformError, enqueue_job, error_chain, mark_dirty};
 
 pub const SYNC_INSTALLATION: &str = "sync_installation";
@@ -394,9 +395,17 @@ async fn onboard(
     }
 
     let (org_id, connection_id) = create_organization(conn, kind, installation, now).await?;
-    let job = sync_repos_job(org_id, connection_id, &hour_window(now));
+    let window = hour_window(now);
 
-    enqueue_job(conn, &job, now, now).await?;
+    // The hourly request of the scheduler may have run before the
+    // organization existed: without these jobs, it would wait an hour for its
+    // repositories, its members and its profile.
+    for job in [
+        sync_repos_job(org_id, connection_id, &window),
+        sync_members_job(org_id, connection_id, &window),
+    ] {
+        enqueue_job(conn, &job, now, now).await?;
+    }
 
     info!(
         org_id = %org_id,

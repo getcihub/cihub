@@ -18,9 +18,10 @@ use time::OffsetDateTime;
 use crate::contract::Fixture;
 use crate::{
     CommitStatus, ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef,
-    RequiredChecks, Scm, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmFuture, ScmInstallation,
-    ScmMember, ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken, ScmProfile, ScmRepo,
-    ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate, code_challenge,
+    RequiredChecks, Scm, ScmAccount, ScmAccountProfile, ScmDelivery, ScmError, ScmEvent, ScmFuture,
+    ScmInstallation, ScmMember, ScmMembership, ScmPersonReach, ScmPersonRepo, ScmPersonToken,
+    ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
+    code_challenge,
 };
 
 /// The user that acts for CIHub on the simulator.
@@ -180,6 +181,8 @@ struct State {
     members: BTreeMap<String, BTreeMap<String, ScmMember>>,
     /// The profile of each user, by their external identifier.
     profiles: BTreeMap<String, ScmProfile>,
+    /// The profile of each account, by its external identifier.
+    account_profiles: BTreeMap<String, ScmAccountProfile>,
     /// The sign-ins that wait for the exchange of their code: the person and
     /// the request of CIHub.
     sign_in_codes: BTreeMap<String, (ScmUser, SignInRequest)>,
@@ -626,6 +629,16 @@ impl Sim {
     pub fn set_profile(&self, user: &ScmUser, profile: ScmProfile) {
         self.with(|state| {
             state.profiles.insert(user.external_id.clone(), profile);
+        });
+    }
+
+    /// Gives `account` the name, the description and the avatar of
+    /// `profile`.
+    pub fn set_account_profile(&self, account: &ScmAccount, profile: ScmAccountProfile) {
+        self.with(|state| {
+            state
+                .account_profiles
+                .insert(account.external_id.clone(), profile);
         });
     }
 
@@ -2088,6 +2101,28 @@ impl Scm for Sim {
                         })
                         .collect()
                 })
+                .unwrap_or_default())
+        })
+    }
+
+    fn account_profile<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmAccountProfile> {
+        self.record_call("account_profile", class, move |state| {
+            if state.lost.contains(&connection.external_id) {
+                return Err(ScmError::AccessLost("connection suspended".into()));
+            }
+            Ok(state
+                .installations
+                .get(&connection.external_id)
+                .and_then(|installation| {
+                    state
+                        .account_profiles
+                        .get(&installation.account.external_id)
+                })
+                .cloned()
                 .unwrap_or_default())
         })
     }

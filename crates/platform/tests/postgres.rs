@@ -26,9 +26,9 @@ use cihub_platform::{
 use cihub_scm::Scm;
 use cihub_scm::sim::{Fault, Sim};
 use cihub_scm::{
-    ConnectionRef, RepoRef, ScmAccount, ScmDelivery, ScmError, ScmEvent, ScmInstallation,
-    ScmMembership, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest, SignedIn,
-    code_challenge,
+    ConnectionRef, RepoRef, ScmAccount, ScmAccountProfile, ScmDelivery, ScmError, ScmEvent,
+    ScmInstallation, ScmMembership, ScmPersonToken, ScmProfile, ScmUser, SignInCode, SignInRequest,
+    SignedIn, code_challenge,
 };
 use cihub_store::{
     DatabaseCipher, Membership, UserProfile, append_events, authenticate, begin_org, begin_system,
@@ -1767,6 +1767,9 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     let in_org = Membership {
         org_id: org(),
         org_slug: "org".into(),
+        org_name: None,
+        org_description: None,
+        org_avatar_url: None,
         role: MembershipRole::Admin,
         is_org_suspended: false,
         refreshed_at: at(0),
@@ -1774,6 +1777,9 @@ async fn a_sign_in_adds_the_roles_that_the_scm_gives_and_deletes_none(pool: PgPo
     let in_globex = Membership {
         org_id: globex,
         org_slug: "globex".into(),
+        org_name: None,
+        org_description: None,
+        org_avatar_url: None,
         role: MembershipRole::Member,
         is_org_suspended: false,
         refreshed_at: at(60),
@@ -1882,7 +1888,8 @@ async fn a_sign_in_connects_the_installations_that_cihub_does_not_know(pool: PgP
             .await
             .unwrap();
     let jobs: Vec<String> = sqlx::query_scalar(
-        "SELECT j.type FROM jobs j JOIN orgs o ON o.id = j.org_id WHERE o.slug = 'acme'",
+        "SELECT j.type FROM jobs j JOIN orgs o ON o.id = j.org_id WHERE o.slug = 'acme'
+         ORDER BY 1",
     )
     .fetch_all(&mut *tx)
     .await
@@ -1890,8 +1897,8 @@ async fn a_sign_in_connects_the_installations_that_cihub_does_not_know(pool: PgP
     assert_eq!(connections, ["1", "7"]);
     assert_eq!(
         jobs,
-        ["sync_repos"],
-        "the new organization reads its repositories"
+        ["sync_members", "sync_repos"],
+        "the new organization reads its members, its profile and its repositories"
     );
 }
 
@@ -2122,6 +2129,54 @@ async fn the_hourly_read_of_the_members_follows_the_account(pool: PgPool) {
 
     assert_eq!(read, 1);
     assert_eq!(roles(&pool).await, [("ada".to_owned(), "admin".to_owned())]);
+}
+
+async fn org_profile(
+    pool: &PgPool,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    OffsetDateTime,
+) {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as("SELECT name, description, avatar_url, updated_at FROM orgs")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_hourly_read_of_the_members_copies_the_profile_of_the_account(pool: PgPool) {
+    seed(&pool).await;
+    let sim = Sim::new();
+    let job = sync_members_job(org(), connection(), "20260910T00");
+    let acme = |description: &str| ScmAccountProfile {
+        name: Some("Acme".into()),
+        description: Some(description.into()),
+        avatar_url: Some("https://avatars.example.com/u/1".into()),
+    };
+    sim.add_installation("1", account("1", "org"), &[]);
+    sim.set_account_profile(&account("1", "org"), acme("Rockets"));
+
+    run_sync_members(&pool, &sim, &job, at(0)).await.unwrap();
+    run_sync_members(&pool, &sim, &job, at(3600)).await.unwrap();
+
+    let (name, description, avatar_url, updated_at) = org_profile(&pool).await;
+    assert_eq!(name.as_deref(), Some("Acme"));
+    assert_eq!(description.as_deref(), Some("Rockets"));
+    assert_eq!(
+        avatar_url.as_deref(),
+        Some("https://avatars.example.com/u/1")
+    );
+    assert_eq!(updated_at, at(0), "an unchanged profile keeps its instant");
+
+    sim.set_account_profile(&account("1", "org"), acme("Anvils"));
+    run_sync_members(&pool, &sim, &job, at(7200)).await.unwrap();
+
+    let (_, description, _, updated_at) = org_profile(&pool).await;
+    assert_eq!(description.as_deref(), Some("Anvils"));
+    assert_eq!(updated_at, at(7200));
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]

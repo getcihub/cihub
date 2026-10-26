@@ -597,6 +597,16 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
     let cookie = session_cookie(&secret);
     let with_session = [("Cookie", cookie.as_str())];
     let unknown = [("Cookie", "__Host-cihub_session=chs_unknown")];
+    let mut tx = begin_system(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE orgs SET name = 'Acme', description = 'Rockets and anvils',
+                         avatar_url = 'https://avatars.example.com/u/70'
+         WHERE slug = 'acme'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
 
     let me = call_with(&addr, "GET", "/api/v1/user", &with_session).await;
     let orgs = call_with(&addr, "GET", "/api/v1/user/orgs", &with_session).await;
@@ -619,17 +629,19 @@ async fn a_session_acts_with_the_role_of_its_user_in_the_organization(pool: PgPo
             "synced_at": null
         })
     );
+    let acme = serde_json::json!({
+        "slug": "acme",
+        "name": "Acme",
+        "description": "Rockets and anvils",
+        "avatar_url": "https://avatars.example.com/u/70",
+        "role": "member",
+        "is_suspended": false
+    });
     assert_eq!(
         orgs,
-        serde_json::json!({
-            "orgs": [{ "slug": "acme", "role": "member", "is_suspended": false }],
-            "has_more": false, "count": 1, "cursor": null
-        })
+        serde_json::json!({ "orgs": [acme], "has_more": false, "count": 1, "cursor": null })
     );
-    assert_eq!(
-        org,
-        serde_json::json!({ "slug": "acme", "role": "member", "is_suspended": false })
-    );
+    assert_eq!(org, acme);
     assert_eq!(
         upper.status, 200,
         "the case of a slug does not matter: {}",
@@ -679,7 +691,14 @@ async fn a_sign_out_needs_the_csrf_token_and_ends_the_session(pool: PgPool) {
     assert_eq!(instance.status, 200, "{}", instance.body);
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&org.body).unwrap(),
-        serde_json::json!({ "slug": "acme", "role": null, "is_suspended": false }),
+        serde_json::json!({
+            "slug": "acme",
+            "name": null,
+            "description": null,
+            "avatar_url": null,
+            "role": null,
+            "is_suspended": false
+        }),
         "a token has no role"
     );
     assert_eq!(signed_out.status, 204);
@@ -810,7 +829,7 @@ async fn the_command_line_signs_in_once_its_person_approves_the_code(pool: PgPoo
     assert_eq!(me["login"], "ada");
     assert_eq!(
         org.body,
-        r#"{"slug":"acme","role":"member","is_suspended":false}"#
+        r#"{"slug":"acme","name":null,"description":null,"avatar_url":null,"role":"member","is_suspended":false}"#
     );
     assert_eq!(
         in_cookie.status, 401,
@@ -984,7 +1003,14 @@ async fn a_sign_in_creates_a_session_with_the_roles_that_the_scm_gives(pool: PgP
     assert_eq!(me["login"], "ada");
     assert_eq!(
         orgs["orgs"],
-        serde_json::json!([{ "slug": "acme", "role": "member", "is_suspended": false }])
+        serde_json::json!([{
+            "slug": "acme",
+            "name": null,
+            "description": null,
+            "avatar_url": null,
+            "role": "member",
+            "is_suspended": false
+        }])
     );
     assert_eq!(instance["app_install_url"], "sim:install");
 }
@@ -1051,7 +1077,14 @@ async fn the_setup_url_trusts_only_the_installations_of_the_person(pool: PgPool)
     let orgs: serde_json::Value = serde_json::from_str(&orgs.body).unwrap();
     assert_eq!(
         orgs["orgs"],
-        serde_json::json!([{ "slug": "globex", "role": "admin", "is_suspended": false }])
+        serde_json::json!([{
+            "slug": "globex",
+            "name": null,
+            "description": null,
+            "avatar_url": null,
+            "role": "admin",
+            "is_suspended": false
+        }])
     );
     let mut tx = begin_system(&pool).await.unwrap();
     let slugs: Vec<String> = sqlx::query_scalar("SELECT slug FROM orgs ORDER BY slug")

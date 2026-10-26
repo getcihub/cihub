@@ -19,9 +19,9 @@ use cihub_domain::{ConnectionId, JobClass, MembershipRole, MergeMethod, Permissi
 use cihub_github::{GithubApp, GithubConfig, SignInClient};
 use cihub_scm::contract;
 use cihub_scm::{
-    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmError, ScmInstallation,
-    ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding, SignInCode,
-    SignInRequest,
+    ConnectionRef, PrMerge, RecentDelivery, RepoRef, Scm, ScmAccount, ScmAccountProfile, ScmError,
+    ScmInstallation, ScmMember, ScmMembership, ScmProfile, ScmRepo, ScmUser, SetupFinding,
+    SignInCode, SignInRequest,
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::json;
@@ -1113,6 +1113,108 @@ async fn an_account_neither_organization_nor_person_has_no_member() {
 
     replay.finish();
     assert_eq!(listed, []);
+}
+
+/// Written by hand from the documentation of GitHub, not recorded: the
+/// recording by the `github` example does not read the profile of an account
+/// yet.
+#[tokio::test]
+async fn an_organization_gives_its_name_its_description_and_its_avatar() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let acme = json!({ "id": 7, "account": { "id": 70, "login": "acme", "type": "Organization" } });
+    let organization = json!({
+        "login": "acme",
+        "name": "Acme",
+        "description": "Rockets and anvils",
+        "avatar_url": "https://avatars.example.com/u/70",
+    });
+    let exchanges = vec![
+        answer("GET", "/app/installations/7", 200, acme),
+        token("7", now),
+        answer("GET", "/orgs/acme", 200, organization),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let profile = app
+        .account_profile(&repo("7", "acme", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(
+        profile,
+        ScmAccountProfile {
+            name: Some("Acme".into()),
+            description: Some("Rockets and anvils".into()),
+            avatar_url: Some("https://avatars.example.com/u/70".into()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn the_account_of_a_person_gives_their_bio_as_its_description() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let octocat = json!({ "id": 8, "account": { "id": 5, "login": "octocat", "type": "User" } });
+    let person = json!({
+        "login": "octocat",
+        "name": "The Octocat",
+        "bio": null,
+        "avatar_url": "https://avatars.example.com/u/5",
+    });
+    let exchanges = vec![
+        answer("GET", "/app/installations/8", 200, octocat),
+        token("8", now),
+        answer("GET", "/users/octocat", 200, person),
+    ];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let profile = app
+        .account_profile(&repo("8", "octocat", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(
+        profile,
+        ScmAccountProfile {
+            name: Some("The Octocat".into()),
+            description: None,
+            avatar_url: Some("https://avatars.example.com/u/5".into()),
+        }
+    );
+}
+
+#[tokio::test]
+async fn an_account_neither_organization_nor_person_gives_only_its_avatar() {
+    let now = OffsetDateTime::from_unix_timestamp(1_789_000_000).unwrap();
+    let enterprise = json!({
+        "id": 9,
+        "account": {
+            "id": 5,
+            "login": "megacorp",
+            "type": "Enterprise",
+            "avatar_url": "https://avatars.example.com/b/5",
+        },
+    });
+    let exchanges = vec![answer("GET", "/app/installations/9", 200, enterprise)];
+    let replay = Replay::start(exchanges).await;
+    let app = app(&replay.url, now);
+
+    let profile = app
+        .account_profile(&repo("9", "megacorp", "app").connection, JobClass::Repair)
+        .await
+        .unwrap();
+
+    replay.finish();
+    assert_eq!(
+        profile,
+        ScmAccountProfile {
+            avatar_url: Some("https://avatars.example.com/b/5".into()),
+            ..ScmAccountProfile::default()
+        }
+    );
 }
 
 /// Written by hand from the documentation of GitHub, not recorded: the

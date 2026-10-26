@@ -370,6 +370,21 @@ pub struct Org {
     /// The slug of the organization, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "acme"))]
     pub slug: String,
+    /// The name that the account gives on the SCM, `null` when it gives none
+    /// or until CIHub reads it.
+    #[cfg_attr(feature = "openapi", schema(example = "Acme"))]
+    pub name: Option<String>,
+    /// The description that the account gives on the SCM, `null` when it
+    /// gives none or until CIHub reads it.
+    #[cfg_attr(feature = "openapi", schema(example = "Rockets and anvils"))]
+    pub description: Option<String>,
+    /// The address of the image of the account on the SCM, `null` when the
+    /// SCM gives none or until CIHub reads it.
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://avatars.example.com/u/70")
+    )]
+    pub avatar_url: Option<String>,
     /// The role of the person of the session: `admin` has every scope,
     /// `member` has `queues:read` and `prs:write`; `null` for an API token.
     #[cfg_attr(feature = "openapi", schema(value_type = Option<closed::MembershipRole>))]

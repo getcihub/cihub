@@ -524,10 +524,25 @@ export type MergeMethod = 'squash' | 'merge_commit' | 'rebase' | 'fast_forward';
  */
 export type Org = {
     /**
+     * The address of the image of the account on the SCM, `null` when the
+     * SCM gives none or until CIHub reads it.
+     */
+    avatar_url?: string | null;
+    /**
+     * The description that the account gives on the SCM, `null` when it
+     * gives none or until CIHub reads it.
+     */
+    description?: string | null;
+    /**
      * Every connection of the organization to the SCM is suspended: CIHub
      * reaches none of its accounts, and its queues are paused.
      */
     is_suspended: boolean;
+    /**
+     * The name that the account gives on the SCM, `null` when it gives none
+     * or until CIHub reads it.
+     */
+    name?: string | null;
     role?: MembershipRole | null;
     /**
      * The slug of the organization, as the routes name it.

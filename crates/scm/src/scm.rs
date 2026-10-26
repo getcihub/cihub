@@ -7,8 +7,9 @@ use time::OffsetDateTime;
 
 use crate::{
     ConnectionRef, MergeIntoRef, PrMerge, PrSnapshot, RecentDelivery, RepoRef, RequiredChecks,
-    ScmAccount, ScmError, ScmInstallation, ScmMember, ScmPersonReach, ScmPersonToken, ScmRepo,
-    ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn, StatusUpdate,
+    ScmAccount, ScmAccountProfile, ScmError, ScmInstallation, ScmMember, ScmPersonReach,
+    ScmPersonToken, ScmRepo, ScmUser, SetupFinding, SignInCode, SignInRequest, SignedIn,
+    StatusUpdate,
 };
 
 /// The answer of a call. A future is boxed because an executor holds an
@@ -350,4 +351,12 @@ pub trait Scm: Send + Sync {
         connection: &'a ConnectionRef,
         class: JobClass,
     ) -> ScmFuture<'a, Vec<ScmMember>>;
+
+    /// The name, the description and the avatar of the account of
+    /// `connection`.
+    fn account_profile<'a>(
+        &'a self,
+        connection: &'a ConnectionRef,
+        class: JobClass,
+    ) -> ScmFuture<'a, ScmAccountProfile>;
 }

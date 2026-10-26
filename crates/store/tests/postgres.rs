@@ -926,6 +926,9 @@ async fn a_refresh_keeps_the_memberships_it_sees(pool: PgPool) {
     .map(|(n, role, minutes)| Membership {
         org_id: org(n),
         org_slug: format!("org-{n}"),
+        org_name: None,
+        org_description: None,
+        org_avatar_url: None,
         role,
         is_org_suspended: false,
         refreshed_at: now + Duration::minutes(minutes),

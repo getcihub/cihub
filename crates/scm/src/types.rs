@@ -147,6 +147,14 @@ pub struct ScmAccount {
     pub path: String,
 }
 
+/// What an account shows of itself on the SCM.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ScmAccountProfile {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
 /// An installation of the App of CIHub on an account, as the SCM reads it: the
 /// permission name gives its access level.
 #[derive(Clone, Debug, PartialEq, Eq)]
