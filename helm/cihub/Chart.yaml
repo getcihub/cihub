@@ -8,8 +8,8 @@ type: application
 kubeVersion: ">=1.25.0-0"
 # release-please sets both at each release, so that an install from git
 # deploys a published image; image.yaml sets them again when it packages.
-version: 0.3.1 # x-release-please-version
-appVersion: "0.3.1" # x-release-please-version
+version: 0.4.0 # x-release-please-version
+appVersion: "0.4.0" # x-release-please-version
 home: https://github.com/getcihub/cihub
 sources:
   - https://github.com/getcihub/cihub

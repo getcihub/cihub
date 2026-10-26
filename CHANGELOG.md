@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/getcihub/cihub/compare/v0.3.1...v0.4.0) (2026-10-25)
+
+
+### Features
+
+* **github:** show a running GitHub Actions check as running ([623a2f3](https://github.com/getcihub/cihub/commit/623a2f34a720b0b9578a3b301e4ba213ab90772f))
+
 ## [0.3.1](https://github.com/getcihub/cihub/compare/v0.3.0...v0.3.1) (2026-10-25)
 
 
