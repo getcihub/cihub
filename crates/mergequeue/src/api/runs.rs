@@ -148,14 +148,14 @@ async fn draft_pr_url(
     repo: RepoId,
     number: u64,
 ) -> Result<String, ApiError> {
-    let (connection_id, connection_external_id, external_id, namespace, name): (
+    let (connection_id, connection_external_id, external_id, owner, name): (
         String,
         String,
         String,
         String,
         String,
     ) = sqlx::query_as(
-        "SELECT c.id, c.external_id, r.external_id, r.namespace, r.name
+        "SELECT c.id, c.external_id, r.external_id, r.owner, r.name
          FROM repos r JOIN scm_connections c ON c.id = r.connection_id
          WHERE r.id = $1",
     )
@@ -168,7 +168,7 @@ async fn draft_pr_url(
             external_id: connection_external_id,
         },
         external_id,
-        namespace,
+        owner,
         name,
     };
 

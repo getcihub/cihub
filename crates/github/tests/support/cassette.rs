@@ -37,7 +37,7 @@ pub struct Cassette {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct World {
     pub installation: String,
-    pub namespace: String,
+    pub owner: String,
     pub name: String,
     pub base_branch: String,
     pub required_checks: BTreeSet<String>,

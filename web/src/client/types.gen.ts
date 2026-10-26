@@ -815,6 +815,10 @@ export type Queue = {
      */
     counts: ItemCounts;
     /**
+     * When the first command on the target branch created the queue.
+     */
+    created_at: string;
+    /**
      * The current items that reached `failed` in the 24 hours before the
      * request.
      */
@@ -913,6 +917,11 @@ export type Queue = {
      * the first.
      */
     target_head_sha?: string | null;
+    /**
+     * The last change of the state, the mode or the configuration file of
+     * the queue.
+     */
+    updated_at: string;
     /**
      * How many runs the queue keeps in progress.
      */
@@ -1037,6 +1046,10 @@ export type ReasonCount = {
  */
 export type Repo = {
     /**
+     * When CIHub first read the repository from the SCM.
+     */
+    created_at: string;
+    /**
      * The default branch of the repository.
      */
     default_branch: string;
@@ -1051,7 +1064,7 @@ export type Repo = {
     /**
      * The account of the repository on the SCM.
      */
-    namespace: string;
+    owner: string;
     /**
      * What the caller may do on the repository.
      */
@@ -1060,6 +1073,11 @@ export type Repo = {
      * The verdict of the setup of the repository.
      */
     setup: SetupSummary;
+    /**
+     * When a read of the SCM last changed its owner, its name or its default
+     * branch, or removed or restored it.
+     */
+    updated_at: string;
 };
 
 /**
@@ -1067,6 +1085,10 @@ export type Repo = {
  * its whole setup.
  */
 export type RepoDetail = {
+    /**
+     * When CIHub first read the repository from the SCM.
+     */
+    created_at: string;
     /**
      * The default branch of the repository.
      */
@@ -1082,7 +1104,7 @@ export type RepoDetail = {
     /**
      * The account of the repository on the SCM.
      */
-    namespace: string;
+    owner: string;
     /**
      * What the caller may do on the repository.
      */
@@ -1092,10 +1114,15 @@ export type RepoDetail = {
      * default branch.
      */
     setup: RepoSetup;
+    /**
+     * When a read of the SCM last changed its owner, its name or its default
+     * branch, or removed or restored it.
+     */
+    updated_at: string;
 };
 
 /**
- * A page of repositories, by namespace then name.
+ * A page of repositories, by owner then name.
  */
 export type RepoList = {
     /**

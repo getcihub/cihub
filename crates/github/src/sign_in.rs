@@ -242,7 +242,7 @@ impl GithubApp {
         token: &SecretString,
         repo: &RepoRef,
     ) -> Result<Permission, ScmError> {
-        let path = format!("/repos/{}/{}", encode(&repo.namespace), encode(&repo.name));
+        let path = format!("/repos/{}/{}", encode(&repo.owner), encode(&repo.name));
         let (answer, _) = self.get_as_person(token, &path).await?;
         if answer.status == StatusCode::NOT_FOUND {
             return Ok(Permission::None);

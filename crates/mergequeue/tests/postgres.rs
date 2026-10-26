@@ -72,7 +72,7 @@ fn repo() -> RepoRef {
             external_id: "1".into(),
         },
         external_id: "200".into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: "app".into(),
     }
 }
@@ -101,7 +101,7 @@ async fn seed(pool: &PgPool) {
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('{connection}', '{org}', '1', 'github_app', '1', '{synced_at}', '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
              VALUES ('{queue}', '{org}', '{repo}', 'main');",
@@ -2436,7 +2436,7 @@ async fn a_failing_delivery_does_not_block_the_deliveries_of_another_organizatio
                                       synced_at, permissions)
              VALUES ('{other_connection}', '{other_org}', '2', 'github_app', '2',
                      '{synced_at}', '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{other_repo}', '{other_org}', '{other_connection}', '300', 'other', 'app',
                      'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
@@ -4878,7 +4878,7 @@ async fn the_api_lists_the_queues_of_the_organization_with_their_counters(pool: 
         "INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions, suspended_at)
              VALUES ('{suspended}', '{org}', '2', 'github_app', '2', '{now}', '{{}}', '{now}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{api_repo}', '{org}', '{suspended}', '201', 'acme', 'api', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
              VALUES ('{app_release}', '{org}', '{app_repo}', 'release'),
@@ -5078,7 +5078,7 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
         (76, "gone"),
     ] {
         sql.push(format!(
-            "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+            "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                                 default_branch)
                  VALUES ('{}', '{}', '{}', '{n}', 'acme', '{name}', 'main');",
             id(n),
@@ -5087,7 +5087,7 @@ async fn the_api_lists_the_repositories_with_their_setup(pool: PgPool) {
         ));
     }
     sql.push(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                             default_branch, removed_at)
              VALUES ('{}', '{}', '{}', '71', 'acme', 'old', 'main', now());",
         id(71),
@@ -5491,6 +5491,48 @@ async fn config_of(pool: &PgPool) -> (Option<String>, Option<String>, Option<Str
         .fetch_one(&mut *tx)
         .await
         .unwrap()
+}
+
+/// When the queue last changed, and when it reached its state.
+async fn updated_at(pool: &PgPool) -> (OffsetDateTime, Option<OffsetDateTime>) {
+    let mut tx = begin_system(pool).await.unwrap();
+    sqlx::query_as("SELECT updated_at, state_changed_at FROM queues WHERE id = $1")
+        .bind(queue().to_string())
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+}
+
+/// A new head of the target with the same file leaves `updated_at`; a new
+/// state sets it to the instant of the state.
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn the_queue_is_updated_by_its_file_and_its_state_only(pool: PgPool) {
+    let mut q = SimQueue::new(pool.clone()).await;
+    let sim = q.sim.clone();
+    let file = "version: 1\nqueues:\n  - branch: main\n";
+    let main = target_repo(&sim, &[("a.txt", "a"), (".cihub.yaml", file)]);
+
+    q.deliver().await;
+    q.settle().await;
+    let (read, _) = updated_at(&pool).await;
+
+    let pushed = sim.commit(&repo(), &main, &[("a.txt", Some("b"))]).unwrap();
+    sim.push(&repo(), "main", &pushed, &alice()).unwrap();
+    q.deliver().await;
+    q.settle().await;
+
+    assert_eq!(config_of(&pool).await.1, Some(pushed));
+    assert_eq!(updated_at(&pool).await.0, read, "the file did not change");
+
+    sim.set_access("1", false);
+    q.send().await;
+    q.settle().await;
+
+    let (paused, state_changed_at) = updated_at(&pool).await;
+    assert!(paused > read, "{paused} after {read}");
+    assert_eq!(Some(paused), state_changed_at);
+
+    q.stop().await;
 }
 
 /// The queue reads its file on each new head of its target, keeps the last
@@ -6228,7 +6270,7 @@ impl Chaos {
                 external_id: format!("conn-{}", self.seed),
             },
             external_id: format!("repo-{}", self.seed),
-            namespace: "acme".into(),
+            owner: "acme".into(),
             name: format!("app-{}", self.seed),
         }
     }
@@ -6256,7 +6298,7 @@ impl Chaos {
                                           synced_at, permissions)
                  VALUES ('{connection}', '{org}', 'account-{seed}', 'github_app',
                          '{connection_external_id}', '{synced_at}', '{{}}');
-             INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+             INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{repo_external_id}', 'acme',
                          '{name}', 'main');
@@ -6898,7 +6940,7 @@ async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPo
             external_id: "1".into(),
         },
         external_id: external_id.into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: name.into(),
     };
     let (app, secret) = (repo_on_scm("200", "app"), repo_on_scm("201", "secret"));
@@ -6909,7 +6951,7 @@ async fn a_person_reads_only_the_repositories_that_the_scm_shows_them(pool: PgPo
     sim.set_permission(&app, &ada, Permission::Write).unwrap();
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                             default_branch)
              VALUES ('{secret}', '{org}', '{connection}', '201', 'acme', 'secret', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
@@ -7045,7 +7087,7 @@ async fn a_percent_encoded_repository_name_does_not_bypass_the_permission(pool: 
             external_id: "1".into(),
         },
         external_id: "201".into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: "secret".into(),
     };
     sim.add_installation("1", account, &[]);
@@ -7053,7 +7095,7 @@ async fn a_percent_encoded_repository_name_does_not_bypass_the_permission(pool: 
     sim.add_repo(&secret_repo, "main", &[]);
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                             default_branch)
              VALUES ('{secret}', '{org}', '{connection}', '201', 'acme', 'secret', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)

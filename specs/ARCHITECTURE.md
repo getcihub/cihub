@@ -120,7 +120,7 @@ Three rules structure the split, and each one is checked in CI rather than left 
 Postgres queries are written in SQL with the `sqlx::query!` and `query_as!` macros, checked at
 compile time against the schema; the metadata is versioned in `.sqlx/` so that compilation and CI
 run without a database. The migrations are in `migrations/`, embedded in `cihub-server` and applied by
-`cihub-server migrate`. The Postgres enums are not derived in `cihub-domain`, so that it
+`cihub-server migrate up`. The Postgres enums are not derived in `cihub-domain`, so that it
 stays free of `sqlx`: `cihub-store` converts them with `as_str` and `FromStr`, and a test compares `pg_enum` to the
 variants of each enumeration.
 

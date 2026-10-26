@@ -1,9 +1,4 @@
-CREATE TYPE check_kind AS ENUM ('check', 'status');
 CREATE TYPE check_status AS ENUM ('queued', 'in_progress', 'completed');
-CREATE TYPE check_conclusion AS ENUM (
-    'success', 'neutral', 'skipped', 'failure', 'error', 'cancelled', 'timed_out',
-    'action_required', 'stale'
-);
 
 CREATE TABLE check_observations (
     org_id       text             NOT NULL REFERENCES orgs (id),

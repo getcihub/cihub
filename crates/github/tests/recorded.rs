@@ -48,14 +48,14 @@ fn connection() -> ConnectionId {
     ConnectionId::from_ulid(Ulid(1))
 }
 
-fn repo(installation: &str, namespace: &str, name: &str) -> RepoRef {
+fn repo(installation: &str, owner: &str, name: &str) -> RepoRef {
     RepoRef {
         connection: ConnectionRef {
             id: connection(),
             external_id: installation.to_owned(),
         },
         external_id: String::new(),
-        namespace: namespace.to_owned(),
+        owner: owner.to_owned(),
         name: name.to_owned(),
     }
 }
@@ -68,7 +68,7 @@ async fn the_contract_passes_on_recorded_answers() {
     let replay = Replay::start(cassette.exchanges).await;
     let now = OffsetDateTime::from_unix_timestamp(cassette.recorded_at).unwrap();
     let fixture = world.fixture();
-    let repo = repo(&world.installation, &world.namespace, &world.name);
+    let repo = repo(&world.installation, &world.owner, &world.name);
     contract::run(&app(&replay.url, now), &repo, &fixture).await;
     replay.finish();
 }
@@ -376,7 +376,7 @@ async fn an_installation_gives_its_account_and_every_page_of_its_repositories() 
     let repos = app.list_repos(&connection, JobClass::Repair).await.unwrap();
     let listed = |id: &str, name: &str, branch: &str| ScmRepo {
         external_id: id.into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: name.into(),
         default_branch: branch.into(),
     };

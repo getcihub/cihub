@@ -136,7 +136,7 @@ mod tests {
                 external_id: "1".into(),
             },
             external_id: "1".into(),
-            namespace: "acme".into(),
+            owner: "acme".into(),
             name: "app".into(),
         };
         let sim = Sim::new();

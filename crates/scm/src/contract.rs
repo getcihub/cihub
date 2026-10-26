@@ -70,7 +70,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
         .expect("the SCM knows the installation of the connection");
 
     assert_eq!(
-        installation.account.path, repo.namespace,
+        installation.account.path, repo.owner,
         "the connection serves the account of the repository"
     );
     assert_ne!(installation.account.external_id, "");
@@ -90,7 +90,7 @@ async fn connection(scm: &dyn Scm, repo: &RepoRef, fixture: &Fixture) {
     let repos = scm.list_repos(&repo.connection, CLASS).await.unwrap();
     let listed = repos
         .iter()
-        .find(|listed| listed.namespace == repo.namespace && listed.name == repo.name)
+        .find(|listed| listed.owner == repo.owner && listed.name == repo.name)
         .expect("the connection lists the repository");
 
     assert_ne!(listed.external_id, "");

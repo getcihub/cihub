@@ -23,7 +23,7 @@ pub struct ConnectionRef {
 pub struct RepoRef {
     pub connection: ConnectionRef,
     pub external_id: String,
-    pub namespace: String,
+    pub owner: String,
     pub name: String,
 }
 
@@ -254,7 +254,7 @@ pub struct ScmMember {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScmRepo {
     pub external_id: String,
-    pub namespace: String,
+    pub owner: String,
     pub name: String,
     pub default_branch: String,
 }

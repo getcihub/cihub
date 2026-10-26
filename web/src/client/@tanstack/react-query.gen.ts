@@ -249,8 +249,8 @@ export const listReposQueryKey = (options: Options<ListReposData>) => createQuer
 /**
  * List the repositories
  *
- * The repositories of the organization that the App reaches, by namespace
- * then name, each with what the caller may do on it and the verdict of its
+ * The repositories of the organization that the App reaches, by owner then
+ * name, each with what the caller may do on it and the verdict of its
  * setup. Reads Postgres only.
  *
  * **Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.

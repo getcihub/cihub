@@ -35,7 +35,7 @@ services:
 
   migrate:
     image: ghcr.io/getcihub/server:0.2
-    command: migrate
+    command: ["migrate", "up"]
     environment:
       CIHUB_DATABASE_URL: postgres://cihub:${CIHUB_DATABASE_PASSWORD}@postgres:5432/cihub
     depends_on:
@@ -151,6 +151,18 @@ docker compose up -d
 ```
 
 `migrate` applies the migrations of the new version before `cihub` starts again.
+
+## Go back to an older version
+
+When the older version has fewer migrations, the running version reverts its own first. `--to` takes the newest
+migration of the older version: the last file of `migrations/` in its tag.
+
+```sh
+docker compose run --rm cihub migrate down --to <version>
+```
+
+Then put the older tag back on the two `image:` lines and run `docker compose up -d`. The data of the reverted
+migrations is lost.
 
 ## Without Caddy
 

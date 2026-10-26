@@ -67,7 +67,7 @@ async fn seed(pool: &PgPool) {
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('{c}', '{org}', '1', 'github_app', '1', '{synced_at}', '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('r', '{org}', '{c}', '1', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, dirty, next_tick_at) VALUES
              ('{q1}', '{org}', 'r', 'main', true, NULL),
@@ -1094,7 +1094,7 @@ async fn a_repository_of_two_connections_routes_to_the_queue_of_each(pool: PgPoo
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('{other_connection}', '{other_org}', '2', 'github_app', '2', now(), '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('r2', '{other_org}', '{other_connection}', '1', 'other', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
              VALUES ('{other_queue}', '{other_org}', 'r2', 'main');"
@@ -1367,7 +1367,8 @@ async fn a_suspension_gives_access_lost_to_each_queue_then_access_restored(pool:
 
 /// A repository that the installation no longer lists keeps its row with
 /// `removed_at`, and its queues lose their access; they get it back when the
-/// repository comes back.
+/// repository comes back. Only a read that changes the row changes
+/// `updated_at`.
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
 async fn a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_back(pool: PgPool) {
     seed(&pool).await;
@@ -1380,8 +1381,8 @@ async fn a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_bac
     };
     let removed_at = || async {
         let mut tx = begin_system(&pool).await.unwrap();
-        let at: Option<OffsetDateTime> =
-            sqlx::query_scalar("SELECT removed_at FROM repos WHERE id = 'r'")
+        let at: (Option<OffsetDateTime>, OffsetDateTime) =
+            sqlx::query_as("SELECT removed_at, updated_at FROM repos WHERE id = 'r'")
                 .fetch_one(&mut *tx)
                 .await
                 .unwrap();
@@ -1392,22 +1393,23 @@ async fn a_removed_repository_gives_access_lost_to_its_queues_until_it_comes_bac
 
     run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap();
 
-    assert_eq!(removed_at().await, None);
+    assert_eq!(removed_at().await.0, None);
     assert_eq!(given_facts(&pool).await, [] as [(String, String); 0]);
 
     sim.move_repo("1", "2");
     run_sync_repos(&pool, &sim, &job, at(10)).await.unwrap();
     run_sync_repos(&pool, &sim, &job, at(20)).await.unwrap();
 
-    assert_eq!(removed_at().await, Some(at(10)));
+    assert_eq!(removed_at().await, (Some(at(10)), at(10)));
     assert_eq!(given_facts(&pool).await, facts("access.lost"));
 
     sim.move_repo("1", "1");
     run_sync_repos(&pool, &sim, &job, at(30)).await.unwrap();
+    run_sync_repos(&pool, &sim, &job, at(40)).await.unwrap();
 
     let mut expected = facts("access.lost");
     expected.extend(facts("access.restored"));
-    assert_eq!(removed_at().await, None);
+    assert_eq!(removed_at().await, (None, at(30)));
     assert_eq!(given_facts(&pool).await, expected);
 }
 
@@ -1599,7 +1601,7 @@ type RepoRow = (String, String, String, String, String, String);
 async fn repos(pool: &PgPool) -> Vec<RepoRow> {
     let mut tx = begin_system(pool).await.unwrap();
     sqlx::query_as(
-        "SELECT external_id, org_id, connection_id, namespace, name, default_branch
+        "SELECT external_id, org_id, connection_id, owner, name, default_branch
          FROM repos ORDER BY external_id, org_id",
     )
     .fetch_all(&mut *tx)
@@ -1614,7 +1616,7 @@ fn sim_repo(connection: &str, external_id: &str, name: &str) -> RepoRef {
             external_id: connection.into(),
         },
         external_id: external_id.into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: name.into(),
     }
 }
@@ -1628,7 +1630,7 @@ async fn a_read_of_the_repositories_creates_and_updates_those_of_its_connection(
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('c2', 'other', '2', 'github_app', '2', now(), '{}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('r4', 'other', 'c2', '4', 'other', 'moved', 'main');",
     )
     .execute(&mut *tx)
@@ -1644,12 +1646,12 @@ async fn a_read_of_the_repositories_creates_and_updates_those_of_its_connection(
 
     let job = sync_repos_job(org(), connection(), "w");
     assert_eq!(run_sync_repos(&pool, &sim, &job, at(0)).await.unwrap(), 3);
-    let row = |id: &str, org: &str, connection: &str, namespace: &str, name: &str, branch: &str| {
+    let row = |id: &str, org: &str, connection: &str, owner: &str, name: &str, branch: &str| {
         (
             id.to_owned(),
             org.to_owned(),
             connection.to_owned(),
-            namespace.to_owned(),
+            owner.to_owned(),
             name.to_owned(),
             branch.to_owned(),
         )
@@ -1908,7 +1910,7 @@ async fn the_sync_of_a_person_records_what_their_token_reaches(pool: PgPool) {
             external_id: connection.into(),
         },
         external_id: external_id.into(),
-        namespace: "acme".into(),
+        owner: "acme".into(),
         name: name.into(),
     };
     sim.add_installation("1", account("1", "org"), &[]);
@@ -1918,7 +1920,7 @@ async fn the_sync_of_a_person_records_what_their_token_reaches(pool: PgPool) {
     let lib = RepoId::from_ulid(Ulid(90));
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
          VALUES ($1, $2, $3, '9', 'acme', 'lib', 'main')",
     )
     .bind(lib.to_string())
@@ -1989,7 +1991,7 @@ async fn a_refused_repository_is_not_asked_again_within_the_hour(pool: PgPool) {
     let lib = RepoId::from_ulid(Ulid(90));
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::query(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
          VALUES ($1, $2, $3, '9', 'acme', 'lib', 'main')",
     )
     .bind(lib.to_string())

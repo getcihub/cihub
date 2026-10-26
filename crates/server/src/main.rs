@@ -51,11 +51,26 @@ struct Cli {
 enum Command {
     /// Starts the four roles in one process.
     Start,
-    /// Applies the migrations, creates the partitions, then stops.
-    Migrate,
+    /// Applies or reverts the migrations, then stops.
+    #[command(subcommand)]
+    Migrate(MigrateCommand),
     /// Manages the API tokens of an organization.
     #[command(subcommand)]
     Token(TokenCommand),
+}
+
+#[derive(Subcommand)]
+enum MigrateCommand {
+    /// Applies the missing migrations and creates the partitions of the
+    /// events.
+    Up,
+    /// Reverts the applied migrations newer than a version, the newest first;
+    /// their data is lost.
+    Down {
+        /// The version to go back to; `0` reverts every migration.
+        #[arg(long, value_name = "VERSION")]
+        to: i64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -85,7 +100,8 @@ async fn main() -> anyhow::Result<()> {
     let pool = cihub_store::connect(&database.url, database.pool).await?;
     cihub_store::check_role(&pool).await?;
     match cli.command {
-        Command::Migrate => migrate::run(&pool).await,
+        Command::Migrate(MigrateCommand::Up) => migrate::up(&pool).await,
+        Command::Migrate(MigrateCommand::Down { to }) => migrate::down(&pool, to).await,
         Command::Token(TokenCommand::Create { org }) => token::create(&pool, &org).await,
         Command::Start => {
             let github = start_github(&pool, github, database.secret.as_ref()).await?;
@@ -125,7 +141,7 @@ async fn start_github(
 
     let missing = cihub_store::missing_migrations(&MIGRATOR, pool).await?;
     if !missing.is_empty() {
-        bail!("the database misses the migrations {missing:?}: run `cihub-server migrate`");
+        bail!("the database misses the migrations {missing:?}: run `cihub-server migrate up`");
     }
 
     let config::GithubApp {

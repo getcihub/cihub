@@ -237,7 +237,7 @@ async fn token(pool: &PgPool, number: u128, scopes: &[ApiScope]) -> String {
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('c', '{org}', '1', 'github_app', '1', now(), '{{}}') ON CONFLICT DO NOTHING;
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('r', '{org}', 'c', '1', 'acme', 'app', 'main') ON CONFLICT DO NOTHING;"
     )))
     .execute(&mut *tx)
@@ -387,7 +387,7 @@ async fn the_stream_of_a_person_carries_their_repositories_only(pool: PgPool) {
     let (shown, hidden) = (QueueId::from_ulid(Ulid(32)), QueueId::from_ulid(Ulid(33)));
     let mut tx = begin_system(&pool).await.unwrap();
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{a}', '{org}', 'c', '40', 'acme', 'web', 'main'),
                     ('{b}', '{org}', 'c', '41', 'acme', 'secret', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)

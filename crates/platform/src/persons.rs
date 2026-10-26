@@ -430,7 +430,7 @@ pub async fn repo_permission_now(
         .map_err(PlatformError::Store)?;
     // The SCM does not tell names apart by their case.
     let row: Option<(String, String, String, String, String, String)> = sqlx::query_as(
-        "SELECT r.id, r.external_id, r.namespace, r.name, c.id, c.external_id
+        "SELECT r.id, r.external_id, r.owner, r.name, c.id, c.external_id
          FROM repos r JOIN scm_connections c ON c.id = r.connection_id
          WHERE lower(r.name) = lower($1) ORDER BY r.id LIMIT 1",
     )
@@ -438,7 +438,7 @@ pub async fn repo_permission_now(
     .fetch_optional(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
-    let Some((repo_id, external_id, namespace, repo_name, connection_id, connection)) = row else {
+    let Some((repo_id, external_id, owner, repo_name, connection_id, connection)) = row else {
         return Ok(Access::Granted(None));
     };
     let read = || PlatformError::read("repository", &repo_id);
@@ -462,7 +462,7 @@ pub async fn repo_permission_now(
             external_id: connection,
         },
         external_id,
-        namespace,
+        owner,
         name: repo_name,
     };
     let permission = match scm

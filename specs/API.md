@@ -39,7 +39,7 @@ setup (`Repo`), and the repository alone its whole setup (`RepoDetail`), whose f
 | POST               | `/device-codes/{user_code}/approve`, `…/deny`            | The person of a session of the dashboard approves, or denies, the code that the command line shows; `204`, or `404 device_code_not_found`; a session of the dashboard only                                                                    |
 | GET                | `/instance`                                              | The version of the instance and the page of the SCM that installs the App (`null` when the SCM did not answer); any token or session                                                                                                           |
 | GET                | `/orgs/{org}`                                            | The organization (`slug`), the `role` of the person of the session in it, `null` for a token, and `is_suspended` (every connection of the organization is suspended); any token or session of the organization            |
-| GET                | `/orgs/{org}/repos`                                      | The repositories that the App reaches, by namespace then name, each a `Repo`; filters `state` (states of the setup, separated by commas; an unknown state answers `400 invalid_request`) and `q` (a part of the name, whatever its case, 1 to 100 characters); `queues:read` |
+| GET                | `/orgs/{org}/repos`                                      | The repositories that the App reaches, by owner then name, each a `Repo`; filters `state` (states of the setup, separated by commas; an unknown state answers `400 invalid_request`) and `q` (a part of the name, whatever its case, 1 to 100 characters); `queues:read` |
 | GET                | `/orgs/{org}/repos/{repo}`                               | The repository with its whole setup, a `RepoDetail`; `404 repo_not_found`; `queues:read`                                                                                                                                                      |
 | POST               | `/orgs/{org}/repos/{repo}/sync`                          | Admin: read the setup of the repository from the SCM now (class `interactive`, at most once a minute); `202`; `queues:write`                                                                   |
 | GET                | `/orgs/{org}/queues`                                     | The queues of every repository of the organization, by repository name then target branch, each a `Queue`; filter `q` (a part of the name of the repository, whatever its case, 1 to 100 characters)                                         |
@@ -64,7 +64,7 @@ setup (`Repo`), and the repository alone its whole setup (`RepoDetail`), whose f
 A queue (`Queue`) carries its `repo`, its `target_branch` and `is_default_branch` (the branch is the default branch
 of the repository), its `state` and `mode`, `state_changed_at` (its creation before a
 first change) and `state_changed_by`, the login of the person who asked for the state (`null` when CIHub decided it
-or a token asked for it); the `strategy` of its last valid file; `target_head_sha`, the head of the target branch
+or a token asked for it); `created_at`, when the first command on its branch created it, and `updated_at`, the last change of its state, its mode or its configuration file; the `strategy` of its last valid file; `target_head_sha`, the head of the target branch
 that the log saw last; `is_suspended`, when the installation of the App is suspended or removed, or no longer lists the repository;
 `has_config_file`, `config_sha` and `config_error`; its counters: `counts` (the current items in each state that is
 not terminal), `merged_last_24h`, `failed_last_24h` and `failed_or_cancelled_last_24h` (the current items that reached
@@ -81,7 +81,7 @@ members, a setup); its jobs run by themselves, and `POST …/sync` asks for one 
 default branch and its configuration file, with a verdict. A *check* is only a check of the CI. No route says
 "check" or "readiness".
 
-A repository (`Repo`) carries its `id`, `namespace`, `name` and `default_branch`; its `permission`, what the caller
+A repository (`Repo`) carries its `id`, `owner`, `name` and `default_branch`; `created_at`, its first read from the SCM, and `updated_at`, the last read that changed its owner, its name or its default branch, or removed or restored it; its `permission`, what the caller
 may do on it (`read` its queues, its PRs and its setup; `write`: submit, cancel and restart a PR; `admin`: change a
 queue and ask for a sync; for a person, from their permission on the repository, and for a token, from its
 scopes); and `setup`, a `SetupSummary` (`state`, `checked_at`, `requested_at`). A `RepoDetail` carries the same

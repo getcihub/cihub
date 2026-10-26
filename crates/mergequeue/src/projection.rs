@@ -229,6 +229,7 @@ pub(crate) async fn project(
             let done = sqlx::query(
                 "UPDATE queues SET state = $2::queue_state, mode = $3::queue_mode,
                                    state_changed_at = $4,
+                                   updated_at = greatest(updated_at, $4),
                                    state_changed_by = (SELECT actor_user_id FROM events
                                                        WHERE queue_id = $1 AND id = $5)
                  WHERE id = $1",

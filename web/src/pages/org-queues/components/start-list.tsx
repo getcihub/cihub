@@ -170,7 +170,7 @@ function StartRow({
         onClick={onToggle}
       >
         <span className="flex min-w-0 items-center">
-          <span className="text-muted-foreground">{repo.namespace}/</span>
+          <span className="text-muted-foreground">{repo.owner}/</span>
           <b className="truncate font-medium">{repo.name}</b>
           <code className="ml-2.5">{repo.default_branch}</code>
         </span>

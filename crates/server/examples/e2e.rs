@@ -220,7 +220,7 @@ fn simulator_pages(sim: Arc<Sim>) -> Router {
 }
 
 /// Drops and creates `cihub_e2e` on the server of `DATABASE_URL`, then applies
-/// the migrations and creates the partitions, as `cihub-server migrate` does.
+/// the migrations and creates the partitions, as `cihub-server migrate up` does.
 async fn fresh_database() -> Result<PgPool, Box<dyn std::error::Error>> {
     let url = std::env::var("DATABASE_URL")?;
     let admin = PgPool::connect(&url).await?;
@@ -254,7 +254,7 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
              INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                           synced_at, permissions)
                  VALUES ('{connection}', '{org}', '{n}0', 'github_app', '{n}00', now(), '{{}}');
-             INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+             INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                                 default_branch)
                  VALUES ('{repo_id}', '{org}', '{connection}', '{n}000', '{slug}', '{repo}', 'main');
              INSERT INTO queues (id, org_id, repo_id, target_branch, config_text)
@@ -270,7 +270,7 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     }
     sqlx::raw_sql(AssertSqlSafe(format!(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '1001', 'acme', 'api', 'main');",
         repo = RepoId::from_ulid(Ulid(3)),
         org = OrgId::from_ulid(Ulid(1)),
@@ -287,7 +287,7 @@ async fn seed(pool: &PgPool) -> Result<(), Box<dyn std::error::Error>> {
 /// the sign-in that follows the installation: until then, the identifier of
 /// its connection is a placeholder that the simulator does not read.
 fn world_repo(name: &str) -> Option<RepoRef> {
-    let (external_id, namespace, connection, connection_external_id) = match name {
+    let (external_id, owner, connection, connection_external_id) = match name {
         "web" => ("1000", "acme", 1, "100"),
         "api" => ("1001", "acme", 1, "100"),
         "app" => ("3000", "initech", 3, INITECH_INSTALLATION),
@@ -301,7 +301,7 @@ fn world_repo(name: &str) -> Option<RepoRef> {
             external_id: connection_external_id.into(),
         },
         external_id: external_id.into(),
-        namespace: namespace.into(),
+        owner: owner.into(),
         name: name.into(),
     })
 }

@@ -19,7 +19,7 @@ data; the flags of the role apply only when it creates the role.
 | Profile         | Services                                                                                                                                                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none)          | `postgres`, `postgres-setup`                                                                                                                                                                                                              |
-| `server`        | `cihub-migrate` (one-shot `cihub-server migrate`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                         |
+| `server`        | `cihub-migrate` (one-shot `cihub-server migrate up`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                      |
 | `observability` | Prometheus (`127.0.0.1:9090`, scrapes `cihub-server:8081/metrics`, empty until lot 11b), Loki, Alloy (sends the logs of the containers of the compose project to Loki, with the label `service`), Grafana (`127.0.0.1:3000`, anonymous admin) |
 | `tunnel`        | `cloudflared`: a named Cloudflare Tunnel, token in `CLOUDFLARE_TUNNEL_TOKEN`, so that GitHub delivers the webhooks of the test App                                                                                                        |
 
@@ -33,8 +33,8 @@ stops at startup on a missing value.
 
 ```sh
 mise run db:start                                  # Postgres, then postgres-setup
-mise run db:reset                                  # erases the data, then mise run db:start (after a migration is rewritten)
-mise run db:migrate                                # Postgres, then cihub-server migrate
+mise run db:reset                                  # erases the data, then mise run db:start (after the baseline is rewritten)
+mise run db:migrate                                # Postgres, then cihub-server migrate up
 mise run dev                                       # db:migrate, the profiles of COMPOSE_PROFILES, then cihub-server start with the four roles and pretty logs
 mise run server:up                                 # cihub-server in a container, from the local Dockerfile, and the profiles of COMPOSE_PROFILES
 mise run up                                        # the server and observability profiles together, and the profiles of COMPOSE_PROFILES
@@ -138,7 +138,7 @@ file without its secrets, and a Secret gives `CIHUB_DATABASE_URL`, `CIHUB_DATABA
 are `database.pool_size` for each replica: the sum over the replicas stays under the `max_connections` of Postgres.
 
 ```sh
-cihub-server migrate --config /etc/cihub/server.yaml
+cihub-server migrate up --config /etc/cihub/server.yaml
 cihub-server start --config /etc/cihub/server.yaml    # the four roles, as many replicas as needed
 ```
 
@@ -176,7 +176,7 @@ repository.
 
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Job `<release>-migrate`     | `cihub-server migrate`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
+| Job `<release>-migrate`     | `cihub-server migrate up`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
 | ConfigMap                   | `server.yaml` without secrets; a change rolls the pods, and Reloader ignores it (`reloader.stakater.com/ignore`), so that two rollouts do not race |
 | Deployment                  | `cihub-server start --config /etc/cihub/server.yaml`, `replicas` identical replicas, spread over the nodes when the cluster can (`topologySpreadConstraints`, rendered through `tpl`) |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
@@ -251,13 +251,24 @@ error.
 
 Migrations are explicit:
 
-- `cihub-server migrate` applies the embedded migrations that are missing, creates the partitions, then stops.
+- `cihub-server migrate up` applies the embedded migrations that are missing, creates the partitions, then stops.
 - At startup, `cihub-server start` applies nothing: it stops if an embedded migration is missing in the database. A
   migration in the database that the binary does not know comes from a newer version and does not prevent startup.
-- A published migration stays backward compatible for one version, so that old and new processes
-  coexist during a deployment.
+- `cihub-server migrate down --to <version>` reverts the applied migrations newer than `<version>`, the newest
+  first, then stops; `--to 0` reverts them all, and the data of what it reverts is lost. A version that the binary
+  does not know stops it before it changes anything.
+- Each migration is a pair `<version>_<description>.up.sql` and `.down.sql`, embedded in the binary. An up
+  published in a tag never changes. A published migration stays backward compatible for one version, so that old
+  and new processes coexist during a deployment.
+- Version 0.5.0 starts from a new baseline: a database of version 0.4 or older does not upgrade to it, as
+  `cihub-server migrate up` stops on the applied migrations that it does not know.
 
-| Environment                     | What runs `cihub-server migrate`                       | When                                     |
+A binary knows only the down files of its own migrations. To go back to an older version whose schema differs,
+the newer image reverts its migrations first, with `--to` the newest migration of the older version (the last file
+of `migrations/` in its tag), then the older image is deployed. A rollback without a change of schema needs no
+down.
+
+| Environment                     | What runs `cihub-server migrate up`                    | When                                     |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------------- |
 | Development                     | `mise run db:migrate`                                  | By hand                                  |
 | Development, `server` profile   | `cihub-migrate` service, on which `cihub-server` depends | Before `cihub-server`                  |

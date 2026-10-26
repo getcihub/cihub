@@ -79,10 +79,21 @@ last one, `Build Success`, is the required status.
 
 ## Migrations
 
-- A migration is named `<YYYYMMDDHHMMSS>_<description>.sql` and is applied by `cihub-server migrate`, never at
-  startup.
-- Before the first published version, rewrite a migration rather than add one that fixes it; `mise run db:reset`
-  starts again from an empty database.
+- A migration is a pair `<YYYYMMDDHHMMSS>_<description>.up.sql` and `.down.sql`. `cihub-server migrate up`
+  applies the up files, never at startup; `cihub-server migrate down --to <version>` runs the down files of the newer
+  ones, the newest first.
+- One migration creates one table, `create_<table>`, with the enums that only this table uses. An enum of
+  several tables has its own, `create_type_<enum>`; the functions of row level security are in
+  `create_tenancy_functions`. A later change of a table is a new migration that names it
+  (`add_<column>_to_<table>`).
+- A down gives back exactly the schema before its up: `each_down_migration_gives_back_the_schema_before_its_up`
+  compares the catalog after each step. Postgres cannot remove a value from an enum, so the down of an added
+  value recreates the type.
+- An up published in a tag never changes, not even by one byte: a database that applied it refuses another file
+  (`scripts/lint-rules.sh`). A change of the schema is a new migration; only a down may be fixed. Until `v0.5.0`
+  is tagged, the baseline is rewritten instead, and `mise run db:reset` starts again from an empty database.
+- A migration stays compatible with the version before it (expand now, contract in a later version), so that old
+  and new processes run side by side during a deployment, and a rollback of the image needs no down.
 - Every tenant table carries `org_id`, forced row level security and the `tenant` policy. Only `users`,
   `sessions` and `device_codes` are global: a session covers every organization of its user, and a device code
   belongs to no organization. The test

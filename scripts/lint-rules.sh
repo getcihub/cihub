@@ -23,4 +23,18 @@ while IFS= read -r spec; do
   fi
 done < <(git grep --untracked -hoE 'specs/[A-Z_]+\.md' -- ':!CHANGELOG.md' | sort -u)
 
+# A migration published in a tag never changes: a database that applied it
+# refuses another file with the same version. Its down may still be fixed.
+tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+if [[ -z "$tag" ]]; then
+  echo "no v* tag: fetch the tags to check the published migrations" >&2
+  failed=1
+fi
+while IFS= read -r up; do
+  if ! git show "$tag:$up" | cmp -s - "$up"; then
+    echo "$up is published in $tag: add a migration instead of changing it" >&2
+    failed=1
+  fi
+done < <([[ -n "$tag" ]] && git ls-tree --name-only "$tag" -- migrations/ | grep '\.up\.sql$')
+
 exit "$failed"

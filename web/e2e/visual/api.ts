@@ -63,6 +63,8 @@ function queueOf(repo: string, name: string, changes: Partial<Queue> = {}): Queu
     state: "running",
     mode: "single",
     state_changed_at: ago(6),
+    created_at: ago(6),
+    updated_at: ago(6),
     strategy: "pipelined",
     is_suspended: false,
     has_config_file: false,
@@ -821,9 +823,11 @@ function repoOf(org: string, name: string, isAdmin: boolean, start: Start | unde
   const branch = start?.branch ?? "main";
   return {
     id: `repo_${name}`,
-    namespace: org,
+    owner: org,
     name,
     default_branch: branch,
+    created_at: "2026-10-01T09:00:00Z",
+    updated_at: "2026-10-01T09:00:00Z",
     permission: { read: true, write: true, admin: isAdmin },
     setup: {
       state,

@@ -12,14 +12,14 @@ use cihub_domain::{
 };
 use cihub_domain::{ApiTokenId, DeviceCodeId, DeviceCodeState, MembershipRole, SessionId};
 use cihub_store::{
-    ApiTokenGrant, CLI_SESSION_IDLE_LIFETIME, DevicePoll, Membership, NewApiToken, NewDeviceCode,
-    NewSession, SessionClient, SessionGrant, answer_device_code, append_events, authenticate,
-    authenticate_session, begin_org, begin_system, create_api_token, create_device_code,
-    create_event_partitions, create_session, delete_session, delete_session_by_id,
-    forget_memberships_before, forget_permissions_before, forget_tokens_without_session,
-    load_events, memberships_of, migrate, missing_migrations, new_api_token_secret,
-    new_cli_session_secret, new_device_code_secret, new_session_secret, new_user_code,
-    poll_device_code, record_membership,
+    ApiTokenGrant, CLI_SESSION_IDLE_LIFETIME, DevicePoll, MIGRATOR, Membership, NewApiToken,
+    NewDeviceCode, NewSession, SessionClient, SessionGrant, StoreError, answer_device_code,
+    append_events, authenticate, authenticate_session, begin_org, begin_system, create_api_token,
+    create_device_code, create_event_partitions, create_session, delete_session,
+    delete_session_by_id, forget_memberships_before, forget_permissions_before,
+    forget_tokens_without_session, load_events, memberships_of, migrate, missing_migrations,
+    new_api_token_secret, new_cli_session_secret, new_device_code_secret, new_session_secret,
+    new_user_code, poll_device_code, record_membership, revert,
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::migrate::Migrator;
@@ -60,6 +60,97 @@ async fn an_older_binary_ignores_a_newer_migration(pool: PgPool) {
     let first = fixtures("first").await;
     assert_eq!(
         missing_migrations(&first, &pool).await.unwrap(),
+        Vec::<i64>::new()
+    );
+}
+
+/// Every object of the schema `public` but the table of the migrations, with
+/// its definition: two databases with the same schema give the same list.
+async fn schema(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar(
+        r"SELECT format('relation %s %s %s %s', c.relname, c.relkind, c.relrowsecurity,
+                        c.relforcerowsecurity)
+          FROM pg_class c
+          WHERE c.relnamespace = 'public'::regnamespace AND c.relname NOT LIKE '\_sqlx\_migrations%'
+          UNION ALL
+          SELECT format('column %s.%s %s %s %s', c.relname, a.attname,
+                        format_type(a.atttypid, a.atttypmod), a.attnotnull,
+                        pg_get_expr(d.adbin, d.adrelid))
+          FROM pg_attribute a
+          JOIN pg_class c ON c.oid = a.attrelid
+          LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+          WHERE c.relnamespace = 'public'::regnamespace AND c.relname NOT LIKE '\_sqlx\_migrations%'
+            AND a.attnum > 0 AND NOT a.attisdropped
+          UNION ALL
+          SELECT format('constraint %s.%s %s', conrelid::regclass, conname,
+                        pg_get_constraintdef(oid))
+          FROM pg_constraint
+          WHERE connamespace = 'public'::regnamespace
+            AND conrelid::regclass::text NOT LIKE '\_sqlx\_migrations%'
+          UNION ALL
+          SELECT format('index %s', indexdef) FROM pg_indexes
+          WHERE schemaname = 'public' AND tablename NOT LIKE '\_sqlx\_migrations%'
+          UNION ALL
+          SELECT format('type %s %s', t.typname, array(
+              SELECT e.enumlabel FROM pg_enum e WHERE e.enumtypid = t.oid ORDER BY e.enumsortorder))
+          FROM pg_type t
+          WHERE t.typnamespace = 'public'::regnamespace AND t.typtype = 'e'
+          UNION ALL
+          SELECT format('function %s', pg_get_functiondef(p.oid)) FROM pg_proc p
+          WHERE p.pronamespace = 'public'::regnamespace
+          UNION ALL
+          SELECT format('policy %s.%s %s %s', tablename, policyname, qual, with_check)
+          FROM pg_policies WHERE schemaname = 'public'
+          ORDER BY 1",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn each_down_migration_gives_back_the_schema_before_its_up(pool: PgPool) {
+    let versions: Vec<i64> = std::iter::once(0)
+        .chain(
+            MIGRATOR
+                .iter()
+                .filter(|m| m.migration_type.is_up_migration())
+                .map(|m| m.version),
+        )
+        .collect();
+    let mut schemas = vec![schema(&pool).await];
+    for version in &versions[1..] {
+        MIGRATOR.run_to(*version, &pool).await.unwrap();
+        schemas.push(schema(&pool).await);
+    }
+
+    for step in (1..versions.len()).rev() {
+        let reverted = revert(&MIGRATOR, &pool, versions[step - 1]).await.unwrap();
+
+        assert_eq!(reverted, [versions[step]]);
+        assert_eq!(schema(&pool).await, schemas[step - 1], "{}", versions[step]);
+    }
+}
+
+#[sqlx::test(migrations = false)]
+async fn migrate_down_to_zero_leaves_an_empty_schema(pool: PgPool) {
+    let empty = schema(&pool).await;
+    let applied = migrate(&MIGRATOR, &pool).await.unwrap();
+    create_event_partitions(&pool, september()).await.unwrap();
+
+    let reverted = revert(&MIGRATOR, &pool, 0).await.unwrap();
+
+    assert_eq!(reverted, applied.into_iter().rev().collect::<Vec<_>>());
+    assert_eq!(schema(&pool).await, empty);
+}
+
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn migrate_down_refuses_an_unknown_version(pool: PgPool) {
+    let err = revert(&MIGRATOR, &pool, 1).await.unwrap_err();
+
+    assert!(matches!(err, StoreError::UnknownMigration(1)), "{err:?}");
+    assert_eq!(
+        missing_migrations(&MIGRATOR, &pool).await.unwrap(),
         Vec::<i64>::new()
     );
 }
@@ -112,7 +203,7 @@ fn rows(org: OrgId, n: u8) -> String {
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('connection-{n}', '{org}', '{n}', 'github_app', '{n}', now(), '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
                             default_branch)
              VALUES ('repo-{n}', '{org}', 'connection-{n}', '{n}', 'account-{n}', 'name', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch, snapshot_seq, snapshot)

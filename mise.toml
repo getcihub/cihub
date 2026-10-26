@@ -109,7 +109,7 @@ run = ["docker compose down --volumes", { task = "db:start" }]
 description = "Apply the migrations to the development Postgres"
 depends = ["db:start"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = "cargo run --quiet -p cihub-server -- migrate"
+run = "cargo run --quiet -p cihub-server -- migrate up"
 
 [tasks.dev]
 description = "Start Postgres and the profiles of COMPOSE_PROFILES, apply the migrations, then run cihub-server start with the four roles"

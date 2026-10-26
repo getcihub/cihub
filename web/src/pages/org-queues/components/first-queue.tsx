@@ -74,7 +74,7 @@ export function FirstQueue({
                     onStart(pick);
                   }}
                 >
-                  Start with {pick.namespace}/{pick.name}
+                  Start with {pick.owner}/{pick.name}
                 </Button>
               )}
               {installUrl && (

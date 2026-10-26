@@ -37,6 +37,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - migrate
+            - up
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:

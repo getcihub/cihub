@@ -22,6 +22,9 @@ CREATE TABLE queues (
     config_sha    text,
     config_error  text,
     created_at    timestamptz NOT NULL DEFAULT now(),
+    -- The last change of the state, the mode or the configuration file; the
+    -- lease, the wake-up, the snapshot and the target do not change it.
+    updated_at    timestamptz NOT NULL DEFAULT now(),
     CHECK ((snapshot_seq IS NULL) = (snapshot IS NULL)),
     UNIQUE (repo_id, target_branch),
     UNIQUE (org_id, id),
@@ -32,15 +35,3 @@ CREATE INDEX queues_org_id ON queues (org_id);
 CREATE INDEX queues_work ON queues (next_tick_at) WHERE dirty OR next_tick_at IS NOT NULL;
 
 SELECT cihub_tenant_table('queues');
-
--- The last setup read of a queue: what the rules of the SCM miss. Not a column
--- of `queues`: the lease of the queues skips a locked row.
-CREATE TABLE queue_setups (
-    org_id     text        NOT NULL REFERENCES orgs (id),
-    queue_id   text        PRIMARY KEY,
-    findings   jsonb       NOT NULL,
-    checked_at timestamptz NOT NULL,
-    FOREIGN KEY (org_id, queue_id) REFERENCES queues (org_id, id)
-);
-
-SELECT cihub_tenant_table('queue_setups');

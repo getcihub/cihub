@@ -1280,7 +1280,7 @@
           "Repositories"
         ],
         "summary": "List the repositories",
-        "description": "The repositories of the organization that the App reaches, by namespace\nthen name, each with what the caller may do on it and the verdict of its\nsetup. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
+        "description": "The repositories of the organization that the App reaches, by owner then\nname, each with what the caller may do on it and the verdict of its\nsetup. Reads Postgres only.\n\n**Scope**: `queues:read`, for an API token, or for the role of the user of a session or their permission on the repository of the route.",
         "operationId": "list_repos",
         "parameters": [
           {
@@ -6233,6 +6233,8 @@
           "state",
           "mode",
           "state_changed_at",
+          "created_at",
+          "updated_at",
           "strategy",
           "is_suspended",
           "has_config_file",
@@ -6265,6 +6267,12 @@
           "counts": {
             "$ref": "#/components/schemas/ItemCounts",
             "description": "The current items of the queue in each state that is not terminal."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the first command on the target branch created the queue.",
+            "example": "2026-10-11T09:00:00Z"
           },
           "failed_last_24h": {
             "type": "integer",
@@ -6386,6 +6394,12 @@
             ],
             "description": "The head of the target branch that the queue saw last; `null` before\nthe first.",
             "example": "9f2c4e1a7b3d5f60812a4c6e8b0d2f4a6c8e0b1d"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The last change of the state, the mode or the configuration file of\nthe queue.",
+            "example": "2026-10-11T09:42:00Z"
           },
           "window": {
             "$ref": "#/components/schemas/Window",
@@ -6632,13 +6646,21 @@
         "description": "A repository of the organization, with what the caller may do on it and\nthe verdict of its setup; `RepoDetail` gives its whole setup.",
         "required": [
           "id",
-          "namespace",
+          "owner",
           "name",
           "default_branch",
+          "created_at",
+          "updated_at",
           "permission",
           "setup"
         ],
         "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When CIHub first read the repository from the SCM.",
+            "example": "2026-10-11T09:00:00Z"
+          },
           "default_branch": {
             "type": "string",
             "description": "The default branch of the repository.",
@@ -6654,7 +6676,7 @@
             "description": "The name of the repository, as the routes name it.",
             "example": "web"
           },
-          "namespace": {
+          "owner": {
             "type": "string",
             "description": "The account of the repository on the SCM.",
             "example": "acme"
@@ -6666,6 +6688,12 @@
           "setup": {
             "$ref": "#/components/schemas/SetupSummary",
             "description": "The verdict of the setup of the repository."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When a read of the SCM last changed its owner, its name or its default\nbranch, or removed or restored it.",
+            "example": "2026-10-11T09:42:00Z"
           }
         }
       },
@@ -6674,13 +6702,21 @@
         "description": "A repository of the organization, with what the caller may do on it and\nits whole setup.",
         "required": [
           "id",
-          "namespace",
+          "owner",
           "name",
           "default_branch",
+          "created_at",
+          "updated_at",
           "permission",
           "setup"
         ],
         "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When CIHub first read the repository from the SCM.",
+            "example": "2026-10-11T09:00:00Z"
+          },
           "default_branch": {
             "type": "string",
             "description": "The default branch of the repository.",
@@ -6696,7 +6732,7 @@
             "description": "The name of the repository, as the routes name it.",
             "example": "web"
           },
-          "namespace": {
+          "owner": {
             "type": "string",
             "description": "The account of the repository on the SCM.",
             "example": "acme"
@@ -6708,12 +6744,18 @@
           "setup": {
             "$ref": "#/components/schemas/RepoSetup",
             "description": "What CIHub found about the rules and the configuration file of the\ndefault branch."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When a read of the SCM last changed its owner, its name or its default\nbranch, or removed or restored it.",
+            "example": "2026-10-11T09:42:00Z"
           }
         }
       },
       "RepoList": {
         "type": "object",
-        "description": "A page of repositories, by namespace then name.",
+        "description": "A page of repositories, by owner then name.",
         "required": [
           "repos",
           "has_more",

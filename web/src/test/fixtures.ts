@@ -59,6 +59,8 @@ export function queueOf(repo: string, name: string, pending = 0, configError: st
     state: "running",
     mode: "single",
     state_changed_at: "2026-10-01T09:00:00Z",
+    created_at: "2026-10-01T09:00:00Z",
+    updated_at: "2026-10-01T09:00:00Z",
     strategy: "pipelined",
     is_suspended: false,
     has_config_file: true,
@@ -128,9 +130,11 @@ export const ADMIN: Permission = { read: true, write: true, admin: true };
 export function repoRowOf(name: string, state: SetupState, permission: Permission = ADMIN): Repo {
   return {
     id: `repo_${name}`,
-    namespace: "acme",
+    owner: "acme",
     name,
     default_branch: "main",
+    created_at: "2026-10-01T09:00:00Z",
+    updated_at: "2026-10-01T09:00:00Z",
     permission,
     setup: { state, checked_at: new Date().toISOString(), requested_at: null },
   };
@@ -140,9 +144,11 @@ export function repoRowOf(name: string, state: SetupState, permission: Permissio
 export function repoOf(name: string, permission: Permission = ADMIN): RepoDetail {
   return {
     id: `repo_${name}`,
-    namespace: "acme",
+    owner: "acme",
     name,
     default_branch: "main",
+    created_at: "2026-10-01T09:00:00Z",
+    updated_at: "2026-10-01T09:00:00Z",
     permission,
     setup: {
       state: "started",

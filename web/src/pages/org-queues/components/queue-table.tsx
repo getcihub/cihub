@@ -106,7 +106,7 @@ function QueueRow({
               to="/orgs/$org/repos/$repo"
               params={{ org, repo: repo.name }}
             >
-              <span className="text-muted-foreground">{repo.namespace}/</span>
+              <span className="text-muted-foreground">{repo.owner}/</span>
               <b className="font-medium">{repo.name}</b>
             </Link>
             {dot && (

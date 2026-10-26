@@ -155,7 +155,7 @@ pub struct Reviews {
 #[derive(Debug)]
 struct Repo {
     connection: String,
-    namespace: String,
+    owner: String,
     name: String,
     default_branch: String,
     commits: HashMap<String, Commit>,
@@ -247,7 +247,7 @@ impl Sim {
                 .collect();
             let empty = Repo {
                 connection: repo.connection.external_id.clone(),
-                namespace: repo.namespace.clone(),
+                owner: repo.owner.clone(),
                 name: repo.name.clone(),
                 default_branch: default_branch.to_owned(),
                 commits: HashMap::new(),
@@ -823,8 +823,8 @@ pub enum PrChange {
 }
 
 /// The page of PR `number`, for the read of the PR and for [`Scm::pr_url`].
-fn pr_page(namespace: &str, name: &str, number: u64) -> String {
-    format!("https://scm.example/{namespace}/{name}/prs/{number}")
+fn pr_page(owner: &str, name: &str, number: u64) -> String {
+    format!("https://scm.example/{owner}/{name}/prs/{number}")
 }
 
 /// `text` for the query of an address: every byte but the unreserved ones
@@ -1346,7 +1346,7 @@ impl Repo {
         };
         Ok(PrSnapshot {
             number,
-            url: pr_page(&self.namespace, &self.name, number),
+            url: pr_page(&self.owner, &self.name, number),
             state: pr.state,
             head_sha: head.clone(),
             base_branch: pr.base_branch.clone(),
@@ -1892,7 +1892,7 @@ impl Scm for Sim {
                 .filter(|(_, repo)| repo.connection == connection.external_id)
                 .map(|(external_id, repo)| ScmRepo {
                     external_id: external_id.clone(),
-                    namespace: repo.namespace.clone(),
+                    owner: repo.owner.clone(),
                     name: repo.name.clone(),
                     default_branch: repo.default_branch.clone(),
                 })
@@ -1914,7 +1914,7 @@ impl Scm for Sim {
     }
 
     fn pr_url(&self, repo: &RepoRef, number: u64) -> String {
-        pr_page(&repo.namespace, &repo.name, number)
+        pr_page(&repo.owner, &repo.name, number)
     }
 
     fn sign_in_url(&self, request: &SignInRequest) -> Option<String> {
@@ -2159,7 +2159,7 @@ pub fn contract_world(repo: &RepoRef) -> Result<(Sim, Fixture), ScmError> {
     sim.set_permission(repo, &admin, Permission::Admin)?;
     let account = ScmAccount {
         external_id: "10".into(),
-        path: repo.namespace.clone(),
+        path: repo.owner.clone(),
     };
     sim.add_installation(
         &repo.connection.external_id,
@@ -2198,7 +2198,7 @@ mod tests {
                 external_id: "100".into(),
             },
             external_id: "200".into(),
-            namespace: "acme".into(),
+            owner: "acme".into(),
             name: "widgets".into(),
         }
     }

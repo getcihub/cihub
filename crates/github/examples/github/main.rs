@@ -164,7 +164,7 @@ async fn run(args: Vec<String>) -> Result<()> {
 }
 
 fn repo_ref(installation: &str, repo: &str) -> Result<RepoRef> {
-    let (namespace, name) = repo
+    let (owner, name) = repo
         .split_once('/')
         .ok_or("the repository is <owner>/<repo>")?;
     Ok(RepoRef {
@@ -173,7 +173,7 @@ fn repo_ref(installation: &str, repo: &str) -> Result<RepoRef> {
             external_id: (*installation).to_owned(),
         },
         external_id: String::new(),
-        namespace: namespace.to_owned(),
+        owner: owner.to_owned(),
         name: name.to_owned(),
     })
 }

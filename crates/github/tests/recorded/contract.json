@@ -2,7 +2,7 @@
   "recorded_at": 1792614956,
   "world": {
     "installation": "169943782",
-    "namespace": "getcihub",
+    "owner": "getcihub",
     "name": "testing",
     "base_branch": "main",
     "required_checks": [

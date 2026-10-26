@@ -139,28 +139,35 @@ pub async fn run_sync_repos(
     .map_err(PlatformError::Query)?;
     // `xmax` is 0 on a row that the statement inserted, not updated.
     let inserted: Vec<bool> = sqlx::query_scalar(
-        "INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name,
-                            default_branch)
-         SELECT r.id, $2, $3, r.external_id, r.namespace, r.name, r.default_branch
+        "INSERT INTO repos (id, org_id, connection_id, external_id, owner, name,
+                            default_branch, created_at, updated_at)
+         SELECT r.id, $2, $3, r.external_id, r.owner, r.name, r.default_branch, $8, $8
          FROM unnest($1::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-              AS r (id, external_id, namespace, name, default_branch)
+              AS r (id, external_id, owner, name, default_branch)
          ON CONFLICT (connection_id, external_id) DO UPDATE
-         SET namespace = EXCLUDED.namespace, name = EXCLUDED.name,
-             default_branch = EXCLUDED.default_branch, removed_at = NULL
+         SET owner = EXCLUDED.owner, name = EXCLUDED.name,
+             default_branch = EXCLUDED.default_branch, removed_at = NULL,
+             updated_at = CASE
+                 WHEN (repos.owner, repos.name, repos.default_branch, repos.removed_at)
+                      IS DISTINCT FROM
+                      (EXCLUDED.owner, EXCLUDED.name, EXCLUDED.default_branch, NULL)
+                 THEN $8 ELSE repos.updated_at
+             END
          RETURNING xmax = 0",
     )
     .bind(&ids)
     .bind(org_id.to_string())
     .bind(connection_id.to_string())
     .bind(column(|repo| &repo.external_id))
-    .bind(column(|repo| &repo.namespace))
+    .bind(column(|repo| &repo.owner))
     .bind(column(|repo| &repo.name))
     .bind(column(|repo| &repo.default_branch))
+    .bind(now)
     .fetch_all(&mut *tx)
     .await
     .map_err(PlatformError::Query)?;
     let removed: Vec<String> = sqlx::query_scalar(
-        "UPDATE repos SET removed_at = $3
+        "UPDATE repos SET removed_at = $3, updated_at = $3
          WHERE connection_id = $1 AND removed_at IS NULL AND external_id <> ALL($2)
          RETURNING id",
     )

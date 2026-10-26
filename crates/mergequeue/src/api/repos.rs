@@ -81,21 +81,24 @@ const SETUP_STATE: &str = "CASE
 
 /// A repository of a list: its identity, its verdict, when its setup was read
 /// and asked for, and the permission of the person of the request on it.
-type RepoRow = (
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<OffsetDateTime>,
-    Option<OffsetDateTime>,
-    Option<String>,
-);
+#[derive(sqlx::FromRow)]
+struct RepoRow {
+    id: String,
+    owner: String,
+    name: String,
+    default_branch: String,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
+    state: String,
+    checked_at: Option<OffsetDateTime>,
+    requested_at: Option<OffsetDateTime>,
+    permission: Option<String>,
+}
 
 /// List the repositories
 ///
-/// The repositories of the organization that the App reaches, by namespace
-/// then name, each with what the caller may do on it and the verdict of its
+/// The repositories of the organization that the App reaches, by owner then
+/// name, each with what the caller may do on it and the verdict of its
 /// setup. Reads Postgres only.
 #[utoipa::path(
     get,
@@ -127,7 +130,8 @@ pub(super) async fn list_repos(
     // `$4` names the person of the request, whose permission a row gives.
     let listed = format!(
         "WITH listed AS (
-             SELECT r.id, r.namespace, r.name, r.default_branch, {SETUP_STATE} AS state,
+             SELECT r.id, r.owner, r.name, r.default_branch, r.created_at, r.updated_at,
+                    {SETUP_STATE} AS state,
                     s.checked_at, w.requested_at, p.permission::text AS permission
              FROM {SETUP_SOURCE}
              LEFT JOIN repo_permissions p ON p.repo_id = r.id AND p.user_id = $4
@@ -147,24 +151,25 @@ pub(super) async fn list_repos(
     .bind(&user)
     .fetch_one(&mut *tx)
     .await?;
-    let (namespace, after_name, id) = match page.after.clone() {
-        Some((namespace, name, id)) => (Some(namespace), Some(name), Some(id)),
+    let (after_owner, after_name, id) = match page.after.clone() {
+        Some((owner, name, id)) => (Some(owner), Some(name), Some(id)),
         None => (None, None, None),
     };
     // A repository deleted then created again keeps its row: the identifier
     // tells two repositories of the same name apart.
     let rows: Vec<RepoRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "{listed}
-         SELECT id, namespace, name, default_branch, state, checked_at, requested_at, permission
+         SELECT id, owner, name, default_branch, created_at, updated_at, state, checked_at,
+                requested_at, permission
          FROM listed
-         WHERE {filter} AND ($5::text IS NULL OR (namespace, name, id) > ($5, $6, $7))
-         ORDER BY namespace, name, id LIMIT $8"
+         WHERE {filter} AND ($5::text IS NULL OR (owner, name, id) > ($5, $6, $7))
+         ORDER BY owner, name, id LIMIT $8"
     )))
     .bind(&name)
     .bind(&states)
     .bind(&repos)
     .bind(&user)
-    .bind(namespace)
+    .bind(after_owner)
     .bind(after_name)
     .bind(id)
     .bind(page.rows())
@@ -179,7 +184,7 @@ pub(super) async fn list_repos(
     let cursor = repos
         .last()
         .filter(|_| has_more)
-        .map(|repo| cursor_of("repos", (&repo.namespace, &repo.name, &repo.id)));
+        .map(|repo| cursor_of("repos", (&repo.owner, &repo.name, &repo.id)));
     Ok(Json(RepoList {
         repos,
         has_more,
@@ -192,9 +197,11 @@ pub(super) async fn list_repos(
 #[derive(sqlx::FromRow)]
 struct DetailRow {
     id: String,
-    namespace: String,
+    owner: String,
     name: String,
     default_branch: String,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
     external_id: String,
     connection_id: String,
     connection_external_id: String,
@@ -242,7 +249,8 @@ pub(super) async fn get_repo(
     let mut tx = grant.begin_in_org(&state.pool, &path.org).await?;
     // The SCM does not tell names apart by their case.
     let row: Option<DetailRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-        "SELECT r.id, r.namespace, r.name, r.default_branch, r.external_id,
+        "SELECT r.id, r.owner, r.name, r.default_branch, r.created_at, r.updated_at,
+                r.external_id,
                 c.id AS connection_id, c.external_id AS connection_external_id,
                 q.target_branch AS queue, {SETUP_STATE} AS state, s.repo_id IS NOT NULL AS is_read,
                 s.head_sha, s.findings, s.config_state::text, s.config_path, s.config_error,
@@ -267,7 +275,7 @@ pub(super) async fn get_repo(
             external_id: row.connection_external_id.clone(),
         },
         external_id: row.external_id.clone(),
-        namespace: row.namespace.clone(),
+        owner: row.owner.clone(),
         name: row.name.clone(),
     };
     let setup = RepoSetup {
@@ -282,9 +290,11 @@ pub(super) async fn get_repo(
     };
     Ok(Json(RepoDetail {
         id: row.id,
-        namespace: row.namespace,
+        owner: row.owner,
         name: row.name,
         default_branch: row.default_branch,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
         permission: permission_of(&grant),
         setup,
     }))
@@ -460,26 +470,25 @@ fn permission_of(grant: &ApiGrant) -> Permission {
 
 /// A repository of a list: a person gets their permission on it, a token
 /// that of its scopes.
-fn repo_of(
-    (id, namespace, name, default_branch, state, checked_at, requested_at, level): RepoRow,
-    grant: &ApiGrant,
-) -> Result<Repo, ApiError> {
-    let permission = match (grant.actor, level) {
+fn repo_of(row: RepoRow, grant: &ApiGrant) -> Result<Repo, ApiError> {
+    let permission = match (grant.actor, row.permission) {
         (GrantActor::User(_), Some(level)) => permission_of_level(level.parse()?),
         (GrantActor::User(_), None) => permission_of_level(Level::None),
         (GrantActor::Token(_), _) => permission_of(grant),
     };
 
     Ok(Repo {
-        id,
-        namespace,
-        name,
-        default_branch,
+        id: row.id,
+        owner: row.owner,
+        name: row.name,
+        default_branch: row.default_branch,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
         permission,
         setup: SetupSummary {
-            state: state.parse()?,
-            checked_at,
-            requested_at,
+            state: row.state.parse()?,
+            checked_at: row.checked_at,
+            requested_at: row.requested_at,
         },
     })
 }

@@ -9,8 +9,8 @@ must be read by code that exists today. What a future lot needs is created by th
 
 **What does not change.** Identifiers are `text` in the typedid form. Every tenant table carries `org_id`
 and goes through `cihub_tenant_table`. The log is the source of truth and the other tables are projections
-(principle I). Postgres is the only dependency. Before the first published version, a migration is
-rewritten, never stacked (`migrations/AGENTS.md`).
+(principle I). Postgres is the only dependency. Until `v0.5.0` is tagged, the baseline of `migrations/` is
+rewritten, never stacked; after, a change is a new migration (`AGENTS.md`).
 
 ## Where we are
 

@@ -76,7 +76,7 @@ pub(crate) async fn load(
     pool: &PgPool,
     scm: &dyn Scm,
     job: &Job,
-    _now: OffsetDateTime,
+    now: OffsetDateTime,
 ) -> Result<(), Failure> {
     let request: LoadConfig = read_payload(job)?;
     let target = target_of(pool, job).await?;
@@ -99,7 +99,11 @@ pub(crate) async fn load(
     let mut tx = begin_system(pool).await?;
     let query = match &checked {
         Ok(text) => sqlx::query(
-            "UPDATE queues SET config_text = $2, config_sha = $3, config_error = NULL
+            "UPDATE queues SET config_text = $2, config_sha = $3, config_error = NULL,
+                               updated_at = CASE
+                                   WHEN (config_text, config_error) IS DISTINCT FROM ($2, NULL)
+                                   THEN $4 ELSE updated_at
+                               END
              WHERE id = $1",
         )
         .bind(target.queue_id.to_string())
@@ -110,13 +114,20 @@ pub(crate) async fn load(
                 error = err as &dyn Error,
                 "configuration file not valid"
             );
-            sqlx::query("UPDATE queues SET config_error = $2, config_sha = $3 WHERE id = $1")
-                .bind(target.queue_id.to_string())
-                .bind(err.to_string())
+            sqlx::query(
+                "UPDATE queues SET config_error = $2, config_sha = $3,
+                                   updated_at = CASE
+                                       WHEN config_error IS DISTINCT FROM $2 THEN $4
+                                       ELSE updated_at
+                                   END
+                 WHERE id = $1",
+            )
+            .bind(target.queue_id.to_string())
+            .bind(err.to_string())
         }
     };
 
-    query.bind(&request.sha).execute(&mut *tx).await?;
+    query.bind(&request.sha).bind(now).execute(&mut *tx).await?;
     mark_dirty(&mut tx, target.queue_id).await?;
     // The page shows the settings and the error of the file.
     notify_queue_changed(&mut tx, target.org_id, target.queue_id, None).await?;

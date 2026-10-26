@@ -35,6 +35,8 @@ pub(super) struct QueueRow {
     mode: String,
     state_changed_at: OffsetDateTime,
     state_changed_by: Option<String>,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
     target_head_sha: Option<String>,
     pub(super) window_size: Option<i32>,
     is_suspended: bool,
@@ -47,7 +49,7 @@ pub(super) struct QueueRow {
 pub(super) const QUEUE_COLUMNS: &str = "q.id, q.repo_id, r.name AS repo, q.target_branch,
     q.target_branch = r.default_branch AS is_default_branch, q.state::text AS state, q.mode::text AS mode,
     coalesce(q.state_changed_at, q.created_at) AS state_changed_at,
-    u.login AS state_changed_by, q.target_head_sha, q.window_size,
+    u.login AS state_changed_by, q.created_at, q.updated_at, q.target_head_sha, q.window_size,
     (c.suspended_at IS NOT NULL OR r.removed_at IS NOT NULL) AS is_suspended, q.config_text, q.config_sha, q.config_error";
 
 pub(super) const QUEUE_SOURCE: &str = "queues q
@@ -254,6 +256,8 @@ impl QueueFacts {
             setup,
             state_changed_at: row.state_changed_at,
             state_changed_by: row.state_changed_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
             target_head_sha: row.target_head_sha,
             id: row.id,
             repo_id: row.repo_id,

@@ -51,7 +51,7 @@ impl Rest {
         let url = format!("{api}/app/installations/{installation}/access_tokens");
         let answer = send(http.post(url).bearer_auth(jwt), None).await?;
         let token = answer["token"].as_str().ok_or("no token")?.to_owned();
-        let repo_url = format!("{api}/repos/{}/{}", repo.namespace, repo.name);
+        let repo_url = format!("{api}/repos/{}/{}", repo.owner, repo.name);
         Ok(Self {
             http,
             repo_url,
@@ -190,7 +190,7 @@ pub async fn record(
     let recording_app = GithubApp::new(&through_proxy, Arc::new(now))?;
     let world = World {
         installation: repo.connection.external_id.clone(),
-        namespace: repo.namespace.clone(),
+        owner: repo.owner.clone(),
         name: repo.name.clone(),
         base_branch: BASE.to_owned(),
         required_checks: BTreeSet::from([REQUIRED.to_owned()]),
@@ -240,7 +240,7 @@ fn keep_only_repo(exchange: &mut Exchange, repo: &RepoRef) {
         return;
     };
 
-    let full_name = format!("{}/{}", repo.namespace, repo.name);
+    let full_name = format!("{}/{}", repo.owner, repo.name);
     if let Some(Value::Array(repositories)) = page.get_mut("repositories") {
         repositories.retain(|listed| listed["full_name"] == full_name.as_str());
         let kept = repositories.len();

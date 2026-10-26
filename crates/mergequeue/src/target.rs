@@ -45,7 +45,7 @@ type Row = (
 /// The columns of [`Row`]: the queue, its repository and its connection.
 const COLUMNS: &str =
     "q.id, q.org_id, q.target_branch, q.config_text, q.config_sha, r.id, r.external_id,
-    r.namespace, r.name, c.id, c.external_id
+    r.owner, r.name, c.id, c.external_id
     FROM queues q
     JOIN repos r ON r.id = q.repo_id
     JOIN scm_connections c ON c.id = r.connection_id";
@@ -59,7 +59,7 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
         config_sha,
         repo,
         external_id,
-        namespace,
+        owner,
         name,
         connection,
         cext,
@@ -74,7 +74,7 @@ fn decode(row: Row) -> Result<QueueTarget, MergeQueueError> {
                 external_id: cext,
             },
             external_id,
-            namespace,
+            owner,
             name,
         },
         target_branch: branch,
@@ -200,7 +200,7 @@ impl RepoTarget {
     ) -> Result<Self, MergeQueueError> {
         type RepoRow = (String, String, String, String, String, String, String);
         let row: Option<RepoRow> = sqlx::query_as(
-            "SELECT r.org_id, r.external_id, r.namespace, r.name, r.default_branch,
+            "SELECT r.org_id, r.external_id, r.owner, r.name, r.default_branch,
                     c.id, c.external_id
              FROM repos r JOIN scm_connections c ON c.id = r.connection_id
              WHERE r.id = $1",
@@ -208,7 +208,7 @@ impl RepoTarget {
         .bind(repo.to_string())
         .fetch_optional(conn)
         .await?;
-        let (org, external_id, namespace, name, default_branch, connection, cext) =
+        let (org, external_id, owner, name, default_branch, connection, cext) =
             row.ok_or(MergeQueueError::UnknownRepo(repo))?;
 
         Ok(Self {
@@ -220,7 +220,7 @@ impl RepoTarget {
                     external_id: cext,
                 },
                 external_id,
-                namespace,
+                owner,
                 name,
             },
             default_branch,
@@ -241,7 +241,7 @@ pub(crate) fn test_target() -> QueueTarget {
                 external_id: "4".into(),
             },
             external_id: "5".into(),
-            namespace: "acme".into(),
+            owner: "acme".into(),
             name: "app".into(),
         },
         target_branch: "main".into(),

@@ -536,7 +536,7 @@ impl GithubApp {
     fn repo_path(repo: &RepoRef, rest: &str) -> String {
         format!(
             "/repos/{}/{}{rest}",
-            encode(&repo.namespace),
+            encode(&repo.owner),
             encode(&repo.name)
         )
     }
@@ -657,7 +657,7 @@ impl GithubApp {
         let query = format!(
             "query($owner: String!, $name: String!) {{\n  repository(owner: $owner, name: $name) {{\n{fields}  }}\n}}{CHECKS_FRAGMENT}{PR_FIELDS}"
         );
-        let variables = json!({ "owner": repo.namespace, "name": repo.name });
+        let variables = json!({ "owner": repo.owner, "name": repo.name });
         let data = self
             .query(&repo.connection, class, &query, variables)
             .await?;
@@ -786,7 +786,7 @@ impl Scm for GithubApp {
                 status_check_rollup: Option<Rollup>,
             }
 
-            let variables = json!({ "owner": repo.namespace, "name": repo.name, "sha": sha });
+            let variables = json!({ "owner": repo.owner, "name": repo.name, "sha": sha });
             let query = format!("{CHECKS_QUERY}{CHECKS_FRAGMENT}");
             let data = self
                 .query(&repo.connection, class, &query, variables)
@@ -856,7 +856,7 @@ impl Scm for GithubApp {
 
             let key = (
                 repo.connection.id,
-                format!("{}/{}", repo.namespace, repo.name),
+                format!("{}/{}", repo.owner, repo.name),
                 user.login.clone(),
             );
             if let Some(permission) = self.kept_permission(&key) {
@@ -989,7 +989,7 @@ impl Scm for GithubApp {
                 path: String,
             }
 
-            let variables = json!({ "owner": repo.namespace, "name": repo.name, "number": number });
+            let variables = json!({ "owner": repo.owner, "name": repo.name, "number": number });
             let data = self
                 .query(&repo.connection, class, THREADS_QUERY, variables)
                 .await?;
@@ -1298,7 +1298,7 @@ impl Scm for GithubApp {
 
             let rest = format!(
                 "/pulls?state=open&head={}:{}&base={}",
-                encode(&repo.namespace),
+                encode(&repo.owner),
                 encode(head),
                 encode(base)
             );
@@ -1521,7 +1521,7 @@ impl Scm for GithubApp {
 
                 repos.extend(repositories.into_iter().map(|repo| ScmRepo {
                     external_id: repo.id.to_string(),
-                    namespace: repo.owner.login,
+                    owner: repo.owner.login,
                     name: repo.name,
                     default_branch: repo.default_branch,
                 }));
@@ -1542,14 +1542,14 @@ impl Scm for GithubApp {
     fn branch_rules_url(&self, repo: &RepoRef) -> Option<String> {
         Some(format!(
             "{}/{}/{}/settings/rules",
-            self.web_url, repo.namespace, repo.name
+            self.web_url, repo.owner, repo.name
         ))
     }
 
     fn pr_url(&self, repo: &RepoRef, number: u64) -> String {
         format!(
             "{}/{}/{}/pull/{number}",
-            self.web_url, repo.namespace, repo.name
+            self.web_url, repo.owner, repo.name
         )
     }
 

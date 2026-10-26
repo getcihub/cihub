@@ -400,13 +400,28 @@ pub struct Repo {
     pub id: String,
     /// The account of the repository on the SCM.
     #[cfg_attr(feature = "openapi", schema(example = "acme"))]
-    pub namespace: String,
+    pub owner: String,
     /// The name of the repository, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "web"))]
     pub name: String,
     /// The default branch of the repository.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub default_branch: String,
+    /// When CIHub first read the repository from the SCM.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:00:00Z")
+    )]
+    pub created_at: OffsetDateTime,
+    /// When a read of the SCM last changed its owner, its name or its default
+    /// branch, or removed or restored it.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:42:00Z")
+    )]
+    pub updated_at: OffsetDateTime,
     /// What the caller may do on the repository.
     pub permission: Permission,
     /// The verdict of the setup of the repository.
@@ -426,13 +441,28 @@ pub struct RepoDetail {
     pub id: String,
     /// The account of the repository on the SCM.
     #[cfg_attr(feature = "openapi", schema(example = "acme"))]
-    pub namespace: String,
+    pub owner: String,
     /// The name of the repository, as the routes name it.
     #[cfg_attr(feature = "openapi", schema(example = "web"))]
     pub name: String,
     /// The default branch of the repository.
     #[cfg_attr(feature = "openapi", schema(example = "main"))]
     pub default_branch: String,
+    /// When CIHub first read the repository from the SCM.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:00:00Z")
+    )]
+    pub created_at: OffsetDateTime,
+    /// When a read of the SCM last changed its owner, its name or its default
+    /// branch, or removed or restored it.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:42:00Z")
+    )]
+    pub updated_at: OffsetDateTime,
     /// What the caller may do on the repository.
     pub permission: Permission,
     /// What CIHub found about the rules and the configuration file of the
@@ -455,7 +485,7 @@ pub struct Permission {
 }
 
 page! {
-    /// A page of repositories, by namespace then name.
+    /// A page of repositories, by owner then name.
     pub struct RepoList {
         /// The repositories of the page.
         pub repos: Vec<Repo>,
@@ -508,6 +538,21 @@ pub struct Queue {
     /// decided it, or when an API token asked for it.
     #[cfg_attr(feature = "openapi", schema(example = "ada"))]
     pub state_changed_by: Option<String>,
+    /// When the first command on the target branch created the queue.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:00:00Z")
+    )]
+    pub created_at: OffsetDateTime,
+    /// The last change of the state, the mode or the configuration file of
+    /// the queue.
+    #[serde(with = "time::serde::rfc3339")]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(value_type = String, format = DateTime, example = "2026-10-11T09:42:00Z")
+    )]
+    pub updated_at: OffsetDateTime,
     /// The strategy of the last valid configuration file.
     #[cfg_attr(feature = "openapi", schema(value_type = closed::Strategy))]
     pub strategy: Strategy,

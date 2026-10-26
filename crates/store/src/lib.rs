@@ -2,8 +2,8 @@
 //! organization or of the system (row level security), and
 //! the migrations embedded from `migrations/`. It holds no
 //! queue logic and does not decide when the migrations run: `cihub-server
-//! migrate` applies them, and `cihub-server start` refuses to start while one
-//! is missing.
+//! migrate up` applies them, `cihub-server migrate down` reverts them, and
+//! `cihub-server start` refuses to start while one is missing.
 
 mod cipher;
 mod device_codes;
@@ -82,6 +82,10 @@ pub enum StoreError {
     ReadMigrations(#[source] sqlx::Error),
     #[error("cannot apply the migrations")]
     Migrate(#[source] MigrateError),
+    #[error("no migration has the version {0}")]
+    UnknownMigration(i64),
+    #[error("cannot revert the migrations")]
+    Revert(#[source] MigrateError),
     #[error("`database.secret` is shorter than {MIN_DATABASE_SECRET_BYTES} bytes")]
     ShortDatabaseSecret,
     #[error("cannot seal a secret with the database secret")]
@@ -192,6 +196,25 @@ pub async fn ping(pool: &PgPool) -> bool {
     sqlx::query("SELECT 1").execute(pool).await.is_ok()
 }
 
+async fn applied_migrations(pool: &PgPool) -> Result<BTreeSet<i64>, StoreError> {
+    let exists: bool = sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
+        .fetch_one(pool)
+        .await
+        .map_err(StoreError::ReadMigrations)?;
+    if !exists {
+        return Ok(BTreeSet::new());
+    }
+
+    Ok(
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success")
+            .fetch_all(pool)
+            .await
+            .map_err(StoreError::ReadMigrations)?
+            .into_iter()
+            .collect(),
+    )
+}
+
 /// # Errors
 ///
 /// The table of the applied migrations cannot be read.
@@ -199,20 +222,7 @@ pub async fn missing_migrations(
     migrator: &Migrator,
     pool: &PgPool,
 ) -> Result<Vec<i64>, StoreError> {
-    let exists: bool = sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations') IS NOT NULL")
-        .fetch_one(pool)
-        .await
-        .map_err(StoreError::ReadMigrations)?;
-    let applied: BTreeSet<i64> = if exists {
-        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success")
-            .fetch_all(pool)
-            .await
-            .map_err(StoreError::ReadMigrations)?
-            .into_iter()
-            .collect()
-    } else {
-        BTreeSet::new()
-    };
+    let applied = applied_migrations(pool).await?;
     Ok(migrator
         .iter()
         .filter(|m| m.migration_type.is_up_migration() && !applied.contains(&m.version))
@@ -230,4 +240,57 @@ pub async fn migrate(migrator: &Migrator, pool: &PgPool) -> Result<Vec<i64>, Sto
     let missing = missing_migrations(migrator, pool).await?;
     migrator.run(pool).await.map_err(StoreError::Migrate)?;
     Ok(missing)
+}
+
+/// Reverts the applied migrations of `migrator` newer than `target`, the
+/// newest first, and returns their versions; `0` reverts them all. Their data
+/// is lost.
+///
+/// # Errors
+///
+/// `target` is neither `0` nor a migration of `migrator`, the database holds a
+/// migration that `migrator` does not know, or a revert fails.
+pub async fn revert(
+    migrator: &Migrator,
+    pool: &PgPool,
+    target: i64,
+) -> Result<Vec<i64>, StoreError> {
+    let is_known = target == 0 || migrator.iter().any(|m| m.version == target);
+    if !is_known {
+        return Err(StoreError::UnknownMigration(target));
+    }
+
+    let applied = applied_migrations(pool).await?;
+    let reverted = migrator
+        .iter()
+        .rev()
+        .filter(|m| m.migration_type.is_down_migration())
+        .filter(|m| m.version > target && applied.contains(&m.version))
+        .map(|m| m.version)
+        .collect();
+
+    migrator
+        .undo(pool, target)
+        .await
+        .map_err(StoreError::Revert)?;
+    Ok(reverted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_migration_has_an_up_and_a_down() {
+        let versions = |is_down: bool| -> Vec<i64> {
+            MIGRATOR
+                .iter()
+                .filter(|m| m.migration_type.is_down_migration() == is_down)
+                .map(|m| m.version)
+                .collect()
+        };
+
+        assert!(MIGRATOR.iter().all(|m| m.migration_type.is_reversible()));
+        assert_eq!(versions(false), versions(true));
+    }
 }

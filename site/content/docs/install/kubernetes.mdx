@@ -167,6 +167,18 @@ helm upgrade cihub oci://ghcr.io/getcihub/charts/cihub --reuse-values
 
 The migration Job applies the migrations of the new version before the pods roll.
 
+## Go back to an older version
+
+When the older version has fewer migrations, the running version reverts its own first, then Helm rolls back.
+`--to` takes the newest migration of the older version: the last file of `migrations/` in its tag.
+
+```sh
+kubectl exec deploy/cihub -- cihub-server migrate down --config /etc/cihub/server.yaml --to <version>
+helm rollback cihub
+```
+
+The data of the reverted migrations is lost, and the pods of the newer version fail until the rollback ends.
+
 ## Next
 
 [Install the App on your repositories](/docs/install/github-app#install-the-app-on-your-repositories), then [merge

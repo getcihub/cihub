@@ -26,7 +26,7 @@ the migration Job uses the same URL.
 
 ## What the chart installs
 
-- A `pre-install` and `pre-upgrade` hook Job, `cihub-server migrate`: the pods of a new version start only once
+- A `pre-install` and `pre-upgrade` hook Job, `cihub-server migrate up`: the pods of a new version start only once
   the migrations are applied.
 - A Deployment of `cihub-server start`. Each replica runs the four roles; the replicas share the work through
   Postgres. `server.yaml` comes from a ConfigMap, without secrets: the URL of the database and the webhook secret

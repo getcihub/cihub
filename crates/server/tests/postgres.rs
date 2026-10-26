@@ -128,18 +128,50 @@ fn all_in_one_answers_and_stops(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
-fn migrate_twice_succeeds(pool: PgPool) {
+fn migrate_up_twice_succeeds(pool: PgPool) {
     for _ in 0..2 {
-        let status = command(&pool).arg("migrate").status().unwrap();
+        let status = command(&pool).args(["migrate", "up"]).status().unwrap();
         assert!(status.success(), "{status}");
     }
+}
+
+#[sqlx::test(migrations = false)]
+fn migrate_down_reverts_what_migrate_up_applied(pool: PgPool) {
+    assert!(
+        command(&pool)
+            .args(["migrate", "up"])
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let status = command(&pool)
+        .args(["migrate", "down", "--to", "0"])
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "{status}");
+    assert!(!with_github(&pool).arg("start").status().unwrap().success());
+    assert!(
+        command(&pool)
+            .args(["migrate", "up"])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 #[sqlx::test(migrations = false)]
 fn a_missing_migration_stops_the_start(pool: PgPool) {
     let status = with_github(&pool).arg("start").status().unwrap();
     assert!(!status.success(), "{status}");
-    assert!(command(&pool).arg("migrate").status().unwrap().success());
+    assert!(
+        command(&pool)
+            .args(["migrate", "up"])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
@@ -240,7 +272,7 @@ async fn with_a_github_app_the_web_role_stores_a_signed_webhook(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "cihub_store::MIGRATOR")]
-fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
+fn without_github_the_server_stops_and_migrate_up_runs(pool: PgPool) {
     let output = command(&pool)
         .arg("start")
         .stderr(Stdio::piped())
@@ -250,7 +282,13 @@ fn without_github_the_server_stops_and_migrate_runs(pool: PgPool) {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("GitHub is not configured"), "{stderr}");
-    assert!(command(&pool).arg("migrate").status().unwrap().success());
+    assert!(
+        command(&pool)
+            .args(["migrate", "up"])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 /// Cargo gives the path of the binaries of this crate only; `cargo nextest
@@ -276,7 +314,7 @@ async fn two_queues(pool: &PgPool) -> String {
          INSERT INTO scm_connections (id, org_id, account_external_id, kind, external_id,
                                       synced_at, permissions)
              VALUES ('{connection}', '{org}', '1', 'github_app', '1', now(), '{{}}');
-         INSERT INTO repos (id, org_id, connection_id, external_id, namespace, name, default_branch)
+         INSERT INTO repos (id, org_id, connection_id, external_id, owner, name, default_branch)
              VALUES ('{repo}', '{org}', '{connection}', '200', 'acme', 'app', 'main');
          INSERT INTO queues (id, org_id, repo_id, target_branch)
              VALUES ('{main}', '{org}', '{repo}', 'main'),
