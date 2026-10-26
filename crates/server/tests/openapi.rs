@@ -68,6 +68,10 @@ fn each_route_documents_its_errors_with_an_example_of_each() {
                 .as_object()
                 .unwrap();
             for (code, example) in examples {
+                let reference = example["$ref"].as_str().unwrap_or_default();
+                let example = &document["components"]["examples"]
+                    [reference.trim_start_matches("#/components/examples/")];
+
                 assert_eq!(
                     example["value"]["status"].to_string(),
                     *status,

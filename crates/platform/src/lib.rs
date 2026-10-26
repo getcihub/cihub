@@ -30,7 +30,8 @@ mod wake;
 mod worker;
 
 pub use api::{
-    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, document_error, error_responses,
+    ApiError, ApiGrant, ApiJson, ApiPath, ApiQuery, GrantActor, document_error, error_examples,
+    error_responses,
 };
 pub use budget::{ConnectionBudget, record_budgets, run_budget_writer};
 pub use connections::{

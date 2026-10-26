@@ -24,7 +24,7 @@ use cihub_api_types::{
 use cihub_domain::{ApiScope, ApiTokenId, JobClass, OrgId, Permission, RepoId, SessionId, UserId};
 use cihub_platform::{
     Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, PAGE_ERRORS, Page,
-    PlatformError, cursor_of, document_error, error_responses, repo_permission_now,
+    PlatformError, cursor_of, document_error, error_examples, error_responses, repo_permission_now,
     request_user_sync, request_user_sync_when_old, role_now,
 };
 use cihub_scm::Scm;
@@ -185,6 +185,11 @@ pub fn openapi(modules: &[utoipa::openapi::OpenApi]) -> utoipa::openapi::OpenApi
     }
 
     document.info.description = Some(introduction());
+    document
+        .components
+        .get_or_insert_with(Default::default)
+        .examples
+        .extend(error_examples());
     for (path, item) in &mut document.paths.paths {
         for (operation, changes_state) in operations(item) {
             accept_session(operation);

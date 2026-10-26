@@ -176,8 +176,23 @@ pub fn error_responses(codes: &[ErrorCode]) -> BTreeMap<String, RefOr<openapi::R
     responses.responses
 }
 
+/// The example of each error code, for the components of the `OpenAPI`
+/// document: the responses of the routes refer to them by name.
+pub fn error_examples() -> BTreeMap<String, RefOr<Example>> {
+    ErrorCode::all()
+        .map(|code| {
+            let mut example = Example::new();
+            example.summary = code.to_string();
+            example.value = serde_json::to_value(problem(code, code.sentence().to_owned())).ok();
+
+            (code.to_string(), RefOr::T(example))
+        })
+        .collect()
+}
+
 /// Adds the error `code` to the responses of a route in the `OpenAPI`
-/// document: the response of its status lists it, with an example.
+/// document: the response of its status lists it, with a reference to its
+/// example in [`error_examples`].
 pub fn document_error(responses: &mut Responses, code: ErrorCode) {
     let status = status_of(code);
     let entry = responses
@@ -202,10 +217,10 @@ pub fn document_error(responses: &mut Responses, code: ErrorCode) {
         return;
     }
 
-    let mut example = Example::new();
-    example.summary.clone_from(&name);
-    example.value = serde_json::to_value(problem(code, code.sentence().to_owned())).ok();
-    content.examples.insert(name.clone(), RefOr::T(example));
+    content.examples.insert(
+        name.clone(),
+        RefOr::Ref(Ref::new(format!("#/components/examples/{name}"))),
+    );
 
     let line = format!("- `{name}`: {}", code.sentence());
     response.description = if response.description.is_empty() {

@@ -62,14 +62,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -84,14 +77,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -106,14 +92,7 @@
                 },
                 "examples": {
                   "sign_in_unavailable": {
-                    "summary": "sign_in_unavailable",
-                    "value": {
-                      "code": "sign_in_unavailable",
-                      "detail": "The instance has no public address or no sign-in client: nobody signs in to it.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/sign_in_unavailable"
                   }
                 }
               }
@@ -160,34 +139,13 @@
                 },
                 "examples": {
                   "device_code_expired": {
-                    "summary": "device_code_expired",
-                    "value": {
-                      "code": "device_code_expired",
-                      "detail": "The device code is unknown, already used, or older than 15 minutes: start again.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/device_code_expired"
                   },
                   "device_code_pending": {
-                    "summary": "device_code_pending",
-                    "value": {
-                      "code": "device_code_pending",
-                      "detail": "The person has not approved or denied the code yet: ask again after `interval` seconds.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/device_code_pending"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   }
                 }
               }
@@ -202,14 +160,7 @@
                 },
                 "examples": {
                   "device_code_denied": {
-                    "summary": "device_code_denied",
-                    "value": {
-                      "code": "device_code_denied",
-                      "detail": "The person denied the code: the command line is not signed in.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/device_code_denied"
                   }
                 }
               }
@@ -232,24 +183,10 @@
                 },
                 "examples": {
                   "polling_too_fast": {
-                    "summary": "polling_too_fast",
-                    "value": {
-                      "code": "polling_too_fast",
-                      "detail": "The command line asked again sooner than `interval`: wait 5 seconds more each time.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/polling_too_fast"
                   },
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -264,14 +201,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -313,14 +243,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -335,14 +258,7 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   }
                 }
               }
@@ -357,14 +273,7 @@
                 },
                 "examples": {
                   "device_code_not_found": {
-                    "summary": "device_code_not_found",
-                    "value": {
-                      "code": "device_code_not_found",
-                      "detail": "No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/device_code_not_found"
                   }
                 }
               }
@@ -387,14 +296,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -409,14 +311,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -463,14 +358,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -485,14 +373,7 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   }
                 }
               }
@@ -507,14 +388,7 @@
                 },
                 "examples": {
                   "device_code_not_found": {
-                    "summary": "device_code_not_found",
-                    "value": {
-                      "code": "device_code_not_found",
-                      "detail": "No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/device_code_not_found"
                   }
                 }
               }
@@ -537,14 +411,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -559,14 +426,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -608,14 +468,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -638,14 +491,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -660,14 +506,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -724,14 +563,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -746,14 +578,7 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   }
                 }
               }
@@ -776,14 +601,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -798,14 +616,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -820,14 +631,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -904,34 +708,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -946,14 +729,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -968,14 +744,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -990,14 +759,7 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   }
                 }
               }
@@ -1020,14 +782,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -1042,14 +797,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -1064,14 +812,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -1214,34 +955,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -1256,14 +976,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -1278,14 +991,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -1300,14 +1006,7 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   }
                 }
               }
@@ -1330,14 +1029,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -1352,14 +1044,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -1374,14 +1059,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -1470,34 +1148,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -1512,14 +1169,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -1534,14 +1184,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -1556,24 +1199,10 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -1596,14 +1225,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -1618,14 +1240,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -1640,14 +1255,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -1746,34 +1354,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -1788,14 +1375,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -1810,14 +1390,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -1832,14 +1405,7 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   }
                 }
               }
@@ -1862,14 +1428,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -1884,14 +1443,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -1906,14 +1458,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -1982,14 +1527,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -2004,14 +1542,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -2026,24 +1557,10 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -2066,14 +1583,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -2088,14 +1598,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -2110,14 +1613,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -2280,34 +1776,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -2322,14 +1797,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -2344,14 +1812,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -2366,34 +1827,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -2416,14 +1856,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -2438,14 +1871,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -2460,14 +1886,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -2548,14 +1967,7 @@
                 },
                 "examples": {
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   }
                 }
               }
@@ -2570,14 +1982,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -2592,14 +1997,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -2614,34 +2012,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "pr_not_found": {
-                    "summary": "pr_not_found",
-                    "value": {
-                      "code": "pr_not_found",
-                      "detail": "The PR was never submitted to a queue of the repository.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/pr_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -2664,14 +2041,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -2686,14 +2056,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -2708,14 +2071,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -2789,14 +2145,7 @@
                 },
                 "examples": {
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   }
                 }
               }
@@ -2811,14 +2160,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -2833,24 +2175,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -2865,34 +2193,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "pr_not_found": {
-                    "summary": "pr_not_found",
-                    "value": {
-                      "code": "pr_not_found",
-                      "detail": "The PR was never submitted to a queue of the repository.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/pr_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -2907,14 +2214,7 @@
                 },
                 "examples": {
                   "item_ended": {
-                    "summary": "item_ended",
-                    "value": {
-                      "code": "item_ended",
-                      "detail": "The item of the PR ended: `merged`, `failed` or `cancelled`.",
-                      "status": 409,
-                      "title": "Conflict",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/item_ended"
                   }
                 }
               }
@@ -2937,14 +2237,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -2959,14 +2252,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -2981,14 +2267,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -3089,34 +2368,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -3131,14 +2389,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -3153,14 +2404,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -3175,34 +2419,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "pr_not_found": {
-                    "summary": "pr_not_found",
-                    "value": {
-                      "code": "pr_not_found",
-                      "detail": "The PR was never submitted to a queue of the repository.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/pr_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -3225,14 +2448,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -3247,14 +2463,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -3269,14 +2478,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -3350,14 +2552,7 @@
                 },
                 "examples": {
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   }
                 }
               }
@@ -3372,14 +2567,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -3394,24 +2582,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -3426,34 +2600,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "pr_not_found": {
-                    "summary": "pr_not_found",
-                    "value": {
-                      "code": "pr_not_found",
-                      "detail": "The PR was never submitted to a queue of the repository.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/pr_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -3468,14 +2621,7 @@
                 },
                 "examples": {
                   "item_not_in_test": {
-                    "summary": "item_not_in_test",
-                    "value": {
-                      "code": "item_not_in_test",
-                      "detail": "Only an item in `testing` or `pending_failure` can restart its tests.",
-                      "status": 409,
-                      "title": "Conflict",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/item_not_in_test"
                   }
                 }
               }
@@ -3498,14 +2644,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -3520,14 +2659,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -3542,14 +2674,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -3633,24 +2758,10 @@
                 },
                 "examples": {
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "unknown_priority": {
-                    "summary": "unknown_priority",
-                    "value": {
-                      "code": "unknown_priority",
-                      "detail": "The name of the priority is not `urgent`, `high`, `medium` or `low`.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unknown_priority"
                   }
                 }
               }
@@ -3665,14 +2776,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -3687,24 +2791,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -3719,24 +2809,10 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -3751,14 +2827,7 @@
                 },
                 "examples": {
                   "pr_already_queued": {
-                    "summary": "pr_already_queued",
-                    "value": {
-                      "code": "pr_already_queued",
-                      "detail": "The PR is already in a queue of the repository, and its item has not ended.",
-                      "status": 409,
-                      "title": "Conflict",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/pr_already_queued"
                   }
                 }
               }
@@ -3781,14 +2850,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -3803,14 +2865,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -3825,14 +2880,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -3921,34 +2969,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -3963,14 +2990,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -3985,14 +3005,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -4007,24 +3020,10 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -4047,14 +3046,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -4069,14 +3061,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -4091,14 +3076,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -4177,14 +3155,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -4199,14 +3170,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -4221,34 +3185,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -4271,14 +3214,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -4293,14 +3229,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -4315,14 +3244,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -4402,14 +3324,7 @@
                 },
                 "examples": {
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   }
                 }
               }
@@ -4424,14 +3339,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -4446,24 +3354,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -4478,34 +3372,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -4528,14 +3401,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -4550,14 +3416,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -4572,14 +3431,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -4658,14 +3510,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -4680,14 +3525,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -4702,34 +3540,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -4752,14 +3569,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -4774,14 +3584,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -4796,14 +3599,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -4917,14 +3713,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -4939,14 +3728,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -4961,34 +3743,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -5011,14 +3772,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -5033,14 +3787,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -5055,14 +3802,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -5134,14 +3874,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -5156,24 +3889,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -5188,34 +3907,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "queue_not_found": {
-                    "summary": "queue_not_found",
-                    "value": {
-                      "code": "queue_not_found",
-                      "detail": "The repository has no queue of this branch.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/queue_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -5238,14 +3936,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -5260,14 +3951,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -5282,14 +3966,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -5368,14 +4045,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -5390,14 +4060,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -5412,34 +4075,13 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   },
                   "run_not_found": {
-                    "summary": "run_not_found",
-                    "value": {
-                      "code": "run_not_found",
-                      "detail": "The organization has no run with this identifier.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/run_not_found"
                   }
                 }
               }
@@ -5462,14 +4104,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -5484,14 +4119,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -5506,14 +4134,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -5575,14 +4196,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -5597,24 +4211,10 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   },
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -5629,24 +4229,10 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   },
                   "repo_not_found": {
-                    "summary": "repo_not_found",
-                    "value": {
-                      "code": "repo_not_found",
-                      "detail": "The organization has no repository with this name.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/repo_not_found"
                   }
                 }
               }
@@ -5669,14 +4255,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -5691,14 +4270,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -5713,14 +4285,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -5779,14 +4344,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -5801,14 +4359,7 @@
                 },
                 "examples": {
                   "scope_missing": {
-                    "summary": "scope_missing",
-                    "value": {
-                      "code": "scope_missing",
-                      "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scope_missing"
                   }
                 }
               }
@@ -5823,14 +4374,7 @@
                 },
                 "examples": {
                   "org_not_found": {
-                    "summary": "org_not_found",
-                    "value": {
-                      "code": "org_not_found",
-                      "detail": "No organization has this slug, or the token or the user does not belong to it.",
-                      "status": 404,
-                      "title": "Not Found",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/org_not_found"
                   }
                 }
               }
@@ -5853,24 +4397,10 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   },
                   "too_many_streams": {
-                    "summary": "too_many_streams",
-                    "value": {
-                      "code": "too_many_streams",
-                      "detail": "The token or the person already keeps 8 streams open.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/too_many_streams"
                   }
                 }
               }
@@ -5885,14 +4415,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -5907,14 +4430,7 @@
                 },
                 "examples": {
                   "scm_unavailable": {
-                    "summary": "scm_unavailable",
-                    "value": {
-                      "code": "scm_unavailable",
-                      "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
-                      "status": 503,
-                      "title": "Service Unavailable",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/scm_unavailable"
                   }
                 }
               }
@@ -5961,14 +4477,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -5991,14 +4500,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -6013,14 +4515,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -6084,34 +4579,13 @@
                 },
                 "examples": {
                   "invalid_cursor": {
-                    "summary": "invalid_cursor",
-                    "value": {
-                      "code": "invalid_cursor",
-                      "detail": "`from` is not a `cursor` that this list gave.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_cursor"
                   },
                   "invalid_request": {
-                    "summary": "invalid_request",
-                    "value": {
-                      "code": "invalid_request",
-                      "detail": "The body, the path or the query of the request is not valid.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/invalid_request"
                   },
                   "limit_out_of_range": {
-                    "summary": "limit_out_of_range",
-                    "value": {
-                      "code": "limit_out_of_range",
-                      "detail": "`limit` is from 1 to 100.",
-                      "status": 400,
-                      "title": "Bad Request",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/limit_out_of_range"
                   }
                 }
               }
@@ -6126,14 +4600,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -6156,14 +4623,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -6178,14 +4638,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -6220,14 +4673,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -6242,14 +4688,7 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   }
                 }
               }
@@ -6272,14 +4711,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -6294,14 +4726,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -6336,14 +4761,7 @@
                 },
                 "examples": {
                   "unauthorized": {
-                    "summary": "unauthorized",
-                    "value": {
-                      "code": "unauthorized",
-                      "detail": "No API token or session, or one that is unknown or expired.",
-                      "status": 401,
-                      "title": "Unauthorized",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/unauthorized"
                   }
                 }
               }
@@ -6358,14 +4776,7 @@
                 },
                 "examples": {
                   "csrf_refused": {
-                    "summary": "csrf_refused",
-                    "value": {
-                      "code": "csrf_refused",
-                      "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
-                      "status": 403,
-                      "title": "Forbidden",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/csrf_refused"
                   }
                 }
               }
@@ -6388,14 +4799,7 @@
                 },
                 "examples": {
                   "rate_limited": {
-                    "summary": "rate_limited",
-                    "value": {
-                      "code": "rate_limited",
-                      "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
-                      "status": 429,
-                      "title": "Too Many Requests",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/rate_limited"
                   }
                 }
               }
@@ -6410,14 +4814,7 @@
                 },
                 "examples": {
                   "internal": {
-                    "summary": "internal",
-                    "value": {
-                      "code": "internal",
-                      "detail": "The server failed; the logs of the instance say why.",
-                      "status": 500,
-                      "title": "Internal Server Error",
-                      "type": "about:blank"
-                    }
+                    "$ref": "#/components/examples/internal"
                   }
                 }
               }
@@ -9068,6 +7465,268 @@
             "example": 1,
             "minimum": 0
           }
+        }
+      }
+    },
+    "examples": {
+      "csrf_refused": {
+        "summary": "csrf_refused",
+        "value": {
+          "code": "csrf_refused",
+          "detail": "A request of a session that can change a state lacks the header `X-CSRF-Token`, or carries another token than the cookie `__Host-cihub_csrf`.",
+          "status": 403,
+          "title": "Forbidden",
+          "type": "about:blank"
+        }
+      },
+      "device_code_denied": {
+        "summary": "device_code_denied",
+        "value": {
+          "code": "device_code_denied",
+          "detail": "The person denied the code: the command line is not signed in.",
+          "status": 403,
+          "title": "Forbidden",
+          "type": "about:blank"
+        }
+      },
+      "device_code_expired": {
+        "summary": "device_code_expired",
+        "value": {
+          "code": "device_code_expired",
+          "detail": "The device code is unknown, already used, or older than 15 minutes: start again.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
+        }
+      },
+      "device_code_not_found": {
+        "summary": "device_code_not_found",
+        "value": {
+          "code": "device_code_not_found",
+          "detail": "No sign-in of the command line waits for this code: it is wrong, used, or older than 15 minutes.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "device_code_pending": {
+        "summary": "device_code_pending",
+        "value": {
+          "code": "device_code_pending",
+          "detail": "The person has not approved or denied the code yet: ask again after `interval` seconds.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
+        }
+      },
+      "internal": {
+        "summary": "internal",
+        "value": {
+          "code": "internal",
+          "detail": "The server failed; the logs of the instance say why.",
+          "status": 500,
+          "title": "Internal Server Error",
+          "type": "about:blank"
+        }
+      },
+      "invalid_cursor": {
+        "summary": "invalid_cursor",
+        "value": {
+          "code": "invalid_cursor",
+          "detail": "`from` is not a `cursor` that this list gave.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
+        }
+      },
+      "invalid_request": {
+        "summary": "invalid_request",
+        "value": {
+          "code": "invalid_request",
+          "detail": "The body, the path or the query of the request is not valid.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
+        }
+      },
+      "item_ended": {
+        "summary": "item_ended",
+        "value": {
+          "code": "item_ended",
+          "detail": "The item of the PR ended: `merged`, `failed` or `cancelled`.",
+          "status": 409,
+          "title": "Conflict",
+          "type": "about:blank"
+        }
+      },
+      "item_not_in_test": {
+        "summary": "item_not_in_test",
+        "value": {
+          "code": "item_not_in_test",
+          "detail": "Only an item in `testing` or `pending_failure` can restart its tests.",
+          "status": 409,
+          "title": "Conflict",
+          "type": "about:blank"
+        }
+      },
+      "limit_out_of_range": {
+        "summary": "limit_out_of_range",
+        "value": {
+          "code": "limit_out_of_range",
+          "detail": "`limit` is from 1 to 100.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
+        }
+      },
+      "org_not_found": {
+        "summary": "org_not_found",
+        "value": {
+          "code": "org_not_found",
+          "detail": "No organization has this slug, or the token or the user does not belong to it.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "polling_too_fast": {
+        "summary": "polling_too_fast",
+        "value": {
+          "code": "polling_too_fast",
+          "detail": "The command line asked again sooner than `interval`: wait 5 seconds more each time.",
+          "status": 429,
+          "title": "Too Many Requests",
+          "type": "about:blank"
+        }
+      },
+      "pr_already_queued": {
+        "summary": "pr_already_queued",
+        "value": {
+          "code": "pr_already_queued",
+          "detail": "The PR is already in a queue of the repository, and its item has not ended.",
+          "status": 409,
+          "title": "Conflict",
+          "type": "about:blank"
+        }
+      },
+      "pr_not_found": {
+        "summary": "pr_not_found",
+        "value": {
+          "code": "pr_not_found",
+          "detail": "The PR was never submitted to a queue of the repository.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "queue_not_found": {
+        "summary": "queue_not_found",
+        "value": {
+          "code": "queue_not_found",
+          "detail": "The repository has no queue of this branch.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "rate_limited": {
+        "summary": "rate_limited",
+        "value": {
+          "code": "rate_limited",
+          "detail": "The token, the session or the client address made too many requests in the minute (600 for a token or a session, 120 for the sign-in of the command line): retry after `Retry-After` seconds.",
+          "status": 429,
+          "title": "Too Many Requests",
+          "type": "about:blank"
+        }
+      },
+      "repo_not_found": {
+        "summary": "repo_not_found",
+        "value": {
+          "code": "repo_not_found",
+          "detail": "The organization has no repository with this name.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "route_not_found": {
+        "summary": "route_not_found",
+        "value": {
+          "code": "route_not_found",
+          "detail": "No route has this path.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "run_not_found": {
+        "summary": "run_not_found",
+        "value": {
+          "code": "run_not_found",
+          "detail": "The organization has no run with this identifier.",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        }
+      },
+      "scm_unavailable": {
+        "summary": "scm_unavailable",
+        "value": {
+          "code": "scm_unavailable",
+          "detail": "The SCM did not answer the check of the access of the person of the session: try again in a moment.",
+          "status": 503,
+          "title": "Service Unavailable",
+          "type": "about:blank"
+        }
+      },
+      "scope_missing": {
+        "summary": "scope_missing",
+        "value": {
+          "code": "scope_missing",
+          "detail": "The token, or the role of the user of the session or their permission on the repository, lacks the scope of the route.",
+          "status": 403,
+          "title": "Forbidden",
+          "type": "about:blank"
+        }
+      },
+      "sign_in_unavailable": {
+        "summary": "sign_in_unavailable",
+        "value": {
+          "code": "sign_in_unavailable",
+          "detail": "The instance has no public address or no sign-in client: nobody signs in to it.",
+          "status": 503,
+          "title": "Service Unavailable",
+          "type": "about:blank"
+        }
+      },
+      "too_many_streams": {
+        "summary": "too_many_streams",
+        "value": {
+          "code": "too_many_streams",
+          "detail": "The token or the person already keeps 8 streams open.",
+          "status": 429,
+          "title": "Too Many Requests",
+          "type": "about:blank"
+        }
+      },
+      "unauthorized": {
+        "summary": "unauthorized",
+        "value": {
+          "code": "unauthorized",
+          "detail": "No API token or session, or one that is unknown or expired.",
+          "status": 401,
+          "title": "Unauthorized",
+          "type": "about:blank"
+        }
+      },
+      "unknown_priority": {
+        "summary": "unknown_priority",
+        "value": {
+          "code": "unknown_priority",
+          "detail": "The name of the priority is not `urgent`, `high`, `medium` or `low`.",
+          "status": 400,
+          "title": "Bad Request",
+          "type": "about:blank"
         }
       }
     },
