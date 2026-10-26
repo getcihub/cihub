@@ -11,16 +11,17 @@ The reference installation is one image, one Postgres 17 and one GitHub App. The
 `compose.yaml`, at the root, is for development only: its credentials are fixed and public. Production installs
 with the Helm chart (below). The configuration files of its services are in `.docker/`. Without a profile, it
 starts only Postgres (`postgres:17.5-alpine`), published on `127.0.0.1:5432`. The superuser is `postgres`
-(password `postgres`). The one-shot service `postgres-setup` runs `.docker/postgres-setup.sql`, which brings the
-`cihub` role (password `cihub`), which is not a superuser and can create databases for the tests, and the `cihub`
-database it owns, to the desired state. It runs at each start: a change to the file applies without erasing the
-data.
+(password `postgres`). The one-shot service `postgres-setup` (`ghcr.io/home-operations/postgres-init`) creates the
+`cihub` role if it is missing, which is not a superuser and can create databases for the tests, sets its password
+to `cihub`, and creates the `cihub` database it owns if it is missing. It runs at each start, without erasing the
+data; the flags of the role apply only when it creates the role.
 
 | Profile         | Services                                                                                                                                                                                                                                  |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none)          | `postgres`, `postgres-setup`                                                                                                                                                                                                              |
 | `server`        | `cihub-migrate` (one-shot `cihub-server migrate`), then `cihub-server` (the four roles, JSON logs) on `127.0.0.1:8080`; image `cihub-server:local`, built from the `Dockerfile`, or `CIHUB_IMAGE`                                         |
 | `observability` | Prometheus (`127.0.0.1:9090`, scrapes `cihub-server:8081/metrics`, empty until lot 11b), Loki, Alloy (sends the logs of the containers of the compose project to Loki, with the label `service`), Grafana (`127.0.0.1:3000`, anonymous admin) |
+| `tunnel`        | `cloudflared`: a named Cloudflare Tunnel, token in `CLOUDFLARE_TUNNEL_TOKEN`, so that GitHub delivers the webhooks of the test App                                                                                                        |
 
 The `server` profile takes the variables of the test App from the environment, which mise fills from
 `mise.local.toml` (below), as for `mise run dev`: `mise run server:up` starts it. The private key is a Compose
@@ -34,10 +35,11 @@ stops at startup on a missing value.
 mise run db:start                                  # Postgres, then postgres-setup
 mise run db:reset                                  # erases the data, then mise run db:start (after a migration is rewritten)
 mise run db:migrate                                # Postgres, then cihub-server migrate
-mise run dev                                       # db:migrate, then cihub-server start with the four roles and pretty logs
-mise run server:up                                 # cihub-server in a container, from the local Dockerfile
-mise run up                                        # the server and observability profiles together
+mise run dev                                       # db:migrate, the profiles of COMPOSE_PROFILES, then cihub-server start with the four roles and pretty logs
+mise run server:up                                 # cihub-server in a container, from the local Dockerfile, and the profiles of COMPOSE_PROFILES
+mise run up                                        # the server and observability profiles together, and the profiles of COMPOSE_PROFILES
 docker compose --profile observability up -d       # Prometheus, Loki, Alloy, Grafana
+docker compose --profile tunnel up -d              # cloudflared
 docker compose --profile "*" down                  # stops every service and keeps the volumes
 ```
 
@@ -58,10 +60,17 @@ CIHUB_GITHUB_WEBHOOK_SECRET = "<the webhook secret of the App>"
 CIHUB_GITHUB_CLIENT_ID = "Iv23li…"
 CIHUB_GITHUB_CLIENT_SECRET = "<the client secret of the App>"
 CIHUB_DATABASE_SECRET = "<64 hexadecimal digits>"
+# With the tunnel: the mise tasks start the profiles of COMPOSE_PROFILES.
+COMPOSE_PROFILES = "tunnel"
+CLOUDFLARE_TUNNEL_TOKEN = "<the output of cloudflared tunnel token <your tunnel>>"
+CIHUB_HTTP_PUBLIC_URL = "https://<the public hostname of your tunnel>"
 ```
 
 The first time, `mise trust mise.local.toml` authorizes the file. To receive webhooks locally, the webhook URL
-of the App points to a tunnel that leads to port 8080.
+of the App is `<CIHUB_HTTP_PUBLIC_URL>/webhooks/github`. Each developer has their own named tunnel
+(`cloudflared tunnel create`, then `cloudflared tunnel route dns`). The `cloudflared` service sends its traffic
+to `http://host.docker.internal:8080` (`TUNNEL_URL`), which reaches both `mise run dev` and the `server` profile.
+`--profile` replaces `COMPOSE_PROFILES`: the mise tasks add their profiles to it instead.
 
 `mise tasks` lists the project tasks and their description. A task of one part carries its prefix (`rust:`, `web:`,
 `db:`, `server:`, `helm:`, `workflows:`); `fmt`, `lint`, `test` and `generate` run the tasks of the same name of each part, in parallel.

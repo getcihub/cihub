@@ -8,7 +8,11 @@
 #   mise run server:up                                # cihub-server from the local Dockerfile
 #   mise run up                                       # the server and observability profiles together
 #   docker compose --profile observability up -d      # Prometheus, Loki, Alloy, Grafana on http://127.0.0.1:3000
+#   docker compose --profile tunnel up -d             # cloudflared, to receive the webhooks of the App
 #   docker compose --profile "*" down                 # stop everything, keep the data
+#
+# mise run dev starts the services of the profiles in COMPOSE_PROFILES:
+# COMPOSE_PROFILES = "tunnel" in mise.local.toml starts the tunnel with it.
 #
 # postgres/postgres is the superuser. cihub-server connects as cihub/cihub,
 # which is neither superuser nor BYPASSRLS and can create the databases
@@ -20,21 +24,27 @@
 # a variable of the server profile has a `:-` default, never `:?`, so that
 # Postgres starts without them. cihub-server stops at startup on a missing
 # value (specs/LESSONS.md).
+name: cihub
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 3s
+  retries: 5
+  start_period: 30s
+  start_interval: 1s
 
 x-cihub: &cihub
   image: ${CIHUB_IMAGE:-cihub-server:local}
   build: .
   environment:
+    CIHUB_DATABASE_SECRET: ${CIHUB_DATABASE_SECRET:-}
     CIHUB_DATABASE_URL: postgres://cihub:cihub@postgres:5432/cihub
-    CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
     CIHUB_GITHUB_APP_ID: ${CIHUB_GITHUB_APP_ID:-}
-    CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app
-    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:-}
-    # The sign-in to the dashboard: all four, or none.
-    CIHUB_HTTP_PUBLIC_URL: ${CIHUB_HTTP_PUBLIC_URL:-}
     CIHUB_GITHUB_CLIENT_ID: ${CIHUB_GITHUB_CLIENT_ID:-}
     CIHUB_GITHUB_CLIENT_SECRET: ${CIHUB_GITHUB_CLIENT_SECRET:-}
-    CIHUB_DATABASE_SECRET: ${CIHUB_DATABASE_SECRET:-}
+    CIHUB_GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app
+    CIHUB_GITHUB_URL: ${CIHUB_GITHUB_URL:-https://github.com}
+    CIHUB_GITHUB_WEBHOOK_SECRET: ${CIHUB_GITHUB_WEBHOOK_SECRET:-}
+    CIHUB_HTTP_PUBLIC_URL: ${CIHUB_HTTP_PUBLIC_URL:-}
     CIHUB_LOG_FILTER: ${CIHUB_LOG_FILTER:-info}
   secrets:
     - github-app
@@ -51,26 +61,21 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:
+      <<: *healthcheck
       test: ["CMD", "pg_isready", "--host=127.0.0.1", "--username=postgres"]
-      interval: 2s
-      timeout: 5s
-      retries: 15
 
-  # One-shot: bring the cihub role and database to the wanted state. It runs
-  # on every start, so a change to postgres-setup.sql applies without deleting
-  # the data. The CI runs the same file.
   postgres-setup:
-    image: postgres:17.5-alpine
+    image: ghcr.io/home-operations/postgres-init:18.6
+    environment:
+      INIT_POSTGRES_HOST: postgres
+      INIT_POSTGRES_SUPER_PASS: postgres
+      INIT_POSTGRES_USER: cihub
+      INIT_POSTGRES_PASS: cihub
+      INIT_POSTGRES_DBNAME: cihub
+      INIT_POSTGRES_USER_FLAGS: "--createdb --login --no-superuser"
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      PGHOST: postgres
-      PGUSER: postgres
-      PGPASSWORD: postgres
-    volumes:
-      - ./.docker/postgres-setup.sql:/postgres-setup.sql:ro
-    command: ["psql", "--quiet", "--set", "ON_ERROR_STOP=1", "--file", "/postgres-setup.sql"]
     restart: "no"
 
   cihub-migrate:
@@ -87,11 +92,24 @@ services:
       cihub-migrate:
         condition: service_completed_successfully
     ports:
-      # The internal address (8081) stays inside the network of the compose
-      # (specs/SECURITY.md): Prometheus reaches it there.
       - "127.0.0.1:${CIHUB_HTTP_PORT:-8080}:8080"
-    # No healthcheck: the distroless image has no shell and no HTTP client.
     restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.3
+    command: ["tunnel", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+      TUNNEL_URL: http://host.docker.internal:8080
+      TUNNEL_METRICS: 127.0.0.1:2000
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "cloudflared", "tunnel", "ready"]
+    restart: unless-stopped
+    profiles:
+      - tunnel
 
   prometheus:
     image: prom/prometheus:v3.15.0
@@ -101,14 +119,14 @@ services:
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
-      - ./.docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus:/prometheus
+      - type: bind
+        read_only: true
+        source: ./.docker/observability/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
     healthcheck:
+      <<: *healthcheck
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/ready"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
     profiles:
       - observability
 
@@ -116,14 +134,14 @@ services:
     image: grafana/loki:3.7.9
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
-      - ./.docker/observability/loki.yaml:/etc/loki/loki.yaml:ro
       - loki:/loki
-    # No healthcheck: the image has no shell, no HTTP client and no health
-    # command.
+      - type: bind
+        read_only: true
+        source: ./.docker/observability/loki.yaml
+        target: /etc/loki/loki.yaml
     profiles:
       - observability
 
-  # Sends the logs of the containers of this compose project to Loki.
   alloy:
     image: grafana/alloy:v1.21.0
     command:
@@ -134,52 +152,51 @@ services:
     environment:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
     volumes:
-      - ./.docker/observability/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    # The image has neither wget nor curl: bash sends the request.
+      - type: bind
+        read_only: true
+        source: ./.docker/observability/config.alloy
+        target: /etc/alloy/config.alloy
     healthcheck:
+      <<: *healthcheck
       test:
         - CMD
         - bash
         - -c
         - exec 3<>/dev/tcp/127.0.0.1/12345 && printf 'GET /-/ready HTTP/1.0\r\n\r\n' >&3 && head -n 1 <&3 | grep -q ' 200 '
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
     depends_on:
-      - loki
+      loki:
+        condition: service_started
     profiles:
       - observability
 
   grafana:
     image: grafana/grafana:13.2.4
     environment:
-      # Local only: anyone who reaches 127.0.0.1:3000 is an admin.
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
-      - ./.docker/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana:/var/lib/grafana
+      - type: bind
+        read_only: true
+        source: ./.docker/observability/grafana/provisioning
+        target: /etc/grafana/provisioning
     healthcheck:
+      <<: *healthcheck
       test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:3000/api/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 30s
     depends_on:
-      - prometheus
-      - loki
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
     profiles:
       - observability
 
 secrets:
   github-app:
-    # The private key of the GitHub App (.pem), at the path that mise run dev
-    # reads. The user of the image (uid 65532) must be able to read it.
     file: ${CIHUB_GITHUB_PRIVATE_KEY_FILE:-./github-app.private-key.pem}
 
 volumes:

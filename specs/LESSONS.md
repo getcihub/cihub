@@ -133,7 +133,8 @@ reason no longer holds.
 
 - **Tried / considered**: an init script in the Postgres container to create the `cihub` role and database.
 - **Why not**: it runs only on an empty volume, so a change never reaches an existing database. A one-shot
-  `postgres-setup` service converges the role and the database at each start.
+  `postgres-setup` service creates the role and the database when they are missing, at each start; the flags of
+  the role apply only when it creates the role.
 
 ### Write `last_used_at` on each API request
 

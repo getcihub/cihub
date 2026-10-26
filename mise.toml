@@ -112,18 +112,18 @@ env = { CIHUB_LOG_FORMAT = "pretty" }
 run = "cargo run --quiet -p cihub-server -- migrate"
 
 [tasks.dev]
-description = "Start Postgres, apply the migrations, then run cihub-server start with the four roles"
+description = "Start Postgres and the profiles of COMPOSE_PROFILES, apply the migrations, then run cihub-server start with the four roles"
 depends = ["db:migrate"]
 env = { CIHUB_LOG_FORMAT = "pretty" }
-run = "cargo run --quiet -p cihub-server -- start"
+run = ["docker compose up --detach", "cargo run --quiet -p cihub-server -- start"]
 
 [tasks."server:up"]
-description = "Build the image, then start Postgres, the migrations and cihub-server in compose.yaml (profile server)"
-run = "docker compose --profile server up --detach --wait --build"
+description = "Build the image, then start Postgres, the migrations and cihub-server in compose.yaml (profile server), with the profiles of COMPOSE_PROFILES"
+run = 'COMPOSE_PROFILES="server${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" docker compose up --detach --wait --build'
 
 [tasks.up]
-description = "Build the image, then start every service of compose.yaml: Postgres, cihub-server and the observability stack"
-run = "docker compose --profile server --profile observability up --detach --wait --build"
+description = "Build the image, then start Postgres, cihub-server, the observability stack and the profiles of COMPOSE_PROFILES"
+run = 'COMPOSE_PROFILES="server,observability${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" docker compose up --detach --wait --build'
 
 [tasks."web:install"]
 description = "Install the dependencies of the dashboard, as pnpm-lock.yaml gives them"
