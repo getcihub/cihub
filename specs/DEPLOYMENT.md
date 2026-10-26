@@ -307,6 +307,10 @@ again.
 Renovate (`.github/workflows/renovate.yaml`) runs on a push that modifies `.renovaterc.json5`, on demand
 (with a dry-run option), and when a person edits its dashboard or one of its PRs (a checkbox) or closes one of
 its PRs; another issue or PR does not run it. It opens PRs for the GitHub actions, the tools of `mise.toml`
-(with `mise.lock`) and the crates of `Cargo.toml`, and maintains a dashboard in an issue. No PR is merged
+(with `mise.lock`), the versions that follow a `# renovate:` comment in `mise.toml` (helm-unittest), the crates
+of `Cargo.toml` and the images of `helm/cihub/values.yaml`, and maintains a dashboard in an issue. On its PRs,
+`renovate-regenerate.yaml` runs `mise run helm:generate` and pushes `README.md` and `values.schema.json` of the chart
+when they change, so that an update of helm-docs or helm-schema passes `helm:generate-check`; `gitIgnoredAuthors`
+lets Renovate keep updating such a branch. No PR is merged
 automatically. TypeScript stays below 7 until `typescript-eslint` supports it. It uses the same bot GitHub App
 as release-please.

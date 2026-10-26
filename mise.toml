@@ -230,6 +230,7 @@ run = "helm lint helm/cihub --values {{vars.helm_lint_values}}"
 
 [tasks."helm:unittest"]
 description = "Run the template tests of the Helm chart with helm-unittest"
+# renovate: datasource=github-releases depName=helm-unittest/helm-unittest
 env = { HELM_UNITTEST_VERSION = "1.2.1" }
 run = [
   "helm plugin list | grep -q '^unittest' || helm plugin install https://github.com/helm-unittest/helm-unittest --version \"v$HELM_UNITTEST_VERSION\" --verify=false",
