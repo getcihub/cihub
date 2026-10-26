@@ -12,3 +12,9 @@ tests:
       - matchRegex:
           path: spec.containers[0].command[2]
           pattern: http://RELEASE-NAME-cihub:8080/webhooks/github
+
+  - it: pulls a pinned image from the mirror of Google
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].image
+          pattern: ^mirror\.gcr\.io/curlimages/curl:[0-9.]+@sha256:[0-9a-f]{64}$

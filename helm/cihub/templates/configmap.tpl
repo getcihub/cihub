@@ -9,6 +9,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cihub.labels" . | nindent 4 }}
+  annotations:
+    reloader.stakater.com/ignore: "true"
 data:
   server.yaml: |
     {{- $http := dict "addr" "0.0.0.0:8080" }}

@@ -1,5 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
   "properties": {
     "affinity": {
       "description": "Affinity of the pods.",
@@ -8,10 +9,12 @@
       "type": "object"
     },
     "database": {
+      "additionalProperties": false,
       "properties": {
         "connectionTimeout": {
           "default": 30,
           "description": "Seconds that a query waits for a connection of the pool before it fails.",
+          "minimum": 1,
           "title": "connectionTimeout",
           "type": "integer"
         },
@@ -24,6 +27,7 @@
         "idleTimeout": {
           "default": 600,
           "description": "Seconds after which an unused connection is closed.",
+          "minimum": 1,
           "title": "idleTimeout",
           "type": "integer"
         },
@@ -36,6 +40,7 @@
         "poolSize": {
           "default": 10,
           "description": "Largest number of connections of each replica to Postgres; the sum over the replicas stays under the `max_connections` of Postgres.",
+          "minimum": 1,
           "title": "poolSize",
           "type": "integer"
         },
@@ -69,6 +74,7 @@
       "type": "string"
     },
     "github": {
+      "additionalProperties": false,
       "properties": {
         "appId": {
           "default": "",
@@ -128,6 +134,7 @@
       "type": "object"
     },
     "httpRoute": {
+      "additionalProperties": false,
       "properties": {
         "annotations": {
           "description": "Annotations of the HTTPRoute.",
@@ -202,7 +209,7 @@
       "type": "object"
     },
     "image": {
-      "description": "Default values of the cihub chart (specs/DEPLOYMENT.md).",
+      "additionalProperties": false,
       "properties": {
         "digest": {
           "default": "",
@@ -242,6 +249,7 @@
       "type": "array"
     },
     "ingress": {
+      "additionalProperties": false,
       "description": "One Ingress, or one Gateway API HTTPRoute, to the Service. The webhook URL\nof the GitHub App is `https://\u003chost\u003e/webhooks/github`.",
       "properties": {
         "annotations": {
@@ -352,6 +360,7 @@
       "type": "object"
     },
     "log": {
+      "additionalProperties": false,
       "properties": {
         "filter": {
           "default": "info",
@@ -362,6 +371,10 @@
         "format": {
           "default": "json",
           "description": "Log format, `json` or `pretty`.",
+          "enum": [
+            "json",
+            "pretty"
+          ],
           "title": "format",
           "type": "string"
         }
@@ -389,6 +402,7 @@
       "type": "object"
     },
     "podDisruptionBudget": {
+      "additionalProperties": false,
       "properties": {
         "enabled": {
           "default": true,
@@ -585,6 +599,7 @@
       "type": "object"
     },
     "service": {
+      "additionalProperties": false,
       "properties": {
         "port": {
           "default": 8080,
@@ -669,8 +684,10 @@
       "type": "object"
     },
     "tests": {
+      "additionalProperties": false,
       "properties": {
         "image": {
+          "additionalProperties": false,
           "properties": {
             "pullPolicy": {
               "default": "IfNotPresent",
@@ -679,14 +696,14 @@
               "type": "string"
             },
             "repository": {
-              "default": "docker.io/curlimages/curl",
-              "description": "Image of the `helm test` pod.",
+              "default": "mirror.gcr.io/curlimages/curl",
+              "description": "Image of the `helm test` pod, from the mirror of Google, which does not limit the pulls as Docker Hub does.",
               "title": "repository",
               "type": "string"
             },
             "tag": {
-              "default": "8.22.0",
-              "description": "Tag of that image.",
+              "default": "8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777",
+              "description": "Tag of that image, followed by its digest, so that Renovate updates both together.",
               "title": "tag",
               "type": "string"
             }
@@ -709,9 +726,10 @@
       "type": "array"
     },
     "topologySpreadConstraints": {
-      "description": "Topology spread constraints of the server pods.",
+      "description": "Topology spread constraints of the server pods, rendered through `tpl`. By default, the replicas go to different nodes when the cluster can do it, so that the loss of a node keeps a replica that serves the webhooks.",
       "items": {
-        "required": []
+        "required": [],
+        "type": "object"
       },
       "title": "topologySpreadConstraints",
       "type": "array"

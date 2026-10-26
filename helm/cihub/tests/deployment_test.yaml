@@ -159,3 +159,56 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: github.existingSecret is required
+
+  - it: runs under the restricted Pod Security profile
+    template: deployment.tpl
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+  - it: spreads the server pods over the nodes, with the labels of the release
+    template: deployment.tpl
+    release:
+      name: ci
+    asserts:
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints
+          value:
+            - maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: cihub
+                  app.kubernetes.io/instance: ci
+                  app.kubernetes.io/component: server
+
+  - it: refuses an unknown key
+    template: deployment.tpl
+    set:
+      database.existingsecret: cihub-postgres
+    asserts:
+      - failedTemplate:
+          errorPattern: existingsecret
+
+  - it: refuses an unknown log format
+    template: deployment.tpl
+    set:
+      log.format: text
+    asserts:
+      - failedTemplate:
+          errorPattern: log.format

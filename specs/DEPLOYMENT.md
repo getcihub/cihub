@@ -168,12 +168,12 @@ repository.
 | Resource                    | Role                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Job `<release>-migrate`     | `cihub-server migrate`, as a `pre-install` and `pre-upgrade` hook; it reads only the environment, as the ConfigMap does not exist yet when it runs |
-| ConfigMap                   | `server.yaml` without secrets; a change rolls the pods                                                    |
-| Deployment                  | `cihub-server start --config /etc/cihub/server.yaml`, `replicas` identical replicas               |
+| ConfigMap                   | `server.yaml` without secrets; a change rolls the pods, and Reloader ignores it (`reloader.stakater.com/ignore`), so that two rollouts do not race |
+| Deployment                  | `cihub-server start --config /etc/cihub/server.yaml`, `replicas` identical replicas, spread over the nodes when the cluster can (`topologySpreadConstraints`, rendered through `tpl`) |
 | Service                     | The public address (8080) only; the probes reach `/healthz` and `/readyz` on the internal address of the pod (8081) |
 | Ingress or HTTPRoute        | Optional, to the Service; it must not buffer the stream `/api/v1/orgs/{org}/stream` (CIHub sends `X-Accel-Buffering: no`) and must keep it open past 15 seconds of silence, the ping; HTTP/2 to the browser, else each open tab holds one of the 6 connections that a browser opens to a site |
 | PodDisruptionBudget         | When `replicas` is above 1                                                                               |
-| Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`                                               |
+| Pod of `helm test`          | Posts an unsigned delivery to the Service and expects `401`; its image comes from `mirror.gcr.io`, pinned by its digest |
 
 The secrets come from existing Secrets: `database.existingSecret` gives `CIHUB_DATABASE_URL` and, when
 `github.clientId` is set, `CIHUB_DATABASE_SECRET` (key `database.secretKey`, `secret`), from
@@ -183,7 +183,8 @@ gives `CIHUB_GITHUB_WEBHOOK_SECRET`, the private key of the App, mounted as a fi
 set, `CIHUB_GITHUB_CLIENT_SECRET`; `publicUrl` gives `http.public_url`, `trustedProxyHops` gives `http.trusted_proxy_hops` (set it to the number of proxies of the Ingress path, else every client behind them shares one limit), and `database.poolSize`,
 `database.idleTimeout` and `database.connectionTimeout` give the settings of the pool. The
 role of the URL owns the database, as the migration Job uses the same URL. The pods mount no ServiceAccount token:
-CIHub does not call the Kubernetes API. `helm/cihub/README.md`, generated, lists the values.
+CIHub does not call the Kubernetes API. `helm/cihub/README.md`, generated, lists the values; `values.schema.json`
+refuses a key that the chart does not know, so that a typo fails the install instead of being ignored.
 
 ```sh
 mise run helm:lint       # helm lint with helm/cihub/ci/lint-values.yaml

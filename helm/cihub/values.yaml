@@ -1,6 +1,14 @@
 ---
 # Default values of the cihub chart (specs/DEPLOYMENT.md).
 
+# @schema.root
+# additionalProperties: false
+# @schema.root
+
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 image:
   # -- Image repository.
   repository: ghcr.io/getcihub/server
@@ -34,12 +42,24 @@ strategy:
     maxUnavailable: 0
     maxSurge: 1
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 log:
   # -- Log filter, `log.filter` of `server.yaml` (specs/OBSERVABILITY.md).
   filter: info
+  # @schema
+  # type: string
+  # enum: [json, pretty]
+  # @schema
   # -- Log format, `json` or `pretty`.
   format: json
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 database:
   # -- (required) Secret that holds the URL of Postgres, `database.url` of `server.yaml`. The role is neither a superuser nor `BYPASSRLS` (CIHub refuses it at startup) and owns the database: the migration Job uses the same URL.
   existingSecret: ""
@@ -49,13 +69,29 @@ database:
   secretExistingSecret: ""
   # -- Key of `database.secret` in its Secret.
   secretKey: secret
+  # @schema
+  # type: integer
+  # minimum: 1
+  # @schema
   # -- Largest number of connections of each replica to Postgres; the sum over the replicas stays under the `max_connections` of Postgres.
   poolSize: 10
+  # @schema
+  # type: integer
+  # minimum: 1
+  # @schema
   # -- Seconds after which an unused connection is closed.
   idleTimeout: 600
+  # @schema
+  # type: integer
+  # minimum: 1
+  # @schema
   # -- Seconds that a query waits for a connection of the pool before it fails.
   connectionTimeout: 30
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 github:
   # -- github.com, or the address of a GitHub Enterprise Server.
   url: https://github.com
@@ -98,6 +134,10 @@ securityContext:
     drop:
       - ALL
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 service:
   # -- Type of the Service.
   type: ClusterIP
@@ -106,6 +146,10 @@ service:
 
 # One Ingress, or one Gateway API HTTPRoute, to the Service. The webhook URL
 # of the GitHub App is `https://<host>/webhooks/github`.
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 ingress:
   # -- Expose the Service through an Ingress.
   enabled: false
@@ -122,6 +166,10 @@ ingress:
   # -- TLS configuration of the Ingress.
   tls: []
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 httpRoute:
   # -- Expose the Service through a Gateway API HTTPRoute, instead of an Ingress.
   enabled: false
@@ -167,6 +215,10 @@ startupProbe:
   periodSeconds: 2
   failureThreshold: 30
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 podDisruptionBudget:
   # -- Create a PodDisruptionBudget when there is more than one replica.
   enabled: true
@@ -189,14 +241,35 @@ nodeSelector: {}
 tolerations: []
 # -- Affinity of the pods.
 affinity: {}
-# -- Topology spread constraints of the server pods.
-topologySpreadConstraints: []
+# @schema
+# type: array
+# items:
+#   type: object
+# @schema
+# -- Topology spread constraints of the server pods, rendered through `tpl`. By default, the replicas go to different nodes when the cluster can do it, so that the loss of a node keeps a replica that serves the webhooks.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: '{{ include "cihub.name" . }}'
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/component: server
 
+# @schema
+# type: object
+# additionalProperties: false
+# @schema
 tests:
+  # @schema
+  # type: object
+  # additionalProperties: false
+  # @schema
   image:
-    # -- Image of the `helm test` pod.
-    repository: docker.io/curlimages/curl
-    # -- Tag of that image.
-    tag: 8.22.0
+    # -- Image of the `helm test` pod, from the mirror of Google, which does not limit the pulls as Docker Hub does.
+    repository: mirror.gcr.io/curlimages/curl
+    # -- Tag of that image, followed by its digest, so that Renovate updates both together.
+    tag: "8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"
     # -- Pull policy of that image.
     pullPolicy: IfNotPresent

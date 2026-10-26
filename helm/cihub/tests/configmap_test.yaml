@@ -99,3 +99,9 @@ tests:
             log:
               filter: info
               format: json
+
+  - it: leaves the rollout to the checksum of the pods, not to Reloader
+    asserts:
+      - equal:
+          path: metadata.annotations["reloader.stakater.com/ignore"]
+          value: "true"

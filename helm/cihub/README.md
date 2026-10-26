@@ -100,10 +100,10 @@ Kubernetes: `>=1.25.0-0`
 | startupProbe | object | `{"failureThreshold":30,"httpGet":{"path":"/healthz","port":"internal"},"periodSeconds":2}` | Startup probe; the other probes wait until it passes. It allows a minute. |
 | strategy | object | `{"rollingUpdate":{"maxSurge":1,"maxUnavailable":0},"type":"RollingUpdate"}` | Update strategy of the Deployment. A new pod is ready before an old one stops, so a replica always serves the webhooks; a published migration stays compatible with the previous version for this overlap (specs/DEPLOYMENT.md). |
 | tests.image.pullPolicy | string | `"IfNotPresent"` | Pull policy of that image. |
-| tests.image.repository | string | `"docker.io/curlimages/curl"` | Image of the `helm test` pod. |
-| tests.image.tag | string | `"8.22.0"` | Tag of that image. |
+| tests.image.repository | string | `"mirror.gcr.io/curlimages/curl"` | Image of the `helm test` pod, from the mirror of Google, which does not limit the pulls as Docker Hub does. |
+| tests.image.tag | string | `"8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"` | Tag of that image, followed by its digest, so that Renovate updates both together. |
 | tolerations | list | `[]` | Tolerations of the pods. |
-| topologySpreadConstraints | list | `[]` | Topology spread constraints of the server pods. |
+| topologySpreadConstraints | list | `[{"labelSelector":{"matchLabels":{"app.kubernetes.io/component":"server","app.kubernetes.io/instance":"{{ .Release.Name }}","app.kubernetes.io/name":"{{ include \"cihub.name\" . }}"}},"maxSkew":1,"topologyKey":"kubernetes.io/hostname","whenUnsatisfiable":"ScheduleAnyway"}]` | Topology spread constraints of the server pods, rendered through `tpl`. By default, the replicas go to different nodes when the cluster can do it, so that the loss of a node keeps a replica that serves the webhooks. |
 | trustedProxyHops | int | `0` | Number of proxies in front of the server (an Ingress, a load balancer) that append to `X-Forwarded-For`; the sign-in routes that need no token are limited per client address, which the server reads in this header from the right. 0 takes the address of the connection, which is the address of the proxy behind a proxy, so that every client shares one limit (specs/SECURITY.md). |
 
 ---
