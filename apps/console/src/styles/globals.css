@@ -1,0 +1,44 @@
+/* The stylesheet of the console: the design system of @cihub/ui, and the utilities and base styles of the console
+   only. A component uses the utilities (`bg-card`, `text-muted-foreground`), never a color, a size or a radius of
+   its own. */
+@import "tailwindcss";
+@import "@cihub/ui/tokens.css";
+@import "@cihub/ui/theme.css";
+@source "../../../../packages/ui/src";
+
+/* index.html sets `data-theme` before the first paint, from the choice of the person or of their system. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* The dots of the mockups behind the hero of the sign-in. */
+@utility bg-dots {
+  background-image: radial-gradient(var(--pattern) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-lg);
+    line-height: 1.45;
+    background: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a {
+    color: var(--primary);
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    background: var(--muted);
+    border-radius: var(--radius-xs);
+    padding: 0 4px;
+  }
+}

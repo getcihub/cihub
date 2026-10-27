@@ -1,7 +1,7 @@
-//! Embeds the build of the dashboard (`web/dist`, `mise run web:build`) in
+//! Embeds the build of the dashboard (`apps/console/dist`, `mise run console:build`) in
 //! the binary, as a table of paths and contents. Without a build, the table is
 //! empty and the server answers 404 on the pages of the dashboard: a build of
-//! the Rust code alone does not need Node. The script creates `web/dist`
+//! the Rust code alone does not need Node. The script creates `apps/console/dist`
 //! empty when it is missing (git ignores it): cargo runs a script again at
 //! each command while a path that it watches does not exist.
 
@@ -11,7 +11,7 @@ use std::{env, fs, io};
 
 fn main() -> io::Result<()> {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(io::Error::other)?);
-    let dist = manifest.join("../../web/dist");
+    let dist = manifest.join("../../apps/console/dist");
     let out = PathBuf::from(env::var("OUT_DIR").map_err(io::Error::other)?);
     let mut files = Vec::new();
 

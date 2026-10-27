@@ -78,7 +78,11 @@ crates/
   server/                cihub-server         (exists, the cihub-server binary)
   ...                    the other crates of the table, with their lot
 migrations/              Postgres migrations embedded in the cihub-server binary (Lot 2)
-web/                     dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs (Lots 10a to 10d)
+apps/
+  console/               dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs (Lots 10a to 10d)
+  website/               the website cihub.io and its documentation (Next.js, Fumadocs)
+packages/
+  ui/                    @cihub/ui: the design system of the console and the website (tokens, theme, components, logo, icons)
 ```
 
 | Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |

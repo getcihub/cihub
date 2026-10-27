@@ -1,0 +1,37 @@
+{
+  "name": "@cihub/website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/publish-machine-files.ts",
+    "dev": "next dev",
+    "prebuild": "node scripts/publish-machine-files.ts",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next typegen && tsc --noEmit && eslint . && oxfmt --check",
+    "format": "oxfmt",
+    "test": "mkdir -p ../../test-reports/website && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../../test-reports/website/junit.xml tests/*.test.ts"
+  },
+  "dependencies": {
+    "@cihub/ui": "workspace:*",
+    "fumadocs-core": "16.17.7",
+    "fumadocs-mdx": "15.4.8",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.7",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdx": "2.0.14",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "10.12.0",
+    "oxfmt": "0.72.0",
+    "postcss": "8.5.31",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1"
+  }
+}

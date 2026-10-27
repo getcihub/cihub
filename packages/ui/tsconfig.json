@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["@testing-library/jest-dom"],
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src", "vitest.config.ts"]
+}

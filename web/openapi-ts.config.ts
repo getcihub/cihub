@@ -1,9 +1,0 @@
-// The client of the API, generated from the document that the server serves
-// (`mise run web:generate`): never edited by hand.
-import { defineConfig } from "@hey-api/openapi-ts";
-
-export default defineConfig({
-  input: "../schema/openapi/v1.json",
-  output: "src/client",
-  plugins: ["@hey-api/client-fetch", "@tanstack/react-query"],
-});

@@ -151,10 +151,10 @@ answers `200` as long as the process runs; `/readyz` answers `503` when Postgres
 ## Image
 
 `Dockerfile`, at the root, builds the server image in three stages: the dashboard on
-`node:24.21.0-bookworm-slim` (the Node of `mise.toml`, pnpm by corepack from `web/package.json`), compilation on
-`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), which embeds `web/dist` in the
+`node:24.21.0-bookworm-slim` (the Node of `mise.toml`, pnpm by corepack from the root `package.json`), compilation on
+`rust:1.98.1-slim-bookworm` (the Rust of `mise.toml`, with the glibc of Debian 12), which embeds `apps/console/dist` in the
 binary (`crates/web/build.rs`), then execution on `gcr.io/distroless/cc-debian12:nonroot`. The images are pinned
-by their digest, with the tag as a comment. A build of the Rust code without `web/dist` serves no dashboard: its
+by their digest, with the tag as a comment. A build of the Rust code without `apps/console/dist` serves no dashboard: its
 pages answer `404`, and the API works. The binary is `/usr/local/bin/cihub-server`, its entry point; the default command is `start`, so the
 image starts the four roles, and an argument replaces it (`migrate`). The image does not contain the `cihub`
 command line. The project
@@ -285,13 +285,13 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 ## Project CI
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run rust:lint`, then `mise run
-web:generate-check`), `Web Lint` (`mise run web:lint`), `Rust Test` (`mise run
-rust:test`), `Web Test` (`mise run web:test`), `Rust Integration` (`mise run rust:integration`), `Rust Coverage` (`mise
+console:generate-check`), `Console Lint` (`mise run console:lint`, then `mise run ui:lint`), `Rust Test` (`mise run
+rust:test`), `Console Test` (`mise run console:test`), `Website` (`mise run website:lint`, then `mise run website:test`), `Console E2E` (`mise run console:e2e`), `Rust Integration` (`mise run rust:integration`), `Rust Coverage` (`mise
 run rust:cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
 helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run helm:smoke`). The last job, `Build
 Success`, is the required status of the `main` branch: it fails when one of these jobs failed or was cancelled.
 The test jobs upload their JUnit report (`test-reports/<suite>/junit.xml`) as the artifact `junit-<suite>`, even
-when the tests fail; `Dashboard E2E` adds the traces of the failed tests.
+when the tests fail; `Console E2E` adds the traces of the failed tests.
 
 The CI runs on pushes to `main` (except a Markdown-only change), PRs to `main`, `merge_group` and on demand. Each
 job installs the tools with `mise install --locked`. Each action and each image is pinned by its SHA or its

@@ -2,5 +2,7 @@
 # Local settings and secrets of each developer (specs/DEPLOYMENT.md).
 mise.local.toml
 *.pem
-# The JUnit reports of the tests (.config/nextest.toml, web/).
+# The JUnit reports of the tests (.config/nextest.toml, apps/, packages/).
 /test-reports
+# The dependencies of the pnpm workspace, at its root and in each package.
+node_modules/

@@ -30,28 +30,28 @@ CIHUB_DATABASE_URL = "{{env.DATABASE_URL}}"
 helm_lint_values = "helm/cihub/ci/lint-values.yaml"
 
 [tasks.fmt]
-description = "Format the Rust code, the dashboard and the site"
-depends = ["rust:fmt", "web:fmt", "site:fmt"]
+description = "Format the Rust code, the console, the website and @cihub/ui"
+depends = ["rust:fmt", "console:fmt", "website:fmt", "ui:fmt"]
 
 [tasks.lint]
-description = "Lint the Rust code, the dashboard and the site"
-depends = ["rust:lint", "web:lint", "site:lint"]
+description = "Lint the Rust code, the console, the website and @cihub/ui"
+depends = ["rust:lint", "console:lint", "website:lint", "ui:lint"]
 
 [tasks.test]
-description = "Run the unit tests of the Rust code and of the dashboard"
-depends = ["rust:test", "web:test"]
+description = "Run the unit tests of the Rust code, of the console and of @cihub/ui"
+depends = ["rust:test", "console:test", "ui:test"]
 
 [tasks."test:all"]
-description = "Run every test suite: unit, integration, browser and site"
-depends = ["rust:test", "rust:integration", "web:test", "web:e2e", "site:test"]
+description = "Run every test suite: unit, integration, browser and website"
+depends = ["rust:test", "rust:integration", "console:test", "ui:test", "console:e2e", "website:test"]
 
 [tasks.check]
 description = "Run lint, then test"
 run = [{ task = "lint" }, { task = "test" }]
 
 [tasks.generate]
-description = "Generate the files of the dashboard and of the chart"
-depends = ["web:generate", "helm:generate"]
+description = "Generate the files of the console and of the chart"
+depends = ["console:generate", "helm:generate"]
 
 [tasks."rust:fmt"]
 description = "Format the Rust code"
@@ -67,8 +67,8 @@ run = [
 ]
 
 [tasks."rust:build"]
-description = "Build the dashboard, then the cihub-server binary in release mode"
-depends = ["web:build"]
+description = "Build the console, then the cihub-server binary in release mode"
+depends = ["console:build"]
 run = "cargo build --release --locked -p cihub-server"
 
 [tasks."rust:test"]
@@ -125,104 +125,116 @@ run = 'COMPOSE_PROFILES="server${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" docker c
 description = "Build the image, then start Postgres, cihub-server, the observability stack and the profiles of COMPOSE_PROFILES"
 run = 'COMPOSE_PROFILES="server,observability${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" docker compose up --detach --wait --build'
 
-[tasks."web:install"]
-description = "Install the dependencies of the dashboard, as pnpm-lock.yaml gives them"
-dir = "web"
+[tasks."pnpm:install"]
+description = "Install the dependencies of the console, the website and @cihub/ui, as pnpm-lock.yaml gives them"
 run = "pnpm install --frozen-lockfile"
 
-[tasks."web:fmt"]
-description = "Format the dashboard with oxfmt, its TypeScript, CSS, JSON and Markdown"
-depends = ["web:install"]
-dir = "web"
+[tasks."console:fmt"]
+description = "Format the console with oxfmt, its TypeScript, CSS, JSON and Markdown"
+depends = ["pnpm:install"]
+dir = "apps/console"
 run = "pnpm format"
 
-[tasks."web:lint"]
-description = "Type check, lint and check the format of the dashboard"
-depends = ["web:install"]
-dir = "web"
+[tasks."console:lint"]
+description = "Type check, lint and check the format of the console"
+depends = ["pnpm:install"]
+dir = "apps/console"
 run = "pnpm lint"
 
-[tasks."web:test"]
-description = "Run the unit tests of the dashboard"
-depends = ["web:install"]
-dir = "web"
+[tasks."console:test"]
+description = "Run the unit tests of the console"
+depends = ["pnpm:install"]
+dir = "apps/console"
 run = "pnpm test"
 
-[tasks."web:build"]
-description = "Build the dashboard into web/dist, which the next build of cihub-web embeds"
-depends = ["web:install"]
-dir = "web"
+[tasks."console:build"]
+description = "Build the console into apps/console/dist, which the next build of cihub-web embeds"
+depends = ["pnpm:install"]
+dir = "apps/console"
 run = "pnpm build"
 
-[tasks."web:dev"]
-description = "Serve the dashboard with Vite, in front of a cihub-server start on CIHUB_URL (http://localhost:8080)"
-depends = ["web:install"]
-dir = "web"
+[tasks."console:dev"]
+description = "Serve the console with Vite, in front of a cihub-server start on CIHUB_URL (http://localhost:8080)"
+depends = ["pnpm:install"]
+dir = "apps/console"
 run = "pnpm dev"
 
-[tasks."web:e2e"]
-description = "Run the browser tests of the dashboard against a server on the simulator (needs Postgres)"
-depends = ["db:start", "web:build"]
-dir = "web"
+[tasks."console:e2e"]
+description = "Run the browser tests of the console against a server on the simulator (needs Postgres)"
+depends = ["db:start", "console:build"]
+dir = "apps/console"
 run = ["pnpm exec playwright install chromium", "pnpm e2e"]
 
-[tasks."web:shots"]
-description = "Capture the views of the dashboard, with a mocked API, into test-reports/web-visual/head"
-depends = ["web:install"]
-run = "web/e2e/visual/shots.sh"
+[tasks."console:shots"]
+description = "Capture the views of the console, with a mocked API, into test-reports/console-visual/head"
+depends = ["pnpm:install"]
+run = "apps/console/e2e/visual/shots.sh"
 
-[tasks."web:shots-diff"]
-description = "Compare the views of the dashboard with the ones of a git ref, into test-reports/web-visual/diff"
-depends = ["web:install"]
-run = "web/e2e/visual/shots.sh diff"
+[tasks."console:shots-diff"]
+description = "Compare the views of the console with the ones of a git ref, into test-reports/console-visual/diff"
+depends = ["pnpm:install"]
+run = "apps/console/e2e/visual/shots.sh diff"
 
-[tasks."web:generate"]
-description = "Write the OpenAPI document of the API from the code, then the API client of the dashboard"
-depends = ["web:install"]
-dir = "web"
-run = ["cargo run --quiet -p cihub-server --example openapi > ../schema/openapi/v1.json", "pnpm generate"]
+[tasks."console:generate"]
+description = "Write the OpenAPI document of the API from the code, then the API client of the console"
+depends = ["pnpm:install"]
+dir = "apps/console"
+run = ["cargo run --quiet -p cihub-server --example openapi > ../../schema/openapi/v1.json", "pnpm generate"]
 
-[tasks."web:generate-check"]
-description = "Fail if the OpenAPI document or the API client of the dashboard are not up to date"
+[tasks."console:generate-check"]
+description = "Fail if the OpenAPI document or the API client of the console are not up to date"
 run = [
-  { task = "web:generate" },
-  "! git status --porcelain schema/openapi web/src/client | grep .",
+  { task = "console:generate" },
+  "! git status --porcelain schema/openapi apps/console/src/client | grep .",
 ]
 
-[tasks."site:install"]
-description = "Install the dependencies of the site cihub.io, as pnpm-lock.yaml gives them"
-dir = "site"
-run = "pnpm install --frozen-lockfile"
-
-[tasks."site:fmt"]
-description = "Format the site with oxfmt"
-depends = ["site:install"]
-dir = "site"
+[tasks."website:fmt"]
+description = "Format the website with oxfmt"
+depends = ["pnpm:install"]
+dir = "apps/website"
 run = "pnpm format"
 
-[tasks."site:lint"]
-description = "Type check, lint and check the format of the site"
-depends = ["site:install"]
-dir = "site"
+[tasks."website:lint"]
+description = "Type check, lint and check the format of the website"
+depends = ["pnpm:install"]
+dir = "apps/website"
 run = "pnpm lint"
 
-[tasks."site:dev"]
-description = "Serve the site with Next.js on http://localhost:3000"
-depends = ["site:install"]
-dir = "site"
+[tasks."website:dev"]
+description = "Serve the website with Next.js on http://localhost:3000"
+depends = ["pnpm:install"]
+dir = "apps/website"
 run = "pnpm dev"
 
-[tasks."site:build"]
-description = "Build the site into site/.next, with the schema and the OpenAPI document of the repository"
-depends = ["site:install"]
-dir = "site"
+[tasks."website:build"]
+description = "Build the website into apps/website/.next, with the schema and the OpenAPI document of the repository"
+depends = ["pnpm:install"]
+dir = "apps/website"
 run = "pnpm build"
 
-[tasks."site:test"]
-description = "Check what an agent reads on the built site: llms.txt, the Markdown of each page, the published files"
-depends = ["site:build"]
-dir = "site"
+[tasks."website:test"]
+description = "Check what an agent reads on the built website: llms.txt, the Markdown of each page, the published files"
+depends = ["website:build"]
+dir = "apps/website"
 run = "pnpm test"
+
+[tasks."ui:fmt"]
+description = "Format @cihub/ui with oxfmt"
+depends = ["pnpm:install"]
+dir = "packages/ui"
+run = "pnpm format"
+
+[tasks."ui:test"]
+description = "Run the unit tests of @cihub/ui"
+depends = ["pnpm:install"]
+dir = "packages/ui"
+run = "pnpm test"
+
+[tasks."ui:lint"]
+description = "Type check, lint and check the format of @cihub/ui"
+depends = ["pnpm:install"]
+dir = "packages/ui"
+run = "pnpm lint"
 
 [tasks."helm:lint"]
 description = "Lint the Helm chart"

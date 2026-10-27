@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
+    "verbatimModuleSyntax": true,
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": [
+    "src",
+    "e2e",
+    "vite.config.ts",
+    "openapi-ts.config.ts",
+    "playwright.config.ts",
+    "playwright.visual.config.ts"
+  ]
+}

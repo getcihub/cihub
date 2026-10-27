@@ -7,7 +7,7 @@ mise.local.toml
 .env.*
 helm/
 .docker/
-web/node_modules/
-web/dist/
+**/node_modules/
+apps/console/dist/
 test-reports/
-site/
+apps/website/

@@ -309,7 +309,7 @@ and its pages together, and starts from the routes by name of `/orgs/{org}/…`.
 Decisions:
 
 - **Q9** (decided October 10, 2026): TypeScript, React, Vite and the TanStack libraries (Router, Query, Form),
-  with a client generated from the OpenAPI document. The stack and its rules are in `web/AGENTS.md`.
+  with a client generated from the OpenAPI document. The stack and its rules are in `apps/console/AGENTS.md`.
 - The roles are `admin` and `member`, from the SCM membership. The `viewer` role and the change of a role by an
   admin come after lot 10d (see "Next").
 - The mockups v5 (October 10, 2026, validated by the project lead) drop the pages of the settings (configuration,
@@ -326,7 +326,7 @@ Decisions:
   session; `GET /api/v1/me` (login, organizations with their role, version of the instance, installation URL of
   the App); a session is a second authentication of every route, and its role gives the scopes (`member`:
   `queues:read`, `prs:write`; `admin`: every scope); the sign-in flow in the simulator; a server on the
-  simulator for the browser tests. `web/`: Vite, the generated client, the router, the sign-in page and its
+  simulator for the browser tests. `apps/console/`: Vite, the generated client, the router, the sign-in page and its
   two errors, the frame (navigation, organization switcher, user menu), the pages "not found" and "server
   error"; the build embedded by the `web` role; the dashboard in `mise run lint`, `mise run check` and the CI.
 - **Frozen interfaces**: the session cookie and the CSRF token; `GET /me`; the scopes of each role.
@@ -336,7 +336,7 @@ Decisions:
 - **Tracking**:
   - Steps: 1. `sessions` and `memberships` tables; 2. sign-in through the SCM, in `cihub-github` and in the
     simulator, and the refresh of the roles; 3. session in `cihub-web` (cookie, CSRF, scopes of a role, `/auth/*`,
-    `GET /me`); 4. `web/` (tools, Vite, router, generated client, lint and tests in `mise` and the CI); 5. pages and
+    `GET /me`); 4. `apps/console/` (tools, Vite, router, generated client, lint and tests in `mise` and the CI); 5. pages and
     the build embedded in the binary; 6. server on the simulator and browser test of the exit criterion.
   - Decided (October 10, 2026): the sign-in goes through the App that exists (authorization of a user by the
     App), coded with `reqwest`, without an OAuth crate: the App lists the installations that the user reaches
@@ -374,7 +374,7 @@ Decisions:
     sign-in.
   - Changed by the mockups v5 (October 10, 2026, validated by the project lead): a person without an organization
     gets a session, and the dashboard asks them to install the App, instead of an error of the sign-in.
-  - Done (October 10, 2026): step 4. `web/`: TypeScript 6 (`typescript-eslint` does not take 7 yet), React 19,
+  - Done (October 10, 2026): step 4. `apps/console/`: TypeScript 6 (`typescript-eslint` does not take 7 yet), React 19,
     Vite 8, TanStack Router and Query, Zod 4, the client of `@hey-api/openapi-ts` from `schema/openapi/v1.json`, which
     the example `openapi` of `cihub-cli` writes without a database; ESLint, Prettier and Vitest in `mise run lint`
     and `mise run test`; Node 24 and pnpm 12 in `mise.toml`.
@@ -393,8 +393,8 @@ Decisions:
     sign-in does not send the person back.
   - Done (October 10, 2026): step 6 and exit criterion. `crates/cli/examples/e2e.rs` serves the API, the dashboard
     and the sign-in on the simulator, with a fresh database `cihub_e2e` (`acme` and `globex`); the simulator serves
-    its sign-in on a page that a browser opens, and signs in the person chosen there. `web/e2e/sign-in.spec.ts`
-    (Playwright, `mise run web:e2e`, the required job `Dashboard E2E`): a person signs in and sees their organization,
+    its sign-in on a page that a browser opens, and signs in the person chosen there. `apps/console/e2e/sign-in.spec.ts`
+    (Playwright, `mise run console:e2e`, the required job `Console E2E`): a person signs in and sees their organization,
     a member gets `403` on `PATCH` of a queue, a session gets `404` on another organization and its page, a refused
     sign-in and a person without an organization see their message.
   - Checked on the App of staging (October 11, 2026): GitHub shows no account picker to a GitHub App with
@@ -448,7 +448,7 @@ Decisions:
     actions stay for lot 10c.
   - Done (October 11, 2026): step 6 and exit criterion. The server of the browser tests runs the worker, the
     router and the scheduler of the queues on the simulator, where `ada` submits three PRs of `acme/web` by
-    comment; `web/e2e/queues.spec.ts` checks the cards and the page of the queue (titles, authors, positions,
+    comment; `apps/console/e2e/queues.spec.ts` checks the cards and the page of the queue (titles, authors, positions,
     runs). `the_page_of_a_queue_follows_its_prs_and_survives_a_replay` checks that the page calls the SCM zero
     times and gives the same answers after a replay.
 
@@ -497,7 +497,7 @@ Decisions:
     ended, its run and checks, its history), "Your pull requests" on the queues and first on the page of a
     queue, the title of the tab, the submission (TanStack Form), the cancellation and the restart, pause, drain
     and resume for an admin; the generated client sends the CSRF token of the session.
-  - Done (October 11, 2026): step 6 and exit criterion. `web/e2e/your-prs.spec.ts`: `ada` creates the queue of
+  - Done (October 11, 2026): step 6 and exit criterion. `apps/console/e2e/your-prs.spec.ts`: `ada` creates the queue of
     `acme/api` by the first `/cihub merge`, submits her PR from the dashboard and follows it in "Your pull
     requests" until the merge, whose comment links to its page; a member pauses nothing. The server of the
     browser tests passes each test commit of `acme/api`.
@@ -517,7 +517,7 @@ Decisions:
     `started_at`, `completed_at` are in the API.
   - Done (October 22, 2026): the dashboard. The drawer of a PR links its number to the page of the PR on the
     SCM, and the number of the draft PR of its run to its page. It shows the state of each check: queued,
-    running since its start, or its conclusion and its duration. `web/e2e/your-prs.spec.ts` checks the link of
+    running since its start, or its conclusion and its duration. `apps/console/e2e/your-prs.spec.ts` checks the link of
     the PR. Lot 10c is done.
   - Done (October 23, 2026): the words of the drawer. `not_ready` reads "Not ready"; the drawer says what
     blocks the PR from `Pr.block_reasons`, each unmet queue condition as the condition builder of the mockups
@@ -548,7 +548,7 @@ Decisions:
     bounded to 30 seconds; the listener keeps its connection after a loss and tells the pages; the dashboard
     opens a closed stream again with a growing wait, reads everything on each open, and gathers the changes of
     half a second into one read.
-  - Exit criterion: `web/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
+  - Exit criterion: `apps/console/e2e/updates.spec.ts` (a PR submitted on the simulator shows on the open page of its
     queue in less than 2 seconds), `the_stream_carries_the_changes_of_the_organization_only` (another
     organization, end with the server), `a_reconciliation_that_writes_the_log_tells_the_pages`.
   - Decided (October 11, 2026, validated by the project lead): an action takes a segment of its own,
@@ -624,7 +624,7 @@ Decisions:
 - **Exit criterion**: on the simulator, a person without an organization installs the App, comes back through the
   Setup URL, sees "Connecting" then the setup of each repository (`cannot_merge`, `invalid_config` with its line,
   `ready`); a fixed rule and "Check again" turn a repository to `ready`, and a `/cihub merge` to `started` without
-  a reload (`web/e2e/onboarding.spec.ts`); a Setup URL with an `installation_id` that the person does not reach
+  a reload (`apps/console/e2e/onboarding.spec.ts`); a Setup URL with an `installation_id` that the person does not reach
   creates nothing and gives no role; a person without access to a private repository on the SCM gets `404
   repo_not_found` on it and finds it in no list and no stream, and loses a repository within an hour of losing it
   on the SCM; showing a setup with an access read less than an hour ago calls the SCM zero times, and the setup of
@@ -666,7 +666,7 @@ Decisions:
   - The work packages come one after the other: WP1 (the Setup URL, the sign-in that connects the installations,
     `repos.removed_at`, `access.lost` of a repository, `Org.is_suspended`), WP5 (the token of the person kept and
     refreshed, `sync_user` and `POST /user/sync`, the access per repository), WP3 (the setup reads and the bodies of the routes), WP4 (the pages), WP2 (the world of
-    the simulator for `web/e2e/onboarding.spec.ts`); each one brings the changes of the simulator that its tests
+    the simulator for `apps/console/e2e/onboarding.spec.ts`); each one brings the changes of the simulator that its tests
     need.
 - **Tracking**:
   - Done (October 16, 2026): WP0, the interfaces. `Queue.config_check` becomes `Queue.setup` (`Setup`), the table
@@ -757,7 +757,7 @@ Decisions:
     organization is suspended (`Org.is_suspended`). Left out, as the decisions say: the state "request sent" of
     a member, and the buttons of the configuration; the mockup checks every repository at once, which the API
     no longer offers. Tests: `pages/welcome/page.test.tsx`, `pages/org-queues/page.test.tsx`,
-    `pages/repo-queues/page.test.tsx`, the views `welcome`, `org-empty` and `repo-setup` of `web:shots`.
+    `pages/repo-queues/page.test.tsx`, the views `welcome`, `org-empty` and `repo-setup` of `console:shots`.
   - Done (October 18, 2026): WP4 after the mockups v21. The page of an organization shows the repositories with a
     queue first, in a table with one row per queue (the name of the repository on its first row, with a dot when
     its setup is not ready), the ones whose queues need someone at the top; then the others, under "Not started"
@@ -768,7 +768,7 @@ Decisions:
     which the API does not offer; the search by branch, as `q` searches the names; the builder of the
     configuration, which comes with "Next". A repository whose default branch has its queue is `started`, so the
     list shows no dot for its warnings. Tests: `pages/org-queues/page.test.tsx`, the view `org-start-open` of
-    `web:shots`, `e2e/queues.spec.ts`.
+    `console:shots`, `e2e/queues.spec.ts`.
   - Done (October 18, 2026): WP2, the world of the simulator and the exit criterion. The simulator restricts the
     updates of a branch (`Sim::set_update_restriction`, with or without the exemption of the App, over the test
     branches or not) and gives the findings that GitHub would give; a branch without a restriction still gives
@@ -793,7 +793,7 @@ Decisions:
     as the server titles it; or, blocked, what blocks it, the rules on GitHub and "Check again". "3 · Start the
     queue" leaves the setup, which folds when every point passes. Left out: "Configure the queue" and "Fix it in
     the configuration", which wait for the builder of the configuration. Tests: `pages/org-queues/page.test.tsx`,
-    `pages/repo-queues/page.test.tsx`, the views `org-first-queue*` and `repo-start-*` of `web:shots`.
+    `pages/repo-queues/page.test.tsx`, the views `org-first-queue*` and `repo-start-*` of `console:shots`.
   - Done (October 23, 2026, validated by the project lead): the welcome of a PR opened before its queue. The PR
     got no comment, because only the opening asked the welcome. `PrChanged` replaces `opened` with
     `is_ready_for_review` (open and out of draft after the change), and every change of such a PR without a
@@ -846,7 +846,7 @@ Decisions (October 14, 2026, validated by the project lead):
   - Exit criterion: `a_subscription_that_fails_reads_its_events_again`,
     `the_health_of_a_queue_reads_the_facts_of_its_log` (a PR merged after its check passed on a retry, a PR
     failed; the facts rebuilt from the log are the same; another organization reads none of them),
-    `web/e2e/health.spec.ts`.
+    `apps/console/e2e/health.spec.ts`.
   - Done (October 15, 2026): an open Health reads its facts again every 30 seconds, and not at each change of its
     queue, which mostly came before the notifier wrote them (validated by the project lead).
   - Done (October 15, 2026): the Health reads the hourly aggregate (`an_hourly_conclusions`,

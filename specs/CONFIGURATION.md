@@ -273,7 +273,7 @@ each level and the values of each closed setting are those that the parser accep
 setting is the one that it checks, the attributes, the operators of each attribute and the values of each
 closed choice are those of `cihub-conditions`, and every key has a description. A key, a value, a range, an
 attribute or an operator that the code adds or removes thus fails a test until the schema follows. The site
-(`site/`) publishes the schema of `main` at `https://cihub.io/schema/config/v1.json`, the URL of the
+(`apps/website/`) publishes the schema of `main` at `https://cihub.io/schema/config/v1.json`, the URL of the
 documentation, a copy that its build makes; a file that the dashboard writes will declare the URL of the tag
 of its instance on GitHub (`…/cihub/<tag>/schema/config/v1.json`), whose keys are those that this instance
 accepts.

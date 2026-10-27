@@ -60,16 +60,16 @@ jobs:
       - name: Run linters
         run: mise run rust:lint
 
-      # Here and not in Web Lint: the OpenAPI document comes from a build of
+      # Here and not in Console Lint: the OpenAPI document comes from a build of
       # cihub-server, which uses the Cargo cache of this job.
-      - name: Check that the API client of the dashboard is up to date
-        run: mise run web:generate-check
+      - name: Check that the API client of the console is up to date
+        run: mise run console:generate-check
 
-  web-lint:
+  console-lint:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Web Lint
+    name: Console Lint
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -85,7 +85,10 @@ jobs:
           install_args: --locked
 
       - name: Run linters
-        run: mise run web:lint
+        run: mise run console:lint
+
+      - name: Run the linters of @cihub/ui
+        run: mise run ui:lint
 
   rust-test:
     if: >-
@@ -130,11 +133,11 @@ jobs:
 
   # Apart from Rust Test: the build of the Rust code would slow these tests
   # past the waits of their queries.
-  web-test:
+  console-test:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Web Test
+    name: Console Test
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -149,22 +152,33 @@ jobs:
         with:
           install_args: --locked
 
-      - name: Run the unit tests of the dashboard
-        run: mise run web:test
+      - name: Run the unit tests of the console
+        run: mise run console:test
 
       - name: Upload the JUnit report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: junit-web-unit
-          path: test-reports/web-unit/junit.xml
+          name: junit-console-unit
+          path: test-reports/console-unit/junit.xml
           if-no-files-found: error
 
-  site:
+      - name: Run the unit tests of @cihub/ui
+        run: mise run ui:test
+
+      - name: Upload the JUnit report of @cihub/ui
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-ui-unit
+          path: test-reports/ui-unit/junit.xml
+          if-no-files-found: error
+
+  website:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Site
+    name: Website
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -180,18 +194,18 @@ jobs:
           install_args: --locked
 
       - name: Run linters
-        run: mise run site:lint
+        run: mise run website:lint
 
-      # Builds the site, then checks what an agent reads on it.
-      - name: Run the tests of the site
-        run: mise run site:test
+      # Builds the website, then checks what an agent reads on it.
+      - name: Run the tests of the website
+        run: mise run website:test
 
       - name: Upload the JUnit report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: junit-site
-          path: test-reports/site/junit.xml
+          name: junit-website
+          path: test-reports/website/junit.xml
           if-no-files-found: error
 
   rust-integration:
@@ -269,11 +283,11 @@ jobs:
       - name: Check coverage of the pure crates
         run: mise run rust:cover
 
-  dashboard-e2e:
+  console-e2e:
     if: >-
       ${{ !(startsWith(github.head_ref, 'release-please--')
       && github.event.pull_request.head.repo.full_name == github.repository) }}
-    name: Dashboard E2E
+    name: Console E2E
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -301,25 +315,25 @@ jobs:
 
       # The system libraries of Chromium: the task installs only the browser.
       - name: Install Chromium and its libraries
-        run: mise run web:install && pnpm --dir web exec playwright install --with-deps chromium
+        run: mise run pnpm:install && pnpm --dir apps/console exec playwright install --with-deps chromium
 
-      # Starts the Postgres of compose.yaml, builds the dashboard, then runs
+      # Starts the Postgres of compose.yaml, builds the console, then runs
       # Playwright against the server on the simulator (crates/server/examples/e2e.rs).
-      - name: Run the browser tests of the dashboard
-        run: mise run web:e2e
+      - name: Run the browser tests of the console
+        run: mise run console:e2e
 
       - name: Upload the JUnit report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: junit-web-e2e
-          path: test-reports/web-e2e/
+          name: junit-console-e2e
+          path: test-reports/console-e2e/
           if-no-files-found: error
 
   # Informs the review and gates nothing: Build Success does not need it.
-  dashboard-visual:
+  console-visual:
     if: ${{ github.event_name == 'pull_request' }}
-    name: Dashboard Visual
+    name: Console Visual
     runs-on: ubuntu-26.04
     permissions:
       contents: read
@@ -331,38 +345,38 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Check whether the dashboard changed
-        id: dashboard
+      - name: Check whether the console changed
+        id: console
         run: |
-          if git diff --quiet HEAD^1 HEAD -- web/; then
+          if git diff --quiet HEAD^1 HEAD -- apps/console/ packages/ui/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Mise
-        if: ${{ steps.dashboard.outputs.changed == 'true' }}
+        if: ${{ steps.console.outputs.changed == 'true' }}
         uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           install_args: --locked
 
       - name: Install Chromium and its libraries
-        if: ${{ steps.dashboard.outputs.changed == 'true' }}
-        run: mise run web:install && pnpm --dir web exec playwright install --with-deps chromium
+        if: ${{ steps.console.outputs.changed == 'true' }}
+        run: mise run pnpm:install && pnpm --dir apps/console exec playwright install --with-deps chromium
 
-      - name: Compare the views of the dashboard with the base
-        if: ${{ steps.dashboard.outputs.changed == 'true' }}
+      - name: Compare the views of the console with the base
+        if: ${{ steps.console.outputs.changed == 'true' }}
         run: |
-          mise run web:shots-diff HEAD^1
-          cat test-reports/web-visual/diff/report.md >> "$GITHUB_STEP_SUMMARY"
+          mise run console:shots-diff HEAD^1
+          cat test-reports/console-visual/diff/report.md >> "$GITHUB_STEP_SUMMARY"
 
       # diff/ is the whole comparison: it holds the captures of the views that differ, and only them.
       - name: Upload the views before and after
-        if: ${{ steps.dashboard.outputs.changed == 'true' }}
+        if: ${{ steps.console.outputs.changed == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: dashboard-visual
-          path: test-reports/web-visual/diff/
+          name: console-visual
+          path: test-reports/console-visual/diff/
           if-no-files-found: error
 
   workflow-lint:
@@ -466,13 +480,13 @@ jobs:
     name: Build Success
     needs:
       - rust-lint
-      - web-lint
+      - console-lint
       - rust-test
-      - web-test
-      - site
+      - console-test
+      - website
       - rust-integration
       - rust-cover
-      - dashboard-e2e
+      - console-e2e
       - workflow-lint
       - helm-lint
       - helm-unittest

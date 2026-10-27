@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.source/
+next-env.d.ts
+*.tsbuildinfo
+# Copied from schema/ by scripts/publish-machine-files.ts.
+public/schema/
+public/openapi/

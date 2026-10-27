@@ -8,16 +8,22 @@ glob = ["*.rs"]
 run = "cargo fmt --all"
 stage_fixed = true
 
-# The files of the dashboard that oxfmt formats; it skips the ones that `web/.oxfmtrc.json` ignores.
-[pre-commit.commands.format-web]
-root = "web/"
+# The files of the console that oxfmt formats; it skips the ones that `apps/console/.oxfmtrc.json` ignores.
+[pre-commit.commands.format-console]
+root = "apps/console/"
 glob = ["*.{ts,tsx,js,mjs,json,jsonc,css,md,yaml,yml}"]
 run = "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
 stage_fixed = true
 
-[pre-commit.commands.format-site]
-root = "site/"
+[pre-commit.commands.format-website]
+root = "apps/website/"
 glob = ["*.{ts,tsx,js,mjs,json,css,md,mdx}"]
+run = "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
+stage_fixed = true
+
+[pre-commit.commands.format-ui]
+root = "packages/ui/"
+glob = ["*.{ts,tsx,json,css,md}"]
 run = "pnpm exec oxfmt --no-error-on-unmatched-pattern {staged_files}"
 stage_fixed = true
 

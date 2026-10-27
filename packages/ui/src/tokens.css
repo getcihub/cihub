@@ -1,0 +1,70 @@
+/* The colors of CIHub, from the mockups v5, in two themes. The console marks the dark theme with `data-theme`,
+   Fumadocs on the website with the class `dark`. A component uses the utilities of these tokens, never a color
+   of its own. */
+:root {
+  --background: #fafafb;
+  --card: #ffffff;
+  --muted: #f4f5f7;
+  --border: #e6e8eb;
+  --divider: #eef0f2;
+  --foreground: #1d1f23;
+  --secondary-foreground: #50565e;
+  --muted-foreground: #8b9199;
+  --pattern: #e4e7eb;
+  --overlay: rgba(8, 10, 14, 0.32);
+  --overlay-shadow: 0 8px 28px rgba(16, 24, 40, 0.12);
+
+  --primary: #006fff;
+  --primary-hover: #0062e0;
+  --primary-top: #2e86ff;
+  --primary-foreground: #ffffff;
+  --primary-muted: #eaf2ff;
+  --primary-border: #9fc6ff;
+  --destructive: #e5484d;
+  --destructive-muted: #fdecec;
+  --destructive-border: #f4b4b6;
+  --warning: #c2710c;
+  --warning-muted: #fef3e2;
+  --warning-border: #f5cf94;
+  --success: #18a058;
+  --success-muted: #e7f6ee;
+  --waiting: #c3c9d1;
+
+  /* An information is blue, as the primary action: the mockups give them one color. */
+  --info: var(--primary);
+  --info-muted: var(--primary-muted);
+  --info-border: var(--primary-border);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"],
+.dark {
+  --background: #131416;
+  --card: #1a1c1f;
+  --muted: #212327;
+  --border: #2a2d32;
+  --divider: #24272b;
+  --foreground: #eceef1;
+  --secondary-foreground: #a9afb7;
+  --primary-hover: #4c97ff;
+  --muted-foreground: #767c85;
+  --pattern: #26292e;
+  --overlay-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+
+  --primary: #2f86ff;
+  --primary-top: #4c97ff;
+  --primary-muted: #14233a;
+  --primary-border: #244d85;
+  --destructive: #ff5c61;
+  --destructive-muted: #2b1618;
+  --destructive-border: #7a2e31;
+  --warning: #f0a43a;
+  --warning-muted: #2b2112;
+  --warning-border: #6b4a1a;
+  --success: #3ccb7f;
+  --success-muted: #12261c;
+  --waiting: #4a4f57;
+
+  color-scheme: dark;
+}
