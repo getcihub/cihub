@@ -87,7 +87,7 @@ pub async fn run_budget_writer(
         let budgets: Vec<_> = pending.iter().map(|(id, b)| (*id, b.clone())).collect();
         match write(&pool, &budgets).await {
             Ok(()) => pending.clear(),
-            Err(err) => warn!(error = &err as &dyn Error, "budgets not recorded"),
+            Err(err) => warn!(error = &err as &dyn Error, "budgets.not_recorded"),
         }
     }
 }

@@ -71,7 +71,7 @@ pub async fn run_subscriptions(
                 warn!(
                     error = &err as &dyn Error,
                     subscription = subscription.name,
-                    "log not delivered"
+                    "log.not_delivered"
                 );
             }
         }
@@ -115,7 +115,7 @@ pub async fn deliver_all(pool: &PgPool, subscription: &Subscription) -> Result<(
                 error = &err as &dyn Error,
                 subscription = subscription.name,
                 queue_id = %queue,
-                "log of a queue not delivered"
+                "queue_log.not_delivered"
             );
             first_error.get_or_insert(err);
         }
@@ -192,7 +192,7 @@ async fn deliver(
         subscription = subscription.name,
         queue_id = %queue,
         seq = last,
-        "log delivered"
+        "log.delivered"
     );
     Ok(i64::try_from(events.len()).is_ok_and(|count| count == EVENTS_PER_DELIVERY))
 }

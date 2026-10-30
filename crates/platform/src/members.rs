@@ -109,7 +109,7 @@ pub async fn run_sync_members(
         connection_id = %connection_id,
         members = members.len(),
         forgotten,
-        "members read"
+        "members.read"
     );
     Ok(members.len())
 }
@@ -170,7 +170,7 @@ pub async fn record_sign_in(
         info!(
             login = signed_in.user.login,
             organizations = connected,
-            "installations connected at a sign-in"
+            "installations.connected"
         );
     }
 

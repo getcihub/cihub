@@ -140,7 +140,7 @@ impl ApiError {
     }
 
     fn internal(err: &(dyn Error + 'static)) -> Self {
-        error!(error = err, "API request failed");
+        error!(error = err, "request.failed");
         Self::new(ErrorCode::Internal, "the server failed".into())
     }
 

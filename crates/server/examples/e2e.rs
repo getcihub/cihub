@@ -155,24 +155,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let subscriptions = run_subscriptions(pool.clone(), module.subscriptions, cancel.clone());
     tokio::spawn(async move {
         if let Err(err) = worker.await {
-            warn!(error = &err as &dyn std::error::Error, "worker stopped");
+            warn!(error = &err as &dyn std::error::Error, "worker.stopped");
         }
     });
     tokio::spawn(async move {
         if let Err(err) = router.await {
-            warn!(error = &err as &dyn std::error::Error, "router stopped");
+            warn!(error = &err as &dyn std::error::Error, "router.stopped");
         }
     });
     tokio::spawn(async move {
         if let Err(err) = scheduler.await {
-            warn!(error = &*err as &dyn std::error::Error, "scheduler stopped");
+            warn!(error = &*err as &dyn std::error::Error, "scheduler.stopped");
         }
     });
     tokio::spawn(async move {
         if let Err(err) = subscriptions.await {
             warn!(
                 error = &err as &dyn std::error::Error,
-                "subscriptions stopped"
+                "subscriptions.stopped"
             );
         }
     });
@@ -506,7 +506,7 @@ async fn pass_api_tests(pool: PgPool, sim: Arc<Sim>, cancel: CancellationToken) 
         if let Err(err) = pass_new_tests(&pool, &sim, &api, &mut passed_shas).await {
             warn!(
                 error = &*err as &dyn std::error::Error,
-                "test commits not passed"
+                "test_commits.not_passed"
             );
         }
     }
@@ -666,7 +666,7 @@ async fn pass_deliveries(
             {
                 warn!(
                     error = &*err as &dyn std::error::Error,
-                    "delivery not stored"
+                    "delivery.not_stored"
                 );
             }
         }

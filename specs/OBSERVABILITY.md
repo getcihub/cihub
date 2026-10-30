@@ -26,7 +26,7 @@ decisions.
 
 The keys are those of the configuration file (`specs/DEPLOYMENT.md`). An invalid value stops the process at startup. `mise run dev` uses `pretty`.
 
-A `web` replica that loses its connection to `cihub_queue_changed` writes `warn` ("changes of the queues not heard", or "connection of the changes of the queues lost"): the open pages then read everything again. No metric counts the open streams yet (Lot 11).
+A `web` replica that loses its connection to `cihub_queue_changed` writes `warn` (`queue_changes.not_heard`, or `queue_changes.connection_lost`): the open pages then read everything again. No metric counts the open streams yet (Lot 11).
 
 ### Format
 
@@ -36,7 +36,7 @@ carries it. When two give the same field, the event wins, then the span closest 
 has no list, because the `json` parser of Loki skips the arrays:
 
 ```json
-{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","message":"group formed","predecessors":2,"target":"cihub_mergequeue::reconcile","role":"scheduler","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk"}
+{"timestamp":"2026-09-29T14:03:12.481Z","level":"INFO","message":"submission.refused","reason":"permission","target":"cihub_mergequeue::jobs::submit_pr","role":"worker","job_type":"submit_pr","job_key":"submit_pr:72d3162e-cc78-11e3-81ab-4c9367dc0958:1","org_id":"org_0627ank54ajth78mw4353dqpw5dvt5kp","queue_id":"queue_05ywjdspm06ftp1ahh11w4vk086z2kjk","repo_id":"repo_01hx3v9q2k8m4n6p7r5s3t2w1yzab","pr_number":4821}
 ```
 
 `timestamp` is in RFC 3339 UTC, in milliseconds; `level` is `DEBUG`, `INFO`, `WARN` or `ERROR`; `target` is
@@ -44,31 +44,40 @@ the Rust module that writes. The `trace_id` and `span_id` are added when the Ope
 
 ### Correlation keys
 
-Each unit of work opens a span that carries its keys; all the lines written inside inherit them.
+Each unit of work opens a span that carries its keys; all the lines written inside inherit them. A line
+says where it happened (organization, queue, repository, PR) without repeating it in each call.
 
-| Span        | Opened by                                     | Keys                              |
-| ----------- | --------------------------------------------- | --------------------------------- |
-| `webhook`   | reception of a webhook (`web` role)           | `delivery_id`                     |
-| `reconcile` | reconciliation of a queue (`scheduler` role)  | `org_id`, `queue_id`              |
-| `job`       | execution of a job (`worker` role)            | `job_type`, `job_id`, and `run_id` when the job concerns a run |
-| `request`   | API request (`web` role)                      | `request_id`, then `org_id` after authentication |
+| Span        | Opened by                                     | Keys                                                                                                   |
+| ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `webhook`   | reception of a webhook (`web` role)           | `delivery_id`                                                                                          |
+| `reconcile` | reconciliation of a queue (`scheduler` role)  | `org_id`, `queue_id`                                                                                   |
+| `job`       | execution of a job (`worker` role)            | `job_type`, `job_key`, `org_id` and `queue_id` of the job; then `repo_id`, `pr_number`, `item_id`, `run_id` when the job reads them from its payload |
+| `request`   | API request (`web` role)                      | `request_id`, then `org_id` after authentication                                                       |
 
-Each process also opens one span per role, with the `role` key. The key names above are the only ones
-allowed for these data (`org_id`, `queue_id`, `item_id`, `group_id`, `run_id`, `delivery_id`, `job_id`,
-`job_type`, `request_id`, `role`); the same names serve as span attributes and as metric labels.
+Each process also opens one span per role, with the `role` key. A key that the unit of work learns after
+it starts is declared `tracing::field::Empty` in the span and set with `Span::current().record(...)` as soon
+as it is known. The key names above are the only ones allowed for these data (`org_id`, `queue_id`,
+`repo_id`, `pr_number`, `item_id`, `group_id`, `run_id`, `delivery_id`, `job_key`, `job_type`, `request_id`,
+`role`); the same names serve as span attributes and as metric labels. A key is an identifier, never a
+name: a repository can be renamed, its `repo_id` stays.
 
 ### Log writing rules
 
-These rules apply to all the code, written by a human or by an agent. The clippy lints check those that
-carry the mention _lint_; review checks the others.
+These rules apply to all the code, written by a human or by an agent. The lints (clippy and
+`scripts/lint-rules.sh`) check those that carry the mention _lint_; review checks the others.
 
 1. **No direct output.** No `println!`, no `eprintln!`, no `dbg!` outside the command-line examples and
    the normal output of the CLI. _(lint: `print_stdout`, `print_stderr`, `dbg_macro`)_
 2. **The correlation keys are added once, at the start of the unit of work**, in its span
    (`#[instrument(skip_all, fields(queue_id = %queue_id))]` or `info_span!`). The called code does not repeat them.
-3. **The message is a constant**, in lowercase, that names what happened (`"merge refused"`,
-   `"job step done"`). The variable data go in the fields: `info!(pr_number, "item submitted")`, never
-   `info!("item {pr_number} submitted")`. A query on `message` thus finds all the lines of the same type.
+3. **The message is the name of the event: `<object>.<action>`**, in snake_case, the object first and the
+   action as a past participle (`"submission.refused"`, `"test_branch.assembled"`,
+   `"webhook.signature.refused"`). The message carries no reason and no variable data: the reason goes in
+   the `reason` field, with a value of the closed vocabulary of `specs/DOMAIN.md` when one exists, else a
+   constant in snake_case; the other data go in their fields. Write
+   `info!(reason = "permission", "submission.refused")`, never `info!("submission refused: permission")` nor
+   `info!("item {pr_number} submitted")`. A query on `message` thus finds all the lines of the same event,
+   and a query on `reason` splits them. _(lint: `scripts/lint-rules.sh`)_
 4. **The fields are in snake_case.** A new key shared between crates is added to the list above.
 5. **An error uses the `error` field** and is written only once, where it is handled:
    `warn!(error = &err as &dyn std::error::Error, "github call retried")`. The `pretty` format also writes the

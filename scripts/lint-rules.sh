@@ -15,6 +15,24 @@ for root in crates/*/src/lib.rs crates/*/src/main.rs; do
   fi
 done
 
+# A log message is the name of its event, `<object>.<action>` in snake_case,
+# never a sentence nor a format: the data go in the fields
+# (`specs/OBSERVABILITY.md`, rule 3). The Perl program prints each call of a
+# `tracing` macro whose last argument is not such a name.
+# shellcheck disable=SC2016 # a Perl program, which the shell must not expand
+log_messages='
+  while (/\b(?:trace|debug|info|warn|error)!(\((?:[^()"]++|"(?:[^"\\]|\\.)*+"|(?1))*\))/g) {
+    my ($call, $start) = ($1, $-[0]);
+    next if $call =~ /"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+"\s*,?\s*\)\z/;
+    my $line = 1 + (substr($_, 0, $start) =~ tr/\n//);
+    print "$ARGV:$line\n";
+  }'
+while IFS= read -r call; do
+  echo "$call: the message of a log is <object>.<action> in snake_case, its last argument" >&2
+  failed=1
+done < <(git grep --untracked -lzE '(trace|debug|info|warn|error)!' -- 'crates/*.rs' |
+  xargs -0 perl -0777 -ne "$log_messages")
+
 # Every spec that the repository cites exists.
 while IFS= read -r spec; do
   if [[ ! -f "$spec" ]]; then

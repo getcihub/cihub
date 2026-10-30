@@ -62,7 +62,7 @@ pub(super) async fn create_queue(
     .await?;
 
     if inserted.rows_affected() == 1 {
-        info!(target_branch = branch, "queue created");
+        info!(target_branch = branch, "queue.created");
         mark_dirty(&mut tx, id).await?;
         notify_queue_changed(&mut tx, repo.org_id, id, Some(0)).await?;
     }

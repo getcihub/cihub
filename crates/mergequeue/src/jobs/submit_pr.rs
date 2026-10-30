@@ -118,31 +118,34 @@ async fn open_queue(
     }
 }
 
-/// Why the queue refuses the submission, if it does, as the reply says it: a
-/// command while the commands are off, a label that is not the label of the
-/// queue, or that the PR no longer has.
+/// Why the queue refuses the submission, if it does: the reason for the
+/// logs, and the text of the reply. A command while the commands are off, a
+/// label that is not the label of the queue, or that the PR no longer has.
 fn refusal(
     settings: &QueueSettings,
     target: &QueueTarget,
     request: &SubmitPr,
     pr: &PrSnapshot,
-) -> Option<String> {
+) -> Option<(&'static str, String)> {
     let label = &settings.enqueue_label.value;
     let branch = &target.target_branch;
     match request.via {
-        SubmittedVia::Comment if !settings.commands_enabled.value => {
-            Some(format!("the commands are off for the queue of `{branch}`."))
-        }
+        SubmittedVia::Comment if !settings.commands_enabled.value => Some((
+            "commands_off",
+            format!("the commands are off for the queue of `{branch}`."),
+        )),
         SubmittedVia::Label
             if !settings.label_commands_enabled.value || request.label.as_ref() != Some(label) =>
         {
-            Some(format!(
-                "the label is not the label of the queue of `{branch}`."
+            Some((
+                "label_not_of_queue",
+                format!("the label is not the label of the queue of `{branch}`."),
             ))
         }
-        SubmittedVia::Label if !pr.labels.contains(label) => {
-            Some(format!("the PR no longer has the label `{label}`."))
-        }
+        SubmittedVia::Label if !pr.labels.contains(label) => Some((
+            "label_removed",
+            format!("the PR no longer has the label `{label}`."),
+        )),
         _ => None,
     }
 }
@@ -272,7 +275,7 @@ pub(crate) async fn submit_pr(
     let refuse = |text: String| refuse_submission(scm, repo_ref, &request, text, job.class);
 
     let Some(sender) = sender_of(scm, &repo, &request, job.class).await? else {
-        info!(pr_number, "submission refused: permission");
+        info!(reason = "permission", "submission.refused");
         return refuse("the command needs the write permission on the repository.".to_owned())
             .await;
     };
@@ -282,15 +285,15 @@ pub(crate) async fn submit_pr(
     };
 
     if let Some(state) = not_open(&pr) {
-        info!(pr_number, state, "submission refused: PR not open");
+        info!(reason = "pr_not_open", state, "submission.refused");
         return refuse(format!("this PR is {state}.")).await;
     }
 
     let Some(target) = queue_of_pr(pool, scm, &repo, &pr, &request, job.class).await? else {
         info!(
-            pr_number,
+            reason = "no_queue",
             base_branch = pr.base_branch,
-            "submission dropped: no queue"
+            "submission.dropped"
         );
         return refuse(format!(
             "no queue serves the branch `{}`; a queue of `.cihub.yaml` on this branch would.",
@@ -304,8 +307,8 @@ pub(crate) async fn submit_pr(
         .await?;
     let config = target.config()?;
     let settings = target.settings_in(config.as_ref())?;
-    if let Some(text) = refusal(&settings, &target, &request, &pr) {
-        info!(pr_number, reason = text, "submission dropped");
+    if let Some((reason, text)) = refusal(&settings, &target, &request, &pr) {
+        info!(reason, "submission.dropped");
         return refuse(text).await;
     }
 
@@ -320,7 +323,7 @@ pub(crate) async fn submit_pr(
     let profile = match named_profile(&request, config.as_ref(), &target.target_branch) {
         Ok(named) => named.or(choices.profile),
         Err(text) => {
-            info!(pr_number, "submission refused: unknown profile");
+            info!(reason = "unknown_profile", "submission.refused");
             return refuse(text).await;
         }
     };

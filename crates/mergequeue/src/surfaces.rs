@@ -342,11 +342,7 @@ pub(crate) async fn publish(
 
     lock.commit().await?;
 
-    info!(
-        pr_number = number,
-        hash = desired_hash,
-        "surfaces published"
-    );
+    info!(hash = desired_hash, "surfaces.published");
 
     Ok(())
 }
@@ -498,7 +494,7 @@ pub(crate) async fn post_welcome(
 
     keep_comment(&mut lock, &target, number, &id).await?;
     lock.commit().await?;
-    info!(pr_number = request.pr_number, "welcome comment posted");
+    info!("welcome_comment.posted");
 
     Ok(())
 }

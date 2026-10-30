@@ -114,10 +114,7 @@ async fn listen(
         let Err(err) = pass_on(&mut listener, &news, &cancel).await else {
             return;
         };
-        warn!(
-            error = &err as &dyn Error,
-            "changes of the queues not heard"
-        );
+        warn!(error = &err as &dyn Error, "queue_changes.not_heard");
 
         let Some(again) = listen_again(&pool, &cancel).await else {
             return;
@@ -136,10 +133,7 @@ async fn listen_again(pool: &PgPool, cancel: &CancellationToken) -> Option<PgLis
         }
         match listening(pool).await {
             Ok(listener) => return Some(listener),
-            Err(err) => warn!(
-                error = &err as &dyn Error,
-                "changes of the queues not heard"
-            ),
+            Err(err) => warn!(error = &err as &dyn Error, "queue_changes.not_heard"),
         }
     }
 }
@@ -160,7 +154,7 @@ async fn pass_on(
         let heard = if let Some(notification) = received {
             change_of(notification.payload()).map(QueueNews::Changed)
         } else {
-            warn!("connection of the changes of the queues lost: the pages read again");
+            warn!("queue_changes.connection_lost");
             Some(QueueNews::Lost)
         };
         if let Some(heard) = heard {

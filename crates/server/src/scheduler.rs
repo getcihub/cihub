@@ -69,29 +69,29 @@ async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
         let maintenance =
             in_system_transaction(pool, |tx| Box::pin(request_maintenance(tx, now()))).await;
         match maintenance {
-            Ok(true) => info!("maintenance requested"),
+            Ok(true) => info!("maintenance.requested"),
             Ok(false) => {}
-            Err(err) => warn!(error = &*err as &dyn Error, "maintenance not requested"),
+            Err(err) => warn!(error = &*err as &dyn Error, "maintenance.not_requested"),
         }
 
         let installations =
             in_system_transaction(pool, |tx| Box::pin(request_installations_sync(tx, now()))).await;
         match installations {
-            Ok(true) => info!("sync of the installations requested"),
+            Ok(true) => info!("installations_sync.requested"),
             Ok(false) => {}
             Err(err) => warn!(
                 error = &*err as &dyn Error,
-                "sync of the installations not requested"
+                "installations_sync.not_requested"
             ),
         }
 
         let repos = in_system_transaction(pool, |tx| Box::pin(request_repo_syncs(tx, now()))).await;
         match repos {
             Ok(0) => {}
-            Ok(requested) => info!(requested, "reads of the repositories requested"),
+            Ok(requested) => info!(requested, "repositories_read.requested"),
             Err(err) => warn!(
                 error = &*err as &dyn Error,
-                "reads of the repositories not requested"
+                "repositories_read.not_requested"
             ),
         }
 
@@ -99,11 +99,8 @@ async fn request_hourly(pool: &PgPool, cancel: &CancellationToken) {
             in_system_transaction(pool, |tx| Box::pin(request_member_syncs(tx, now()))).await;
         match members {
             Ok(0) => {}
-            Ok(requested) => info!(requested, "reads of the members requested"),
-            Err(err) => warn!(
-                error = &*err as &dyn Error,
-                "reads of the members not requested"
-            ),
+            Ok(requested) => info!(requested, "members_read.requested"),
+            Err(err) => warn!(error = &*err as &dyn Error, "members_read.not_requested"),
         }
     })
     .await;
@@ -113,9 +110,12 @@ async fn request_sweep_regularly(pool: &PgPool, cancel: &CancellationToken) {
     repeat_every(SWEEP_EVERY, cancel, || async move {
         let sweep = in_system_transaction(pool, |tx| Box::pin(request_sweep(tx, now()))).await;
         match sweep {
-            Ok(true) => info!("sweep of the deliveries requested"),
+            Ok(true) => info!("deliveries_sweep.requested"),
             Ok(false) => {}
-            Err(err) => warn!(error = &*err as &dyn Error, "sweep not requested"),
+            Err(err) => warn!(
+                error = &*err as &dyn Error,
+                "deliveries_sweep.not_requested"
+            ),
         }
     })
     .await;

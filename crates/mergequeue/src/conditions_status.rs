@@ -432,9 +432,8 @@ pub(crate) async fn publish(
     lock.commit().await?;
 
     info!(
-        pr_number = request.pr_number,
         state = ?status.state,
-        "conditions status published"
+        "conditions_status.published"
     );
 
     Ok(())

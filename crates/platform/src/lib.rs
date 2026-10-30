@@ -83,7 +83,7 @@ pub use wake::{
     MIN_WAIT, QueueWakeup, TICK, Wake, begin_reconciliation, mark_dirty, schedule_tick,
     until_next_tick,
 };
-pub use worker::{Executors, JOB_POLL, Outcome, error_chain, run_worker};
+pub use worker::{Executors, JOB_POLL, Outcome, error_chain, job_span, run_worker};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {

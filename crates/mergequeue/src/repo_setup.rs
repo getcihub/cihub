@@ -182,10 +182,9 @@ pub(crate) async fn read_repo_setup(
     keep(&mut tx, &target, &read, now).await?;
     tx.commit().await?;
     info!(
-        repo_id = %repo_id,
         findings = read.findings.len(),
         config = read.file.state.as_str(),
-        "repository setup read"
+        "repo_setup.read"
     );
     Ok(())
 }

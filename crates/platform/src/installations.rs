@@ -223,7 +223,7 @@ fn keep_slug_taken(
         Err(err @ PlatformError::SlugTaken { .. }) => {
             warn!(
                 error = &err as &dyn std::error::Error,
-                "installation not synced"
+                "installation.not_synced"
             );
             slug_taken.get_or_insert(err);
             Ok(())
@@ -367,7 +367,7 @@ async fn reconnect(
         org_id = %connection.org_id,
         connection_id = %connection.id,
         installation = installation.external_id,
-        "connection moved to a new installation"
+        "connection.moved"
     );
 
     Ok(())
@@ -411,7 +411,7 @@ async fn onboard(
         org_id = %org_id,
         connection_id = %connection_id,
         installation = installation.external_id,
-        "organization created"
+        "org.created"
     );
 
     Ok(())
@@ -506,7 +506,7 @@ async fn update_connection(
         org_id = %connection.org_id,
         connection_id = %connection.id,
         suspended = is_suspended,
-        "connection access changed"
+        "connection.access_changed"
     );
 
     give_to_queues(conn, connection, &kind, now).await

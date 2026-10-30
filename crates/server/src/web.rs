@@ -29,7 +29,7 @@ pub(super) async fn run(shared: Shared) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("cannot listen on {http_addr}"))?;
 
-    info!(http_addr = %listener.local_addr()?, "public address served");
+    info!(http_addr = %listener.local_addr()?, "public_address.served");
     let webhooks = GithubWebhooks {
         secret: github.webhook_secret,
     };

@@ -60,12 +60,12 @@ pub(super) async fn run(
         .await
         .with_context(|| format!("cannot listen on {internal_addr}"))?;
 
-    info!(internal_addr = %listener.local_addr()?, "server started");
+    info!(internal_addr = %listener.local_addr()?, "server.started");
 
     let mut tx = begin_system(&pool).await?;
     request_installations_sync_at_start(&mut tx, now()).await?;
     tx.commit().await?;
-    info!("sync of the installations requested");
+    info!("installations_sync.requested");
 
     let cancel = CancellationToken::new();
     let mut tasks = JoinSet::new();
@@ -87,19 +87,19 @@ pub(super) async fn run(
     }
 
     let result = supervise(tasks, &cancel).await;
-    info!("server stopped");
+    info!("server.stopped");
     result
 }
 
 async fn run_role(role: Role, shared: Shared) -> anyhow::Result<()> {
-    info!("role started");
+    info!("role.started");
     match role {
         Role::Web => web::run(shared).await?,
         Role::Scheduler => scheduler::run(shared).await?,
         Role::Worker => worker::run(shared).await?,
         Role::Notifier => notifier::run(shared).await?,
     }
-    info!("role stopped");
+    info!("role.stopped");
     Ok(())
 }
 
@@ -123,11 +123,11 @@ async fn supervise(
     loop {
         tokio::select! {
             _ = terminate.recv(), if !cancel.is_cancelled() => {
-                info!(signal = "SIGTERM", "shutdown requested");
+                info!(signal = "SIGTERM", "shutdown.requested");
                 cancel.cancel();
             }
             _ = interrupt.recv(), if !cancel.is_cancelled() => {
-                info!(signal = "SIGINT", "shutdown requested");
+                info!(signal = "SIGINT", "shutdown.requested");
                 cancel.cancel();
             }
             joined = tasks.join_next() => {

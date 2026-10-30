@@ -144,11 +144,11 @@ async fn github_webhook(
     let received = match cihub_github::receive(&webhooks.github.secret, &headers, &body) {
         Ok(received) => received,
         Err(WebhookError::Signature) => {
-            warn!("webhook signature refused");
+            warn!("webhook.signature.refused");
             return StatusCode::UNAUTHORIZED;
         }
         Err(err) => {
-            warn!(error = &err as &dyn Error, "webhook refused");
+            warn!(error = &err as &dyn Error, "webhook.refused");
             return StatusCode::BAD_REQUEST;
         }
     };
@@ -157,19 +157,19 @@ async fn github_webhook(
         let event = received.event.clone();
         match tokio::time::timeout(ACK_WITHIN, store(&webhooks, received)).await {
             Ok(Ok(true)) => {
-                info!(event, "webhook stored");
+                info!(event, "webhook.stored");
                 StatusCode::ACCEPTED
             }
             Ok(Ok(false)) => {
-                info!(event, "webhook copy ignored");
+                info!(event, "webhook.copy_ignored");
                 StatusCode::ACCEPTED
             }
             Ok(Err(err)) => {
-                warn!(error = &err as &dyn Error, "webhook not stored");
+                warn!(error = &err as &dyn Error, "webhook.not_stored");
                 StatusCode::SERVICE_UNAVAILABLE
             }
             Err(_) => {
-                warn!("webhook not stored in time");
+                warn!(reason = "timeout", "webhook.not_stored");
                 StatusCode::SERVICE_UNAVAILABLE
             }
         }

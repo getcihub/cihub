@@ -597,10 +597,7 @@ async fn by_session(
         .await?
         .ok_or_else(org_not_found)?;
     if let Err(err) = request_user_sync_when_old(&state.pool, user_id, now).await {
-        warn!(
-            error = &err as &dyn Error,
-            "sync of the person not requested"
-        );
+        warn!(error = &err as &dyn Error, "person_sync.not_requested");
     }
 
     let Some(name) = names.repo else {
@@ -649,10 +646,7 @@ async fn granted<T>(
             Err(sign_in_again())
         }
         Err(PlatformError::Scm(err)) => {
-            warn!(
-                error = &err as &dyn Error,
-                "access of the person not checked"
-            );
+            warn!(error = &err as &dyn Error, "person_access.not_checked");
             Err(ApiError::new(
                 ErrorCode::ScmUnavailable,
                 "the SCM did not answer the check of the access".into(),
@@ -936,10 +930,7 @@ async fn get_instance(State(state): State<ApiState>) -> Json<Instance> {
         .app_install_url(JobClass::Interactive)
         .await
         .inspect_err(|err| {
-            warn!(
-                error = err as &dyn Error,
-                "install page of the App not read"
-            );
+            warn!(error = err as &dyn Error, "app_install_page.not_read");
         })
         .ok();
 

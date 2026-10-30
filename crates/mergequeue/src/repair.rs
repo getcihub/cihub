@@ -116,7 +116,7 @@ pub(crate) async fn read_checks(
         .await?
         .is_none()
     {
-        info!(run_id = %request.run_id, "test branch gone: created again at its test SHA");
+        info!(reason = "test_branch_gone", "test_branch.recreated");
         scm.set_branch(
             repo,
             &request.test_branch,
@@ -231,7 +231,7 @@ pub async fn sync_queue(
     }
 
     tx.commit().await?;
-    info!(%queue, jobs = requested, "queue sync requested");
+    info!(%queue, jobs = requested, "queue_sync.requested");
 
     Ok(requested)
 }

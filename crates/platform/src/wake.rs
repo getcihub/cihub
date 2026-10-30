@@ -167,17 +167,20 @@ impl QueueWakeup {
         self.recv(tick, cancel).await.map_err(PlatformError::Query)
     }
 
-    /// Like [`wait`](Self::wait), but a lost connection is logged with
-    /// `lost`, then waits for `tick` or `cancel` before the caller looks for
-    /// work again.
+    /// Like [`wait`](Self::wait), but a lost connection is logged with the
+    /// name of the `notifications`, then waits for `tick` or `cancel` before
+    /// the caller looks for work again.
     pub async fn wait_or_pause(
         &mut self,
         tick: Duration,
         cancel: &CancellationToken,
-        lost: &'static str,
+        notifications: &'static str,
     ) {
         if let Err(err) = self.recv(tick, cancel).await {
-            warn!(error = &err as &dyn Error, "{lost}");
+            warn!(
+                error = &err as &dyn Error,
+                notifications, "notifications.lost"
+            );
             tokio::select! {
                 () = cancel.cancelled() => {}
                 () = tokio::time::sleep(tick) => {}

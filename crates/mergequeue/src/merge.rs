@@ -112,16 +112,11 @@ fn after_error(
     }
 }
 
-fn log_merge_failure(item_id: ItemId, fact: &EventKind, scm_error: Option<&str>) {
+fn log_merge_failure(fact: &EventKind, scm_error: Option<&str>) {
     if let EventKind::MergeFailed { error, .. } = fact
         && *error != JobError::DirectMergeUnavailable
     {
-        warn!(
-            %item_id,
-            error = error.as_str(),
-            scm_error,
-            "PR not merged"
-        );
+        warn!(error = error.as_str(), scm_error, "pr.not_merged");
     }
 }
 
@@ -137,7 +132,7 @@ pub(crate) async fn merge_pr(
     let item_id = request.item_id;
 
     let Some(item) = item_to_merge(pool, &request).await? else {
-        info!(%item_id, "item no longer waits for its merge");
+        info!(reason = "item_not_waiting", "merge.skipped");
         return Ok(());
     };
 
@@ -151,7 +146,7 @@ pub(crate) async fn merge_pr(
     };
     let fact = match landed {
         Ok(Landed::Merged(merged_sha)) => {
-            info!(%item_id, merged_sha, "PR merged");
+            info!(merged_sha, "pr.merged");
 
             EventKind::MergeSucceeded {
                 item_id,
@@ -160,7 +155,7 @@ pub(crate) async fn merge_pr(
         }
         Ok(Landed::AlreadyMerged) => failed(JobError::PrAlreadyMerged),
         Ok(Landed::Unavailable) => {
-            info!(%item_id, "direct merge not possible: the item goes through the tests");
+            info!(reason = "direct_merge_unavailable", "direct_merge.skipped");
 
             EventKind::MergeFailed {
                 item_id,
@@ -171,7 +166,7 @@ pub(crate) async fn merge_pr(
         Err(err) => after_error(&request, &err, job.attempts, now)?,
     };
 
-    log_merge_failure(item_id, &fact, scm_error.as_deref());
+    log_merge_failure(&fact, scm_error.as_deref());
 
     give_back_facts(pool, &target, vec![(Actor::Bot, fact)], now).await
 }

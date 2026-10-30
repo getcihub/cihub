@@ -11,7 +11,8 @@ use sqlx::PgPool;
 use time::OffsetDateTime;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, info_span, warn};
+use tracing::field::Empty;
+use tracing::{Instrument, Span, error, info, info_span, warn};
 
 use crate::jobs::JOB_CHANNEL;
 use crate::{Job, PlatformError, QueueWakeup, Retry, claim_jobs, complete_job, fail_job};
@@ -58,6 +59,22 @@ impl Executors {
     }
 }
 
+/// The `job` span of `specs/OBSERVABILITY.md`, in which the worker runs `job`.
+/// The executor records the keys of the payload once it reads them.
+pub fn job_span(job: &Job) -> Span {
+    info_span!(
+        "job",
+        job_key = job.idempotency_key,
+        job_type = job.job_type,
+        org_id = job.org_id.map(display),
+        queue_id = job.queue_id.map(display),
+        repo_id = Empty,
+        pr_number = Empty,
+        item_id = Empty,
+        run_id = Empty,
+    )
+}
+
 /// Claims the due jobs as `worker` and runs each with its executor, until
 /// `cancel`; then waits for the jobs in progress. Wakes up on a new job, or
 /// every `idle_wait`. An error of Postgres is logged and the worker tries
@@ -81,21 +98,19 @@ pub async fn run_worker(
         let jobs = match claim(&pool, &worker, now).await {
             Ok(jobs) => jobs,
             Err(err) => {
-                warn!(error = &err as &dyn Error, "jobs not claimed");
+                warn!(error = &err as &dyn Error, "jobs.not_claimed");
                 Vec::new()
             }
         };
 
         if jobs.is_empty() {
-            wakeup
-                .wait_or_pause(idle_wait, &cancel, "job notifications lost")
-                .await;
+            wakeup.wait_or_pause(idle_wait, &cancel, "jobs").await;
             continue;
         }
 
         let mut running = JoinSet::new();
         for job in jobs {
-            let span = info_span!("job", key = job.idempotency_key, job_type = job.job_type);
+            let span = job_span(&job);
             let key = job.idempotency_key.clone();
             let outcome = within(JOB_TIMEOUT, executors.run(pool.clone(), job, now));
             let run = outcome.instrument(span.clone());
@@ -105,7 +120,7 @@ pub async fn run_worker(
 
         while let Some(joined) = running.join_next().await {
             let Ok((key, outcome, span)) = joined else {
-                warn!("job panicked");
+                warn!("job.panicked");
                 continue;
             };
             record(&pool, &key, &worker, clock(), &outcome)
@@ -137,16 +152,16 @@ async fn record(pool: &PgPool, key: &str, worker: &str, now: OffsetDateTime, out
     let state = match store_outcome(pool, key, worker, now, outcome).await {
         Ok(state) => state,
         Err(err) => {
-            warn!(error = &err as &dyn Error, "job result not recorded");
+            warn!(error = &err as &dyn Error, "job_result.not_recorded");
             return;
         }
     };
     match (state, outcome) {
-        (None, _) => warn!("job taken back before its result"),
-        (Some(JobState::Done), _) => info!("job done"),
-        (Some(JobState::Queued), Outcome::Retry(error)) => warn!(error, "job retried"),
-        (Some(JobState::Dead), Outcome::Retry(error)) => error!(error, "job dead"),
-        (Some(_), Outcome::Failed(error) | Outcome::Retry(error)) => warn!(error, "job failed"),
+        (None, _) => warn!("job.taken_back"),
+        (Some(JobState::Done), _) => info!("job.done"),
+        (Some(JobState::Queued), Outcome::Retry(error)) => warn!(error, "job.retried"),
+        (Some(JobState::Dead), Outcome::Retry(error)) => error!(error, "job.dead"),
+        (Some(_), Outcome::Failed(error) | Outcome::Retry(error)) => warn!(error, "job.failed"),
         (Some(_), Outcome::Done) => {}
     }
 }

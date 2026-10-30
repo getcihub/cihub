@@ -334,6 +334,7 @@ dependencies = [
  "cihub-platform",
  "cihub-scm",
  "cihub-store",
+ "cihub-telemetry",
  "cihub-web",
  "secrecy",
  "serde",

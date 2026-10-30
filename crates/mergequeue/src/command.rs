@@ -132,7 +132,7 @@ pub(crate) async fn run_pr_command(
     let author = ScmUser::from(&request.requested_by);
 
     if scm.permission(&repo.repo, &author, class).await? < Permission::Write {
-        info!(pr_number = number, "command refused: permission");
+        info!(reason = "permission", "command.refused");
         return refuse("the command needs the write permission on the repository.".to_owned())
             .await;
     }
@@ -175,11 +175,7 @@ pub(crate) async fn run_pr_command(
     give_back_facts(pool, &target, facts, now).await?;
     acknowledge(scm, &repo.repo, Some(&request.comment_id), class).await;
 
-    info!(
-        pr_number = number,
-        command = name,
-        "command given to the queue"
-    );
+    info!(command = name, "command.forwarded");
 
     Ok(())
 }

@@ -142,7 +142,7 @@ impl Reconciler {
                         delivery_id = delivery.delivery_id.as_str(),
                         event = delivery.event.as_str(),
                         error = &*err as &dyn Error,
-                        "delivery not translated"
+                        "delivery.not_translated"
                     );
                     true
                 }
@@ -207,7 +207,7 @@ impl Reconciler {
                 facts = written,
                 decisions,
                 jobs = requested,
-                "queue reconciled"
+                "queue.reconciled"
             );
         }
 
@@ -572,7 +572,7 @@ pub async fn pass_connection_deliveries(
                 org_id,
                 attempts,
                 error = &err as &dyn Error,
-                "delivery of a connection set aside"
+                "connection_delivery.set_aside"
             );
         } else {
             warn!(
@@ -580,7 +580,7 @@ pub async fn pass_connection_deliveries(
                 org_id,
                 attempts,
                 error = &err as &dyn Error,
-                "delivery of a connection failed"
+                "connection_delivery.failed"
             );
         }
     }
@@ -610,7 +610,7 @@ async fn read_connection_delivery(
                 delivery_id = delivery.delivery_id,
                 event,
                 error = &*err as &dyn Error,
-                "delivery not translated"
+                "delivery.not_translated"
             );
             true
         }
@@ -823,7 +823,8 @@ async fn repo_of_command(
             delivery_id = delivery.delivery_id,
             org_id = %delivery.org_id,
             repo_external_id = external_id,
-            "command on an unknown repository ignored"
+            reason = "unknown_repository",
+            "command.ignored"
         );
     }
 
@@ -1171,8 +1172,8 @@ pub(crate) async fn run_scheduler(
 ) -> Result<(), MergeQueueError> {
     let mut wakeup = QueueWakeup::listen(&pool).await?;
     match wake_live_queues(&pool).await {
-        Ok(queues) => info!(queues, "live queues woken at start"),
-        Err(err) => warn!(error = &err as &dyn Error, "live queues not woken at start"),
+        Ok(queues) => info!(queues, "live_queues.woken"),
+        Err(err) => warn!(error = &err as &dyn Error, "live_queues.not_woken"),
     }
 
     let mut next_cover = clock();
@@ -1188,7 +1189,7 @@ pub(crate) async fn run_scheduler(
         if let Err(err) = pass_connection_deliveries(&pool, &reconciler, now).await {
             warn!(
                 error = &err as &dyn Error,
-                "deliveries of the connections not given"
+                "connection_deliveries.not_given"
             );
         }
 
@@ -1198,7 +1199,7 @@ pub(crate) async fn run_scheduler(
         }
 
         let wait = next_wait(&pool, clock()).await.unwrap_or_else(|err| {
-            warn!(error = &err as &dyn Error, "next tick not read");
+            warn!(error = &err as &dyn Error, "next_tick.not_read");
             TICK
         });
         // An idle scheduler waits up to `TICK`: the look for the new
@@ -1210,7 +1211,7 @@ pub(crate) async fn run_scheduler(
             .wait_or_pause(
                 wait.min(until_new_repo_setups.max(MIN_WAIT)),
                 &cancel,
-                "queue notifications lost",
+                "queues",
             )
             .await;
     }
@@ -1229,8 +1230,8 @@ async fn cover_if_due(pool: &PgPool, now: OffsetDateTime, next_cover: &mut Offse
     *next_cover = now + COVER_EVERY;
     match wake_uncovered(pool, now).await {
         Ok(0) => {}
-        Ok(queues) => info!(queues, "queues woken for their snapshot"),
-        Err(err) => warn!(error = &err as &dyn Error, "queues to cover not read"),
+        Ok(queues) => info!(queues, "snapshot_queues.woken"),
+        Err(err) => warn!(error = &err as &dyn Error, "snapshot_queues.not_read"),
     }
 }
 
@@ -1246,10 +1247,10 @@ async fn read_queue_setups_if_due(
     *next_reads = now + QUEUE_SETUPS_SWEEP_EVERY;
     match request_queue_setups(pool, now).await {
         Ok(0) => {}
-        Ok(queues) => info!(queues, "setup reads of the queues requested"),
+        Ok(queues) => info!(queues, "queue_setup_reads.requested"),
         Err(err) => warn!(
             error = &err as &dyn Error,
-            "setup reads of the queues not requested"
+            "queue_setup_reads.not_requested"
         ),
     }
     request_repo_setups_logged(pool, RepoSetupSweep::All, now).await;
@@ -1274,11 +1275,8 @@ async fn read_new_repo_setups_if_due(
 async fn request_repo_setups_logged(pool: &PgPool, sweep: RepoSetupSweep, now: OffsetDateTime) {
     match request_repo_setups(pool, sweep, now).await {
         Ok(0) => {}
-        Ok(repos) => info!(repos, "setup reads of the repositories requested"),
-        Err(err) => warn!(
-            error = &err as &dyn Error,
-            "setup reads of the repositories not requested"
-        ),
+        Ok(repos) => info!(repos, "repo_setup_reads.requested"),
+        Err(err) => warn!(error = &err as &dyn Error, "repo_setup_reads.not_requested"),
     }
 }
 
@@ -1292,7 +1290,7 @@ async fn reconcile_leased_queues(
     let queues = match leases(pool, owner, now).await {
         Ok(queues) => queues,
         Err(err) => {
-            warn!(error = &err as &dyn Error, "leases not taken");
+            warn!(error = &err as &dyn Error, "leases.not_taken");
             Vec::new()
         }
     };
@@ -1303,7 +1301,7 @@ async fn reconcile_leased_queues(
             .reconcile(pool, *queue, clock)
             .instrument(span.clone());
         if let Err(err) = done.await {
-            span.in_scope(|| warn!(error = &err as &dyn Error, "queue not reconciled"));
+            span.in_scope(|| warn!(error = &err as &dyn Error, "queue.not_reconciled"));
         }
     }
 

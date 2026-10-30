@@ -82,7 +82,7 @@ pub async fn run_sweep(scm: &dyn Scm, now: OffsetDateTime) -> Result<usize, Plat
         scm.redeliver(attempt_id, JobClass::Repair)
             .await
             .map_err(PlatformError::Scm)?;
-        info!(delivery_id, "delivery asked again");
+        info!(delivery_id, "delivery.redelivery_requested");
         asked += 1;
     }
 

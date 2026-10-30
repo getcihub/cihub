@@ -271,7 +271,7 @@ async fn session_of_callback(
     info!(
         user_id = %user_id,
         organizations = signed_in.memberships.len(),
-        "signed in"
+        "person.signed_in"
     );
     Ok((secret, next))
 }
@@ -309,7 +309,7 @@ async fn page_of_installation(
 }
 
 fn failed(err: &SignInFailure) -> Response {
-    warn!(error = err as &dyn std::error::Error, "sign-in failed");
+    warn!(error = err as &dyn std::error::Error, "sign_in.failed");
     Redirect::to(FAILED).into_response()
 }
 

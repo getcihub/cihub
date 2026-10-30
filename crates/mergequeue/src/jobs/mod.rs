@@ -26,7 +26,8 @@ use cihub_store::{PgPool, StoreError, begin_system, deposit_fact};
 use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
 use time::OffsetDateTime;
-use tracing::warn;
+use tracing::field::display;
+use tracing::{Span, warn};
 
 use crate::MergeQueueError;
 use crate::target::{QueueTarget, RepoTarget};
@@ -147,7 +148,7 @@ pub(crate) async fn acknowledge(
     if let Err(err) = scm.acknowledge_comment(repo, comment_id, class).await {
         warn!(
             error = &err as &dyn Error,
-            comment_id, "command not acknowledged"
+            comment_id, "command.not_acknowledged"
         );
     }
 }
@@ -367,16 +368,40 @@ pub(crate) fn outcome(result: Result<(), Failure>) -> Outcome {
     }
 }
 
+/// The correlation keys that a payload can carry, under the same names as in
+/// the span of the job (`specs/OBSERVABILITY.md`).
+const PAYLOAD_KEYS: [&str; 4] = ["repo_id", "pr_number", "item_id", "run_id"];
+
+/// Reads the payload of `job` and records its correlation keys in the span
+/// of the job, so that every line of the job says where it happened.
 pub(crate) fn read_payload<T: for<'de> Deserialize<'de>>(job: &Job) -> Result<T, Failure> {
-    serde_json::from_value(job.payload.clone())
-        .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))
+    let request = serde_json::from_value(job.payload.clone())
+        .map_err(|err| Failure::Never(MergeQueueError::Payload(err)))?;
+
+    let span = Span::current();
+    for key in PAYLOAD_KEYS {
+        match job.payload.get(key) {
+            Some(serde_json::Value::String(text)) => {
+                span.record(key, text.as_str());
+            }
+            Some(serde_json::Value::Number(number)) => {
+                span.record(key, number.as_u64());
+            }
+            _ => {}
+        }
+    }
+
+    Ok(request)
 }
 
 pub(crate) async fn target_of(pool: &PgPool, job: &Job) -> Result<QueueTarget, Failure> {
     let queue = job
         .queue_id
         .ok_or_else(|| Failure::never("the job has no queue"))?;
-    load_target(pool, queue).await
+    let target = load_target(pool, queue).await?;
+
+    Span::current().record("repo_id", display(target.repo_id));
+    Ok(target)
 }
 
 /// The queue `queue`, read in its own transaction.
@@ -525,5 +550,45 @@ mod tests {
         for (n, (pr, required, want)) in cases.into_iter().enumerate() {
             assert_eq!(mergeability(&pr, required), want, "case {n}");
         }
+    }
+
+    #[test]
+    fn a_line_of_a_job_says_where_it_happened() {
+        let logs = cihub_telemetry::CapturedLogs::default();
+        let (org, queue, repo) = (
+            OrgId::from_ulid(ulid::Ulid(1)),
+            QueueId::from_ulid(ulid::Ulid(2)),
+            RepoId::from_ulid(ulid::Ulid(3)),
+        );
+        let job = Job {
+            idempotency_key: "submit_pr:delivery-1:1".to_owned(),
+            job_type: SUBMIT_PR.to_owned(),
+            class: JobClass::Interactive,
+            org_id: Some(org),
+            connection: None,
+            queue_id: Some(queue),
+            payload: serde_json::json!({ "repo_id": repo, "pr_number": 4821 }),
+            attempts: 1,
+        };
+
+        tracing::subscriber::with_default(logs.subscriber(), || {
+            let _job = cihub_platform::job_span(&job).entered();
+            let read: Result<serde::de::IgnoredAny, _> = read_payload(&job);
+            assert!(read.is_ok());
+            tracing::info!(reason = "permission", "submission.refused");
+        });
+
+        let records = logs.records().unwrap();
+        let [record] = records.as_slice() else {
+            panic!("one record expected, got {records:?}");
+        };
+        assert_eq!(record["message"], "submission.refused");
+        assert_eq!(record["reason"], "permission");
+        assert_eq!(record["job_key"], "submit_pr:delivery-1:1");
+        assert_eq!(record["job_type"], SUBMIT_PR);
+        assert_eq!(record["org_id"], org.to_string());
+        assert_eq!(record["queue_id"], queue.to_string());
+        assert_eq!(record["repo_id"], repo.to_string());
+        assert_eq!(record["pr_number"], 4821);
     }
 }

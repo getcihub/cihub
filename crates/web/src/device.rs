@@ -114,7 +114,7 @@ pub(crate) async fn start_device_sign_in(
         };
 
         if create_device_code(&state.pool, &code).await? {
-            info!(device_code_id = %id, "device code created");
+            info!(device_code_id = %id, "device_code.created");
             return Ok(Json(DeviceCode {
                 device_code: device_code.expose_secret().to_owned(),
                 user_code,
@@ -181,7 +181,7 @@ pub(crate) async fn get_device_session(
         .await?
         .ok_or_else(ApiError::unauthorized)?;
 
-    info!(user_id = %user_id, session_id = %session.id, "command line signed in");
+    info!(user_id = %user_id, session_id = %session.id, "command_line.signed_in");
     Ok(Json(CliSession {
         token: secret.expose_secret().to_owned(),
         login: profile.login,
@@ -272,7 +272,7 @@ async fn answer(
         return Err(not_found());
     }
 
-    info!(user_id = %session.user_id, answer = answer.as_str(), "device code answered");
+    info!(user_id = %session.user_id, answer = answer.as_str(), "device_code.answered");
     Ok(StatusCode::NO_CONTENT)
 }
 

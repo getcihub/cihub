@@ -252,11 +252,9 @@ where
         match route_pass(&pool, &translate, clock()).await {
             Ok(routed) if routed == ROUTES_PER_PASS => continue,
             Ok(_) => {}
-            Err(err) => warn!(error = &err as &dyn Error, "deliveries not routed"),
+            Err(err) => warn!(error = &err as &dyn Error, "deliveries.not_routed"),
         }
-        wakeup
-            .wait_or_pause(idle_wait, &cancel, "inbox notifications lost")
-            .await;
+        wakeup.wait_or_pause(idle_wait, &cancel, "inbox").await;
     }
     Ok(())
 }
@@ -282,7 +280,7 @@ where
                 warn!(
                     delivery_id,
                     error = &err as &dyn Error,
-                    "delivery not translated"
+                    "delivery.not_translated"
                 );
                 None
             }
@@ -303,7 +301,7 @@ where
             org_id = route.org_id.map(tracing::field::display),
             queue_id = route.queue_id.map(tracing::field::display),
             processed = route.processed,
-            "delivery routed"
+            "delivery.routed"
         );
     }
 

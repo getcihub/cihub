@@ -187,7 +187,7 @@ async fn forget_token_in(
         .await
         .map_err(PlatformError::Store)?;
     tx.commit().await.map_err(PlatformError::Query)?;
-    info!(user_id = %user_id, "token of the person refused or ended");
+    info!(user_id = %user_id, "person_token.refused");
     Ok(())
 }
 
@@ -263,7 +263,7 @@ pub async fn run_sync_user(
     info!(
         user_id = %user_id,
         repos = permissions.len(),
-        "repositories of the person read"
+        "person_repositories.read"
     );
 
     Ok(permissions.len())

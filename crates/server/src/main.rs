@@ -150,11 +150,7 @@ async fn start_github(
     } = github;
     let client = GithubApp::new(&config, Arc::new(now)).context("the GitHub App cannot start")?;
 
-    info!(
-        url = config.url,
-        app_id = config.app_id,
-        "GitHub App configured"
-    );
+    info!(url = config.url, app_id = config.app_id, "app.configured");
 
     let cipher = database_secret
         .map(DatabaseCipher::new)

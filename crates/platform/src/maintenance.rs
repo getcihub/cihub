@@ -89,7 +89,11 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
 
     tx.commit().await.map_err(PlatformError::Query)?;
     for partition in &kept {
-        info!(partition, "event partition kept: events without a snapshot");
+        info!(
+            partition,
+            reason = "events_without_snapshot",
+            "event_partition.kept"
+        );
     }
 
     info!(
@@ -99,7 +103,7 @@ pub async fn run_maintenance(pool: &PgPool, now: OffsetDateTime) -> Result<(), P
         tokens,
         permissions,
         partitions = dropped.len(),
-        "maintenance done"
+        "maintenance.done"
     );
     Ok(())
 }

@@ -85,7 +85,11 @@ pub(crate) async fn load(
         .await?;
 
     if head.as_deref() != Some(request.sha.as_str()) {
-        info!(sha = request.sha, "target moved before its file was read");
+        info!(
+            sha = request.sha,
+            reason = "target_moved",
+            "config.not_read"
+        );
         return Ok(());
     }
 
@@ -112,7 +116,7 @@ pub(crate) async fn load(
             warn!(
                 sha = request.sha,
                 error = err as &dyn Error,
-                "configuration file not valid"
+                "config.invalid"
             );
             sqlx::query(
                 "UPDATE queues SET config_error = $2, config_sha = $3,
@@ -219,7 +223,7 @@ pub(crate) async fn read_setup(
         }
         found
     } else {
-        info!("target branch gone");
+        info!("target_branch.gone");
         vec![CheckFinding::TargetBranchMissing]
     };
 

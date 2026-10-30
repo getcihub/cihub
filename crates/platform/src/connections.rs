@@ -191,7 +191,7 @@ pub async fn run_sync_repos(
         repos = written,
         removed = removed.len(),
         restored = restored.len(),
-        "repositories read"
+        "repositories.read"
     );
 
     Ok(written)

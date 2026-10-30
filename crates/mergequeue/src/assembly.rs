@@ -281,7 +281,7 @@ impl Assembly<'_> {
             Trigger::DraftPr => Some(self.open_draft_pr().await?),
             Trigger::Push => None,
             Trigger::Inplace => {
-                warn!("trigger inplace is not available before its lot");
+                warn!(trigger = "inplace", "trigger.unavailable");
                 return Err(Step::GiveUp(JobError::InvalidEvent, None));
             }
         };
@@ -510,10 +510,10 @@ fn assembly_failed(
     };
 
     if error == JobError::RetryExhausted {
-        warn!(%run_id, "assembly gave up after its attempts");
+        warn!("test_branch.assembly_abandoned");
     }
 
-    info!(%run_id, error = error.as_str(), "test branch not assembled");
+    info!(error = error.as_str(), "test_branch.not_assembled");
 
     Ok(EventKind::TestBranchAssemblyFailed {
         run_id,
@@ -536,7 +536,10 @@ pub(crate) async fn assemble_run(
     let settings = &target.settings()?;
 
     let Some((RunStatus::Assembling, started_at)) = run_state(pool, run_id).await? else {
-        info!(%run_id, "run no longer waits for its test branch");
+        info!(
+            reason = "run_not_assembling",
+            "test_branch.assembly_skipped"
+        );
         return Ok(());
     };
 
@@ -549,7 +552,7 @@ pub(crate) async fn assemble_run(
     };
     let fact = match assembly.build().await {
         Ok(assembled) => {
-            info!(%run_id, test_sha = assembled.test_sha, "test branch assembled");
+            info!(test_sha = assembled.test_sha, "test_branch.assembled");
 
             EventKind::TestBranchAssembled {
                 run_id,
@@ -594,7 +597,7 @@ pub(crate) async fn cleanup_run(
         .map_err(|err| Failure::Never(MergeQueueError::Parse(Box::new(err))))?;
 
     if !status.is_terminal() {
-        info!(run_id = %request.run_id, "run still live: nothing to clean");
+        info!(reason = "run_live", "test_branch.cleanup_skipped");
         return Ok(());
     }
 
@@ -609,7 +612,7 @@ pub(crate) async fn cleanup_run(
         scm.delete_branch(repo, &temp, job.class).await?;
     }
 
-    info!(run_id = %request.run_id, "test branch cleaned");
+    info!("test_branch.cleaned");
 
     Ok(())
 }
