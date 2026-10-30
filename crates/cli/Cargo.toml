@@ -17,13 +17,12 @@ anyhow.workspace = true
 cihub-api-types.workspace = true
 cihub-client.workspace = true
 cihub-domain.workspace = true
-cihub-github.workspace = true
 clap.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [lints]
 workspace = true

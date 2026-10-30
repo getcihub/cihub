@@ -1,10 +1,9 @@
 ---
 title: Install the command line
-description: Install cihub, the command line of CIHub, on Linux or macOS, to create the GitHub App of an instance and to drive its queues from a terminal or a CI.
+description: Install cihub, the command line of CIHub, on Linux or macOS, to drive the queues of an instance from a terminal or a CI.
 ---
 
-`cihub` is one binary. It creates the GitHub App of an instance (`cihub app create`), signs in to an instance
-(`cihub auth login`) and drives its queues (`cihub queue …`).
+`cihub` is one binary. It signs in to an instance (`cihub auth login`) and drives its queues (`cihub queue …`).
 
 <Callout title="From the release after 0.2.1">
   Each release attaches the binaries below from the next release of CIHub. Until then, build `cihub` with
@@ -58,5 +57,4 @@ page of the release, `cihub-<target>.tar.gz.sha256`.
 
 ## Next
 
-- [Create the GitHub App](/docs/install/github-app#create-the-app-with-one-command) with `cihub app create`.
 - [Sign in to an instance](/docs/install/first-pull-request#follow-the-queue) with `cihub auth login`.

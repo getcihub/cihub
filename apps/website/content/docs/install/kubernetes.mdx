@@ -79,21 +79,18 @@ kubectl create secret generic cihub-db-app \
 ## Create the Secrets
 
 One Secret holds the keys of the App, and one the sealing key, at least 32 bytes, which seals the GitHub tokens of
-the people who sign in. With the two files of [`cihub app create`](/docs/install/github-app#create-the-app-with-one-command),
-in their directory:
+the people who sign in. With the [keys of the App](/docs/install/github-app#give-the-keys-to-cihub):
 
 ```sh
-set -a; . ./github-app.env; set +a
 kubectl create secret generic cihub-github \
-  --from-file=private-key.pem=github-app.private-key.pem \
-  --from-literal=webhook-secret="$CIHUB_GITHUB_WEBHOOK_SECRET" \
-  --from-literal=client-secret="$CIHUB_GITHUB_CLIENT_SECRET"
+  --from-file=private-key.pem=<path to the private key> \
+  --from-literal=webhook-secret='<webhook secret>' \
+  --from-literal=client-secret='<client secret>'
 kubectl create secret generic cihub-sealing \
   --from-literal=secret="$(openssl rand -hex 32)"
 ```
 
-With an App created by hand, set the four variables of `github-app.env` yourself, or write the values in the
-command. Keep the sealing key: a new one signs every person out.
+Keep the sealing key: a new one signs every person out.
 
 ## Install the chart
 
@@ -102,8 +99,8 @@ helm install cihub oci://ghcr.io/getcihub/charts/cihub \
   --set database.existingSecret=cihub-db-app \
   --set database.secretExistingSecret=cihub-sealing \
   --set github.existingSecret=cihub-github \
-  --set github.appId="$CIHUB_GITHUB_APP_ID" \
-  --set github.clientId="$CIHUB_GITHUB_CLIENT_ID" \
+  --set github.appId='<App ID>' \
+  --set github.clientId='<Client ID>' \
   --set publicUrl=https://cihub.example.com \
   --set replicas=2
 ```

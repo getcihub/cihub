@@ -14,7 +14,7 @@ You need:
 
 ## Write the files
 
-In a new directory, write four files. If you create the App with [`cihub app create`](/docs/install/github-app#create-the-app-with-one-command), run it in this directory first.
+In a new directory, write four files.
 
 `compose.yaml`:
 
@@ -93,9 +93,8 @@ CREATE DATABASE cihub OWNER cihub;
 SQL
 ```
 
-`.env`, with your address, the passwords and the sealing key, generated once, then the keys of the App. With
-[`cihub app create`](/docs/install/github-app#create-the-app-with-one-command), run in this directory, they are in
-`github-app.env`:
+`.env`, with your address, the passwords and the sealing key, generated once, then the keys of the
+[GitHub App](/docs/install/github-app#give-the-keys-to-cihub):
 
 ```sh
 cat > .env <<EOF
@@ -103,16 +102,16 @@ CIHUB_HOST=cihub.example.com
 POSTGRES_PASSWORD=$(openssl rand -hex 16)
 CIHUB_DATABASE_PASSWORD=$(openssl rand -hex 16)
 CIHUB_DATABASE_SECRET=$(openssl rand -hex 32)
+CIHUB_GITHUB_APP_ID=<App ID>
+CIHUB_GITHUB_WEBHOOK_SECRET=<webhook secret>
+CIHUB_GITHUB_CLIENT_ID=<Client ID>
+CIHUB_GITHUB_CLIENT_SECRET=<client secret>
 EOF
-cat github-app.env >> .env
 chmod 600 .env
 ```
 
-With an App created by hand, add its four lines yourself: `CIHUB_GITHUB_APP_ID`, `CIHUB_GITHUB_WEBHOOK_SECRET`,
-`CIHUB_GITHUB_CLIENT_ID` and `CIHUB_GITHUB_CLIENT_SECRET`.
-
-`github-app.private-key.pem`: the private key of the App, which the command wrote, or which GitHub downloaded. The
-container reads it as the user 65532:
+`github-app.private-key.pem`: the private key of the App, which GitHub downloaded, under this name. The container
+reads it as the user 65532:
 
 ```sh
 chmod +x create-cihub-database.sh

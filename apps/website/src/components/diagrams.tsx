@@ -713,7 +713,7 @@ export function GithubAppKeysDiagram() {
   ];
 
   return (
-    <Figure caption="By hand, you copy five values. cihub app create writes them for you in github-app.env and github-app.private-key.pem.">
+    <Figure caption="You copy five values from the page of the App to the server.">
       <Svg
         width={720}
         height={250}

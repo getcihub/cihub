@@ -289,9 +289,11 @@ reason no longer holds.
 
 ### An App creation wizard (manifest flow)
 
-- **Tried / considered**: a `/setup` page that creates the GitHub App and shows its secrets once.
+- **Tried / considered**: a `/setup` page that creates the GitHub App and shows its secrets once; then
+  `cihub app create`, which served the manifest on `localhost` and wrote the keys of the App in two files.
 - **Why not**: CIHub is not designed for a single SCM, the wizard needed a public URL and state cookies, and a
-  manual creation from `specs/GITHUB.md` is enough.
+  manual creation from `specs/GITHUB.md` is enough. The command line talks to the public API of an instance only:
+  a command that talks to GitHub makes it know an SCM and holds code that no instance runs.
 
 ### Webhooks as the source of truth for installations, and a bootstrap command
 
