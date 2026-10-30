@@ -29,6 +29,7 @@ allow-wildcard-paths = true
 # needs one of them (for example hyper needs tokio), add it here.
 deny = [
     { crate = "tokio", wrappers = [
+        "cihub-client",
         "cihub-scm",
         "cihub-github",
         "cihub-web",

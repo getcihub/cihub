@@ -2,6 +2,8 @@
 //! methods that the CLI uses, with the types of `cihub-api-types`. It holds no
 //! server code and no queue logic.
 
+mod stream;
+
 use std::fmt::Write;
 
 use cihub_api_types::{
@@ -12,6 +14,7 @@ use reqwest::{Method, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+pub use stream::{QueueStream, QueueWatch};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -75,6 +78,21 @@ impl Client {
         path: &str,
         body: Option<&impl Serialize>,
     ) -> Result<(StatusCode, String), ClientError> {
+        let response = self.respond(method, path, body).await?;
+        let status = response.status();
+        let text = response.text().await.map_err(ClientError::Http)?;
+
+        Ok((status, text))
+    }
+
+    /// Sends the request, and gives a successful answer before its body: a
+    /// stream reads its body as it comes.
+    async fn respond(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&impl Serialize>,
+    ) -> Result<reqwest::Response, ClientError> {
         let mut request = self.http.request(method, format!("{}{path}", self.base));
 
         if let Some(token) = &self.token {
@@ -89,11 +107,12 @@ impl Client {
 
         let response = request.send().await.map_err(ClientError::Http)?;
         let status = response.status();
-        let text = response.text().await.map_err(ClientError::Http)?;
 
         if status.is_success() {
-            return Ok((status, text));
+            return Ok(response);
         }
+
+        let text = response.text().await.map_err(ClientError::Http)?;
 
         Err(match serde_json::from_str::<Problem>(&text) {
             Ok(problem) => ClientError::Api(problem),
