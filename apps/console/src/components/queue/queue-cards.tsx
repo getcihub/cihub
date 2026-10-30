@@ -2,7 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
-import { cardVariants, cn, Input, useFlip } from "@cihub/ui";
+import { cardVariants } from "@cihub/ui/components/card";
+import { Input } from "@cihub/ui/components/input";
+import { useFlip } from "@cihub/ui/hooks/use-flip";
+import { cn } from "@cihub/ui/lib/cn";
 import { needsAttention } from "@/domain/queue/attention";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { useNow } from "@/hooks/use-now";

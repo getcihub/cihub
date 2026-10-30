@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { cn, GraphIcon, PulseIcon } from "@cihub/ui";
+import { GraphIcon } from "@cihub/icons/graph";
+import { PulseIcon } from "@cihub/icons/pulse";
+import { cn } from "@cihub/ui/lib/cn";
 import { PANES, type Pane, type QueuePath } from "@/domain/queue/queries";
 
 const PANE_LABELS: Record<Pane, { label: string; icon: ReactNode }> = {

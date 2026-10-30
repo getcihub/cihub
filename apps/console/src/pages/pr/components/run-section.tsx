@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 
 import { getRunOptions } from "@/client/@tanstack/react-query.gen";
 import type { CheckConclusion, CheckStatus, RunCheck } from "@/client/types.gen";
-import { cn, Skeleton } from "@cihub/ui";
+import { Skeleton } from "@cihub/ui/components/skeleton";
+import { cn } from "@cihub/ui/lib/cn";
 import { shortSha } from "@/lib/text";
 import { dateAndTime, durationBetween, timeOfDay } from "@/lib/time";
 import { DrawerNote, DrawerSection, DrawerSectionTitle } from "./drawer-frame";

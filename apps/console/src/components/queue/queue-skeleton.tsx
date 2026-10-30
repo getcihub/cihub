@@ -1,4 +1,6 @@
-import { Card, CardHeader, LoadingStatus, Page, PageHeader, Skeleton } from "@cihub/ui";
+import { Card, CardHeader } from "@cihub/ui/components/card";
+import { Page, PageHeader } from "@cihub/ui/components/page";
+import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
 
 /** The rows of the items while they load: the columns of `ItemTabs`. */
 export function ItemRowsSkeleton({ count = 5 }: { count?: number }) {

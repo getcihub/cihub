@@ -82,7 +82,10 @@ apps/
   console/               dashboard (React, Vite, TanStack), embedded in cihub-server by crates/web/build.rs (Lots 10a to 10d)
   website/               the website cihub.io and its documentation (Next.js, Fumadocs)
 packages/
-  ui/                    @cihub/ui: the design system of the console and the website (tokens, theme, components, logo, icons)
+  theme/                 @cihub/theme: the tokens and the Tailwind theme, in CSS (console, website)
+  icons/                 @cihub/icons: the icons and the logo, as React components (console, website)
+  utils/                 @cihub/utils: the functions without React that more than one package needs (UTC days)
+  ui/                    @cihub/ui: the components of the console and their hooks
 ```
 
 | Crate              | Responsibility                                                                                                                                                         | Depends on (workspace)                                           | Lot | State  |

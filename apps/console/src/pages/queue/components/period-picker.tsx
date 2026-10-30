@@ -2,7 +2,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, m } from "motion/react";
 import { useRef, useState } from "react";
 
-import { Button, cn, RangeCalendar, Select, transitions, useCloseOutside } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
+import { transitions } from "@cihub/ui/components/motion";
+import { RangeCalendar } from "@cihub/ui/components/range-calendar";
+import { Select } from "@cihub/ui/components/select";
+import { useCloseOutside } from "@cihub/ui/hooks/use-close-outside";
+import { cn } from "@cihub/ui/lib/cn";
 import {
   type HealthPeriod,
   grainOf,
@@ -13,7 +18,15 @@ import {
   spanText,
 } from "@/domain/queue/period";
 import type { QueuePath } from "@/domain/queue/queries";
-import { DAY_MS, HOUR_MS, addMonths, hourText, startOfDay, startOfMonth, utcText } from "@cihub/ui/utc-days";
+import {
+  DAY_MS,
+  HOUR_MS,
+  addMonths,
+  hourText,
+  startOfDay,
+  startOfMonth,
+  utcText,
+} from "@cihub/utils/utc-days";
 
 /** The period that the person builds in the calendar, before Apply. */
 interface Draft {

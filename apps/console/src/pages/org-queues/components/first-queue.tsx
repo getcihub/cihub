@@ -1,7 +1,11 @@
 import type { ReactNode } from "react";
 
 import type { Repo } from "@/client/types.gen";
-import { Button, buttonVariants, Card, CheckIcon, cn, QueueIllustration } from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
+import { Button, buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { QueueIllustration } from "@cihub/ui/components/illustrations";
+import { cn } from "@cihub/ui/lib/cn";
 import { COMMAND } from "@/components/queue/copy-command";
 import { plural } from "@/lib/text";
 import { type Verdict, isBlockedVerdict } from "@/pages/org-queues/use-setup-verdicts";

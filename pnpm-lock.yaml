@@ -178,9 +178,18 @@ importers:
 
   apps/console:
     dependencies:
+      '@cihub/icons':
+        specifier: workspace:*
+        version: link:../../packages/icons
+      '@cihub/theme':
+        specifier: workspace:*
+        version: link:../../packages/theme
       '@cihub/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@cihub/utils':
+        specifier: workspace:*
+        version: link:../../packages/utils
       '@tanstack/react-form':
         specifier: 1.33.5
         version: 1.33.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -278,9 +287,12 @@ importers:
 
   apps/website:
     dependencies:
-      '@cihub/ui':
+      '@cihub/icons':
         specifier: workspace:*
-        version: link:../../packages/ui
+        version: link:../../packages/icons
+      '@cihub/theme':
+        specifier: workspace:*
+        version: link:../../packages/theme
       fumadocs-core:
         specifier: 16.17.7
         version: 16.17.7(@mdx-js/mdx@3.1.1)(@tanstack/react-router@1.170.42(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@types/estree-jsx@1.0.5)(@types/hast@3.0.5)(@types/mdast@4.0.4)(@types/react@19.3.0)(lucide-react@1.61.0(@types/react@19.3.0)(react@19.3.1))(next@16.4.2(@babel/core@7.29.7)(@playwright/test@1.64.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.6)
@@ -334,17 +346,44 @@ importers:
         specifier: 8.71.1
         version: 8.71.1(eslint@10.12.0(jiti@2.7.0))(typescript@6.0.3)
 
+  packages/icons:
+    devDependencies:
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      eslint:
+        specifier: 10.12.0
+        version: 10.12.0(jiti@2.7.0)
+      oxfmt:
+        specifier: 0.72.0
+        version: 0.72.0
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      typescript-eslint:
+        specifier: 8.71.1
+        version: 8.71.1(eslint@10.12.0(jiti@2.7.0))(typescript@6.0.3)
+
+  packages/theme:
+    devDependencies:
+      oxfmt:
+        specifier: 0.72.0
+        version: 0.72.0
+
   packages/ui:
     dependencies:
+      '@cihub/utils':
+        specifier: workspace:*
+        version: link:../utils
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
       clsx:
         specifier: 2.1.1
         version: 2.1.1
-      motion:
-        specifier: 14.1.0
-        version: 14.1.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       tailwind-merge:
         specifier: 3.7.0
         version: 3.7.0
@@ -373,6 +412,9 @@ importers:
       jsdom:
         specifier: 30.1.2
         version: 30.1.2
+      motion:
+        specifier: 14.1.0
+        version: 14.1.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       oxfmt:
         specifier: 0.72.0
         version: 0.72.0
@@ -394,6 +436,21 @@ importers:
       vitest:
         specifier: 5.0.4
         version: 5.0.4(@types/node@24.19.2)(jsdom@30.1.2)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/utils:
+    devDependencies:
+      eslint:
+        specifier: 10.12.0
+        version: 10.12.0(jiti@2.7.0)
+      oxfmt:
+        specifier: 0.72.0
+        version: 0.72.0
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      typescript-eslint:
+        specifier: 8.71.1
+        version: 8.71.1(eslint@10.12.0(jiti@2.7.0))(typescript@6.0.3)
 
 packages:
 

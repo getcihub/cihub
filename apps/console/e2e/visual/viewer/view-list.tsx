@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 
-import { Badge, cn, Input } from "@cihub/ui";
+import { Badge } from "@cihub/ui/components/badge";
+import { Input } from "@cihub/ui/components/input";
+import { cn } from "@cihub/ui/lib/cn";
 import { type ViewDifference, type ViewStatus, partsOf } from "./data";
 
 export const STATUSES: {

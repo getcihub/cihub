@@ -7,7 +7,7 @@ import {
   startOfDay,
   startOfMonth,
   utcText,
-} from "@cihub/ui/utc-days";
+} from "@cihub/utils/utc-days";
 import type { Range } from "./queries";
 
 /** The history that a period of the Health can start in, as the server checks it: 13 months. */

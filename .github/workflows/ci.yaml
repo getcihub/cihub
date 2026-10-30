@@ -87,8 +87,8 @@ jobs:
       - name: Run linters
         run: mise run console:lint
 
-      - name: Run the linters of @cihub/ui
-        run: mise run ui:lint
+      - name: Run the linters of the shared packages
+        run: mise run packages:lint
 
   rust-test:
     if: >-
@@ -163,8 +163,8 @@ jobs:
           path: test-reports/console-unit/junit.xml
           if-no-files-found: error
 
-      - name: Run the unit tests of @cihub/ui
-        run: mise run ui:test
+      - name: Run the unit tests of the shared packages
+        run: mise run packages:test
 
       - name: Upload the JUnit report of @cihub/ui
         if: ${{ !cancelled() }}
@@ -348,7 +348,7 @@ jobs:
       - name: Check whether the console changed
         id: console
         run: |
-          if git diff --quiet HEAD^1 HEAD -- apps/console/ packages/ui/; then
+          if git diff --quiet HEAD^1 HEAD -- apps/console/ packages/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"

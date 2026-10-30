@@ -3,7 +3,8 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Suspense } from "react";
 
 import { ItemStateBadge } from "@/components/pr/item-state-badge";
-import { Alert, Prose } from "@cihub/ui";
+import { Alert } from "@cihub/ui/components/alert";
+import { Prose } from "@cihub/ui/components/prose";
 import { prReads } from "@/domain/pr/queries";
 import { isEnded } from "@/domain/pr/words";
 import { useSentNotice } from "@/hooks/use-sent-notice";

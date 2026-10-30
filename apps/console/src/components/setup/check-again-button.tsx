@@ -1,4 +1,4 @@
-import { Button } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
 
 /** "Check again", for an admin: the server reads the setup again; the button runs while the page waits for it. */
 export function CheckAgainButton({

@@ -6,7 +6,10 @@ import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";
 import { SetupRules } from "@/components/setup/setup-rules";
 import { SetupStateBadge } from "@/components/setup/setup-state-badge";
-import { Button, Card, CardHeader, CardHint, CardTitle, cn, Prose } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
+import { Card, CardHeader, CardHint, CardTitle } from "@cihub/ui/components/card";
+import { Prose } from "@cihub/ui/components/prose";
+import { cn } from "@cihub/ui/lib/cn";
 import type { RepoSetupRead } from "@/hooks/use-repo-setup";
 import { timeAgo } from "@/lib/time";
 

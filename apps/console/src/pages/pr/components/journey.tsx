@@ -1,6 +1,6 @@
 import type { Pr } from "@/client/types.gen";
 import { itemStateLabel } from "@/domain/pr/words";
-import { cn } from "@cihub/ui";
+import { cn } from "@cihub/ui/lib/cn";
 
 const STEPS = ["Submitted", "Queued", "Testing", "Merged"];
 

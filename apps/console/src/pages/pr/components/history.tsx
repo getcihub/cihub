@@ -1,5 +1,6 @@
 import type { Event } from "@/client/types.gen";
-import { cn, Prose } from "@cihub/ui";
+import { Prose } from "@cihub/ui/components/prose";
+import { cn } from "@cihub/ui/lib/cn";
 import { itemStateLabel } from "@/domain/pr/words";
 import { useNow } from "@/hooks/use-now";
 import { dateAndTime, timeOfDay } from "@/lib/time";

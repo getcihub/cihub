@@ -2,21 +2,17 @@ import { Link, getRouteApi } from "@tanstack/react-router";
 import { Fragment, type ReactNode, Suspense, useState } from "react";
 
 import type { ConfigFile, Repo, RepoDetail, SetupState } from "@/client/types.gen";
-import {
-  ArrowIcon,
-  buttonVariants,
-  Card,
-  CheckIcon,
-  cn,
-  ErrorIcon,
-  Prose,
-  SectionCount,
-  SectionHead,
-  SectionTitle,
-  Skeleton,
-  Spinner,
-  WarningIcon,
-} from "@cihub/ui";
+import { ArrowIcon } from "@cihub/icons/arrow";
+import { CheckIcon } from "@cihub/icons/check";
+import { ErrorIcon } from "@cihub/icons/error";
+import { WarningIcon } from "@cihub/icons/warning";
+import { buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { Prose } from "@cihub/ui/components/prose";
+import { SectionCount, SectionHead, SectionTitle } from "@cihub/ui/components/section";
+import { Skeleton } from "@cihub/ui/components/skeleton";
+import { Spinner } from "@cihub/ui/components/spinner";
+import { cn } from "@cihub/ui/lib/cn";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { ConfigText } from "@/components/setup/config-text";

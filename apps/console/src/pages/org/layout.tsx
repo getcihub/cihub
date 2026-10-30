@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, getRouteApi, useParams } from "@tanstack/react-router";
 
 import { Frame } from "@/components/frame/frame";
-import { Alert, AlertContent, AlertDescription, AlertTitle, ErrorIcon } from "@cihub/ui";
+import { ErrorIcon } from "@cihub/icons/error";
+import { Alert, AlertContent, AlertDescription, AlertTitle } from "@cihub/ui/components/alert";
 import { tabTitleOf } from "@/domain/pr/words";
 import { reposOptions } from "@/domain/setup/queries";
 import { type Me, membershipOf } from "@/domain/session/session";

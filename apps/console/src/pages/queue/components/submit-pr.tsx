@@ -3,7 +3,11 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { submitMutation } from "@/client/@tanstack/react-query.gen";
-import { Button, Input, Modal, ModalFooter, PlusIcon, Select } from "@cihub/ui";
+import { PlusIcon } from "@cihub/icons/plus";
+import { Button } from "@cihub/ui/components/button";
+import { Input } from "@cihub/ui/components/input";
+import { Modal, ModalFooter } from "@cihub/ui/components/modal";
+import { Select } from "@cihub/ui/components/select";
 import { refusalOf } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useQueueMutation } from "@/hooks/use-queue-mutation";

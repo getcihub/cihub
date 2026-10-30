@@ -1,10 +1,9 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/shadcn.css";
 @import "fumadocs-ui/css/preset.css";
-@import "@cihub/ui/tokens.css";
-@source "../../../../packages/ui/src";
+@import "@cihub/theme/tokens.css";
 
-/* shadcn.css gives the tokens of @cihub/ui to the colors of Fumadocs. */
+/* shadcn.css gives the tokens of @cihub/theme to the colors of Fumadocs. */
 :root {
   --popover: var(--card);
   --popover-foreground: var(--foreground);

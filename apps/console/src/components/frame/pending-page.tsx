@@ -1,4 +1,5 @@
-import { LoadingStatus, Page } from "@cihub/ui";
+import { Page } from "@cihub/ui/components/page";
+import { LoadingStatus } from "@cihub/ui/components/skeleton";
 import { TopBar, TopBarLogo } from "./frame";
 
 /** A page outside an organization reads its data (the sign-in, `/`): the top bar, empty, so that it does not jump. */

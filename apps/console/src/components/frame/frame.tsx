@@ -2,12 +2,12 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 
 import type { Queue } from "@/client/types.gen";
+import { Mark } from "@cihub/icons/brand/mark";
+import { CheckIcon } from "@cihub/icons/check";
+import { ExternalIcon } from "@cihub/icons/external";
+import { UpDownIcon } from "@cihub/icons/up-down";
+import { Avatar } from "@cihub/ui/components/avatar";
 import {
-  Avatar,
-  CheckIcon,
-  cn,
-  ExternalIcon,
-  Mark,
   Menu,
   MenuHint,
   MenuItem,
@@ -15,8 +15,8 @@ import {
   MenuLabel,
   MenuSeparator,
   MenuSub,
-  UpDownIcon,
-} from "@cihub/ui";
+} from "@cihub/ui/components/menu";
+import { cn } from "@cihub/ui/lib/cn";
 import { inQueueCount } from "@/domain/queue/counts";
 import { type Me, membershipOf } from "@/domain/session/session";
 import { useSignOut } from "@/hooks/use-sign-out";

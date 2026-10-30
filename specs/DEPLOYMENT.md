@@ -285,8 +285,8 @@ checksums for Linux and macOS, on x64 and arm64; after a version change, `mise l
 ## Project CI
 
 `.github/workflows/ci.yaml` runs its jobs in parallel: `Rust Lint` (`mise run rust:lint`, then `mise run
-console:generate-check`), `Console Lint` (`mise run console:lint`, then `mise run ui:lint`), `Rust Test` (`mise run
-rust:test`), `Console Test` (`mise run console:test`), `Website` (`mise run website:lint`, then `mise run website:test`), `Console E2E` (`mise run console:e2e`), `Rust Integration` (`mise run rust:integration`), `Rust Coverage` (`mise
+console:generate-check`), `Console Lint` (`mise run console:lint`, then `mise run packages:lint`), `Rust Test` (`mise run
+rust:test`), `Console Test` (`mise run console:test`, then `mise run packages:test`), `Website` (`mise run website:lint`, then `mise run website:test`), `Console E2E` (`mise run console:e2e`), `Rust Integration` (`mise run rust:integration`), `Rust Coverage` (`mise
 run rust:cover`), `Workflow Lint` (`mise run workflows:lint`), `Helm Lint` (`mise run helm:lint`, then `mise run
 helm:generate-check`), `Helm Unittest` (`mise run helm:unittest`) and `Smoke` (`mise run helm:smoke`). The last job, `Build
 Success`, is the required status of the `main` branch: it fails when one of these jobs failed or was cancelled.

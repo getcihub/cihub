@@ -33,9 +33,9 @@ Markdown. A change keeps these URLs working; `mise run website:test` checks them
 - A page answers one task, lists what it needs first, and gives complete commands to copy.
 - A text that the repository already holds is included, not copied: `<include>../../../../INSTALL.md</include>`. Its
   links are absolute, so that they work on GitHub and here.
-- The colors, the logo and the icons come from `@cihub/ui` (`packages/ui/AGENTS.md`): `src/app/global.css`
-  imports its tokens and gives them to the colors of Fumadocs; it does not import `theme.css`, whose scales would
-  replace the ones that Fumadocs uses.
+- The colors come from `@cihub/theme`, the logo and the icons from `@cihub/icons` (`packages/ui/AGENTS.md`):
+  `src/app/global.css` imports `tokens.css` and gives the tokens to the colors of Fumadocs; it does not import
+  `tailwind.css`, whose scales would replace the ones that Fumadocs uses. The website does not use `@cihub/ui`.
 - Same vocabulary as the rest of the repository: a reason, a state or a setting is named as `specs/DOMAIN.md` and
   `specs/CONFIGURATION.md` name it.
 

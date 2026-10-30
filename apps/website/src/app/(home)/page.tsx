@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { JsonLd } from "@/components/json-ld";
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 import { repositoryUrl, siteDescription, siteName, siteUrl, version } from "@/lib/shared";
 
 import { CopyButton } from "./copy-button";

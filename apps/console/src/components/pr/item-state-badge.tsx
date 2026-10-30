@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 
-import { Badge } from "@cihub/ui";
+import { Badge } from "@cihub/ui/components/badge";
 import { itemStateLabel } from "@/domain/pr/words";
 
 type Tone = NonNullable<ComponentProps<typeof Badge>["tone"]>;

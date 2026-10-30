@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router";
 
-import { Button, buttonVariants, Card, EmptyState, LostIllustration, Page } from "@cihub/ui";
+import { Button, buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { LostIllustration } from "@cihub/ui/components/illustrations";
+import { Page } from "@cihub/ui/components/page";
 import { type Me, membershipOf } from "@/domain/session/session";
 import { useSignOut } from "@/hooks/use-sign-out";
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 import { changelogUrl, repositoryUrl, version } from "@/lib/shared";
 
 export function SiteFooter() {

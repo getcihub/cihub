@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
-import { Alert, cn, ErrorIcon, Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
+import { ErrorIcon } from "@cihub/icons/error";
+import { Alert } from "@cihub/ui/components/alert";
+import { cn } from "@cihub/ui/lib/cn";
 
 export function Brand({ className }: { className?: string }) {
   return (

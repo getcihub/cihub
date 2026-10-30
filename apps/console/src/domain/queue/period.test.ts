@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DAY_MS, HOUR_MS } from "@cihub/ui/utc-days";
+import { DAY_MS, HOUR_MS } from "@cihub/utils/utc-days";
 import { grainOf, hasPeriodBefore, periodOfSearch, presetsOf, rangeText, spanText } from "./period";
 
 // A Thursday.

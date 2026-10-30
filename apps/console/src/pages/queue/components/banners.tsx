@@ -1,15 +1,10 @@
 import type { ComponentProps, ReactNode } from "react";
 
 import type { Queue } from "@/client/types.gen";
-import {
-  Alert,
-  AlertContent,
-  AlertDescription,
-  AlertTitle,
-  DrainIcon,
-  PauseIcon,
-  WarningIcon,
-} from "@cihub/ui";
+import { DrainIcon } from "@cihub/icons/drain";
+import { PauseIcon } from "@cihub/icons/pause";
+import { WarningIcon } from "@cihub/icons/warning";
+import { Alert, AlertContent, AlertDescription, AlertTitle } from "@cihub/ui/components/alert";
 import { timeAgo } from "@/lib/time";
 
 function Banner({

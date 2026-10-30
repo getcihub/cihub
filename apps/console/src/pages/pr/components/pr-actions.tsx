@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { cancelMutation, restartMutation } from "@/client/@tanstack/react-query.gen";
 import type { Pr } from "@/client/types.gen";
-import { Button, Modal, ModalDescription, ModalFooter } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
+import { Modal, ModalDescription, ModalFooter } from "@cihub/ui/components/modal";
 import { refusalOf } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useQueueMutation } from "@/hooks/use-queue-mutation";

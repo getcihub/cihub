@@ -1,16 +1,13 @@
 import type { ReactNode } from "react";
 
 import type { RepoDetail } from "@/client/types.gen";
-import {
-  ArrowIcon,
-  buttonVariants,
-  Card,
-  EmptyState,
-  FailureIllustration,
-  Prose,
-  QueueIllustration,
-  WarningIcon,
-} from "@cihub/ui";
+import { ArrowIcon } from "@cihub/icons/arrow";
+import { WarningIcon } from "@cihub/icons/warning";
+import { buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { FailureIllustration, QueueIllustration } from "@cihub/ui/components/illustrations";
+import { Prose } from "@cihub/ui/components/prose";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
 import { CheckAgainButton } from "@/components/setup/check-again-button";
 import { FirstCommandWait } from "@/components/setup/first-command-wait";

@@ -2,7 +2,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { m, useReducedMotion } from "motion/react";
 import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
-import { cn, transitions, useDialog } from "@cihub/ui";
+import { transitions } from "@cihub/ui/components/motion";
+import { useDialog } from "@cihub/ui/hooks/use-dialog";
+import { cn } from "@cihub/ui/lib/cn";
 import type { QueuePath } from "@/domain/queue/queries";
 
 interface Props {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { PageHeader, PageLocation, PageTitle } from "@cihub/ui";
+import { PageHeader, PageLocation, PageTitle } from "@cihub/ui/components/page";
 
 /** The head of a list: where it is, then its title, and its actions on the right. */
 export function OverviewHead({

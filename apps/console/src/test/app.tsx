@@ -5,7 +5,7 @@ import { vi } from "vitest";
 
 import { client } from "@/client/client.gen";
 import type { ErrorCode } from "@/client/types.gen";
-import { MotionProvider } from "@cihub/ui";
+import { MotionProvider } from "@cihub/ui/components/motion";
 import { sendCsrfToken } from "@/domain/session/session";
 import { routeTree } from "@/routeTree.gen";
 

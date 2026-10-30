@@ -2,18 +2,14 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { updateQueueMutation } from "@/client/@tanstack/react-query.gen";
 import type { Queue, RequestedQueueState } from "@/client/types.gen";
-import {
-  Button,
-  CheckIcon,
-  DrainIcon,
-  Modal,
-  ModalDescription,
-  ModalFooter,
-  PauseIcon,
-  PlayIcon,
-  Spinner,
-  Toast,
-} from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
+import { DrainIcon } from "@cihub/icons/drain";
+import { PauseIcon } from "@cihub/icons/pause";
+import { PlayIcon } from "@cihub/icons/play";
+import { Button } from "@cihub/ui/components/button";
+import { Modal, ModalDescription, ModalFooter } from "@cihub/ui/components/modal";
+import { Spinner } from "@cihub/ui/components/spinner";
+import { Toast } from "@cihub/ui/components/toast";
 import { refusalOf } from "@/domain/queue/actions";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useQueueMutation } from "@/hooks/use-queue-mutation";

@@ -30,20 +30,20 @@ CIHUB_DATABASE_URL = "{{env.DATABASE_URL}}"
 helm_lint_values = "helm/cihub/ci/lint-values.yaml"
 
 [tasks.fmt]
-description = "Format the Rust code, the console, the website and @cihub/ui"
-depends = ["rust:fmt", "console:fmt", "website:fmt", "ui:fmt"]
+description = "Format the Rust code, the console, the website and the shared packages"
+depends = ["rust:fmt", "console:fmt", "website:fmt", "packages:fmt"]
 
 [tasks.lint]
-description = "Lint the Rust code, the console, the website and @cihub/ui"
-depends = ["rust:lint", "console:lint", "website:lint", "ui:lint"]
+description = "Lint the Rust code, the console, the website and the shared packages"
+depends = ["rust:lint", "console:lint", "website:lint", "packages:lint"]
 
 [tasks.test]
-description = "Run the unit tests of the Rust code, of the console and of @cihub/ui"
-depends = ["rust:test", "console:test", "ui:test"]
+description = "Run the unit tests of the Rust code, of the console and of the shared packages"
+depends = ["rust:test", "console:test", "packages:test"]
 
 [tasks."test:all"]
 description = "Run every test suite: unit, integration, browser and website"
-depends = ["rust:test", "rust:integration", "console:test", "ui:test", "console:e2e", "website:test"]
+depends = ["rust:test", "rust:integration", "console:test", "packages:test", "console:e2e", "website:test"]
 
 [tasks.check]
 description = "Run lint, then test"
@@ -126,7 +126,7 @@ description = "Build the image, then start Postgres, cihub-server, the observabi
 run = 'COMPOSE_PROFILES="server,observability${COMPOSE_PROFILES:+,$COMPOSE_PROFILES}" docker compose up --detach --wait --build'
 
 [tasks."pnpm:install"]
-description = "Install the dependencies of the console, the website and @cihub/ui, as pnpm-lock.yaml gives them"
+description = "Install the dependencies of the console, the website and the shared packages, as pnpm-lock.yaml gives them"
 run = "pnpm install --frozen-lockfile"
 
 [tasks."console:fmt"]
@@ -218,23 +218,20 @@ depends = ["website:build"]
 dir = "apps/website"
 run = "pnpm test"
 
-[tasks."ui:fmt"]
-description = "Format @cihub/ui with oxfmt"
+[tasks."packages:fmt"]
+description = "Format the shared packages (@cihub/theme, @cihub/icons, @cihub/utils, @cihub/ui) with oxfmt"
 depends = ["pnpm:install"]
-dir = "packages/ui"
-run = "pnpm format"
+run = "pnpm --recursive --filter './packages/*' run format"
 
-[tasks."ui:test"]
-description = "Run the unit tests of @cihub/ui"
+[tasks."packages:test"]
+description = "Run the unit tests of the shared packages"
 depends = ["pnpm:install"]
-dir = "packages/ui"
-run = "pnpm test"
+run = "pnpm --recursive --filter './packages/*' --if-present run test"
 
-[tasks."ui:lint"]
-description = "Type check, lint and check the format of @cihub/ui"
+[tasks."packages:lint"]
+description = "Type check, lint and check the format of the shared packages"
 depends = ["pnpm:install"]
-dir = "packages/ui"
-run = "pnpm lint"
+run = "pnpm --recursive --filter './packages/*' run lint"
 
 [tasks."helm:lint"]
 description = "Lint the Helm chart"

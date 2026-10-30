@@ -1,4 +1,4 @@
-import { cn } from "@cihub/ui";
+import { cn } from "@cihub/ui/lib/cn";
 
 /** The text of a configuration file that is not valid, with the line of its error marked. */
 export function ConfigText({ text, errorLine }: { text: string; errorLine: number | null }) {

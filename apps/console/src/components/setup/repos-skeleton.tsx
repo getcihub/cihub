@@ -1,5 +1,7 @@
 import { OverviewHead } from "@/components/queue/overview-head";
-import { Card, LoadingStatus, Page, Skeleton } from "@cihub/ui";
+import { Card } from "@cihub/ui/components/card";
+import { Page } from "@cihub/ui/components/page";
+import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
 
 /** The repositories of an organization while they load: the head of the page, then the shapes of six rows. */
 export function ReposSkeleton({ org }: { org: string }) {

@@ -1,6 +1,6 @@
 import { getRouteApi } from "@tanstack/react-router";
 
-import { LoadingStatus, Skeleton } from "@cihub/ui";
+import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
 import { DrawerFrame, DrawerSection } from "@/pages/pr/components/drawer-frame";
 import { RunSectionSkeleton } from "@/pages/pr/components/run-section";
 

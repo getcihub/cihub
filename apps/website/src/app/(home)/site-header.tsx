@@ -1,7 +1,7 @@
 import { ThemeSwitch } from "fumadocs-ui/layouts/shared/slots/theme-switch";
 import Link from "next/link";
 
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 import { changelogUrl, repositoryUrl } from "@/lib/shared";
 
 import { GitHubIcon } from "./icons";

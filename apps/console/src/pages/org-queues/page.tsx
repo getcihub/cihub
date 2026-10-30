@@ -4,20 +4,15 @@ import { useDeferredValue, useEffect, useRef, useState } from "react";
 
 import { getUserOptions, syncUserMutation } from "@/client/@tanstack/react-query.gen";
 import type { Repo, RepoList as RepoListOfOrg, User } from "@/client/types.gen";
-import {
-  Button,
-  buttonVariants,
-  Card,
-  EmptyState,
-  Input,
-  Page,
-  QueueIllustration,
-  SearchIcon,
-  SectionCount,
-  SectionHead,
-  SectionTitle,
-  Spinner,
-} from "@cihub/ui";
+import { SearchIcon } from "@cihub/icons/search";
+import { Button, buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { QueueIllustration } from "@cihub/ui/components/illustrations";
+import { Input } from "@cihub/ui/components/input";
+import { Page } from "@cihub/ui/components/page";
+import { SectionCount, SectionHead, SectionTitle } from "@cihub/ui/components/section";
+import { Spinner } from "@cihub/ui/components/spinner";
 import { MinePrs } from "@/components/mine/mine";
 import { OverviewHead } from "@/components/queue/overview-head";
 import { Failure } from "@/components/session/parts";

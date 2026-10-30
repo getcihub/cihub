@@ -2,7 +2,8 @@ import { Outlet, getRouteApi } from "@tanstack/react-router";
 import { Suspense } from "react";
 
 import { Spotlight } from "@/components/mine/mine";
-import { Card, Page } from "@cihub/ui";
+import { Card } from "@cihub/ui/components/card";
+import { Page } from "@cihub/ui/components/page";
 import { ranksOf } from "@/domain/queue/queries";
 import { useMinePrs } from "@/hooks/use-mine-prs";
 import { periodOfSearch } from "@/domain/queue/period";

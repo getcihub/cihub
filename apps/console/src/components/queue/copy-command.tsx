@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
-import { Button, CopyIcon, Toast } from "@cihub/ui";
+import { CopyIcon } from "@cihub/icons/copy";
+import { Button } from "@cihub/ui/components/button";
+import { Toast } from "@cihub/ui/components/toast";
 
 /** The command that submits a PR in a comment. */
 export const COMMAND = "/cihub merge";

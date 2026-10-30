@@ -1,6 +1,7 @@
 import type { Queue } from "@/client/types.gen";
 import { COMMAND, CopyCommand } from "@/components/queue/copy-command";
-import { EmptyState, QueueIllustration } from "@cihub/ui";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { QueueIllustration } from "@cihub/ui/components/illustrations";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useRepoPermission } from "@/hooks/use-repo-permission";
 import { timeAgo } from "@/lib/time";

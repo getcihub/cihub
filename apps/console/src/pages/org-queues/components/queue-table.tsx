@@ -3,7 +3,9 @@ import { useRef } from "react";
 
 import type { Queue, Repo, SetupState } from "@/client/types.gen";
 import { QueueStateBadge } from "@/components/queue/queue-state-badge";
-import { Card, cn, useFlip } from "@cihub/ui";
+import { Card } from "@cihub/ui/components/card";
+import { useFlip } from "@cihub/ui/hooks/use-flip";
+import { cn } from "@cihub/ui/lib/cn";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { timeAgo } from "@/lib/time";
 

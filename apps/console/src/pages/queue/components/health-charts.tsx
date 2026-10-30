@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import type { HealthBucket } from "@/client/types.gen";
 import type { Grain } from "@/domain/queue/period";
-import { cn } from "@cihub/ui";
+import { cn } from "@cihub/ui/lib/cn";
 import { minutesOf } from "./health-format";
 
 /** The rounded tops of the axis: the largest value of a chart reaches one of them. */

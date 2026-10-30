@@ -1,9 +1,9 @@
-/* The stylesheet of the console: the design system of @cihub/ui, and the utilities and base styles of the console
-   only. A component uses the utilities (`bg-card`, `text-muted-foreground`), never a color, a size or a radius of
-   its own. */
+/* The stylesheet of the console: the tokens and the Tailwind theme of @cihub/theme, the classes of the components
+   of @cihub/ui, and the utilities and base styles of the console only. A component uses the utilities (`bg-card`,
+   `text-muted-foreground`), never a color, a size or a radius of its own. */
 @import "tailwindcss";
-@import "@cihub/ui/tokens.css";
-@import "@cihub/ui/theme.css";
+@import "@cihub/theme/tokens.css";
+@import "@cihub/theme/tailwind.css";
 @source "../../../../packages/ui/src";
 
 /* index.html sets `data-theme` before the first paint, from the choice of the person or of their system. */

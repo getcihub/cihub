@@ -1,6 +1,6 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 
 import { changelogUrl, repositoryUrl, siteName } from "./shared";
 

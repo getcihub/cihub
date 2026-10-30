@@ -1,7 +1,8 @@
 import type { ComponentProps } from "react";
 
 import type { SetupState } from "@/client/types.gen";
-import { Badge, Spinner } from "@cihub/ui";
+import { Badge } from "@cihub/ui/components/badge";
+import { Spinner } from "@cihub/ui/components/spinner";
 
 type Tone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 

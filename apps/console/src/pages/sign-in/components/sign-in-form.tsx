@@ -1,6 +1,8 @@
 import { useState } from "react";
 
-import { ArrowIcon, buttonVariants, Spinner } from "@cihub/ui";
+import { ArrowIcon } from "@cihub/icons/arrow";
+import { buttonVariants } from "@cihub/ui/components/button";
+import { Spinner } from "@cihub/ui/components/spinner";
 import { signInAddress } from "@/domain/session/session";
 import { Failure, Lead, Note, Title } from "@/components/session/parts";
 

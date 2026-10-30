@@ -10,10 +10,13 @@ FROM docker.io/library/node@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca9
 WORKDIR /src
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY apps/console/package.json apps/console/
+COPY packages/theme/package.json packages/theme/
+COPY packages/icons/package.json packages/icons/
+COPY packages/utils/package.json packages/utils/
 COPY packages/ui/package.json packages/ui/
 RUN corepack enable && pnpm install --frozen-lockfile --filter @cihub/console...
 COPY apps/console/ apps/console/
-COPY packages/ui/ packages/ui/
+COPY packages/ ./packages/
 RUN pnpm --dir apps/console build
 
 # rust:1.98.1-slim-bookworm

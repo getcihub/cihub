@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { CheckIcon } from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
 import { Brand } from "@/components/session/parts";
 import { Timeline } from "./timeline";
 

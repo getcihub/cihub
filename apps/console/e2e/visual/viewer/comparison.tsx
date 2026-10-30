@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 
-import { Badge } from "@cihub/ui";
+import { Badge } from "@cihub/ui/components/badge";
 import type { ViewDifference } from "./data";
 
 export type Mode = "side" | "split" | "blend" | "changes";

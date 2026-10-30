@@ -1,6 +1,6 @@
 import { Fragment, useRef } from "react";
 
-import { Input } from "@cihub/ui";
+import { Input } from "@cihub/ui/components/input";
 
 const CODE_LENGTH = 8;
 

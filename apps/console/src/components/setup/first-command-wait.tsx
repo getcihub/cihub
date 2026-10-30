@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { cn } from "@cihub/ui";
+import { cn } from "@cihub/ui/lib/cn";
 
 /** The page waits for the first command on a repository: a beacon, and what moves on once it comes. */
 export function FirstCommandWait({ className, children }: { className?: string; children: ReactNode }) {

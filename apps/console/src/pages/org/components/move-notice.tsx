@@ -2,7 +2,8 @@ import { hashKey, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
-import { Button, Toast } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
+import { Toast } from "@cihub/ui/components/toast";
 import { minePrsOf, minePrsReads } from "@/domain/mine/queries";
 import { whereAmong } from "@/domain/pr/words";
 import { useMe } from "@/hooks/use-me";

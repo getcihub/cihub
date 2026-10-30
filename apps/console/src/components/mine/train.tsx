@@ -1,5 +1,6 @@
 import type { ItemState, Pr } from "@/client/types.gen";
-import { CheckIcon, cn } from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
+import { cn } from "@cihub/ui/lib/cn";
 import { itemStateLabel } from "@/domain/pr/words";
 import { plural } from "@/lib/text";
 

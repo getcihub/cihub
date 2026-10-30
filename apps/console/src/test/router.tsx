@@ -2,7 +2,7 @@ import { RouterProvider, createMemoryHistory, createRootRoute, createRouter } fr
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-import { MotionProvider } from "@cihub/ui";
+import { MotionProvider } from "@cihub/ui/components/motion";
 
 /** Renders `ui` in a router of its own, so that its links work. */
 export function renderInRouter(ui: ReactNode) {

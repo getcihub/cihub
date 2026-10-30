@@ -3,10 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css",
-    "./theme.css": "./src/theme.css",
-    "./utc-days": "./src/utc-days.ts"
+    "./components/*": "./src/components/*.tsx",
+    "./hooks/*": "./src/hooks/*.ts",
+    "./lib/*": "./src/lib/*.ts"
   },
   "scripts": {
     "lint": "tsc --noEmit && eslint . && oxfmt --check",
@@ -14,13 +13,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@cihub/utils": "workspace:*",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
-    "motion": "14.1.0",
     "tailwind-merge": "3.7.0"
   },
   "peerDependencies": {
-    "react": "19.3.1"
+    "motion": "^14",
+    "react": "^19"
   },
   "devDependencies": {
     "@testing-library/dom": "10.4.2",
@@ -31,6 +31,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "eslint": "10.12.0",
     "jsdom": "30.1.2",
+    "motion": "14.1.0",
     "oxfmt": "0.72.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",

@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { approveDeviceCodeMutation, denyDeviceCodeMutation } from "@/client/@tanstack/react-query.gen";
 import { Failure, Lead, Note, Title } from "@/components/session/parts";
-import { Alert, Button } from "@cihub/ui";
+import { Alert } from "@cihub/ui/components/alert";
+import { Button } from "@cihub/ui/components/button";
 import { failureOf, isProblem, problemOf } from "@/domain/problem";
 import { userCodeOf } from "@/domain/session/device";
 import { CodeBoxes } from "./code-boxes";

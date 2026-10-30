@@ -1,7 +1,7 @@
 import type { ComponentProps } from "react";
 
 import type { Queue } from "@/client/types.gen";
-import { Badge } from "@cihub/ui";
+import { Badge } from "@cihub/ui/components/badge";
 
 type Tone = NonNullable<ComponentProps<typeof Badge>["tone"]>;
 

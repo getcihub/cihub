@@ -1,5 +1,10 @@
 import type { RepoDetail, RuleCheck } from "@/client/types.gen";
-import { Alert, AlertContent, AlertTitle, CheckIcon, cn, ErrorIcon, Prose, WarningIcon } from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
+import { ErrorIcon } from "@cihub/icons/error";
+import { WarningIcon } from "@cihub/icons/warning";
+import { Alert, AlertContent, AlertTitle } from "@cihub/ui/components/alert";
+import { Prose } from "@cihub/ui/components/prose";
+import { cn } from "@cihub/ui/lib/cn";
 
 /** The four rules that a queue needs, as the server read them; the link to change them on the SCM. */
 export function SetupRules({ repo, isChecking }: { repo: RepoDetail; isChecking: boolean }) {

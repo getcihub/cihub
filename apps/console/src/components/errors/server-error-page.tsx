@@ -1,7 +1,8 @@
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { Card, Page } from "@cihub/ui";
+import { Card } from "@cihub/ui/components/card";
+import { Page } from "@cihub/ui/components/page";
 import { ServerError } from "./server-error";
 
 /**

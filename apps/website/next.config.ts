@@ -14,8 +14,8 @@ const config: NextConfig = {
   reactStrictMode: true,
   // The root of the repository: a page includes INSTALL.md, outside apps/website/.
   turbopack: { root: join(import.meta.dirname, "..", "..") },
-  // @cihub/ui is TypeScript source, compiled by each app.
-  transpilePackages: ["@cihub/ui"],
+  // @cihub/icons is TypeScript source, compiled by each app.
+  transpilePackages: ["@cihub/icons"],
   headers() {
     return Promise.resolve([
       { source: "/schema/:path*", headers: machineFileHeaders("application/schema+json") },

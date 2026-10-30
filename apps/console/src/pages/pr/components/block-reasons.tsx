@@ -1,5 +1,6 @@
 import type { Pr } from "@/client/types.gen";
-import { cn, Prose } from "@cihub/ui";
+import { Prose } from "@cihub/ui/components/prose";
+import { cn } from "@cihub/ui/lib/cn";
 import { type ConditionNode, conditionTree } from "@/domain/pr/conditions";
 import { blockSentence } from "@/domain/pr/words";
 

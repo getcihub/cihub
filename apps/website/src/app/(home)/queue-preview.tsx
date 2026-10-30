@@ -1,4 +1,4 @@
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 
 /** The queue of a branch as the dashboard shows it, read from the bottom like `git log --graph`. */
 export function QueuePreview() {

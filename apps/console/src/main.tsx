@@ -3,7 +3,7 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { MotionProvider } from "@cihub/ui";
+import { MotionProvider } from "@cihub/ui/components/motion";
 import { sendCsrfToken } from "@/domain/session/session";
 import { createQueryClient } from "@/lib/query-client";
 import "@/styles/globals.css";

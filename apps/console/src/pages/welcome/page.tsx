@@ -4,7 +4,10 @@ import { type ReactNode, useEffect } from "react";
 
 import { syncUserMutation } from "@/client/@tanstack/react-query.gen";
 import type { OrgList } from "@/client/types.gen";
-import { ArrowIcon, Avatar, Button, buttonVariants, cn } from "@cihub/ui";
+import { ArrowIcon } from "@cihub/icons/arrow";
+import { Avatar } from "@cihub/ui/components/avatar";
+import { Button, buttonVariants } from "@cihub/ui/components/button";
+import { cn } from "@cihub/ui/lib/cn";
 import { COMMAND } from "@/components/queue/copy-command";
 import { Brand, Failure, Note } from "@/components/session/parts";
 import { readsOfMe } from "@/domain/session/session";

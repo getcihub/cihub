@@ -1,0 +1,16 @@
+{
+  "name": "@cihub/theme",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./tailwind.css": "./tailwind.css"
+  },
+  "scripts": {
+    "lint": "oxfmt --check",
+    "format": "oxfmt"
+  },
+  "devDependencies": {
+    "oxfmt": "0.72.0"
+  }
+}

@@ -1,4 +1,5 @@
-import { Card, LoadingStatus, Skeleton } from "@cihub/ui";
+import { Card } from "@cihub/ui/components/card";
+import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
 
 /** The cards of the queues while they load: four, in the grid of `QueueCards`. */
 export function QueueCardsSkeleton() {

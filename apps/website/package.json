@@ -13,7 +13,8 @@
     "test": "mkdir -p ../../test-reports/website && node --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=../../test-reports/website/junit.xml tests/*.test.ts"
   },
   "dependencies": {
-    "@cihub/ui": "workspace:*",
+    "@cihub/icons": "workspace:*",
+    "@cihub/theme": "workspace:*",
     "fumadocs-core": "16.17.7",
     "fumadocs-mdx": "15.4.8",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.7",

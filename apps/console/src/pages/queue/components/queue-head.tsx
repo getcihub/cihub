@@ -1,6 +1,7 @@
 import type { Queue } from "@/client/types.gen";
 import { QueueStateBadge } from "@/components/queue/queue-state-badge";
-import { PageHeader, PageLocation, PageTitle, Toast } from "@cihub/ui";
+import { PageHeader, PageLocation, PageTitle } from "@cihub/ui/components/page";
+import { Toast } from "@cihub/ui/components/toast";
 import type { QueuePath } from "@/domain/queue/queries";
 import { useRepoPermission } from "@/hooks/use-repo-permission";
 import type { SentNotice } from "@/hooks/use-sent-notice";

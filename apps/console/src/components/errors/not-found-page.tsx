@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router";
 
-import { buttonVariants, Card, EmptyState, LostIllustration, Page } from "@cihub/ui";
+import { buttonVariants } from "@cihub/ui/components/button";
+import { Card } from "@cihub/ui/components/card";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { LostIllustration } from "@cihub/ui/components/illustrations";
+import { Page } from "@cihub/ui/components/page";
 
 /** An address that leads nowhere in CIHub. */
 export function NotFoundPage() {

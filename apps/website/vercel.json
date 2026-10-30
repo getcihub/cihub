@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- . ../../packages/ui ../../schema ../../.release-please-manifest.json ../../pnpm-lock.yaml || exit 1"
+  "ignoreCommand": "git diff --quiet \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" HEAD -- . ../../packages/theme ../../packages/icons ../../schema ../../.release-please-manifest.json ../../pnpm-lock.yaml || exit 1"
 }

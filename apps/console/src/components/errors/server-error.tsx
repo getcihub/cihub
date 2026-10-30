@@ -2,7 +2,9 @@ import { useQueryClient, useQueryErrorResetBoundary } from "@tanstack/react-quer
 import { type ErrorComponentProps, useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import { Button, EmptyState, FailureIllustration } from "@cihub/ui";
+import { Button } from "@cihub/ui/components/button";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { FailureIllustration } from "@cihub/ui/components/illustrations";
 import { failureOf, isProblem, problemOf } from "@/domain/problem";
 import { forgetMe, readMe } from "@/domain/session/session";
 

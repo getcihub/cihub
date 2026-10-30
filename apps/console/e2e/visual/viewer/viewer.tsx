@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { Badge, Button, Card, CardHeader, CardTitle, cn, EmptyState, Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
+import { Badge } from "@cihub/ui/components/badge";
+import { Button } from "@cihub/ui/components/button";
+import { Card, CardHeader, CardTitle } from "@cihub/ui/components/card";
+import { EmptyState } from "@cihub/ui/components/empty-state";
+import { cn } from "@cihub/ui/lib/cn";
 import { toggleTheme } from "@/lib/preferences";
 import { Comparison, type Mode, type Side, type Size, isForViewer } from "./comparison";
 import { type ViewDifference, type ViewerData, partsOf } from "./data";

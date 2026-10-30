@@ -3,7 +3,9 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { CheckHealth, HealthTotals, QueueHealth, StateTime } from "@/client/types.gen";
-import { Card, CardHeader, CardHint, CardTitle, cn, LoadingStatus, Skeleton } from "@cihub/ui";
+import { Card, CardHeader, CardHint, CardTitle } from "@cihub/ui/components/card";
+import { LoadingStatus, Skeleton } from "@cihub/ui/components/skeleton";
+import { cn } from "@cihub/ui/lib/cn";
 import {
   type HealthPeriod,
   type PeriodWords,

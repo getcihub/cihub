@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Mark } from "@cihub/ui";
+import { Mark } from "@cihub/icons/brand/mark";
 
 // The illustrations of the documentation. They draw with the tokens of global.css, so that they follow the theme.
 

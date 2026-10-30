@@ -2,7 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { useRef } from "react";
 
 import type { Pr, Queue } from "@/client/types.gen";
-import { CardHeader, CardHint, CardTitle, cardVariants, cn, Prose, useFlip } from "@cihub/ui";
+import { CardHeader, CardHint, CardTitle, cardVariants } from "@cihub/ui/components/card";
+import { Prose } from "@cihub/ui/components/prose";
+import { useFlip } from "@cihub/ui/hooks/use-flip";
+import { cn } from "@cihub/ui/lib/cn";
 import { etaOf, whereAmong, whereOf } from "@/domain/pr/words";
 import { plural } from "@/lib/text";
 import { Train } from "./train";

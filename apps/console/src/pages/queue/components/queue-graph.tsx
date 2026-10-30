@@ -1,7 +1,10 @@
 import { Fragment, useRef, useSyncExternalStore } from "react";
 
 import type { Graph, GraphRun, Pr, Queue } from "@/client/types.gen";
-import { CardHeader, CardHint, CardTitle, cardVariants, CheckIcon, cn, useFlip } from "@cihub/ui";
+import { CheckIcon } from "@cihub/icons/check";
+import { CardHeader, CardHint, CardTitle, cardVariants } from "@cihub/ui/components/card";
+import { useFlip } from "@cihub/ui/hooks/use-flip";
+import { cn } from "@cihub/ui/lib/cn";
 import { itemStateLabel } from "@/domain/pr/words";
 import { isStreamOpen, onStreamOpenChanged } from "@/domain/queue/live";
 import { shortSha } from "@/lib/text";

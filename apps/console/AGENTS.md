@@ -20,9 +20,9 @@ does not also check.
   simulator (`cihub-scm`, feature `sim`), never the real SCM.
 - Tailwind CSS 4 for every style, with `class-variance-authority` for the variants of a component and `clsx` with
   `tailwind-merge` for `cn()` (decided October 12, 2026, by the project lead). No CSS module, no CSS file other
-  than `src/styles/globals.css` and the ones of `@cihub/ui`.
+  than `src/styles/globals.css` and the ones of `@cihub/theme`.
 - `motion` for the animations (decided October 12, 2026, by the project lead), through `m.*` components under
-  `LazyMotion strict` (`motion.tsx` of `@cihub/ui`): a `motion.*` component throws.
+  `LazyMotion strict` (`components/motion.tsx` of `@cihub/ui`): a `motion.*` component throws.
 - oxfmt formats every file of the dashboard (`.oxfmtrc.json`) and sorts the Tailwind classes, in `className`,
   `cn()` and `cva()` (decided October 12, 2026, by the project lead). Its version is exact: a new one can change
   the format, so its update shows the files that it changes. It skips the generated files (`src/client/`,
@@ -47,8 +47,10 @@ imported through `@/` (`@/domain/queue/queries`).
 and its test sit side by side. A component or a hook that only one page uses sits in the folder of that page; it
 moves to `components/` or `hooks/` when a second page needs it. Every file name is in kebab-case
 (`queue-graph.tsx`, `use-org-queues.ts`). There is no barrel file (`index.ts`): an import names the file.
-The components of the design system, their hooks, `cn()`, the icons and the logo are in `@cihub/ui`
-(`packages/ui/AGENTS.md`); every folder imports them from `@cihub/ui`, and the UTC days from `@cihub/ui/utc-days`.
+The shared packages of `packages/` (`packages/ui/AGENTS.md`) give the rest, each imported by the path of its file:
+the components, their hooks and `cn()` from `@cihub/ui` (`@cihub/ui/components/button`, `@cihub/ui/lib/cn`), the
+icons and the logo from `@cihub/icons` (`@cihub/icons/pause`, `@cihub/icons/brand/mark`), the UTC days from
+`@cihub/utils/utc-days`, and the tokens and the Tailwind theme from `@cihub/theme`.
 
 ## Pages
 
@@ -147,8 +149,8 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
 
 ## Interface
 
-- The design system is `@cihub/ui`: its `tokens.css` holds the tokens of the mockups v5 in two themes
-  (`data-theme`), and its `theme.css` the Tailwind theme that makes them utilities. `src/styles/globals.css`
+- The look comes from `@cihub/theme`: its `tokens.css` holds the tokens of the mockups v5 in two themes
+  (`data-theme`), and its `tailwind.css` the Tailwind theme that makes them utilities. `src/styles/globals.css`
   imports both, then adds the utilities and the base styles of the console only. The theme holds these tokens only: a color, a radius, a shadow, a
   font or a size of the Tailwind palette does not exist, so `bg-white` or `text-gray-500` is a build without the
   class.
@@ -157,7 +159,7 @@ A state that the page shares with others comes from `components/` (`NotFoundPage
   from the tokens: a component names a theme (`dark:`, which follows `data-theme`) only where no token can tell
   the two apart.
 - No arbitrary value (`text-[13px]`, `bg-[#fff]`, `rounded-[5px]`) for a color, a size of text, a radius or a
-  shadow: use a token of `@cihub/ui`, or add one. An arbitrary value stays for a layout that only one component
+  shadow: use a token of `@cihub/theme`, or add one. An arbitrary value stays for a layout that only one component
   has (`grid-cols-[auto_1fr]`).
 - A class goes on the element that it styles, never on a parent through a descendant selector (`[&_p]:`), but for
   the icons that a component sizes in its own slot (`[&>svg]:size-4`): a part that repeats is a component
@@ -189,7 +191,7 @@ both, and writes into `test-reports/console-visual/diff` the captures of each vi
 (`before/`, `after/`), its changed pixels (`changes/`, as `pixelmatch` finds them: it ignores the anti-aliased
 edges and the changes that the eye does not see), `report.md`, and `index.html`, which shows each of these
 views before and after: side by side, split, blend, or its changed pixels, zoomed on the change. A view that did not
-change is only counted. On a pull request that changes `apps/console/` or `packages/ui/`, the job `Console Visual` of the CI runs it against
+change is only counted. On a pull request that changes `apps/console/` or `packages/`, the job `Console Visual` of the CI runs it against
 the base, writes `report.md` into the summary of the run, and uploads `diff/` as the artifact `dashboard-visual`:
 download it and open `index.html`. It gates nothing. Its viewer (`e2e/visual/viewer/`) uses the design system and the components of
 `src/`, built as one script, as a page opened from the disk runs no module. The fixtures use the types of `src/client`: a change of the API that they no longer

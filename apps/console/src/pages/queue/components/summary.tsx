@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 
 import type { Queue } from "@/client/types.gen";
-import { Card, cardVariants, cn } from "@cihub/ui";
+import { Card, cardVariants } from "@cihub/ui/components/card";
+import { cn } from "@cihub/ui/lib/cn";
 import { inQueueCount, testingCount } from "@/domain/queue/counts";
 import { plural, shortSha } from "@/lib/text";
 import { timeAgo } from "@/lib/time";
