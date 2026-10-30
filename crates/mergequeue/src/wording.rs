@@ -8,7 +8,7 @@ mod history;
 use std::fmt::Write as _;
 
 use cihub_config::QueueSettings;
-use cihub_domain::{AwaitedCheckStatus, BlockReason, ItemState, Reason};
+use cihub_domain::{BlockReason, ItemState, Reason};
 use cihub_mq_core::{BatchWait, Surface};
 use cihub_scm::{CommitStatus, SUBMIT_BOX};
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ fn description(surface: &Surface) -> String {
     };
     match surface.state {
         ItemState::NotReady => match surface.block_reasons.first() {
-            Some(reason) => format!("Waiting: {}", block_text(reason)),
+            Some(reason) => format!("Waiting: {}", reason.describe()),
             None => "Waiting to enter the queue".to_owned(),
         },
         ItemState::Pending => at("Queued"),
@@ -150,33 +150,6 @@ pub(crate) fn truncate(text: &str) -> String {
     short
 }
 
-pub(crate) fn block_text(reason: &BlockReason) -> String {
-    match reason {
-        BlockReason::ReviewRequired { have, need } => {
-            format!("{have} of {need} required approvals")
-        }
-        BlockReason::ChangesRequested => "a review asks for changes".to_owned(),
-        BlockReason::FailingRequiredCheck { check } => {
-            format!("the required check `{check}` failed")
-        }
-        BlockReason::AwaitingRequiredCheck { check, status } => match status {
-            AwaitedCheckStatus::Missing => format!("the required check `{check}` has not reported"),
-            AwaitedCheckStatus::Queued => format!("the required check `{check}` is queued"),
-            AwaitedCheckStatus::Running => format!("the required check `{check}` is running"),
-        },
-        BlockReason::BehindBase => "the branch is behind its base".to_owned(),
-        BlockReason::MergeConflict => "the branch conflicts with its base".to_owned(),
-        BlockReason::StackNeedsRebase { onto_pr_number } => {
-            format!("the branch must be rebased onto #{onto_pr_number}")
-        }
-        BlockReason::Undetermined => "the SCM does not say yet why the PR is blocked".to_owned(),
-        BlockReason::QueueConditionsUnmet { conditions } => {
-            let list: Vec<String> = conditions.iter().map(|c| format!("`{c}`")).collect();
-            format!("the queue conditions {} are not met", list.join(", "))
-        }
-    }
-}
-
 /// The comment of the queue on the PR, in Markdown: the state line, its
 /// details, the history, then the commands in small print.
 fn comment(
@@ -197,7 +170,7 @@ fn comment(
         let reasons: Vec<String> = surface
             .block_reasons
             .iter()
-            .map(|reason| format!("- {}", capitalized(&block_text(reason))))
+            .map(|reason| format!("- {}", capitalized(&reason.describe())))
             .collect();
         blocks.push(reasons.join("\n"));
     }
@@ -335,7 +308,7 @@ pub(crate) fn blocks_sentence(block_reasons: &[BlockReason]) -> Option<String> {
         return None;
     }
 
-    let reasons: Vec<String> = block_reasons.iter().map(block_text).collect();
+    let reasons: Vec<String> = block_reasons.iter().map(BlockReason::describe).collect();
 
     Some(reasons.join("; "))
 }
@@ -427,7 +400,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use cihub_config::{Layer, Setting};
-    use cihub_domain::Reason;
+    use cihub_domain::{AwaitedCheckStatus, Reason};
 
     use super::*;
 
@@ -745,67 +718,6 @@ mod tests {
                 .unwrap()
                 .contains(&format!("[Open in CIHub]({page})"))
         );
-    }
-
-    #[test]
-    fn each_block_reason_gives_its_sentence() {
-        let cases = [
-            (
-                BlockReason::ReviewRequired { have: 1, need: 2 },
-                "1 of 2 required approvals",
-            ),
-            (BlockReason::ChangesRequested, "a review asks for changes"),
-            (
-                BlockReason::FailingRequiredCheck {
-                    check: "build".into(),
-                },
-                "the required check `build` failed",
-            ),
-            (
-                BlockReason::AwaitingRequiredCheck {
-                    check: "build".into(),
-                    status: AwaitedCheckStatus::Missing,
-                },
-                "the required check `build` has not reported",
-            ),
-            (
-                BlockReason::AwaitingRequiredCheck {
-                    check: "build".into(),
-                    status: AwaitedCheckStatus::Queued,
-                },
-                "the required check `build` is queued",
-            ),
-            (
-                BlockReason::AwaitingRequiredCheck {
-                    check: "build".into(),
-                    status: AwaitedCheckStatus::Running,
-                },
-                "the required check `build` is running",
-            ),
-            (BlockReason::BehindBase, "the branch is behind its base"),
-            (
-                BlockReason::MergeConflict,
-                "the branch conflicts with its base",
-            ),
-            (
-                BlockReason::StackNeedsRebase { onto_pr_number: 4 },
-                "the branch must be rebased onto #4",
-            ),
-            (
-                BlockReason::Undetermined,
-                "the SCM does not say yet why the PR is blocked",
-            ),
-            (
-                BlockReason::QueueConditionsUnmet {
-                    conditions: vec!["a".into(), "b".into()],
-                },
-                "the queue conditions `a`, `b` are not met",
-            ),
-        ];
-
-        for (reason, want) in cases {
-            assert_eq!(block_text(&reason), want, "{reason:?}");
-        }
     }
 
     #[test]

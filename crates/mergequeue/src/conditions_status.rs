@@ -21,7 +21,7 @@ use crate::jobs::{
 };
 use crate::surfaces::lock_pr;
 use crate::target::QueueTarget;
-use crate::wording::{StatusState, block_text, capitalized, hash, truncate};
+use crate::wording::{StatusState, capitalized, hash, truncate};
 
 pub(crate) const OBSERVE_PR: &str = "observe_pr";
 pub(crate) const OBSERVE_OPEN_PRS: &str = "observe_open_prs";
@@ -174,7 +174,7 @@ fn status_of(blocks: &[BlockReason]) -> (StatusState, String) {
     } else {
         StatusState::Failure
     };
-    let text = capitalized(&block_text(shown));
+    let text = capitalized(&shown.describe());
     let description = match blocks.len() - 1 {
         0 => text,
         others => format!("{text}, and {others} more"),
