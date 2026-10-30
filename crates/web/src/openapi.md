@@ -44,7 +44,7 @@ An error is a `application/problem+json` document (RFC 9457). Decide on its `cod
 
 ```json
 {
-  "type": "about:blank",
+  "type": "https://cihub.io/docs/api/errors#queue_not_found",
   "title": "Not Found",
   "status": 404,
   "detail": "no queue of `main`",
@@ -52,4 +52,4 @@ An error is a `application/problem+json` document (RFC 9457). Decide on its `cod
 }
 ```
 
-Each route lists the codes that it can answer. Every code:
+Its `type` is the page of the documentation that explains its `code`. Each route lists the codes that it can answer. Every code:

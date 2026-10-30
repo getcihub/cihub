@@ -807,7 +807,7 @@ export type Problem = {
      */
     title: string;
     /**
-     * Always `about:blank`: `code` tells the errors apart.
+     * The page of the documentation that explains `code`.
      */
     type: string;
 };

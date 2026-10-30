@@ -11,7 +11,7 @@ describe("ServerErrorPage", () => {
       title: "Service Unavailable",
       code: "internal",
       detail: "",
-      type: "about:blank",
+      type: "https://cihub.io/docs/api/errors#internal",
     };
     renderInRouter(<ServerErrorPage error={problem} reset={vi.fn()} info={{ componentStack: "" }} />);
 

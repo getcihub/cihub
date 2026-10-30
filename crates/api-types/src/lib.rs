@@ -173,6 +173,12 @@ impl ErrorCode {
         }
     }
 
+    /// The page of the documentation that explains the code: the `type` of
+    /// its problem.
+    pub fn documentation_url(self) -> String {
+        format!("https://cihub.io/docs/api/errors#{self}")
+    }
+
     /// What the code means, in English, for a person.
     pub const fn sentence(self) -> &'static str {
         match self {
@@ -245,9 +251,12 @@ impl ErrorCode {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Problem {
-    /// Always `about:blank`: `code` tells the errors apart.
+    /// The page of the documentation that explains `code`.
     #[serde(rename = "type")]
-    #[cfg_attr(feature = "openapi", schema(example = "about:blank"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "https://cihub.io/docs/api/errors#queue_not_found")
+    )]
     pub kind: String,
     /// The reason phrase of the HTTP status.
     #[cfg_attr(feature = "openapi", schema(example = "Not Found"))]
@@ -1757,14 +1766,17 @@ mod tests {
     #[test]
     fn a_problem_has_a_type_and_a_code() {
         let problem = Problem {
-            kind: "about:blank".into(),
+            kind: ErrorCode::QueueNotFound.documentation_url(),
             title: "Not Found".into(),
             status: 404,
             detail: "no queue".into(),
             code: ErrorCode::QueueNotFound,
         };
         let json = serde_json::to_value(&problem).unwrap();
-        assert_eq!(json["type"], "about:blank");
+        assert_eq!(
+            json["type"],
+            "https://cihub.io/docs/api/errors#queue_not_found"
+        );
         assert_eq!(json["code"], "queue_not_found");
         assert_eq!(ErrorCode::PrAlreadyQueued.to_string(), "pr_already_queued");
     }

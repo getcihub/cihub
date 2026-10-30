@@ -6,3 +6,5 @@ next-env.d.ts
 # Copied from schema/ by scripts/publish-machine-files.ts.
 public/schema/
 public/openapi/
+# Written from the OpenAPI document by scripts/publish-machine-files.ts.
+generated/

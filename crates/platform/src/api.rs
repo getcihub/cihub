@@ -157,7 +157,7 @@ fn problem(code: ErrorCode, detail: String) -> Problem {
     let status = status_of(code);
 
     Problem {
-        kind: "about:blank".to_owned(),
+        kind: code.documentation_url(),
         title: status.canonical_reason().unwrap_or_default().to_owned(),
         status: status.as_u16(),
         detail,

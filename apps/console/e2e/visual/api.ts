@@ -46,7 +46,7 @@ export interface ApiRequest {
 export type Person = "ada" | "grace" | "nobody";
 
 export function problem(status: number, code: ErrorCode, detail = ""): Problem {
-  return { type: "about:blank", title: code, status, detail, code };
+  return { type: `https://cihub.io/docs/api/errors#${code}`, title: code, status, detail, code };
 }
 
 function listOf(name: string, entries: object[]): object {

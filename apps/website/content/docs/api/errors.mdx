@@ -1,0 +1,29 @@
+---
+title: API errors
+description: The error codes of the API of a CIHub instance, with the HTTP status of each and what it means.
+---
+
+An error of the API is an `application/problem+json` document (RFC 9457):
+
+```json
+{
+  "type": "https://cihub.io/docs/api/errors#queue_not_found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "no queue of `main`",
+  "code": "queue_not_found"
+}
+```
+
+| Field    | Meaning                                                              |
+| -------- | -------------------------------------------------------------------- |
+| `type`   | The section of this page that explains `code`                        |
+| `title`  | The reason phrase of the HTTP status                                 |
+| `status` | The HTTP status of the answer                                        |
+| `detail` | What went wrong with this request, for a person; its text can change |
+| `code`   | The cause of the error, from the closed list below: decide on it     |
+
+Each code has one HTTP status. A `429` also carries the header `Retry-After`: the seconds to wait before the next
+request. The [OpenAPI document](/openapi/v1.json) lists, for each route, the codes that it can answer.
+
+<include>../../../generated/error-codes.md</include>

@@ -143,6 +143,26 @@ describe("the machine-readable files", () => {
     assert.equal((JSON.parse(schema) as { $id: string }).$id, `${productionOrigin}/schema/config/v1.json`);
   });
 
+  test("the type of each error code is its section of the page of the API errors", async () => {
+    const document = (await (await fetch(`${origin}/openapi/v1.json`)).json()) as {
+      components: {
+        schemas: { ErrorCode: { enum: string[] } };
+        examples: Record<string, { value: { type: string } }>;
+      };
+    };
+    const html = await (await fetch(`${origin}/docs/api/errors`)).text();
+    const markdown = await (await fetch(`${origin}/docs/api/errors.md`)).text();
+
+    for (const code of document.components.schemas.ErrorCode.enum) {
+      assert.equal(
+        document.components.examples[code]?.value.type,
+        `${productionOrigin}/docs/api/errors#${code}`,
+      );
+      assert.ok(html.includes(`id="${code}"`), `the page has no section ${code}`);
+      assert.ok(markdown.includes(`### \`${code}\``), `the Markdown has no section ${code}`);
+    }
+  });
+
   test("the OpenAPI document names no server on cihub.io", async () => {
     const response = await fetch(`${origin}/openapi/v1.json`);
     const document = (await response.json()) as { servers: { url: string }[] };

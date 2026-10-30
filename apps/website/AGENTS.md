@@ -18,7 +18,9 @@ Markdown. A change keeps these URLs working; `mise run website:test` checks them
 | `/openapi/v1.json`                                   | a copy of `schema/openapi/v1.json`, without the relative server |
 
 - The build copies the two files of the repository into `public/` (`scripts/publish-machine-files.ts`, which
-  git ignores): the repository keeps a single source for each.
+  git ignores): the repository keeps a single source for each. It also writes `generated/error-codes.md` from the
+  examples of the OpenAPI document, which `content/docs/api/errors.mdx` includes: a section per error code, whose
+  anchor is the `type` of its problem.
 - A Markdown URL that does not exist answers 404 with the list of the pages that do, so that an agent corrects
   itself.
 - `next.config.ts` redirects the paths that an agent guesses (`/install`, `/quickstart`) to the real page.

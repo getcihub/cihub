@@ -21,7 +21,7 @@ export type Answer = [number, object | null];
 export type Answers = Record<string, Answer | Answer[]>;
 
 export const problem = (status: number, code: ErrorCode) => ({
-  type: "about:blank",
+  type: `https://cihub.io/docs/api/errors#${code}`,
   title: code,
   status,
   detail: "",
