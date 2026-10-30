@@ -88,13 +88,13 @@ These rules apply to all the code, written by a human or by an agent. The lints 
 
    | Level   | When                                              | Examples                                                                                                                                                    |
    | ------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `DEBUG` | Detail for a developer; off in production         | Each GitHub call and its cost, each retried request, the gap between the plan and the observed state                                                        |
+   | `DEBUG` | Detail for a developer; off in production         | Each GitHub call and its cost, each retried request, the gap between the plan and the observed state, an API request refused with a 4XX status            |
    | `INFO`  | One line per decision or state change             | Reconciliation decision (`decision=start_run group=... predecessors=...`), job step, webhook stored, migration applied, degraded mode change                |
    | `WARN`  | A problem that CIHub handles alone                | Retry after a GitHub error, failed delivery of a connection (counted, retried at the next pass), budget in `throttled` mode, GitHub unavailable, queue lease lost                                                                 |
-   | `ERROR` | An operator must act                              | Job sent to the dead-letter queue, delivery of a connection set aside after 5 failures, invariant violated, migration failed                                                                                     |
+   | `ERROR` | An operator must act                              | Job sent to the dead-letter queue, delivery of a connection set aside after 5 failures, invariant violated, migration failed, an API request failed with a 5XX status |
 
    A red CI, a PR evicted from the queue or a duplicate webhook are normal results: `INFO`, never
-   `ERROR`.
+   `ERROR`. An API request refused with a 4XX status is an error of the client, not of CIHub: `DEBUG`.
 
 8. **No secret, no raw tenant data.** No token, key, webhook secret, webhook payload,
    diff or GitHub request body: write the identifier (`delivery_id`, `run_id`). A secret is

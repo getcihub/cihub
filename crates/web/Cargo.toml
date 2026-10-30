@@ -30,6 +30,7 @@ utoipa.workspace = true
 
 [dev-dependencies]
 cihub-scm = { workspace = true, features = ["sim"] }
+cihub-telemetry = { workspace = true, features = ["capture"] }
 ring.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
 ulid.workspace = true

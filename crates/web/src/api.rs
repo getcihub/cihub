@@ -21,7 +21,9 @@ use cihub_api_types::{
     AuditEntry, AuditList, CliSession, DeviceCode, DeviceCodeToken, ErrorCode, Instance, Org,
     OrgList, Problem, QueueChanged, User,
 };
-use cihub_domain::{ApiScope, ApiTokenId, JobClass, OrgId, Permission, RepoId, SessionId, UserId};
+use cihub_domain::{
+    ApiScope, ApiTokenId, JobClass, OrgId, Permission, RepoId, RequestId, SessionId, UserId,
+};
 use cihub_platform::{
     Access, ApiError, ApiGrant, ApiPath, ApiQuery, GrantActor, ModuleApi, ORG_IS_SUSPENDED,
     PAGE_ERRORS, Page, PlatformError, authenticate, cursor_of, document_error, error_examples,
@@ -35,7 +37,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
-use tracing::warn;
+use tracing::field::{Empty, display};
+use tracing::{Instrument, Span, debug, info_span, warn};
 use utoipa::openapi::path::{Operation, PathItem};
 use utoipa::openapi::security::{
     ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityRequirement, SecurityScheme,
@@ -394,6 +397,22 @@ pub(crate) fn router(
         .merge(sign_in)
         .merge(routes)
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(middleware::from_fn(in_request_span))
+}
+
+/// Opens the `request` span of `specs/OBSERVABILITY.md`: every line written
+/// for the request carries its `request_id`, then its `org_id` once
+/// authenticated. A refusal is an error of the client: `DEBUG`; a failure
+/// writes its `ERROR` where it happens.
+async fn in_request_span(request: Request, next: Next) -> Response {
+    let span = info_span!("request", request_id = %RequestId::new(), org_id = Empty);
+    let response = next.run(request).instrument(span.clone()).await;
+
+    let status = response.status();
+    if status.is_client_error() {
+        span.in_scope(|| debug!(status = status.as_u16(), "request.refused"));
+    }
+    response
 }
 
 async fn authenticated(
@@ -429,11 +448,13 @@ async fn authenticated(
     let extensions = request.extensions_mut();
     match authenticated {
         Authenticated::Token(_, grant) => {
+            Span::current().record("org_id", display(grant.org_id));
             extensions.insert(grant);
         }
         Authenticated::Session(session, grant) => {
             extensions.insert(session);
             if let Some(grant) = grant {
+                Span::current().record("org_id", display(grant.org_id));
                 extensions.insert(grant);
             }
         }

@@ -308,6 +308,32 @@ async fn the_api_wants_a_token_with_the_scope_of_the_route(pool: PgPool) {
     );
 }
 
+#[sqlx::test(migrator = "cihub_store::MIGRATOR")]
+async fn a_line_of_a_request_says_which_request_and_which_organization(pool: PgPool) {
+    let logs = cihub_telemetry::CapturedLogs::default();
+    let _logs = tracing::subscriber::set_default(logs.subscriber());
+    let addr = start(&pool).await;
+    let reader = token(&pool, 1, &[ApiScope::QueuesRead]).await;
+
+    let forbidden = call(&addr, "GET", "/api/v1/orgs/acme/audit", Some(&reader)).await;
+
+    assert_eq!(forbidden.status, 403, "{}", forbidden.body);
+    let records = logs.records().unwrap();
+    let refused = records
+        .iter()
+        .find(|record| {
+            record
+                .get("message")
+                .is_some_and(|message| message == "request.refused")
+        })
+        .unwrap();
+    assert_eq!(refused["level"], "DEBUG");
+    assert_eq!(refused["status"], 403);
+    assert_eq!(refused["org_id"], OrgId::from_ulid(Ulid(7)).to_string());
+    let request_id = refused["request_id"].as_str().unwrap();
+    assert!(request_id.starts_with("request_"), "{request_id}");
+}
+
 /// Reads `stream` until its text holds `marker`, at most 5 seconds; `None`
 /// once the server closes it.
 async fn read_until(stream: &mut TcpStream, marker: &str) -> Option<String> {

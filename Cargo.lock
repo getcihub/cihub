@@ -470,6 +470,7 @@ dependencies = [
  "cihub-platform",
  "cihub-scm",
  "cihub-store",
+ "cihub-telemetry",
  "ring",
  "secrecy",
  "serde",
