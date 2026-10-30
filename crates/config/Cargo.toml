@@ -13,6 +13,7 @@ cihub-conditions.workspace = true
 cihub-domain.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

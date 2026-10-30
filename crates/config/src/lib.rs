@@ -5,6 +5,7 @@
 mod conditions;
 mod error;
 mod file;
+mod read;
 mod settings;
 
 pub use error::{ConfigError, ConfigErrorKind, Position};

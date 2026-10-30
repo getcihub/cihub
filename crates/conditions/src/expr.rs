@@ -76,8 +76,8 @@ impl Expr {
         match self {
             Self::Condition(condition) => condition.eval(ctx),
             Self::All(list) => all(list, ctx),
-            Self::Any(list) => has(list, ctx, true),
-            Self::None(list) => has(list, ctx, true).map(|any| !any),
+            Self::Any(list) => any(list, ctx),
+            Self::None(list) => any(list, ctx).map(|holds| !holds),
         }
     }
 
@@ -91,17 +91,25 @@ impl Expr {
     }
 }
 
+/// Stops at the first element that does not hold.
 fn all(list: &[Expr], ctx: &Context) -> Result<bool, EvalError> {
-    has(list, ctx, false).map(|failed| !failed)
+    for expr in list {
+        if !expr.eval(ctx)? {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
-/// Whether an element of `list` evaluates to `value`. Stops at the first one.
-fn has(list: &[Expr], ctx: &Context, value: bool) -> Result<bool, EvalError> {
+/// Stops at the first element that holds.
+fn any(list: &[Expr], ctx: &Context) -> Result<bool, EvalError> {
     for expr in list {
-        if expr.eval(ctx)? == value {
+        if expr.eval(ctx)? {
             return Ok(true);
         }
     }
+
     Ok(false)
 }
 
@@ -115,7 +123,7 @@ mod tests {
     use crate::{Check, Operator};
 
     fn conditions(attribute: Attribute, operator: Operator, values: &[&str]) -> Vec<Expr> {
-        let values: Vec<String> = values.iter().map(|&v| v.to_owned()).collect();
+        let values: Vec<String> = values.iter().map(|&value| value.to_owned()).collect();
         Condition::build(attribute, operator, &values)
             .unwrap()
             .into_iter()
@@ -161,155 +169,172 @@ mod tests {
         }
     }
 
+    /// Each case is an attribute, an operator, its values, and whether the
+    /// condition holds on `ctx`.
+    fn assert_cases(ctx: &Context, cases: &[(Attribute, Operator, &[&str], bool)]) {
+        for &(attribute, operator, values, expected) in cases {
+            assert_eq!(
+                holds(attribute, operator, values, ctx),
+                expected,
+                "{attribute}.{operator}: {values:?}"
+            );
+        }
+    }
+
     #[test]
     fn list_operators() {
-        use Attribute::Labels;
-        let ctx = pr();
-
-        assert!(holds(Labels, Operator::Is, &["ready", "area/ci"], &ctx));
-        assert!(!holds(Labels, Operator::All, &["ready", "blocked"], &ctx));
-        assert!(holds(Labels, Operator::Any, &["blocked", "ready"], &ctx));
-        assert!(!holds(Labels, Operator::Any, &["blocked"], &ctx));
-        assert!(holds(Labels, Operator::None, &["blocked", "wip"], &ctx));
-        assert!(!holds(Labels, Operator::None, &["blocked", "ready"], &ctx));
-        assert!(holds(Labels, Operator::Count, &["2"], &ctx));
-        assert!(holds(Labels, Operator::CountMin, &["1"], &ctx));
-        assert!(!holds(Labels, Operator::CountMax, &["1"], &ctx));
+        assert_cases(
+            &pr(),
+            &[
+                (Attribute::Labels, Operator::Is, &["ready", "area/ci"], true),
+                (
+                    Attribute::Labels,
+                    Operator::All,
+                    &["ready", "blocked"],
+                    false,
+                ),
+                (
+                    Attribute::Labels,
+                    Operator::Any,
+                    &["blocked", "ready"],
+                    true,
+                ),
+                (Attribute::Labels, Operator::Any, &["blocked"], false),
+                (Attribute::Labels, Operator::None, &["blocked", "wip"], true),
+                (
+                    Attribute::Labels,
+                    Operator::None,
+                    &["blocked", "ready"],
+                    false,
+                ),
+                (Attribute::Labels, Operator::Count, &["2"], true),
+                (Attribute::Labels, Operator::CountMin, &["1"], true),
+                (Attribute::Labels, Operator::CountMax, &["1"], false),
+            ],
+        );
     }
 
     #[test]
     fn globs_match_any_every_or_no_element() {
-        use Attribute::Files;
         let mut ctx = pr();
 
-        assert!(holds(Files, Operator::AnyMatch, &["src/**/*.rs"], &ctx));
-        assert!(!holds(Files, Operator::AnyMatch, &["src/*.rs"], &ctx));
-        assert!(holds(Files, Operator::AllMatch, &["src/**", "*.md"], &ctx));
-        assert!(!holds(Files, Operator::AllMatch, &["src/**"], &ctx));
-        assert!(holds(Files, Operator::NoneMatch, &["migrations/**"], &ctx));
-        assert!(!holds(Files, Operator::NoneMatch, &["*.md"], &ctx));
+        assert_cases(
+            &ctx,
+            &[
+                (Attribute::Files, Operator::AnyMatch, &["src/**/*.rs"], true),
+                (Attribute::Files, Operator::AnyMatch, &["src/*.rs"], false),
+                (
+                    Attribute::Files,
+                    Operator::AllMatch,
+                    &["src/**", "*.md"],
+                    true,
+                ),
+                (Attribute::Files, Operator::AllMatch, &["src/**"], false),
+                (
+                    Attribute::Files,
+                    Operator::NoneMatch,
+                    &["migrations/**"],
+                    true,
+                ),
+                (Attribute::Files, Operator::NoneMatch, &["*.md"], false),
+            ],
+        );
 
         ctx.files = Some(Vec::new());
 
-        assert!(!holds(Files, Operator::AllMatch, &["**"], &ctx));
+        assert!(!holds(Attribute::Files, Operator::AllMatch, &["**"], &ctx));
     }
 
     #[test]
     fn string_operators() {
-        let ctx = pr();
-
-        assert!(holds(
-            Attribute::Author,
-            Operator::Is,
-            &["bob", "alice"],
-            &ctx
-        ));
-        assert!(!holds(Attribute::Author, Operator::Not, &["alice"], &ctx));
-        assert!(holds(Attribute::Base, Operator::Matches, &["ma*"], &ctx));
-        assert!(holds(Attribute::Title, Operator::Regex, &["queue"], &ctx));
-        assert!(!holds(Attribute::Title, Operator::Regex, &["^queue"], &ctx));
+        assert_cases(
+            &pr(),
+            &[
+                (Attribute::Author, Operator::Is, &["bob", "alice"], true),
+                (Attribute::Author, Operator::Not, &["alice"], false),
+                (Attribute::Base, Operator::Matches, &["ma*"], true),
+                (Attribute::Title, Operator::Regex, &["queue"], true),
+                (Attribute::Title, Operator::Regex, &["^queue"], false),
+            ],
+        );
     }
 
     #[test]
     fn checks_are_grouped_by_conclusion() {
-        let ctx = pr();
-
-        assert!(holds(
-            Attribute::CheckSuccess,
-            Operator::Is,
-            &["lint"],
-            &ctx
-        ));
-        assert!(holds(
-            Attribute::CheckFailure,
-            Operator::Is,
-            &["build"],
-            &ctx
-        ));
-        assert!(holds(Attribute::CheckPending, Operator::Is, &["e2e"], &ctx));
-        assert!(!holds(
-            Attribute::CheckSuccess,
-            Operator::Is,
-            &["e2e"],
-            &ctx
-        ));
-        assert!(holds(
-            Attribute::CheckSkipped,
-            Operator::Count,
-            &["0"],
-            &ctx
-        ));
-        assert!(holds(
-            Attribute::CheckNeutral,
-            Operator::Count,
-            &["0"],
-            &ctx
-        ));
+        assert_cases(
+            &pr(),
+            &[
+                (Attribute::CheckSuccess, Operator::Is, &["lint"], true),
+                (Attribute::CheckFailure, Operator::Is, &["build"], true),
+                (Attribute::CheckPending, Operator::Is, &["e2e"], true),
+                (Attribute::CheckSuccess, Operator::Is, &["e2e"], false),
+                (Attribute::CheckSkipped, Operator::Count, &["0"], true),
+                (Attribute::CheckNeutral, Operator::Count, &["0"], true),
+            ],
+        );
     }
 
     #[test]
     fn compares_numbers_durations_and_choices() {
         let mut ctx = pr();
 
-        assert!(holds(Attribute::Number, Operator::Is, &["42"], &ctx));
-        assert!(holds(Attribute::Number, Operator::Min, &["42"], &ctx));
-        assert!(!holds(Attribute::Number, Operator::Max, &["41"], &ctx));
-        assert!(holds(Attribute::PrAge, Operator::Min, &["2h"], &ctx));
-        assert!(holds(
-            Attribute::ReviewDecision,
-            Operator::Is,
-            &["approved"],
-            &ctx
-        ));
-        assert!(!holds(
-            Attribute::ReviewDecision,
-            Operator::Is,
-            &["none", "review_required"],
-            &ctx
-        ));
+        assert_cases(
+            &ctx,
+            &[
+                (Attribute::Number, Operator::Is, &["42"], true),
+                (Attribute::Number, Operator::Min, &["42"], true),
+                (Attribute::Number, Operator::Max, &["41"], false),
+                (Attribute::PrAge, Operator::Min, &["2h"], true),
+                (Attribute::ReviewDecision, Operator::Is, &["approved"], true),
+                (
+                    Attribute::ReviewDecision,
+                    Operator::Is,
+                    &["none", "review_required"],
+                    false,
+                ),
+            ],
+        );
 
         ctx.sender = Some("bob".into());
         ctx.sender_permission = Some(Permission::Write);
+        ctx.queue_position = Some(2);
 
-        assert!(holds(
-            Attribute::SenderPermission,
-            Operator::Min,
-            &["write"],
-            &ctx
-        ));
-        assert!(!holds(
-            Attribute::SenderPermission,
-            Operator::Min,
-            &["admin"],
-            &ctx
-        ));
-        assert!(holds(Attribute::Sender, Operator::Is, &["bob"], &ctx));
+        assert_cases(
+            &ctx,
+            &[
+                (Attribute::SenderPermission, Operator::Min, &["write"], true),
+                (
+                    Attribute::SenderPermission,
+                    Operator::Min,
+                    &["admin"],
+                    false,
+                ),
+                (Attribute::Sender, Operator::Is, &["bob"], true),
+                (Attribute::QueuePosition, Operator::Max, &["2"], true),
+                (Attribute::QueuePosition, Operator::Max, &["1"], false),
+            ],
+        );
     }
 
     #[test]
     fn absent_values_do_not_compare() {
-        let ctx = pr();
-
-        assert!(!holds(
-            Attribute::SenderPermission,
-            Operator::Max,
-            &["admin"],
-            &ctx
-        ));
-        assert!(!holds(
-            Attribute::SenderPermission,
-            Operator::Is,
-            &["none"],
-            &ctx
-        ));
-        assert!(!holds(Attribute::QueueAge, Operator::Max, &["1000d"], &ctx));
-        assert!(!holds(
-            Attribute::QueuePosition,
-            Operator::Min,
-            &["0"],
-            &ctx
-        ));
-        assert!(holds(Attribute::Sender, Operator::Not, &["bob"], &ctx));
+        assert_cases(
+            &pr(),
+            &[
+                (
+                    Attribute::SenderPermission,
+                    Operator::Max,
+                    &["admin"],
+                    false,
+                ),
+                (Attribute::SenderPermission, Operator::Is, &["none"], false),
+                (Attribute::QueueAge, Operator::Max, &["1000d"], false),
+                (Attribute::QueuePosition, Operator::Min, &["0"], false),
+                (Attribute::QueuePosition, Operator::Max, &["3"], false),
+                (Attribute::QueuePosition, Operator::Is, &["0"], false),
+                (Attribute::Sender, Operator::Not, &["bob"], true),
+            ],
+        );
     }
 
     #[test]
@@ -317,7 +342,9 @@ mod tests {
         let mut ctx = pr();
 
         assert!(holds(Attribute::Draft, Operator::Is, &["false"], &ctx));
+
         ctx.draft = true;
+
         assert!(holds(Attribute::Draft, Operator::Is, &["true"], &ctx));
         assert!(!holds(Attribute::Draft, Operator::Is, &["false"], &ctx));
     }

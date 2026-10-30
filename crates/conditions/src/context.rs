@@ -1,9 +1,8 @@
-use std::fmt;
 use std::time::Duration;
 
 use cihub_domain::{CheckConclusion, Permission, ReviewDecision};
 
-use crate::Attribute;
+use crate::{Attribute, EvalError};
 
 /// What conditions are evaluated on: a PR, its checks, and its place in the
 /// queue. The caller loads it; checks come from the PR head for
@@ -53,23 +52,6 @@ pub struct Check {
     pub conclusion: Option<CheckConclusion>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EvalError {
-    /// A condition uses an attribute that is loaded on demand, and the
-    /// context does not have it.
-    NotLoaded(Attribute),
-}
-
-impl fmt::Display for EvalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotLoaded(a) => write!(f, "attribute `{a}` is not loaded in the context"),
-        }
-    }
-}
-
-impl std::error::Error for EvalError {}
-
 /// Value of an attribute, in the shape that its kind gives. A scalar string
 /// is a list of at most one element.
 pub(crate) enum Value<'a> {
@@ -81,46 +63,51 @@ pub(crate) enum Value<'a> {
 
 impl Context {
     pub(crate) fn value<'a>(&'a self, attribute: Attribute) -> Result<Value<'a>, EvalError> {
-        use Attribute as A;
-        use CheckConclusion as C;
         let loaded = |list: &'a Option<Vec<String>>| {
             list.as_deref()
                 .map(texts)
                 .ok_or(EvalError::NotLoaded(attribute))
         };
         Ok(match attribute {
-            A::Draft => Value::Flag(self.draft),
-            A::Conflict => Value::Flag(self.conflict),
-            A::FromFork => Value::Flag(self.from_fork),
-            A::BehindBase => Value::Flag(self.behind_base),
-            A::Number => number(self.number),
-            A::Title => Value::Texts(vec![&self.title]),
-            A::Body => Value::Texts(vec![&self.body]),
-            A::ReviewDecision => Value::Number(Some(self.review_decision as i64)),
-            A::ApprovedReviewsBy => texts(&self.approved_reviews_by),
-            A::ChangesRequestedReviewsBy => texts(&self.changes_requested_reviews_by),
-            A::ReviewRequested => texts(&self.review_requested),
-            A::ReviewThreadsUnresolved => loaded(&self.review_threads_unresolved)?,
-            A::CheckSuccess => self.checks_where(|c| c == Some(C::Success)),
-            A::CheckNeutral => self.checks_where(|c| c == Some(C::Neutral)),
-            A::CheckSkipped => self.checks_where(|c| c == Some(C::Skipped)),
-            A::CheckFailure => self.checks_where(|c| c.is_some_and(|c| !c.is_passing())),
-            A::CheckPending => self.checks_where(|c| c.is_none()),
-            A::Labels => texts(&self.labels),
-            A::Author => Value::Texts(vec![&self.author]),
-            A::Sender => Value::Texts(self.sender.as_deref().into_iter().collect()),
-            A::SenderPermission => Value::Number(self.sender_permission.map(|p| p as i64)),
-            A::Files => loaded(&self.files)?,
-            A::Additions => number(self.additions),
-            A::Deletions => number(self.deletions),
-            A::Base => Value::Texts(vec![&self.base]),
-            A::Head => Value::Texts(vec![&self.head]),
-            A::QueuePosition => match self.queue_position {
-                Some(position) => number(position),
-                None => Value::Number(Some(-1)),
-            },
-            A::QueueAge => Value::Number(self.queue_age.map(seconds)),
-            A::PrAge => Value::Number(Some(seconds(self.pr_age))),
+            Attribute::Draft => Value::Flag(self.draft),
+            Attribute::Conflict => Value::Flag(self.conflict),
+            Attribute::FromFork => Value::Flag(self.from_fork),
+            Attribute::BehindBase => Value::Flag(self.behind_base),
+            Attribute::Number => number(self.number),
+            Attribute::Title => Value::Texts(vec![&self.title]),
+            Attribute::Body => Value::Texts(vec![&self.body]),
+            Attribute::ReviewDecision => Value::Number(Some(self.review_decision as i64)),
+            Attribute::ApprovedReviewsBy => texts(&self.approved_reviews_by),
+            Attribute::ChangesRequestedReviewsBy => texts(&self.changes_requested_reviews_by),
+            Attribute::ReviewRequested => texts(&self.review_requested),
+            Attribute::ReviewThreadsUnresolved => loaded(&self.review_threads_unresolved)?,
+            Attribute::CheckSuccess => {
+                self.checks_where(|conclusion| conclusion == Some(CheckConclusion::Success))
+            }
+            Attribute::CheckNeutral => {
+                self.checks_where(|conclusion| conclusion == Some(CheckConclusion::Neutral))
+            }
+            Attribute::CheckSkipped => {
+                self.checks_where(|conclusion| conclusion == Some(CheckConclusion::Skipped))
+            }
+            Attribute::CheckFailure => self.checks_where(|conclusion| {
+                conclusion.is_some_and(|conclusion| !conclusion.is_passing())
+            }),
+            Attribute::CheckPending => self.checks_where(|conclusion| conclusion.is_none()),
+            Attribute::Labels => texts(&self.labels),
+            Attribute::Author => Value::Texts(vec![&self.author]),
+            Attribute::Sender => Value::Texts(self.sender.as_deref().into_iter().collect()),
+            Attribute::SenderPermission => {
+                Value::Number(self.sender_permission.map(|permission| permission as i64))
+            }
+            Attribute::Files => loaded(&self.files)?,
+            Attribute::Additions => number(self.additions),
+            Attribute::Deletions => number(self.deletions),
+            Attribute::Base => Value::Texts(vec![&self.base]),
+            Attribute::Head => Value::Texts(vec![&self.head]),
+            Attribute::QueuePosition => Value::Number(self.queue_position.map(saturate)),
+            Attribute::QueueAge => Value::Number(self.queue_age.map(seconds)),
+            Attribute::PrAge => Value::Number(Some(seconds(self.pr_age))),
         })
     }
 
@@ -139,14 +126,14 @@ fn texts(list: &[String]) -> Value<'_> {
     Value::Texts(list.iter().map(String::as_str).collect())
 }
 
-fn number(n: u64) -> Value<'static> {
-    Value::Number(Some(saturate(n)))
+fn number(number: u64) -> Value<'static> {
+    Value::Number(Some(saturate(number)))
 }
 
-fn seconds(d: Duration) -> i64 {
-    saturate(d.as_secs())
+fn seconds(duration: Duration) -> i64 {
+    saturate(duration.as_secs())
 }
 
-fn saturate(n: u64) -> i64 {
-    i64::try_from(n).unwrap_or(i64::MAX)
+pub(crate) fn saturate(number: impl TryInto<i64>) -> i64 {
+    number.try_into().unwrap_or(i64::MAX)
 }

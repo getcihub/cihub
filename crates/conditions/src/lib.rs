@@ -6,9 +6,16 @@
 mod attribute;
 mod condition;
 mod context;
+mod error;
 mod expr;
+mod glob;
+mod operator;
+mod parse;
 
 pub use attribute::Attribute;
-pub use condition::{Condition, ConditionError, ConditionErrorKind, Glob, Operator};
-pub use context::{Check, Context, EvalError};
+pub use condition::Condition;
+pub use context::{Check, Context};
+pub use error::{ConditionError, ConditionErrorKind, EvalError};
 pub use expr::{Conditions, Expr};
+pub use glob::Glob;
+pub use operator::Operator;

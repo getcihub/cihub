@@ -31,12 +31,8 @@ pub(crate) struct Reader<'a> {
     pub text: &'a str,
 }
 
-fn position<T>(node: &Spanned<T>) -> Position {
-    Position::of(&node.referenced)
-}
-
 fn error<T>(node: &Spanned<T>, message: impl Into<String>) -> ConfigError {
-    ConfigError::parsing(Some(position(node)), message)
+    ConfigError::parsing(Some(Position::of_value(node)), message)
 }
 
 fn map<'a>(node: &'a Spanned<RawNode>, expected: &str) -> Result<&'a Entries, ConfigError> {
@@ -60,11 +56,26 @@ fn filled<'a>(node: &'a Spanned<RawNode>, expected: &str) -> Result<&'a Entries,
     Ok(entries)
 }
 
+/// The name of the check when the condition is one name of
+/// `checks.success`, the only form of `merge_conditions` for now.
+pub(crate) fn required_check(condition: &Condition) -> Option<&str> {
+    let is_required_check = condition.attribute() == Attribute::CheckSuccess
+        && matches!(condition.operator(), Operator::Is | Operator::All);
+    if !is_required_check {
+        return None;
+    }
+
+    match condition.values() {
+        [name] => Some(name),
+        _ => None,
+    }
+}
+
 /// `merge_conditions` accept only required checks: `exprs` come from `key`.
 fn only_required_checks(key: &Spanned<String>, exprs: Vec<Expr>) -> Result<Vec<Expr>, ConfigError> {
-    let refused = exprs
-        .iter()
-        .find(|expr| !matches!(expr, Expr::Condition(c) if c.required_check().is_some()));
+    let refused = exprs.iter().find(
+        |expr| !matches!(expr, Expr::Condition(condition) if required_check(condition).is_some()),
+    );
     if let Some(expr) = refused {
         return Err(error(
             key,
@@ -111,7 +122,7 @@ impl<'a> Reader<'a> {
         let mut conditions = Vec::new();
         for (key, value) in map(node, "a map of conditions")? {
             let exprs = match key.value.as_str() {
-                "checks" => self.merge_checks(value)?,
+                "checks" => self.merge_check_states(value)?,
                 _ => only_required_checks(key, self.entry(key, value)?)?,
             };
             conditions.extend(exprs);
@@ -120,7 +131,7 @@ impl<'a> Reader<'a> {
     }
 
     /// The states of `checks`, each refused at its own key.
-    fn merge_checks(self, value: &Spanned<RawNode>) -> Result<Vec<Expr>, ConfigError> {
+    fn merge_check_states(self, value: &Spanned<RawNode>) -> Result<Vec<Expr>, ConfigError> {
         let mut exprs = Vec::new();
         for (state, value) in filled(value, CHECK_STATES)? {
             exprs.extend(self.merge_state(state, value)?);
@@ -160,17 +171,23 @@ impl<'a> Reader<'a> {
         key: &Spanned<String>,
         value: &Spanned<RawNode>,
     ) -> Result<Vec<Expr>, ConfigError> {
-        let block: fn(Vec<Expr>) -> Expr = match key.value.as_str() {
-            "all" => Expr::All,
-            "any" => Expr::Any,
-            "none" => Expr::None,
-            "checks" => return self.checks(value),
-            name if name.contains('.') => {
-                return Err(error(key, format!("unknown attribute `{name}`")));
-            }
-            name => return self.attribute(name, key, value),
-        };
+        match key.value.as_str() {
+            "all" => self.block(Expr::All, key, value),
+            "any" => self.block(Expr::Any, key, value),
+            "none" => self.block(Expr::None, key, value),
+            "checks" => self.checks(value),
+            name if name.contains('.') => Err(error(key, format!("unknown attribute `{name}`"))),
+            name => self.attribute(name, key, value),
+        }
+    }
 
+    /// A block `all`, `any` or `none`: a list of condition maps.
+    fn block(
+        self,
+        build: fn(Vec<Expr>) -> Expr,
+        key: &Spanned<String>,
+        value: &Spanned<RawNode>,
+    ) -> Result<Vec<Expr>, ConfigError> {
         let maps = match &value.value {
             RawNode::List(maps) if !maps.is_empty() => maps,
             _ => {
@@ -180,12 +197,13 @@ impl<'a> Reader<'a> {
                 ));
             }
         };
+
         let list = maps
             .iter()
             .map(|node| self.group(node))
             .collect::<Result<_, _>>()?;
 
-        Ok(vec![block(list)])
+        Ok(vec![build(list)])
     }
 
     /// One map of a block: its only condition, or all of them.
@@ -288,7 +306,7 @@ impl<'a> Reader<'a> {
             .map_err(|failure| {
                 let at = failure
                     .value
-                    .and_then(|n| nodes.get(n))
+                    .and_then(|index| nodes.get(index))
                     .map_or(value, |(_, node)| node);
                 let path = match operator.key() {
                     Some(key) => format!("{attribute}.{key}"),
@@ -434,5 +452,36 @@ impl<'de> Visitor<'de> for RawNodeVisitor {
             entries.push(entry);
         }
         Ok(RawNode::Map(entries))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_one_name_of_checks_success_is_a_required_check() {
+        let names = |attribute, operator, list: &[&str]| {
+            let values: Vec<String> = list.iter().map(|&value| value.to_owned()).collect();
+            Condition::build(attribute, operator, &values)
+                .unwrap()
+                .iter()
+                .map(|condition| required_check(condition).map(str::to_owned))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::All, &["a", "b"]),
+            [Some("a".into()), Some("b".into())]
+        );
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::Any, &["a"]),
+            [None]
+        );
+        assert_eq!(names(Attribute::Labels, Operator::Is, &["a"]), [None]);
+        assert_eq!(
+            names(Attribute::CheckSuccess, Operator::None, &["a"]),
+            [None]
+        );
     }
 }

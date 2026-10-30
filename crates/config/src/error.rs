@@ -1,6 +1,5 @@
-use std::fmt;
-
 use cihub_domain::JobError;
+use serde_saphyr::Spanned;
 
 /// 1-based line and character column in the configuration file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,6 +15,11 @@ impl Position {
             column: location.column(),
         }
     }
+
+    /// The position of a value of the file.
+    pub(crate) fn of_value<T>(value: &Spanned<T>) -> Self {
+        Self::of(&value.referenced)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +33,8 @@ pub enum ConfigErrorKind {
 
 /// An error in the configuration, with the position of the value at fault
 /// when it comes from the file.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{}{message}", prefix(*position))]
 pub struct ConfigError {
     pub kind: ConfigErrorKind,
     pub position: Option<Position>,
@@ -37,12 +42,20 @@ pub struct ConfigError {
 }
 
 impl ConfigError {
-    pub(crate) fn parsing(position: Option<Position>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(
+        kind: ConfigErrorKind,
+        position: Option<Position>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
-            kind: ConfigErrorKind::Parsing,
+            kind,
             position,
             message: message.into(),
         }
+    }
+
+    pub(crate) fn parsing(position: Option<Position>, message: impl Into<String>) -> Self {
+        Self::new(ConfigErrorKind::Parsing, position, message)
     }
 
     /// The error that the assembly job reports for this configuration.
@@ -55,15 +68,8 @@ impl ConfigError {
     }
 }
 
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.position {
-            Some(Position { line, column }) => {
-                write!(f, "line {line}, column {column}: {}", self.message)
-            }
-            None => f.write_str(&self.message),
-        }
-    }
+fn prefix(position: Option<Position>) -> String {
+    position
+        .map(|Position { line, column }| format!("line {line}, column {column}: "))
+        .unwrap_or_default()
 }
-
-impl std::error::Error for ConfigError {}

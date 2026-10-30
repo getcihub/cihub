@@ -294,7 +294,7 @@ impl Layer {
             && (prefix.value.is_empty()
                 || prefix
                     .value
-                    .contains(|c: char| c == '/' || c.is_whitespace()))
+                    .contains(|character: char| character == '/' || character.is_whitespace()))
         {
             return Err(ConfigError::parsing(
                 prefix.at,
@@ -310,25 +310,33 @@ impl Layer {
             at,
         }) = &self.required_statuses
         {
-            let mut seen = HashSet::new();
-            for name in names {
-                let problem = if name.trim().is_empty() {
-                    "an empty name"
-                } else if !seen.insert(name) {
-                    "a duplicate name"
-                } else {
-                    continue;
-                };
-                return Err(ConfigError {
-                    kind: ConfigErrorKind::BadRequiredStatuses,
-                    position: *at,
-                    message: format!("required_statuses has {problem}: `{name}`"),
-                });
-            }
+            check_required_statuses(names, *at)?;
         }
 
         Ok(())
     }
+}
+
+fn check_required_statuses(names: &[String], at: Option<Position>) -> Result<(), ConfigError> {
+    let refused = |problem: &str, name: &str| {
+        ConfigError::new(
+            ConfigErrorKind::BadRequiredStatuses,
+            at,
+            format!("required_statuses has {problem}: `{name}`"),
+        )
+    };
+
+    let mut seen = HashSet::new();
+    for name in names {
+        if name.trim().is_empty() {
+            return Err(refused("an empty name", name));
+        }
+        if !seen.insert(name) {
+            return Err(refused("a duplicate name", name));
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) fn in_range(

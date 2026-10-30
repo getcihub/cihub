@@ -82,7 +82,10 @@ attributes! {
 
 impl Attribute {
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|a| a.name() == name)
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|attribute| attribute.name() == name)
     }
 }
 
@@ -93,12 +96,12 @@ impl fmt::Display for Attribute {
 }
 
 /// Names of the values of `review_decision`, in the declaration order of
-/// `ReviewDecision`, which is the rank the evaluation compares.
+/// `ReviewDecision`: the context gives a decision as its index here.
 const REVIEW_DECISION_NAMES: &[&str] =
     &["approved", "changes_requested", "review_required", "none"];
 
 /// Names of the values of `sender_permission`, in the declaration order of
-/// `Permission`.
+/// `Permission`, which is the rank that `min` and `max` compare.
 const PERMISSION_NAMES: &[&str] = &["none", "read", "write", "admin"];
 
 #[cfg(test)]
@@ -111,7 +114,10 @@ mod tests {
 
     #[test]
     fn names_are_unique_and_round_trip() {
-        let names: HashSet<_> = Attribute::ALL.iter().map(|a| a.name()).collect();
+        let names: HashSet<_> = Attribute::ALL
+            .iter()
+            .map(|attribute| attribute.name())
+            .collect();
         assert_eq!(names.len(), Attribute::ALL.len());
         for &attribute in Attribute::ALL {
             assert_eq!(Attribute::from_name(attribute.name()), Some(attribute));
@@ -119,23 +125,14 @@ mod tests {
     }
 
     #[test]
-    fn choice_names_follow_the_rank() {
-        for decision in [
-            ReviewDecision::Approved,
-            ReviewDecision::ChangesRequested,
-            ReviewDecision::ReviewRequired,
-            ReviewDecision::None,
-        ] {
-            assert_eq!(REVIEW_DECISION_NAMES[decision as usize], decision.as_str());
+    fn choice_names_follow_the_declaration_order() {
+        for (index, name) in REVIEW_DECISION_NAMES.iter().enumerate() {
+            let decision: ReviewDecision = name.parse().unwrap();
+            assert_eq!(decision as usize, index, "{name}");
         }
-        for permission in [
-            Permission::None,
-            Permission::Read,
-            Permission::Write,
-            Permission::Admin,
-        ] {
-            assert_eq!(PERMISSION_NAMES[permission as usize], permission.as_str());
+        for (index, name) in PERMISSION_NAMES.iter().enumerate() {
+            let permission: Permission = name.parse().unwrap();
+            assert_eq!(permission as usize, index, "{name}");
         }
-        assert_eq!(REVIEW_DECISION_NAMES.len(), 4);
     }
 }
